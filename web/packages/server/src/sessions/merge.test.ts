@@ -22,6 +22,42 @@ describe('toolOutcome (TAL-313)', () => {
     expect(toolOutcome('a'.repeat(4001)).result_text).toBe(`${'a'.repeat(4000)}...`)
     expect(toolOutcome(undefined).result_text).toBe('')
   })
+
+  it('reports the result view both clients render (TAL-315)', () => {
+    const cases: [unknown, Record<string, unknown>][] = [
+      // Terminal results: output, stderr, error, then the exit code only when it is non-zero or nothing else shows.
+      ['{"output":"line one\\nline two\\n","exit_code":0,"error":null}', { stdout: 'line one\nline two' }],
+      [{ output: 'a\\nb', stderr: 'warn', exit_code: 1, error: 'boom' }, { stdout: 'a\nb', stderr: 'warn', error: 'boom', exit_code: 1 }],
+      [{ stdout: 'x', exitCode: '3' }, { stdout: 'x', exit_code: 3 }],
+      [{ output: '', exit_code: 0 }, { exit_code: 0 }],
+      ['{"output":"done\\n","exit_code":1e300,"error":null}', { stdout: 'done' }],
+      [{ exit_code: 'abc', error: 'denied' }, { error: 'denied' }],
+      ['{\\"output\\":\\"pwd\\n\\",\\"exit_code\\":0,\\"error\\":null}', { stdout: 'pwd' }],
+      // Nested JSON strings unwrap; escaped line breaks become real ones.
+      [JSON.stringify(JSON.stringify({ output: 'nested', exit_code: 0 })), { stdout: 'nested' }],
+      [{ result: JSON.stringify({ stdout: 'inner', exit_code: 4 }) }, { stdout: 'inner', exit_code: 4 }],
+      [{ content: 'tab\\there\\r\\nnext' }, { text: 'tab\there\nnext' }],
+      // Other objects: the first readable value; an array of text parts joins; anything else is pretty JSON.
+      [{ results: [{ title: 'Hermes WebUI' }], exit_code: 0, error: null }, { text: '[\n  {\n    "title": "Hermes WebUI"\n  }\n]' }],
+      [{ result: '', message: 'saved' }, { text: 'saved' }],
+      [{ content: [{ type: 'text', text: 'one' }, { type: 'text', text: 'two' }] }, { text: 'one\ntwo' }],
+      [[{ type: 'text', text: 'part' }], { text: 'part' }],
+      [[{ title: 'match' }], { text: '[\n  {\n    "title": "match"\n  }\n]' }],
+      [{ a: 1 }, { text: '{\n  "a": 1\n}' }],
+      // Scalars and plain text; text that is not JSON stays as written.
+      [42, { text: '42' }], [true, { text: 'true' }], ['true', { text: 'true' }],
+      ['plain \\n text', { text: 'plain \\n text' }], ['{"output": "unterminated"', { text: '{"output": "unterminated"' }],
+      ['', {}], [undefined, {}], [null, {}], [{}, {}],
+    ]
+    for (const [raw, view] of cases) expect(toolOutcome(raw).result_view, JSON.stringify(raw)).toEqual(view)
+  })
+
+  it('caps every result view field at the result cap (TAL-315)', () => {
+    const long = 'x'.repeat(5000)
+    const lengths = (raw: unknown) => Object.entries(toolOutcome(raw).result_view ?? {}).map(([key, value]) => [key, String(value).length, String(value).endsWith('x...')])
+    expect(lengths({ output: long, stderr: long, error: long })).toEqual([['stdout', 4003, true], ['stderr', 4003, true], ['error', 4003, true]])
+    expect(lengths(long)).toEqual([['text', 4003, true]])
+  })
 })
 
 describe('withToolCallOutcomes (TAL-313)', () => {

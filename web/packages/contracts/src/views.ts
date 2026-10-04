@@ -29,16 +29,25 @@ export type ToolKind = z.infer<typeof ToolKindSchema>
 export const ToolDisplayFields = { kind: ToolKindSchema.optional(), target: z.string().optional() }
 
 /**
+ * TAL-315: a tool result's display sections, decided by the server's one rule for live, replayed and persisted results
+ * alike. Clients show `stdout`, `stderr`, a labelled `error` and a labelled `exit_code` (sent only when worth showing), or
+ * `text`, in that order, and never parse result text. Each string is capped server-side; a client without the field
+ * shows `preview`.
+ */
+export const ToolResultViewSchema = z.object({ text: z.string().optional(), stdout: z.string().optional(), stderr: z.string().optional(), error: z.string().optional(), exit_code: z.number().int().optional() })
+export type ToolResultView = z.infer<typeof ToolResultViewSchema>
+
+/**
  * Stored transcripts carry the OpenAI shape (`function.name` / `function.arguments` JSON string); live events carry `name` / `args`.
  * On an assistant row the server resolves every call (TAL-313, `session-sse-contract-v1.md`): Anthropic `tool_use` parts and
  * session-level-only calls join `tool_calls`; `done` is answered or outside the running turn; `is_error` is the server's
  * outcome rule over the result; `duration` is the seconds the live stream measured, else `null`; `result` is the redacted
- * result snippet, else `null`. Clients render these and pair nothing themselves.
+ * result snippet, else `null`; `result_view` its display sections, else `null`. Clients render these and pair nothing themselves.
  */
 export const ToolCallSchema = z.looseObject({
   ...ToolDisplayFields,
   name: z.string().optional(), args: Json.optional(), function: z.looseObject({ name: z.string().optional(), arguments: Json.optional() }).optional(), id: z.string().optional(), call_id: z.string().optional(), tool_call_id: z.string().optional(),
-  done: z.boolean().optional(), is_error: z.boolean().optional(), preview: z.string().nullable().optional(), result: Json.optional(), output: Json.optional(), duration: z.number().nullable().optional(), cost_usd: z.number().nullable().optional(),
+  done: z.boolean().optional(), is_error: z.boolean().optional(), preview: z.string().nullable().optional(), result: Json.optional(), result_view: ToolResultViewSchema.nullable().optional(), output: Json.optional(), duration: z.number().nullable().optional(), cost_usd: z.number().nullable().optional(),
   timestamp: z.number().nullable().optional(), event_type: z.string().optional(),
 })
 export type ToolCall = z.infer<typeof ToolCallSchema>
@@ -76,7 +85,7 @@ export const ActivitySceneRowSchema = z.looseObject({
   text: z.string().optional(), titles: z.array(z.string()).optional(),
   /** TAL-186: a prose row's `text` with its media references rewritten for display (see `_display_content`), and its media. */
   display_text: z.string().optional(), media: z.array(DisplayMediaSchema).optional(),
-  tool: z.looseObject({ id: z.string(), name: z.string(), ...ToolDisplayFields, args: Json.optional(), preview: z.string().nullable(), result: Json.optional(), done: z.boolean(), is_error: z.boolean(), duration: z.number().nullable(), cost_usd: z.number().nullable(), background: BackgroundLinkSchema.optional() }).optional(),
+  tool: z.looseObject({ id: z.string(), name: z.string(), ...ToolDisplayFields, args: Json.optional(), preview: z.string().nullable(), result: Json.optional(), result_view: ToolResultViewSchema.nullable().optional(), done: z.boolean(), is_error: z.boolean(), duration: z.number().nullable(), cost_usd: z.number().nullable(), background: BackgroundLinkSchema.optional() }).optional(),
   steering: z.looseObject({ steer_id: z.string(), consumed: z.boolean(), submitted_at: z.number().nullable(), consumed_at: z.number().nullable(), phase_duration: z.number().nullable().optional() }).optional(),
 })
 export type ActivitySceneRow = z.infer<typeof ActivitySceneRowSchema>

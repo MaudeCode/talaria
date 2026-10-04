@@ -464,14 +464,18 @@ export class TurnRunner {
               return
             }
             case 'tool_complete': {
-              // TAL-313: the server decides failure from the sidecar's raw result, which never leaves the server.
+              // TAL-313: the server decides failure from the sidecar's raw result, which never leaves the server; TAL-315: so
+              // are its display sections, which keep the stderr and exit code the flat preview drops.
               const { raw_result: rawResult, ...complete } = data
-              complete.is_error = toolOutcome(rawResult).is_error
+              const outcome = toolOutcome(rawResult)
+              complete.is_error = outcome.is_error
+              if (rawResult !== undefined) complete.result_view = outcome.result_view
               const tc = liveToolCalls[completedToolIndex(liveToolCalls, str(data.tid), data.name)]
               if (tc) {
                 const startedAt = toolStartedAt.get(tc)
                 if (startedAt !== undefined) complete.duration = Math.round(Math.max(0, deps.now() - startedAt) * 1000) / 1000
-                Object.assign(tc, { done: true, snippet: data.preview, is_error: complete.is_error, duration: complete.duration ?? null })
+                // TAL-315: the decided view too, so a failed or cancelled turn's snapshot keeps the sections shown live.
+                Object.assign(tc, { done: true, snippet: data.preview, is_error: complete.is_error, duration: complete.duration ?? null, ...(complete.result_view ? { result_view: complete.result_view } : {}) })
               }
               const id = (tc && toolIds.get(tc)) || str(data.tid) || mintToolId()
               this.lastCompletedTool.set(streamId, id)

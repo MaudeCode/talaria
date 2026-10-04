@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { ClarifyStepSchema, ContextUsageFields, PendingSteerSchema, SteerWithdrawnSchema, ToolDisplayFields, TurnTerminalStateSchema } from './views.js'
+import { ClarifyStepSchema, ContextUsageFields, PendingSteerSchema, SteerWithdrawnSchema, ToolDisplayFields, ToolResultViewSchema, TurnTerminalStateSchema } from './views.js'
 
 /**
  * Wire events of `GET /api/chat/stream` and the per-session relay
@@ -10,7 +10,7 @@ import { ClarifyStepSchema, ContextUsageFields, PendingSteerSchema, SteerWithdra
 const Text = z.looseObject({ text: z.string().optional(), already_streamed: z.boolean().optional(), reasoning_echo: z.boolean().optional(), session_id: z.string().optional() })
 const Reasoning = z.looseObject({ text: z.string().optional(), titles: z.array(z.string()).optional(), name: z.string().optional(), session_id: z.string().optional() })
 const Tool = z.looseObject({ name: z.string().optional(), ...ToolDisplayFields, preview: z.string().nullable().optional(), args: z.unknown().optional(), event_type: z.string().optional(), session_id: z.string().optional(), /** The call's one id, the same on its `tool` and `tool_complete` frames; `after_tool_call_id` names it. */ id: z.string(), timestamp: z.number().optional() })
-const ToolComplete = Tool.extend({ duration: z.number().nullable().optional(), is_error: z.boolean().optional(), cost_usd: z.number().nullable().optional(), result: z.unknown().optional(), output: z.unknown().optional() })
+const ToolComplete = Tool.extend({ duration: z.number().nullable().optional(), is_error: z.boolean().optional(), cost_usd: z.number().nullable().optional(), result: z.unknown().optional(), result_view: ToolResultViewSchema.optional(), output: z.unknown().optional() })
 const Approval = z.looseObject({ approval_id: z.string().optional(), session_id: z.string().optional(), command: z.string().optional(), description: z.string().optional(), title: z.string().optional(), name: z.string().optional(), kind: z.string().optional(), reason: z.string().optional(), action: z.string().optional(), question: z.string().optional(), status: z.string().optional(), pending_count: z.number().optional(), run_id: z.string().optional(), mirror_token: z.string().optional() })
 const Clarify = z.looseObject({ steps: z.array(ClarifyStepSchema).optional(), clarify_id: z.string().optional(), session_id: z.string().optional(), question: z.string().optional(), choices: z.array(z.unknown()).optional(), title: z.string().optional(), name: z.string().optional(), kind: z.string().optional(), reason: z.string().optional(), action: z.string().optional(), status: z.string().optional(), raw_preview: z.string().optional(), timeout_seconds: z.number().optional(), timeout_at: z.number().optional(), index: z.number().optional(), total: z.number().optional() })
 const Compression = z.looseObject({ session_id: z.string().optional(), old_session_id: z.string().optional(), new_session_id: z.string().optional(), continuation_session_id: z.string().optional(), usage: z.unknown().optional() })

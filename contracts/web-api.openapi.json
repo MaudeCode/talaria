@@ -2871,6 +2871,35 @@
                                       ]
                                     },
                                     "result": {},
+                                    "result_view": {
+                                      "anyOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "text": {
+                                              "type": "string"
+                                            },
+                                            "stdout": {
+                                              "type": "string"
+                                            },
+                                            "stderr": {
+                                              "type": "string"
+                                            },
+                                            "error": {
+                                              "type": "string"
+                                            },
+                                            "exit_code": {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            }
+                                          }
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
                                     "output": {},
                                     "duration": {
                                       "anyOf": [
@@ -3047,6 +3076,35 @@
                                               ]
                                             },
                                             "result": {},
+                                            "result_view": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "text": {
+                                                      "type": "string"
+                                                    },
+                                                    "stdout": {
+                                                      "type": "string"
+                                                    },
+                                                    "stderr": {
+                                                      "type": "string"
+                                                    },
+                                                    "error": {
+                                                      "type": "string"
+                                                    },
+                                                    "exit_code": {
+                                                      "type": "integer",
+                                                      "minimum": -9007199254740991,
+                                                      "maximum": 9007199254740991
+                                                    }
+                                                  }
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
                                             "done": {
                                               "type": "boolean"
                                             },
@@ -3559,6 +3617,35 @@
                                 ]
                               },
                               "result": {},
+                              "result_view": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "text": {
+                                        "type": "string"
+                                      },
+                                      "stdout": {
+                                        "type": "string"
+                                      },
+                                      "stderr": {
+                                        "type": "string"
+                                      },
+                                      "error": {
+                                        "type": "string"
+                                      },
+                                      "exit_code": {
+                                        "type": "integer",
+                                        "minimum": -9007199254740991,
+                                        "maximum": 9007199254740991
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
                               "output": {},
                               "duration": {
                                 "anyOf": [
@@ -4720,6 +4807,35 @@
                                       ]
                                     },
                                     "result": {},
+                                    "result_view": {
+                                      "anyOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "text": {
+                                              "type": "string"
+                                            },
+                                            "stdout": {
+                                              "type": "string"
+                                            },
+                                            "stderr": {
+                                              "type": "string"
+                                            },
+                                            "error": {
+                                              "type": "string"
+                                            },
+                                            "exit_code": {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            }
+                                          }
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
                                     "output": {},
                                     "duration": {
                                       "anyOf": [
@@ -4896,6 +5012,35 @@
                                               ]
                                             },
                                             "result": {},
+                                            "result_view": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "text": {
+                                                      "type": "string"
+                                                    },
+                                                    "stdout": {
+                                                      "type": "string"
+                                                    },
+                                                    "stderr": {
+                                                      "type": "string"
+                                                    },
+                                                    "error": {
+                                                      "type": "string"
+                                                    },
+                                                    "exit_code": {
+                                                      "type": "integer",
+                                                      "minimum": -9007199254740991,
+                                                      "maximum": 9007199254740991
+                                                    }
+                                                  }
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
                                             "done": {
                                               "type": "boolean"
                                             },
@@ -5408,6 +5553,35 @@
                                 ]
                               },
                               "result": {},
+                              "result_view": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "text": {
+                                        "type": "string"
+                                      },
+                                      "stdout": {
+                                        "type": "string"
+                                      },
+                                      "stderr": {
+                                        "type": "string"
+                                      },
+                                      "error": {
+                                        "type": "string"
+                                      },
+                                      "exit_code": {
+                                        "type": "integer",
+                                        "minimum": -9007199254740991,
+                                        "maximum": 9007199254740991
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
                               "output": {},
                               "duration": {
                                 "anyOf": [
@@ -6315,6 +6489,35 @@
                                       ]
                                     },
                                     "result": {},
+                                    "result_view": {
+                                      "anyOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "text": {
+                                              "type": "string"
+                                            },
+                                            "stdout": {
+                                              "type": "string"
+                                            },
+                                            "stderr": {
+                                              "type": "string"
+                                            },
+                                            "error": {
+                                              "type": "string"
+                                            },
+                                            "exit_code": {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            }
+                                          }
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
                                     "output": {},
                                     "duration": {
                                       "anyOf": [
@@ -6491,6 +6694,35 @@
                                               ]
                                             },
                                             "result": {},
+                                            "result_view": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "text": {
+                                                      "type": "string"
+                                                    },
+                                                    "stdout": {
+                                                      "type": "string"
+                                                    },
+                                                    "stderr": {
+                                                      "type": "string"
+                                                    },
+                                                    "error": {
+                                                      "type": "string"
+                                                    },
+                                                    "exit_code": {
+                                                      "type": "integer",
+                                                      "minimum": -9007199254740991,
+                                                      "maximum": 9007199254740991
+                                                    }
+                                                  }
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
                                             "done": {
                                               "type": "boolean"
                                             },
@@ -7003,6 +7235,35 @@
                                 ]
                               },
                               "result": {},
+                              "result_view": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "text": {
+                                        "type": "string"
+                                      },
+                                      "stdout": {
+                                        "type": "string"
+                                      },
+                                      "stderr": {
+                                        "type": "string"
+                                      },
+                                      "error": {
+                                        "type": "string"
+                                      },
+                                      "exit_code": {
+                                        "type": "integer",
+                                        "minimum": -9007199254740991,
+                                        "maximum": 9007199254740991
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
                               "output": {},
                               "duration": {
                                 "anyOf": [
@@ -9048,6 +9309,35 @@
                                       ]
                                     },
                                     "result": {},
+                                    "result_view": {
+                                      "anyOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "text": {
+                                              "type": "string"
+                                            },
+                                            "stdout": {
+                                              "type": "string"
+                                            },
+                                            "stderr": {
+                                              "type": "string"
+                                            },
+                                            "error": {
+                                              "type": "string"
+                                            },
+                                            "exit_code": {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            }
+                                          }
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
                                     "output": {},
                                     "duration": {
                                       "anyOf": [
@@ -9224,6 +9514,35 @@
                                               ]
                                             },
                                             "result": {},
+                                            "result_view": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "text": {
+                                                      "type": "string"
+                                                    },
+                                                    "stdout": {
+                                                      "type": "string"
+                                                    },
+                                                    "stderr": {
+                                                      "type": "string"
+                                                    },
+                                                    "error": {
+                                                      "type": "string"
+                                                    },
+                                                    "exit_code": {
+                                                      "type": "integer",
+                                                      "minimum": -9007199254740991,
+                                                      "maximum": 9007199254740991
+                                                    }
+                                                  }
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
                                             "done": {
                                               "type": "boolean"
                                             },
@@ -9736,6 +10055,35 @@
                                 ]
                               },
                               "result": {},
+                              "result_view": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "text": {
+                                        "type": "string"
+                                      },
+                                      "stdout": {
+                                        "type": "string"
+                                      },
+                                      "stderr": {
+                                        "type": "string"
+                                      },
+                                      "error": {
+                                        "type": "string"
+                                      },
+                                      "exit_code": {
+                                        "type": "integer",
+                                        "minimum": -9007199254740991,
+                                        "maximum": 9007199254740991
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
                               "output": {},
                               "duration": {
                                 "anyOf": [
@@ -11635,6 +11983,35 @@
                                       ]
                                     },
                                     "result": {},
+                                    "result_view": {
+                                      "anyOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "text": {
+                                              "type": "string"
+                                            },
+                                            "stdout": {
+                                              "type": "string"
+                                            },
+                                            "stderr": {
+                                              "type": "string"
+                                            },
+                                            "error": {
+                                              "type": "string"
+                                            },
+                                            "exit_code": {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            }
+                                          }
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
                                     "output": {},
                                     "duration": {
                                       "anyOf": [
@@ -11811,6 +12188,35 @@
                                               ]
                                             },
                                             "result": {},
+                                            "result_view": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "text": {
+                                                      "type": "string"
+                                                    },
+                                                    "stdout": {
+                                                      "type": "string"
+                                                    },
+                                                    "stderr": {
+                                                      "type": "string"
+                                                    },
+                                                    "error": {
+                                                      "type": "string"
+                                                    },
+                                                    "exit_code": {
+                                                      "type": "integer",
+                                                      "minimum": -9007199254740991,
+                                                      "maximum": 9007199254740991
+                                                    }
+                                                  }
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
                                             "done": {
                                               "type": "boolean"
                                             },
@@ -12323,6 +12729,35 @@
                                 ]
                               },
                               "result": {},
+                              "result_view": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "text": {
+                                        "type": "string"
+                                      },
+                                      "stdout": {
+                                        "type": "string"
+                                      },
+                                      "stderr": {
+                                        "type": "string"
+                                      },
+                                      "error": {
+                                        "type": "string"
+                                      },
+                                      "exit_code": {
+                                        "type": "integer",
+                                        "minimum": -9007199254740991,
+                                        "maximum": 9007199254740991
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
                               "output": {},
                               "duration": {
                                 "anyOf": [
@@ -14149,6 +14584,35 @@
                                       ]
                                     },
                                     "result": {},
+                                    "result_view": {
+                                      "anyOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "text": {
+                                              "type": "string"
+                                            },
+                                            "stdout": {
+                                              "type": "string"
+                                            },
+                                            "stderr": {
+                                              "type": "string"
+                                            },
+                                            "error": {
+                                              "type": "string"
+                                            },
+                                            "exit_code": {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            }
+                                          }
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
                                     "output": {},
                                     "duration": {
                                       "anyOf": [
@@ -14325,6 +14789,35 @@
                                               ]
                                             },
                                             "result": {},
+                                            "result_view": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "text": {
+                                                      "type": "string"
+                                                    },
+                                                    "stdout": {
+                                                      "type": "string"
+                                                    },
+                                                    "stderr": {
+                                                      "type": "string"
+                                                    },
+                                                    "error": {
+                                                      "type": "string"
+                                                    },
+                                                    "exit_code": {
+                                                      "type": "integer",
+                                                      "minimum": -9007199254740991,
+                                                      "maximum": 9007199254740991
+                                                    }
+                                                  }
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
                                             "done": {
                                               "type": "boolean"
                                             },
@@ -14837,6 +15330,35 @@
                                 ]
                               },
                               "result": {},
+                              "result_view": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "text": {
+                                        "type": "string"
+                                      },
+                                      "stdout": {
+                                        "type": "string"
+                                      },
+                                      "stderr": {
+                                        "type": "string"
+                                      },
+                                      "error": {
+                                        "type": "string"
+                                      },
+                                      "exit_code": {
+                                        "type": "integer",
+                                        "minimum": -9007199254740991,
+                                        "maximum": 9007199254740991
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
                               "output": {},
                               "duration": {
                                 "anyOf": [
@@ -15831,6 +16353,35 @@
                                       ]
                                     },
                                     "result": {},
+                                    "result_view": {
+                                      "anyOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "text": {
+                                              "type": "string"
+                                            },
+                                            "stdout": {
+                                              "type": "string"
+                                            },
+                                            "stderr": {
+                                              "type": "string"
+                                            },
+                                            "error": {
+                                              "type": "string"
+                                            },
+                                            "exit_code": {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            }
+                                          }
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
                                     "output": {},
                                     "duration": {
                                       "anyOf": [
@@ -16007,6 +16558,35 @@
                                               ]
                                             },
                                             "result": {},
+                                            "result_view": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "text": {
+                                                      "type": "string"
+                                                    },
+                                                    "stdout": {
+                                                      "type": "string"
+                                                    },
+                                                    "stderr": {
+                                                      "type": "string"
+                                                    },
+                                                    "error": {
+                                                      "type": "string"
+                                                    },
+                                                    "exit_code": {
+                                                      "type": "integer",
+                                                      "minimum": -9007199254740991,
+                                                      "maximum": 9007199254740991
+                                                    }
+                                                  }
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
                                             "done": {
                                               "type": "boolean"
                                             },
@@ -16519,6 +17099,35 @@
                                 ]
                               },
                               "result": {},
+                              "result_view": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "text": {
+                                        "type": "string"
+                                      },
+                                      "stdout": {
+                                        "type": "string"
+                                      },
+                                      "stderr": {
+                                        "type": "string"
+                                      },
+                                      "error": {
+                                        "type": "string"
+                                      },
+                                      "exit_code": {
+                                        "type": "integer",
+                                        "minimum": -9007199254740991,
+                                        "maximum": 9007199254740991
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
                               "output": {},
                               "duration": {
                                 "anyOf": [
@@ -17500,6 +18109,35 @@
                                       ]
                                     },
                                     "result": {},
+                                    "result_view": {
+                                      "anyOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "text": {
+                                              "type": "string"
+                                            },
+                                            "stdout": {
+                                              "type": "string"
+                                            },
+                                            "stderr": {
+                                              "type": "string"
+                                            },
+                                            "error": {
+                                              "type": "string"
+                                            },
+                                            "exit_code": {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            }
+                                          }
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
                                     "output": {},
                                     "duration": {
                                       "anyOf": [
@@ -17676,6 +18314,35 @@
                                               ]
                                             },
                                             "result": {},
+                                            "result_view": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "text": {
+                                                      "type": "string"
+                                                    },
+                                                    "stdout": {
+                                                      "type": "string"
+                                                    },
+                                                    "stderr": {
+                                                      "type": "string"
+                                                    },
+                                                    "error": {
+                                                      "type": "string"
+                                                    },
+                                                    "exit_code": {
+                                                      "type": "integer",
+                                                      "minimum": -9007199254740991,
+                                                      "maximum": 9007199254740991
+                                                    }
+                                                  }
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
                                             "done": {
                                               "type": "boolean"
                                             },
@@ -18188,6 +18855,35 @@
                                 ]
                               },
                               "result": {},
+                              "result_view": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "text": {
+                                        "type": "string"
+                                      },
+                                      "stdout": {
+                                        "type": "string"
+                                      },
+                                      "stderr": {
+                                        "type": "string"
+                                      },
+                                      "error": {
+                                        "type": "string"
+                                      },
+                                      "exit_code": {
+                                        "type": "integer",
+                                        "minimum": -9007199254740991,
+                                        "maximum": 9007199254740991
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
                               "output": {},
                               "duration": {
                                 "anyOf": [
@@ -19246,6 +19942,35 @@
                                 ]
                               },
                               "result": {},
+                              "result_view": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "text": {
+                                        "type": "string"
+                                      },
+                                      "stdout": {
+                                        "type": "string"
+                                      },
+                                      "stderr": {
+                                        "type": "string"
+                                      },
+                                      "error": {
+                                        "type": "string"
+                                      },
+                                      "exit_code": {
+                                        "type": "integer",
+                                        "minimum": -9007199254740991,
+                                        "maximum": 9007199254740991
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
                               "done": {
                                 "type": "boolean"
                               },
@@ -25946,6 +26671,35 @@
                                       ]
                                     },
                                     "result": {},
+                                    "result_view": {
+                                      "anyOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "text": {
+                                              "type": "string"
+                                            },
+                                            "stdout": {
+                                              "type": "string"
+                                            },
+                                            "stderr": {
+                                              "type": "string"
+                                            },
+                                            "error": {
+                                              "type": "string"
+                                            },
+                                            "exit_code": {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            }
+                                          }
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
                                     "output": {},
                                     "duration": {
                                       "anyOf": [
@@ -26122,6 +26876,35 @@
                                               ]
                                             },
                                             "result": {},
+                                            "result_view": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "text": {
+                                                      "type": "string"
+                                                    },
+                                                    "stdout": {
+                                                      "type": "string"
+                                                    },
+                                                    "stderr": {
+                                                      "type": "string"
+                                                    },
+                                                    "error": {
+                                                      "type": "string"
+                                                    },
+                                                    "exit_code": {
+                                                      "type": "integer",
+                                                      "minimum": -9007199254740991,
+                                                      "maximum": 9007199254740991
+                                                    }
+                                                  }
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
                                             "done": {
                                               "type": "boolean"
                                             },
@@ -26634,6 +27417,35 @@
                                 ]
                               },
                               "result": {},
+                              "result_view": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "text": {
+                                        "type": "string"
+                                      },
+                                      "stdout": {
+                                        "type": "string"
+                                      },
+                                      "stderr": {
+                                        "type": "string"
+                                      },
+                                      "error": {
+                                        "type": "string"
+                                      },
+                                      "exit_code": {
+                                        "type": "integer",
+                                        "minimum": -9007199254740991,
+                                        "maximum": 9007199254740991
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
                               "output": {},
                               "duration": {
                                 "anyOf": [
@@ -27624,6 +28436,35 @@
                                           ]
                                         },
                                         "result": {},
+                                        "result_view": {
+                                          "anyOf": [
+                                            {
+                                              "type": "object",
+                                              "properties": {
+                                                "text": {
+                                                  "type": "string"
+                                                },
+                                                "stdout": {
+                                                  "type": "string"
+                                                },
+                                                "stderr": {
+                                                  "type": "string"
+                                                },
+                                                "error": {
+                                                  "type": "string"
+                                                },
+                                                "exit_code": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                }
+                                              }
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
                                         "output": {},
                                         "duration": {
                                           "anyOf": [
@@ -27800,6 +28641,35 @@
                                                   ]
                                                 },
                                                 "result": {},
+                                                "result_view": {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "text": {
+                                                          "type": "string"
+                                                        },
+                                                        "stdout": {
+                                                          "type": "string"
+                                                        },
+                                                        "stderr": {
+                                                          "type": "string"
+                                                        },
+                                                        "error": {
+                                                          "type": "string"
+                                                        },
+                                                        "exit_code": {
+                                                          "type": "integer",
+                                                          "minimum": -9007199254740991,
+                                                          "maximum": 9007199254740991
+                                                        }
+                                                      }
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
+                                                  ]
+                                                },
                                                 "done": {
                                                   "type": "boolean"
                                                 },
@@ -28295,6 +29165,35 @@
                                     ]
                                   },
                                   "result": {},
+                                  "result_view": {
+                                    "anyOf": [
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "text": {
+                                            "type": "string"
+                                          },
+                                          "stdout": {
+                                            "type": "string"
+                                          },
+                                          "stderr": {
+                                            "type": "string"
+                                          },
+                                          "error": {
+                                            "type": "string"
+                                          },
+                                          "exit_code": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991
+                                          }
+                                        }
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
                                   "output": {},
                                   "duration": {
                                     "anyOf": [

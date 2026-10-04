@@ -5123,6 +5123,7 @@ public final class ChatViewModel {
                     args: payload.args,
                     kind: payload.kind,
                     target: payload.target,
+                    resultView: payload.resultView,
                     duration: payload.duration,
                     isError: payload.isError,
                     isCompleted: true

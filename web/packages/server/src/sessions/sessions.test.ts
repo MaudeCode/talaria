@@ -1496,3 +1496,43 @@ describe('server-resolved workspace display names (TAL-303)', () => {
     }
   })
 })
+
+describe('session detail ships each tool result view (TAL-315)', () => {
+  let s: TestServer
+  beforeAll(async () => { s = await bootTestServer() })
+  afterAll(() => s.close())
+
+  const fixturePath = join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json')
+  const call = (id: string, name: string, args: Json): Json => ({ id, type: 'function', function: { name, arguments: JSON.stringify(args) } })
+  /** One turn per result shape the ticket names: a terminal result, a nested JSON string, an array of text parts, plain text. */
+  const transcript: Json[] = [
+    { role: 'user', content: 'Build, read, search and date', message_id: 'view-user', timestamp: 3000, _turn_id: 'view-run' },
+    { role: 'assistant', content: '', message_id: 'view-calls', timestamp: 3001, _turn_id: 'view-run', tool_calls: [
+      call('call-make', 'terminal', { command: 'make' }), call('call-nested', 'read_file', { path: 'notes.txt' }), call('call-parts', 'web_search', { query: 'hermes' }), call('call-date', 'terminal', { command: 'date' }),
+    ] },
+    { role: 'tool', tool_call_id: 'call-make', content: '{"output": "built\\nok", "stderr": "warning: deprecated", "exit_code": 2, "error": null}', timestamp: 3002, _turn_id: 'view-run' },
+    { role: 'tool', tool_call_id: 'call-nested', content: JSON.stringify(JSON.stringify({ content: 'line one\nline two' })), timestamp: 3003, _turn_id: 'view-run' },
+    { role: 'tool', tool_call_id: 'call-parts', content: '[{"type": "text", "text": "first"}, {"type": "text", "text": "second"}]', timestamp: 3004, _turn_id: 'view-run' },
+    { role: 'tool', tool_call_id: 'call-date', content: 'Sat Sep 27', timestamp: 3005, _turn_id: 'view-run' },
+    { role: 'assistant', content: 'Done.', message_id: 'view-answer', timestamp: 3006, _turn_id: 'view-run' },
+  ]
+
+  it('matches the shared contract fixture in full detail and every window, on the calls and the scene alike', async () => {
+    const sid = String((await newSession(s)).session_id)
+    const session = s.deps.sessionStore.get(sid)
+    session.messages = structuredClone(transcript)
+    session.title = 'Tool result views'
+    s.deps.sessionStore.save(session)
+    const fixture = (JSON.parse(readFileSync(fixturePath, 'utf8')) as Json).tool_result_views as Json
+    const expected = fixture.expected as Json
+    for (const query of ['', '&msg_limit=50']) {
+      const served = (await json(await s.get(`/api/session?session_id=${sid}&messages=1${query}`))).session as Json
+      const messages = served.messages as Json[]
+      expect(messages, query).toEqual((fixture.session as Json).messages)
+      const calls = messages.find((m) => m.message_id === 'view-calls')?.tool_calls as Json[]
+      expect(Object.fromEntries(calls.map((c) => [c.id, c.result_view])), query).toEqual(expected)
+      const rows = ((messages.find((m) => m.message_id === 'view-answer')?._anchor_activity_scene as Json).activity_rows as Json[]).filter((r) => r.role === 'tool')
+      expect(Object.fromEntries(rows.map((r) => [(r.tool as Json).id, (r.tool as Json).result_view])), query).toEqual(expected)
+    }
+  })
+})

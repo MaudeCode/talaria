@@ -15,7 +15,7 @@ test('reloading a running session renders its turn once from the transcript curs
   const journal: [string, Record<string, unknown>][] = [
     ['token', { text: 'Reading the file.' }],
     ['tool', { id: 't1', name: 'read_file', args: { path: 'a.txt' } }],
-    ['tool_complete', { id: 't1', name: 'read_file', result: 'A' }],
+    ['tool_complete', { id: 't1', name: 'read_file', result_view: { text: 'A' } }],
     ['token', { text: 'Checked once.' }],
   ]
   const requests: string[] = []

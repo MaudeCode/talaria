@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Tool results show the same output, warnings, errors, and exit codes on iPhone and on the web.",
+      "highlight": false,
+      "components": ["app", "web"]
+    },
+    {
+      "category": "Fixed",
+      "summary": "Command results shown while a reply streams keep their warnings and non-zero exit codes.",
+      "highlight": false,
+      "components": ["app", "web"]
+    }
+  ]
+}

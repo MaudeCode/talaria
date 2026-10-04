@@ -2159,7 +2159,6 @@ describe('live tool outcomes (TAL-313)', () => {
     expect(live.map((d) => [d.id, d.is_error, d.duration])).toEqual(expected)
     expect(JSON.stringify(live)).not.toContain('raw_result')
     const journal = readFileSync(join(realpathSync(s.state), 'sessions', '_run_journal', sid, `${streamId}.jsonl`), 'utf8')
-    expect(journal).not.toContain(marker)
     expect(journal).not.toContain('raw_result')
     const replayed = completes(await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'stream_end'))
     expect(replayed.map((d) => [d.id, d.is_error, d.duration])).toEqual(expected)
@@ -2180,21 +2179,62 @@ describe('live tool outcomes (TAL-313)', () => {
     expect((scene.activity_rows as Json[]).filter((r) => r.role === 'tool').map((r) => { const t = r.tool as Json; return [t.id, t.is_error, t.duration] })).toEqual(expected)
   })
 
+  it('ships each result view live, on replay and after reload, keeping stderr and the exit code (TAL-315)', async () => {
+    const sid = await newSession(s)
+    const bearer = 'synthetic-bearer-0123456789abcdef'
+    const raw = { output: 'built\\nok', stderr: `warning: deprecated\nAuthorization: Bearer ${bearer}`, exit_code: 2, error: null }
+    sidecar.respond('chat.start', (params, emit) => {
+      emit({ event: 'tool', data: { event_type: 'tool.started', name: 'terminal', args: { command: 'make' }, tid: 'call-make' } })
+      // The sidecar's flat preview keeps only the output.
+      emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'terminal', preview: 'built\\nok', args: { command: 'make' }, tid: 'call-make', raw_result: raw } })
+      return completed([
+        { role: 'user', content: str(params.user_message) },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'call-make', type: 'function', function: { name: 'terminal', arguments: '{"command":"make"}' } }] },
+        { role: 'tool', tool_call_id: 'call-make', content: JSON.stringify(raw) },
+        { role: 'assistant', content: 'Built with a warning.' },
+      ])
+    })
+    sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Make"', usage: null }))
+    const streamId = String((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'build' }))).stream_id)
+    // Redacted like every string that leaves the server.
+    const view = { stdout: 'built\nok', stderr: 'warning: deprecated\nAuthorization: Bearer synthe...cdef', exit_code: 2 }
+    const completes = (frames: SseFrame[]) => frames.filter((f) => f.event === 'tool_complete').map((f) => (f.data as Json).result_view)
+    const live = await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'stream_end')
+    expect(completes(live)).toEqual([view])
+    expect(JSON.stringify(live)).not.toContain(bearer)
+    expect(completes(await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'stream_end'))).toEqual([view])
+    const journal = readFileSync(join(realpathSync(s.state), 'sessions', '_run_journal', sid, `${streamId}.jsonl`), 'utf8')
+    expect(journal).toContain('"result_view"')
+    expect(journal).not.toContain('raw_result')
+    expect(journal).not.toContain(bearer)
+
+    for (const query of ['', '&messages=1&msg_limit=50']) {
+      const detail = (await json(await s.get(`/api/session?session_id=${sid}${query}`))).session as Json
+      const calls = (detail.messages as Json[]).find((m) => Array.isArray(m.tool_calls))?.tool_calls as Json[]
+      expect(calls.map((c) => c.result_view), query).toEqual([view])
+      expect(JSON.stringify(detail), query).not.toContain(bearer)
+      const scene = (detail.messages as Json[]).find((m) => m.content === 'Built with a warning.')?._anchor_activity_scene as Json
+      expect((scene.activity_rows as Json[]).filter((r) => r.role === 'tool').map((r) => (r.tool as Json).result_view), query).toEqual([view])
+    }
+  })
+
   it('keeps a failed turn\'s completed tools with their outcomes after reload', async () => {
     const sid = await newSession(s)
     sidecar.respond('chat.start', (_params, emit) => {
       emit({ event: 'tool', data: { event_type: 'tool.started', name: 'terminal', args: { command: 'make' }, tid: 'call-make' } })
       clock += 4
-      emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'terminal', preview: 'failed', args: { command: 'make' }, tid: 'call-make', raw_result: { exit_code: 2 } } })
+      emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'terminal', preview: 'failed', args: { command: 'make' }, tid: 'call-make', raw_result: { exit_code: 2, stderr: 'boom' } } })
       throw new SidecarError('provider exploded', { condition: 'sidecar_error' })
     })
     const streamId = String((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'build it' }))).stream_id)
     await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'apperror')
     const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
     const partial = (detail.messages as Json[]).find((m) => m._partial === true)
-    expect((partial?.tool_calls as Json[]).map((c) => [c.id, c.done, c.is_error, c.duration, c.result])).toEqual([['call-make', true, true, 4, 'failed']])
+    // TAL-315: the sections shown live (stderr, the exit code) survive the failed turn's reload.
+    const view = { stderr: 'boom', exit_code: 2 }
+    expect((partial?.tool_calls as Json[]).map((c) => [c.id, c.done, c.is_error, c.duration, c.result, c.result_view])).toEqual([['call-make', true, true, 4, 'failed', view]])
     const scene = (detail.messages as Json[]).at(-1)?._anchor_activity_scene as Json
-    expect((scene.activity_rows as Json[]).filter((r) => r.role === 'tool').map((r) => { const t = r.tool as Json; return [t.id, t.is_error, t.duration] })).toEqual([['call-make', true, 4]])
+    expect((scene.activity_rows as Json[]).filter((r) => r.role === 'tool').map((r) => { const t = r.tool as Json; return [t.id, t.is_error, t.duration, t.result_view] })).toEqual([['call-make', true, 4, view]])
   })
 
   it('keeps an Anthropic tool_result call\'s live duration after reload', async () => {

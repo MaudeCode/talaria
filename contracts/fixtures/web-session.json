@@ -30,6 +30,9 @@
                 },
                 "preview": "Synthetic contents",
                 "result": "Synthetic contents",
+                "result_view": {
+                  "text": "Synthetic contents"
+                },
                 "done": true,
                 "is_error": false,
                 "duration": null,
@@ -91,6 +94,9 @@
                 },
                 "preview": "exit 1",
                 "result": "exit 1",
+                "result_view": {
+                  "text": "exit 1"
+                },
                 "done": true,
                 "is_error": true,
                 "duration": null,
@@ -111,6 +117,9 @@
                 },
                 "preview": "A",
                 "result": "A",
+                "result_view": {
+                  "text": "A"
+                },
                 "done": true,
                 "is_error": false,
                 "duration": null,
@@ -297,6 +306,9 @@
                 },
                 "preview": null,
                 "result": "port = 8080",
+                "result_view": {
+                  "text": "port = 8080"
+                },
                 "done": true,
                 "is_error": false,
                 "duration": null,
@@ -377,6 +389,9 @@
                 },
                 "preview": null,
                 "result": "B",
+                "result_view": {
+                  "text": "B"
+                },
                 "done": true,
                 "is_error": false,
                 "duration": null,
@@ -442,6 +457,9 @@
                 },
                 "preview": null,
                 "result": "a.txt",
+                "result_view": {
+                  "text": "a.txt"
+                },
                 "done": true,
                 "is_error": false,
                 "duration": null,
@@ -580,6 +598,9 @@
                 },
                 "preview": null,
                 "result": "A",
+                "result_view": {
+                  "text": "A"
+                },
                 "done": true,
                 "is_error": false,
                 "duration": null,
@@ -620,6 +641,9 @@
                 },
                 "preview": null,
                 "result": "B",
+                "result_view": {
+                  "text": "B"
+                },
                 "done": true,
                 "is_error": false,
                 "duration": null,
@@ -871,6 +895,9 @@
             "done": true,
             "is_error": false,
             "result": "A contents",
+            "result_view": {
+              "text": "A contents"
+            },
             "duration": 1.25,
             "type": "function"
           },
@@ -885,6 +912,10 @@
             "done": true,
             "is_error": true,
             "result": "{\"exit_code\": 2, \"output\": \"1 failed\"}",
+            "result_view": {
+              "stdout": "1 failed",
+              "exit_code": 2
+            },
             "duration": 3.5,
             "type": "function"
           }
@@ -928,6 +959,9 @@
                 },
                 "preview": null,
                 "result": "A contents",
+                "result_view": {
+                  "text": "A contents"
+                },
                 "done": true,
                 "is_error": false,
                 "duration": 1.25,
@@ -949,6 +983,10 @@
                 },
                 "preview": null,
                 "result": "{\"exit_code\": 2, \"output\": \"1 failed\"}",
+                "result_view": {
+                  "stdout": "1 failed",
+                  "exit_code": 2
+                },
                 "done": true,
                 "is_error": true,
                 "duration": 3.5,
@@ -1009,6 +1047,9 @@
             "done": true,
             "is_error": true,
             "result": "{\"error\": \"permission denied\"}",
+            "result_view": {
+              "error": "permission denied"
+            },
             "duration": null,
             "type": "function"
           }
@@ -1052,6 +1093,9 @@
                 },
                 "preview": null,
                 "result": "{\"error\": \"permission denied\"}",
+                "result_view": {
+                  "error": "permission denied"
+                },
                 "done": true,
                 "is_error": true,
                 "duration": null,
@@ -1097,6 +1141,9 @@
             "done": true,
             "is_error": false,
             "result": "Sat Sep 27",
+            "result_view": {
+              "text": "Sat Sep 27"
+            },
             "duration": 0.42,
             "type": "function"
           }
@@ -1139,6 +1186,9 @@
                 },
                 "preview": null,
                 "result": "Sat Sep 27",
+                "result_view": {
+                  "text": "Sat Sep 27"
+                },
                 "done": true,
                 "is_error": false,
                 "duration": 0.42,
@@ -1184,6 +1234,7 @@
             "done": false,
             "is_error": false,
             "result": null,
+            "result_view": null,
             "duration": null,
             "type": "function"
           }
@@ -2781,5 +2832,262 @@
         ]
       }
     ]
+  },
+  "tool_result_views": {
+    "expected": {
+      "call-make": {
+        "stdout": "built\nok",
+        "stderr": "warning: deprecated",
+        "exit_code": 2
+      },
+      "call-nested": {
+        "text": "line one\nline two"
+      },
+      "call-parts": {
+        "text": "first\nsecond"
+      },
+      "call-date": {
+        "text": "Sat Sep 27"
+      }
+    },
+    "session": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "Build, read, search and date",
+          "message_id": "view-user",
+          "timestamp": 3000,
+          "_turn_id": "view-run"
+        },
+        {
+          "role": "assistant",
+          "content": "",
+          "message_id": "view-calls",
+          "timestamp": 3001,
+          "tool_calls": [
+            {
+              "kind": "shell",
+              "target": "make",
+              "function": {
+                "name": "terminal",
+                "arguments": "{\"command\":\"make\"}"
+              },
+              "id": "call-make",
+              "done": true,
+              "is_error": true,
+              "result": "{\"output\": \"built\\nok\", \"stderr\": \"warning: deprecated\", \"exit_code\": 2, \"error\": null}",
+              "result_view": {
+                "stdout": "built\nok",
+                "stderr": "warning: deprecated",
+                "exit_code": 2
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "kind": "read",
+              "target": "notes.txt",
+              "function": {
+                "name": "read_file",
+                "arguments": "{\"path\":\"notes.txt\"}"
+              },
+              "id": "call-nested",
+              "done": true,
+              "is_error": false,
+              "result": "\"{\\\"content\\\":\\\"line one\\\\nline two\\\"}\"",
+              "result_view": {
+                "text": "line one\nline two"
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "kind": "web",
+              "target": "hermes",
+              "function": {
+                "name": "web_search",
+                "arguments": "{\"query\":\"hermes\"}"
+              },
+              "id": "call-parts",
+              "done": true,
+              "is_error": false,
+              "result": "[{\"type\": \"text\", \"text\": \"first\"}, {\"type\": \"text\", \"text\": \"second\"}]",
+              "result_view": {
+                "text": "first\nsecond"
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "kind": "shell",
+              "target": "date",
+              "function": {
+                "name": "terminal",
+                "arguments": "{\"command\":\"date\"}"
+              },
+              "id": "call-date",
+              "done": true,
+              "is_error": false,
+              "result": "Sat Sep 27",
+              "result_view": {
+                "text": "Sat Sep 27"
+              },
+              "duration": null,
+              "type": "function"
+            }
+          ],
+          "_turn_id": "view-run"
+        },
+        {
+          "role": "tool",
+          "content": "{\"output\": \"built\\nok\", \"stderr\": \"warning: deprecated\", \"exit_code\": 2, \"error\": null}",
+          "timestamp": 3002,
+          "tool_call_id": "call-make",
+          "_turn_id": "view-run"
+        },
+        {
+          "role": "tool",
+          "content": "\"{\\\"content\\\":\\\"line one\\\\nline two\\\"}\"",
+          "timestamp": 3003,
+          "tool_call_id": "call-nested",
+          "_turn_id": "view-run"
+        },
+        {
+          "role": "tool",
+          "content": "[{\"type\": \"text\", \"text\": \"first\"}, {\"type\": \"text\", \"text\": \"second\"}]",
+          "timestamp": 3004,
+          "tool_call_id": "call-parts",
+          "_turn_id": "view-run"
+        },
+        {
+          "role": "tool",
+          "content": "Sat Sep 27",
+          "timestamp": 3005,
+          "tool_call_id": "call-date",
+          "_turn_id": "view-run"
+        },
+        {
+          "role": "assistant",
+          "content": "Done.",
+          "message_id": "view-answer",
+          "timestamp": 3006,
+          "_anchor_activity_scene": {
+            "version": "activity_scene_v1",
+            "activity_rows": [
+              {
+                "row_id": "tool:call-make",
+                "order_index": 0,
+                "role": "tool",
+                "created_at": 3001,
+                "tool": {
+                  "id": "call-make",
+                  "name": "terminal",
+                  "kind": "shell",
+                  "target": "make",
+                  "args": {
+                    "command": "make"
+                  },
+                  "preview": null,
+                  "result": "{\"output\": \"built\\nok\", \"stderr\": \"warning: deprecated\", \"exit_code\": 2, \"error\": null}",
+                  "result_view": {
+                    "stdout": "built\nok",
+                    "stderr": "warning: deprecated",
+                    "exit_code": 2
+                  },
+                  "done": true,
+                  "is_error": true,
+                  "duration": null,
+                  "cost_usd": null
+                }
+              },
+              {
+                "row_id": "tool:call-nested",
+                "order_index": 1,
+                "role": "tool",
+                "created_at": 3001,
+                "tool": {
+                  "id": "call-nested",
+                  "name": "read_file",
+                  "kind": "read",
+                  "target": "notes.txt",
+                  "args": {
+                    "path": "notes.txt"
+                  },
+                  "preview": null,
+                  "result": "\"{\\\"content\\\":\\\"line one\\\\nline two\\\"}\"",
+                  "result_view": {
+                    "text": "line one\nline two"
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                }
+              },
+              {
+                "row_id": "tool:call-parts",
+                "order_index": 2,
+                "role": "tool",
+                "created_at": 3001,
+                "tool": {
+                  "id": "call-parts",
+                  "name": "web_search",
+                  "kind": "web",
+                  "target": "hermes",
+                  "args": {
+                    "query": "hermes"
+                  },
+                  "preview": null,
+                  "result": "[{\"type\": \"text\", \"text\": \"first\"}, {\"type\": \"text\", \"text\": \"second\"}]",
+                  "result_view": {
+                    "text": "first\nsecond"
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                }
+              },
+              {
+                "row_id": "tool:call-date",
+                "order_index": 3,
+                "role": "tool",
+                "created_at": 3001,
+                "tool": {
+                  "id": "call-date",
+                  "name": "terminal",
+                  "kind": "shell",
+                  "target": "date",
+                  "args": {
+                    "command": "date"
+                  },
+                  "preview": null,
+                  "result": "Sat Sep 27",
+                  "result_view": {
+                    "text": "Sat Sep 27"
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                }
+              }
+            ],
+            "final_answer": "Done.",
+            "turn_duration": null,
+            "terminal_state": "completed",
+            "expanded_by_default": false,
+            "has_consumed_steering": false,
+            "file_changes": [],
+            "activity_rows_total": 4,
+            "activity_rows_offset": 0,
+            "activity_rows_complete": true,
+            "activity_rows_omitted": 0,
+            "activity_scene_ref": "9864e85142b590b8ac94eaf71ed1e755af59bbeed18623aba529548febade674"
+          },
+          "_turn_id": "view-run"
+        }
+      ]
+    }
   }
 }

@@ -70,7 +70,7 @@ describe('Background work card (TAL-372)', () => {
 })
 
 describe('Delegation row (TAL-372)', () => {
-  const call: ToolCardData = { id: 'c1', name: 'delegate_task', kind: 'delegate', target: '', args: {}, preview: null, done: true, isError: false, duration: null, costUsd: null, result: null }
+  const call: ToolCardData = { id: 'c1', name: 'delegate_task', kind: 'delegate', target: '', args: {}, preview: null, done: true, isError: false, duration: null, costUsd: null, resultView: null }
   it('shows the server\'s counts for the work it started, in place', () => {
     const { rerender } = render(<ToolCard call={{ ...call, background: { task_ids: ['a-1', 'a-2'], status: 'running', agents: { total: 3, completed: 0, failed: 0, running: 3 } } }} />)
     expect(screen.getByText('0 of 3 done')).toHaveAttribute('data-background-status', 'running')

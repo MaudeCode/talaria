@@ -2104,6 +2104,8 @@
 	"tool_args_label": "Arguments",
 	"tool_error_label": "Error",
 	"tool_result_label": "Result",
+	"tool_result_error": "Error: {error}",
+	"tool_result_exit_code": "Exit code: {code}",
 	"thinking_label": "Thinking",
 	"attachments_label": "Attachments",
 	"branch_from_here": "Branch from here",
