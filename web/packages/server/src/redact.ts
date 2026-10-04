@@ -666,15 +666,14 @@ const COMMAND_FLAGS: Record<string, CommandFlags> = {
   smbclient: { separate: ['-U', '--user'], attached: ['-U', '--user='], percent: true },
 }
 /**
- * A known command's name as a word: bare, after a path, a listed argv element, or composed by quotes (`do"cker"`); or, in
- * command position (past assignments and plain wrappers), a name the shell computes whole or in part (`$CLIENT`,
- * `$(which docker)`, `` `printf docker` ``, `my${EMPTY}sql`, `LC_ALL=C $CLIENT`), which may be any.
+ * A known command's name as a word: bare, after a path, a listed argv element, or composed by quotes (`do"cker"`); or a
+ * word the shell computes in whole or part (`$CLIENT`, `$(echo $(which mysql))`, `` `printf docker` ``, `my${EMPTY}sql`),
+ * which may name any of them wherever it stands (`sudo -u root $CLIENT -ppw`). A computed word is matched whole when its
+ * pieces are flat, so a quoted one reads as a listed element; otherwise up to its first expansion, and read from there.
  */
 /** A parameter, substitution or backtick piece of a word; a name is read whole, so a word splits into pieces one way only. */
 const EXPANSION = String.raw`\$[A-Za-z_][A-Za-z0-9_]*(?![A-Za-z0-9_])|\$\{[^{}\n]*\}|\$\([^()\n]*\)|\x60[^\x60\n]*\x60`
-/** A word before the executable: an assignment (`LC_ALL=C`) or a wrapper that runs the next word (`env`, `sudo`). */
-const COMMAND_PREFIX = String.raw`(?:[A-Za-z_][A-Za-z0-9_]*=[^\s;&|()]*|sudo|doas|env|exec|command|builtin|time|nice|nohup)`
-const COMMAND_FLAG_RE = new RegExp(String.raw`(?<![^\s;&|()\x60'"/,[\\])(?:${Object.keys(COMMAND_FLAGS).map((name) => name.replaceAll(/(?<=.)(?=.)/g, String.raw`["'\\]*`)).join('|')}|(?=[\w./-]*[$\x60])(?<=(?:^|[;&|(\n\x60{[])[ \t]*(?:${COMMAND_PREFIX}[ \t]+)*['"]?)[\w./-]*(?:${EXPANSION})(?:[\w./-]|${EXPANSION})*)(?=[\s;&|)'",\]]|$)`, 'g')
+const COMMAND_FLAG_RE = new RegExp(String.raw`(?<![^\s;&|()\x60'"/,[\\])(?:(?:${Object.keys(COMMAND_FLAGS).map((name) => name.replaceAll(/(?<=.)(?=.)/g, String.raw`["'\\]*`)).join('|')}|[\w./-]*(?:${EXPANSION})(?:[\w./-]|${EXPANSION})*)(?=[\s;&|)'",\]]|$)|[\w./-]*(?=\$[({A-Za-z_]|\x60))`, 'g')
 /** Every command's flags, for an executable the shell computes. */
 const ALL_COMMAND_FLAGS = [...new Set(Object.values(COMMAND_FLAGS))]
 const COMMAND_FLAG_TEST_RE = new RegExp(COMMAND_FLAG_RE.source)
@@ -710,9 +709,9 @@ function commandFlagMasks(words: readonly string[]): Map<number, number> {
       if (flags.stop && !word.startsWith('-')) states.delete(flags)
     }
     const name = word.slice(word.lastIndexOf('/') + 1)
-    // A command named again (`docker login docker -p pw`, a host) keeps the state it is in. An executable the shell computes
-    // (`$CLIENT -ppw`) may be any known command.
-    const named = Object.hasOwn(COMMAND_FLAGS, name) ? [COMMAND_FLAGS[name]!] : i === 0 && /[$`]/.test(word) ? ALL_COMMAND_FLAGS : []
+    // A command named again (`docker login docker -p pw`, a host) keeps the state it is in. A word the shell computes may
+    // be the executable (`sudo -u root $CLIENT -ppw`), so it may be any known command.
+    const named = Object.hasOwn(COMMAND_FLAGS, name) ? [COMMAND_FLAGS[name]!] : !word.startsWith('-') && /[$`]/.test(word) ? ALL_COMMAND_FLAGS : []
     for (const flags of named) if (!states.has(flags)) states.set(flags, { active: !flags.login, next: i + 1 })
   }
   return masks
@@ -727,6 +726,8 @@ function maskWordFrom(raw: string, plain: string, from: number): string {
   return raw.startsWith(kept) ? kept + maskShellWord(raw.slice(from)) : maskShellWord(raw)
 }
 
+/** A redirection operator, with its file descriptor. */
+const REDIRECT_RE = /[0-9]*(?:&>>?|<<<|<<-?|<>|>>|>&|<&|>\||[<>])/y
 /**
  * The words of the simple command (or `list`ed argv) at `from`, up to a shell metacharacter, the line end, a list's close
  * or the close of the `enclosing` quote, and where the scan stopped. An unterminated quote ends the command with its word.
@@ -734,10 +735,14 @@ function maskWordFrom(raw: string, plain: string, from: number): string {
  */
 function commandWords(text: string, from: number, enclosing: string, list: boolean): { spans: [number, number][]; end: number } {
   const spans: [number, number][] = []
-  const [gap, close, stop] = list ? [/[ \t,<>]/, /[\n;&|()\]}]/, /[\s;&|()<>,\]}]/] : [/[ \t<>]/, /[\n;&|()]/, /[\s;&|()<>]/]
+  const [gap, close, stop] = list ? [/[ \t,<>]/, /[\n;&|()\]}]/, /[\s;&|()<>,\]}]/] : [/[ \t]/, /[\n;&|()]/, /[\s;&|()<>]/]
   let i = from
+  let redirect = false
   for (;;) {
     while (i < text.length && gap.test(text[i]!)) i += 1
+    // A redirection and its target (`</dev/null`, `2> /tmp/e`, `2>&1`) are no argument: the shell removes them.
+    REDIRECT_RE.lastIndex = i
+    if (!list && i < text.length && text[i] !== enclosing && REDIRECT_RE.test(text)) { i = REDIRECT_RE.lastIndex; redirect = true; continue }
     if (i >= text.length || text[i] === enclosing || close.test(text[i]!)) return { spans, end: i }
     const start = i
     while (i < text.length && text[i] !== enclosing && !stop.test(text[i]!)) {
@@ -763,7 +768,8 @@ function commandWords(text: string, from: number, enclosing: string, list: boole
         i = k + 1
       } else i += 1
     }
-    spans.push([start, Math.min(i, text.length)])
+    if (!redirect) spans.push([start, Math.min(i, text.length)])
+    redirect = false
   }
 }
 
@@ -779,7 +785,12 @@ function redactCommandFlags(text: string): string {
   for (let m = re.exec(text); m; m = re.exec(text)) {
     const quote = quoteAt(m.index).slice(-1)
     // A listed element (`'mysql',`) is read from its opening quote; a command inside a quoted argument ends at its close.
-    const listed = quote !== '' && text[m.index + m[0].length] === quote
+    let listed = quote !== '' && text[m.index + m[0].length] === quote
+    // A computed word matched only to its first expansion (`"$(echo $(which docker))"`) is listed when it fills its quotes.
+    if (!listed && quote && text[m.index - 1] === quote) {
+      const probe = commandWords(text, m.index, quote, false)
+      listed = probe.spans.length === 1 && text[probe.end] === quote
+    }
     const { spans, end } = commandWords(text, listed ? text.lastIndexOf(quote, m.index) : m.index, listed ? '' : quote, listed)
     const words = spans.map(([start, stop]) => shellDequote(text.slice(start, stop)))
     const masks = commandFlagMasks(words)
@@ -794,7 +805,7 @@ function redactCommandFlags(text: string): string {
       out += text.slice(last, start) + replaced
       last = stop
     }
-    re.lastIndex = Math.max(end, re.lastIndex)
+    re.lastIndex = Math.max(end, re.lastIndex, m.index + 1)
   }
   return out + text.slice(last)
 }
