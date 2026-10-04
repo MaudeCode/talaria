@@ -855,6 +855,61 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     expect(((await json(res)).session as Json).profile).toBe('work')
   })
 
+  it('a new session without a body profile takes the cookie profile and its default model', async () => {
+    configs.set(workHome, { model: { default: 'work-default-model', provider: 'anthropic' } })
+    writeFileSync(join(workHome, 'config.yaml'), '# work default model\n')
+    try {
+      await s.deps.agentConfig.read(workHome)
+      const res = await post(s, '/api/session/new', {}, asWork())
+      expect(res.status, await res.clone().text()).toBe(200)
+      const sid = String(((await json(res)).session as Json).session_id)
+      const detail = await s.get(`/api/session?session_id=${sid}`, { headers: asWork() })
+      expect(detail.status, await detail.clone().text()).toBe(200)
+      expect((await json(detail)).session).toMatchObject({ profile: 'work', model: 'work-default-model', model_provider: 'anthropic' })
+      const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'first message' }, asWork()))
+      await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'done', { headers: asWork() })
+      const listed = (await json(await s.get('/api/sessions', { headers: asWork() }))).sessions as Json[]
+      expect(listed.map((r) => r.session_id)).toContain(sid)
+    } finally {
+      configs.delete(workHome)
+      writeFileSync(join(workHome, 'config.yaml'), '# seed\n')
+    }
+  })
+
+  it('an explicit profile other than the cookie starts on its own config default, even uncached', async () => {
+    const researchHome = join(s.state, 'profiles', 'research')
+    configs.set(researchHome, { model: '@anthropic:research-model' })
+    writeFileSync(join(researchHome, 'config.yaml'), '# research qualified model\n')
+    try {
+      const res = await post(s, '/api/session/new', { profile: 'research' }, asWork())
+      expect(res.status, await res.clone().text()).toBe(200)
+      const sid = String(((await json(res)).session as Json).session_id)
+      expect(s.deps.sessionStore.get(sid)).toMatchObject({ profile: 'research', model: 'research-model', model_provider: 'anthropic' })
+    } finally {
+      configs.delete(researchHome)
+      writeFileSync(join(researchHome, 'config.yaml'), '# seed\n')
+    }
+  })
+
+  it('a target profile without a default model falls back to one consistent model and provider pair', async () => {
+    const researchHome = join(s.state, 'profiles', 'research')
+    configs.set(researchHome, { model: { provider: 'openrouter' } })
+    configs.set(workHome, { model: { default: 'work-default-model', provider: 'anthropic' } })
+    writeFileSync(join(researchHome, 'config.yaml'), '# research provider only\n')
+    writeFileSync(join(workHome, 'config.yaml'), '# work default model pair\n')
+    try {
+      const res = await post(s, '/api/session/new', { profile: 'research' }, asWork())
+      expect(res.status, await res.clone().text()).toBe(200)
+      const sid = String(((await json(res)).session as Json).session_id)
+      expect(s.deps.sessionStore.get(sid)).toMatchObject({ profile: 'research', model: 'work-default-model', model_provider: 'anthropic' })
+    } finally {
+      configs.delete(researchHome)
+      configs.delete(workHome)
+      writeFileSync(join(researchHome, 'config.yaml'), '# seed\n')
+      writeFileSync(join(workHome, 'config.yaml'), '# seed\n')
+    }
+  })
+
   it('an explicit provider argument beats the parsed hint', () => {
     expect(splitProviderModel('@ollama:qwen3.8:27b-mtp-q8_0', 'anthropic')).toEqual(['qwen3.8:27b-mtp-q8_0', 'anthropic'])
   })

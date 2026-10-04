@@ -45,6 +45,10 @@ describe('request-profile session visibility', () => {
     // Outside a request the process default answers.
     expect(s.deps.activeProfile()).toBe('default')
     // Detail load is exempt from the generic guard and reports the mismatch itself (frontend switches profile).
+    // A legacy session saved without a profile counts as root and answers a plain 404 elsewhere.
+    const legacy = s.deps.sessionStore.get(sid)
+    legacy.profile = null
+    s.deps.sessionStore.save(legacy)
     expect((await s.get(`/api/session?session_id=${sid}`, { headers: root.headers })).status).toBe(200)
     expect((await s.get(`/api/session?session_id=${sid}`, { headers: work.headers })).status).toBe(404)
     // A session that names its profile answers 409 so the frontend can offer to switch (Python detail-load behaviour).

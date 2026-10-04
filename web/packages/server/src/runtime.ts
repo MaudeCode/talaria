@@ -157,6 +157,13 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   }
   const sidecar = opts.sidecar ?? null
   const agentConfig = new AgentConfig({ sidecar: () => sidecar, env })
+  /** A profile's config.yaml `model` as [model, provider] as written; '' / null when unset or not yet read. */
+  const profileDefaultModel = (profile: string | null): [string, string | null] => {
+    const cfg = agentConfig.peek(profileHome(profile ?? activeProfile()))
+    if (typeof cfg?.model === 'string') return [cfg.model.trim(), null]
+    const { default: d, provider: p } = asDict(cfg?.model)
+    return [typeof d === 'string' ? d.trim() : '', typeof p === 'string' && p ? p : null]
+  }
   const events = new SessionEventBus(isRootProfile)
   const drafts = new DraftStore(config.sessionDir)
   const registry = new StreamRegistry()
@@ -184,9 +191,17 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     sessionDir: config.sessionDir,
     drafts,
     events,
+    // Python `_profile_default_model_state`: the profile's own config.yaml model, else the global default. The provider
+    // always comes with its model, so a provider-only profile never pairs with another profile's model.
     defaults: (profile) => {
-      const s = settings.load()
-      return { workspace: workspaces.lastWorkspace(profile), model: typeof s.default_model === 'string' && s.default_model ? s.default_model : null }
+      let [model, provider] = profileDefaultModel(profile)
+      if (!model) {
+        const s = settings.load()
+        model = typeof s.default_model === 'string' ? s.default_model : ''
+        provider = model && typeof s.default_model_provider === 'string' && s.default_model_provider ? s.default_model_provider : null
+      }
+      const [bare, modelProvider] = parseProviderQualifiedModel(model) ?? [model || null, provider]
+      return { workspace: workspaces.lastWorkspace(profile), model: bare, modelProvider }
     },
     activeStreamIds: () => activeStreamIds,
     now,
@@ -443,8 +458,8 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   })
   oidc = new OidcService({ env, operatorConfig: () => agentConfig.read(config.hermesHome), profileHome, fetch: () => lazyFetch, pinned: () => ({ lookup: deps.dnsLookup, fetch: deps.pinnedFetch }), now, log })
   operatorConfigPeek = () => agentConfig.peek(config.hermesHome)
-  settings.hooks.defaultModel = () => { const cfg = agentConfig.peek(profileHome(activeProfile())); if (!cfg) return ''; if (typeof cfg.model === 'string') return cfg.model.trim(); const d = asDict(cfg.model).default; return typeof d === 'string' ? d.trim() : '' }
-  settings.hooks.defaultModelProvider = () => { const cfg = agentConfig.peek(profileHome(activeProfile())); const p = asDict(cfg?.model).provider; return typeof p === 'string' && p ? p : undefined }
+  settings.hooks.defaultModel = () => profileDefaultModel(null)[0]
+  settings.hooks.defaultModelProvider = () => profileDefaultModel(null)[1] ?? undefined
   const terminals = new TerminalRegistry({ env, now: () => Date.now(), log, ...(opts.pty !== undefined ? { pty: opts.pty } : {}) })
   // Python `_handle_file_open_vscode` / `_handle_file_reveal`: `vscode.command`, `vscode.container_path_prefix` and
   // `vscode.host_path_prefix` from the active profile's config.yaml (Docker host/container path translation).

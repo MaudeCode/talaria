@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A new chat started while a named profile is active now belongs to that profile, opens instead of showing not found, and starts on that profile's default model.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
