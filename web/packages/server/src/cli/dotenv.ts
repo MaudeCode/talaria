@@ -41,6 +41,14 @@ const PROTECTED_ENV_KEYS: ReadonlySet<string> = new Set([
   'HERMES_WEBUI_OIDC_PROFILE_MAP',
   'HERMES_WEBUI_OIDC_OWNER_CLAIM',
   'HERMES_WEBUI_OIDC_OWNER_VALUES',
+  // Not in the Python list, but they gate access the same way: remote onboarding while auth is off, CSRF origins, and
+  // which forwarded client, host, scheme, and group values are believed.
+  'HERMES_WEBUI_ONBOARDING_OPEN',
+  'HERMES_WEBUI_ALLOWED_ORIGINS',
+  'HERMES_WEBUI_TRUST_FORWARDED_FOR',
+  'HERMES_WEBUI_TRUST_FORWARDED_HOST',
+  'HERMES_WEBUI_TRUST_FORWARDED_PROTO',
+  'HERMES_WEBUI_TRUSTED_GROUPS_PIPE_SEPARATOR',
 ])
 
 function unescapeDouble(raw: string): string {
