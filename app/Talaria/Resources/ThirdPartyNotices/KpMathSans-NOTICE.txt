@@ -1,0 +1,6 @@
+Copyright (c) 2007-2018, Christophe Caignaert (c.caignaert@free.fr),
+with Reserved Font Name <Kp>.
+Copyright (c) 2019-2024, Daniel Flipo (daniel.flipo@free.fr),
+with Reserved Font Name <KpMath-Sans>.
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.

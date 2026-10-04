@@ -1,0 +1,5 @@
+Copyright (c) 1997, 2009 American Mathematical Society (http://www.ams.org).
+Copyright (c) 2009, 2021 Khaled Hosny (khaledhosny@eglug.org).
+Copyright (c) 2022-2024, Daniel Flipo (daniel.flipo@free.fr)
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
