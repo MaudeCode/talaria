@@ -29977,6 +29977,19 @@
                     "default_model": {
                       "type": "string"
                     },
+                    "default_provider_id": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "default_bare_id": {
+                      "type": "string"
+                    },
                     "groups": {
                       "type": "array",
                       "items": {
@@ -30002,6 +30015,12 @@
                                 "provider": {
                                   "type": "string"
                                 },
+                                "provider_id": {
+                                  "type": "string"
+                                },
+                                "bare_id": {
+                                  "type": "string"
+                                },
                                 "supports_fast_tier": {
                                   "type": "boolean"
                                 }
@@ -30024,6 +30043,12 @@
                                   "type": "string"
                                 },
                                 "provider": {
+                                  "type": "string"
+                                },
+                                "provider_id": {
+                                  "type": "string"
+                                },
+                                "bare_id": {
                                   "type": "string"
                                 },
                                 "supports_fast_tier": {
@@ -30164,6 +30189,19 @@
                         "default_model": {
                           "type": "string"
                         },
+                        "default_provider_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "default_bare_id": {
+                          "type": "string"
+                        },
                         "groups": {
                           "type": "array",
                           "items": {
@@ -30189,6 +30227,12 @@
                                     "provider": {
                                       "type": "string"
                                     },
+                                    "provider_id": {
+                                      "type": "string"
+                                    },
+                                    "bare_id": {
+                                      "type": "string"
+                                    },
                                     "supports_fast_tier": {
                                       "type": "boolean"
                                     }
@@ -30211,6 +30255,12 @@
                                       "type": "string"
                                     },
                                     "provider": {
+                                      "type": "string"
+                                    },
+                                    "provider_id": {
+                                      "type": "string"
+                                    },
+                                    "bare_id": {
                                       "type": "string"
                                     },
                                     "supports_fast_tier": {
@@ -30748,6 +30798,12 @@
                                   "type": "string"
                                 },
                                 "provider": {
+                                  "type": "string"
+                                },
+                                "provider_id": {
+                                  "type": "string"
+                                },
+                                "bare_id": {
                                   "type": "string"
                                 },
                                 "supports_fast_tier": {
@@ -31722,6 +31778,19 @@
                         "default_model": {
                           "type": "string"
                         },
+                        "default_provider_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "default_bare_id": {
+                          "type": "string"
+                        },
                         "groups": {
                           "type": "array",
                           "items": {
@@ -31747,6 +31816,12 @@
                                     "provider": {
                                       "type": "string"
                                     },
+                                    "provider_id": {
+                                      "type": "string"
+                                    },
+                                    "bare_id": {
+                                      "type": "string"
+                                    },
                                     "supports_fast_tier": {
                                       "type": "boolean"
                                     }
@@ -31769,6 +31844,12 @@
                                       "type": "string"
                                     },
                                     "provider": {
+                                      "type": "string"
+                                    },
+                                    "provider_id": {
+                                      "type": "string"
+                                    },
+                                    "bare_id": {
                                       "type": "string"
                                     },
                                     "supports_fast_tier": {
@@ -32133,6 +32214,19 @@
                         "default_model": {
                           "type": "string"
                         },
+                        "default_provider_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "default_bare_id": {
+                          "type": "string"
+                        },
                         "groups": {
                           "type": "array",
                           "items": {
@@ -32158,6 +32252,12 @@
                                     "provider": {
                                       "type": "string"
                                     },
+                                    "provider_id": {
+                                      "type": "string"
+                                    },
+                                    "bare_id": {
+                                      "type": "string"
+                                    },
                                     "supports_fast_tier": {
                                       "type": "boolean"
                                     }
@@ -32180,6 +32280,12 @@
                                       "type": "string"
                                     },
                                     "provider": {
+                                      "type": "string"
+                                    },
+                                    "provider_id": {
+                                      "type": "string"
+                                    },
+                                    "bare_id": {
                                       "type": "string"
                                     },
                                     "supports_fast_tier": {

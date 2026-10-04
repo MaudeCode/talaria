@@ -2,7 +2,7 @@
 import { join } from 'node:path'
 import type { CronRecentCompletion, CronContextSources, CronDerivedState } from '@maudecode/talaria-web-contracts'
 import type { SidecarLike } from '../sidecar/client.js'
-import type { Dict } from '../config/agent-config.js'
+import { parseProviderQualifiedModel, type Dict } from '../config/agent-config.js'
 import { HttpFailure } from '../sessions/service.js'
 import { SidecarError } from '../sidecar/client.js'
 import { latestCronSessionInfo } from '../sessions/state-db.js'
@@ -26,9 +26,20 @@ const JOB_ID_RE = /^[A-Za-z0-9_-][A-Za-z0-9_.-]{0,63}$/
 const PASSTHROUGH_FIELDS = ['script', 'no_agent', 'context_from', 'reasoning_effort']
 interface StoredJob { home: string; profile: string; job: Dict; managed: boolean }
 
+/** TAL-301: a picked catalog id (`@provider:model`) names its own provider, exactly as a chat request does; a bare id keeps the explicit one. */
+function modelSelection(model: unknown, provider: unknown): [string | null, string | null] {
+  const raw = str(model).trim()
+  const explicit = str(provider).trim() || null
+  if (!raw) return [null, explicit]
+  return parseProviderQualifiedModel(raw) ?? [raw, explicit]
+}
+
 /** Python `_cron_job_for_api`, plus the derived status every client renders (TAL-296). */
 export function jobForApi(job: Dict, running = false): Dict {
   const payload: Dict = { ...job }
+  // TAL-301: a job stored with a provider-qualified id (older clients) still reads back as a bare model and its provider.
+  const qualified = parseProviderQualifiedModel(job.model)
+  if (qualified) [payload.model, payload.provider] = qualified
   if (!('profile' in payload)) payload.profile = null
   payload.toast_notifications = payload.toast_notifications !== false
   payload.monitor = str(payload.monitor_url) || str(payload.monitor_script) || ''
@@ -319,7 +330,8 @@ export class CronService {
     const active = await this.profileForHome(home)
     if (profile && !(await this.profileNames(active)).some((name) => this.deps.profilesMatch(name, profile))) throw new HttpFailure(403, 'Execution profile is not accessible')
     const executionHome = profile ? this.deps.profileHome(profile) : home
-    const job: Dict = { prompt: body.prompt ?? '', schedule: body.schedule, name: body.name ?? null, deliver: body.deliver ?? 'local', skills: body.skills ?? [], model: body.model ?? null, provider: body.provider ?? null, ...jobFieldUpdates(body) }
+    const [model, provider] = modelSelection(body.model, body.provider)
+    const job: Dict = { prompt: body.prompt ?? '', schedule: body.schedule, name: body.name ?? null, deliver: body.deliver ?? 'local', skills: body.skills ?? [], model, provider, ...jobFieldUpdates(body) }
     if (body.repeat !== null && body.repeat !== undefined) job.repeat = body.repeat
     if (profile !== null) job.profile = profile
     if (body.toast_notifications === false) job.toast_notifications = false
@@ -347,10 +359,14 @@ export class CronService {
         if (profile && !this.deps.profilesMatch(profile, store.profile)) throw new HttpFailure(400, 'To change the execution profile, duplicate the task in that profile and delete the old task')
         updates.profile = profile
       }
-      else if (k === 'model' || k === 'provider') updates[k] = v ? v : null
-      else if (k === 'monitor' || k === 'continuity' || k === 'repeat') continue
+      else if (k === 'model' || k === 'provider' || k === 'monitor' || k === 'continuity' || k === 'repeat') continue
       else if (v !== null && v !== undefined) updates[k] = v
     }
+    if ('model' in body) {
+      const [model, provider] = modelSelection(body.model, body.provider)
+      updates.model = model
+      if (provider !== null || 'provider' in body) updates.provider = provider
+    } else if ('provider' in body) updates.provider = str(body.provider).trim() || null
     let currentContextFrom: unknown = null
     if ('continuity' in body && !('context_from' in body)) {
       try { currentContextFrom = (await this.sidecar().call('cron.get', { profile_home: home, job_id: storedId })).job?.context_from ?? null } catch { currentContextFrom = null }
