@@ -222,18 +222,27 @@ const URL_BARE_TOKEN_RE = /((?:https?|wss?|git|ssh|ftps?|sftp):\/\/)([^\s:@/?#]{
 /** C0, DEL, C1 and zero-width characters that can split a token body (`ghp_abc\x1bdef`, `sk-abc\u200bdef`). */
 const CONTROL_CHAR_RE = /[\x00-\x1f\x7f-\x9f\u200b-\u200f\u2028-\u202f\u2060\ufeff]/
 const CONTROL_CHARS_RE = new RegExp(CONTROL_CHAR_RE.source, 'g')
+/** C0 controls a terminal runs inside an escape sequence without ending it (all but CAN, SUB and ESC), and DEL. */
+const SEQ_C0 = String.raw`\x00-\x17\x19\x1c-\x1f\x7f`
+/** Where a sequence ends early: CAN or SUB cancels it, and ESC, a C1 control or the end of the text interrupts it. */
+const SEQ_CUT = String.raw`(?:[\x18\x1a]|(?=[\x1b\x80-\x9f]|$))`
+const SEQ_ESC = String.raw`\x1b[${SEQ_C0}]*`
 /**
- * A complete ECMA-48 escape sequence or one control or zero-width character. The sequences, 7-bit `ESC …` or the C1
- * code point: CSI (`ESC [` … final byte), the strings OSC (… BEL or ST) and DCS, SOS, PM and APC (… ST), a character-set
- * selection (`ESC ( B`), and a single-character escape (`ESC 7`). A string's payload can hold a token itself (a
- * terminal title), so this view is matched besides the control-only one. A string body stops at the next opener, which
- * keeps the scan linear.
+ * An ECMA-48 escape sequence as a terminal parses it, or one control or zero-width character. The sequences, 7-bit
+ * `ESC …` or the C1 code point: CSI (`ESC [` … final byte), the strings OSC (… BEL or ST) and DCS, SOS, PM and APC
+ * (… ST), a character-set selection (`ESC ( B`), and a single-character escape (`ESC 7`); each also ends at `SEQ_CUT`.
+ * A string's payload can hold a token itself (a terminal title), so this view is matched besides the control-only one.
+ * No part of a sequence can start the part after it, which keeps the scan linear.
  */
 const ANSI_GAPS_RE = new RegExp(
-  String.raw`(?:\x1b\[|\x9b)[0-?]*[ -/]*[@-~]|(?:\x1b\]|\x9d)[^\x07\x1b\x90\x98\x9c-\x9f]*(?:\x07|\x1b\\|\x9c)|` +
-    String.raw`(?:\x1b[PX^_]|[\x90\x98\x9e\x9f])[^\x1b\x90\x98\x9c-\x9f]*(?:\x1b\\|\x9c)|` +
-    String.raw`\x1b[ -/]+[0-~]|\x1b[0-OQ-WYZ\\\x60-~]|` +
+  [
+    String.raw`(?:${SEQ_ESC}\[|\x9b)[0-?${SEQ_C0}]*(?:[ -/][ -/${SEQ_C0}]*)?(?:[@-~]|${SEQ_CUT})`,
+    String.raw`(?:${SEQ_ESC}\]|\x9d)[^\x07\x18\x1a\x1b\x80-\x9f]*(?:\x07|\x1b\\|\x9c|${SEQ_CUT})`,
+    String.raw`(?:${SEQ_ESC}[PX^_]|[\x90\x98\x9e\x9f])[^\x18\x1a\x1b\x80-\x9f]*(?:\x1b\\|\x9c|${SEQ_CUT})`,
+    String.raw`${SEQ_ESC}[ -/][ -/${SEQ_C0}]*(?:[0-~]|${SEQ_CUT})`,
+    String.raw`${SEQ_ESC}[0-OQ-WYZ\\\x60-~]`,
     CONTROL_CHAR_RE.source,
+  ].join('|'),
   'g',
 )
 const CRED_TEST_RE = new RegExp(CRED_RE.source)

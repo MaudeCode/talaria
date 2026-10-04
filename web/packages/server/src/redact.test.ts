@@ -523,10 +523,10 @@ describe('redactSensitive cost', () => {
     // A quadratic scan takes seconds on these inputs; a linear one takes milliseconds.
     // Unquoted runs, and many credential keys inside one long quoted argument.
     // The Agent's ported families: env names, split tokens, JWT headers, phone numbers and bare URL userinfo.
-    for (const text of [...['abcdefghij-', 'a.b+c-', 'token_', '--password ', 'aB', 'aBcD_', 'ABCd', 'AB', 'PW', 'KEY_', 'a_pw', 'a_key_', 'ghp_a\x1b', 'ghp_a\x1b[1m', 'ghp_a\x1b]8;;a', '\x1b[1', 'ghp_a\x9b1m', '\x9d8;;a', 'ghp_a\x1bPa', '\x1b( ', '\x90a\x9d', 'ghp_ab\n', 'eyJaaaaaaaaaa.', '+1234567', 'https://aaaaaaaa', 'DB_PW="', "db_pw='a ", 'ghp_ab\nK=', 'a_key=x\\ ', 'a_key=,', '\nsk-a', 'sk-aaaaaaaaaaaa\n', '&a_key=x', 'sk-aaaaaaaaaa\nsk-b\n'].map((seg) => seg.repeat(Math.ceil(200_000 / seg.length))),
+    for (const text of [...['abcdefghij-', 'a.b+c-', 'token_', '--password ', 'aB', 'aBcD_', 'ABCd', 'AB', 'PW', 'KEY_', 'a_pw', 'a_key_', 'ghp_a\x1b', 'ghp_a\x1b[1m', 'ghp_a\x1b]8;;a', '\x1b[1', 'ghp_a\x9b1m', '\x9d8;;a', 'ghp_a\x1bPa', '\x1b( ', '\x90a\x9d', '\x1b\x00\x00', 'ghp_a\x1b[\x07', '\x1b(\x00', 'ghp_ab\n', 'eyJaaaaaaaaaa.', '+1234567', 'https://aaaaaaaa', 'DB_PW="', "db_pw='a ", 'ghp_ab\nK=', 'a_key=x\\ ', 'a_key=,', '\nsk-a', 'sk-aaaaaaaaaaaa\n', '&a_key=x', 'sk-aaaaaaaaaa\nsk-b\n'].map((seg) => seg.repeat(Math.ceil(200_000 / seg.length))),
       ...['Authorization: x ', 'Authorization: *** ', 'secret sauce ', 'password=*** '].map((seg) => `"${seg.repeat(Math.ceil(200_000 / seg.length))}"`),
       // One huge identifier that does name a credential, and many long ones that are followed by a separator.
-      `--${'aB'.repeat(100_000)}Password=x`, `${'a'.repeat(1_000)}= `.repeat(200), `${'a'.repeat(1_000)}://x:`.repeat(200),
+      `--${'aB'.repeat(100_000)}Password=x`, `ghp_a\x1b${'\x00'.repeat(200_000)}`, `${'a'.repeat(1_000)}= `.repeat(200), `${'a'.repeat(1_000)}://x:`.repeat(200),
       // Shell-composed identifiers: unclosed and alternating quote and escape pieces.
       ...[`a'`, `a"b'c\\d`, `a'b'`, `pass$'`, `a$(b`, 'a`b ', `a\${b`, `a$b`, `x://b:c'd`, `a$(b$(`, `?token=a&`, `Bearer a'`, `a{b,`, `a{b`, `a{,}`, `a$'\\`, `--$'\\x`, `a'='`, `a'b `, `x:'@'`, `%41`, `a%4`, `a:b`, `'--a', '`, `"-u", "x`].map((seg) => `--${seg.repeat(Math.ceil(200_000 / seg.length))}`),
       // Inline assignments: long chains, prefix chains, many substitutions, and a secret substituted many times.
@@ -800,6 +800,11 @@ describe('Agent redactor parity', () => {
       ['gh\x85p_abcdef1234567890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
       // Only OSC ends at BEL; the other strings run to ST.
       ['ghp_ab\x1bPx\x07.\x1b\\cdef1234567890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
+      // A C0 control inside a sequence runs without ending it; CAN or SUB cancels it, and ESC or a C1 control interrupts it.
+      ['ghp_abcdef\x1b[31\x07m1234567890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
+      ['ghp_abcdef\x1b\x07(B123456\x1b(\nB7890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
+      ['ghp_abcdef\x1b[31\x18123456\x1b]0;t\x1a7890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
+      ['ghp_abcdef\x1b[31\x1b[0m123456\x1b]0;t\x9b1m7890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
       ['ghp_abcdef\x84123456\x8f7890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
       // The piece before the sequence is a whole token by itself.
       ['ghp_abcdefghij\x1b[31m1234567890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
