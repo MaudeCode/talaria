@@ -244,6 +244,37 @@ final class ChatComposerConfigLoaderTests: APIClientTestCase {
         XCTAssertNil(result.configurationError)
         XCTAssertTrue(result.state.isSingleProfileMode)
     }
+
+    // TAL-314: the last good command catalog survives a failed fetch or an older server's rows.
+    func testLoadKeepsTheLastCatalogWhenCommandsFailOrComeFromAnOlderServer() async throws {
+        let catalog = [AgentCommand(name: "compress", aliases: ["compact"], handler: "client", clients: ["web", "ios"])]
+        for commandsResponse in [nil, #"{"commands": [{"name": "status", "description": "Show status"}]}"#] {
+            let client = makeClient { request in
+                switch request.url?.path {
+                case "/api/profiles":
+                    return apiTestJSONResponse(#"{"active": "default", "profiles": [{"name": "default"}]}"#, for: request)
+                case "/api/models":
+                    return apiTestJSONResponse(#"{"default_model": "gpt-5.4", "groups": []}"#, for: request)
+                case "/api/reasoning":
+                    return apiTestJSONResponse(#"{"reasoning_effort": "medium"}"#, for: request)
+                case "/api/workspaces":
+                    return apiTestJSONResponse(#"{"workspaces": [], "last": null}"#, for: request)
+                case "/api/commands":
+                    guard let commandsResponse else { throw URLError(.notConnectedToInternet) }
+                    return apiTestJSONResponse(commandsResponse, for: request)
+                default:
+                    XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                    throw URLError(.badURL)
+                }
+            }
+
+            let result = await ChatComposerConfigLoader(client: client).loadConfiguration(
+                from: ChatComposerConfigState(agentCommands: catalog)
+            )
+
+            XCTAssertEqual(result.state.agentCommands, catalog)
+        }
+    }
 }
 
 /// Pure gating logic for the composer reasoning-effort menu (issue #18):
