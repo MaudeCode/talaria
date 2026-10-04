@@ -1880,6 +1880,30 @@ describe('chat turns through the sidecar', () => {
     expect(messages.some((m) => m._error)).toBe(true)
   })
 
+  it('answers /btw while the chat\'s own turn runs, leaving that turn untouched (TAL-518)', async () => {
+    const sid = await newSession(s)
+    let release: () => void = () => undefined
+    sidecar.respond('chat.start', (params) => {
+      const msg = str(params.user_message)
+      if (msg.endsWith('side question')) return completed([{ role: 'user', content: msg }, { role: 'assistant', content: 'side answer' }])
+      return new Promise((resolve) => { release = () => { resolve(completed([{ role: 'user', content: msg }, { role: 'assistant', content: 'Done.' }])) } })
+    })
+    const run = String((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'long task' }))).stream_id)
+    const res = await post(s, '/api/btw', { session_id: sid, question: 'side question' })
+    expect(res.status).toBe(200)
+    const side = await json(res)
+    const frames = await s.sse(`/api/chat/stream?stream_id=${String(side.stream_id)}&replay=1`, (f) => f.event === 'done' || f.event === 'apperror')
+    expect(frames.find((f) => f.event === 'done')?.data).toMatchObject({ ephemeral: true, answer: 'side answer' })
+    expect(s.deps.sessionStore.get(sid).active_stream_id).toBe(run)
+    // The side question sees the running turn's prompt, which deferred save keeps out of the stored history until settlement.
+    const asked = sidecar.calls.find((c) => c.method === 'chat.start' && str((c.params as Json).user_message).endsWith('side question'))
+    expect(((asked?.params as Json).conversation_history as Json[]).map((m) => [m.role, m.content])).toEqual([['user', 'long task']])
+    release()
+    await s.sse(`/api/chat/stream?stream_id=${run}&replay=1`, (f) => f.event === 'done')
+    await new Promise((r) => setTimeout(r, 50))
+    expect(s.deps.sessionStore.get(sid).messages.map((m) => [m.role, m.content])).toEqual([['user', 'long task'], ['assistant', 'Done.']])
+  })
+
   it('a failed /btw is an error, never the parent\'s previous answer, and leaves no clone behind (TAL-512)', async () => {
     const sid = await newSession(s)
     const seeded = s.deps.sessionStore.get(sid)

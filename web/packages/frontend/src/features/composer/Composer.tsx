@@ -25,6 +25,7 @@ import { ThemeSchema } from '../../contracts/persisted'
 import type { Clarify } from '../chat/useClarify'
 import { LiveStatusPill } from '../chat/LiveTurnView'
 import { ComposerTab, type ComposerNotice } from './ComposerTab'
+import { useBtw } from './useBtw'
 import { BackgroundWorkCard, useBackgroundTasks } from '../background/BackgroundWork'
 import { beginFirstSend, endFirstSend, failFirstSend, getFirstSend, ownsFirstSend, useFirstSend } from '../chat/firstSend'
 import { REST_MS, onComposerRestRequest, requestScroll } from '../chat/sendMotion'
@@ -355,6 +356,8 @@ export function Composer(props: ComposerProps) {
     })
   }, [sessionId])
 
+  const { ask: askBtw, notice: btwNotice } = useBtw(sessionId)
+
   const send = useCallback(async () => {
     if (locked) { showToast(m.live_compressing(), 1500); return }
     const value = text.trim()
@@ -377,6 +380,14 @@ export function Composer(props: ComposerProps) {
           setText('')
           void qc.invalidateQueries({ queryKey: keys.background(target.session_id) })
         } catch (e) { showToast(e instanceof Error ? e.message : String(e), 4000, 'error') }
+        return
+      }
+      // TAL-518: a side question never steers or sends; its answer shows in the composer tab, running or idle.
+      if (cmd.name === 'btw') {
+        if (!cmd.args) { showToast(m.cmd_btw_usage(), 2000); return }
+        if (!sessionId) { showToast(m.btw_needs_chat(), 2000); return }
+        setText('')
+        void askBtw(cmd.args)
         return
       }
       if (cmd.name === 'queue' && busy) { requestScroll('end'); onQueue(queueEntry(cmd.args)); setText(''); setFiles([]); return }
@@ -430,7 +441,7 @@ export function Composer(props: ComposerProps) {
       setSending(false)
       textarea.current?.focus()
     }
-  }, [text, files, sending, session, onEnsureSession, busy, busyMode, sessionId, trySteer, locked, queueEntry, onQueue, onLocalCommand, bootstrap.profile, qc])
+  }, [text, files, sending, session, onEnsureSession, busy, busyMode, sessionId, trySteer, locked, queueEntry, onQueue, onLocalCommand, bootstrap.profile, qc, askBtw])
 
   const applySuggestion = (s: CommandSuggestion) => { setText(`/${s.name} `); textarea.current?.focus() }
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -530,12 +541,14 @@ export function Composer(props: ComposerProps) {
   const tabNotices: ComposerNotice[] = [
     ...(busy && live ? [{ id: 'live', content: <LiveStatusPill turn={live} background={session?.active_turn_origin === 'background' && session.active_stream_id === live.streamId} /> }] : []),
     ...notices,
+    ...(btwNotice ? [btwNotice] : []),
     ...(dictating ? [{ id: 'dictation', content: <span className="inline-flex items-center gap-1.5" role="status"><span className="mic-dot" aria-hidden="true" />{m.voice_listening()}</span> }] : []),
     ...(showYolo ? [{ id: 'yolo', tone: 'warning' as const, content: <><span aria-hidden="true">⚡</span><span className="truncate">{m.yolo_tab_active()}</span></>, action: { label: m.yolo_turn_off(), run: onToggleYolo } }] : []),
     ...(sessionId && backgroundTasks.some((t) => t.pinned) ? [{ id: 'background', content: <BackgroundWorkCard sessionId={sessionId} tasks={backgroundTasks} /> }] : []),
     ...(queued.length > 0 ? [{ id: 'queue', content: <span className="queue-card flex min-w-0 flex-col gap-0.5" role="region" aria-label={m.queued_count({ n: queued.length })} aria-live="polite"><span className="queue-card-title">{m.queued_count({ n: queued.length })}</span><span className="queue-card-list flex flex-col">{queued.map((q, i) => <span key={i} className="truncate">{q.text}{q.attachments.length ? ` (+${q.attachments.length})` : ''}</span>)}</span></span> }] : []),
   ]
-  const busyLabel = busyMode === 'queue' ? m.composer_queue() : busyMode === 'interrupt' ? m.composer_interrupt() : m.composer_steer()
+  // A `/btw` draft asks beside the turn instead of steering, queueing or interrupting it (TAL-518).
+  const busyLabel = parseCommand(text)?.name === 'btw' ? m.composer_send() : busyMode === 'queue' ? m.composer_queue() : busyMode === 'interrupt' ? m.composer_interrupt() : m.composer_steer()
 
   // The server marks sessions Web may not continue (TAL-312); it would refuse every send, so none is offered.
   if (session?.read_only) return <div className="composer-wrap" id="composerWrap"><div className="mx-auto max-w-(--msg-max) px-3 py-2 text-center text-xs text-muted" role="note">{m.session_read_only_notice()}</div></div>
