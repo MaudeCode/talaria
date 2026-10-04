@@ -6,7 +6,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { readFileSync } from 'node:fs'
 import type { AgentConfig, Config, Dict } from './config/agent-config.js'
-import { dict, isDict, modelSection } from './config/agent-config.js'
+import { canonicaliseProviderId, dict, isDict, modelSection, parseProviderQualifiedModel } from './config/agent-config.js'
 import { loadEnvFile, writeEnvFile } from './providers/env-file.js'
 import { PROVIDER_CATEGORIES, PROVIDER_DISPLAY, SUPPORTED_PROVIDER_SETUPS, UNSUPPORTED_PROVIDER_NOTE } from './providers/tables.js'
 import type { ModelsCatalog } from './providers/catalog.js'
@@ -45,8 +45,14 @@ const currentModel = (cfg: Config): string => (typeof cfg.model === 'string' ? c
 const normalizeBaseUrl = (v: unknown): string => str(v).trim().replace(/\/+$/, '')
 const currentBaseUrl = (cfg: Config): string => normalizeBaseUrl(modelSection(cfg).base_url)
 
+/** A picked `/api/models` id (`@provider:model`) is saved as its bare model, like `setDefaultModel`; one qualified for another provider is refused. */
 function normalizeModelForProvider(provider: string, model: string): string {
-  const clean = model.trim()
+  let clean = model.trim()
+  const qualified = parseProviderQualifiedModel(clean)
+  if (qualified) {
+    if (canonicaliseProviderId(qualified[1]) !== canonicaliseProviderId(provider)) throw new OnboardingError(`Model '${clean}' belongs to another provider than '${provider}'.`)
+    clean = qualified[0].trim()
+  }
   if (!clean) return ''
   if ((provider === 'anthropic' || provider === 'openai') && clean.startsWith(`${provider}/`)) return clean.slice(provider.length + 1)
   return clean

@@ -63,6 +63,19 @@ describe('OAuthSignIn', () => {
     expect(screen.getByRole('button', { name: 'Sign in with ChatGPT' })).toBeEnabled()
   })
 
+  it('a start that answers after the panel is gone cancels its flow', async () => {
+    let answer: (value: typeof started) => void = () => undefined
+    vi.mocked(api.onboardingOauthStart).mockReturnValue(new Promise((resolve) => { answer = resolve }))
+    const view = render(<OAuthSignIn provider="openai-codex" label="ChatGPT" signedIn={false} onApproved={vi.fn()} />)
+    await startFlow()
+    view.unmount()
+    expect(api.onboardingOauthCancel).not.toHaveBeenCalled()
+    await act(async () => { answer(started); await Promise.resolve() })
+    expect(api.onboardingOauthCancel).toHaveBeenCalledWith('flow-1')
+    await nextPoll()
+    expect(api.onboardingOauthPoll).not.toHaveBeenCalled()
+  })
+
   it('cancel stops the flow, and leaving a pending flow cancels it', async () => {
     vi.mocked(api.onboardingOauthPoll).mockResolvedValue({ ok: true, status: 'pending', flow_id: 'flow-1' })
     const view = render(<OAuthSignIn provider="openai-codex" label="ChatGPT" signedIn={false} onApproved={vi.fn()} />)

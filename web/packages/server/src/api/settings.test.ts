@@ -774,6 +774,12 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
       expect(res.status).toBe(200)
       expect(configs.get(s.state)?.model).toEqual({ default: 'gpt-5.5', provider: 'openai-codex' })
       const saved = await json(res)
+      // A picker id from the model list is saved as its bare model; one for another provider is refused.
+      expect((await post(s, '/api/onboarding/setup', { provider: 'openai-codex', model: '@openai-codex:gpt-5.4', confirm_overwrite: true })).status).toBe(200)
+      expect(configs.get(s.state)?.model).toEqual({ default: 'gpt-5.4', provider: 'openai-codex' })
+      res = await post(s, '/api/onboarding/setup', { provider: 'openai-codex', model: '@nous:anthropic/claude-sonnet-4.6', confirm_overwrite: true })
+      expect(res.status).toBe(400)
+      expect(configs.get(s.state)?.model).toEqual({ default: 'gpt-5.4', provider: 'openai-codex' })
       expect(((saved.setup as Json).providers as Json[]).find((p) => p.id === 'openai-codex')?.signed_in).toBe(true)
       expect(saved.system).toMatchObject({ provider_ready: true })
       // No API key is written for a sign-in provider.

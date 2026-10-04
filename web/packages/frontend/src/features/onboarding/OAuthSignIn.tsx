@@ -18,9 +18,17 @@ export function OAuthSignIn({ provider, label, signedIn, onApproved }: { provide
   const pendingId = flow?.status === 'pending' ? flow.flow_id ?? null : null
   const pendingRef = useRef<string | null>(null)
 
+  const mounted = useRef(false)
+
   useEffect(() => { pendingRef.current = pendingId }, [pendingId])
   // Leaving the panel (another provider, another step) abandons its pending flow, so nothing is saved after it.
-  useEffect(() => () => { if (pendingRef.current) void api.onboardingOauthCancel(pendingRef.current).catch(() => undefined) }, [])
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+      if (pendingRef.current) void api.onboardingOauthCancel(pendingRef.current).catch(() => undefined)
+    }
+  }, [])
 
   const waitMs = Math.max(1, flow?.interval ?? 5) * 1000
   useEffect(() => {
@@ -52,11 +60,17 @@ export function OAuthSignIn({ provider, label, signedIn, onApproved }: { provide
     setBusy(true)
     setFailure(null)
     try {
-      setFlow(await api.onboardingOauthStart(provider))
+      const started = await api.onboardingOauthStart(provider)
+      // The panel went away while the start was in flight: that flow has no one to finish it.
+      if (!mounted.current) {
+        if (started.status === 'pending' && started.flow_id) void api.onboardingOauthCancel(started.flow_id).catch(() => undefined)
+        return
+      }
+      setFlow(started)
     } catch (e) {
-      setFailure(message(e))
+      if (mounted.current) setFailure(message(e))
     } finally {
-      setBusy(false)
+      if (mounted.current) setBusy(false)
     }
   }
 
