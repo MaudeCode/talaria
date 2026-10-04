@@ -17,7 +17,7 @@ import { isTerminal } from '../../stream/reducer'
 import { useTranscript, type VisibleMessage } from './useTranscript'
 import { Transcript } from './Transcript'
 import { TranscriptSkeleton } from './TranscriptSkeleton'
-import { Composer, type QueuedTurn } from '../composer/Composer'
+import { Composer, turnRequest, type QueuedTurn } from '../composer/Composer'
 import { returnToComposer } from '../composer/composerReturn'
 import { ApprovalCard } from './ApprovalCard'
 import { ClarifyCard } from './ClarifyCard'
@@ -117,14 +117,18 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   const onToolsetsChange = useCallback((toolsets: string[] | null) => { if (!sessionId) { setPending((p) => ({ ...p, enabled_toolsets: toolsets })); return } void api.setSessionToolsets(sessionId, toolsets).then(() => refresh()).catch((e: unknown) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error')) }, [sessionId, refresh])
   const onToggleYolo = useCallback(() => { if (!sessionId) return; void api.setSessionYolo(sessionId, !yolo).then((r) => setYolo(r.yolo_enabled)).catch((e: unknown) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error')) }, [sessionId, yolo])
 
+  // Regenerate, `/retry`, and the error notice's Retry: the server drops the last exchange, then its prompt and files are resent.
   const onRegenerate = useCallback(async () => {
-    if (!sessionId) return
-    const r = await api.retrySession(sessionId)
-    const streamId = 'stream_id' in r ? r.stream_id : undefined
-    const turnId = 'turn_id' in r ? r.turn_id : undefined
-    if (typeof streamId === 'string' && streamId) dispatch({ type: 'start', sessionId, streamId, turnId: typeof turnId === 'string' ? turnId : null, userMessageId: null, userText: '', now: Date.now() })
-    await refresh()
-  }, [sessionId, refresh])
+    if (!sessionId || !session) return
+    try {
+      const r = await api.retrySession(sessionId)
+      if ('error' in r) { showToast(r.error, 4000, 'error'); return }
+      await refresh()
+      await startTurn({ sessionId, message: r.last_user_text, request: { ...turnRequest(session, bootstrap.profile?.name ?? 'default'), ...(r.last_user_attachments.length ? { attachments: r.last_user_attachments } : {}) } })
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : String(e), 4000, 'error')
+    }
+  }, [sessionId, session, refresh, bootstrap.profile])
 
   // Manual compression: start, poll the job to done/error, then load the compacted session (a new id when the server forks).
   const [compressing, setCompressing] = useState(false)

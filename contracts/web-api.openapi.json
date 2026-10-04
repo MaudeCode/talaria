@@ -10683,6 +10683,36 @@
                         "last_user_text": {
                           "type": "string"
                         },
+                        "last_user_attachments": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "filename": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "path": {
+                                "type": "string"
+                              },
+                              "size": {
+                                "type": "number"
+                              },
+                              "mime": {
+                                "type": "string"
+                              },
+                              "is_image": {
+                                "type": "boolean"
+                              },
+                              "rollback_token": {
+                                "type": "string"
+                              }
+                            },
+                            "additionalProperties": {}
+                          }
+                        },
                         "removed_count": {
                           "type": "integer",
                           "minimum": -9007199254740991,
@@ -10692,6 +10722,7 @@
                       "required": [
                         "ok",
                         "last_user_text",
+                        "last_user_attachments",
                         "removed_count"
                       ]
                     },

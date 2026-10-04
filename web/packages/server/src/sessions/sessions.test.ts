@@ -267,6 +267,14 @@ describe('session lifecycle over HTTP', () => {
     expect(await json(res)).toMatchObject({ ok: true, last_user_text: 'first', removed_count: 2 })
     expect(((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages).toEqual([])
 
+    // TAL-515: the prompt comes back as typed, without the lines the server adds, and with its files, so it can be resent.
+    const file = { filename: 'notes.txt', path: '/tmp/notes.txt', mime: 'text/plain' }
+    writeMessages(s, sid, [
+      { role: 'user', content: '[Workspace::v1: /tmp/ws]\nSummarize the logs\n\n[Attached files: /tmp/notes.txt]', attachments: [file, 'legacy.txt'] }, { role: 'assistant', content: 'fine' },
+    ])
+    res = await post(s, '/api/session/retry', { session_id: sid })
+    expect(await json(res)).toEqual({ ok: true, last_user_text: 'Summarize the logs', last_user_attachments: [file, { name: 'legacy.txt', filename: 'legacy.txt' }], removed_count: 2 })
+
     writeMessages(s, sid, [
       { role: 'user', content: 'a' }, { role: 'assistant', content: '', reasoning: 'think', tool_calls: [{ id: 't', name: 'read_file' }] },
       { role: 'tool', tool_call_id: 't', content: 'x' }, { role: 'assistant', content: 'b' }, { role: 'user', content: 'c' },

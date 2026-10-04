@@ -103,7 +103,7 @@ export function isContextCompressionMarker(msg: unknown): boolean {
 }
 
 /** A user prompt as the user typed it: without the workspace prefix and the attached-files line the server adds. */
-const userPromptText = (text: string): string => stripWorkspacePrefix(stripAttachedFilesMarker(text), true)
+export const userPromptText = (text: string): string => stripWorkspacePrefix(stripAttachedFilesMarker(text), true)
 const normalizeUserText = (text: string): string => userPromptText(text).split(/\s+/).join(' ').trim()
 
 export function looksLikeCurrentUserTurn(msg: unknown, msgText: string): boolean {

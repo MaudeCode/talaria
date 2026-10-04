@@ -20,7 +20,7 @@ import { attachTodoState } from './todo.js'
 import { stateDbSessionMessages, stateDbSessionRow, stateDbSessionSources } from './state-db.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { SidecarError, type SidecarLike } from '../sidecar/client.js'
-import { attachmentObjects, isContextCompressionMarker, mergeSessionMessagesAppendOnly, pendingUserRow, sanitizeMessagesForApi, withAttachmentObjects, withBodyExcerpts, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput } from './merge.js'
+import { attachmentObjects, isContextCompressionMarker, mergeSessionMessagesAppendOnly, pendingUserRow, sanitizeMessagesForApi, userPromptText, withAttachmentObjects, withBodyExcerpts, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput } from './merge.js'
 import { withBackgroundUpdates } from './background-updates.js'
 import { withBackgroundLinks, type Receipt } from './background-tasks.js'
 import { messagesForLimitedPayload, messageWindowForDisplay, MAX_MSG_LIMIT, parseMsgLimit, toolCallsForMessageWindow } from './window.js'
@@ -1000,11 +1000,14 @@ export class SessionService {
       const history = s.messages
       const lastUser = findLastUserIndex(history)
       if (lastUser === null) return { error: 'No previous message to retry.' }
-      const lastUserText = extractText(history[lastUser]?.content)
+      // The prompt as typed and its files, so a client resends exactly what the user sent (TAL-515).
+      const prompt = history[lastUser]!
+      const lastUserText = userPromptText(extractText(prompt.content))
+      const lastUserAttachments = attachmentObjects(Array.isArray(prompt.attachments) ? prompt.attachments : [])
       const removed = history.length - lastUser
       shrinkTo(s, lastUser)
       this.store.save(s)
-      return { ok: true, last_user_text: lastUserText, removed_count: removed }
+      return { ok: true, last_user_text: lastUserText, last_user_attachments: lastUserAttachments, removed_count: removed }
     })
   }
 
