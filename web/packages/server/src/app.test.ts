@@ -312,6 +312,19 @@ describe('password auth', () => {
       s.deps.auth.clearLoginAttempts('127.0.0.1')
     }
   })
+
+  it('a correct login releases only its own reservation, not concurrent failures', async () => {
+    s.deps.auth.clearLoginAttempts('127.0.0.1')
+    const login = (password: string) => s.get('/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password }) })
+    try {
+      const statuses = (await Promise.all([login(PASSWORD), ...Array.from({ length: 4 }, () => login('nope'))])).map((res) => res.status)
+      expect(statuses.toSorted()).toEqual([200, 401, 401, 401, 401])
+      expect((await login('nope')).status).toBe(401)
+      expect((await login('nope')).status).toBe(429)
+    } finally {
+      s.deps.auth.clearLoginAttempts('127.0.0.1')
+    }
+  })
 })
 
 describe('trusted-header auth', () => {

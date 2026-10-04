@@ -564,10 +564,22 @@ export class AuthStore {
     return attempts.length < LOGIN_MAX_ATTEMPTS
   }
 
-  recordLoginAttempt(ip: string): void {
+  recordLoginAttempt(ip: string): number {
+    const at = this.now()
     const list = this.attempts[ip] ?? []
-    list.push(this.now())
+    list.push(at)
     this.attempts[ip] = list
+    this.saveLoginAttempts()
+    return at
+  }
+
+  /** Drops one attempt recorded at `at`, leaving concurrent reservations counted. */
+  releaseLoginAttempt(ip: string, at: number): void {
+    const list = this.attempts[ip]
+    const index = list?.indexOf(at) ?? -1
+    if (!list || index < 0) return
+    list.splice(index, 1)
+    if (!list.length) Reflect.deleteProperty(this.attempts, ip)
     this.saveLoginAttempts()
   }
 
