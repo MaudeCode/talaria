@@ -1242,53 +1242,124 @@ extension ChatViewModelSendTests {
     // TAL-441: an unavailable steer waits for the running turn instead of stopping it.
     private func assertUnavailableSteerQueuesWithoutStopping(steerStatus: Int, steerBody: String) async throws {
         let streamClient = SpySSEStreamingClient()
-        var startedTexts: [String] = []
-        var cancelRequests = 0
-        let viewModel = try makeViewModel(streamClient: streamClient) { request in
-            switch request.url?.path {
-            case "/api/chat/start":
-                startedTexts.append(try apiTestJSONBody(from: request)["message"] as? String ?? "")
-                return apiTestJSONResponse(
-                    """
-                    {"session_id":"session-abc","stream_id":"stream-\(startedTexts.count)"}
-                    """,
-                    for: request
-                )
-            case "/api/chat/steer":
-                let response = HTTPURLResponse(
-                    url: try XCTUnwrap(request.url),
-                    statusCode: steerStatus,
-                    httpVersion: nil,
-                    headerFields: ["Content-Type": "application/json"]
-                )!
-                return (response, Data(steerBody.utf8))
-            case "/api/chat/cancel":
-                cancelRequests += 1
-                return apiTestJSONResponse(#"{"ok":true}"#, for: request)
-            default:
-                return apiTestJSONResponse(#"{}"#, for: request)
-            }
-        }
+        let log = UnavailableSteerLog(steerStatus: steerStatus, steerBody: steerBody)
+        let viewModel = try makeUnavailableSteerViewModel(streamClient: streamClient, log: log)
 
         let didStart = await viewModel.sendMessage("Initial request")
         XCTAssertTrue(didStart)
         let result = await viewModel.submitStreamingMessage("Use the focused test", behavior: .steer)
 
         XCTAssertEqual(result, .executed(message: "Steer was unavailable, so the message was queued for after this response."))
-        XCTAssertEqual(cancelRequests, 0)
+        XCTAssertEqual(log.cancelRequests, 0)
         XCTAssertEqual(viewModel.activeStreamID, "stream-1")
         XCTAssertFalse(viewModel.messages.contains(where: \.isLocalSteeringHint))
-        let status = await viewModel.executeSlashCommand(try XCTUnwrap(SlashCommandCatalog.command(named: "status")))
-        guard case let .executed(statusText?) = status else {
-            return XCTFail("Expected /status to return an executed message, got \(status).")
-        }
-        XCTAssertTrue(statusText.contains("Queued messages: 1"), statusText)
+        try await assertQueuedMessages(1, in: viewModel)
 
         streamClient.emit(.done(DoneStreamEvent(session: nil)))
         streamClient.emit(.streamEnd)
-        try await waitUntil { startedTexts.count == 2 }
-        XCTAssertEqual(startedTexts, ["Initial request", "Use the focused test"])
-        XCTAssertEqual(cancelRequests, 0)
+        try await waitUntil { log.startedTexts.count == 2 }
+        XCTAssertEqual(log.startedTexts, ["Initial request", "Use the focused test"])
+        XCTAssertEqual(log.cancelRequests, 0)
+    }
+
+    @MainActor
+    func testFailedSteerTheServerReportsLaterIsNotSentAgain() async throws {
+        let streamClient = SpySSEStreamingClient()
+        let log = UnavailableSteerLog(steerStatus: 500, steerBody: #"{"error":"reply lost"}"#)
+        let viewModel = try makeUnavailableSteerViewModel(streamClient: streamClient, log: log)
+
+        let didStart = await viewModel.sendMessage("Initial request")
+        XCTAssertTrue(didStart)
+        _ = await viewModel.submitStreamingMessage("Use the focused test", behavior: .steer)
+        try await assertQueuedMessages(1, in: viewModel)
+
+        // The request reached the server after all: its report makes the steer the server's, not a queued send.
+        let steerID = try XCTUnwrap(log.steerIDs.first)
+        streamClient.emit(.steerPending(PendingSteer(steerId: steerID, text: "Use the focused test", submittedAt: 5, state: .pending, actions: .none)))
+        try await assertQueuedMessages(0, in: viewModel)
+        XCTAssertEqual(viewModel.messages.last(where: \.isLocalSteeringHint)?.messageId, steerID)
+
+        streamClient.emit(.steerConsumed(SteeringStreamEvent(steerId: steerID, text: "Use the focused test")))
+        streamClient.emit(.done(DoneStreamEvent(session: nil)))
+        streamClient.emit(.streamEnd)
+        try await waitUntil { viewModel.activeStreamID == nil }
+        // A drain would send right after the stream ends; give it time to show.
+        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertEqual(log.startedTexts, ["Initial request"])
+    }
+
+    @MainActor
+    func testFailedSteerTheServerReportedDuringTheRequestIsKept() async throws {
+        let streamClient = SpySSEStreamingClient()
+        let log = UnavailableSteerLog(steerStatus: 500, steerBody: #"{"error":"reply lost"}"#)
+        log.releaseSteer = DispatchSemaphore(value: 0)
+        let viewModel = try makeUnavailableSteerViewModel(streamClient: streamClient, log: log)
+
+        let didStart = await viewModel.sendMessage("Initial request")
+        XCTAssertTrue(didStart)
+        let submission = Task { await viewModel.submitStreamingMessage("Use the focused test", behavior: .steer) }
+        try await waitUntil { !log.steerIDs.isEmpty }
+        let steerID = try XCTUnwrap(log.steerIDs.first)
+        streamClient.emit(.steerConsumed(SteeringStreamEvent(steerId: steerID, text: "Use the focused test")))
+        log.releaseSteer?.signal()
+
+        let result = await submission.value
+        XCTAssertEqual(result, .executed(message: nil))
+        try await assertQueuedMessages(0, in: viewModel)
+        XCTAssertEqual(viewModel.messages.last(where: \.isLocalSteeringHint)?.steeringHintState, .consumed)
+        XCTAssertEqual(log.cancelRequests, 0)
+    }
+
+    private final class UnavailableSteerLog: @unchecked Sendable {
+        let steerStatus: Int
+        let steerBody: String
+        var releaseSteer: DispatchSemaphore?
+        var startedTexts: [String] = []
+        var steerIDs: [String] = []
+        var cancelRequests = 0
+
+        init(steerStatus: Int, steerBody: String) {
+            self.steerStatus = steerStatus
+            self.steerBody = steerBody
+        }
+    }
+
+    private func makeUnavailableSteerViewModel(streamClient: SpySSEStreamingClient, log: UnavailableSteerLog) throws -> ChatViewModel {
+        try makeViewModel(streamClient: streamClient) { request in
+            switch request.url?.path {
+            case "/api/chat/start":
+                log.startedTexts.append(try apiTestJSONBody(from: request)["message"] as? String ?? "")
+                return apiTestJSONResponse(
+                    """
+                    {"session_id":"session-abc","stream_id":"stream-\(log.startedTexts.count)"}
+                    """,
+                    for: request
+                )
+            case "/api/chat/steer":
+                log.steerIDs.append(try apiTestJSONBody(from: request)["steer_id"] as? String ?? "")
+                log.releaseSteer?.wait()
+                let response = HTTPURLResponse(
+                    url: try XCTUnwrap(request.url),
+                    statusCode: log.steerStatus,
+                    httpVersion: nil,
+                    headerFields: ["Content-Type": "application/json"]
+                )!
+                return (response, Data(log.steerBody.utf8))
+            case "/api/chat/cancel":
+                log.cancelRequests += 1
+                return apiTestJSONResponse(#"{"ok":true}"#, for: request)
+            default:
+                return apiTestJSONResponse(#"{}"#, for: request)
+            }
+        }
+    }
+
+    private func assertQueuedMessages(_ count: Int, in viewModel: ChatViewModel, line: UInt = #line) async throws {
+        let status = await viewModel.executeSlashCommand(try XCTUnwrap(SlashCommandCatalog.command(named: "status")))
+        guard case let .executed(statusText?) = status else {
+            return XCTFail("Expected /status to return an executed message, got \(status).", line: line)
+        }
+        XCTAssertTrue(statusText.contains("Queued messages: \(count)"), statusText, line: line)
     }
 
     @MainActor
