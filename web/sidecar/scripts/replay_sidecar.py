@@ -116,6 +116,8 @@ def build_methods() -> dict:
     methods["clarify.respond"] = _clarify_respond
     methods["approval.pending"] = lambda ctx, params: {"pending": []}
     methods["approval.set_yolo"] = lambda ctx, params: {"yolo_enabled": bool(params.get("enabled")), "released": 0}
+    # Every settled turn asks the goal judge (TAL-396); the replay holds no goal, so it answers as the sidecar does then.
+    methods["goals.evaluate"] = lambda ctx, params: {"status": None, "should_continue": False, "continuation_prompt": None, "verdict": "inactive", "reason": "no active goal", "message": ""}
     methods["runtime.shutdown"] = _shutdown
     return methods
 
