@@ -74,7 +74,7 @@ export function SteerMessage({ text, state, actions }: { text: string; state?: P
 /** Live events and persisted history share ordering, nesting and final-answer boundaries. */
 export function TurnActivityView({ activity, mode, sessionId, scope }: { activity: TurnActivity; mode: ActivityMode; sessionId?: string | undefined; scope?: string | undefined }) {
   if (activity.history && sessionId && mode !== 'hide_all_activity') return <ActivityHistory key={JSON.stringify([scope, sessionId, activity.history])} activity={activity} history={activity.history} mode={mode} sessionId={sessionId} scope={scope} />
-  return <ActivityBody activity={activity} mode={mode} />
+  return <ActivityBody activity={activity} mode={mode} sessionId={sessionId} />
 }
 
 function ActivityHistory({ activity, history, mode, sessionId, scope }: { activity: TurnActivity; history: NonNullable<TurnActivity["history"]>; mode: ActivityMode; sessionId: string; scope: string | undefined }) {
@@ -89,10 +89,10 @@ function ActivityHistory({ activity, history, mode, sessionId, scope }: { activi
   const items = pages.length ? sceneItems([...pages.flatMap((page) => page.rows), ...(activity.sceneRows ?? [])]) : activity.items
   const remaining = query.data?.pages.at(-1)?.start ?? history.before
   const control = remaining > 0 ? <Button variant="ghost" disabled={query.isFetching} onClick={() => { void query.fetchNextPage() }}>{query.isFetching ? m.loading() : query.isError ? m.retry() : m.show_earlier_steps({ a0: String(remaining) })}</Button> : null
-  return <ActivityBody activity={{ ...activity, items }} mode={mode} earlier={control} />
+  return <ActivityBody activity={{ ...activity, items }} mode={mode} earlier={control} sessionId={sessionId} />
 }
 
-function ActivityBody({ activity, mode, earlier }: { activity: TurnActivity; mode: ActivityMode; earlier?: ReactNode }) {
+function ActivityBody({ activity, mode, earlier, sessionId }: { activity: TurnActivity; mode: ActivityMode; earlier?: ReactNode; sessionId?: string | undefined }) {
   const { items, finalAnswer, status } = activity
   const locale = useLocale()
   const running = status === 'running'
@@ -102,7 +102,7 @@ function ActivityBody({ activity, mode, earlier }: { activity: TurnActivity; mod
       case 'text': return <div key={item.key} className="msg-body"><Markdown text={item.display ?? item.text} streaming={running && last} /><MediaTiles media={item.media} /></div>
       case 'reasoning': return <ReasoningBlock key={item.key} text={item.text} titles={item.titles} live={running && last} />
       case 'steering': return <SteerMessage key={item.key} text={item.text} />
-      case 'tool': return <ToolCard key={item.key} call={item.call} />
+      case 'tool': return <ToolCard key={item.key} call={item.call} sessionId={sessionId} />
     }
   }
   // `tail` marks the list that ends the turn: only its last item can still be streaming.

@@ -2,7 +2,7 @@ import sceneCases from '../src/features/chat/__fixtures__/activity-scene-boundar
 import canonicalScene from '../src/features/chat/__fixtures__/activity-scene.json' with { type: 'json' }
 import { createServer, type ServerResponse } from 'node:http'
 import { expect, test } from './fixtures'
-import { hydrateAnchorActivityScenes, withTurnIds } from '../../server/dist/sessions/anchor.js'
+import { fullToolResult, hydrateAnchorActivityScenes, withTurnIds } from '../../server/dist/sessions/anchor.js'
 import { publicToolFrame, redactSessionData } from '../../server/dist/redact.js'
 
 /** Mocked transcripts pass through the server's own turn and public projection, so the page sees exactly what the server sends. */
@@ -259,6 +259,37 @@ test('recovered worklog can fetch its omitted history', async ({ page }) => {
   await expect(page.locator('[data-tool-id="earlier"] > button')).toBeVisible()
   await expect(page.getByRole('button', { name: /earlier steps/ })).toHaveCount(0)
   await expect(page.getByText('Recovered answer', { exact: true })).toBeVisible()
+})
+
+test('a tool result a limited response clipped opens whole on request (TAL-331)', async ({ page }, testInfo) => {
+  const full = Array.from({ length: 120 }, (_, i) => `line ${String(i + 1).padStart(3, '0')}: ${'synthetic output '.repeat(3)}`).join('\n')
+  const transcript = [
+    { role: 'user', id: 1, content: 'Dump the log' },
+    { role: 'assistant', id: 2, content: '', tool_calls: [{ id: 'big', function: { name: 'read_file', arguments: '{"path":"build.log"}' } }] },
+    { role: 'tool', id: 3, tool_call_id: 'big', content: full },
+    { role: 'assistant', id: 4, content: 'The log is long.' },
+  ]
+  // A `msg_limit` detail: the server's own projection clips the row and flags it.
+  const limited = redactSessionData({ messages: hydrateAnchorActivityScenes(withTurnIds(transcript), {}, { clipToolResults: true }) }, true).messages as unknown[]
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'clipped-tool', title: 'Clipped tool', messages: limited } } }))
+  await page.route('**/api/session/tool-result?**', (route) => {
+    const params = new URL(route.request().url()).searchParams
+    expect([params.get('session_id'), params.get('tool_call_id')]).toEqual(['clipped-tool', 'big'])
+    return route.fulfill({ json: { tool_call_id: 'big', result: fullToolResult(transcript, 'big') } })
+  })
+  await page.goto('/session/clipped-tool')
+  await page.locator('.tool-worklog-summary').first().click()
+  const card = page.locator('[data-tool-id="big"]')
+  await card.locator('> button').click()
+  const result = card.locator('.tool-card-result pre')
+  await expect(result).toContainText('Tool output truncated')
+  await expect(result).not.toContainText('line 120')
+  await card.locator('.tool-card-result').screenshot({ path: testInfo.outputPath('clipped-before.png') })
+  await card.getByRole('button', { name: 'Show full output' }).click()
+  await expect(result).toContainText('line 120')
+  await expect(result).not.toContainText('Tool output truncated')
+  await expect(card.getByRole('button', { name: 'Show full output' })).toHaveCount(0)
+  await card.locator('.tool-card-result').screenshot({ path: testInfo.outputPath('clipped-after.png') })
 })
 
 for (const mode of ['transparent_stream', 'hide_all_activity']) {
