@@ -461,4 +461,36 @@ describe('anchor scenes over HTTP', () => {
     expect(JSON.stringify(body)).not.toContain(secret)
     expect((await s.get(`/api/session/tool-result?session_id=${sid}&tool_call_id=missing`)).status).toBe(404)
   })
+
+  it('flags a capped row of a scene stored before TAL-331 from its rebuilt turn, in the preview and the paged rows', async () => {
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    const session = s.deps.sessionStore.get(sid)
+    const full = 'z'.repeat(6000)
+    session.messages = [
+      { role: 'user', content: 'Dump it' },
+      { role: 'assistant', content: 'Reading.', tool_calls: [{ id: 'big', name: 'read_file' }, { id: 'small', name: 'read_file' }] },
+      { role: 'tool', tool_call_id: 'big', content: full },
+      { role: 'tool', tool_call_id: 'small', content: 'ok' },
+      { role: 'assistant', content: 'Done.' },
+    ]
+    s.deps.sessionStore.save(session)
+    // An older client's stored scene: whole results, no flags.
+    const old = (id: string, result: string, order_index: number) => ({ row_id: `tool:${id}`, order_index, role: 'tool', tool: { id, name: 'read_file', result, done: true } })
+    const filler = Array.from({ length: 85 }, (_, i) => ({ row_id: `r${String(i)}`, order_index: 2 + i, role: 'reasoning', text: `step ${String(i)}` }))
+    expect((await post(s, '/api/session/anchor-scene', { session_id: sid, message_index: 4, scene: { version: 'activity_scene_v1', final_answer: 'Done.', activity_rows: [old('big', full, 0), old('small', 'ok', 1), ...filler] } })).status).toBe(200)
+    const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
+    const scene = (detail.messages as Json[]).at(-1)?._anchor_activity_scene as Json
+    expect(scene.activity_rows_offset).toBe(7)
+    // The two tool rows are paged out of the 80-row preview; the paged rows carry the rebuilt turn's flag.
+    const page = await json(await s.get(`/api/session/anchor-scene?session_id=${sid}&message_index=4&before=7`))
+    const tool = (id: string) => (page.rows as Json[]).find((r) => r.row_id === `tool:${id}`)?.tool as Json
+    expect(tool('big')).toMatchObject({ result_truncated: true, result_chars: 6000 })
+    expect(tool('small').result_truncated).toBeUndefined()
+    // The same rows in a short scene sit in the preview itself.
+    expect((await post(s, '/api/session/anchor-scene', { session_id: sid, message_index: 4, scene: { version: 'activity_scene_v1', final_answer: 'Done.', activity_rows: [old('big', full, 0), old('small', 'ok', 1)] } })).status).toBe(200)
+    const short = ((await json(await s.get(`/api/session?session_id=${sid}&msg_limit=10`))).session as Json).messages as Json[]
+    const rows = (short.at(-1)?._anchor_activity_scene as Json).activity_rows as Json[]
+    expect(rows.find((r) => r.row_id === 'tool:big')?.tool).toMatchObject({ result_truncated: true, result_chars: 6000 })
+    expect((rows.find((r) => r.row_id === 'tool:small')?.tool as Json).result_truncated).toBeUndefined()
+  })
 })

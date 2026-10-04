@@ -455,10 +455,22 @@ function withStoredFinalAnswer(scene: Record<string, unknown>, built: Record<str
   return { ...scene, final_answer: built.final_answer }
 }
 
+/**
+ * TAL-331: a stored scene's tool rows take the clip flag its rebuilt turn computed, so a capped row of a scene stored
+ * before the flag existed still offers the whole result, and only for a call whose reply the transcript holds.
+ */
+function withBuiltToolFlags(rows: unknown, built: Record<string, unknown> | null): SceneRow[] {
+  const flags = new Map(normalizeSceneRows(built?.activity_rows).flatMap((row) => (row.tool?.result_truncated ? [[row.row_id, row.tool.result_chars ?? null] as const] : [])))
+  return (rows as SceneRow[]).map((row) => {
+    if (!row.tool || row.tool.result_truncated || !flags.has(row.row_id)) return row
+    return { ...row, tool: { ...row.tool, result_truncated: true as const, result_chars: flags.get(row.row_id) ?? null } }
+  })
+}
+
 /** The outcome fields a stored scene predates, from its turn by the same rules as a built one, and the turn's file changes. */
 function withStoredOutcome(preview: Record<string, unknown>, built: Record<string, unknown> | null): Record<string, unknown> {
   // Always the turn's own: a stored scene is client-posted, so its rows never decide what the turn changed.
-  const next: Record<string, unknown> = { ...preview, file_changes: built?.file_changes ?? [] }
+  const next: Record<string, unknown> = { ...preview, file_changes: built?.file_changes ?? [], activity_rows: withBuiltToolFlags(preview.activity_rows, built) }
   // Only an explicit outcome carries over from the turn; answered or not follows the scene's own final answer.
   const explicit = str(built?.terminal_state)
   if (!str(next.terminal_state)) next.terminal_state = explicit && explicit !== 'completed' && explicit !== 'no_response' ? explicit : str(next.final_answer).trim() ? 'completed' : 'no_response'
@@ -590,7 +602,7 @@ export function readAnchorSceneRows(session: Session, query: { messageRef: strin
   const scene = stored ?? built
   const sceneRef = record ? str(record.message_ref || query.messageRef) : query.messageRef
   if (!scene || !Array.isArray(scene.activity_rows)) return null
-  const rows = transportRows(scene)
+  const rows = stored ? withBuiltToolFlags(transportRows(scene), built) : transportRows(scene)
   const total = rows.length
   const before = Math.max(0, Math.min(total, query.before ?? total))
   const limit = Math.max(1, Math.min(200, query.limit ?? 80))
