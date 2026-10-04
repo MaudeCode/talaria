@@ -26,7 +26,7 @@ export const DEFAULT_BOOTSTRAP: Bootstrap = {
   language: 'en',
   bot_name: 'Hermes',
   assistant_name: 'Hermes',
-  auth: { auth_enabled: true, logged_in: true, can_manage_server: true, oidc_enabled: false, oidc_native_handoff_enabled: false, password_auth_enabled: true, passwordless_enabled: false, passkeys_enabled: false, passkeys_count: 0, passkey_feature_flag: false, auth_disabled_acknowledged: false },
+  auth: { auth_enabled: true, logged_in: true, can_manage_server: true, oidc_enabled: false, oidc_native_handoff_enabled: false, oidc_unavailable: false, password_auth_enabled: true, passwordless_enabled: false, passkeys_enabled: false, passkeys_count: 0, passkey_feature_flag: false, auth_disabled_acknowledged: false },
   profile: { name: 'default', is_default: true },
   onboarding: { completed: true },
   features: { dashboard: false, terminal_remote_backend: false, extensions: false, single_profile_mode: false },

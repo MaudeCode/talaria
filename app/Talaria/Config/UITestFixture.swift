@@ -30,6 +30,8 @@ struct UITestFixtureEnvironment {
     /// Serves a transcript of very long bodies in the server's collapsed shape (TAL-456), the
     /// shape that ran the App out of memory before it rendered excerpts.
     nonisolated static let longBodiesArgument = "--ui-test-long-bodies"
+    /// Serves a reply whose media references the server rewrote for display (TAL-186), and the media bytes.
+    nonisolated static let transcriptMediaArgument = "--ui-test-transcript-media"
     /// Serves a transcript with automatic background wakeups in the server's `_background_update` shape (TAL-371).
     nonisolated static let backgroundUpdatesArgument = "--ui-test-background-updates"
     /// Adds a pinned long-titled chat and scheduled and webhook groups whose server counts say
@@ -82,6 +84,9 @@ struct UITestFixtureEnvironment {
     }
     nonisolated static var hasLongBodies: Bool {
         ProcessInfo.processInfo.arguments.contains(longBodiesArgument)
+    }
+    nonisolated static var hasTranscriptMedia: Bool {
+        ProcessInfo.processInfo.arguments.contains(transcriptMediaArgument)
     }
     nonisolated static var hasBackgroundUpdates: Bool {
         ProcessInfo.processInfo.arguments.contains(backgroundUpdatesArgument)
@@ -571,6 +576,8 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             return json(["sessions": [], "query": "", "count": 0])
         case "/api/session":
             return UITestChatScenario.current == nil ? sessionResponse() : chatSessionResponse()
+        case "/api/media" where UITestFixtureEnvironment.hasTranscriptMedia:
+            return url.query?.contains(".mp3") == true ? transcriptMediaAudio : transcriptMediaImage
         case "/api/background/tasks" where UITestFixtureEnvironment.hasBackgroundUpdates:
             return json(["session_id": sessionID, "agent_available": true, "tasks": Self.backgroundTasks()])
         case "/api/background/result" where UITestFixtureEnvironment.hasBackgroundUpdates:
@@ -763,6 +770,11 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             detail["messages"] = longBodyMessages
             return json(["session": detail])
         }
+        if UITestFixtureEnvironment.hasTranscriptMedia {
+            var detail = session(id: sessionID, title: sessionTitle)
+            detail["messages"] = transcriptMediaMessages
+            return json(["session": detail])
+        }
         let messageCount = UITestFixtureEnvironment.isDense ? 600 : 48
         var messages: [[String: Any]] = (0..<messageCount).map { index in
             [
@@ -862,6 +874,76 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
 
     /// Mixed text-and-link content that pins deterministic long-press targets for
     /// the message-action interaction tests (TAL-49).
+    /// TAL-186: a reply with images inside bold text, a list item, a quote and a link, and an audio file, in the
+    /// server's shape: `content` as written, and `_display_content`, `_media` and the scene's display fields
+    /// rewritten to `/api/media` URLs. Every image URL serves `transcriptMediaImage`.
+    private static var transcriptMediaMessages: [[String: Any]] {
+        let chart = "./api/media?path=%2Ffixture%2Fout%2Fchart.png&session_id=\(sessionID)"
+        let audio = "./api/media?path=%2Ffixture%2Fout%2Fnarration.mp3&session_id=\(sessionID)"
+        let content = """
+        Here is the run:
+
+        - MEDIA:/fixture/out/chart.png
+        - **Before ![Chart](/fixture/out/chart.png) after**
+        - Narration: MEDIA:/fixture/out/narration.mp3
+
+        > MEDIA:/fixture/out/chart.png
+
+        [![Linked chart](/fixture/out/chart.png)](https://example.invalid/chart)
+        """
+        let display = """
+        Here is the run:
+
+        - ![chart.png](\(chart))
+        - **Before ![Chart](\(chart)) after**
+        - Narration: [narration.mp3](\(audio))
+
+        > ![chart.png](\(chart))
+
+        [![Linked chart](\(chart))](https://example.invalid/chart)
+        """
+        let media: [[String: Any]] = [
+            ["url": chart, "name": "chart.png", "mime": "image/png", "kind": "image"],
+            ["url": audio, "name": "narration.mp3", "mime": "audio/mpeg", "kind": "audio"]
+        ]
+        return [
+            ["role": "user", "content": "Plot the run", "message_id": "ui-fixture-media-user", "_turn_id": "media-turn", "_ts": 2_000_000_300],
+            [
+                "role": "assistant", "content": content, "message_id": "ui-fixture-media-reply", "_turn_id": "media-turn", "_ts": 2_000_000_301,
+                "_display_content": display, "_media": media,
+                "_anchor_activity_scene": [
+                    "version": "activity_scene_v1", "final_answer": content, "final_answer_display": display, "final_answer_media": media,
+                    "terminal_state": "completed",
+                    "activity_rows": [["row_id": "media-thinking", "order_index": 0, "role": "reasoning", "text": "Plot the run.", "titles": ["Plotting"]]]
+                ] as [String: Any]
+            ]
+        ]
+    }
+
+    private static let transcriptMediaImage: Data = UIGraphicsImageRenderer(size: CGSize(width: 240, height: 140)).pngData { context in
+        UIColor.systemTeal.setFill()
+        context.fill(CGRect(x: 0, y: 0, width: 240, height: 140))
+        UIColor.systemIndigo.setFill()
+        for bar in 0..<6 {
+            let height = CGFloat(30 + bar * 16)
+            context.fill(CGRect(x: CGFloat(20 + bar * 36), y: 140 - height - 10, width: 24, height: height))
+        }
+    }
+
+    /// Half a second of 8 kHz mono silence as WAV, which plays wherever the file is named `.mp3`.
+    private static let transcriptMediaAudio: Data = {
+        let samples = 4_000
+        var data = Data("RIFF".utf8)
+        func append<T: FixedWidthInteger>(_ value: T) { withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) } }
+        append(UInt32(36 + samples * 2))
+        data.append(contentsOf: Array("WAVEfmt ".utf8))
+        append(UInt32(16)); append(UInt16(1)); append(UInt16(1)); append(UInt32(8_000)); append(UInt32(16_000)); append(UInt16(2)); append(UInt16(16))
+        data.append(contentsOf: Array("data".utf8))
+        append(UInt32(samples * 2))
+        data.append(Data(count: samples * 2))
+        return data
+    }()
+
     private static let linkInteractionMessages: [[String: Any]] = [
         [
             "role": "user",
@@ -977,6 +1059,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             "message_count": UITestFixtureEnvironment.isDense ? 600 : 48,
             "last_message_at": 2_000_000_000,
             "workspace": "/fixture",
+            "workspace_name": "Fixture Workspace",
             "model": "fixture-model",
             "model_provider": "fixture-provider",
             "profile": "fixture-profile",

@@ -19,7 +19,7 @@ import { useTasksWorkbench } from './TasksPage'
 const full: CronJob = {
   id: 'ab12cd34ef56', name: 'Digest', prompt: 'Summarise the inbox', skills: ['inbox', 'summary'], model: 'gpt-5.6-sol', provider: 'openai-codex', model_option_id: '@openai-codex:gpt-5.6-sol',
   script: 'collect.sh', no_agent: false, monitor: 'https://example.com/status', continuity: true, context_from: ['self', 'feed0000feed'],
-  schedule: { kind: 'cron', expr: '0 9 * * *', display: '0 9 * * *' }, schedule_display: '0 9 * * *', repeat: { times: null, completed: 4 },
+  schedule: { kind: 'cron', expr: '0 9 * * *', display: '0 9 * * *' }, schedule_display: '0 9 * * *', schedule_input: '0 9 * * *', repeat: { times: null, completed: 4 },
   enabled: true, state: 'scheduled', next_run_at: '2026-09-18T09:00:00+02:00', last_run_at: '2026-09-17T09:00:00+02:00', last_status: 'ok',
   last_error: null, last_delivery_error: null, deliver: 'telegram', workdir: '/srv/digest', reasoning_effort: 'high', profile: 'work', toast_notifications: false,
   derived_state: 'active', needs_attention: false, resumable: false,
@@ -152,6 +152,20 @@ describe('TasksPage', () => {
     await userEvent.click(dialog.getByRole('button', { name: /^save$/i }))
     await waitFor(() => expect(api.cronAction).toHaveBeenCalledTimes(1))
     expect(vi.mocked(api.cronAction).mock.calls[0]![1]).toMatchObject({ model: '@custom:localhost:8080:m', provider: 'custom:localhost:8080' })
+  })
+
+  it('shows the server schedule text and prefills the editor with the value the scheduler accepts back (TAL-298)', async () => {
+    const runAt = '2026-10-05T09:00:00+02:00'
+    const once: CronJob = { ...feed, id: '0nce0000once', name: 'Once', schedule: { kind: 'once', run_at: runAt }, schedule_display: `once at ${runAt}`, schedule_input: runAt, repeat: { times: 1, completed: 0 } }
+    const detail = await openJob('Once', [once])
+    expect(within(screen.getByTestId('sidebar')).getByText(`once at ${runAt}`)).toBeVisible()
+    expect(detail.getByText(`once at ${runAt}`, { selector: 'code' })).toBeVisible()
+    await userEvent.click(detail.getByRole('button', { name: /^edit/i }))
+    const dialog = await screen.findByRole('form', { name: /edit job/i })
+    expect(within(dialog).getByLabelText(/schedule/i, { selector: 'input' })).toHaveValue(runAt)
+    await userEvent.click(within(dialog).getByRole('button', { name: /^save$/i }))
+    await waitFor(() => expect(api.cronAction).toHaveBeenCalledTimes(1))
+    expect(api.cronAction).toHaveBeenCalledWith('update', expect.objectContaining({ job_id: '0nce0000once', schedule: runAt }))
   })
 
   it('blocks a script-only save until the monitor is cleared, then sends the cleared name and monitor', async () => {

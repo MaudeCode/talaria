@@ -14,7 +14,7 @@ import { ErrorState, LoadingState } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { cn } from '../../ui/cn'
 import { useModelsQuery, useProfilesQuery } from '../../app/queries'
-import { contextFromList, jobId, scheduleText } from './cronJob'
+import { contextFromList, jobId } from './cronJob'
 import { catalogEntryById } from '../../lib/modelEntry'
 
 export type EditorMode = 'create' | 'edit' | 'duplicate'
@@ -47,7 +47,7 @@ export function JobForm({ mode, job, jobs, onCancel, onSaved }: { mode: EditorMo
   const form = useForm({
     defaultValues: {
       name: mode === 'duplicate' ? copyName(job?.name ?? '') : job?.name ?? '',
-      schedule: job ? scheduleText(job) : '',
+      schedule: job?.schedule_input ?? '',
       prompt: job?.prompt ?? '',
       script: job?.script ?? '',
       no_agent: !!job?.no_agent,

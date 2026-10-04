@@ -164,8 +164,10 @@ struct WorkspaceManagerView: View {
 
     private func workspaceRow(_ workspace: WorkspaceRoot) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(displayName(for: workspace))
-                .font(.body)
+            if let name = workspace.name, !name.isEmpty {
+                Text(name)
+                    .font(.body)
+            }
 
             if let path = workspace.path {
                 Text(path)
@@ -184,13 +186,6 @@ struct WorkspaceManagerView: View {
             .tint(.blue)
             .disabled(viewModel.isMutating)
         }
-    }
-
-    private func displayName(for workspace: WorkspaceRoot) -> String {
-        if let name = workspace.name, !name.isEmpty {
-            return name
-        }
-        return workspace.path?.lastPathComponentFallback ?? ""
     }
 
     private var renameAlertBinding: Binding<Bool> {

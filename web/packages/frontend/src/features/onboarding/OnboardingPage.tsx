@@ -275,7 +275,7 @@ export function OnboardingPage() {
                           <span>{m.onboarding_workspace_label()}</span>
                           <Select id="onboardingWorkspaceSelect" value={workspaces.some((w) => w.path === field.state.value) ? field.state.value : ''} onValueChange={(v) => field.handleChange(v)}>
                             <option value="">—</option>
-                            {workspaces.map((w) => <option key={w.path} value={w.path}>{w.name ?? w.path} — {w.path}</option>)}
+                            {workspaces.map((w) => <option key={w.path} value={w.path}>{w.name} — {w.path}</option>)}
                           </Select>
                         </label>
                         <label className="onboarding-field flex flex-col gap-1 text-sm">

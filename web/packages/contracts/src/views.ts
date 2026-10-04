@@ -60,10 +60,22 @@ export const BackgroundLinkSchema = z.object({
 })
 export type BackgroundLink = z.infer<typeof BackgroundLinkSchema>
 
+/**
+ * TAL-186: one local or remote media reference the server recognized in a message's Markdown (a `MEDIA:` token, a bare
+ * `file://` URL or a local image destination), in content order. `url` is relative to the app root (`./api/media?path=…&session_id=…`)
+ * for a local file the `/api/media` allow-list serves, or the remote `http(s)` URL as written. Clients render `image`
+ * items inline from the display text and every other kind as a tile after it. A remote URL without a file
+ * extension has no known kind and is a `file`.
+ */
+export const DisplayMediaSchema = z.object({ url: z.string(), name: z.string(), mime: z.string(), kind: z.enum(['image', 'audio', 'video', 'pdf', 'file']) })
+export type DisplayMedia = z.infer<typeof DisplayMediaSchema>
+
 /** One normalized activity row: the server decides role, order, tool completion/error, and steering consumption. */
 export const ActivitySceneRowSchema = z.looseObject({
   row_id: z.string(), order_index: z.number().int(), role: z.enum(['prose', 'reasoning', 'tool', 'steering']), created_at: z.number().optional(),
   text: z.string().optional(), titles: z.array(z.string()).optional(),
+  /** TAL-186: a prose row's `text` with its media references rewritten for display (see `_display_content`), and its media. */
+  display_text: z.string().optional(), media: z.array(DisplayMediaSchema).optional(),
   tool: z.looseObject({ id: z.string(), name: z.string(), ...ToolDisplayFields, args: Json.optional(), preview: z.string().nullable(), result: Json.optional(), done: z.boolean(), is_error: z.boolean(), duration: z.number().nullable(), cost_usd: z.number().nullable(), background: BackgroundLinkSchema.optional() }).optional(),
   steering: z.looseObject({ steer_id: z.string(), consumed: z.boolean(), submitted_at: z.number().nullable(), consumed_at: z.number().nullable(), phase_duration: z.number().nullable().optional() }).optional(),
 })
@@ -82,6 +94,8 @@ export const ActivitySceneSchema = z.looseObject({
   version: z.literal('activity_scene_v1'), activity_rows: z.array(ActivitySceneRowSchema), final_answer: z.string().optional(),
   /** TAL-456: a settled final answer too long to lay out whole; clients render it collapsed, with a local "Show more". */
   final_answer_excerpt: z.string().optional(), turn_duration: z.number().nullable().optional(),
+  /** TAL-186: `final_answer` with its media references rewritten for display (see `_display_content`), and its media. */
+  final_answer_display: z.string().optional(), final_answer_media: z.array(DisplayMediaSchema).optional(),
   /** The turn's outcome (`completed`, `no_response`, `error`, `cancelled`, `interrupted`, `tool_limit_reached`, ...). */
   terminal_state: z.string().optional(),
   /** Whether the "Worked" disclosure opens by default: an unsuccessful outcome with work to read. */
@@ -122,6 +136,14 @@ export const MessageSchema = z.looseObject({
   /** A settled body too long to lay out whole: clients render `_display_excerpt` collapsed, with a local "Show more" for `content`. */
   _display_truncated: z.boolean().optional(),
   _display_excerpt: z.string().optional(),
+  /**
+   * TAL-186: an assistant row's text with each media reference the server serves rewritten to standard Markdown: an
+   * image to `![alt](url)`, any other file to `[name](url)`. Clients render it in place of `content` as one Markdown
+   * document; `content` stays as stored for copy and edit. Absent when the text has no such reference.
+   */
+  _display_content: z.string().optional(),
+  /** TAL-186: the media `_display_content` references, in content order. */
+  _media: z.array(DisplayMediaSchema).optional(),
   /**
    * TAL-371: an automatic background wakeup (delegation results, background process or watch notice), not a message the
    * user sent. Clients render it as a "Background update" disclosure: a localized label per `kind` (with `count`), a
@@ -187,6 +209,12 @@ export const SourceKindSchema = z.enum(['webui', 'cli', 'messaging', 'cron', 'we
   .describe('The session\'s source family. `is_cli_session` is true only for `cli` and `claude_code`.')
 const IsMessagingSessionSchema = z.boolean().describe('`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it.')
 
+/**
+ * The label every client shows for the session's workspace: its registered name in the session profile's registry, else
+ * the folder name (TAL-303). Null without a workspace; absent from an older server, where clients show no label.
+ */
+const WorkspaceNameSchema = NullableString.optional()
+
 /** Full session record from `GET /api/session` and mutations returning `session`. */
 export const SessionSchema = z.looseObject({
   session_id: SessionIdSchema, title: z.string(), workspace: z.string().optional(), created_workspace: z.string().nullable().optional(), model: NullableString.optional(), model_provider: NullableString.optional(),
@@ -210,6 +238,7 @@ export const SessionSchema = z.looseObject({
   transcript_seq: z.object({ stream_id: z.string(), seq: z.number().int().nonnegative() }).nullable().optional(),
   /** The agent's display name: a named profile's own name, else the `bot_name` setting (TAL-458). */
   assistant_name: z.string().optional(),
+  workspace_name: WorkspaceNameSchema,
 })
 export type Session = z.infer<typeof SessionSchema>
 export const SessionEnvelopeSchema = z.looseObject({ session: SessionSchema })
@@ -220,7 +249,8 @@ export const SessionRowSchema = z.looseObject({
   message_count: z.number().optional(), pinned: z.boolean().optional(), archived: z.boolean().optional(), project_id: NullableString.optional(), profile: NullableString.optional(), is_streaming: IsStreamingSchema,
   is_cli_session: z.boolean().optional(), source_kind: SourceKindSchema, is_messaging_session: IsMessagingSessionSchema, cron_running: z.boolean().optional(), read_only: ReadOnlySchema, can_branch: CanBranchSchema, can_pin: CanPinSchema, can_archive: CanArchiveSchema, can_duplicate: CanDuplicateSchema, attention: z.looseObject({ kind: z.string().optional(), count: z.number().optional() }).nullable().optional(),
   source_tag: NullableString.optional(), source_label: NullableString.optional(), session_source: NullableString.optional(), raw_source: NullableString.optional(), parent_session_id: NullableString.optional(),
-  active_stream_id: ActiveStreamIdSchema, share_token: NullableString.optional(), worktree_branch: NullableString.optional(), match_type: z.string().optional(), match_preview: NullableString.optional(),
+  active_stream_id: ActiveStreamIdSchema, share_token: NullableString.optional(), worktree_branch: NullableString.optional(), match_type: z.enum(['title', 'metadata', 'content']).optional(), match_preview: NullableString.optional(),
+  workspace_name: WorkspaceNameSchema,
   ...ContextUsageFields,
 })
 export type SessionRow = z.infer<typeof SessionRowSchema>
@@ -440,7 +470,8 @@ export const MaxTokensSchema = z.looseObject({ max_tokens: NullableNumber, max_t
 
 // ── workspaces, files, git ───────────────────────────────────────────────
 
-export const WorkspaceEntrySchema = z.looseObject({ name: z.string().optional(), path: z.string() })
+/** A registry entry; `name` is never empty (the folder name when none is registered, `Home` for `default`), so pickers show it as-is (TAL-303). */
+export const WorkspaceEntrySchema = z.looseObject({ name: z.string().min(1), path: z.string() })
 export type Workspace = z.infer<typeof WorkspaceEntrySchema>
 export const WorkspacesSchema = z.looseObject({ workspaces: z.array(WorkspaceEntrySchema), last: NullableString.optional(), terminal_remote_backend: z.boolean().optional() })
 export type Workspaces = z.infer<typeof WorkspacesSchema>
@@ -466,9 +497,22 @@ export const MemorySchema = z.looseObject({
 export type Memory = z.infer<typeof MemorySchema>
 export const PromptSchema = z.looseObject({ id: z.string().optional(), name: z.string().optional(), title: z.string().optional(), label: z.string().optional(), text: z.string().optional(), content: z.string().optional(), created_at: z.number().optional() })
 export const PromptsSchema = z.looseObject({ prompts: z.array(PromptSchema) })
-export const CommandRowSchema = z.looseObject({ name: z.string(), description: z.string().optional(), aliases: z.array(z.string()).optional(), args_hint: z.string().optional(), category: z.string().optional(), cli_only: z.boolean().optional(), gateway_only: z.boolean().optional(), subcommands: z.array(Json).optional() })
+/**
+ * One slash command in the server's canonical catalog (TAL-314). `GET /api/commands` lists the client-handled commands
+ * first, then the Agent registry, in display order; each name appears once. `handler` says who runs it, `clients` which
+ * clients can run it, and `unsupported_message` is the English text a client outside `clients` shows when it is typed.
+ * Clients suggest the entries listing them whose name or any alias starts with the typed text (case-insensitive), and
+ * resolve a typed alias to the entry's `name`.
+ */
+export const CommandClientSchema = z.enum(['web', 'ios'])
+export const CommandRowSchema = z.looseObject({
+  name: z.string(), description: z.string().optional(), aliases: z.array(z.string()), args_hint: z.string().optional(), category: z.string().optional(),
+  handler: z.enum(['client', 'agent']), clients: z.array(CommandClientSchema), unsupported_message: z.string().optional(),
+  cli_only: z.boolean().optional(), gateway_only: z.boolean().optional(), subcommands: z.array(Json).optional(),
+})
 export const CommandsSchema = z.looseObject({ commands: z.array(CommandRowSchema) })
 export type Command = z.infer<typeof CommandRowSchema>
+export type CommandClient = z.infer<typeof CommandClientSchema>
 export const LogsSchema = z.looseObject({ file: z.string(), tail: z.number().optional(), lines: z.array(z.string()), truncated: z.boolean().optional(), total_bytes: z.number().optional(), mtime: NullableNumber.optional(), hint: z.string().optional() })
 export type Logs = z.infer<typeof LogsSchema>
 export const InsightsSchema = z.looseObject({
@@ -590,7 +634,8 @@ export const CronDerivedStateSchema = z.enum(['needs_attention', 'schedule_error
 export type CronDerivedState = z.infer<typeof CronDerivedStateSchema>
 export const CronJobViewSchema = z.looseObject({
   read_only: z.boolean().optional(), owner_profile: NullableString.optional(), id: z.string().optional(), job_id: z.string().optional(), name: z.string().nullable().optional(), prompt: z.string().optional(), schedule: z.union([z.string(), CronScheduleSchema]).optional(),
-  schedule_display: z.string().optional(), enabled: z.boolean().optional(), paused: z.boolean().optional(), paused_reason: NullableString.optional(), state: NullableString.optional(), last_status: NullableString.optional(), last_error: NullableString.optional(),
+  /** Server-filled (TAL-298): `schedule_display` is the schedule text clients show; `schedule_input` is the editor prefill the scheduler accepts back. */
+  schedule_display: z.string(), schedule_input: z.string(), enabled: z.boolean().optional(), paused: z.boolean().optional(), paused_reason: NullableString.optional(), state: NullableString.optional(), last_status: NullableString.optional(), last_error: NullableString.optional(),
   last_delivery_error: NullableString.optional(), next_run_at: z.union([z.string(), z.number(), z.null()]).optional(), last_run_at: z.union([z.string(), z.number(), z.null()]).optional(), repeat: z.union([CronRepeatSchema, z.number(), z.null()]).optional(),
   status: z.string().optional(), last_run: Json.optional(), next_run: Json.optional(), profile: NullableString.optional(), session_id: NullableString.optional(), model: NullableString.optional(), provider: NullableString.optional(), model_option_id: NullableString.optional(), workspace: NullableString.optional(),
   workdir: NullableString.optional(), deliver: NullableString.optional(), skills: z.array(z.string()).optional(), no_agent: z.boolean().optional(), script: NullableString.optional(), monitor: NullableString.optional(), continuity: z.boolean().optional(),

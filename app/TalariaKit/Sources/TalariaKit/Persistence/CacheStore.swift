@@ -297,6 +297,7 @@ private extension SessionSummary {
         sessionId = cachedSession.sessionID
         title = cachedSession.title
         workspace = cachedSession.workspace
+        workspaceName = cachedSession.workspaceName
         model = cachedSession.model
         modelProvider = cachedSession.modelProvider
         // Pairs with the live catalog only; the cached row has none (TAL-301).
@@ -378,6 +379,7 @@ private extension ChatMessage {
             turnId: cachedMessage.turnId,
             steer: cachedMessage.steerData.flatMap { try? JSONDecoder().decode([String: JSONValue].self, from: $0) },
             displayExcerpt: cachedMessage.displayExcerpt,
+            displayBody: cachedMessage.displayBodyData.flatMap { try? JSONDecoder().decode(TranscriptDisplayBody.self, from: $0) },
             backgroundUpdate: cachedMessage.backgroundUpdateData.flatMap { try? JSONDecoder().decode(BackgroundUpdate.self, from: $0) },
             backgroundSilent: cachedMessage.backgroundSilent == true,
             markerKind: ChatMarkerMessageKind(wireValue: cachedMessage.markerKind),

@@ -17,6 +17,16 @@ export const SessionsListQuerySchema = z.object({
   show_cli_sessions: z.string().optional(), show_claude_code_sessions: z.string().optional(), show_cron_sessions: z.string().optional(),
   show_webhook_sessions: z.string().optional(), show_kanban_sessions: z.string().optional(),
 })
+export type SessionsListQuery = z.infer<typeof SessionsListQuerySchema>
+
+/**
+ * TAL-308: the sidebar search. Any filter here (`project_id`: a project id or `none`; `sidebar_source`; `include_archived`;
+ * a `show_*` override) selects the `/api/sessions` rows and order, so the response is the complete result and says
+ * `sidebar_filtered: true`. Without one the search keeps its older store-only behavior.
+ */
+export const SessionsSearchQuerySchema = SessionsListQuerySchema.omit({ archived_limit: true, archived_offset: true }).extend({
+  q: z.string().optional(), content: z.string().optional(), depth: z.string().optional(), project_id: z.string().optional(),
+})
 
 export const SessionDetailQuerySchema = z.object({ session_id: z.string(), messages: z.string().optional(), msg_limit: z.string().optional(), msg_before: z.string().optional(), resolve_model: z.string().optional(), expand_renderable: z.string().optional() })
 
@@ -45,7 +55,7 @@ export const CompressionStatusSchema = z.looseObject({
 export const sessionsContract = {
   sessions: {
     list: oc.route({ method: 'GET', path: '/api/sessions', tags, summary: 'Sidebar rows for the active profile.' }).input(SessionsListQuerySchema).output(SessionsListSchema),
-    search: oc.route({ method: 'GET', path: '/api/sessions/search', tags }).input(z.object({ q: z.string().optional(), content: z.string().optional(), depth: z.string().optional(), all_profiles: z.string().optional() })).output(z.looseObject({ sessions: z.array(SessionRowSchema), query: z.string().optional(), count: z.number().int().optional(), all_profiles: z.boolean(), active_profile: z.string() })),
+    search: oc.route({ method: 'GET', path: '/api/sessions/search', tags, summary: 'Title, metadata and content matches; any sidebar filter answers from the /api/sessions rows, in their order.' }).input(SessionsSearchQuerySchema).output(z.looseObject({ sessions: z.array(SessionRowSchema), query: z.string().optional(), count: z.number().int().optional(), all_profiles: z.boolean(), active_profile: z.string(), sidebar_filtered: z.boolean().optional() })),
     cleanupZeroMessage: oc.route({ method: 'POST', path: '/api/sessions/cleanup_zero_message', tags }).input(z.object({}).catchall(Json)).output(z.object({ ok: z.literal(true), cleaned: z.number().int() })),
   },
   session: {

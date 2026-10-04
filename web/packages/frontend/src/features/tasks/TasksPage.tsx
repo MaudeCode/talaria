@@ -22,7 +22,7 @@ import { ConfirmDialog } from '../../ui/Dialog'
 import { EmptyState, ErrorState, LoadingState, formatBytes, formatDate } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { cn } from '../../ui/cn'
-import { contextFromList, cronDiagnostics, cronState, jobId, lastRunAt, nextRunAt, runResponse, runningIds, scheduleText, usageStrip, type CronState } from './cronJob'
+import { contextFromList, cronDiagnostics, cronState, jobId, lastRunAt, nextRunAt, runResponse, runningIds, usageStrip, type CronState } from './cronJob'
 import { Markdown } from '../chat/render/Markdown'
 import { JobForm, type EditorMode } from './JobForm'
 
@@ -186,7 +186,7 @@ function TaskListPanel({ jobs, pending, error, otherProfileCount, allProfiles, r
           <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{job.name || m.untitled()}</span>
           <span className={cn('shrink-0 text-[11px]', active ? 'opacity-80' : st.tone)}>{st.label}</span>
         </span>
-        <span className="truncate font-mono text-[11px] opacity-70">{scheduleText(job)}</span>
+        <span className="truncate font-mono text-[11px] opacity-70">{job.schedule_display}</span>
       </button>
     )
   }
@@ -306,7 +306,7 @@ function TaskDetail({ job, jobs, state, onAction, onEdit, onDuplicate, onDelete 
             <h2 className="mb-2 text-xs font-medium text-muted">{m.cron_schedule_preset_label()}</h2>
             <dl className={DL}>
               <Row label={m.cron_status_label()}><span className={st.tone}>{st.label}</span>{job.paused_reason && <span className="text-muted"> · {job.paused_reason}</span>}</Row>
-              <Row label={m.cron_schedule_preset_label()}><code>{scheduleText(job)}</code></Row>
+              <Row label={m.cron_schedule_preset_label()}><code>{job.schedule_display}</code></Row>
               <Row label={m.cron_next()}>{nextRun ? formatDate(nextRun) : m.not_available()}</Row>
               <Row label={m.cron_last()}>{lastRun ? formatDate(lastRun) : m.never()}</Row>
               <Row label={m.cron_deliver_label()}>{job.deliver || 'local'}</Row>

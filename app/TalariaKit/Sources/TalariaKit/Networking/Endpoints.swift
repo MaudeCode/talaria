@@ -13,7 +13,7 @@ public enum Endpoint {
         archivedLimit: Int? = nil,
         visibility: AutomatedSessionVisibility? = nil
     )
-    case sessionsSearch(query: String, content: Bool, depth: Int)
+    case sessionsSearch(query: String, content: Bool, depth: Int, projectID: String? = nil, visibility: AutomatedSessionVisibility? = nil)
     case session(id: String, includeMessages: Bool, messageLimit: Int?, messageBefore: Int?, expandRenderable: Bool = false)
     case sessionStatus(id: String)
     case anchorScene(sessionID: String, messageRef: String?, messageIndex: Int, before: Int, limit: Int)
@@ -475,12 +475,24 @@ public enum Endpoint {
             }
 
             return items
-        case let .sessionsSearch(query, content, depth):
-            return [
+        case let .sessionsSearch(query, content, depth, projectID, visibility):
+            var items = [
                 URLQueryItem(name: "q", value: query),
                 URLQueryItem(name: "content", value: content ? "1" : "0"),
                 URLQueryItem(name: "depth", value: "\(depth)")
             ]
+            // TAL-308: the sidebar's filters make the server answer from the list's own rows.
+            if let projectID {
+                items.append(URLQueryItem(name: "project_id", value: projectID))
+            }
+            if let visibility {
+                items.append(URLQueryItem(name: "include_archived", value: "0"))
+                items.append(URLQueryItem(name: "show_cli_sessions", value: visibility.showsCli ? "1" : "0"))
+                items.append(URLQueryItem(name: "show_claude_code_sessions", value: visibility.showsClaudeCode ? "1" : "0"))
+                items.append(URLQueryItem(name: "show_cron_sessions", value: visibility.showsCron ? "1" : "0"))
+                items.append(URLQueryItem(name: "show_webhook_sessions", value: visibility.showsWebhook ? "1" : "0"))
+            }
+            return items
         case let .session(id, includeMessages, messageLimit, messageBefore, expandRenderable):
             var items = [
                 URLQueryItem(name: "session_id", value: id),

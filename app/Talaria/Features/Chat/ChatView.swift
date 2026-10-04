@@ -255,6 +255,7 @@ struct ChatView: View {
             selectedModelTitle: viewModel.selectedModelTitle,
             workspaceRoots: viewModel.workspaceRoots,
             selectedWorkspacePath: viewModel.selectedWorkspacePath,
+            selectedWorkspaceName: viewModel.selectedWorkspaceName,
             workspaceSuggestions: viewModel.workspaceSuggestions,
             workspaceManagementServer: server,
             personalitySuggestions: viewModel.personalitySuggestions,
@@ -410,7 +411,6 @@ struct ChatView: View {
     private func transcriptMediaPreviewView(for item: TranscriptMediaPreviewItem) -> some View {
         TranscriptMediaPreviewView(
             server: server,
-            sessionID: transcriptMediaSessionID,
             item: item,
             onAPIError: onAPIError
         )
@@ -1225,7 +1225,6 @@ struct ChatView: View {
             }
         )
         .environment(\.openURL, OpenURLAction(handler: handleTranscriptLink))
-        .environment(\.transcriptMediaWorkspaceRoot, viewModel.selectedWorkspacePath)
         .environment(\.pendingSteerControls, PendingSteerControls(
             actions: viewModel.pendingSteerActions,
             inFlight: viewModel.steerActionsInFlight,
@@ -1373,16 +1372,11 @@ struct ChatView: View {
     }
 
     private var composerWorkspaceTitle: String {
-        guard let path = viewModel.selectedWorkspacePath, !path.isEmpty else {
+        guard let name = viewModel.selectedWorkspaceName, !name.isEmpty else {
             return String(localized: "Workspace")
         }
 
-        if let name = viewModel.workspaceRoots.first(where: { $0.path == path })?.name,
-           !name.isEmpty {
-            return name
-        }
-
-        return path.lastPathComponentFallback
+        return name
     }
 
     private var pinnedNoticeSpacerHeight: CGFloat {
@@ -1449,7 +1443,7 @@ struct ChatView: View {
 
     private var headerSubtitle: String? {
         ChatToolbarSubtitleResolver.subtitle(
-            workspacePath: viewModel.selectedWorkspacePath,
+            workspaceName: viewModel.selectedWorkspaceName,
             profileTitle: viewModel.selectedProfileTitle
         )
     }
@@ -1641,7 +1635,7 @@ struct ChatView: View {
         let shouldRestoreFocusAfterSend = composerIsFocused
 
         if submittedDraft.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("/") {
-            let parsedCommand = SlashCommandExecutor.parse(submittedDraft)?.command
+            let parsedCommand = SlashCommandExecutor.parse(submittedDraft, catalog: viewModel.agentCommands)?.command
             let result = await SlashCommandExecutor.execute(text: submittedDraft, viewModel: viewModel)
             handleSlashExecutionResult(
                 result,

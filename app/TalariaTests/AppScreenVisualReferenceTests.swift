@@ -195,6 +195,7 @@ final class AppScreenVisualReferenceTests: XCTestCase {
               "session_id": "session-visual-reference",
               "title": "Wire the relay pairing handshake",
               "workspace": "/Users/talaria/git/hermes-webui",
+              "workspace_name": "hermes-webui",
               "message_count": 42,
               "last_message_at": \(lastMessageAt),
               "pinned": true

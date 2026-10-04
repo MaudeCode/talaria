@@ -24,6 +24,9 @@ public struct AuthStatusResponse: Decodable {
     /// A newer OIDC server can exchange a system-browser login for the normal
     /// HttpOnly WebUI session cookie without placing that cookie in a callback.
     public let oidcNativeHandoffEnabled: Bool?
+    /// The server may use single sign-on but cannot read its SSO settings yet,
+    /// so it withholds SSO while sign-in stays required.
+    public let oidcUnavailable: Bool?
     /// Set when an identity proxy in front of the server authenticates the
     /// request (Cloudflare Access, Authentik). Present only when that mode is
     /// on, so nil means "not that kind of server".
@@ -42,6 +45,7 @@ public struct AuthStatusResponse: Decodable {
         passwordlessEnabled: Bool? = nil,
         oidcEnabled: Bool? = nil,
         oidcNativeHandoffEnabled: Bool? = nil,
+        oidcUnavailable: Bool? = nil,
         trustedAuthEnabled: Bool? = nil
     ) {
         self.authEnabled = authEnabled
@@ -51,6 +55,7 @@ public struct AuthStatusResponse: Decodable {
         self.passwordlessEnabled = passwordlessEnabled
         self.oidcEnabled = oidcEnabled
         self.oidcNativeHandoffEnabled = oidcNativeHandoffEnabled
+        self.oidcUnavailable = oidcUnavailable
         self.trustedAuthEnabled = trustedAuthEnabled
     }
 }

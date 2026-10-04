@@ -513,6 +513,52 @@ describe('session lifecycle over HTTP', () => {
   })
 })
 
+describe('sidebar search filters (TAL-308)', () => {
+  let s: TestServer
+  beforeAll(async () => { s = await bootTestServer() })
+  afterAll(() => s.close())
+
+  it('answers from the sidebar rows: project, source, archived, match types, projection and order', async () => {
+    const project = String(((await json(await post(s, '/api/projects/create', { name: 'Filtered' }))).project as Json).project_id)
+    const seed = async (title: string, fields: Partial<Session>, text: string, ts: number): Promise<string> => {
+      const sid = String((await newSession(s)).session_id)
+      const stored = s.deps.sessionStore.get(sid)
+      Object.assign(stored, { title, ...fields })
+      stored.messages = [{ role: 'user', content: text, timestamp: ts }, { role: 'assistant', content: 'ok', timestamp: ts + 1 }]
+      s.deps.sessionStore.save(stored)
+      return sid
+    }
+    const inProject = await seed('Alpha plan', { project_id: project, model: 'gpt-5-mini' }, 'the zebra crossing', 5000)
+    const elsewhere = await seed('Beta', { project_id: null }, 'another zebra', 6000)
+    const archived = await seed('Gamma', { project_id: project, archived: true }, 'archived zebra', 7000)
+    const cli = await seed('Cli zebra work', { project_id: project, session_source: 'cli', source_tag: 'cli' }, 'cli turn', 4000)
+    const stale = await seed('Delta', { project_id: project, active_stream_id: 'deadstream308', pending_user_message: 'pending', pending_started_at: Date.now() / 1000 }, 'stale zebra', 3000)
+    const search = async (query: string): Promise<Json> => json(await s.get(`/api/sessions/search?${query}`))
+    const ids = (body: Json): string[] => (body.sessions as Json[]).map((r) => String(r.session_id))
+
+    const all = await search(`q=zebra&project_id=${project}&show_cli_sessions=1`)
+    // Only this project's sidebar rows, in the list's own order.
+    const listed = ids(await json(await s.get('/api/sessions?show_cli_sessions=1'))).filter((id) => [inProject, cli, stale].includes(id))
+    expect(ids(all)).toEqual(listed)
+    expect(all.sidebar_filtered).toBe(true)
+    const types = Object.fromEntries((all.sessions as Json[]).map((r) => [String(r.session_id), String(r.match_type)]))
+    expect(types).toEqual({ [inProject]: 'content', [cli]: 'title', [stale]: 'content' })
+    expect((all.sessions as Json[]).find((r) => r.session_id === inProject)?.match_preview).toBe('the zebra crossing')
+    expect((all.sessions as Json[]).find((r) => r.session_id === stale)).toMatchObject({ is_streaming: false, active_stream_id: null })
+    expect(ids(await search(`q=zebra&project_id=${project}&show_cli_sessions=1&sidebar_source=webui`)).sort()).toEqual([inProject, stale].sort())
+    expect(ids(await search(`q=zebra&project_id=${project}&show_cli_sessions=1&sidebar_source=cli`))).toEqual([cli])
+    expect(ids(await search(`q=zebra&project_id=${project}&include_archived=1`))).toContain(archived)
+    expect(ids(await search('q=zebra&project_id=none'))).toEqual([elsewhere])
+    expect(ids(await search('q=zebra&project_id=unknown-project'))).toEqual([])
+    const metadata = await search('q=gpt-5&include_archived=0')
+    expect(metadata.sessions).toEqual([expect.objectContaining({ session_id: inProject, match_type: 'metadata' })])
+    // Without a filter the older store-wide search stays: other projects and archived rows included.
+    const legacy = await search('q=zebra')
+    expect(legacy.sidebar_filtered).toBeUndefined()
+    expect(ids(legacy)).toEqual(expect.arrayContaining([inProject, elsewhere, archived]))
+  })
+})
+
 describe('session store disk freshness', () => {
   let s: TestServer
   beforeAll(async () => { s = await bootTestServer() })
@@ -975,6 +1021,28 @@ describe('session detail collapses very long message bodies (TAL-456)', () => {
   })
 })
 
+describe('session detail rewrites media references for display (TAL-186)', () => {
+  let s: TestServer
+  beforeAll(async () => { s = await bootTestServer() })
+  afterAll(() => s.close())
+
+  it('serves the shared media example exactly as the contract fixture records it', async () => {
+    const fixturePath = join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json')
+    const fixture = (JSON.parse(readFileSync(fixturePath, 'utf8')) as Json).media_session as Json
+    const sid = String((await newSession(s)).session_id)
+    const session = s.deps.sessionStore.get(sid)
+    // Synthetic paths that exist nowhere: the reply's own MEDIA: token grants the chart, so the URLs are the same on every host.
+    session.workspace = String(fixture.workspace)
+    session.messages = fixture.stored as Json[]
+    s.deps.sessionStore.save(session)
+    for (const query of ['', '&msg_limit=50']) {
+      const served = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1${query}`))).session as Json).messages
+      const shared = JSON.parse(JSON.stringify(served).replaceAll(sid, String(fixture.session_id))) as Json[]
+      expect(shared, query).toEqual(fixture.messages)
+    }
+  })
+})
+
 describe('session detail with legacy string attachments (TAL-277)', () => {
   let s: TestServer
   beforeAll(async () => { s = await bootTestServer() })
@@ -1373,6 +1441,58 @@ describe('session detail resolves each tool call\'s outcome (TAL-313)', () => {
       expect({ ...actual, session_id: fixture.session_id }).toEqual(fixture)
     } finally {
       s.deps.registry.liveIds.delete(RUN)
+    }
+  })
+})
+
+describe('server-resolved workspace display names (TAL-303)', () => {
+  it('ships the registered name, else the basename, on detail, list and search rows, from each session profile\'s registry', async () => {
+    const s = await bootTestServer()
+    try {
+      const root = realpathSync(s.state)
+      const [registered, unregistered, home, unnamed] = ['src/talaria-main', 'src/scratch', 'home-ws', 'src/unnamed'].map((p) => join(root, p))
+      for (const dir of [registered!, unregistered!, home!, unnamed!]) mkdirSync(dir, { recursive: true })
+      const registry = [{ path: registered, name: 'Talaria' }, { path: home, name: 'default' }, { path: unnamed, name: '' }]
+      writeFileSync(join(s.state, 'workspaces.json'), JSON.stringify(registry))
+      // The `work` profile names the same folder differently; its rows follow its own registry.
+      const workState = join(s.state, 'profiles', 'work', 'webui_state')
+      mkdirSync(workState, { recursive: true })
+      writeFileSync(join(workState, 'workspaces.json'), JSON.stringify([{ path: registered, name: 'Work Talaria' }]))
+      // Its config.yaml exists but has never been read, so its terminal backend is still unknown: a label grants no access, so
+      // the name holds on the first read too.
+      writeFileSync(join(s.state, 'profiles', 'work', 'config.yaml'), 'model: work-model\n')
+      const dir = s.deps.sessionStore.sessionDir
+      mkdirSync(dir, { recursive: true })
+      const base = { title: 'needle', message_count: 1, last_message_at: 100, updated_at: 100, archived: false }
+      const rows = [
+        { ...base, session_id: 'ws-registered', workspace: registered, profile: 'default' },
+        { ...base, session_id: 'ws-unregistered', workspace: unregistered, profile: 'default' },
+        { ...base, session_id: 'ws-home', workspace: home, profile: 'default' },
+        { ...base, session_id: 'ws-unnamed', workspace: unnamed, profile: 'default' },
+        { ...base, session_id: 'ws-work', workspace: registered, profile: 'work' },
+        { ...base, session_id: 'ws-ghost', workspace: registered, profile: 'ghost' },
+      ]
+      for (const row of rows) writeFileSync(join(dir, `${row.session_id}.json`), JSON.stringify({ ...row, messages: [{ role: 'user', content: 'needle' }] }))
+      writeFileSync(s.deps.sessionStore.indexFile, JSON.stringify(rows))
+      const want = { 'ws-registered': 'Talaria', 'ws-unregistered': 'scratch', 'ws-home': 'Home', 'ws-unnamed': 'unnamed', 'ws-work': 'Work Talaria', 'ws-ghost': 'talaria-main' }
+      for (const path of ['/api/sessions?all_profiles=1', '/api/sessions/search?q=needle&all_profiles=1', '/api/sessions/search?q=&all_profiles=1']) {
+        const listed = (await json(await s.get(path))).sessions as Json[]
+        expect(Object.fromEntries(listed.map((r) => [r.session_id, r.workspace_name])), path).toEqual(want)
+      }
+      // Naming reads a registry; it never creates a profile's state for a row that names one without any.
+      expect(existsSync(join(s.state, 'profiles', 'ghost'))).toBe(false)
+      for (const sid of ['ws-registered', 'ws-unregistered', 'ws-home', 'ws-unnamed']) {
+        const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
+        expect(detail.workspace_name, sid).toBe(want[sid as keyof typeof want])
+      }
+      // Pickers read the same names: no registry entry is ever nameless.
+      const listedWorkspaces = (await json(await s.get('/api/workspaces'))).workspaces as Json[]
+      expect(listedWorkspaces.map((w) => [w.path, w.name])).toEqual([[registered, 'Talaria'], [home, 'Home'], [unnamed, 'unnamed']])
+      // A rename shows on the next read.
+      expect((await post(s, '/api/workspaces/rename', { path: registered, name: 'Renamed' })).status).toBe(200)
+      expect(((await json(await s.get('/api/session?session_id=ws-registered'))).session as Json).workspace_name).toBe('Renamed')
+    } finally {
+      await s.close()
     }
   })
 })

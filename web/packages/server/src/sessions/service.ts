@@ -20,13 +20,15 @@ import { attachTodoState } from './todo.js'
 import { stateDbSessionMessages, stateDbSessionRow, stateDbSessionSources } from './state-db.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { SidecarError, type SidecarLike } from '../sidecar/client.js'
-import { attachmentObjects, isContextCompressionMarker, mergeSessionMessagesAppendOnly, pendingUserRow, sanitizeMessagesForApi, stripWorkspacePrefix, withAttachmentObjects, withBodyExcerpts, withMarkerKinds, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput } from './merge.js'
+import { attachmentObjects, isContextCompressionMarker, mergeSessionMessagesAppendOnly, pendingUserRow, sanitizeMessagesForApi, stripWorkspacePrefix, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput } from './merge.js'
 import { withBackgroundUpdates } from './background-updates.js'
 import { withBackgroundLinks, type Receipt } from './background-tasks.js'
 import { messagesForLimitedPayload, messageWindowForDisplay, MAX_MSG_LIMIT, parseMsgLimit, toolCallsForMessageWindow } from './window.js'
 import { redactText } from '../redact.js'
-import type { WorkspaceRegistry } from '../workspace/workspaces.js'
+import { workspaceDisplayName, type WorkspaceEntry, type WorkspaceRegistry } from '../workspace/workspaces.js'
 import { buildShareSnapshot, type ShareStore } from './shares.js'
+import { mediaAnchorRoot, mediaRefPath, mediaTarget, type MediaAccessDeps } from '../workspace/media.js'
+import { projectMediaRefs, type MediaProjection } from '../workspace/media-refs.js'
 import type { ProjectStore } from '../projects.js'
 import { loadGatewaySessionIdentityMap } from './list.js'
 import { join } from 'node:path'
@@ -118,6 +120,8 @@ export interface SessionServiceDeps {
   profileHome: (profile: string) => string
   /** Python `commit_session_memory` (fire-and-forget): the cached Agent flushes memory for a session the user left. */
   commitSessionMemory?: (sid: string) => void
+  /** TAL-186: the `/api/media` allow-list the transcript media projection rewrites against; without it nothing local is rewritten. */
+  media?: { access: MediaAccessDeps; localIo: (profile: string | null) => boolean }
 }
 
 const isDict = (v: unknown): v is Record<string, unknown> => Boolean(v) && typeof v === 'object' && !Array.isArray(v)
@@ -131,6 +135,33 @@ export class SessionService {
   }
 
   private get store(): SessionStore { return this.deps.store }
+
+  /**
+   * TAL-186: rewrites a session's media references to their URLs. A local path is rewritten only when `/api/media`
+   * serves it for this session, under the same resolution, so every rewritten reference loads.
+   */
+  mediaProjector(s: Session): (text: string) => MediaProjection | null {
+    const media = this.deps.media
+    const served = new Map<string, string | null>()
+    const localUrl = (path: string): string | null => {
+      if (!media?.localIo(s.profile)) return null
+      if (served.has(path)) return served.get(path) ?? null
+      let url: string | null = null
+      try {
+        const target = mediaTarget(mediaRefPath(path))
+        if (mediaAnchorRoot(target, s, media.access)) url = `./api/media?${new URLSearchParams({ path: target, session_id: s.session_id }).toString()}`
+      } catch { /* an invalid path stays text */ }
+      served.set(path, url)
+      return url
+    }
+    const workspace = s.workspace.trim() || null
+    // A scene's final answer usually repeats its row's text: each distinct text is parsed once.
+    const projected = new Map<string, MediaProjection | null>()
+    return (text) => {
+      if (!projected.has(text)) projected.set(text, projectMediaRefs(text, { workspace, localUrl }))
+      return projected.get(text) ?? null
+    }
+  }
 
   publish(reason: string, profile?: string | null, sessionId?: string | null): void {
     this.deps.events.publish(reason, { profile: profile ?? null, sessionId: sessionId ?? null })
@@ -346,7 +377,24 @@ export class SessionService {
 
   /** `compact()` with the wire streaming/read-only flags (TAL-312), for replies that return the session row. */
   wireRow(s: Session): Record<string, unknown> {
-    return withSessionWireFlags({ ...s.compact({ contextLengthFor: this.deps.contextLengthFor, modelOptionFor: this.deps.modelOptionFor }), read_only: this.isReadOnly(s), assistant_name: this.assistantName(s) }, this.deps.runtime.activeStreamIds)
+    return withSessionWireFlags({ ...s.compact({ contextLengthFor: this.deps.contextLengthFor, modelOptionFor: this.deps.modelOptionFor }), read_only: this.isReadOnly(s), assistant_name: this.assistantName(s), workspace_name: this.workspaceNames()(s) }, this.deps.runtime.activeStreamIds)
+  }
+
+  /**
+   * TAL-303: the label for a session's workspace, from its own profile's registry (a profileless row is the root's).
+   * One resolver serves one response, so each profile's registry is read once however many rows it names.
+   */
+  workspaceNames(): (row: { profile?: unknown; workspace?: unknown }) => string | null {
+    const registries = new Map<string, WorkspaceEntry[]>()
+    return (row) => {
+      const profile = str(row.profile) || 'default'
+      let entries = registries.get(profile)
+      if (!entries) {
+        try { entries = this.deps.workspaces.entries(profile) } catch { entries = [] }
+        registries.set(profile, entries)
+      }
+      return workspaceDisplayName(str(row.workspace), entries)
+    }
   }
 
   /** The agent's display name for a session's profile (`assistant_name`). */
@@ -390,7 +438,7 @@ export class SessionService {
     if (pending) transcript = withPendingUserTurn(transcript, pending)
     if (journaled)transcript = withoutRunningTurnOutput(transcript, { ...journaled, localCount: s.messages.length })
     // Turn ids, tool outcomes and scenes are computed over the full transcript, so every window reports the same values.
-    const all: unknown[] = loadMessages ? withBodyExcerpts(this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes(withBackgroundUpdates(withMarkerKinds(withTurnIds(withAttachmentObjects(transcript))), s), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, clipToolResults: msgLimit !== null })), s.active_stream_id) : []
+    const all: unknown[] = loadMessages ? this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes(withBackgroundUpdates(withMarkerKinds(withTurnIds(withAttachmentObjects(transcript))), s), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, clipToolResults: msgLimit !== null })) : []
     let truncated: unknown[] = []
     let offset = 0
     let summaryCount: number | null = null
@@ -405,6 +453,8 @@ export class SessionService {
         truncated = all.slice(prompt, offset + truncated.length)
         offset = prompt
       }
+      // Per-row display fields (TAL-186 media, TAL-456 excerpts cut from that display text) only for the rows sent.
+      truncated = withBodyExcerpts(withDisplayMedia(truncated, this.mediaProjector(s)), s.active_stream_id)
       if (msgLimit !== null) truncated = messagesForLimitedPayload(truncated)
     } else {
       summaryCount = s.metadataMessageCount ?? s.messages.length
@@ -446,6 +496,7 @@ export class SessionService {
     raw._load_revision = revisionBefore !== null && revisionBefore === revisionAfter ? hashRevision(revisionBefore) : `unstable-${randomUUID().replace(/-/g, '')}`
     raw.read_only = this.isReadOnly(s)
     raw.assistant_name = this.assistantName(s)
+    raw.workspace_name = this.workspaceNames()(s)
     withSessionWireFlags(raw, activeStreamIds)
     raw.pending_steers = raw.active_stream_id ? (this.deps.runtime.pendingSteers?.(str(raw.active_stream_id)) ?? []) : []
     return redactSessionData(raw, this.deps.redactEnabled())
@@ -500,7 +551,7 @@ export class SessionService {
       pinned: synth.pinned, archived: synth.archived, project_id: synth.project_id ?? null, profile: synth.profile,
       is_cli_session: synth.is_cli_session, source_tag: synth.source_tag, raw_source: synth.raw_source, session_source: synth.session_source,
       source_label: synth.source_label, read_only: synth.read_only, can_duplicate: false, messages: msgs, tool_calls: [], transcript_seq: null,
-      assistant_name: this.assistantName(synth),
+      assistant_name: this.assistantName(synth), workspace_name: this.workspaceNames()(synth),
     }
     attachTodoState(sess, msgs)
     const merged = withSessionWireFlags(meta ? mergeCliSidebarMetadata(sess, meta) : sess, this.deps.runtime.activeStreamIds)
@@ -567,7 +618,7 @@ export class SessionService {
     const gatewayIdentity = loadGatewaySessionIdentityMap(join(this.deps.profileHome(activeProfile), 'sessions', 'sessions.json'))
     const truncatedSources = cliRead?.truncated
     const payload = buildSessionListPayload(this.store, { ...params, ...(cliRows ? { cliRows } : {}), ...(truncatedSources ? { truncatedSources } : {}), gatewayIdentity, stateDbSources: this.stateDbSources, activeProfile, isolatedProfileMode: this.deps.isolatedProfileMode(), profilesMatch: this.deps.profilesMatch })
-    return sessionListResponse(payload, this.deps.runtime, this.deps.redactEnabled(), this.deps.now())
+    return sessionListResponse(payload, this.deps.runtime, this.deps.redactEnabled(), this.deps.now(), this.workspaceNames())
   }
 
   search(q: string, opts: { content: boolean; depth: number; allProfiles: boolean }): Record<string, unknown> {
@@ -576,8 +627,10 @@ export class SessionService {
     if (!opts.allProfiles) sessions = sessions.filter((r) => this.deps.profilesMatch(str(r.profile) || null, activeProfile))
     sessions = withOwnerLocks(sessions, this.stateDbSources)
     const redact = this.deps.redactEnabled()
+    const workspaceName = this.workspaceNames()
     const redactRow = (item: Row) => {
       withSessionWireFlags(item, this.deps.runtime.activeStreamIds)
+      item.workspace_name = workspaceName(item)
       if (typeof item.title === 'string') item.title = redactText(item.title, redact)
       for (const f of ['display_title', '_state_db_title', 'parent_title']) if (typeof item[f] === 'string') item[f] = redactText(item[f], redact)
       return item
@@ -588,21 +641,49 @@ export class SessionService {
     for (const s of sessions) {
       if (str(s.title).toLowerCase().includes(query)) { results.push(redactRow({ ...s, match_type: 'title' })); continue }
       if (!opts.content) continue
-      let sess: Session
-      try { sess = this.store.get(str(s.session_id), { promote: false, cacheOnMiss: false }) } catch { continue }
-      const msgs = opts.depth ? sess.messages.slice(0, opts.depth) : sess.messages
-      for (const m of msgs) {
-        const c = sessionSearchMessageText(m)
-        if (c.toLowerCase().includes(query)) {
-          const item: Row = { ...s, match_type: 'content' }
-          const preview = sessionSearchPreview(c, query)
-          if (preview) item.match_preview = redactText(preview, redact)
-          results.push(redactRow(item))
-          break
-        }
-      }
+      const hit = this.contentMatch(str(s.session_id), query, opts.depth)
+      if (hit) results.push(redactRow({ ...s, ...hit }))
     }
     return { sessions: results, query, count: results.length, all_profiles: opts.allProfiles, active_profile: activeProfile }
+  }
+
+  /**
+   * TAL-308: the sidebar search. The candidates are exactly the `/api/sessions` rows for `params` (visibility, source,
+   * archived, projection and order), narrowed to `projectId` (`none`: rows without a project), then matched on the
+   * title, then the metadata the row shows (workspace path and name, model, provider, profile, source label), then message content.
+   */
+  sidebarSearch(q: string, params: Parameters<SessionService['list']>[0], opts: { content: boolean; depth: number; projectId: string | null }): Record<string, unknown> {
+    let rows = this.list(params).body.sessions
+    if (opts.projectId === 'none') rows = rows.filter((r) => !r.project_id)
+    else if (opts.projectId) rows = rows.filter((r) => str(r.project_id) === opts.projectId)
+    const query = q.toLowerCase().trim()
+    const base = { all_profiles: params.allProfiles, active_profile: this.deps.activeProfile(), include_archived: params.includeArchived, sidebar_filtered: true }
+    if (!query) return { ...base, sessions: rows }
+    const results: Row[] = []
+    for (const row of rows) {
+      if (str(row.title).toLowerCase().includes(query)) results.push({ ...row, match_type: 'title' })
+      else if (['workspace', 'workspace_name', 'model', 'model_provider', 'profile', 'source_label'].some((k) => str(row[k]).toLowerCase().includes(query))) results.push({ ...row, match_type: 'metadata' })
+      else if (opts.content) {
+        const hit = this.contentMatch(str(row.session_id), query, opts.depth)
+        if (hit) results.push({ ...row, ...hit })
+      }
+    }
+    return { ...base, sessions: results, query, count: results.length }
+  }
+
+  /** The first of a stored session's first `depth` messages (0: all) containing `query`, with its redacted excerpt. */
+  private contentMatch(sid: string, query: string, depth: number): Row | null {
+    let sess: Session
+    try { sess = this.store.get(sid, { promote: false, cacheOnMiss: false }) } catch { return null }
+    for (const m of depth ? sess.messages.slice(0, depth) : sess.messages) {
+      const c = sessionSearchMessageText(m)
+      if (!c.toLowerCase().includes(query)) continue
+      const item: Row = { match_type: 'content' }
+      const preview = sessionSearchPreview(c, query)
+      if (preview) item.match_preview = redactText(preview, this.deps.redactEnabled())
+      return item
+    }
+    return null
   }
 
   // ── status / usage ───────────────────────────────────────────────────────
@@ -1340,6 +1421,7 @@ export class SessionService {
     if (!sid || (!messageRef && messageIndex === null)) throw new HttpFailure(400, 'session_id and message_ref or message_index are required')
     let session: Session
     let transcript: Message[]
+    let stored = true
     try {
       session = this.store.get(sid)
       if (session.loadedMetadataOnly) session = this.store.load(sid) ?? session
@@ -1350,13 +1432,16 @@ export class SessionService {
       // A state.db-only session pages the same synthesized transcript its detail was built from.
       session = this.foreignSession(sid).synth
       transcript = session.messages
+      stored = false
     }
     const result = readAnchorSceneRows(session, { messageRef, messageIndex, before: anchorSceneIntOrNull(query.before), limit: anchorSceneIntOrNull(query.limit) }, withToolCallOutcomes(withTurnIds(transcript), session.tool_calls, session.active_stream_id))
     if (!result) throw new HttpFailure(404, 'Anchor activity scene not found')
     // Paged rows come from the raw transcript, so they take the same credential redaction as the detail's preview.
     const enabled = this.deps.redactEnabled()
     const redacted = redactValue(result, enabled) as typeof result
-    return { ...redacted, rows: withSceneToolDisplay(result.rows, redacted.rows as unknown[], enabled) }
+    const rows = withSceneToolDisplay(result.rows, redacted.rows as unknown[], enabled)
+    // `/api/media` serves stored sessions only, so a state.db-only session's rows stay as written, as its detail does.
+    return { ...redacted, rows: stored ? withSceneRowMedia(rows, this.mediaProjector(session)) : rows }
   }
 
   // ── shares ───────────────────────────────────────────────────────────────

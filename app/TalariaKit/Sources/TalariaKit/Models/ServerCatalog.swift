@@ -26,6 +26,8 @@ public struct CommandsResponse: Decodable, Equatable {
     public let commands: [AgentCommand]?
 }
 
+/// One entry in the server's slash-command catalog (`GET /api/commands`, TAL-314): client-handled commands first, then
+/// the Agent registry, in display order.
 public struct AgentCommand: Decodable, Equatable, Identifiable, Sendable {
     public var id: String { name ?? UUID().uuidString }
 
@@ -37,6 +39,12 @@ public struct AgentCommand: Decodable, Equatable, Identifiable, Sendable {
     let subcommands: [String]?
     public let cliOnly: Bool?
     public let gatewayOnly: Bool?
+    /// `client` or `agent`; absent from servers that predate the catalog.
+    let handler: String?
+    /// The clients that can run the command (`web`, `ios`).
+    let clients: [String]?
+    /// English text a client outside `clients` shows when the command is typed.
+    let unsupportedMessage: String?
 
     enum CodingKeys: String, CodingKey {
         case name
@@ -47,6 +55,9 @@ public struct AgentCommand: Decodable, Equatable, Identifiable, Sendable {
         case subcommands
         case cliOnly
         case gatewayOnly
+        case handler
+        case clients
+        case unsupportedMessage
     }
 
     init(
@@ -57,7 +68,10 @@ public struct AgentCommand: Decodable, Equatable, Identifiable, Sendable {
         argsHint: String? = nil,
         subcommands: [String]? = nil,
         cliOnly: Bool? = nil,
-        gatewayOnly: Bool? = nil
+        gatewayOnly: Bool? = nil,
+        handler: String? = nil,
+        clients: [String]? = nil,
+        unsupportedMessage: String? = nil
     ) {
         self.name = name
         self.description = description
@@ -67,6 +81,9 @@ public struct AgentCommand: Decodable, Equatable, Identifiable, Sendable {
         self.subcommands = subcommands
         self.cliOnly = cliOnly
         self.gatewayOnly = gatewayOnly
+        self.handler = handler
+        self.clients = clients
+        self.unsupportedMessage = unsupportedMessage
     }
 
     public init(from decoder: Decoder) throws {
@@ -79,6 +96,35 @@ public struct AgentCommand: Decodable, Equatable, Identifiable, Sendable {
         subcommands = try? container.decodeIfPresent([String].self, forKey: .subcommands)
         cliOnly = container.decodeLossyBoolIfPresent(forKey: .cliOnly)
         gatewayOnly = container.decodeLossyBoolIfPresent(forKey: .gatewayOnly)
+        handler = container.decodeLossyStringIfPresent(forKey: .handler)
+        clients = try? container.decodeIfPresent([String].self, forKey: .clients)
+        unsupportedMessage = container.decodeLossyStringIfPresent(forKey: .unsupportedMessage)
+    }
+
+    /// A catalog entry carries `handler` and `clients`; rows from older servers carry neither and are never suggested.
+    var isCatalogEntry: Bool { handler != nil && clients != nil }
+    var runsOnIOS: Bool { clients?.contains("ios") == true }
+    var isClientHandled: Bool { handler == "client" }
+
+    /// The catalog's documented filter: the name or any alias starts with `prefix`, case-insensitively.
+    func matches(prefix: String) -> Bool {
+        let lower = prefix.lowercased()
+        return lower.isEmpty || names.contains { $0.hasPrefix(lower) }
+    }
+
+    func resolves(_ typedName: String) -> Bool {
+        names.contains(typedName.lowercased())
+    }
+
+    private var names: [String] {
+        ([name].compactMap { $0 } + (aliases ?? [])).map { $0.lowercased() }
+    }
+}
+
+extension Array where Element == AgentCommand {
+    /// The catalog entry a typed name or alias resolves to.
+    func entry(named typedName: String) -> AgentCommand? {
+        first { $0.isCatalogEntry && $0.resolves(typedName) }
     }
 }
 

@@ -1,6 +1,112 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+  "Available mobile commands:": {
+    "localizations": {
+      "de": {
+        "stringUnit": {
+          "state": "needs_review",
+          "value": "Verfügbare mobile Befehle:"
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "needs_review",
+          "value": "Comandos móviles disponibles:"
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "needs_review",
+          "value": "Commandes mobiles disponibles :"
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "needs_review",
+          "value": "Comandi mobili disponibili:"
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "needs_review",
+          "value": "Dostępne polecenia mobilne:"
+        }
+      },
+      "pt-BR": {
+        "stringUnit": {
+          "state": "needs_review",
+          "value": "Comandos móveis disponíveis:"
+        }
+      },
+      "nl": {
+        "stringUnit": {
+          "state": "needs_review",
+          "value": "Beschikbare mobiele opdrachten:"
+        }
+      },
+      "tr": {
+        "stringUnit": {
+          "state": "needs_review",
+          "value": "Kullanılabilir mobil komutlar:"
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "needs_review",
+          "value": "Доступные мобильные команды:"
+        }
+      },
+      "ja": {
+        "stringUnit": {
+          "state": "needs_review",
+          "value": "利用可能なモバイルコマンド:"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "needs_review",
+          "value": "可用的移动端命令："
+        }
+      },
+      "ko": {
+        "stringUnit": {
+          "state": "needs_review",
+          "value": "사용 가능한 모바일 명령:"
+        }
+      },
+      "ar": {
+        "stringUnit": {
+          "state": "needs_review",
+          "value": "أوامر الهاتف المتاحة:"
+        }
+      },
+      "he": {
+        "stringUnit": {
+          "state": "needs_review",
+          "value": "פקודות זמינות בנייד:"
+        }
+      },
+      "ur": {
+        "stringUnit": {
+          "state": "needs_review",
+          "value": "دستیاب موبائل کمانڈز:"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "needs_review",
+          "value": "可用的行動裝置指令："
+        }
+      },
+      "zh-HK": {
+        "stringUnit": {
+          "state": "needs_review",
+          "value": "可用的流動裝置指令："
+        }
+      }
+    }
+  },
   "Use SSO instead": {
     "localizations": {
       "en": {
@@ -14340,112 +14446,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已自動封鎖"
-          }
-        }
-      }
-    },
-    "Available mobile commands:\n\n`/help` - Show this command list.\n`/clear` - Clear the local transcript.\n`/stop` - Stop the current response.\n`/new` - Open a fresh session.\n`/model <id>` - Switch this session's model.\n`/workspace <path>` - Switch this session's workspace.\n`/reasoning <level>` - Set reasoning display or effort.\n`/title <text>` - Rename this session.\n`/personality <name>` - Set or clear this session's personality.\n`/skills [query]` - Search available skills.\n`/queue <message>` - Queue a message for the next turn.\n`/steer <message>` - Steer the active response.\n`/interrupt <message>` - Stop the active response and send a new message.\n`/status` - Show session status.\n`/btw <question>` - Ask a side question without changing this chat.\n`/background <prompt>` - Run a parallel task and post the result here.\n`/bg <prompt>` - Alias for `/background`.\n`/branch [name]` - Fork this conversation.\n`/fork [name]` - Alias for `/branch`.\n`/compress [focus]` - Compress this session's context.\n`/compact [focus]` - Alias for `/compress`.\n`/undo` - Undo the last exchange.\n`/retry` - Retry the last turn." : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "أوامر الهاتف المتاحة:\n\n`/help` - عرض قائمة الأوامر هذه.\n`/clear` - مسح النص المحلي.\n`/stop` - إيقاف الرد الحالي.\n`/new` - فتح جلسة جديدة.\n`/model <id>` - تبديل نموذج هذه الجلسة.\n`/workspace <path>` - تبديل مساحة عمل هذه الجلسة.\n`/reasoning <level>` - ضبط عرض الاستدلال أو مستواه.\n`/title <text>` - إعادة تسمية هذه الجلسة.\n`/personality <name>` - تعيين شخصية هذه الجلسة أو مسحها.\n`/skills [query]` - البحث في المهارات المتاحة.\n`/queue <message>` - وضع رسالة في قائمة الانتظار للدور التالي.\n`/steer <message>` - توجيه الرد النشط.\n`/interrupt <message>` - إيقاف الرد النشط وإرسال رسالة جديدة.\n`/status` - عرض حالة الجلسة.\n`/btw <question>` - طرح سؤال جانبي دون تغيير هذه المحادثة.\n`/background <prompt>` - تشغيل مهمة موازية ونشر النتيجة هنا.\n`/bg <prompt>` - اسم بديل لـ `/background`.\n`/branch [name]` - تفريع هذه المحادثة.\n`/fork [name]` - اسم بديل لـ `/branch`.\n`/compress [focus]` - ضغط سياق هذه الجلسة.\n`/compact [focus]` - اسم بديل لـ `/compress`.\n`/undo` - التراجع عن آخر تبادل.\n`/retry` - إعادة محاولة آخر دور."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Verfügbare mobile Befehle:\n\n`/help` - Diese Befehlsliste anzeigen.\n`/clear` - Das lokale Transkript leeren.\n`/stop` - Die aktuelle Antwort stoppen.\n`/new` - Eine neue Sitzung öffnen.\n`/model <id>` - Das Modell dieser Sitzung wechseln.\n`/workspace <path>` - Den Arbeitsbereich dieser Sitzung wechseln.\n`/reasoning <level>` - Reasoning-Anzeige oder Denkaufwand festlegen.\n`/title <text>` - Diese Sitzung umbenennen.\n`/personality <name>` - Die Persönlichkeit dieser Sitzung festlegen oder löschen.\n`/skills [query]` - Verfügbare Skills durchsuchen.\n`/queue <message>` - Eine Nachricht für den nächsten Zug in die Warteschlange stellen.\n`/steer <message>` - Die aktive Antwort lenken.\n`/interrupt <message>` - Die aktive Antwort stoppen und eine neue Nachricht senden.\n`/status` - Den Sitzungsstatus anzeigen.\n`/btw <question>` - Eine Nebenfrage stellen, ohne diesen Chat zu ändern.\n`/background <prompt>` - Eine parallele Aufgabe ausführen und das Ergebnis hier posten.\n`/bg <prompt>` - Alias für `/background`.\n`/branch [name]` - Diese Unterhaltung verzweigen.\n`/fork [name]` - Alias für `/branch`.\n`/compress [focus]` - Den Kontext dieser Sitzung komprimieren.\n`/compact [focus]` - Alias für `/compress`.\n`/undo` - Den letzten Austausch rückgängig machen.\n`/retry` - Den letzten Zug erneut versuchen."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Comandos móviles disponibles:\n\n`/help` - Mostrar esta lista de comandos.\n`/clear` - Borrar la transcripción local.\n`/stop` - Detener la respuesta actual.\n`/new` - Abrir una sesión nueva.\n`/model <id>` - Cambiar el modelo de esta sesión.\n`/workspace <path>` - Cambiar el espacio de trabajo de esta sesión.\n`/reasoning <level>` - Establecer la visualización o el esfuerzo de razonamiento.\n`/title <text>` - Renombrar esta sesión.\n`/personality <name>` - Establecer o borrar la personalidad de esta sesión.\n`/skills [query]` - Buscar habilidades disponibles.\n`/queue <message>` - Poner en cola un mensaje para el siguiente turno.\n`/steer <message>` - Dirigir la respuesta activa.\n`/interrupt <message>` - Detener la respuesta activa y enviar un nuevo mensaje.\n`/status` - Mostrar el estado de la sesión.\n`/btw <question>` - Hacer una pregunta paralela sin cambiar este chat.\n`/background <prompt>` - Ejecutar una tarea paralela y publicar el resultado aquí.\n`/bg <prompt>` - Alias para `/background`.\n`/branch [name]` - Bifurcar esta conversación.\n`/fork [name]` - Alias para `/branch`.\n`/compress [focus]` - Comprimir el contexto de esta sesión.\n`/compact [focus]` - Alias para `/compress`.\n`/undo` - Deshacer el último intercambio.\n`/retry` - Reintentar el último turno."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Commandes mobiles disponibles :\n\n`/help` - Afficher cette liste de commandes.\n`/clear` - Effacer la transcription locale.\n`/stop` - Arrêter la réponse en cours.\n`/new` - Ouvrir une nouvelle session.\n`/model <id>` - Changer le modèle de cette session.\n`/workspace <chemin>` - Changer l'espace de travail de cette session.\n`/reasoning <niveau>` - Définir l'affichage ou l'effort de raisonnement.\n`/title <texte>` - Renommer cette session.\n`/personality <nom>` - Définir ou effacer la personnalité de cette session.\n`/skills [requête]` - Rechercher les compétences disponibles.\n`/queue <message>` - Mettre un message en file d'attente pour le prochain tour.\n`/steer <message>` - Orienter la réponse active.\n`/interrupt <message>` - Arrêter la réponse active et envoyer un nouveau message.\n`/status` - Afficher le statut de la session.\n`/btw <question>` - Poser une question annexe sans modifier cette discussion.\n`/background <invite>` - Lancer une tâche parallèle et publier le résultat ici.\n`/bg <invite>` - Alias pour `/background`.\n`/branch [nom]` - Dériver cette conversation.\n`/fork [nom]` - Alias pour `/branch`.\n`/compress [focus]` - Compresser le contexte de cette session.\n`/compact [focus]` - Alias pour `/compress`.\n`/undo` - Annuler le dernier échange.\n`/retry` - Réessayer le dernier tour."
-          }
-        },
-        "he" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "פקודות נייד זמינות:\n\n`/help` - הצגת רשימת הפקודות הזו.\n`/clear` - ניקוי התמליל המקומי.\n`/stop` - עצירת התגובה הנוכחית.\n`/new` - פתיחת מפגש חדש.\n`/model <id>` - החלפת המודל של המפגש הזה.\n`/workspace <path>` - החלפת סביבת העבודה של המפגש הזה.\n`/reasoning <level>` - הגדרת תצוגת ההיגיון או רמת המאמץ.\n`/title <text>` - שינוי שם המפגש הזה.\n`/personality <name>` - הגדרה או ניקוי של אישיות המפגש הזה.\n`/skills [query]` - חיפוש מיומנויות זמינות.\n`/queue <message>` - הוספת הודעה לתור עבור התור הבא.\n`/steer <message>` - הכוונת התגובה הפעילה.\n`/interrupt <message>` - עצירת התגובה הפעילה ושליחת הודעה חדשה.\n`/status` - הצגת מצב המפגש.\n`/btw <question>` - שאילת שאלת צד מבלי לשנות את הצ׳אט הזה.\n`/background <prompt>` - הרצת משימה מקבילה ופרסום התוצאה כאן.\n`/bg <prompt>` - כינוי עבור `/background`.\n`/branch [name]` - הסתעפות מהשיחה הזו.\n`/fork [name]` - כינוי עבור `/branch`.\n`/compress [focus]` - דחיסת ההקשר של המפגש הזה.\n`/compact [focus]` - כינוי עבור `/compress`.\n`/undo` - ביטול ההחלפה האחרונה.\n`/retry` - ניסיון חוזר של התור האחרון."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Comandi mobile disponibili:\n\n`/help` - Mostra questo elenco di comandi.\n`/clear` - Cancella la trascrizione locale.\n`/stop` - Interrompi la risposta corrente.\n`/new` - Apri una nuova sessione.\n`/model <id>` - Cambia il modello della sessione.\n`/workspace <path>` - Cambia il workspace della sessione.\n`/reasoning <level>` - Imposta la visualizzazione o lo sforzo di ragionamento.\n`/title <text>` - Rinomina questa sessione.\n`/personality <name>` - Imposta o rimuovi la personalità della sessione.\n`/skills [query]` - Cerca le competenze disponibili.\n`/queue <message>` - Metti in coda un messaggio per il prossimo turno.\n`/steer <message>` - Guida la risposta attiva.\n`/interrupt <message>` - Interrompi la risposta attiva e invia un nuovo messaggio.\n`/status` - Mostra lo stato della sessione.\n`/btw <question>` - Fai una domanda secondaria senza modificare questa chat.\n`/background <prompt>` - Esegui un'attività parallela e pubblica il risultato qui.\n`/bg <prompt>` - Alias per `/background`.\n`/branch [name]` - Biforca questa conversazione.\n`/fork [name]` - Alias per `/branch`.\n`/compress [focus]` - Comprimi il contesto di questa sessione.\n`/compact [focus]` - Alias per `/compress`.\n`/undo` - Annulla l'ultimo scambio.\n`/retry` - Riprova l'ultimo turno."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "利用できるモバイルコマンド：\n\n`/help` - このコマンド一覧を表示。\n`/clear` - ローカルの会話履歴を消去。\n`/stop` - 現在の応答を停止。\n`/new` - 新しいセッションを開く。\n`/model <id>` - このセッションのモデルを切り替え。\n`/workspace <path>` - このセッションのワークスペースを切り替え。\n`/reasoning <level>` - 推論の表示または労力を設定。\n`/title <text>` - このセッションの名前を変更。\n`/personality <name>` - このセッションのパーソナリティを設定または解除。\n`/skills [query]` - 利用できるスキルを検索。\n`/queue <message>` - 次のターンにメッセージをキュー。\n`/steer <message>` - アクティブな応答を誘導。\n`/interrupt <message>` - アクティブな応答を停止して新しいメッセージを送信。\n`/status` - セッションの状態を表示。\n`/btw <question>` - このチャットを変えずにサイド質問をする。\n`/background <prompt>` - 並行タスクを実行し結果をここに投稿。\n`/bg <prompt>` - `/background` のエイリアス。\n`/branch [name]` - この会話を分岐。\n`/fork [name]` - `/branch` のエイリアス。\n`/compress [focus]` - このセッションのコンテキストを圧縮。\n`/compact [focus]` - `/compress` のエイリアス。\n`/undo` - 直前のやり取りを取り消し。\n`/retry` - 直前のターンを再試行。"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "사용 가능한 모바일 명령:\n\n`/help` - 이 명령 목록을 표시해요.\n`/clear` - 로컬 기록을 지워요.\n`/stop` - 현재 응답을 중지해요.\n`/new` - 새 세션을 열어요.\n`/model <id>` - 이 세션의 모델을 전환해요.\n`/workspace <path>` - 이 세션의 작업 공간을 전환해요.\n`/reasoning <level>` - 추론 표시 또는 강도를 설정해요.\n`/title <text>` - 이 세션의 이름을 변경해요.\n`/personality <name>` - 이 세션의 성격을 설정하거나 해제해요.\n`/skills [query]` - 사용 가능한 스킬을 검색해요.\n`/queue <message>` - 다음 차례를 위해 메시지를 대기열에 넣어요.\n`/steer <message>` - 활성 응답을 조정해요.\n`/interrupt <message>` - 활성 응답을 중지하고 새 메시지를 보내요.\n`/status` - 세션 상태를 표시해요.\n`/btw <question>` - 이 채팅을 바꾸지 않고 곁가지 질문을 해요.\n`/background <prompt>` - 병렬 작업을 실행하고 결과를 여기에 올려요.\n`/bg <prompt>` - `/background`의 별칭.\n`/branch [name]` - 이 대화를 분기해요.\n`/fork [name]` - `/branch`의 별칭.\n`/compress [focus]` - 이 세션의 컨텍스트를 압축해요.\n`/compact [focus]` - `/compress`의 별칭.\n`/undo` - 마지막 주고받기를 실행 취소해요.\n`/retry` - 마지막 차례를 다시 시도해요."
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Beschikbare mobiele opdrachten:\n\n`/help` - Toon deze opdrachtenlijst.\n`/clear` - Wis het lokale transcript.\n`/stop` - Stop het huidige antwoord.\n`/new` - Open een nieuwe sessie.\n`/model <id>` - Wissel het model van deze sessie.\n`/workspace <path>` - Wissel de werkruimte van deze sessie.\n`/reasoning <level>` - Stel de redeneerweergave of -inspanning in.\n`/title <text>` - Hernoem deze sessie.\n`/personality <name>` - Stel de persoonlijkheid van deze sessie in of wis deze.\n`/skills [query]` - Doorzoek beschikbare vaardigheden.\n`/queue <message>` - Plaats een bericht in de wachtrij voor de volgende beurt.\n`/steer <message>` - Stuur het actieve antwoord bij.\n`/interrupt <message>` - Stop het actieve antwoord en verstuur een nieuw bericht.\n`/status` - Toon de sessiestatus.\n`/btw <question>` - Stel een zijvraag zonder deze chat te wijzigen.\n`/background <prompt>` - Voer een parallelle taak uit en plaats het resultaat hier.\n`/bg <prompt>` - Alias voor `/background`.\n`/branch [name]` - Vertak dit gesprek.\n`/fork [name]` - Alias voor `/branch`.\n`/compress [focus]` - Comprimeer de context van deze sessie.\n`/compact [focus]` - Alias voor `/compress`.\n`/undo` - Maak de laatste uitwisseling ongedaan.\n`/retry` - Probeer de laatste beurt opnieuw."
-          }
-        },
-        "pl" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Dostępne polecenia mobilne:\n\n`/help` - Pokaż tę listę poleceń.\n`/clear` - Wyczyść lokalny transkrypt.\n`/stop` - Zatrzymaj bieżącą odpowiedź.\n`/new` - Otwórz nową sesję.\n`/model <id>` - Zmień model tej sesji.\n`/workspace <path>` - Zmień obszar roboczy tej sesji.\n`/reasoning <level>` - Ustaw wyświetlanie lub wysiłek rozumowania.\n`/title <text>` - Zmień nazwę tej sesji.\n`/personality <name>` - Ustaw lub wyczyść osobowość tej sesji.\n`/skills [query]` - Wyszukaj dostępne umiejętności.\n`/queue <message>` - Kolejkuj wiadomość na następną turę.\n`/steer <message>` - Kieruj aktywną odpowiedzią.\n`/interrupt <message>` - Zatrzymaj aktywną odpowiedź i wyślij nową wiadomość.\n`/status` - Pokaż status sesji.\n`/btw <question>` - Zadaj poboczne pytanie bez zmiany tego czatu.\n`/background <prompt>` - Uruchom równoległe zadanie i opublikuj wynik tutaj.\n`/bg <prompt>` - Alias dla `/background`.\n`/branch [name]` - Rozgałęź tę rozmowę.\n`/fork [name]` - Alias dla `/branch`.\n`/compress [focus]` - Skompresuj kontekst tej sesji.\n`/compact [focus]` - Alias dla `/compress`.\n`/undo` - Cofnij ostatnią wymianę.\n`/retry` - Ponów ostatnią turę."
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Comandos disponíveis no celular:\n\n`/help` - Mostrar esta lista de comandos.\n`/clear` - Limpar a transcrição local.\n`/stop` - Parar a resposta atual.\n`/new` - Abrir uma nova sessão.\n`/model <id>` - Trocar o modelo desta sessão.\n`/workspace <path>` - Trocar o espaço de trabalho desta sessão.\n`/reasoning <level>` - Definir a exibição ou o esforço do raciocínio.\n`/title <text>` - Renomear esta sessão.\n`/personality <name>` - Definir ou limpar a personalidade desta sessão.\n`/skills [query]` - Buscar habilidades disponíveis.\n`/queue <message>` - Enfileirar uma mensagem para o próximo turno.\n`/steer <message>` - Direcionar a resposta ativa.\n`/interrupt <message>` - Parar a resposta ativa e enviar uma nova mensagem.\n`/status` - Mostrar o status da sessão.\n`/btw <question>` - Fazer uma pergunta paralela sem alterar este chat.\n`/background <prompt>` - Executar uma tarefa paralela e publicar o resultado aqui.\n`/bg <prompt>` - Atalho para `/background`.\n`/branch [name]` - Bifurcar esta conversa.\n`/fork [name]` - Atalho para `/branch`.\n`/compress [focus]` - Comprimir o contexto desta sessão.\n`/compact [focus]` - Atalho para `/compress`.\n`/undo` - Desfazer a última troca.\n`/retry` - Tentar novamente o último turno."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Доступные мобильные команды:\n\n`/help` — Показать этот список команд.\n`/clear` — Очистить локальную расшифровку.\n`/stop` — Остановить текущий ответ.\n`/new` — Открыть новую сессию.\n`/model <id>` — Сменить модель этой сессии.\n`/workspace <path>` — Сменить рабочее пространство этой сессии.\n`/reasoning <level>` — Задать отображение рассуждений или уровень усилий.\n`/title <text>` — Переименовать эту сессию.\n`/personality <name>` — Задать или сбросить личность этой сессии.\n`/skills [query]` — Найти доступные навыки.\n`/queue <message>` — Поставить сообщение в очередь на следующий ход.\n`/steer <message>` — Скорректировать активный ответ.\n`/interrupt <message>` — Остановить активный ответ и отправить новое сообщение.\n`/status` — Показать статус сессии.\n`/btw <question>` — Задать побочный вопрос, не меняя этот чат.\n`/background <prompt>` — Запустить параллельную задачу и опубликовать результат здесь.\n`/bg <prompt>` — Псевдоним для `/background`.\n`/branch [name]` — Ответвить этот разговор.\n`/fork [name]` — Псевдоним для `/branch`.\n`/compress [focus]` — Сжать контекст этой сессии.\n`/compact [focus]` — Псевдоним для `/compress`.\n`/undo` — Отменить последний обмен.\n`/retry` — Повторить последний ход."
-          }
-        },
-        "tr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Kullanılabilir mobil komutlar:\n\n`/help` - Bu komut listesini göster.\n`/clear` - Yerel dökümü temizle.\n`/stop` - Geçerli yanıtı durdur.\n`/new` - Yeni bir oturum aç.\n`/model <id>` - Bu oturumun modelini değiştir.\n`/workspace <path>` - Bu oturumun çalışma alanını değiştir.\n`/reasoning <level>` - Akıl yürütme görünümünü veya çabasını ayarla.\n`/title <text>` - Bu oturumu yeniden adlandır.\n`/personality <name>` - Bu oturumun kişiliğini ayarla veya temizle.\n`/skills [query]` - Kullanılabilir becerilerde ara.\n`/queue <message>` - Bir sonraki tur için bir mesaj sıraya al.\n`/steer <message>` - Etkin yanıtı yönlendir.\n`/interrupt <message>` - Etkin yanıtı durdur ve yeni bir mesaj gönder.\n`/status` - Oturum durumunu göster.\n`/btw <question>` - Bu sohbeti değiştirmeden yan soru sor.\n`/background <prompt>` - Paralel bir görev çalıştır ve sonucu buraya gönder.\n`/bg <prompt>` - `/background` için takma ad.\n`/branch [name]` - Bu konuşmayı çatalla.\n`/fork [name]` - `/branch` için takma ad.\n`/compress [focus]` - Bu oturumun bağlamını sıkıştır.\n`/compact [focus]` - `/compress` için takma ad.\n`/undo` - Son alışverişi geri al.\n`/retry` - Son turu yeniden dene."
-          }
-        },
-        "ur" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "دستیاب موبائل کمانڈز:\n\n`/help` - یہ کمانڈ فہرست دکھائیں۔\n`/clear` - مقامی ٹرانسکرپٹ صاف کریں۔\n`/stop` - موجودہ جواب بند کریں۔\n`/new` - نیا سیشن کھولیں۔\n`/model <id>` - اس سیشن کا ماڈل تبدیل کریں۔\n`/workspace <path>` - اس سیشن کا ورک اسپیس تبدیل کریں۔\n`/reasoning <level>` - استدلال کی نمائش یا کوشش مقرر کریں۔\n`/title <text>` - اس سیشن کا نام تبدیل کریں۔\n`/personality <name>` - اس سیشن کی شخصیت مقرر یا صاف کریں۔\n`/skills [query]` - دستیاب مہارتیں تلاش کریں۔\n`/queue <message>` - اگلی باری کے لیے پیغام قطار میں رکھیں۔\n`/steer <message>` - فعال جواب کی سمت بدلیں۔\n`/interrupt <message>` - فعال جواب بند کریں اور نیا پیغام بھیجیں۔\n`/status` - سیشن کی حالت دکھائیں۔\n`/btw <question>` - اس چیٹ کو تبدیل کیے بغیر ضمنی سوال پوچھیں۔\n`/background <prompt>` - متوازی ٹاسک چلائیں اور نتیجہ یہاں شائع کریں۔\n`/bg <prompt>` - `/background` کا متبادل نام۔\n`/branch [name]` - اس گفتگو کو فورک کریں۔\n`/fork [name]` - `/branch` کا متبادل نام۔\n`/compress [focus]` - اس سیشن کا سیاق سکیڑیں۔\n`/compact [focus]` - `/compress` کا متبادل نام۔\n`/undo` - آخری تبادلہ کالعدم کریں۔\n`/retry` - آخری باری دوبارہ کریں۔"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "可用的移动端命令：\n\n`/help` - 显示此命令列表。\n`/clear` - 清除本地记录。\n`/stop` - 停止当前回复。\n`/new` - 打开一个新会话。\n`/model <id>` - 切换此会话的模型。\n`/workspace <path>` - 切换此会话的工作区。\n`/reasoning <level>` - 设置推理显示或推理强度。\n`/title <text>` - 重命名此会话。\n`/personality <name>` - 设置或清除此会话的个性。\n`/skills [query]` - 搜索可用技能。\n`/queue <message>` - 将消息排入下一轮。\n`/steer <message>` - 引导当前回复。\n`/interrupt <message>` - 停止当前回复并发送新消息。\n`/status` - 显示会话状态。\n`/btw <question>` - 提一个附带问题，不影响此聊天。\n`/background <prompt>` - 运行并行任务并将结果发布到此处。\n`/bg <prompt>` - `/background` 的别名。\n`/branch [name]` - 分叉此对话。\n`/fork [name]` - `/branch` 的别名。\n`/compress [focus]` - 压缩此会话的上下文。\n`/compact [focus]` - `/compress` 的别名。\n`/undo` - 撤销上一次交流。\n`/retry` - 重试上一轮。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "可用的行動裝置指令：\n\n`/help` - 顯示此指令清單。\n`/clear` - 清除本機記錄。\n`/stop` - 停止目前的回覆。\n`/new` - 開啟全新的工作階段。\n`/model <id>` - 切換此工作階段的模型。\n`/workspace <path>` - 切換此工作階段的工作區。\n`/reasoning <level>` - 設定推理顯示或推理強度。\n`/title <text>` - 重新命名此工作階段。\n`/personality <name>` - 設定或清除此工作階段的個性。\n`/skills [query]` - 搜尋可用的技能。\n`/queue <message>` - 將訊息排入下一輪。\n`/steer <message>` - 引導目前的回覆。\n`/interrupt <message>` - 停止目前的回覆並傳送新訊息。\n`/status` - 顯示工作階段狀態。\n`/btw <question>` - 提出附帶問題，不影響此聊天。\n`/background <prompt>` - 執行平行任務並將結果發布到此處。\n`/bg <prompt>` - `/background` 的別名。\n`/branch [name]` - 分叉此對話。\n`/fork [name]` - `/branch` 的別名。\n`/compress [focus]` - 壓縮此工作階段的上下文。\n`/compact [focus]` - `/compress` 的別名。\n`/undo` - 復原上一次交流。\n`/retry` - 重試上一輪。"
-          }
-        },
-        "zh-HK" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "可用的流動裝置命令：\n\n`/help` - 顯示此命令列表。\n`/clear` - 清除本機記錄。\n`/stop` - 停止當前回覆。\n`/new` - 開啟新的工作階段。\n`/model <id>` - 切換此工作階段的模型。\n`/workspace <path>` - 切換此工作階段的工作區。\n`/reasoning <level>` - 設定推理顯示或推理強度。\n`/title <text>` - 重新命名此工作階段。\n`/personality <name>` - 設定或清除此工作階段的個性。\n`/skills [query]` - 搜尋可用技能。\n`/queue <message>` - 將訊息排入下一輪。\n`/steer <message>` - 引導當前回覆。\n`/interrupt <message>` - 停止當前回覆並傳送新訊息。\n`/status` - 顯示工作階段狀態。\n`/btw <question>` - 提出附帶問題，不影響此聊天。\n`/background <prompt>` - 執行並行任務並將結果發佈到此處。\n`/bg <prompt>` - `/background` 的別名。\n`/branch [name]` - 分叉此對話。\n`/fork [name]` - `/branch` 的別名。\n`/compress [focus]` - 壓縮此工作階段的上下文。\n`/compact [focus]` - `/compress` 的別名。\n`/undo` - 復原上一次交流。\n`/retry` - 重試上一輪。"
           }
         }
       }
@@ -106770,112 +106770,6 @@
         }
       }
     },
-    "Terminal is not available in the mobile app." : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "الطرفية غير متاحة في تطبيق الهاتف."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Das Terminal ist in der mobilen App nicht verfügbar."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "El terminal no está disponible en la aplicación móvil."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Le terminal n'est pas disponible dans l'application mobile."
-          }
-        },
-        "he" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "הטרמינל אינו זמין באפליקציה הניידת."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Il terminale non è disponibile nell'app mobile."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "ターミナルはモバイルアプリでは利用できません。"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "터미널은 모바일 앱에서 사용할 수 없어요."
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Terminal is niet beschikbaar in de mobiele app."
-          }
-        },
-        "pl" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Terminal jest niedostępny w aplikacji mobilnej."
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "O terminal não está disponível no app móvel."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Терминал недоступен в мобильном приложении."
-          }
-        },
-        "tr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Terminal mobil uygulamada kullanılamıyor."
-          }
-        },
-        "ur" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "موبائل ایپ میں ٹرمینل دستیاب نہیں ہے۔"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "终端在移动应用中不可用。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "終端機在行動 App 中無法使用。"
-          }
-        },
-        "zh-HK" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "終端機在流動應用程式中無法使用。"
-          }
-        }
-      }
-    },
     "Test Connection" : {
       "localizations" : {
         "ar" : {
@@ -113879,112 +113773,6 @@
         }
       }
     },
-    "Theme switching is not available from mobile slash commands." : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "تبديل السمة غير متاح من أوامر الشرطة المائلة على الهاتف."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Das Wechseln des Themes ist über mobile Slash-Befehle nicht möglich."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "El cambio de tema no está disponible desde los comandos de barra móviles."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Le changement de thème n'est pas disponible depuis les commandes slash mobiles."
-          }
-        },
-        "he" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "החלפת ערכת נושא אינה זמינה מפקודות נטוי בנייד."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Il cambio tema non è disponibile dai comandi slash su mobile."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "モバイルのスラッシュコマンドからはテーマの切り替えを利用できません。"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "테마 전환은 모바일 슬래시 명령어에서 사용할 수 없어요."
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Thema wisselen is niet beschikbaar via mobiele slash-opdrachten."
-          }
-        },
-        "pl" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Przełączanie motywu jest niedostępne z poziomu mobilnych poleceń slash."
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "A troca de tema não está disponível pelos comandos de barra móveis."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Переключение темы недоступно из мобильных слэш-команд."
-          }
-        },
-        "tr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Tema değiştirme mobil eğik çizgi komutlarından kullanılamıyor."
-          }
-        },
-        "ur" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "تھیم تبدیل کرنا موبائل سلیش کمانڈز سے دستیاب نہیں ہے۔"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "无法通过移动端斜杠命令切换主题。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "無法透過行動端斜線指令切換主題。"
-          }
-        },
-        "zh-HK" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "無法透過流動端斜線指令切換主題。"
-          }
-        }
-      }
-    },
     "There are no changes to commit." : {
 
     },
@@ -116858,6 +116646,112 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "此伺服器需要密碼。"
+          }
+        }
+      }
+    },
+    "Single sign-on is temporarily unavailable. Try again in a moment." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تسجيل الدخول الموحّد غير متاح مؤقتًا. حاول مرة أخرى بعد قليل."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Single Sign-on ist vorübergehend nicht verfügbar. Versuche es gleich noch einmal."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El inicio de sesión único no está disponible temporalmente. Inténtalo de nuevo en un momento."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’authentification unique est temporairement indisponible. Réessayez dans un instant."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "הכניסה היחידה אינה זמינה זמנית. נסה שוב בעוד רגע."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il single sign-on non è momentaneamente disponibile. Riprova tra poco."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "シングルサインオンは一時的に利用できません。しばらくしてからもう一度お試しください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "통합 로그인을 일시적으로 사용할 수 없습니다. 잠시 후 다시 시도하세요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Single sign-on is tijdelijk niet beschikbaar. Probeer het zo opnieuw."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Logowanie jednokrotne jest chwilowo niedostępne. Spróbuj ponownie za chwilę."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O login único está temporariamente indisponível. Tente novamente em instantes."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Единый вход временно недоступен. Повторите попытку чуть позже."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Çoklu oturum açma geçici olarak kullanılamıyor. Biraz sonra yeniden deneyin."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "سنگل سائن آن عارضی طور پر دستیاب نہیں ہے۔ تھوڑی دیر بعد دوبارہ کوشش کریں۔"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "單一登入暫時無法使用，請稍後再試。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "单点登录暂时不可用，请稍后再试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "單一登入暫時無法使用，請稍後再試。"
           }
         }
       }
@@ -126865,112 +126759,6 @@
         }
       }
     },
-    "Voice commands are not available in the mobile app." : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "الأوامر الصوتية غير متاحة في تطبيق الهاتف."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Sprachbefehle sind in der mobilen App nicht verfügbar."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Los comandos de voz no están disponibles en la aplicación móvil."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Les commandes vocales ne sont pas disponibles dans l'application mobile."
-          }
-        },
-        "he" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "פקודות קוליות אינן זמינות באפליקציה הניידת."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "I comandi vocali non sono disponibili nell'app mobile."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "音声コマンドはモバイルアプリでは利用できません。"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "음성 명령은 모바일 앱에서 사용할 수 없어요."
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Spraakopdrachten zijn niet beschikbaar in de mobiele app."
-          }
-        },
-        "pl" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Polecenia głosowe są niedostępne w aplikacji mobilnej."
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Os comandos de voz não estão disponíveis no app móvel."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Голосовые команды недоступны в мобильном приложении."
-          }
-        },
-        "tr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Sesli komutlar mobil uygulamada kullanılamıyor."
-          }
-        },
-        "ur" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "صوتی کمانڈز موبائل ایپ میں دستیاب نہیں ہیں۔"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "语音命令在移动应用中不可用。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "語音指令在行動 App 中無法使用。"
-          }
-        },
-        "zh-HK" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "語音指令在流動應用程式中無法使用。"
-          }
-        }
-      }
-    },
     "Voice input" : {
       "localizations" : {
         "ar" : {
@@ -131750,112 +131538,6 @@
         }
       }
     },
-    "YOLO mode is not available in the mobile app." : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "وضع YOLO غير متاح في تطبيق الهاتف."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Der YOLO-Modus ist in der mobilen App nicht verfügbar."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "El modo YOLO no está disponible en la aplicación móvil."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Le mode YOLO n'est pas disponible dans l'application mobile."
-          }
-        },
-        "he" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "מצב YOLO אינו זמין באפליקציה הניידת."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "La modalità YOLO non è disponibile nell'app mobile."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "YOLOモードはモバイルアプリでは利用できません。"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "YOLO 모드는 모바일 앱에서 사용할 수 없어요."
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "YOLO-modus is niet beschikbaar in de mobiele app."
-          }
-        },
-        "pl" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Tryb YOLO jest niedostępny w aplikacji mobilnej."
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "O modo YOLO não está disponível no app móvel."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Режим YOLO недоступен в мобильном приложении."
-          }
-        },
-        "tr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "YOLO modu mobil uygulamada kullanılamıyor."
-          }
-        },
-        "ur" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "YOLO موڈ موبائل ایپ میں دستیاب نہیں ہے۔"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "YOLO 模式在移动应用中不可用。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "YOLO 模式在行動 App 中無法使用。"
-          }
-        },
-        "zh-HK" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "YOLO 模式在流動應用程式中無法使用。"
-          }
-        }
-      }
-    },
     "You'll return to onboarding and need the server URL and password to sign back in." : {
       "localizations" : {
         "ar" : {
@@ -133359,6 +133041,119 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "部分已儲存的附件未能恢復。請在傳送前檢查此草稿的附件。"
+          }
+        }
+      }
+    },
+    "Showing cached server analytics while refreshing." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Showing cached server analytics while refreshing."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zwischengespeicherte Serveranalysen werden während der Aktualisierung angezeigt."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Se muestran los análisis del servidor guardados en caché mientras se actualizan."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Les analyses du serveur en cache sont affichées pendant l’actualisation."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vengono mostrate le analisi del server memorizzate nella cache durante l’aggiornamento."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Opgeslagen serveranalyses worden getoond tijdens het vernieuwen."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Wyświetlane są zapisane analizy serwera podczas odświeżania."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mostrando análises do servidor em cache durante a atualização."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Показана сохранённая аналитика сервера, идёт обновление."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Yenilenirken önbellekteki sunucu analizleri gösteriliyor."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تُعرض تحليلات الخادم المخزّنة مؤقتًا أثناء التحديث."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "מוצגים נתוני ניתוח שרת מהמטמון בזמן הרענון."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تازہ کاری کے دوران سرور کے محفوظ شدہ تجزیات دکھائے جا رہے ہیں۔"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "更新中はキャッシュされたサーバー分析を表示しています。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "새로 고치는 동안 캐시된 서버 분석을 표시합니다."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "正在刷新，显示缓存的服务器分析。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "正在重新整理，顯示快取的伺服器分析。"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "正在重新整理，顯示快取的伺服器分析。"
           }
         }
       }

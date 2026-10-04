@@ -75,9 +75,11 @@ public struct SessionSearchResponse: Decodable, Equatable {
     public let sessions: [SessionSummary]?
     let query: String?
     let count: Int?
+    /// The server answered within the requested project and visibility (TAL-308).
+    let sidebarFiltered: Bool?
 
     enum CodingKeys: String, CodingKey {
-        case sessions, query, count
+        case sessions, query, count, sidebarFiltered
     }
 
     public init(from decoder: Decoder) throws {
@@ -85,6 +87,7 @@ public struct SessionSearchResponse: Decodable, Equatable {
         sessions = SessionSummary.decodingRowsIndependently(from: container, forKey: .sessions)
         query = container.decodeLossyStringIfPresent(forKey: .query)
         count = container.decodeLossyIntIfPresent(forKey: .count)
+        sidebarFiltered = container.decodeLossyBoolIfPresent(forKey: .sidebarFiltered)
     }
 }
 
@@ -244,6 +247,8 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
     public let sessionId: String?
     public let title: String?
     public let workspace: String?
+    /// The server's label for `workspace` (TAL-303); nil from an older server, which shows none.
+    public let workspaceName: String?
     public let model: String?
     public let modelProvider: String?
     /// TAL-301: the catalog entry the server says `model`/`modelProvider` selects.
@@ -289,6 +294,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         sessionId: String? = nil,
         title: String? = nil,
         workspace: String? = nil,
+        workspaceName: String? = nil,
         model: String? = nil,
         modelProvider: String? = nil,
         modelOptionID: String? = nil,
@@ -328,6 +334,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         self.sessionId = sessionId
         self.title = title
         self.workspace = workspace
+        self.workspaceName = workspaceName
         self.model = model
         self.modelProvider = modelProvider
         self.modelOptionID = modelOptionID
@@ -366,7 +373,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case sessionId, title, workspace, model, modelProvider
+        case sessionId, title, workspace, workspaceName, model, modelProvider
         case modelOptionID = "modelOptionId"
         case messageCount, createdAt, updatedAt, lastMessageAt
         case pinned, archived, projectId, profile
@@ -392,6 +399,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         sessionId = container.decodeLossyStringIfPresent(forKey: .sessionId)
         title = container.decodeLossyStringIfPresent(forKey: .title)
         workspace = container.decodeLossyStringIfPresent(forKey: .workspace)
+        workspaceName = container.decodeLossyStringIfPresent(forKey: .workspaceName)
         model = container.decodeLossyStringIfPresent(forKey: .model)
         modelProvider = container.decodeLossyStringIfPresent(forKey: .modelProvider)
         modelOptionID = container.decodeLossyStringIfPresent(forKey: .modelOptionID)
@@ -456,6 +464,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         sessionId = detail.sessionId
         title = detail.title
         workspace = detail.workspace
+        workspaceName = detail.workspaceName
         model = detail.model
         modelProvider = detail.modelProvider
         modelOptionID = detail.modelOptionID
@@ -504,6 +513,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
             sessionId: sessionId,
             title: title,
             workspace: workspace,
+            workspaceName: workspaceName,
             model: model,
             modelProvider: modelProvider,
             modelOptionID: modelOptionID,
@@ -570,6 +580,8 @@ extension SessionSummary {
             sessionId: sessionId ?? row.sessionId,
             title: title ?? row.title,
             workspace: workspace ?? row.workspace,
+            // The name labels its own path, so it moves with the workspace it came with.
+            workspaceName: workspace != nil ? workspaceName : row.workspaceName,
             model: model ?? row.model,
             modelProvider: modelProvider ?? row.modelProvider,
             modelOptionID: model != nil ? modelOptionID : row.modelOptionID,
@@ -665,7 +677,7 @@ extension SessionSummary {
 /// Which non-standard session kinds the session list should show. Webhooks,
 /// cron jobs, CLI imports, Claude Code imports, and delegated subagents are
 /// controlled independently. A row with unknown/missing source data remains visible.
-public struct AutomatedSessionVisibility: Equatable {
+public struct AutomatedSessionVisibility: Hashable {
     public var showsCron: Bool
     var showsCli: Bool
     public var showsWebhook: Bool
@@ -722,6 +734,8 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
     public let sessionId: String?
     public let title: String?
     public let workspace: String?
+    /// The server's label for `workspace` (TAL-303); nil from an older server, which shows none.
+    public let workspaceName: String?
     public let model: String?
     public let modelProvider: String?
     /// TAL-301: the catalog entry the server says `model`/`modelProvider` selects.
@@ -784,6 +798,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
         case sessionId
         case title
         case workspace
+        case workspaceName
         case model
         case modelProvider
         case modelOptionID = "modelOptionId"
@@ -847,6 +862,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
         sessionId = container.decodeLossyStringIfPresent(forKey: .sessionId)
         title = container.decodeLossyStringIfPresent(forKey: .title)
         workspace = container.decodeLossyStringIfPresent(forKey: .workspace)
+        workspaceName = container.decodeLossyStringIfPresent(forKey: .workspaceName)
         model = container.decodeLossyStringIfPresent(forKey: .model)
         modelProvider = container.decodeLossyStringIfPresent(forKey: .modelProvider)
         modelOptionID = container.decodeLossyStringIfPresent(forKey: .modelOptionID)

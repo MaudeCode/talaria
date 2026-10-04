@@ -87,6 +87,8 @@ final class APIClientSessionListTests: APIClientTestCase {
                 {
                   "session_id": "abc123",
                   "title": "Planning",
+                  "workspace": "/src/talaria-main",
+                  "workspace_name": "Talaria",
                   "message_count": 7,
                   "last_message_at": 1770000000,
                   "pinned": true,
@@ -109,6 +111,7 @@ final class APIClientSessionListTests: APIClientTestCase {
 
         XCTAssertEqual(response.sessions?.first?.sessionId, "abc123")
         XCTAssertEqual(response.sessions?.first?.title, "Planning")
+        XCTAssertEqual(response.sessions?.first?.workspaceName, "Talaria")
         XCTAssertEqual(response.sessions?.first?.messageCount, 7)
         XCTAssertEqual(response.sessions?.first?.lastMessageAt, 1_770_000_000)
         XCTAssertEqual(response.sessions?.first?.pinned, true)
@@ -266,6 +269,7 @@ final class APIClientSessionListTests: APIClientTestCase {
                 {
                   "session_id": "content-123",
                   "title": "Planning",
+                  "workspace_name": "Talaria",
                   "match_type": "content",
                   "match_preview": "the [REDACTED] billing plan for caf\\u00e9",
                   "unexpected": "ignored"
@@ -283,6 +287,7 @@ final class APIClientSessionListTests: APIClientTestCase {
         XCTAssertEqual(response.count, 1)
         XCTAssertEqual(response.sessions?.first?.sessionId, "content-123")
         XCTAssertEqual(response.sessions?.first?.matchType, "content")
+        XCTAssertEqual(response.sessions?.first?.workspaceName, "Talaria")
         XCTAssertEqual(response.sessions?.first?.matchPreview, "the [REDACTED] billing plan for café")
     }
 

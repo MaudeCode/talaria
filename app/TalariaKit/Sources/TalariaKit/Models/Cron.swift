@@ -44,8 +44,9 @@ public struct CronJob: Decodable, Equatable, Identifiable {
     public let jobId: String?
     public let name: String?
     public let prompt: String?
-    let schedule: CronSchedule?
+    /// Server-filled (TAL-298): the schedule text to show and the editor prefill the scheduler accepts back.
     let scheduleDisplay: String?
+    let scheduleInput: String?
     public let nextRunAt: CronDateValue?
     public let lastRunAt: CronDateValue?
     let lastStatus: String?
@@ -70,8 +71,8 @@ public struct CronJob: Decodable, Equatable, Identifiable {
         case jobId
         case name
         case prompt
-        case schedule
         case scheduleDisplay
+        case scheduleInput
         case nextRunAt
         case lastRunAt
         case lastStatus
@@ -95,8 +96,8 @@ public struct CronJob: Decodable, Equatable, Identifiable {
             ?? container.decodeLossyStringIfPresent(forKey: .jobId)
         name = container.decodeLossyStringIfPresent(forKey: .name)
         prompt = container.decodeLossyStringIfPresent(forKey: .prompt)
-        schedule = (try? container.decodeIfPresent(CronSchedule.self, forKey: .schedule)) ?? nil
         scheduleDisplay = container.decodeLossyStringIfPresent(forKey: .scheduleDisplay)
+        scheduleInput = container.decodeLossyStringIfPresent(forKey: .scheduleInput)
         nextRunAt = (try? container.decodeIfPresent(CronDateValue.self, forKey: .nextRunAt)) ?? nil
         lastRunAt = (try? container.decodeIfPresent(CronDateValue.self, forKey: .lastRunAt)) ?? nil
         lastStatus = container.decodeLossyStringIfPresent(forKey: .lastStatus)
@@ -127,11 +128,7 @@ public struct CronJob: Decodable, Equatable, Identifiable {
     }
 
     public var scheduleText: String? {
-        scheduleDisplay ?? schedule?.displayText
-    }
-
-    var editableScheduleText: String? {
-        schedule?.expression ?? schedule?.expr ?? schedule?.runAt ?? schedule?.every ?? scheduleDisplay
+        scheduleDisplay
     }
 
     /// The server's `derived_state`; a server that omits it yields a neutral `.unknown`.
@@ -145,45 +142,6 @@ public struct CronJob: Decodable, Equatable, Identifiable {
         case "active": return .active
         default: return .unknown
         }
-    }
-}
-
-struct CronSchedule: Decodable, Equatable {
-    let kind: String?
-    let expression: String?
-    let expr: String?
-    let runAt: String?
-    let every: String?
-
-    enum CodingKeys: String, CodingKey {
-        case kind
-        case expression
-        case expr
-        case runAt
-        case every
-    }
-
-    init(from decoder: Decoder) throws {
-        if let container = try? decoder.singleValueContainer(),
-           let value = try? container.decode(String.self) {
-            kind = nil
-            expression = value
-            expr = nil
-            runAt = nil
-            every = nil
-            return
-        }
-
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        kind = container.decodeLossyStringIfPresent(forKey: .kind)
-        expression = container.decodeLossyStringIfPresent(forKey: .expression)
-        expr = container.decodeLossyStringIfPresent(forKey: .expr)
-        runAt = container.decodeLossyStringIfPresent(forKey: .runAt)
-        every = container.decodeLossyStringIfPresent(forKey: .every)
-    }
-
-    var displayText: String? {
-        expression ?? expr ?? runAt ?? every ?? kind
     }
 }
 
@@ -620,7 +578,7 @@ public struct CronJobEditorDraft: Equatable {
         self.init(
             name: job.name ?? "",
             prompt: job.prompt ?? "",
-            schedule: job.editableScheduleText ?? "",
+            schedule: job.scheduleInput ?? "",
             deliver: job.deliver ?? "local",
             skillsText: job.skills?.joined(separator: ", ") ?? "",
             model: job.model ?? "",

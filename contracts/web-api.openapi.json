@@ -293,6 +293,9 @@
                         "oidc_native_handoff_enabled": {
                           "type": "boolean"
                         },
+                        "oidc_unavailable": {
+                          "type": "boolean"
+                        },
                         "password_auth_enabled": {
                           "type": "boolean"
                         },
@@ -348,6 +351,7 @@
                         "logged_in",
                         "oidc_enabled",
                         "oidc_native_handoff_enabled",
+                        "oidc_unavailable",
                         "password_auth_enabled",
                         "passwordless_enabled",
                         "passkeys_enabled",
@@ -466,6 +470,9 @@
                     "oidc_native_handoff_enabled": {
                       "type": "boolean"
                     },
+                    "oidc_unavailable": {
+                      "type": "boolean"
+                    },
                     "password_auth_enabled": {
                       "type": "boolean"
                     },
@@ -521,6 +528,7 @@
                     "logged_in",
                     "oidc_enabled",
                     "oidc_native_handoff_enabled",
+                    "oidc_unavailable",
                     "password_auth_enabled",
                     "passwordless_enabled",
                     "passkeys_enabled",
@@ -1541,9 +1549,24 @@
                             ]
                           },
                           "match_type": {
+                            "enum": [
+                              "title",
+                              "metadata",
+                              "content"
+                            ],
                             "type": "string"
                           },
                           "match_preview": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "workspace_name": {
                             "anyOf": [
                               {
                                 "type": "string"
@@ -1840,9 +1863,24 @@
                             ]
                           },
                           "match_type": {
+                            "enum": [
+                              "title",
+                              "metadata",
+                              "content"
+                            ],
                             "type": "string"
                           },
                           "match_preview": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "workspace_name": {
                             "anyOf": [
                               {
                                 "type": "string"
@@ -2033,10 +2071,92 @@
     "/api/sessions/search": {
       "get": {
         "operationId": "sessions.search",
+        "summary": "Title, metadata and content matches; any sidebar filter answers from the /api/sessions rows, in their order.",
         "tags": [
           "sessions"
         ],
         "parameters": [
+          {
+            "name": "include_archived",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "all_profiles",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "exclude_hidden",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "sidebar_source",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "show_cli_sessions",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "show_claude_code_sessions",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "show_cron_sessions",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "show_webhook_sessions",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "show_kanban_sessions",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
           {
             "name": "q",
             "in": "query",
@@ -2065,7 +2185,7 @@
             "allowReserved": true
           },
           {
-            "name": "all_profiles",
+            "name": "project_id",
             "in": "query",
             "schema": {
               "type": "string"
@@ -2303,9 +2423,24 @@
                             ]
                           },
                           "match_type": {
+                            "enum": [
+                              "title",
+                              "metadata",
+                              "content"
+                            ],
                             "type": "string"
                           },
                           "match_preview": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "workspace_name": {
                             "anyOf": [
                               {
                                 "type": "string"
@@ -2394,6 +2529,9 @@
                     },
                     "active_profile": {
                       "type": "string"
+                    },
+                    "sidebar_filtered": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -2845,6 +2983,42 @@
                                             "type": "string"
                                           }
                                         },
+                                        "display_text": {
+                                          "type": "string"
+                                        },
+                                        "media": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "url": {
+                                                "type": "string"
+                                              },
+                                              "name": {
+                                                "type": "string"
+                                              },
+                                              "mime": {
+                                                "type": "string"
+                                              },
+                                              "kind": {
+                                                "enum": [
+                                                  "image",
+                                                  "audio",
+                                                  "video",
+                                                  "pdf",
+                                                  "file"
+                                                ],
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "url",
+                                              "name",
+                                              "mime",
+                                              "kind"
+                                            ]
+                                          }
+                                        },
                                         "tool": {
                                           "type": "object",
                                           "properties": {
@@ -3053,6 +3227,42 @@
                                       }
                                     ]
                                   },
+                                  "final_answer_display": {
+                                    "type": "string"
+                                  },
+                                  "final_answer_media": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "url": {
+                                          "type": "string"
+                                        },
+                                        "name": {
+                                          "type": "string"
+                                        },
+                                        "mime": {
+                                          "type": "string"
+                                        },
+                                        "kind": {
+                                          "enum": [
+                                            "image",
+                                            "audio",
+                                            "video",
+                                            "pdf",
+                                            "file"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "url",
+                                        "name",
+                                        "mime",
+                                        "kind"
+                                      ]
+                                    }
+                                  },
                                   "terminal_state": {
                                     "type": "string"
                                   },
@@ -3160,6 +3370,42 @@
                               },
                               "_display_excerpt": {
                                 "type": "string"
+                              },
+                              "_display_content": {
+                                "type": "string"
+                              },
+                              "_media": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "url": {
+                                      "type": "string"
+                                    },
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "mime": {
+                                      "type": "string"
+                                    },
+                                    "kind": {
+                                      "enum": [
+                                        "image",
+                                        "audio",
+                                        "video",
+                                        "pdf",
+                                        "file"
+                                      ],
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "url",
+                                    "name",
+                                    "mime",
+                                    "kind"
+                                  ]
+                                }
                               },
                               "_background_update": {
                                 "type": "object",
@@ -3951,6 +4197,16 @@
                         },
                         "assistant_name": {
                           "type": "string"
+                        },
+                        "workspace_name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -4587,6 +4843,42 @@
                                             "type": "string"
                                           }
                                         },
+                                        "display_text": {
+                                          "type": "string"
+                                        },
+                                        "media": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "url": {
+                                                "type": "string"
+                                              },
+                                              "name": {
+                                                "type": "string"
+                                              },
+                                              "mime": {
+                                                "type": "string"
+                                              },
+                                              "kind": {
+                                                "enum": [
+                                                  "image",
+                                                  "audio",
+                                                  "video",
+                                                  "pdf",
+                                                  "file"
+                                                ],
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "url",
+                                              "name",
+                                              "mime",
+                                              "kind"
+                                            ]
+                                          }
+                                        },
                                         "tool": {
                                           "type": "object",
                                           "properties": {
@@ -4795,6 +5087,42 @@
                                       }
                                     ]
                                   },
+                                  "final_answer_display": {
+                                    "type": "string"
+                                  },
+                                  "final_answer_media": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "url": {
+                                          "type": "string"
+                                        },
+                                        "name": {
+                                          "type": "string"
+                                        },
+                                        "mime": {
+                                          "type": "string"
+                                        },
+                                        "kind": {
+                                          "enum": [
+                                            "image",
+                                            "audio",
+                                            "video",
+                                            "pdf",
+                                            "file"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "url",
+                                        "name",
+                                        "mime",
+                                        "kind"
+                                      ]
+                                    }
+                                  },
                                   "terminal_state": {
                                     "type": "string"
                                   },
@@ -4902,6 +5230,42 @@
                               },
                               "_display_excerpt": {
                                 "type": "string"
+                              },
+                              "_display_content": {
+                                "type": "string"
+                              },
+                              "_media": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "url": {
+                                      "type": "string"
+                                    },
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "mime": {
+                                      "type": "string"
+                                    },
+                                    "kind": {
+                                      "enum": [
+                                        "image",
+                                        "audio",
+                                        "video",
+                                        "pdf",
+                                        "file"
+                                      ],
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "url",
+                                    "name",
+                                    "mime",
+                                    "kind"
+                                  ]
+                                }
                               },
                               "_background_update": {
                                 "type": "object",
@@ -5693,6 +6057,16 @@
                         },
                         "assistant_name": {
                           "type": "string"
+                        },
+                        "workspace_name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -6075,6 +6449,42 @@
                                             "type": "string"
                                           }
                                         },
+                                        "display_text": {
+                                          "type": "string"
+                                        },
+                                        "media": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "url": {
+                                                "type": "string"
+                                              },
+                                              "name": {
+                                                "type": "string"
+                                              },
+                                              "mime": {
+                                                "type": "string"
+                                              },
+                                              "kind": {
+                                                "enum": [
+                                                  "image",
+                                                  "audio",
+                                                  "video",
+                                                  "pdf",
+                                                  "file"
+                                                ],
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "url",
+                                              "name",
+                                              "mime",
+                                              "kind"
+                                            ]
+                                          }
+                                        },
                                         "tool": {
                                           "type": "object",
                                           "properties": {
@@ -6283,6 +6693,42 @@
                                       }
                                     ]
                                   },
+                                  "final_answer_display": {
+                                    "type": "string"
+                                  },
+                                  "final_answer_media": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "url": {
+                                          "type": "string"
+                                        },
+                                        "name": {
+                                          "type": "string"
+                                        },
+                                        "mime": {
+                                          "type": "string"
+                                        },
+                                        "kind": {
+                                          "enum": [
+                                            "image",
+                                            "audio",
+                                            "video",
+                                            "pdf",
+                                            "file"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "url",
+                                        "name",
+                                        "mime",
+                                        "kind"
+                                      ]
+                                    }
+                                  },
                                   "terminal_state": {
                                     "type": "string"
                                   },
@@ -6390,6 +6836,42 @@
                               },
                               "_display_excerpt": {
                                 "type": "string"
+                              },
+                              "_display_content": {
+                                "type": "string"
+                              },
+                              "_media": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "url": {
+                                      "type": "string"
+                                    },
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "mime": {
+                                      "type": "string"
+                                    },
+                                    "kind": {
+                                      "enum": [
+                                        "image",
+                                        "audio",
+                                        "video",
+                                        "pdf",
+                                        "file"
+                                      ],
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "url",
+                                    "name",
+                                    "mime",
+                                    "kind"
+                                  ]
+                                }
                               },
                               "_background_update": {
                                 "type": "object",
@@ -7181,6 +7663,16 @@
                         },
                         "assistant_name": {
                           "type": "string"
+                        },
+                        "workspace_name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -7517,9 +8009,24 @@
                           ]
                         },
                         "match_type": {
+                          "enum": [
+                            "title",
+                            "metadata",
+                            "content"
+                          ],
                           "type": "string"
                         },
                         "match_preview": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "workspace_name": {
                           "anyOf": [
                             {
                               "type": "string"
@@ -7865,9 +8372,24 @@
                           ]
                         },
                         "match_type": {
+                          "enum": [
+                            "title",
+                            "metadata",
+                            "content"
+                          ],
                           "type": "string"
                         },
                         "match_preview": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "workspace_name": {
                           "anyOf": [
                             {
                               "type": "string"
@@ -8220,9 +8742,24 @@
                           ]
                         },
                         "match_type": {
+                          "enum": [
+                            "title",
+                            "metadata",
+                            "content"
+                          ],
                           "type": "string"
                         },
                         "match_preview": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "workspace_name": {
                           "anyOf": [
                             {
                               "type": "string"
@@ -8656,6 +9193,42 @@
                                             "type": "string"
                                           }
                                         },
+                                        "display_text": {
+                                          "type": "string"
+                                        },
+                                        "media": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "url": {
+                                                "type": "string"
+                                              },
+                                              "name": {
+                                                "type": "string"
+                                              },
+                                              "mime": {
+                                                "type": "string"
+                                              },
+                                              "kind": {
+                                                "enum": [
+                                                  "image",
+                                                  "audio",
+                                                  "video",
+                                                  "pdf",
+                                                  "file"
+                                                ],
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "url",
+                                              "name",
+                                              "mime",
+                                              "kind"
+                                            ]
+                                          }
+                                        },
                                         "tool": {
                                           "type": "object",
                                           "properties": {
@@ -8864,6 +9437,42 @@
                                       }
                                     ]
                                   },
+                                  "final_answer_display": {
+                                    "type": "string"
+                                  },
+                                  "final_answer_media": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "url": {
+                                          "type": "string"
+                                        },
+                                        "name": {
+                                          "type": "string"
+                                        },
+                                        "mime": {
+                                          "type": "string"
+                                        },
+                                        "kind": {
+                                          "enum": [
+                                            "image",
+                                            "audio",
+                                            "video",
+                                            "pdf",
+                                            "file"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "url",
+                                        "name",
+                                        "mime",
+                                        "kind"
+                                      ]
+                                    }
+                                  },
                                   "terminal_state": {
                                     "type": "string"
                                   },
@@ -8971,6 +9580,42 @@
                               },
                               "_display_excerpt": {
                                 "type": "string"
+                              },
+                              "_display_content": {
+                                "type": "string"
+                              },
+                              "_media": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "url": {
+                                      "type": "string"
+                                    },
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "mime": {
+                                      "type": "string"
+                                    },
+                                    "kind": {
+                                      "enum": [
+                                        "image",
+                                        "audio",
+                                        "video",
+                                        "pdf",
+                                        "file"
+                                      ],
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "url",
+                                    "name",
+                                    "mime",
+                                    "kind"
+                                  ]
+                                }
                               },
                               "_background_update": {
                                 "type": "object",
@@ -9762,6 +10407,16 @@
                         },
                         "assistant_name": {
                           "type": "string"
+                        },
+                        "workspace_name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -10123,9 +10778,24 @@
                           ]
                         },
                         "match_type": {
+                          "enum": [
+                            "title",
+                            "metadata",
+                            "content"
+                          ],
                           "type": "string"
                         },
                         "match_preview": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "workspace_name": {
                           "anyOf": [
                             {
                               "type": "string"
@@ -10468,9 +11138,24 @@
                           ]
                         },
                         "match_type": {
+                          "enum": [
+                            "title",
+                            "metadata",
+                            "content"
+                          ],
                           "type": "string"
                         },
                         "match_preview": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "workspace_name": {
                           "anyOf": [
                             {
                               "type": "string"
@@ -11106,6 +11791,42 @@
                                             "type": "string"
                                           }
                                         },
+                                        "display_text": {
+                                          "type": "string"
+                                        },
+                                        "media": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "url": {
+                                                "type": "string"
+                                              },
+                                              "name": {
+                                                "type": "string"
+                                              },
+                                              "mime": {
+                                                "type": "string"
+                                              },
+                                              "kind": {
+                                                "enum": [
+                                                  "image",
+                                                  "audio",
+                                                  "video",
+                                                  "pdf",
+                                                  "file"
+                                                ],
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "url",
+                                              "name",
+                                              "mime",
+                                              "kind"
+                                            ]
+                                          }
+                                        },
                                         "tool": {
                                           "type": "object",
                                           "properties": {
@@ -11314,6 +12035,42 @@
                                       }
                                     ]
                                   },
+                                  "final_answer_display": {
+                                    "type": "string"
+                                  },
+                                  "final_answer_media": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "url": {
+                                          "type": "string"
+                                        },
+                                        "name": {
+                                          "type": "string"
+                                        },
+                                        "mime": {
+                                          "type": "string"
+                                        },
+                                        "kind": {
+                                          "enum": [
+                                            "image",
+                                            "audio",
+                                            "video",
+                                            "pdf",
+                                            "file"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "url",
+                                        "name",
+                                        "mime",
+                                        "kind"
+                                      ]
+                                    }
+                                  },
                                   "terminal_state": {
                                     "type": "string"
                                   },
@@ -11421,6 +12178,42 @@
                               },
                               "_display_excerpt": {
                                 "type": "string"
+                              },
+                              "_display_content": {
+                                "type": "string"
+                              },
+                              "_media": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "url": {
+                                      "type": "string"
+                                    },
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "mime": {
+                                      "type": "string"
+                                    },
+                                    "kind": {
+                                      "enum": [
+                                        "image",
+                                        "audio",
+                                        "video",
+                                        "pdf",
+                                        "file"
+                                      ],
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "url",
+                                    "name",
+                                    "mime",
+                                    "kind"
+                                  ]
+                                }
                               },
                               "_background_update": {
                                 "type": "object",
@@ -12212,6 +13005,16 @@
                         },
                         "assistant_name": {
                           "type": "string"
+                        },
+                        "workspace_name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -12669,9 +13472,24 @@
                           ]
                         },
                         "match_type": {
+                          "enum": [
+                            "title",
+                            "metadata",
+                            "content"
+                          ],
                           "type": "string"
                         },
                         "match_preview": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "workspace_name": {
                           "anyOf": [
                             {
                               "type": "string"
@@ -13015,9 +13833,24 @@
                           ]
                         },
                         "match_type": {
+                          "enum": [
+                            "title",
+                            "metadata",
+                            "content"
+                          ],
                           "type": "string"
                         },
                         "match_preview": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "workspace_name": {
                           "anyOf": [
                             {
                               "type": "string"
@@ -13483,6 +14316,42 @@
                                             "type": "string"
                                           }
                                         },
+                                        "display_text": {
+                                          "type": "string"
+                                        },
+                                        "media": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "url": {
+                                                "type": "string"
+                                              },
+                                              "name": {
+                                                "type": "string"
+                                              },
+                                              "mime": {
+                                                "type": "string"
+                                              },
+                                              "kind": {
+                                                "enum": [
+                                                  "image",
+                                                  "audio",
+                                                  "video",
+                                                  "pdf",
+                                                  "file"
+                                                ],
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "url",
+                                              "name",
+                                              "mime",
+                                              "kind"
+                                            ]
+                                          }
+                                        },
                                         "tool": {
                                           "type": "object",
                                           "properties": {
@@ -13691,6 +14560,42 @@
                                       }
                                     ]
                                   },
+                                  "final_answer_display": {
+                                    "type": "string"
+                                  },
+                                  "final_answer_media": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "url": {
+                                          "type": "string"
+                                        },
+                                        "name": {
+                                          "type": "string"
+                                        },
+                                        "mime": {
+                                          "type": "string"
+                                        },
+                                        "kind": {
+                                          "enum": [
+                                            "image",
+                                            "audio",
+                                            "video",
+                                            "pdf",
+                                            "file"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "url",
+                                        "name",
+                                        "mime",
+                                        "kind"
+                                      ]
+                                    }
+                                  },
                                   "terminal_state": {
                                     "type": "string"
                                   },
@@ -13798,6 +14703,42 @@
                               },
                               "_display_excerpt": {
                                 "type": "string"
+                              },
+                              "_display_content": {
+                                "type": "string"
+                              },
+                              "_media": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "url": {
+                                      "type": "string"
+                                    },
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "mime": {
+                                      "type": "string"
+                                    },
+                                    "kind": {
+                                      "enum": [
+                                        "image",
+                                        "audio",
+                                        "video",
+                                        "pdf",
+                                        "file"
+                                      ],
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "url",
+                                    "name",
+                                    "mime",
+                                    "kind"
+                                  ]
+                                }
                               },
                               "_background_update": {
                                 "type": "object",
@@ -14589,6 +15530,16 @@
                         },
                         "assistant_name": {
                           "type": "string"
+                        },
+                        "workspace_name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -15058,6 +16009,42 @@
                                             "type": "string"
                                           }
                                         },
+                                        "display_text": {
+                                          "type": "string"
+                                        },
+                                        "media": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "url": {
+                                                "type": "string"
+                                              },
+                                              "name": {
+                                                "type": "string"
+                                              },
+                                              "mime": {
+                                                "type": "string"
+                                              },
+                                              "kind": {
+                                                "enum": [
+                                                  "image",
+                                                  "audio",
+                                                  "video",
+                                                  "pdf",
+                                                  "file"
+                                                ],
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "url",
+                                              "name",
+                                              "mime",
+                                              "kind"
+                                            ]
+                                          }
+                                        },
                                         "tool": {
                                           "type": "object",
                                           "properties": {
@@ -15266,6 +16253,42 @@
                                       }
                                     ]
                                   },
+                                  "final_answer_display": {
+                                    "type": "string"
+                                  },
+                                  "final_answer_media": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "url": {
+                                          "type": "string"
+                                        },
+                                        "name": {
+                                          "type": "string"
+                                        },
+                                        "mime": {
+                                          "type": "string"
+                                        },
+                                        "kind": {
+                                          "enum": [
+                                            "image",
+                                            "audio",
+                                            "video",
+                                            "pdf",
+                                            "file"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "url",
+                                        "name",
+                                        "mime",
+                                        "kind"
+                                      ]
+                                    }
+                                  },
                                   "terminal_state": {
                                     "type": "string"
                                   },
@@ -15373,6 +16396,42 @@
                               },
                               "_display_excerpt": {
                                 "type": "string"
+                              },
+                              "_display_content": {
+                                "type": "string"
+                              },
+                              "_media": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "url": {
+                                      "type": "string"
+                                    },
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "mime": {
+                                      "type": "string"
+                                    },
+                                    "kind": {
+                                      "enum": [
+                                        "image",
+                                        "audio",
+                                        "video",
+                                        "pdf",
+                                        "file"
+                                      ],
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "url",
+                                    "name",
+                                    "mime",
+                                    "kind"
+                                  ]
+                                }
                               },
                               "_background_update": {
                                 "type": "object",
@@ -16164,6 +17223,16 @@
                         },
                         "assistant_name": {
                           "type": "string"
+                        },
+                        "workspace_name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -16620,6 +17689,42 @@
                                             "type": "string"
                                           }
                                         },
+                                        "display_text": {
+                                          "type": "string"
+                                        },
+                                        "media": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "url": {
+                                                "type": "string"
+                                              },
+                                              "name": {
+                                                "type": "string"
+                                              },
+                                              "mime": {
+                                                "type": "string"
+                                              },
+                                              "kind": {
+                                                "enum": [
+                                                  "image",
+                                                  "audio",
+                                                  "video",
+                                                  "pdf",
+                                                  "file"
+                                                ],
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "url",
+                                              "name",
+                                              "mime",
+                                              "kind"
+                                            ]
+                                          }
+                                        },
                                         "tool": {
                                           "type": "object",
                                           "properties": {
@@ -16828,6 +17933,42 @@
                                       }
                                     ]
                                   },
+                                  "final_answer_display": {
+                                    "type": "string"
+                                  },
+                                  "final_answer_media": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "url": {
+                                          "type": "string"
+                                        },
+                                        "name": {
+                                          "type": "string"
+                                        },
+                                        "mime": {
+                                          "type": "string"
+                                        },
+                                        "kind": {
+                                          "enum": [
+                                            "image",
+                                            "audio",
+                                            "video",
+                                            "pdf",
+                                            "file"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "url",
+                                        "name",
+                                        "mime",
+                                        "kind"
+                                      ]
+                                    }
+                                  },
                                   "terminal_state": {
                                     "type": "string"
                                   },
@@ -16935,6 +18076,42 @@
                               },
                               "_display_excerpt": {
                                 "type": "string"
+                              },
+                              "_display_content": {
+                                "type": "string"
+                              },
+                              "_media": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "url": {
+                                      "type": "string"
+                                    },
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "mime": {
+                                      "type": "string"
+                                    },
+                                    "kind": {
+                                      "enum": [
+                                        "image",
+                                        "audio",
+                                        "video",
+                                        "pdf",
+                                        "file"
+                                      ],
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "url",
+                                    "name",
+                                    "mime",
+                                    "kind"
+                                  ]
+                                }
                               },
                               "_background_update": {
                                 "type": "object",
@@ -17726,6 +18903,16 @@
                         },
                         "assistant_name": {
                           "type": "string"
+                        },
+                        "workspace_name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -18070,6 +19257,42 @@
                             "type": "array",
                             "items": {
                               "type": "string"
+                            }
+                          },
+                          "display_text": {
+                            "type": "string"
+                          },
+                          "media": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "url": {
+                                  "type": "string"
+                                },
+                                "name": {
+                                  "type": "string"
+                                },
+                                "mime": {
+                                  "type": "string"
+                                },
+                                "kind": {
+                                  "enum": [
+                                    "image",
+                                    "audio",
+                                    "video",
+                                    "pdf",
+                                    "file"
+                                  ],
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "url",
+                                "name",
+                                "mime",
+                                "kind"
+                              ]
                             }
                           },
                           "tool": {
@@ -18995,9 +20218,24 @@
                           ]
                         },
                         "match_type": {
+                          "enum": [
+                            "title",
+                            "metadata",
+                            "content"
+                          ],
                           "type": "string"
                         },
                         "match_preview": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "workspace_name": {
                           "anyOf": [
                             {
                               "type": "string"
@@ -19340,9 +20578,24 @@
                           ]
                         },
                         "match_type": {
+                          "enum": [
+                            "title",
+                            "metadata",
+                            "content"
+                          ],
                           "type": "string"
                         },
                         "match_preview": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "workspace_name": {
                           "anyOf": [
                             {
                               "type": "string"
@@ -19730,13 +20983,15 @@
                         "type": "object",
                         "properties": {
                           "name": {
-                            "type": "string"
+                            "type": "string",
+                            "minLength": 1
                           },
                           "path": {
                             "type": "string"
                           }
                         },
                         "required": [
+                          "name",
                           "path"
                         ],
                         "additionalProperties": {}
@@ -19858,13 +21113,15 @@
                         "type": "object",
                         "properties": {
                           "name": {
-                            "type": "string"
+                            "type": "string",
+                            "minLength": 1
                           },
                           "path": {
                             "type": "string"
                           }
                         },
                         "required": [
+                          "name",
                           "path"
                         ],
                         "additionalProperties": {}
@@ -19923,13 +21180,15 @@
                         "type": "object",
                         "properties": {
                           "name": {
-                            "type": "string"
+                            "type": "string",
+                            "minLength": 1
                           },
                           "path": {
                             "type": "string"
                           }
                         },
                         "required": [
+                          "name",
                           "path"
                         ],
                         "additionalProperties": {}
@@ -19992,13 +21251,15 @@
                         "type": "object",
                         "properties": {
                           "name": {
-                            "type": "string"
+                            "type": "string",
+                            "minLength": 1
                           },
                           "path": {
                             "type": "string"
                           }
                         },
                         "required": [
+                          "name",
                           "path"
                         ],
                         "additionalProperties": {}
@@ -20052,13 +21313,15 @@
                         "type": "object",
                         "properties": {
                           "name": {
-                            "type": "string"
+                            "type": "string",
+                            "minLength": 1
                           },
                           "path": {
                             "type": "string"
                           }
                         },
                         "required": [
+                          "name",
                           "path"
                         ],
                         "additionalProperties": {}
@@ -24883,6 +26146,42 @@
                                             "type": "string"
                                           }
                                         },
+                                        "display_text": {
+                                          "type": "string"
+                                        },
+                                        "media": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "url": {
+                                                "type": "string"
+                                              },
+                                              "name": {
+                                                "type": "string"
+                                              },
+                                              "mime": {
+                                                "type": "string"
+                                              },
+                                              "kind": {
+                                                "enum": [
+                                                  "image",
+                                                  "audio",
+                                                  "video",
+                                                  "pdf",
+                                                  "file"
+                                                ],
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "url",
+                                              "name",
+                                              "mime",
+                                              "kind"
+                                            ]
+                                          }
+                                        },
                                         "tool": {
                                           "type": "object",
                                           "properties": {
@@ -25091,6 +26390,42 @@
                                       }
                                     ]
                                   },
+                                  "final_answer_display": {
+                                    "type": "string"
+                                  },
+                                  "final_answer_media": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "url": {
+                                          "type": "string"
+                                        },
+                                        "name": {
+                                          "type": "string"
+                                        },
+                                        "mime": {
+                                          "type": "string"
+                                        },
+                                        "kind": {
+                                          "enum": [
+                                            "image",
+                                            "audio",
+                                            "video",
+                                            "pdf",
+                                            "file"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "url",
+                                        "name",
+                                        "mime",
+                                        "kind"
+                                      ]
+                                    }
+                                  },
                                   "terminal_state": {
                                     "type": "string"
                                   },
@@ -25198,6 +26533,42 @@
                               },
                               "_display_excerpt": {
                                 "type": "string"
+                              },
+                              "_display_content": {
+                                "type": "string"
+                              },
+                              "_media": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "url": {
+                                      "type": "string"
+                                    },
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "mime": {
+                                      "type": "string"
+                                    },
+                                    "kind": {
+                                      "enum": [
+                                        "image",
+                                        "audio",
+                                        "video",
+                                        "pdf",
+                                        "file"
+                                      ],
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "url",
+                                    "name",
+                                    "mime",
+                                    "kind"
+                                  ]
+                                }
                               },
                               "_background_update": {
                                 "type": "object",
@@ -25989,6 +27360,16 @@
                         },
                         "assistant_name": {
                           "type": "string"
+                        },
+                        "workspace_name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -26454,6 +27835,42 @@
                                                 "type": "string"
                                               }
                                             },
+                                            "display_text": {
+                                              "type": "string"
+                                            },
+                                            "media": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "url": {
+                                                    "type": "string"
+                                                  },
+                                                  "name": {
+                                                    "type": "string"
+                                                  },
+                                                  "mime": {
+                                                    "type": "string"
+                                                  },
+                                                  "kind": {
+                                                    "enum": [
+                                                      "image",
+                                                      "audio",
+                                                      "video",
+                                                      "pdf",
+                                                      "file"
+                                                    ],
+                                                    "type": "string"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "url",
+                                                  "name",
+                                                  "mime",
+                                                  "kind"
+                                                ]
+                                              }
+                                            },
                                             "tool": {
                                               "type": "object",
                                               "properties": {
@@ -26645,6 +28062,42 @@
                                           }
                                         ]
                                       },
+                                      "final_answer_display": {
+                                        "type": "string"
+                                      },
+                                      "final_answer_media": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "url": {
+                                              "type": "string"
+                                            },
+                                            "name": {
+                                              "type": "string"
+                                            },
+                                            "mime": {
+                                              "type": "string"
+                                            },
+                                            "kind": {
+                                              "enum": [
+                                                "image",
+                                                "audio",
+                                                "video",
+                                                "pdf",
+                                                "file"
+                                              ],
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "url",
+                                            "name",
+                                            "mime",
+                                            "kind"
+                                          ]
+                                        }
+                                      },
                                       "terminal_state": {
                                         "type": "string"
                                       },
@@ -26752,6 +28205,42 @@
                                   },
                                   "_display_excerpt": {
                                     "type": "string"
+                                  },
+                                  "_display_content": {
+                                    "type": "string"
+                                  },
+                                  "_media": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "url": {
+                                          "type": "string"
+                                        },
+                                        "name": {
+                                          "type": "string"
+                                        },
+                                        "mime": {
+                                          "type": "string"
+                                        },
+                                        "kind": {
+                                          "enum": [
+                                            "image",
+                                            "audio",
+                                            "video",
+                                            "pdf",
+                                            "file"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "url",
+                                        "name",
+                                        "mime",
+                                        "kind"
+                                      ]
+                                    }
                                   },
                                   "_background_update": {
                                     "type": "object",
@@ -27543,6 +29032,16 @@
                             },
                             "assistant_name": {
                               "type": "string"
+                            },
+                            "workspace_name": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
                             }
                           },
                           "required": [
@@ -31867,13 +33366,15 @@
                             "type": "object",
                             "properties": {
                               "name": {
-                                "type": "string"
+                                "type": "string",
+                                "minLength": 1
                               },
                               "path": {
                                 "type": "string"
                               }
                             },
                             "required": [
+                              "name",
                               "path"
                             ],
                             "additionalProperties": {}
@@ -32313,13 +33814,15 @@
                             "type": "object",
                             "properties": {
                               "name": {
-                                "type": "string"
+                                "type": "string",
+                                "minLength": 1
                               },
                               "path": {
                                 "type": "string"
                               }
                             },
                             "required": [
+                              "name",
                               "path"
                             ],
                             "additionalProperties": {}
@@ -33569,6 +35072,26 @@
                           "category": {
                             "type": "string"
                           },
+                          "handler": {
+                            "enum": [
+                              "client",
+                              "agent"
+                            ],
+                            "type": "string"
+                          },
+                          "clients": {
+                            "type": "array",
+                            "items": {
+                              "enum": [
+                                "web",
+                                "ios"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "unsupported_message": {
+                            "type": "string"
+                          },
                           "cli_only": {
                             "type": "boolean"
                           },
@@ -33588,7 +35111,10 @@
                           }
                         },
                         "required": [
-                          "name"
+                          "name",
+                          "aliases",
+                          "handler",
+                          "clients"
                         ],
                         "additionalProperties": {}
                       }
@@ -38234,6 +39760,9 @@
                           "schedule_display": {
                             "type": "string"
                           },
+                          "schedule_input": {
+                            "type": "string"
+                          },
                           "enabled": {
                             "type": "boolean"
                           },
@@ -38512,6 +40041,10 @@
                             "type": "boolean"
                           }
                         },
+                        "required": [
+                          "schedule_display",
+                          "schedule_input"
+                        ],
                         "additionalProperties": {}
                       }
                     },
@@ -38943,6 +40476,9 @@
                         "schedule_display": {
                           "type": "string"
                         },
+                        "schedule_input": {
+                          "type": "string"
+                        },
                         "enabled": {
                           "type": "boolean"
                         },
@@ -39221,6 +40757,10 @@
                           "type": "boolean"
                         }
                       },
+                      "required": [
+                        "schedule_display",
+                        "schedule_input"
+                      ],
                       "additionalProperties": {}
                     },
                     "job_id": {
@@ -39537,6 +41077,9 @@
                         "schedule_display": {
                           "type": "string"
                         },
+                        "schedule_input": {
+                          "type": "string"
+                        },
                         "enabled": {
                           "type": "boolean"
                         },
@@ -39815,6 +41358,10 @@
                           "type": "boolean"
                         }
                       },
+                      "required": [
+                        "schedule_display",
+                        "schedule_input"
+                      ],
                       "additionalProperties": {}
                     },
                     "job_id": {
@@ -39935,6 +41482,9 @@
                         "schedule_display": {
                           "type": "string"
                         },
+                        "schedule_input": {
+                          "type": "string"
+                        },
                         "enabled": {
                           "type": "boolean"
                         },
@@ -40213,6 +41763,10 @@
                           "type": "boolean"
                         }
                       },
+                      "required": [
+                        "schedule_display",
+                        "schedule_input"
+                      ],
                       "additionalProperties": {}
                     },
                     "job_id": {
@@ -40334,6 +41888,9 @@
                         "schedule_display": {
                           "type": "string"
                         },
+                        "schedule_input": {
+                          "type": "string"
+                        },
                         "enabled": {
                           "type": "boolean"
                         },
@@ -40612,6 +42169,10 @@
                           "type": "boolean"
                         }
                       },
+                      "required": [
+                        "schedule_display",
+                        "schedule_input"
+                      ],
                       "additionalProperties": {}
                     },
                     "job_id": {
@@ -40743,6 +42304,9 @@
                         "schedule_display": {
                           "type": "string"
                         },
+                        "schedule_input": {
+                          "type": "string"
+                        },
                         "enabled": {
                           "type": "boolean"
                         },
@@ -41021,6 +42585,10 @@
                           "type": "boolean"
                         }
                       },
+                      "required": [
+                        "schedule_display",
+                        "schedule_input"
+                      ],
                       "additionalProperties": {}
                     },
                     "job_id": {
@@ -41142,6 +42710,9 @@
                         "schedule_display": {
                           "type": "string"
                         },
+                        "schedule_input": {
+                          "type": "string"
+                        },
                         "enabled": {
                           "type": "boolean"
                         },
@@ -41420,6 +42991,10 @@
                           "type": "boolean"
                         }
                       },
+                      "required": [
+                        "schedule_display",
+                        "schedule_input"
+                      ],
                       "additionalProperties": {}
                     },
                     "job_id": {

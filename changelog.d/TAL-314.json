@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Slash commands now match between the iPhone app and Talaria Web: both list the same commands in the same order, and /compact, /fork, and /bg work everywhere.",
+      "highlight": false,
+      "components": ["app", "web"]
+    },
+    {
+      "category": "Fixed",
+      "summary": "Slash command suggestions no longer match on description text, so typing a command name shows only the commands that start with it.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

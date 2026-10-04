@@ -200,116 +200,58 @@ final class ChatAttachmentCoordinatorTests: APIClientTestCase {
         let client = makeAuthenticatedMediaClient { request in
             XCTAssertEqual(request.url, remoteURL)
             XCTAssertEqual(request.value(forHTTPHeaderField: "X-Talaria-Test-Session"), "authenticated")
-            let response = HTTPURLResponse(
-                url: request.url!,
-                statusCode: 200,
-                httpVersion: nil,
-                headerFields: nil
-            )!
-            return (response, mediaData)
+            return (Self.okResponse(for: request, contentType: nil), mediaData)
         }
         let coordinator = makeCoordinator(client: client)
 
         let thumbnail = await coordinator.transcriptMediaThumbnailData(
-            for: TranscriptMediaReference(rawReference: remoteURL.absoluteString)
+            for: TranscriptMediaReference(url: remoteURL.absoluteString, name: "image.png", mediaKind: .image)
         )
 
         XCTAssertEqual(thumbnail, mediaData)
     }
 
-    func testTranscriptLocalMediaIncludesSessionIDOnMediaEndpoint() async throws {
+    /// TAL-186: the server's media URL loads as sent, under the base URL's path, with the session's credentials.
+    func testTranscriptServerMediaLoadsTheServerURLUnderTheBasePath() async throws {
         let mediaData = try XCTUnwrap(Self.imageData())
-        let mediaPath = "/Users/hermes/.hermes/browser_screenshots/example.png"
-        let sessionID = "session-abc"
-        let client = makeAuthenticatedMediaClient { request in
+        let mediaPath = "/Users/hermes/.hermes/browser_screenshots/example (1).png"
+        let client = makeAuthenticatedMediaClient(baseURL: "https://example.test/talaria") { request in
             XCTAssertEqual(request.httpMethod, "GET")
-            XCTAssertEqual(request.url?.path, "/api/media")
-
-            let components = URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)
-            let query = Dictionary(uniqueKeysWithValues: (components?.queryItems ?? []).map { ($0.name, $0.value) })
-            XCTAssertEqual(query["session_id"], sessionID)
-            XCTAssertEqual(query["path"], mediaPath)
-
-            let response = HTTPURLResponse(
-                url: try XCTUnwrap(request.url),
-                statusCode: 200,
-                httpVersion: nil,
-                headerFields: ["Content-Type": "image/png"]
-            )!
-            return (response, mediaData)
-        }
-        let coordinator = makeCoordinator(client: client)
-
-        let thumbnail = await coordinator.transcriptMediaThumbnailData(
-            for: TranscriptMediaReference(rawReference: mediaPath)
-        )
-
-        XCTAssertNotNil(thumbnail)
-    }
-
-    func testMarkdownImageWorkspaceRelativeReferenceLoadsResolvedPathFromMediaEndpoint() async throws {
-        let mediaData = try XCTUnwrap(Self.imageData())
-        let sessionID = "session-abc"
-        let segments = TranscriptMediaParser.segments(
-            in: "![Login screen](./shots/login.png)",
-            workspaceRoot: "/srv/workspaces/app"
-        )
-        let reference = try XCTUnwrap(segments.compactMap { segment -> TranscriptMediaReference? in
-            if case let .media(reference) = segment { return reference }
-            return nil
-        }.first)
-        let client = makeAuthenticatedMediaClient { request in
-            XCTAssertEqual(request.httpMethod, "GET")
-            XCTAssertEqual(request.url?.path, "/api/media")
+            XCTAssertEqual(request.url?.path, "/talaria/api/media")
             XCTAssertEqual(request.value(forHTTPHeaderField: "X-Talaria-Test-Session"), "authenticated")
 
             let components = URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)
             let query = Dictionary(uniqueKeysWithValues: (components?.queryItems ?? []).map { ($0.name, $0.value) })
-            XCTAssertEqual(query["session_id"], sessionID)
-            XCTAssertEqual(query["path"], "/srv/workspaces/app/shots/login.png")
-
-            let response = HTTPURLResponse(
-                url: try XCTUnwrap(request.url),
-                statusCode: 200,
-                httpVersion: nil,
-                headerFields: ["Content-Type": "image/png"]
-            )!
-            return (response, mediaData)
+            XCTAssertEqual(query["session_id"], "session-abc")
+            XCTAssertEqual(query["path"], mediaPath)
+            return (Self.okResponse(for: request, contentType: "image/png"), mediaData)
         }
         let coordinator = makeCoordinator(client: client)
 
-        let thumbnail = await coordinator.transcriptMediaThumbnailData(for: reference)
+        let thumbnail = await coordinator.transcriptMediaThumbnailData(for: TranscriptMediaReference(
+            url: "./api/media?path=%2FUsers%2Fhermes%2F.hermes%2Fbrowser_screenshots%2Fexample%20(1).png&session_id=session-abc",
+            name: "example (1).png",
+            mime: "image/png",
+            mediaKind: .image
+        ))
 
         XCTAssertNotNil(thumbnail)
-        XCTAssertEqual(reference.accessibilityName, "Login screen")
     }
 
-    func testTranscriptLocalAudioMediaIncludesSessionIDOnMediaEndpoint() async throws {
+    func testTranscriptServerAudioMediaLoadsItsBytes() async throws {
         let mediaData = Data("audio-bytes".utf8)
-        let mediaPath = "/tmp/generated/clip.mp3"
-        let sessionID = "session-abc"
         let client = makeAuthenticatedMediaClient { request in
-            XCTAssertEqual(request.httpMethod, "GET")
-            XCTAssertEqual(request.url?.path, "/api/media")
-
-            let components = URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)
-            let query = Dictionary(uniqueKeysWithValues: (components?.queryItems ?? []).map { ($0.name, $0.value) })
-            XCTAssertEqual(query["session_id"], sessionID)
-            XCTAssertEqual(query["path"], mediaPath)
-
-            let response = HTTPURLResponse(
-                url: try XCTUnwrap(request.url),
-                statusCode: 200,
-                httpVersion: nil,
-                headerFields: ["Content-Type": "audio/mpeg"]
-            )!
-            return (response, mediaData)
+            XCTAssertEqual(request.url?.absoluteString, "https://example.test/api/media?path=%2Ftmp%2Fgenerated%2Fclip.mp3&session_id=session-abc")
+            return (Self.okResponse(for: request, contentType: "audio/mpeg"), mediaData)
         }
         let coordinator = makeCoordinator(client: client)
 
-        let data = await coordinator.transcriptMediaData(
-            for: TranscriptMediaReference(rawReference: mediaPath)
-        )
+        let data = await coordinator.transcriptMediaData(for: TranscriptMediaReference(
+            url: "./api/media?path=%2Ftmp%2Fgenerated%2Fclip.mp3&session_id=session-abc",
+            name: "clip.mp3",
+            mime: "audio/mpeg",
+            mediaKind: .audio
+        ))
 
         XCTAssertEqual(data, mediaData)
     }
@@ -320,47 +262,40 @@ final class ChatAttachmentCoordinatorTests: APIClientTestCase {
         let client = makeAuthenticatedMediaClient { request in
             XCTAssertEqual(request.url, remoteURL)
             XCTAssertEqual(request.value(forHTTPHeaderField: "X-Talaria-Test-Session"), "public")
-            let response = HTTPURLResponse(
-                url: try XCTUnwrap(request.url),
-                statusCode: 200,
-                httpVersion: nil,
-                headerFields: ["Content-Type": "video/mp4"]
-            )!
-            return (response, mediaData)
+            return (Self.okResponse(for: request, contentType: "video/mp4"), mediaData)
         }
         let coordinator = makeCoordinator(client: client)
 
         let data = await coordinator.transcriptMediaData(
-            for: TranscriptMediaReference(rawReference: remoteURL.absoluteString)
+            for: TranscriptMediaReference(url: remoteURL.absoluteString, name: "movie.mp4", mediaKind: .video)
         )
 
         XCTAssertEqual(data, mediaData)
     }
 
-    func testTranscriptLocalAudioWithoutSessionDoesNotRequestMediaEndpoint() async {
+    func testTranscriptMediaWithANonHTTPSchemeRequestsNothing() async {
         var requestCount = 0
         let client = makeAuthenticatedMediaClient { request in
             requestCount += 1
-            let response = HTTPURLResponse(
-                url: request.url!,
-                statusCode: 200,
-                httpVersion: nil,
-                headerFields: nil
-            )!
-            return (response, Data("unexpected".utf8))
+            return (Self.okResponse(for: request, contentType: nil), Data("unexpected".utf8))
         }
-        let coordinator = ChatAttachmentCoordinator(client: client)
-        let delegate = ChatAttachmentCoordinatorDelegateSpy()
-        delegate.attachmentSessionID = nil
-        delegateSpies.append(delegate)
-        coordinator.delegate = delegate
+        let coordinator = makeCoordinator(client: client)
 
         let data = await coordinator.transcriptMediaData(
-            for: TranscriptMediaReference(rawReference: "/tmp/generated/clip.mp3")
+            for: TranscriptMediaReference(url: "file:///tmp/generated/clip.mp3", name: "clip.mp3", mediaKind: .audio)
         )
 
         XCTAssertNil(data)
         XCTAssertEqual(requestCount, 0)
+    }
+
+    private static func okResponse(for request: URLRequest, contentType: String?) -> HTTPURLResponse {
+        HTTPURLResponse(
+            url: request.url!,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: contentType.map { ["Content-Type": $0] }
+        )!
     }
 
     func testUploadCarriesDraftFileNameIntoPendingAttachment() async throws {
@@ -503,6 +438,7 @@ final class ChatAttachmentCoordinatorTests: APIClientTestCase {
     }
 
     private func makeAuthenticatedMediaClient(
+        baseURL: String = "https://example.test",
         handler: @escaping (URLRequest) throws -> (HTTPURLResponse, Data)
     ) -> APIClient {
         MockURLProtocol.requestHandler = handler
@@ -516,7 +452,7 @@ final class ChatAttachmentCoordinatorTests: APIClientTestCase {
         publicConfiguration.httpAdditionalHeaders = ["X-Talaria-Test-Session": "public"]
 
         return APIClient(
-            baseURL: URL(string: "https://example.test")!,
+            baseURL: URL(string: baseURL)!,
             session: URLSession(configuration: authenticatedConfiguration),
             publicMediaSession: URLSession(configuration: publicConfiguration)
         )

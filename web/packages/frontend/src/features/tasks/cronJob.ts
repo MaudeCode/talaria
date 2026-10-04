@@ -1,4 +1,4 @@
-/** Pure display helpers over the cron job view. The server derives each job's status (`derived_state`, TAL-296). */
+/** Pure display helpers over the cron job view. The server derives each job's status (`derived_state`, TAL-296) and schedule text (`schedule_display` / `schedule_input`, TAL-298). */
 import type { CronJob, CronRunUsageSchema, CronStatusSchema } from '../../contracts'
 import type { z } from 'zod'
 
@@ -6,11 +6,6 @@ export type CronState = 'running' | NonNullable<CronJob['derived_state']> | 'unk
 
 export function jobId(job: CronJob): string {
   return job.id ?? job.job_id ?? ''
-}
-
-export function scheduleText(job: CronJob): string {
-  if (typeof job.schedule === 'string') return job.schedule
-  return job.schedule_display ?? job.schedule?.display ?? job.schedule?.expr ?? ''
 }
 
 /** Legacy `next_run` / `last_run` (epoch or ISO) fall back for the `*_at` timestamps of newer agents. */

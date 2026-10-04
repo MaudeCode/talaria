@@ -23,7 +23,7 @@ struct SlashCommandAutocompleteView: View {
     let onDismiss: () -> Void
 
     private var parsed: ParsedSlashQuery {
-        ParsedSlashQuery(query: query)
+        ParsedSlashQuery(query: query, catalog: agentCommands)
     }
 
     var body: some View {
@@ -58,14 +58,14 @@ struct SlashCommandAutocompleteView: View {
             return filteredSubArgs(for: command).count
         }
 
-        return SlashCommandCatalog.matching(parsed.commandName).count +
+        return SlashCommandCatalog.matching(parsed.commandName, in: agentCommands).count +
             filteredSkillSuggestions.count +
             filteredAgentCommandSuggestions.count
     }
 
     @ViewBuilder
     private var commandList: some View {
-        let commands = SlashCommandCatalog.matching(parsed.commandName)
+        let commands = SlashCommandCatalog.matching(parsed.commandName, in: agentCommands)
         let skills = filteredSkillSuggestions
         let agentCommands = filteredAgentCommandSuggestions
         if commands.isEmpty && skills.isEmpty && agentCommands.isEmpty {
@@ -369,7 +369,7 @@ struct SlashCommandAutocompleteView: View {
 
     private var filteredAgentCommandSuggestions: [AgentSlashCommandSuggestion] {
         guard !parsed.isSubArgMode else { return [] }
-        let builtinNames = SlashCommandCatalog.matching(parsed.commandName)
+        let builtinNames = SlashCommandCatalog.matching(parsed.commandName, in: agentCommands)
             .map { $0.name.lowercased() }
         let skillNames = filteredSkillSuggestions.map { $0.slashName.lowercased() }
         return AgentSlashCommandSuggestion.matching(

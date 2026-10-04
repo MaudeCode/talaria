@@ -65,20 +65,25 @@ public final class InsightsViewModel {
 
     private let client: any InsightsDataClient
     private let cache: InsightsResponseCache?
+    private let sleep: @MainActor (Duration) async throws -> Void
 
-    public init(server: URL) {
-        client = APIClient(baseURL: server)
-        let cache = InsightsResponseCache(server: server)
+    public convenience init(server: URL) {
+        self.init(client: APIClient(baseURL: server), cache: InsightsResponseCache(server: server))
+    }
+
+    /// `sleep` waits between transient-failure retries; tests inject one that never touches the wall clock.
+    init(
+        client: any InsightsDataClient,
+        cache: InsightsResponseCache? = nil,
+        sleep: @escaping @MainActor (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+    ) {
+        self.client = client
         self.cache = cache
-        if let response = cache.load(timeframe: selectedTimeframe) {
+        self.sleep = sleep
+        if let response = cache?.load(timeframe: selectedTimeframe) {
             serverInsights = response
             loadedTimeframe = selectedTimeframe
         }
-    }
-
-    public init(client: any InsightsDataClient) {
-        self.client = client
-        cache = nil
     }
 
     public func load() async {
@@ -100,25 +105,43 @@ public final class InsightsViewModel {
             }
         }
 
-        do {
-            let response = try await client.insights(days: timeframe.serverDays)
-            guard activeLoadID == loadID, !Task.isCancelled else { return }
+        var retryDelays = Self.retryDelays[...]
+        while true {
+            do {
+                let response = try await client.insights(days: timeframe.serverDays)
+                guard activeLoadID == loadID, !Task.isCancelled else { return }
 
-            serverInsights = response
-            loadedTimeframe = timeframe
-            cache?.save(response, timeframe: timeframe)
-        } catch is CancellationError {
-            return
-        } catch {
-            guard activeLoadID == loadID, !Task.isCancelled else { return }
-            lastError = error
-            fallbackReason = error.localizedDescription
+                serverInsights = response
+                loadedTimeframe = timeframe
+                cache?.save(response, timeframe: timeframe)
+                return
+            } catch is CancellationError {
+                return
+            } catch {
+                guard activeLoadID == loadID, !Task.isCancelled else { return }
 
-            if !hadLoadedAnalytics {
-                errorMessage = error.localizedDescription
+                if CacheFallbackPolicy.shouldUseCache(for: error), let delay = retryDelays.popFirst() {
+                    do {
+                        try await sleep(delay)
+                    } catch {
+                        return
+                    }
+                    guard activeLoadID == loadID, !Task.isCancelled else { return }
+                    continue
+                }
+
+                lastError = error
+                fallbackReason = error.localizedDescription
+                if !hadLoadedAnalytics {
+                    errorMessage = error.localizedDescription
+                }
+                return
             }
         }
     }
+
+    /// Waits between the four `/api/insights` attempts a transient failure earns.
+    private static let retryDelays: [Duration] = [.seconds(1), .seconds(2), .seconds(4)]
 
     // MARK: - Aggregates
 
@@ -162,6 +185,9 @@ public final class InsightsViewModel {
     public var sourceDescription: String {
         if let fallbackReason, serverInsights != nil {
             return String(localized: "Showing cached server analytics. Refresh failed: \(fallbackReason)")
+        }
+        if isLoading, serverInsights != nil {
+            return String(localized: "Showing cached server analytics while refreshing.")
         }
         return String(localized: "Source: server insights from the last \(periodDays) days.")
     }

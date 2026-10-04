@@ -75,15 +75,15 @@ public enum SessionRowPresentation {
         return String(localized: "\(count) messages")
     }
 
+    /// The server names the workspace (TAL-303); a row without a name shows none.
     private static func workspaceLabel(for session: SessionSummary, showsWorkspace: Bool) -> String? {
-        guard showsWorkspace else { return nil }
-        guard let workspace = session.workspace?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !workspace.isEmpty
+        guard showsWorkspace,
+              let name = session.workspaceName?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !name.isEmpty
         else {
             return nil
         }
 
-        let lastPathComponent = (workspace as NSString).lastPathComponent
-        return lastPathComponent.isEmpty ? workspace : lastPathComponent
+        return name
     }
 }

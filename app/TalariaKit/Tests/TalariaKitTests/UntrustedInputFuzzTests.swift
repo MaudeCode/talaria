@@ -291,43 +291,25 @@ class UntrustedInputFuzzTests: XCTestCase {
 
     // MARK: - Media references
 
-    /// Transcript media parsing must terminate, stay proportional to its input,
-    /// and never promote a non-HTTP reference into a remote URL that the media
-    /// loader would then fetch.
-    func testMediaParsingIsBoundedAndNeverPromotesNonHTTPSchemes() {
+    /// A media URL from the server (TAL-186) resolves in bounded time to an http(s) URL or nothing, and a
+    /// relative one stays under this server's base URL, so the authenticated loader never fetches elsewhere.
+    func testMediaURLsResolveOnlyToHTTPAndRelativeOnesStayOnTheServer() {
+        let client = APIClient(baseURL: URL(string: "https://example.test/talaria")!)
         forEachSeed { generator, seed in
-            let markdown = generator.markdown()
-
-            // Reading `.source`, `.mediaKind` and `.displayName` parses the
-            // reference again, so those accesses belong inside the watchdog
-            // too; only the assertions run out here.
-            guard let parsed = withinTimeBudget(seed: seed, input: markdown, {
-                let segments = TranscriptMediaParser.segments(in: markdown)
-                return (count: segments.count, media: segments.compactMap(FuzzMediaSummary.init))
-            }) else { return }
-
-            assertBounded(parsed.count, by: markdown.count, label: "media segments", seed: seed)
-
-            for media in parsed.media {
-                assertBounded(
-                    media.rawReference.count,
-                    by: markdown.count,
-                    label: "media reference",
-                    seed: seed
-                )
-                assertRemoteOnlyForHTTP(media, seed: seed)
-                XCTAssertFalse(
-                    media.displayName.isEmpty,
-                    "A parsed media reference produced an empty display name (seed \(seed))."
-                )
-            }
-
             let raw = generator.string()
-            guard let standalone = withinTimeBudget(seed: seed, input: raw, {
-                FuzzMediaSummary(TranscriptMediaReference(rawReference: raw))
+            guard let resolved = withinTimeBudget(seed: seed, input: raw, {
+                client.transcriptMediaURL(for: raw).map { (scheme: $0.scheme?.lowercased(), host: $0.host, path: $0.path) }
             }) else { return }
+            guard let resolved else { return }
 
-            assertRemoteOnlyForHTTP(standalone, seed: seed)
+            XCTAssertTrue(
+                resolved.scheme == "http" || resolved.scheme == "https",
+                "A media URL resolved to a non-HTTP URL (seed \(seed), \(raw.debugDescription))."
+            )
+            if URL(string: raw)?.scheme == nil {
+                XCTAssertEqual(resolved.host, "example.test", "A relative media URL left the server (seed \(seed)).")
+                XCTAssertTrue(resolved.path.hasPrefix("/talaria/"), "A relative media URL left the base path (seed \(seed)).")
+            }
         }
     }
 
@@ -477,24 +459,6 @@ class UntrustedInputFuzzTests: XCTestCase {
         )
     }
 
-    private func assertRemoteOnlyForHTTP(
-        _ reference: FuzzMediaSummary,
-        seed: UInt64,
-        file: StaticString = #filePath,
-        line: UInt = #line
-    ) {
-        guard reference.isRemote else { return }
-        let trimmed = reference.rawReference
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-        XCTAssertTrue(
-            trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://"),
-            "A non-HTTP reference became a remote URL (seed \(seed), \(reference.rawReference.debugDescription)).",
-            file: file,
-            line: line
-        )
-    }
-
     /// A single generated part must be exactly: the opening boundary line, the
     /// expected header lines, the blank separator, the body, and the trailing
     /// CRLF. Any extra line means a name or filename escaped its header.
@@ -568,31 +532,6 @@ final class UntrustedInputFuzzSoakTests: UntrustedInputFuzzTests {
     override class var iterations: Int { 500_000 }
 }
 
-/// What the media boundary produced, resolved inside the watchdog so no
-/// parsing is left to run unwatched on the calling thread.
-private struct FuzzMediaSummary {
-    let rawReference: String
-    let isRemote: Bool
-    let displayName: String
-    let kind: TranscriptMediaKind
-
-    init(_ reference: TranscriptMediaReference) {
-        rawReference = reference.rawReference
-        if case .remoteURL = reference.source {
-            isRemote = true
-        } else {
-            isRemote = false
-        }
-        displayName = reference.displayName
-        kind = reference.mediaKind
-    }
-
-    init?(_ segment: TranscriptMediaSegment) {
-        guard case let .media(reference) = segment else { return nil }
-        self.init(reference)
-    }
-}
-
 /// Carries a watchdogged result back across the queue hop.
 private final class FuzzResultBox<Value>: @unchecked Sendable {
     var value: Value?
@@ -658,15 +597,6 @@ private struct FuzzGenerator {
         var result = ""
         for _ in 0..<int(0...maxFragments) {
             result += element(Self.fragments)
-        }
-        return result
-    }
-
-    mutating func markdown() -> String {
-        var result = ""
-        for _ in 0..<int(1...10) {
-            result += element(Self.fragments)
-            if bool() { result += "\n" }
         }
         return result
     }

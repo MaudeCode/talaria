@@ -31,6 +31,21 @@ final class ContractReadinessTests: APIClientTestCase {
                 query: ["q": "billing plan", "content": "1", "depth": "5"]
             ),
             .init(
+                name: "session search within the sidebar filters",
+                endpoint: .sessionsSearch(
+                    query: "billing plan",
+                    content: true,
+                    depth: 5,
+                    projectID: "project-1",
+                    visibility: AutomatedSessionVisibility(showsCron: false, showsCli: true)
+                ),
+                path: "/api/sessions/search",
+                query: [
+                    "q": "billing plan", "content": "1", "depth": "5", "project_id": "project-1", "include_archived": "0",
+                    "show_cli_sessions": "1", "show_claude_code_sessions": "1", "show_cron_sessions": "0", "show_webhook_sessions": "1"
+                ]
+            ),
+            .init(
                 name: "session detail",
                 endpoint: .session(id: "session-123", includeMessages: true, messageLimit: 50, messageBefore: 100),
                 path: "/api/session",
@@ -432,6 +447,11 @@ final class SharedContractTests: XCTestCase {
         }
         // A run without a journal: the transcript holds its persisted rows and states no cursor.
         XCTAssertNil(try session("session").transcriptSeq)
+        // The server names the workspace (TAL-303); a Web from before that sends no name.
+        if (object["session"] as? [String: Any])?["workspace_name"] != nil {
+            XCTAssertEqual(try session("session").workspaceName, "Talaria")
+            XCTAssertEqual(SessionSummary(from: try session("session")).workspaceName, "Talaria")
+        }
         // A release checks this App against every retained Web; one from before TAL-316 has no such example.
         guard object["journaled_session"] != nil else { return }
         // A journaled run: the transcript ends at the running turn's prompt, and replay resumes after the cursor.
@@ -572,6 +592,36 @@ final class SharedContractTests: XCTestCase {
         }
         XCTAssertEqual(try label("populated"), "50")
         XCTAssertEqual(try label("unknown_window"), "–")
+    }
+
+    func testSharedWebSessionShowsTheMediaExampleAsTheServerRewroteIt() throws {
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
+        // A release checks this App against every retained Web; one from before TAL-186 has no such example.
+        guard let example = object["media_session"] as? [String: Any] else { return }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let messages = try decoder.decode(
+            [ChatMessage].self,
+            from: JSONSerialization.data(withJSONObject: try XCTUnwrap(example["messages"]))
+        )
+        let reply = try XCTUnwrap(messages.first { $0.role == "assistant" })
+        let display = try XCTUnwrap(reply.displayBody)
+        // `content` stays as written for copy and edit; the display text carries the server's media URLs.
+        XCTAssertTrue(reply.content?.contains("MEDIA:/talaria-contract/out/chart.png") == true)
+        XCTAssertFalse(display.text.contains("MEDIA:/talaria-contract/out/chart.png"))
+        XCTAssertTrue(display.text.contains("MEDIA:/talaria-contract/out/secret.png"), "Fenced code stays literal")
+        XCTAssertEqual(display.media.map(\.mediaKind), [.image, .audio])
+        XCTAssertEqual(display.tiles.map(\.name), ["narration.mp3"])
+        let chart = try XCTUnwrap(display.media.first)
+        XCTAssertEqual(display.image(for: URL(string: chart.url)), chart)
+        XCTAssertEqual(
+            APIClient(baseURL: URL(string: "https://example.test/talaria")!).transcriptMediaURL(for: chart.url)?.absoluteString,
+            "https://example.test/talaria/api/media?path=%2Ftalaria-contract%2Fout%2Fchart.png&session_id=contract-media-session"
+        )
+        // The final answer renders the scene's display text, as Web does.
+        let sceneRows = try XCTUnwrap(AssistantActivityTimeline.authoritativeScene(message: reply)).rows
+        let turn = try XCTUnwrap(CompletedAssistantTurn(rows: [AssistantActivityRow(id: "work", content: .reasoning(.init(text: "Plan")))] + sceneRows))
+        XCTAssertEqual(turn.finalAnswerDisplay, display)
     }
 
     func testSharedWebSessionShowsEachInlineThinkingExampleAsTheServerSplitIt() throws {

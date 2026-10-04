@@ -81,6 +81,40 @@ final class BackgroundWorkUITests: ChatUITestCase {
     }
 }
 
+/// A reply whose media the server rewrote for display renders as one Markdown document: images load
+/// where the text puts them, the Markdown around them stays intact, and audio follows as a tile (TAL-186).
+final class TranscriptMediaUITests: ChatUITestCase {
+    func testServerMediaRendersInsideTheMarkdownAroundIt() throws {
+        launchFixture(additionalArguments: ["--ui-test-transcript-media"])
+        let session = fixtureSessionButton
+        XCTAssertTrue(session.awaitExistence(timeout: 15), "Missing deterministic session fixture")
+        tapFixtureSession(session)
+        XCTAssertNotNil(waitForComposer(timeout: 30), "The media session never opened")
+
+        // The thumbnail is named by its Markdown alt text.
+        let linked = app.buttons["Linked chart"].firstMatch
+        let shown = linked.awaitExistence(timeout: 15)
+        // Thumbnails show a spinner until their bytes load; capture them loaded, from the top of the reply.
+        _ = app.activityIndicators.firstMatch.awaitNonExistence(timeout: 10)
+        let listImage = app.buttons["chart.png"].firstMatch.exists
+        let boldImage = app.buttons["Chart"].firstMatch.exists
+        let audioTile = element(labelContaining: "narration.mp3").exists
+        let literalBold = element(labelContaining: "**").exists
+        let literalToken = element(labelContaining: "MEDIA:").exists
+        app.swipeDown()
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "transcript-media"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        XCTAssertTrue(shown, "The linked image did not render as a thumbnail")
+        XCTAssertTrue(listImage, "The list item's image did not render")
+        XCTAssertTrue(boldImage, "The image inside bold text did not render under its alt text")
+        XCTAssertTrue(audioTile, "The audio file did not render as a tile")
+        XCTAssertFalse(literalBold, "Bold text around an image rendered literally")
+        XCTAssertFalse(literalToken, "A media token rendered as text")
+    }
+}
+
 /// A transcript of very long bodies opens collapsed to the server's excerpts, each expands and
 /// collapses in place, and the composer stays usable (TAL-456).
 final class LongBodyTranscriptUITests: ChatUITestCase {

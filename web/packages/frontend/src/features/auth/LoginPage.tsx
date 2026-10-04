@@ -82,6 +82,7 @@ export function LoginPage({ next }: { next: string | undefined }) {
             </a>
           )}
         </form>
+        {bootstrap.auth.oidc_unavailable && <p role="status" className="mt-3 text-xs text-muted">{m.login_sso_unavailable()}</p>}
         {error && <div role="alert" className="mt-3 text-xs text-error">{error}</div>}
       </div>
     </main>

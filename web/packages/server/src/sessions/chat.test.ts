@@ -90,6 +90,8 @@ describe('chat turns through the sidecar', () => {
     const done = frames.find((f) => f.event === 'done')?.data as Json
     const doneSession = done.session as Json
     expect((doneSession.messages as Json[]).map((m) => [m.role, m.content])).toEqual([['user', 'hello there'], ['assistant', ''], ['tool', 'contents'], ['assistant', 'Hi back']])
+    // TAL-303: the settled session names its workspace like the list and detail do (the default workspace is Home).
+    expect(doneSession.workspace_name).toBe('Home')
     // Every row the turn wrote carries its stream id as the turn identity, matching the start response.
     expect(start.turn_id).toBe(streamId)
     expect((doneSession.messages as Json[]).map((m) => m._turn_id)).toEqual([streamId, streamId, streamId, streamId])
@@ -444,6 +446,38 @@ describe('chat turns through the sidecar', () => {
     const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
     const messages = (((frames.find((f) => f.event === 'done')?.data as Json).session as Json).messages as Json[])
     expect(messages.find((m) => m.content === 'look')?.attachments).toEqual([{ name: 'example.png', filename: 'example.png' }])
+  })
+
+  it('ships served media references rewritten for display on the done frame and every detail window, keeping content (TAL-186)', async () => {
+    const sid = await newSession(s)
+    const ws = realpathSync(join(s.state, 'workspace'))
+    writeFileSync(join(ws, 'shot.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+    const denied = join(s.state, 'sessions', 'leak.png')
+    const reply = `**Here MEDIA:${join(ws, 'shot.png')} done**\n\n- ![song](${join(ws, 'song.mp3')})\n\n> ![outside](/etc/outside.png) MEDIA:${denied}\n\n\`MEDIA:${join(ws, 'shot.png')}\``
+    sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: reply }]))
+    sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Media"', usage: null }))
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'show me' }))
+    const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    const url = (path: string): string => `./api/media?${new URLSearchParams({ path, session_id: sid }).toString()}`
+    const display = `**Here ![shot.png](${url(join(ws, 'shot.png'))}) done**\n\n- [song](${url(join(ws, 'song.mp3'))})\n\n> ![outside](/etc/outside.png) MEDIA:${denied}\n\n\`MEDIA:${join(ws, 'shot.png')}\``
+    const media = [
+      { url: url(join(ws, 'shot.png')), name: 'shot.png', mime: 'image/png', kind: 'image' },
+      { url: url(join(ws, 'song.mp3')), name: 'song.mp3', mime: 'audio/mpeg', kind: 'audio' },
+    ]
+    const doneMessages = ((frames.find((f) => f.event === 'done')?.data as Json).session as Json).messages as Json[]
+    const full = ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages as Json[]
+    const windowed = ((await json(await s.get(`/api/session?session_id=${sid}&msg_limit=1`))).session as Json).messages as Json[]
+    for (const messages of [doneMessages, full, windowed]) {
+      const settled = messages.find((m) => m.role === 'assistant')
+      expect(settled?.content).toBe(reply)
+      expect(settled?._display_content).toBe(display)
+      expect(settled?._media).toEqual(media)
+      expect(settled?._anchor_activity_scene).toMatchObject({ final_answer: reply, final_answer_display: display, final_answer_media: media })
+    }
+    expect(full.find((m) => m.role === 'user')).not.toHaveProperty('_display_content')
+    const served = await s.get(`/${url(join(ws, 'shot.png')).slice(2)}`)
+    expect(served.status).toBe(200)
+    expect(served.headers.get('content-type')).toBe('image/png')
   })
 
   it('ships a long reply\'s excerpt on the done frame (TAL-456)', async () => {

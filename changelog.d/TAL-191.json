@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Insights keeps showing your last saved analytics while it refreshes and retries a brief connection drop or server outage a few times before reporting a failure.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

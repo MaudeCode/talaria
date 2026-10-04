@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Web settings and profiles keep reading Agent configuration on Agent builds that replace PyYAML with their own YAML parser.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

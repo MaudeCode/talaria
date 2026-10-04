@@ -197,6 +197,10 @@ public final class ChatViewModel {
         if let readOnly = session?.readOnly { isSessionReadOnly = readOnly }
         if let canBranch = session?.canBranch { self.canBranch = canBranch }
         if let assistantName = session?.assistantName { self.assistantName = assistantName }
+        // A detail relabels the workspace it reports, so a registry rename shows on the next load (TAL-303).
+        if let workspace = session?.workspace, workspace == serverWorkspacePath {
+            serverWorkspaceName = session?.workspaceName
+        }
     }
     private func clearCompressionAnchorMetadata() {
         compressionAnchorMetadata = nil
@@ -298,6 +302,9 @@ public final class ChatViewModel {
 
     private let sessionID: String?
     private var currentWorkspace: String?
+    /// The workspace the server last reported for this session, with its label (TAL-303).
+    private var serverWorkspacePath: String?
+    private var serverWorkspaceName: String?
     private var currentModel: String?
     private var currentModelProvider: String?
     /// TAL-301: the catalog entry the server says `currentModel` selects.
@@ -430,6 +437,8 @@ public final class ChatViewModel {
         self.responseCache = responseCache
         sessionID = session.sessionId
         currentWorkspace = session.workspace
+        serverWorkspacePath = session.workspace
+        serverWorkspaceName = session.workspaceName
         currentModel = session.model
         currentModelProvider = session.modelProvider
         currentModelOptionID = session.modelOptionID
@@ -554,6 +563,23 @@ public final class ChatViewModel {
 
     public var selectedWorkspacePath: String? {
         currentWorkspace
+    }
+
+    /// The server's label for the selected workspace: the session's own, else the picked root's (TAL-303).
+    public var selectedWorkspaceName: String? {
+        guard let currentWorkspace else { return nil }
+        if currentWorkspace == serverWorkspacePath {
+            return serverWorkspaceName
+        }
+        return workspaceRoots.first(where: { $0.path == currentWorkspace })?.name
+    }
+
+    /// Adopts the workspace a server session payload reports, with its label (TAL-303).
+    private func applyServerWorkspace(_ path: String?, name: String?) {
+        guard let path else { return }
+        currentWorkspace = path
+        serverWorkspacePath = path
+        serverWorkspaceName = name
     }
 
     public var selectedProfileTitle: String {
@@ -848,7 +874,7 @@ public final class ChatViewModel {
             currentModelOptionID = response.session?.model != nil ? response.session?.modelOptionID : option.id
             currentModel = response.session?.model ?? option.id
             currentModelProvider = response.session?.modelProvider ?? option.providerID
-            currentWorkspace = response.session?.workspace ?? currentWorkspace
+            applyServerWorkspace(response.session?.workspace, name: response.session?.workspaceName)
             pendingExplicitModelPick = true
             // Still inside the isUpdatingComposerConfiguration window, so the
             // effort menu stays disabled until the new model's gating lands —
@@ -1010,7 +1036,8 @@ public final class ChatViewModel {
                 modelProvider: currentModelProvider
             )
 
-            currentWorkspace = response.session?.workspace ?? workspace
+            currentWorkspace = workspace
+            applyServerWorkspace(response.session?.workspace, name: response.session?.workspaceName)
             if let session = response.session, session.model != nil { currentModelOptionID = session.modelOptionID }
             currentModel = response.session?.model ?? currentModel
             currentModelProvider = response.session?.modelProvider ?? currentModelProvider
@@ -1672,7 +1699,7 @@ public final class ChatViewModel {
             if let title = session.title {
                 displayTitle = Self.displayTitle(from: title)
             }
-            currentWorkspace = session.workspace ?? currentWorkspace
+            applyServerWorkspace(session.workspace, name: session.workspaceName)
             if session.model != nil { currentModelOptionID = session.modelOptionID }
             currentModel = session.model ?? currentModel
             currentModelProvider = session.modelProvider ?? currentModelProvider
@@ -2815,12 +2842,10 @@ public final class ChatViewModel {
             case .new:
                 return await createSessionFromSlashCommand()
             case .help:
-                return .executed(message: Self.slashCommandHelpText)
+                return .executed(message: Self.slashCommandHelpText(catalog: agentCommands))
             }
         case .serverSide(let action):
             return await executeServerSideSlashCommand(action, args: args)
-        case .unsupported:
-            return .unsupported(friendlyMessage: SlashCommandExecutor.unsupportedMessage(for: command.name))
         }
     }
 
@@ -3138,7 +3163,7 @@ public final class ChatViewModel {
             currentModelOptionID = response.session?.model != nil ? response.session?.modelOptionID : match?.id
             currentModel = response.session?.model ?? match?.id ?? requestedModel
             currentModelProvider = response.session?.modelProvider ?? match?.providerID ?? currentModelProvider
-            currentWorkspace = response.session?.workspace ?? currentWorkspace
+            applyServerWorkspace(response.session?.workspace, name: response.session?.workspaceName)
             pendingExplicitModelPick = true
             await refreshReasoningEffortGating()
             return .executed(message: nil)
@@ -3179,7 +3204,8 @@ public final class ChatViewModel {
                 modelProvider: currentModelProvider
             )
 
-            currentWorkspace = response.session?.workspace ?? workspace
+            currentWorkspace = workspace
+            applyServerWorkspace(response.session?.workspace, name: response.session?.workspaceName)
             if let session = response.session, session.model != nil { currentModelOptionID = session.modelOptionID }
             currentModel = response.session?.model ?? currentModel
             currentModelProvider = response.session?.modelProvider ?? currentModelProvider
@@ -3495,7 +3521,7 @@ public final class ChatViewModel {
             if let title = session.title {
                 displayTitle = Self.displayTitle(from: title)
             }
-            currentWorkspace = session.workspace ?? currentWorkspace
+            applyServerWorkspace(session.workspace, name: session.workspaceName)
             if session.model != nil { currentModelOptionID = session.modelOptionID }
             currentModel = session.model ?? currentModel
             currentModelProvider = session.modelProvider ?? currentModelProvider
@@ -4881,7 +4907,7 @@ public final class ChatViewModel {
             applyLiveActivitySessionTitle(title)
         }
 
-        currentWorkspace = completedSession.workspace ?? currentWorkspace
+        applyServerWorkspace(completedSession.workspace, name: completedSession.workspaceName)
         if completedSession.model != nil { currentModelOptionID = completedSession.modelOptionID }
         currentModel = completedSession.model ?? currentModel
         currentModelProvider = completedSession.modelProvider ?? currentModelProvider
@@ -5596,33 +5622,17 @@ public final class ChatViewModel {
         """
     }
 
-    private static let slashCommandHelpText = String(localized: """
-    Available mobile commands:
-
-    `/help` - Show this command list.
-    `/clear` - Clear the local transcript.
-    `/stop` - Stop the current response.
-    `/new` - Open a fresh session.
-    `/model <id>` - Switch this session's model.
-    `/workspace <path>` - Switch this session's workspace.
-    `/reasoning <level>` - Set reasoning display or effort.
-    `/title <text>` - Rename this session.
-    `/personality <name>` - Set or clear this session's personality.
-    `/skills [query]` - Search available skills.
-    `/queue <message>` - Queue a message for the next turn.
-    `/steer <message>` - Steer the active response.
-    `/interrupt <message>` - Stop the active response and send a new message.
-    `/status` - Show session status.
-    `/btw <question>` - Ask a side question without changing this chat.
-    `/background <prompt>` - Run a parallel task and post the result here.
-    `/bg <prompt>` - Alias for `/background`.
-    `/branch [name]` - Fork this conversation.
-    `/fork [name]` - Alias for `/branch`.
-    `/compress [focus]` - Compress this session's context.
-    `/compact [focus]` - Alias for `/compress`.
-    `/undo` - Undo the last exchange.
-    `/retry` - Retry the last turn.
-    """)
+    /// The iOS commands the server catalog lists (TAL-314), in its order, with their aliases.
+    static func slashCommandHelpText(catalog: [AgentCommand]) -> String {
+        let lines = catalog.filter { $0.isCatalogEntry && $0.isClientHandled && $0.runsOnIOS }.flatMap { entry -> [String] in
+            guard let name = entry.name, let command = SlashCommandCatalog.command(named: name) else { return [] }
+            let usage = ["/\(name)", command.argHint].compactMap { $0 }.joined(separator: " ")
+            let aliases = (entry.aliases ?? []).map { "`/\($0)` - " + String(localized: "Alias for \("`/\(name)`")") }
+            return ["`\(usage)` - \(command.description)"] + aliases
+        }
+        guard !lines.isEmpty else { return String(localized: "Check your connection, then try again.") }
+        return ([String(localized: "Available mobile commands:"), ""] + lines).joined(separator: "\n")
+    }
 }
 
 extension ChatViewModel: ChatPendingActionCoordinatorDelegate {

@@ -1,7 +1,7 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { FakeSidecar } from '../sidecar/fake.js'
+import { FakeSidecar, loadSidecarFixtures } from '../sidecar/fake.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { sanitizeClientEvent, updateNotificationOwner, WindowLimiter } from './tools-router.js'
 import type { SessionInfo } from '../auth/store.js'
@@ -162,7 +162,7 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     expect(res.status).toBe(200)
     const commands = (await json(res)).commands as Json[]
     expect(commands.length).toBeGreaterThan(0)
-    expect(commands.every((c) => c.gateway_only === false)).toBe(true)
+    expect(commands.some((c) => c.gateway_only === true)).toBe(false)
     res = await post(s, '/api/commands/exec', { command: '/reload-skills' })
     expect((await json(res)).output).toContain('Reloaded skills')
     res = await post(s, '/api/commands/exec', { command: '' })
@@ -172,6 +172,40 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     sidecar.respond('commands.exec', () => { throw new SidecarError('unknown command', { condition: 'command_not_found' }) })
     res = await post(s, '/api/commands/exec', { command: '/nope' })
     expect(res.status).toBe(404)
+  })
+
+  it('commands list merges the client-command table ahead of the Agent registry (TAL-314)', async () => {
+    const row = (name: string, extra: Json = {}) => ({ name, description: `agent ${name}`, category: 'Session', aliases: [], args_hint: '', subcommands: [], cli_only: false, gateway_only: false, ...extra })
+    sidecar.respond('commands.registry', () => ({
+      commands: [
+        row('stop'), row('bg'), row('compress', { aliases: ['compact', 'squash'] }),
+        row('reload-skills', { aliases: ['reload_skills'] }), row('history', { cli_only: true }), row('sethome', { gateway_only: true }),
+      ],
+    }))
+    try {
+      const commands = (await json(await s.get('/api/commands'))).commands as Json[]
+      const names = commands.map((c) => c.name)
+      // Client entries lead in display order; each name appears once and the client entry wins a clash.
+      expect(names.slice(0, 3)).toEqual(['help', 'new', 'clear'])
+      expect(new Set(names).size).toBe(names.length)
+      expect(commands.find((c) => c.name === 'stop')).toMatchObject({ handler: 'client', clients: ['web', 'ios'] })
+      // An Agent command named like a client alias is dropped, so `/bg` resolves to `background` only.
+      expect(names).not.toContain('bg')
+      expect(commands.find((c) => c.name === 'background')).toMatchObject({ aliases: ['bg'], handler: 'client' })
+      expect(commands.find((c) => c.name === 'compress')).toMatchObject({ aliases: ['compact'], handler: 'client' })
+      expect(commands.find((c) => c.name === 'branch')).toMatchObject({ aliases: ['fork'] })
+      // Web-only commands carry the message other clients show.
+      expect(commands.find((c) => c.name === 'terminal')).toMatchObject({ clients: ['web'], unsupported_message: 'Terminal is not available in the mobile app.' })
+      expect(commands.find((c) => c.name === 'usage')?.clients).toEqual(['web'])
+      // Agent rows follow, run on every client unless CLI-only, and never list gateway-only commands.
+      expect(names.slice(-2)).toEqual(['reload-skills', 'history'])
+      expect(commands.find((c) => c.name === 'reload-skills')).toMatchObject({ handler: 'agent', clients: ['web', 'ios'], aliases: ['reload_skills'] })
+      expect(commands.find((c) => c.name === 'history')).toMatchObject({ handler: 'agent', clients: [], unsupported_message: '/history runs only in the Hermes CLI.' })
+      expect(names).not.toContain('sethome')
+    } finally {
+      const recorded = loadSidecarFixtures().get('commands.registry')?.[0]?.result
+      sidecar.respond('commands.registry', () => recorded as never)
+    }
   })
 
   it('MCP inventory masks secrets and actions edit config.yaml', async () => {

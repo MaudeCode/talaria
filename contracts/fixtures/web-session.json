@@ -759,6 +759,8 @@
     "can_archive": true,
     "can_duplicate": true,
     "assistant_name": "Hermes",
+    "workspace": "/src/talaria-main",
+    "workspace_name": "Talaria",
     "transcript_seq": null,
     "source_kind": "webui",
     "is_messaging_session": false
@@ -2698,6 +2700,85 @@
           "activity_scene_ref": "37f0ec046ba08a1aaf805c66b1fa7e485e00464e03b0d5cc93f744000e054f7f"
         },
         "_turn_id": "legacy:4"
+      }
+    ]
+  },
+  "media_session": {
+    "session_id": "contract-media-session",
+    "workspace": "/talaria-contract",
+    "stored": [
+      {
+        "role": "user",
+        "content": "Plot the run",
+        "timestamp": 1000,
+        "message_id": "media-user"
+      },
+      {
+        "role": "assistant",
+        "content": "Here is the run:\n\n- MEDIA:/talaria-contract/out/chart.png\n- **Before ![Chart](./out/chart.png) after**\n- Narration: MEDIA:/talaria-contract/out/narration.mp3\n\n```text\nMEDIA:/talaria-contract/out/secret.png\n```",
+        "timestamp": 1001,
+        "message_id": "media-reply"
+      }
+    ],
+    "messages": [
+      {
+        "role": "user",
+        "content": "Plot the run",
+        "message_id": "media-user",
+        "timestamp": 1000,
+        "_turn_id": "legacy:0"
+      },
+      {
+        "role": "assistant",
+        "content": "Here is the run:\n\n- MEDIA:/talaria-contract/out/chart.png\n- **Before ![Chart](./out/chart.png) after**\n- Narration: MEDIA:/talaria-contract/out/narration.mp3\n\n```text\nMEDIA:/talaria-contract/out/secret.png\n```",
+        "message_id": "media-reply",
+        "timestamp": 1001,
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "activity_rows": [],
+          "final_answer": "Here is the run:\n\n- MEDIA:/talaria-contract/out/chart.png\n- **Before ![Chart](./out/chart.png) after**\n- Narration: MEDIA:/talaria-contract/out/narration.mp3\n\n```text\nMEDIA:/talaria-contract/out/secret.png\n```",
+          "turn_duration": null,
+          "final_answer_display": "Here is the run:\n\n- ![chart.png](./api/media?path=%2Ftalaria-contract%2Fout%2Fchart.png&session_id=contract-media-session)\n- **Before ![Chart](./api/media?path=%2Ftalaria-contract%2Fout%2Fchart.png&session_id=contract-media-session) after**\n- Narration: [narration.mp3](./api/media?path=%2Ftalaria-contract%2Fout%2Fnarration.mp3&session_id=contract-media-session)\n\n```text\nMEDIA:/talaria-contract/out/secret.png\n```",
+          "final_answer_media": [
+            {
+              "url": "./api/media?path=%2Ftalaria-contract%2Fout%2Fchart.png&session_id=contract-media-session",
+              "name": "chart.png",
+              "mime": "image/png",
+              "kind": "image"
+            },
+            {
+              "url": "./api/media?path=%2Ftalaria-contract%2Fout%2Fnarration.mp3&session_id=contract-media-session",
+              "name": "narration.mp3",
+              "mime": "audio/mpeg",
+              "kind": "audio"
+            }
+          ],
+          "terminal_state": "completed",
+          "expanded_by_default": false,
+          "has_consumed_steering": false,
+          "file_changes": [],
+          "activity_rows_total": 0,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "2271294fb4472d1ea620b9381fa038c0ff8c4c574c36498f928120ca2c304141"
+        },
+        "_turn_id": "legacy:0",
+        "_display_content": "Here is the run:\n\n- ![chart.png](./api/media?path=%2Ftalaria-contract%2Fout%2Fchart.png&session_id=contract-media-session)\n- **Before ![Chart](./api/media?path=%2Ftalaria-contract%2Fout%2Fchart.png&session_id=contract-media-session) after**\n- Narration: [narration.mp3](./api/media?path=%2Ftalaria-contract%2Fout%2Fnarration.mp3&session_id=contract-media-session)\n\n```text\nMEDIA:/talaria-contract/out/secret.png\n```",
+        "_media": [
+          {
+            "url": "./api/media?path=%2Ftalaria-contract%2Fout%2Fchart.png&session_id=contract-media-session",
+            "name": "chart.png",
+            "mime": "image/png",
+            "kind": "image"
+          },
+          {
+            "url": "./api/media?path=%2Ftalaria-contract%2Fout%2Fnarration.mp3&session_id=contract-media-session",
+            "name": "narration.mp3",
+            "mime": "audio/mpeg",
+            "kind": "audio"
+          }
+        ]
       }
     ]
   }

@@ -49,6 +49,13 @@ describe('LoginPage', () => {
     expect(decodeURIComponent(second!.getAttribute('href') ?? '')).toContain('next=/settings/providers')
   })
 
+  it('withholds SSO and explains why while the server cannot resolve its OIDC config', () => {
+    const unresolved = { ...bootstrap, auth: { ...bootstrap.auth, oidc_enabled: false, oidc_native_handoff_enabled: false, oidc_unavailable: true } } as Bootstrap
+    render(<BootstrapContext.Provider value={unresolved}><LoginPage next={undefined} /></BootstrapContext.Provider>)
+    expect(screen.queryByRole('link', { name: /sso|single sign|oidc/i })).toBeNull()
+    expect(screen.getByRole('status')).toHaveTextContent(/sso is temporarily unavailable/i)
+  })
+
   it('redirects to the validated target after a successful login', async () => {
     vi.mocked(api.login).mockResolvedValue({ ok: true })
     const assign = vi.fn()

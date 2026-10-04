@@ -171,10 +171,10 @@ struct ChatComposerConfigLoader {
             configurationError = error
         }
 
-        do {
-            state.agentCommands = (try await client.commands(caching: cache?.entry(ResponseCache.Kind.commands))).commands ?? []
-        } catch {
-            state.agentCommands = []
+        // TAL-314: a failed fetch or an older server's rows (no catalog fields) keep the last good catalog.
+        if let commands = try? await client.commands(caching: cache?.entry(ResponseCache.Kind.commands)).commands,
+           commands.contains(where: \.isCatalogEntry) || !state.agentCommands.contains(where: \.isCatalogEntry) {
+            state.agentCommands = commands
         }
 
         return ChatComposerConfigLoadResult(

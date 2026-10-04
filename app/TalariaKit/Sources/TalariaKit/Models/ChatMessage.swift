@@ -40,6 +40,8 @@ public struct ChatMessage: Decodable, Equatable, Identifiable {
     public internal(set) var steer: [String: JSONValue]?
     /// The server's collapsed excerpt of a body too long to lay out whole (TAL-456); `content` stays whole for actions.
     public internal(set) var displayExcerpt: String?
+    /// The server's display text with media references rewritten, and their media (TAL-186); `content` stays for actions.
+    public internal(set) var displayBody: TranscriptDisplayBody?
     /// The server marked this row an automatic background wakeup (TAL-371): render its completion lines, not the user's bubble.
     public internal(set) var backgroundUpdate: BackgroundUpdate?
     /// The server marked this row part of a background reply that is only a silence marker (TAL-460): it is not shown.
@@ -68,6 +70,7 @@ public struct ChatMessage: Decodable, Equatable, Identifiable {
         turnId: String? = nil,
         steer: [String: JSONValue]? = nil,
         displayExcerpt: String? = nil,
+        displayBody: TranscriptDisplayBody? = nil,
         backgroundUpdate: BackgroundUpdate? = nil,
         backgroundSilent: Bool = false,
         markerKind: ChatMarkerMessageKind? = nil,
@@ -91,6 +94,7 @@ public struct ChatMessage: Decodable, Equatable, Identifiable {
         self.turnId = turnId
         self.steer = steer
         self.displayExcerpt = displayExcerpt
+        self.displayBody = displayBody
         self.backgroundUpdate = backgroundUpdate
         self.backgroundSilent = backgroundSilent
         self.markerKind = markerKind
@@ -117,6 +121,8 @@ public struct ChatMessage: Decodable, Equatable, Identifiable {
         case underscoredTimestamp = "_ts"
         case displayTruncated = "_displayTruncated"
         case displayExcerpt = "_displayExcerpt"
+        case displayContent = "_displayContent"
+        case media = "_media"
         case backgroundUpdate = "_backgroundUpdate"
         case backgroundSilent = "_backgroundSilent"
         case markerKind = "_markerKind"
@@ -150,6 +156,10 @@ public struct ChatMessage: Decodable, Equatable, Identifiable {
         displayExcerpt = (try? container.decodeIfPresent(Bool.self, forKey: .displayTruncated)) == true
             ? container.decodeLossyStringIfPresent(forKey: .displayExcerpt)
             : nil
+        displayBody = TranscriptDisplayBody.decoded(
+            text: container.decodeLossyStringIfPresent(forKey: .displayContent),
+            media: try? container.decodeIfPresent([JSONValue].self, forKey: .media)
+        )
         backgroundUpdate = try? container.decodeIfPresent(BackgroundUpdate.self, forKey: .backgroundUpdate)
         backgroundSilent = (try? container.decodeIfPresent(Bool.self, forKey: .backgroundSilent)) == true
         markerKind = ChatMarkerMessageKind(wireValue: container.decodeLossyStringIfPresent(forKey: .markerKind))
@@ -374,6 +384,9 @@ public struct AssistantActivityScene: Codable, Equatable {
     public let finalAnswer: String?
     /// The server's collapsed excerpt of a final answer too long to lay out whole (TAL-456).
     public let finalAnswerExcerpt: String?
+    /// `finalAnswer` as the server rewrote it for display, and its media (TAL-186); see `finalAnswerDisplay`.
+    let finalAnswerDisplayText: String?
+    let finalAnswerMedia: [JSONValue]?
     public let activityRows: [AssistantActivitySceneRow]?
     let turnDuration: Double?
     /// Server-decided initial state of the turn's "Worked" disclosure.
@@ -395,6 +408,8 @@ public struct AssistantActivityScene: Codable, Equatable {
         case version
         case finalAnswer
         case finalAnswerExcerpt
+        case finalAnswerDisplayText = "finalAnswerDisplay"
+        case finalAnswerMedia
         case activityRows
         case turnDuration
         case expandedByDefault
@@ -411,6 +426,8 @@ public struct AssistantActivityScene: Codable, Equatable {
         version = container.decodeLossyStringIfPresent(forKey: .version)
         finalAnswer = container.decodeLossyStringIfPresent(forKey: .finalAnswer)
         finalAnswerExcerpt = container.decodeLossyStringIfPresent(forKey: .finalAnswerExcerpt)
+        finalAnswerDisplayText = container.decodeLossyStringIfPresent(forKey: .finalAnswerDisplayText)
+        finalAnswerMedia = try? container.decodeIfPresent([JSONValue].self, forKey: .finalAnswerMedia)
         turnDuration = container.decodeLossyDoubleIfPresent(forKey: .turnDuration)
         expandedByDefault = (try? container.decodeIfPresent(Bool.self, forKey: .expandedByDefault)) ?? false
         terminalState = container.decodeLossyStringIfPresent(forKey: .terminalState)
@@ -444,6 +461,11 @@ public struct AnchorScenePageResponse: Decodable, Equatable {
 }
 
 extension AssistantActivityScene {
+    /// `finalAnswer` as the server rewrote it for display, with its media (TAL-186).
+    public var finalAnswerDisplay: TranscriptDisplayBody? {
+        TranscriptDisplayBody.decoded(text: finalAnswerDisplayText, media: finalAnswerMedia)
+    }
+
     public var hasConsumedSteering: Bool {
         // ponytail: preview scan is the pre-field server fallback; delete once those servers are unsupported.
         serverHasConsumedSteering ?? (activityRows?.contains(where: \.isConsumedSteering) == true)
@@ -461,6 +483,9 @@ public struct AssistantActivitySceneRow: Codable, Equatable {
     public let createdAt: Double?
     public let tool: [String: JSONValue]?
     public let steering: [String: JSONValue]?
+    /// A prose row's text as the server rewrote it for display, and its media (TAL-186); see `display`.
+    let displayText: String?
+    let media: [JSONValue]?
 
     enum CodingKeys: String, CodingKey {
         case rowID = "rowId"
@@ -471,6 +496,8 @@ public struct AssistantActivitySceneRow: Codable, Equatable {
         case createdAt
         case tool
         case steering
+        case displayText
+        case media
     }
 
     public init(from decoder: Decoder) throws {
@@ -483,6 +510,13 @@ public struct AssistantActivitySceneRow: Codable, Equatable {
         createdAt = container.decodeLossyDoubleIfPresent(forKey: .createdAt)
         tool = try? container.decodeIfPresent([String: JSONValue].self, forKey: .tool)
         steering = try? container.decodeIfPresent([String: JSONValue].self, forKey: .steering)
+        displayText = container.decodeLossyStringIfPresent(forKey: .displayText)
+        media = try? container.decodeIfPresent([JSONValue].self, forKey: .media)
+    }
+
+    /// A prose row's text as the server rewrote it for display, with its media (TAL-186).
+    public var display: TranscriptDisplayBody? {
+        TranscriptDisplayBody.decoded(text: displayText, media: media)
     }
 
     /// Rows decode one by one, so a malformed row never drops its neighbours.

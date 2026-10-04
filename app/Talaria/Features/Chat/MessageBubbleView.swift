@@ -5,7 +5,6 @@ struct MessageBubbleView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.transcriptMediaWorkspaceRoot) private var transcriptMediaWorkspaceRoot
     @Environment(\.pendingSteerControls) private var pendingSteerControls
     @AppStorage(ChatTranscriptDisplaySettings.hidesAttachmentPathsKey) private var hidesAttachmentPaths = true
     @AppStorage(ChatTranscriptDisplaySettings.showsAssistantTurnTimestampsKey) private var showsAssistantTurnTimestamps = false
@@ -168,19 +167,16 @@ struct MessageBubbleView: View {
     }
 
     private var assistantMessageRow: some View {
-        let segments = TranscriptMediaParser.segments(
-            in: messageText,
-            workspaceRoot: transcriptMediaWorkspaceRoot
-        )
-
-        return VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 6) {
             if showsAssistantTurnHeaderForThisMessage {
                 assistantTurnHeader
             }
 
-            if segments.containsTranscriptMedia {
+            // The server's display text, when it rewrote media references; `content` stays for copy and edit (TAL-186).
+            if let display = message.displayBody {
                 TranscriptMediaContentView(
-                    segments: segments,
+                    markdown: collapsedExcerpt ?? display.text,
+                    display: display,
                     cacheNamespace: transcriptMediaCacheNamespace,
                     loadMediaImage: loadTranscriptMediaImage,
                     loadMediaData: loadTranscriptMediaData,
@@ -560,32 +556,6 @@ extension EnvironmentValues {
         set { self[PendingSteerControlsKey.self] = newValue }
     }
 }
-
-/// The session workspace that `./` and `../` Markdown image destinations
-/// resolve against before they load through `/api/media` (TAL-168). Nil leaves
-/// those images to the Markdown renderer.
-struct TranscriptMediaWorkspaceRootKey: EnvironmentKey {
-    static let defaultValue: String? = nil
-}
-
-extension EnvironmentValues {
-    var transcriptMediaWorkspaceRoot: String? {
-        get { self[TranscriptMediaWorkspaceRootKey.self] }
-        set { self[TranscriptMediaWorkspaceRootKey.self] = newValue }
-    }
-}
-
-private extension [TranscriptMediaSegment] {
-    var containsTranscriptMedia: Bool {
-        contains { segment in
-            if case .media = segment {
-                return true
-            }
-            return false
-        }
-    }
-}
-
 
 // MARK: - Remote image loading with cookie-aware session
 

@@ -125,15 +125,6 @@ extension TranscriptMediaReference {
     }
 
     var exportFileExtension: String? {
-        let fileExtension: String
-        switch source {
-        case let .remoteURL(url):
-            fileExtension = url.pathExtension
-        case let .localPath(path):
-            fileExtension = URL(fileURLWithPath: path).pathExtension
-        }
-
-        let normalized = fileExtension.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return normalized.isEmpty ? nil : normalized
+        fileExtension.isEmpty ? nil : fileExtension
     }
 }

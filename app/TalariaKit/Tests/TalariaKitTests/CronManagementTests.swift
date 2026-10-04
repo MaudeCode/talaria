@@ -16,6 +16,8 @@ final class CronManagementModelTests: XCTestCase {
                 "name": "Aliased task",
                 "prompt": 42,
                 "schedule": "0 9 * * *",
+                "schedule_display": "0 9 * * *",
+                "schedule_input": "0 9 * * *",
                 "enabled": "true",
                 "state": "scheduled",
                 "derived_state": "active",
@@ -42,6 +44,8 @@ final class CronManagementModelTests: XCTestCase {
         {
           "id": "paused-stale-error",
           "schedule": {"kind": "cron", "expr": "0 9 * * *"},
+          "schedule_display": "0 9 * * *",
+          "schedule_input": "0 9 * * *",
           "repeat": {"times": null, "completed": 4},
           "enabled": false,
           "state": "paused",
@@ -79,6 +83,27 @@ final class CronManagementModelTests: XCTestCase {
         XCTAssertNil(oldServer.resumable)
     }
 
+    func testCronJobRendersServerScheduleTextAndEditorPrefill() throws {
+        func decode(_ fields: String) throws -> CronJob {
+            try JSONDecoder.cronTestDecoder.decode(CronJob.self, from: Data(#"{"id": "job", \#(fields)}"#.utf8))
+        }
+
+        let interval = try decode(#""schedule": {"kind": "interval", "minutes": 30}, "schedule_display": "Every half hour", "schedule_input": "every 30m""#)
+        XCTAssertEqual(interval.scheduleText, "Every half hour")
+        XCTAssertEqual(CronJobEditorDraft(job: interval).schedule, "every 30m")
+
+        let runAt = "2026-10-05T09:00:00+02:00"
+        let once = try decode(#""schedule": {"kind": "once", "run_at": "\#(runAt)"}, "schedule_display": "once at \#(runAt)", "schedule_input": "\#(runAt)""#)
+        XCTAssertEqual(once.scheduleText, "once at \(runAt)")
+        XCTAssertEqual(once.displayName, "once at \(runAt)")
+        XCTAssertEqual(CronJobEditorDraft(job: once).schedule, runAt)
+
+        let oldServer = try decode(#""schedule": {"kind": "interval", "minutes": 30}"#)
+        XCTAssertNil(oldServer.scheduleText)
+        XCTAssertEqual(oldServer.displayName, String(localized: "Untitled Task"))
+        XCTAssertEqual(CronJobEditorDraft(job: oldServer).schedule, "")
+    }
+
     func testCronJobEditorDraftNormalizesFieldsAndSkills() {
         let draft = CronJobEditorDraft(
             name: "  Morning digest  ",
@@ -113,6 +138,8 @@ final class CronManagementModelTests: XCTestCase {
               "id": "job-legacy",
               "prompt": "Run it",
               "schedule": "0 7 * * *",
+              "schedule_display": "0 7 * * *",
+              "schedule_input": "0 7 * * *",
               "deliver": "legacy-target",
               "provider": "openai"
             }
@@ -382,6 +409,8 @@ final class CronManagementViewModelTests: APIClientTestCase {
                 "name": "Created",
                 "prompt": "Run it",
                 "schedule": {"kind": "cron", "expr": "0 7 * * *"},
+                "schedule_display": "0 7 * * *",
+                "schedule_input": "0 7 * * *",
                 "enabled": true,
                 "state": "scheduled"
               }
@@ -615,6 +644,8 @@ final class CronManagementViewModelTests: APIClientTestCase {
                 "name": "Digest",
                 "prompt": "Run it",
                 "schedule": {"kind": "cron", "expr": "0 7 * * *"},
+                "schedule_display": "0 7 * * *",
+                "schedule_input": "0 7 * * *",
                 "enabled": true,
                 "state": "paused",
                 "derived_state": "paused",
@@ -630,6 +661,8 @@ final class CronManagementViewModelTests: APIClientTestCase {
               "name": "Digest",
               "prompt": "Run it",
               "schedule": {"kind": "cron", "expr": "0 7 * * *"},
+              "schedule_display": "0 7 * * *",
+              "schedule_input": "0 7 * * *",
               "enabled": true,
               "state": "scheduled"
             }
@@ -818,7 +851,7 @@ final class CronManagementViewModelTests: APIClientTestCase {
             return apiTestJSONResponse(#"{"ok": true, "job": {"id": "job123", "model": "", "provider": ""}}"#, for: request)
         }
         let job = try decodeCronJob(
-            #"{"id": "job123", "prompt": "Run it", "schedule": "0 7 * * *", "model": "gpt-5", "provider": "openai", "profile": "retired", "skills": ["writing", "retired-skill"]}"#
+            #"{"id": "job123", "prompt": "Run it", "schedule": "0 7 * * *", "schedule_display": "0 7 * * *", "schedule_input": "0 7 * * *", "model": "gpt-5", "provider": "openai", "profile": "retired", "skills": ["writing", "retired-skill"]}"#
         )
         let viewModel = TaskDetailViewModel(
             job: job,

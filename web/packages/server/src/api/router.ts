@@ -163,11 +163,10 @@ export const coreRouter = os.router({
       if (!(await auth.isAuthEnabled())) return { ok: true as const, message: 'Auth not enabled' }
       const clientIp = ctx.peer
       if (!auth.checkLoginRate(clientIp)) throw new HttpError(429, 'Too many attempts. Try again in a minute.')
-      if (!(await auth.verifyPassword(input.password ?? ''))) {
-        auth.recordLoginAttempt(clientIp)
-        throw new HttpError(401, 'Invalid password')
-      }
-      auth.clearLoginAttempts(clientIp)
+      // Reserve the attempt before the async hash so concurrent guesses see it; success releases only this one.
+      const reservation = auth.recordLoginAttempt(clientIp)
+      if (!(await auth.verifyPassword(input.password ?? ''))) throw new HttpError(401, 'Invalid password')
+      auth.releaseLoginAttempt(clientIp, reservation)
       const cookieVal = auth.createSession({ authType: 'password' })
       ctx.queueCookie(ctx.authCookieHeader(cookieVal))
       return { ok: true as const }
