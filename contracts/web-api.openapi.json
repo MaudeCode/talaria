@@ -1549,6 +1549,11 @@
                             ]
                           },
                           "match_type": {
+                            "enum": [
+                              "title",
+                              "metadata",
+                              "content"
+                            ],
                             "type": "string"
                           },
                           "match_preview": {
@@ -1858,6 +1863,11 @@
                             ]
                           },
                           "match_type": {
+                            "enum": [
+                              "title",
+                              "metadata",
+                              "content"
+                            ],
                             "type": "string"
                           },
                           "match_preview": {
@@ -2061,10 +2071,92 @@
     "/api/sessions/search": {
       "get": {
         "operationId": "sessions.search",
+        "summary": "Title, metadata and content matches; any sidebar filter answers from the /api/sessions rows, in their order.",
         "tags": [
           "sessions"
         ],
         "parameters": [
+          {
+            "name": "include_archived",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "all_profiles",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "exclude_hidden",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "sidebar_source",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "show_cli_sessions",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "show_claude_code_sessions",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "show_cron_sessions",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "show_webhook_sessions",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "show_kanban_sessions",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
           {
             "name": "q",
             "in": "query",
@@ -2093,7 +2185,7 @@
             "allowReserved": true
           },
           {
-            "name": "all_profiles",
+            "name": "project_id",
             "in": "query",
             "schema": {
               "type": "string"
@@ -2331,6 +2423,11 @@
                             ]
                           },
                           "match_type": {
+                            "enum": [
+                              "title",
+                              "metadata",
+                              "content"
+                            ],
                             "type": "string"
                           },
                           "match_preview": {
@@ -2432,6 +2529,9 @@
                     },
                     "active_profile": {
                       "type": "string"
+                    },
+                    "sidebar_filtered": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -7552,6 +7652,11 @@
                           ]
                         },
                         "match_type": {
+                          "enum": [
+                            "title",
+                            "metadata",
+                            "content"
+                          ],
                           "type": "string"
                         },
                         "match_preview": {
@@ -7910,6 +8015,11 @@
                           ]
                         },
                         "match_type": {
+                          "enum": [
+                            "title",
+                            "metadata",
+                            "content"
+                          ],
                           "type": "string"
                         },
                         "match_preview": {
@@ -8275,6 +8385,11 @@
                           ]
                         },
                         "match_type": {
+                          "enum": [
+                            "title",
+                            "metadata",
+                            "content"
+                          ],
                           "type": "string"
                         },
                         "match_preview": {
@@ -10187,6 +10302,11 @@
                           ]
                         },
                         "match_type": {
+                          "enum": [
+                            "title",
+                            "metadata",
+                            "content"
+                          ],
                           "type": "string"
                         },
                         "match_preview": {
@@ -10542,6 +10662,11 @@
                           ]
                         },
                         "match_type": {
+                          "enum": [
+                            "title",
+                            "metadata",
+                            "content"
+                          ],
                           "type": "string"
                         },
                         "match_preview": {
@@ -12752,6 +12877,11 @@
                           ]
                         },
                         "match_type": {
+                          "enum": [
+                            "title",
+                            "metadata",
+                            "content"
+                          ],
                           "type": "string"
                         },
                         "match_preview": {
@@ -13108,6 +13238,11 @@
                           ]
                         },
                         "match_type": {
+                          "enum": [
+                            "title",
+                            "metadata",
+                            "content"
+                          ],
                           "type": "string"
                         },
                         "match_preview": {
@@ -19095,6 +19230,11 @@
                           ]
                         },
                         "match_type": {
+                          "enum": [
+                            "title",
+                            "metadata",
+                            "content"
+                          ],
                           "type": "string"
                         },
                         "match_preview": {
@@ -19450,6 +19590,11 @@
                           ]
                         },
                         "match_type": {
+                          "enum": [
+                            "title",
+                            "metadata",
+                            "content"
+                          ],
                           "type": "string"
                         },
                         "match_preview": {

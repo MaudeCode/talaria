@@ -31,6 +31,21 @@ final class ContractReadinessTests: APIClientTestCase {
                 query: ["q": "billing plan", "content": "1", "depth": "5"]
             ),
             .init(
+                name: "session search within the sidebar filters",
+                endpoint: .sessionsSearch(
+                    query: "billing plan",
+                    content: true,
+                    depth: 5,
+                    projectID: "project-1",
+                    visibility: AutomatedSessionVisibility(showsCron: false, showsCli: true)
+                ),
+                path: "/api/sessions/search",
+                query: [
+                    "q": "billing plan", "content": "1", "depth": "5", "project_id": "project-1", "include_archived": "0",
+                    "show_cli_sessions": "1", "show_claude_code_sessions": "1", "show_cron_sessions": "0", "show_webhook_sessions": "1"
+                ]
+            ),
+            .init(
                 name: "session detail",
                 endpoint: .session(id: "session-123", includeMessages: true, messageLimit: 50, messageBefore: 100),
                 path: "/api/session",

@@ -104,15 +104,16 @@ export function SessionListPanel() {
   const [project, setProject] = useState<string | null>(null)
   const [showArchived, setShowArchived] = useState(false)
   const list = useSessionListQuery(showArchived ? { include_archived: true } : {})
-  // Server-backed search (title and message content) once the query is long enough; the local title filter answers instantly meanwhile.
-  const q = filter.trim()
-  const search = useQuery({ queryKey: keys.sessions.search(q), queryFn: () => api.searchSessions(q), enabled: q.length >= 2, staleTime: 15_000, placeholderData: (prev) => prev })
   const projects = useProjectsQuery()
   useSessionListStream()
   const newChat = useNewChat()
   const data = list.data
   const rows = useMemo(() => (data?.sessions ?? []).filter((r) => showArchived || !r.archived), [data, showArchived])
   const cliCount = useMemo(() => rows.filter((r) => r.is_cli_session).length, [rows])
+  // TAL-308: the server searches within the visible project, source tab and archive state; the local title filter covers the wait.
+  const q = filter.trim()
+  const searchFilters: api.SessionSearchFilters = { project_id: project === NO_PROJECT ? 'none' : (project ?? undefined), sidebar_source: cliCount > 0 ? source : undefined, include_archived: showArchived }
+  const search = useQuery({ queryKey: keys.sessions.search(q, searchFilters), queryFn: () => api.searchSessions(q, searchFilters), enabled: q.length >= 2, staleTime: 15_000 })
   const webuiCount = rows.length - cliCount
   const hasUnprojected = useMemo(() => rows.some((r) => !r.project_id), [rows])
   const projectList = projects.data?.projects ?? []
@@ -123,13 +124,9 @@ export function SessionListPanel() {
     if (project === NO_PROJECT) visible = visible.filter((r) => !r.project_id)
     else if (project) visible = visible.filter((r) => r.project_id === project)
     if (!q) return visible
-    // Merge the server's matches (content hits included) into the visible set, keeping list order for known rows.
-    const hits = new Map((search.data?.sessions ?? []).map((r) => [r.session_id, r]))
-    const local = visible.filter((r) => r.title.toLowerCase().includes(q) || hits.has(r.session_id))
-    const known = new Set(local.map((r) => r.session_id))
-    const extra = [...hits.values()].filter((r) => !known.has(r.session_id) && (showArchived || !r.archived))
-    return [...local, ...extra]
-  }, [rows, filter, cliCount, source, project, search.data, showArchived])
+    if (search.data) return search.data.sessions
+    return visible.filter((r) => r.title.toLowerCase().includes(q))
+  }, [rows, filter, cliCount, source, project, search.data])
   const previews = useMemo(() => new Map((search.data?.sessions ?? []).flatMap((r) => (r.match_preview ? [[r.session_id, r.match_preview] as const] : []))), [search.data])
   const groups = useMemo(() => {
     const order: ReturnType<typeof groupLabel>[] = ['pinned', 'today', 'yesterday', 'week', 'older']

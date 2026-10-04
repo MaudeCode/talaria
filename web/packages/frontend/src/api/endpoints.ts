@@ -59,8 +59,10 @@ export const setReasoningDisplay = (display: 'show' | 'hide') => orpc().reasonin
 // Sessions
 export interface SessionListParams { include_archived?: boolean; all_profiles?: boolean; sidebar_source?: 'webui' | 'cli'; exclude_hidden?: boolean }
 export const fetchSessions = (params: SessionListParams = {}) => orpc().sessions.list({ include_archived: flag(params.include_archived), all_profiles: flag(params.all_profiles), sidebar_source: params.sidebar_source, exclude_hidden: flag(params.exclude_hidden) }, { signal: timeout(45_000) })
-/** Title and message-content search; rows carry `match_type` and, for content hits, `match_preview`. */
-export const searchSessions = (q: string, depth = 5) => orpc().sessions.search({ q, content: '1', depth: String(depth) })
+/** The sidebar filters a search answers within (TAL-308); `project_id: 'none'` selects rows without a project. */
+export interface SessionSearchFilters { project_id: string | undefined; sidebar_source: 'webui' | 'cli' | undefined; include_archived: boolean }
+/** The sidebar's complete, ordered search result; rows carry `match_type` and, for content hits, `match_preview`. */
+export const searchSessions = (q: string, filters: SessionSearchFilters, depth = 5) => orpc().sessions.search({ q, content: '1', depth: String(depth), project_id: filters.project_id, sidebar_source: filters.sidebar_source, include_archived: filters.include_archived ? '1' : '0' })
 export interface SessionGetParams { messages?: boolean; msg_limit?: number; msg_before?: number; resolve_model?: boolean }
 export const fetchSession = (id: SessionId, params: SessionGetParams = {}) =>
   orpc().session.get({ session_id: id, messages: params.messages === false ? '0' : undefined, msg_limit: num(params.msg_limit), msg_before: num(params.msg_before), resolve_model: params.resolve_model === false ? '0' : undefined }, { signal: timeout(60_000) })

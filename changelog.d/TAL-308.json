@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Searching your sessions with a project or source selected now shows only matches from that project and source, and iPhone and the web app show the same results in the same order.",
+      "highlight": false,
+      "components": ["app", "web"]
+    },
+    {
+      "category": "Changed",
+      "summary": "Session search now finds a session by its model, provider, profile, or workspace as well as its title and messages.",
+      "highlight": false,
+      "components": ["app", "web"]
+    }
+  ]
+}

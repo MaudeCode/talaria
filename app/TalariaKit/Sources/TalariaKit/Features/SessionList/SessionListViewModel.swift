@@ -85,12 +85,18 @@ public final class SessionListViewModel {
     /// the loaded rows instead.
     public private(set) var automatedSessionCounts: AutomatedSessionCounts?
 
-    private(set) var remoteContentSearchSessionIDs: [String] = []
-    /// Server-redacted excerpts for `remoteContentSearchSessionIDs`, keyed by
-    /// session ID. Set and cleared together with the IDs so an excerpt never
-    /// outlives the query that produced it.
+    /// The server's complete, ordered result for `activeRemoteSearch` (TAL-308);
+    /// nil until it arrives, while the list shows local title matches.
+    private(set) var remoteSearchResults: [SessionSummary]?
+    /// Whether the server applied the project and visibility filters itself
+    /// (`sidebar_filtered`). Old-server fallback: delete once every supported
+    /// server ships the field.
+    private var remoteSearchIsFiltered = false
+    /// Server-redacted excerpts for the content matches in `remoteSearchResults`,
+    /// keyed by session ID. Set and cleared together with the results so an
+    /// excerpt never outlives the query that produced it.
     private(set) var remoteContentSearchPreviews: [String: String] = [:]
-    private var activeRemoteSearchQuery: String?
+    private var activeRemoteSearch: RemoteSearchScope?
     private var loadGeneration = 0
     /// Every full-list reload goes through here — the automatic tick,
     /// pull-to-refresh, the return refresh, the active-row monitor and the
@@ -161,30 +167,36 @@ public final class SessionListViewModel {
             guard let selectedProjectID else { return true }
             return session.projectId == selectedProjectID
         }
-        let localMatches = projectFilteredSessions.filter { session in
-            guard !query.isEmpty else { return true }
-            return Self.searchableText(for: session).contains(query)
-        }
-        let sortedLocalMatches = Self.sortedSessions(localMatches)
-
-        guard !query.isEmpty, activeRemoteSearchQuery == query else {
-            return sortedLocalMatches
+        guard !query.isEmpty else {
+            return Self.sortedSessions(projectFilteredSessions)
         }
 
-        let localMatchIDs = Set(sortedLocalMatches.compactMap(\.sessionId))
-        let sessionsByID = Dictionary(
-            projectFilteredSessions.compactMap { session -> (String, SessionSummary)? in
+        let titleMatches: (SessionSummary) -> Bool = { $0.title?.lowercased().contains(query) == true }
+        guard activeRemoteSearch == RemoteSearchScope(query: query, projectID: selectedProjectID),
+              let remoteSearchResults
+        else {
+            return Self.sortedSessions(projectFilteredSessions.filter(titleMatches))
+        }
+
+        guard remoteSearchIsFiltered else {
+            // Old-server fallback: that server ignores the filters, so keep only its hits this list shows.
+            let remoteIDs = Set(remoteSearchResults.compactMap(\.sessionId))
+            return Self.sortedSessions(projectFilteredSessions.filter { session in
+                titleMatches(session) || (session.archived != true && session.sessionId.map(remoteIDs.contains) == true)
+            })
+        }
+
+        // The server's set and order (TAL-308), showing the loaded copy of a row so local edits stay current.
+        let loadedByID = Dictionary(
+            sessions.compactMap { session -> (String, SessionSummary)? in
                 guard let sessionID = session.sessionId, !sessionID.isEmpty else { return nil }
                 return (sessionID, session)
             },
             uniquingKeysWith: { first, _ in first }
         )
-        let remoteMatches = remoteContentSearchSessionIDs.compactMap { sessionID -> SessionSummary? in
-            guard !localMatchIDs.contains(sessionID) else { return nil }
-            return sessionsByID[sessionID]
-        }
-
-        return sortedLocalMatches + Self.sortedSessions(remoteMatches)
+        return remoteSearchResults
+            .map { result in result.sessionId.flatMap { loadedByID[$0] } ?? result }
+            .filter { automatedVisibility.shows($0) }
     }
 
     /// The excerpt explaining why `session` is listed for `searchText`, or nil
@@ -193,7 +205,7 @@ public final class SessionListViewModel {
     /// remote search never shows the previous query's excerpt.
     public func contentMatchPreview(for session: SessionSummary, searchText rawSearchText: String) -> String? {
         let query = Self.normalizedSearchQuery(rawSearchText)
-        guard !query.isEmpty, activeRemoteSearchQuery == query, let sessionID = session.sessionId else {
+        guard !query.isEmpty, activeRemoteSearch?.query == query, let sessionID = session.sessionId else {
             return nil
         }
 
@@ -483,15 +495,20 @@ public final class SessionListViewModel {
         }
     }
 
+    /// Asks the server for the complete result within the selected project and
+    /// visibility (TAL-308); `visibleSessions` shows it once it arrives.
     public func searchSessions(
         query rawQuery: String,
+        selectedProjectID: String? = nil,
+        automatedVisibility: AutomatedSessionVisibility = .showAll,
         content: Bool = true,
         depth: Int = 5,
         debounceNanoseconds: UInt64 = 350_000_000
     ) async {
         let query = Self.normalizedSearchQuery(rawQuery)
-        activeRemoteSearchQuery = query
-        remoteContentSearchSessionIDs = []
+        let scope = RemoteSearchScope(query: query, projectID: selectedProjectID)
+        activeRemoteSearch = scope
+        remoteSearchResults = nil
         remoteContentSearchPreviews = [:]
         searchErrorMessage = nil
 
@@ -505,19 +522,31 @@ public final class SessionListViewModel {
                 try await Task.sleep(nanoseconds: debounceNanoseconds)
             }
 
-            guard !Task.isCancelled, activeRemoteSearchQuery == query else { return }
+            guard !Task.isCancelled, activeRemoteSearch == scope else { return }
 
             isSearchingRemoteSessions = true
-            let response = try await client.searchSessions(query: query, content: content, depth: depth)
+            let response = try await client.searchSessions(
+                query: query,
+                projectID: selectedProjectID,
+                visibility: automatedVisibility,
+                content: content,
+                depth: depth
+            )
 
-            guard !Task.isCancelled, activeRemoteSearchQuery == query else { return }
+            guard !Task.isCancelled, activeRemoteSearch == scope else { return }
 
-            let matches = contentMatches(in: response.sessions ?? [])
-            remoteContentSearchSessionIDs = matches.compactMap(\.sessionId)
+            var seenSessionIDs = Set<String>()
+            let results = (response.sessions ?? []).filter { result in
+                guard let sessionID = result.sessionId, !sessionID.isEmpty else { return false }
+                return seenSessionIDs.insert(sessionID).inserted
+            }
+            remoteSearchResults = results
+            remoteSearchIsFiltered = response.sidebarFiltered == true
             remoteContentSearchPreviews = Dictionary(
-                matches.compactMap { match -> (String, String)? in
-                    guard let sessionID = match.sessionId,
-                          let preview = Self.normalizedMatchPreview(match.matchPreview)
+                results.compactMap { result -> (String, String)? in
+                    guard result.matchType?.lowercased() == "content",
+                          let sessionID = result.sessionId,
+                          let preview = Self.normalizedMatchPreview(result.matchPreview)
                     else { return nil }
                     return (sessionID, preview)
                 },
@@ -525,12 +554,12 @@ public final class SessionListViewModel {
             )
             isSearchingRemoteSessions = false
         } catch {
-            guard activeRemoteSearchQuery == query else { return }
+            guard activeRemoteSearch == scope else { return }
 
             isSearchingRemoteSessions = false
             guard !APIError.isCancellation(error) else { return }
 
-            remoteContentSearchSessionIDs = []
+            remoteSearchResults = nil
             remoteContentSearchPreviews = [:]
             searchErrorMessage = error.localizedDescription
             lastError = error
@@ -538,8 +567,8 @@ public final class SessionListViewModel {
     }
 
     func clearSearchResults() {
-        activeRemoteSearchQuery = nil
-        remoteContentSearchSessionIDs = []
+        activeRemoteSearch = nil
+        remoteSearchResults = nil
         remoteContentSearchPreviews = [:]
         searchErrorMessage = nil
         isSearchingRemoteSessions = false
@@ -1261,19 +1290,6 @@ public final class SessionListViewModel {
         session.lastMessageAt ?? session.updatedAt ?? session.createdAt ?? 0
     }
 
-    private static func searchableText(for session: SessionSummary) -> String {
-        [
-            session.title,
-            session.workspace,
-            session.model,
-            session.modelProvider,
-            session.profile,
-            session.sourceLabel
-        ]
-        .compactMap { $0?.lowercased() }
-        .joined(separator: " ")
-    }
-
     /// `archivedCount` is applied inside the same transaction as the rows so the
     /// bottom Archived entry inserts/removes with the list mutation animation.
     private func applySessions(
@@ -1325,29 +1341,6 @@ public final class SessionListViewModel {
             else { return session }
 
             return claimed.session.merging(onto: session)
-        }
-    }
-
-    /// Content-match rows for sessions the list already shows, first row per ID.
-    private func contentMatches(in sessions: [SessionSummary]) -> [SessionSummary] {
-        let locallyVisibleSessionIDs = Set(self.sessions.compactMap { session -> String? in
-            guard session.archived != true, let sessionID = session.sessionId, !sessionID.isEmpty else {
-                return nil
-            }
-
-            return sessionID
-        })
-        var seenSessionIDs = Set<String>()
-
-        return sessions.filter { session in
-            guard session.matchType?.lowercased() == "content",
-                  let sessionID = session.sessionId,
-                  locallyVisibleSessionIDs.contains(sessionID)
-            else {
-                return false
-            }
-
-            return seenSessionIDs.insert(sessionID).inserted
         }
     }
 
@@ -1434,4 +1427,10 @@ public final class SessionListViewModel {
         }
     }
 
+}
+
+/// The query and project a remote search answered; its result shows only for the same pair.
+private struct RemoteSearchScope: Equatable {
+    let query: String
+    let projectID: String?
 }

@@ -75,9 +75,11 @@ public struct SessionSearchResponse: Decodable, Equatable {
     public let sessions: [SessionSummary]?
     let query: String?
     let count: Int?
+    /// The server answered within the requested project and visibility (TAL-308).
+    let sidebarFiltered: Bool?
 
     enum CodingKeys: String, CodingKey {
-        case sessions, query, count
+        case sessions, query, count, sidebarFiltered
     }
 
     public init(from decoder: Decoder) throws {
@@ -85,6 +87,7 @@ public struct SessionSearchResponse: Decodable, Equatable {
         sessions = SessionSummary.decodingRowsIndependently(from: container, forKey: .sessions)
         query = container.decodeLossyStringIfPresent(forKey: .query)
         count = container.decodeLossyIntIfPresent(forKey: .count)
+        sidebarFiltered = container.decodeLossyBoolIfPresent(forKey: .sidebarFiltered)
     }
 }
 
@@ -665,7 +668,7 @@ extension SessionSummary {
 /// Which non-standard session kinds the session list should show. Webhooks,
 /// cron jobs, CLI imports, Claude Code imports, and delegated subagents are
 /// controlled independently. A row with unknown/missing source data remains visible.
-public struct AutomatedSessionVisibility: Equatable {
+public struct AutomatedSessionVisibility: Hashable {
     public var showsCron: Bool
     var showsCli: Bool
     public var showsWebhook: Bool

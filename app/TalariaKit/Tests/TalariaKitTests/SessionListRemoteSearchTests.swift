@@ -8,40 +8,16 @@ import UniformTypeIdentifiers
 
 @MainActor
 extension SessionListMutationTests {
-    func testRemoteSessionSearchAppendsLoadedContentMatchesAfterLocalMatchesAndPreservesProjectScope() async throws {
+    func testRemoteSessionSearchShowsTheServerResultInItsOrderAndTitlesWhileItLoads() async throws {
         let viewModel = try makeViewModel { request in
             switch request.url?.path {
             case "/api/sessions":
                 return apiTestJSONResponse("""
                 {
                   "sessions": [
-                    {
-                      "session_id": "local-title",
-                      "title": "Needle planning",
-                      "project_id": "project-1",
-                      "last_message_at": 30,
-                      "archived": false
-                    },
-                    {
-                      "session_id": "content-project",
-                      "title": "Budget",
-                      "project_id": "project-1",
-                      "last_message_at": 20,
-                      "archived": false
-                    },
-                    {
-                      "session_id": "content-other-project",
-                      "title": "Roadmap",
-                      "project_id": "project-2",
-                      "last_message_at": 40,
-                      "archived": false
-                    },
-                    {
-                      "session_id": "archived-session",
-                      "title": "Archived",
-                      "project_id": "project-1",
-                      "archived": true
-                    }
+                    {"session_id": "local-title", "title": "Needle planning", "last_message_at": 30, "archived": false},
+                    {"session_id": "content-hit", "title": "Budget", "last_message_at": 20, "archived": false},
+                    {"session_id": "no-match", "title": "Roadmap", "model": "needle-model", "last_message_at": 40, "archived": false}
                   ]
                 }
                 """, for: request)
@@ -51,19 +27,18 @@ extension SessionListMutationTests {
                 XCTAssertEqual(query["q"], "needle")
                 XCTAssertEqual(query["content"], "1")
                 XCTAssertEqual(query["depth"], "5")
+                XCTAssertEqual(query["include_archived"], "0")
 
                 return apiTestJSONResponse("""
                 {
                   "sessions": [
-                    {"session_id": "content-project", "title": "Budget", "match_type": "content"},
-                    {"session_id": "content-other-project", "title": "Roadmap", "match_type": "content"},
-                    {"session_id": "local-title", "title": "Needle planning", "match_type": "content"},
-                    {"session_id": "unknown-session", "title": "Unknown", "match_type": "content"},
-                    {"session_id": "archived-session", "title": "Archived", "match_type": "content"},
-                    {"session_id": "title-only", "title": "Needle remote", "match_type": "title"}
+                    {"session_id": "not-loaded", "title": "Older content", "match_type": "content"},
+                    {"session_id": "content-hit", "title": "Budget", "match_type": "content"},
+                    {"session_id": "local-title", "title": "Needle planning", "match_type": "title"}
                   ],
                   "query": "needle",
-                  "count": 6
+                  "count": 3,
+                  "sidebar_filtered": true
                 }
                 """, for: request)
             default:
@@ -73,19 +48,119 @@ extension SessionListMutationTests {
         }
 
         await viewModel.load()
+        // Before the server answers, only titles match locally.
+        XCTAssertEqual(
+            viewModel.visibleSessions(searchText: "needle", selectedProjectID: nil).compactMap(\.sessionId),
+            ["local-title"]
+        )
+
         await viewModel.searchSessions(query: "needle", debounceNanoseconds: 0)
+
+        XCTAssertEqual(
+            viewModel.visibleSessions(searchText: "needle", selectedProjectID: nil).compactMap(\.sessionId),
+            ["not-loaded", "content-hit", "local-title"]
+        )
+    }
+
+    @MainActor
+    func testRemoteSessionSearchSendsTheSelectedProjectAndVisibility() async throws {
+        let viewModel = try makeViewModel { request in
+            switch request.url?.path {
+            case "/api/sessions":
+                return apiTestJSONResponse("""
+                {
+                  "sessions": [
+                    {"session_id": "in-project", "title": "Budget", "project_id": "project-1", "last_message_at": 20},
+                    {"session_id": "other-project", "title": "Needle roadmap", "project_id": "project-2", "last_message_at": 40}
+                  ]
+                }
+                """, for: request)
+            case "/api/sessions/search":
+                let components = URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)
+                let query = Dictionary(uniqueKeysWithValues: (components?.queryItems ?? []).map { ($0.name, $0.value ?? "") })
+                XCTAssertEqual(query["project_id"], "project-1")
+                XCTAssertEqual(query["include_archived"], "0")
+                XCTAssertEqual(query["show_cli_sessions"], "0")
+                XCTAssertEqual(query["show_cron_sessions"], "1")
+                XCTAssertEqual(query["show_webhook_sessions"], "1")
+                XCTAssertEqual(query["show_claude_code_sessions"], "1")
+
+                return apiTestJSONResponse("""
+                {
+                  "sessions": [{"session_id": "in-project", "title": "Budget", "project_id": "project-1", "match_type": "metadata"}],
+                  "query": "needle",
+                  "count": 1,
+                  "sidebar_filtered": true
+                }
+                """, for: request)
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        await viewModel.load()
+        let visibility = AutomatedSessionVisibility(showsCron: true, showsCli: false)
+        await viewModel.searchSessions(
+            query: "needle",
+            selectedProjectID: "project-1",
+            automatedVisibility: visibility,
+            debounceNanoseconds: 0
+        )
+
+        XCTAssertEqual(
+            viewModel.visibleSessions(searchText: "needle", selectedProjectID: "project-1", automatedVisibility: visibility)
+                .compactMap(\.sessionId),
+            ["in-project"]
+        )
+        // Another project is a different search: until it is answered, only its titles match.
+        XCTAssertEqual(
+            viewModel.visibleSessions(searchText: "needle", selectedProjectID: "project-2", automatedVisibility: visibility)
+                .compactMap(\.sessionId),
+            ["other-project"]
+        )
+    }
+
+    @MainActor
+    func testRemoteSessionSearchFromAnOldServerKeepsOnlyRowsTheListShows() async throws {
+        let viewModel = try makeViewModel { request in
+            switch request.url?.path {
+            case "/api/sessions":
+                return apiTestJSONResponse("""
+                {
+                  "sessions": [
+                    {"session_id": "local-title", "title": "Needle planning", "project_id": "project-1", "last_message_at": 30, "archived": false},
+                    {"session_id": "content-project", "title": "Budget", "project_id": "project-1", "last_message_at": 20, "archived": false},
+                    {"session_id": "content-other-project", "title": "Roadmap", "project_id": "project-2", "last_message_at": 40, "archived": false},
+                    {"session_id": "archived-session", "title": "Archived", "project_id": "project-1", "archived": true}
+                  ]
+                }
+                """, for: request)
+            case "/api/sessions/search":
+                return apiTestJSONResponse("""
+                {
+                  "sessions": [
+                    {"session_id": "content-project", "title": "Budget", "match_type": "content"},
+                    {"session_id": "content-other-project", "title": "Roadmap", "match_type": "content"},
+                    {"session_id": "unknown-session", "title": "Unknown", "match_type": "content"},
+                    {"session_id": "archived-session", "title": "Archived", "match_type": "content"}
+                  ],
+                  "query": "needle",
+                  "count": 4
+                }
+                """, for: request)
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        await viewModel.load()
+        await viewModel.searchSessions(query: "needle", selectedProjectID: "project-1", debounceNanoseconds: 0)
 
         XCTAssertEqual(
             viewModel.visibleSessions(searchText: "needle", selectedProjectID: "project-1").compactMap(\.sessionId),
             ["local-title", "content-project"]
-        )
-        XCTAssertEqual(
-            viewModel.visibleSessions(searchText: "needle", selectedProjectID: "project-2").compactMap(\.sessionId),
-            ["content-other-project"]
-        )
-        XCTAssertEqual(
-            viewModel.visibleSessions(searchText: "needle", selectedProjectID: nil).compactMap(\.sessionId),
-            ["local-title", "content-other-project", "content-project"]
         )
     }
 
@@ -159,7 +234,7 @@ extension SessionListMutationTests {
         await viewModel.searchSessions(query: "new", debounceNanoseconds: 0)
         await oldTask.value
 
-        XCTAssertEqual(viewModel.remoteContentSearchSessionIDs, ["new-content"])
+        XCTAssertEqual(viewModel.remoteSearchResults?.compactMap(\.sessionId), ["new-content"])
         XCTAssertEqual(viewModel.remoteContentSearchPreviews, ["new-content": "second preview"])
         XCTAssertEqual(
             viewModel.visibleSessions(searchText: "new", selectedProjectID: nil).compactMap(\.sessionId),
@@ -212,10 +287,13 @@ extension SessionListMutationTests {
         await viewModel.searchSessions(query: " Needle ", debounceNanoseconds: 0)
 
         // Whitespace collapses like upstream; redaction markers pass through untouched.
-        XCTAssertEqual(viewModel.remoteContentSearchPreviews, ["with-preview": "the [REDACTED] needle café"])
         XCTAssertEqual(
-            Set(viewModel.remoteContentSearchSessionIDs),
-            ["with-preview", "without-preview", "blank-preview"]
+            viewModel.remoteContentSearchPreviews,
+            ["with-preview": "the [REDACTED] needle café", "not-loaded": "not visible"]
+        )
+        XCTAssertEqual(
+            viewModel.remoteSearchResults?.compactMap(\.sessionId),
+            ["with-preview", "without-preview", "blank-preview", "title-hit", "not-loaded"]
         )
 
         let rows = Dictionary(
@@ -267,7 +345,7 @@ extension SessionListMutationTests {
 
         XCTAssertNotNil(viewModel.searchErrorMessage)
         XCTAssertTrue(viewModel.remoteContentSearchPreviews.isEmpty)
-        XCTAssertTrue(viewModel.remoteContentSearchSessionIDs.isEmpty)
+        XCTAssertNil(viewModel.remoteSearchResults)
     }
 
     func testHighlightedPreviewEmphasizesEveryHitAcrossUnicodeForms() {

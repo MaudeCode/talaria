@@ -507,7 +507,7 @@ extension SessionListMutationTests {
             ["subagent-p1"]
         )
 
-        await viewModel.searchSessions(query: "needle", debounceNanoseconds: 0)
+        await viewModel.searchSessions(query: "needle", selectedProjectID: "p1", debounceNanoseconds: 0)
 
         XCTAssertTrue(
             viewModel.visibleSessions(
@@ -574,7 +574,7 @@ extension SessionListMutationTests {
             ["normal-p1", "cli-p1"]
         )
 
-        await viewModel.searchSessions(query: "needle", debounceNanoseconds: 0)
+        await viewModel.searchSessions(query: "needle", selectedProjectID: "p1", debounceNanoseconds: 0)
 
         XCTAssertEqual(
             viewModel.visibleSessions(

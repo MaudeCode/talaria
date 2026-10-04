@@ -604,21 +604,49 @@ export class SessionService {
     for (const s of sessions) {
       if (str(s.title).toLowerCase().includes(query)) { results.push(redactRow({ ...s, match_type: 'title' })); continue }
       if (!opts.content) continue
-      let sess: Session
-      try { sess = this.store.get(str(s.session_id), { promote: false, cacheOnMiss: false }) } catch { continue }
-      const msgs = opts.depth ? sess.messages.slice(0, opts.depth) : sess.messages
-      for (const m of msgs) {
-        const c = sessionSearchMessageText(m)
-        if (c.toLowerCase().includes(query)) {
-          const item: Row = { ...s, match_type: 'content' }
-          const preview = sessionSearchPreview(c, query)
-          if (preview) item.match_preview = redactText(preview, redact)
-          results.push(redactRow(item))
-          break
-        }
-      }
+      const hit = this.contentMatch(str(s.session_id), query, opts.depth)
+      if (hit) results.push(redactRow({ ...s, ...hit }))
     }
     return { sessions: results, query, count: results.length, all_profiles: opts.allProfiles, active_profile: activeProfile }
+  }
+
+  /**
+   * TAL-308: the sidebar search. The candidates are exactly the `/api/sessions` rows for `params` (visibility, source,
+   * archived, projection and order), narrowed to `projectId` (`none`: rows without a project), then matched on the
+   * title, then the metadata the row shows (workspace path and name, model, provider, profile, source label), then message content.
+   */
+  sidebarSearch(q: string, params: Parameters<SessionService['list']>[0], opts: { content: boolean; depth: number; projectId: string | null }): Record<string, unknown> {
+    let rows = this.list(params).body.sessions
+    if (opts.projectId === 'none') rows = rows.filter((r) => !r.project_id)
+    else if (opts.projectId) rows = rows.filter((r) => str(r.project_id) === opts.projectId)
+    const query = q.toLowerCase().trim()
+    const base = { all_profiles: params.allProfiles, active_profile: this.deps.activeProfile(), include_archived: params.includeArchived, sidebar_filtered: true }
+    if (!query) return { ...base, sessions: rows }
+    const results: Row[] = []
+    for (const row of rows) {
+      if (str(row.title).toLowerCase().includes(query)) results.push({ ...row, match_type: 'title' })
+      else if (['workspace', 'workspace_name', 'model', 'model_provider', 'profile', 'source_label'].some((k) => str(row[k]).toLowerCase().includes(query))) results.push({ ...row, match_type: 'metadata' })
+      else if (opts.content) {
+        const hit = this.contentMatch(str(row.session_id), query, opts.depth)
+        if (hit) results.push({ ...row, ...hit })
+      }
+    }
+    return { ...base, sessions: results, query, count: results.length }
+  }
+
+  /** The first of a stored session's first `depth` messages (0: all) containing `query`, with its redacted excerpt. */
+  private contentMatch(sid: string, query: string, depth: number): Row | null {
+    let sess: Session
+    try { sess = this.store.get(sid, { promote: false, cacheOnMiss: false }) } catch { return null }
+    for (const m of depth ? sess.messages.slice(0, depth) : sess.messages) {
+      const c = sessionSearchMessageText(m)
+      if (!c.toLowerCase().includes(query)) continue
+      const item: Row = { match_type: 'content' }
+      const preview = sessionSearchPreview(c, query)
+      if (preview) item.match_preview = redactText(preview, this.deps.redactEnabled())
+      return item
+    }
+    return null
   }
 
   // ── status / usage ───────────────────────────────────────────────────────

@@ -283,7 +283,13 @@ struct SessionListView: View {
                 await restoreLastSelectedSessionIfNeeded()
             }
             .task(id: remoteSearchTaskID) {
-                await viewModel.searchSessions(query: searchText, content: true, depth: 5)
+                await viewModel.searchSessions(
+                    query: searchText,
+                    selectedProjectID: selectedProjectID,
+                    automatedVisibility: automatedSessionVisibility,
+                    content: true,
+                    depth: 5
+                )
             }
             .task(id: activeSessionMonitorTaskID) {
                 await monitorActiveSessionRows()
@@ -1201,7 +1207,12 @@ struct SessionListView: View {
     }
 
     private var remoteSearchTaskID: SessionSearchTaskID {
-        SessionSearchTaskID(query: normalizedSearchText, isViewingCachedData: viewModel.isViewingCachedData)
+        SessionSearchTaskID(
+            query: normalizedSearchText,
+            projectID: selectedProjectID,
+            visibility: automatedSessionVisibility,
+            isViewingCachedData: viewModel.isViewingCachedData
+        )
     }
 
     private var activeSessionMonitorTaskID: ActiveSessionMonitorTaskID {
@@ -1630,6 +1641,8 @@ private extension View {
 
 private struct SessionSearchTaskID: Hashable {
     let query: String
+    let projectID: String?
+    let visibility: AutomatedSessionVisibility
     let isViewingCachedData: Bool
 }
 
