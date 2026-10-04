@@ -894,6 +894,24 @@ describe('Agent checkout updates', () => {
     expect(git(a.agent, 'stash', 'show', '-p', ref)).toContain('+local edit')
   })
 
+  it.each([
+    ['reverted them', true, null, 'local note\n', 0],
+    ['reverted them, and the file changed again', true, 'edited again\n', 'edited again\n', 1],
+    ['reverted nothing', false, null, 'local note\n', 0],
+  ])('the next check recovers the changes of an interrupted update that %s', async (_, reverted, later, expected, listed) => {
+    const a = agentInstall()
+    writeFileSync(join(a.agent, 'README'), 'local note\n')
+    const sha = git(a.agent, 'stash', 'create', 'hermes-update-autostash')
+    git(a.agent, 'update-ref', `refs/talaria/autostash/pending/${sha}`, sha) // the server stopped here or later
+    if (reverted) git(a.agent, 'checkout', '--', 'README')
+    if (later) writeFileSync(join(a.agent, 'README'), later)
+    await checkAgentUpdate(a.agent, runGit)
+    expect(readFileSync(join(a.agent, 'README'), 'utf8')).toBe(expected)
+    expect(git(a.agent, 'for-each-ref', '--format=%(refname)', 'refs/talaria/autostash/pending')).toBe('')
+    expect(stashes(a.agent)).toHaveLength(listed)
+    if (listed) expect(git(a.agent, 'stash', 'show', '-p', `refs/talaria/autostash/${sha}`)).toContain('+local note')
+  })
+
   it('cleanly restored changes leave no stash behind and the update restarts', async () => {
     const a = agentInstall()
     writeFileSync(join(a.agent, 'README'), 'local note\n')

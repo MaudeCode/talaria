@@ -83,7 +83,10 @@ private ref, which the user deletes once satisfied. It is also listed in
 `git stash list` for convenience. The result carries `stash_conflict: true`
 with inspect, re-apply, and cleanup commands. An
 edit made while the update saves local changes aborts the update; nothing is
-lost.
+lost. While an update runs, the saved commit lives under
+`refs/talaria/autostash/pending/<sha>`. If the server stops before restoring it,
+the next Agent check or update finishes the job: changes already in the tree
+just drop the ref, and the rest are re-applied or kept and listed as above.
 
 API callers can provide `agent_channel` independently of Web's `channel` on
 check/apply/force requests. Omitting it uses the persisted Agent setting. Cached

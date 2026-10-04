@@ -621,6 +621,7 @@ export async function checkAgentUpdate(path: string | null, git: GitRun, channel
     const message = fetched.out ? `fetch failed: ${sanitizeGitDiagnostic(fetched.out)}` : 'fetch failed'
     return { name: 'agent', channel, behind: null, error: message, stale_check: true, dirty: await isDirty(path, git) }
   }
+  await recoverInterruptedAutostash(path, git)
   try { return { ...await agentTarget(path, git, channel), dirty: await isDirty(path, git) } }
   catch (error) { return { name: 'agent', channel, behind: null, error: (error as Error).message } }
 }
@@ -645,6 +646,7 @@ export async function applyAgentUpdate(path: string | null, git: GitRun, channel
   if (warning) return warning
   const ref = str(info.branch)
   const revision = str(info.latest_sha)
+  await recoverInterruptedAutostash(path, git)
   const status = await git(['status', '--porcelain', '--untracked-files=no'], path)
   if (!status.ok) {
     if (isGitLockError(status.out)) return { ok: false, message: `Failed to inspect repo status due to a repository lock: ${status.out.trim()}`, lock_conflict: true }
@@ -675,6 +677,17 @@ export async function applyAgentUpdate(path: string | null, git: GitRun, channel
 }
 
 interface Autostash { sha: string; ref: string; dir: string; patch: string }
+const AUTOSTASH_REFS = 'refs/talaria/autostash/'
+/** An update holds its saved changes here only while it runs; one left behind marks an interrupted update. */
+const PENDING_AUTOSTASH_REFS = `${AUTOSTASH_REFS}pending/`
+
+async function autostashPatch(path: string, git: GitRun, sha: string): Promise<Autostash | null> {
+  const dir = mkdtempSync(join(tmpdir(), 'talaria-autostash-'))
+  const saved: Autostash = { sha, ref: `${PENDING_AUTOSTASH_REFS}${sha}`, dir, patch: join(dir, 'autostash.patch') }
+  if ((await git(['diff', '--binary', `--output=${saved.patch}`, `${sha}^1`, sha], path)).ok) return saved
+  rmSync(dir, { recursive: true, force: true })
+  return null
+}
 
 /**
  * Save tracked local changes as a stash commit under a private per-commit ref, never the shared stash reflog
@@ -685,14 +698,11 @@ async function saveLocalChanges(path: string, git: GitRun): Promise<Autostash | 
   const created = await git(['stash', 'create', 'hermes-update-autostash'], path)
   if (!created.ok || !SHA.test(created.out)) return 'Failed to stash local changes'
   const sha = created.out
-  const ref = `refs/talaria/autostash/${sha}`
-  if (!(await git(['update-ref', ref, sha], path)).ok) return 'Failed to stash local changes'
-  const dir = mkdtempSync(join(tmpdir(), 'talaria-autostash-'))
-  const saved: Autostash = { sha, ref, dir, patch: join(dir, 'autostash.patch') }
-  const diffed = await git(['diff', '--binary', `--output=${saved.patch}`, `${sha}^1`, sha], path)
-  if (!diffed.ok || (lstatSync(saved.patch).size > 0 && !(await git(['apply', '-R', '--whitespace=nowarn', saved.patch], path)).ok)) {
-    rmSync(dir, { recursive: true, force: true })
-    await git(['update-ref', '-d', ref, sha], path)
+  if (!(await git(['update-ref', `${PENDING_AUTOSTASH_REFS}${sha}`, sha], path)).ok) return 'Failed to stash local changes'
+  const saved = await autostashPatch(path, git, sha)
+  if (!saved || (lstatSync(saved.patch).size > 0 && !(await git(['apply', '-R', '--whitespace=nowarn', saved.patch], path)).ok)) {
+    if (saved) rmSync(saved.dir, { recursive: true, force: true })
+    await git(['update-ref', '-d', `${PENDING_AUTOSTASH_REFS}${sha}`, sha], path)
     return 'Local changes in the Agent checkout changed while the update was saving them, so nothing was modified. Try the update again.'
   }
   // Only the index returns to HEAD; the working tree is untouched and staged content stays in the saved commit.
@@ -700,7 +710,7 @@ async function saveLocalChanges(path: string, git: GitRun): Promise<Autostash | 
   return saved
 }
 
-/** Re-apply the saved changes atomically; on a conflict list the commit in the git stash and leave the files as the update wrote them. */
+/** Re-apply the saved changes atomically; on a conflict keep the commit under its own ref and leave the files as the update wrote them. */
 async function restoreLocalChanges(path: string, git: GitRun, saved: Autostash): Promise<{ applied: boolean; note: string }> {
   try {
     if (lstatSync(saved.patch).size === 0 || (await git(['apply', '--whitespace=nowarn', saved.patch], path)).ok) {
@@ -709,9 +719,28 @@ async function restoreLocalChanges(path: string, git: GitRun, saved: Autostash):
     }
   } finally { rmSync(saved.dir, { recursive: true, force: true }) }
   const short = saved.sha.slice(0, 12)
-  // The private ref keeps owning the commit; the stash list entry is only a convenience others may drop.
-  const listed = (await git(['stash', 'store', '-m', 'hermes-update-autostash', saved.sha], path)).ok
-  return { applied: false, note: `Your local modifications could not be re-applied cleanly and were saved as ${short} under ${saved.ref}${listed ? ' and in the git stash' : ''}; Agent files were left as the update wrote them. To inspect: git -C ${path} stash show -p ${short}. To re-apply: git -C ${path} stash apply ${short}, then resolve conflicts. Once you are satisfied, run git -C ${path} update-ref -d ${saved.ref}${listed ? ' and drop that stash entry' : ''}.` }
+  // The kept ref owns the commit; the stash list entry is only a convenience others may drop.
+  const keptRef = `${AUTOSTASH_REFS}${saved.sha}`
+  const kept = (await git(['update-ref', keptRef, saved.sha], path)).ok
+  if (kept) await git(['update-ref', '-d', saved.ref, saved.sha], path)
+  const ref = kept ? keptRef : saved.ref
+  const listed = kept && (await git(['stash', 'store', '-m', 'hermes-update-autostash', saved.sha], path)).ok
+  return { applied: false, note: `Your local modifications could not be re-applied cleanly and were saved as ${short} under ${ref}${listed ? ' and in the git stash' : ''}; Agent files were left as the update wrote them. To inspect: git -C ${path} stash show -p ${short}. To re-apply: git -C ${path} stash apply ${short}, then resolve conflicts. Once you are satisfied, run git -C ${path} update-ref -d ${ref}${listed ? ' and drop that stash entry' : ''}.` }
+}
+
+/** Finish an update the server stopped mid-way: its saved changes return to the tree, or are kept and listed in the git stash if they no longer apply. */
+async function recoverInterruptedAutostash(path: string, git: GitRun): Promise<void> {
+  const refs = await git(['for-each-ref', '--format=%(objectname)', PENDING_AUTOSTASH_REFS], path)
+  if (!refs.ok) return
+  for (const sha of refs.out.split('\n').filter((line) => SHA.test(line))) {
+    const saved = await autostashPatch(path, git, sha)
+    if (!saved) continue
+    // Stopped before the revert or after the restore: the changes are already in the tree.
+    if (lstatSync(saved.patch).size === 0 || (await git(['apply', '-R', '--check', saved.patch], path)).ok) {
+      rmSync(saved.dir, { recursive: true, force: true })
+      await git(['update-ref', '-d', saved.ref, sha], path)
+    } else await restoreLocalChanges(path, git, saved)
+  }
 }
 
 /** Python `apply_force_update` (agent branch): fetch, refuse a pure-ancestor rewind, `checkout . && clean -fd && reset --hard`. */
