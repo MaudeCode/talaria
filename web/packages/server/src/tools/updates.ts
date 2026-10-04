@@ -709,11 +709,9 @@ async function restoreLocalChanges(path: string, git: GitRun, saved: Autostash):
     }
   } finally { rmSync(saved.dir, { recursive: true, force: true }) }
   const short = saved.sha.slice(0, 12)
-  // The private ref keeps the commit even if it cannot be listed in the git stash.
+  // The private ref keeps owning the commit; the stash list entry is only a convenience others may drop.
   const listed = (await git(['stash', 'store', '-m', 'hermes-update-autostash', saved.sha], path)).ok
-  if (listed) await git(['update-ref', '-d', saved.ref, saved.sha], path)
-  const kept = listed ? `in the git stash as ${short}` : `as ${short} under ${saved.ref}`
-  return { applied: false, note: `Your local modifications could not be re-applied cleanly and were saved ${kept}; Agent files were left as the update wrote them. To inspect: git -C ${path} stash show -p ${short}. To re-apply: git -C ${path} stash apply ${short}, then resolve conflicts${listed ? ', and drop that stash entry once you are satisfied' : `, then run git -C ${path} update-ref -d ${saved.ref}`}.` }
+  return { applied: false, note: `Your local modifications could not be re-applied cleanly and were saved as ${short} under ${saved.ref}${listed ? ' and in the git stash' : ''}; Agent files were left as the update wrote them. To inspect: git -C ${path} stash show -p ${short}. To re-apply: git -C ${path} stash apply ${short}, then resolve conflicts. Once you are satisfied, run git -C ${path} update-ref -d ${saved.ref}${listed ? ' and drop that stash entry' : ''}.` }
 }
 
 /** Python `apply_force_update` (agent branch): fetch, refuse a pure-ancestor rewind, `checkout . && clean -fd && reset --hard`. */

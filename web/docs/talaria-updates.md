@@ -78,9 +78,10 @@ with `git stash create` under a private `refs/talaria/autostash/<sha>` ref, neve
 the shared stash list, and reverts exactly that patch before fast-forwarding.
 Afterwards it re-applies the patch with `git apply`, which writes all of it or
 nothing. If the edits conflict with the update, the Agent files stay as the
-update wrote them, with no conflict markers. The saved commit is then listed in
-`git stash list` (or kept under its private ref if listing fails), and the
-result carries `stash_conflict: true` with inspect and re-apply commands. An
+update wrote them, with no conflict markers. The saved commit stays under its
+private ref, which the user deletes once satisfied. It is also listed in
+`git stash list` for convenience. The result carries `stash_conflict: true`
+with inspect, re-apply, and cleanup commands. An
 edit made while the update saves local changes aborts the update; nothing is
 lost.
 

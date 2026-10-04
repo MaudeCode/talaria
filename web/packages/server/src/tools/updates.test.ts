@@ -787,6 +787,11 @@ describe('Agent checkout updates', () => {
     expect(stashes(a.agent)).toHaveLength(1)
     expect(git(a.agent, 'stash', 'show', '-p', 'stash@{0}')).toContain('+local edit')
     expect(commands.filter((args) => args[0] === 'reset' && args.includes('--hard'))).toEqual([]) // nothing is ever reset away
+    // The private ref keeps owning the edits, whatever later happens to the shared stash list.
+    const ref = git(a.agent, 'for-each-ref', '--format=%(refname)', 'refs/talaria')
+    expect(ref).toMatch(/^refs\/talaria\/autostash\/[0-9a-f]{40}$/)
+    expect(git(a.agent, 'stash', 'show', '-p', ref)).toContain('+local edit')
+    expect(String(result.message)).toContain(`update-ref -d ${ref}`)
   })
 
   it('an edit made during the merge is never discarded', async () => {
