@@ -149,6 +149,9 @@ describe('assistant display text (TAL-302)', () => {
     expect(stripToolCallXml('<tool_call>{"a":1}</tool_call>after')).toBe('after')
     expect(stripToolCallXml('Prose <｜DSML｜function_calls><｜DSML｜invoke name="x"></｜DSML｜function_calls>')).toBe('Prose')
     expect(stripToolCallXml('plain **md** <b>x</b>\n')).toBe('plain **md** <b>x</b>\n')
+    // Markup an answer writes as Markdown code is literal.
+    expect(stripToolCallXml('Use `<function_calls>` and `<tool_call>` tags.')).toBe('Use `<function_calls>` and `<tool_call>` tags.')
+    expect(stripToolCallXml('Example:\n```xml\n<function_calls><invoke/></function_calls>\n```\nDone <tool_call>{}</tool_call>')).toBe('Example:\n```xml\n<function_calls><invoke/></function_calls>\n```\nDone')
   })
 
   it('splits every inline thinking form out of the text, anywhere and unterminated', () => {
@@ -159,6 +162,17 @@ describe('assistant display text (TAL-302)', () => {
     expect(splitDisplayText('Answer <think>still')).toEqual(['Answer', 'still'])
     expect(splitDisplayText('<think>a</think>One <think>b</think>Two')).toEqual(['One Two', 'a\n\nb'])
     expect(splitDisplayText('no tags\n')).toEqual(['no tags', ''])
+    // Any case and attributes, as providers emit them.
+    expect(splitDisplayText('<think type="analysis">plan</think>Answer')).toEqual(['Answer', 'plan'])
+    expect(splitDisplayText('<THINK>plan</THINK>Answer')).toEqual(['Answer', 'plan'])
+    expect(splitDisplayText('<think-tank>is prose')).toEqual(['<think-tank>is prose', ''])
+    // A tag written as Markdown code is prose, inline or fenced, even unterminated.
+    expect(splitDisplayText('Use `<think>` and `<function_calls>` tags.')).toEqual(['Use `<think>` and `<function_calls>` tags.', ''])
+    expect(splitDisplayText('<think>real</think>See:\n```\n<think>\n```')).toEqual(['See:\n```\n<think>\n```', 'real'])
+    expect(splitDisplayText('Open fence:\n```\n<thinking>')).toEqual(['Open fence:\n```\n<thinking>', ''])
+    expect(splitDisplayText('Open fence:\n```\nline\n<thinking>')).toEqual(['Open fence:\n```\nline\n<thinking>', ''])
+    // A stray backtick pairs with nothing across a paragraph break.
+    expect(splitDisplayText('A ` tick.\n\n<think>plan</think>Answer `x`')).toEqual(['A ` tick.\n\nAnswer `x`', 'plan'])
   })
 
   it('ships clean content and one reasoning string, idempotently, and leaves other rows and the input alone', () => {

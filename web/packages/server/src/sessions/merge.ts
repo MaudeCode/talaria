@@ -485,45 +485,65 @@ export function buildPartialMessage(contentText: string, reasoningText: string, 
 
 const DSML = '(?:\\s*｜\\s*DSML\\s*[｜|]\\s*)?'
 
+/** Markdown code (fenced blocks, an unclosed one running to the end, and inline spans): markup written there is literal. */
+function codeRanges(text: string): [number, number][] {
+  const code = /^ {0,3}(`{3,}|~{3,})[^\n]*(?:\n[\s\S]*?(?:\n {0,3}\1[^\n]*(?=\n|$)|(?![\s\S]))|(?![\s\S]))|(`+)(?!`)(?:[^\n]|\n(?!\n))*?(?<!`)\2(?!`)/gm
+  return [...text.matchAll(code)].map((m) => [m.index, m.index + m[0].length])
+}
+
+const inCode = (code: [number, number][], at: number) => code.some(([from, to]) => at >= from && at < to)
+
+/** `re` matches removed, except the ones that start inside Markdown code. */
+function removeOutsideCode(text: string, re: RegExp): string {
+  const code = codeRanges(text)
+  return text.replace(re, (match: string, ...rest: unknown[]) => (inCode(code, rest.find((x): x is number => typeof x === 'number') ?? 0) ? match : ''))
+}
+
 /** Remove provider tool-call XML (`<function_calls>…`, DSML variants, `<tool_call>`), closed or cut off, that leaks into text. */
 export function stripToolCallXml(text: string): string {
   const lo = text.toLowerCase()
   if (!lo.includes('function_calls') && !lo.includes('dsml') && !lo.includes('<tool_call')) return text
-  return text
-    .replace(new RegExp(`<${DSML}function_calls>[\\s\\S]*?<\\/${DSML}function_calls>`, 'gi'), '')
-    .replace(new RegExp(`<${DSML}function_calls(?:>|$)[\\s\\S]*$`, 'i'), '')
-    .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '')
-    .replace(/<tool_call>[\s\S]*$/i, '')
-    .replace(/<\s*｜\s*DSML\s*[｜|]\s*/gi, '')
-    .replace(/^\s+/, '').trimEnd()
+  return [
+    new RegExp(`<${DSML}function_calls>[\\s\\S]*?<\\/${DSML}function_calls>`, 'gi'),
+    new RegExp(`<${DSML}function_calls(?:>|$)[\\s\\S]*$`, 'i'),
+    /<tool_call>[\s\S]*?<\/tool_call>/gi,
+    /<tool_call>[\s\S]*$/i,
+    /<\s*｜\s*DSML\s*[｜|]\s*/gi,
+  ].reduce(removeOutsideCode, text).replace(/^\s+/, '').trimEnd()
 }
 
-const THINK_PAIRS = [['<think>', '</think>'], ['<thinking>', '</thinking>'], ['<|channel|>thought', '<channel|>'], ['<|turn|>thinking', '<turn|>']] as const
+/** Inline thinking openers: `<think>`/`<thinking>` in any case and with attributes (as the Agent's own split), and the channel forms. */
+const THINK_OPEN = /<think(?:ing)?(?:\s[^>]*)?>|<\|channel\|>thought|<\|turn\|>thinking/gi
+
+function thinkClose(open: string): RegExp {
+  if (open.startsWith('<|channel|>')) return /<channel\|>/g
+  if (open.startsWith('<|turn|>')) return /<turn\|>/g
+  return /<\/think(?:ing)?\s*>/gi
+}
 
 /**
  * Split assistant text into its visible prose and its inline thinking: every `<think>`, `<thinking>`,
  * `<|channel|>thought` and `<|turn|>thinking` block anywhere in the text, an unterminated one running to the end.
- * Tool-call XML leaves both halves; both come back trimmed.
+ * A tag written inside Markdown code is prose. Tool-call XML leaves both halves; both come back trimmed.
  */
 export function splitDisplayText(text: string): [string, string] {
-  if (!THINK_PAIRS.some(([open]) => text.includes(open))) return [stripToolCallXml(text).replace(/^\s+/, '').trimEnd(), '']
+  const code = codeRanges(text)
   let content = ''
   const reasoning: string[] = []
   let cursor = 0
   while (cursor < text.length) {
-    let at = -1
-    let pair: (typeof THINK_PAIRS)[number] | null = null
-    for (const p of THINK_PAIRS) {
-      const i = text.indexOf(p[0], cursor)
-      if (i !== -1 && (at === -1 || i < at)) { at = i; pair = p }
-    }
-    if (!pair) { content += text.slice(cursor); break }
-    content += text.slice(cursor, at)
-    const body = at + pair[0].length
-    const close = text.indexOf(pair[1], body)
-    reasoning.push(text.slice(body, close === -1 ? undefined : close))
-    if (close === -1) break
-    cursor = close + pair[1].length
+    THINK_OPEN.lastIndex = cursor
+    let open = THINK_OPEN.exec(text)
+    while (open && inCode(code, open.index)) open = THINK_OPEN.exec(text)
+    if (!open) { content += text.slice(cursor); break }
+    content += text.slice(cursor, open.index)
+    const body = open.index + open[0].length
+    const closer = thinkClose(open[0])
+    closer.lastIndex = body
+    const close = closer.exec(text)
+    reasoning.push(text.slice(body, close?.index))
+    if (!close) break
+    cursor = close.index + close[0].length
   }
   return [stripToolCallXml(content).replace(/^\s+/, '').trimEnd(), joinReasoning(reasoning)]
 }
