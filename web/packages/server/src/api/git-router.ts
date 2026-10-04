@@ -4,7 +4,7 @@ import { gitContract } from '@maudecode/talaria-web-contracts'
 import { HttpError, requireFields, type ApiContext } from './router.js'
 import { requestSessionIdGuard } from './session-visibility.js'
 import type { RequestContext } from '../http/context.js'
-import { cleanGeneratedCommitMessage, GitWorkspaceError, WORKSPACE_GIT_DESTRUCTIVE_ENV, type GitStatus } from '../workspace/git.js'
+import { cleanGeneratedCommitMessage, enclosingRepoRoot, GitWorkspaceError, WORKSPACE_BUSY_MESSAGE, WORKSPACE_GIT_DESTRUCTIVE_ENV, type GitStatus } from '../workspace/git.js'
 import { REMOTE_WORKSPACE_UNSUPPORTED_CODE, REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE } from '../workspace/workspaces.js'
 import { removeWorktreeForSession, worktreeStatusForSession } from '../workspace/worktrees.js'
 import { isSafeSessionId, type Session } from '../sessions/session.js'
@@ -17,7 +17,8 @@ const os = implement(gitContract).$context<ApiContext>().use(requestSessionIdGua
 /** Python `_git_bad`: `{error, code}` with the classified reason. */
 function gitBad(error: unknown, status = 400): never {
   if (error instanceof HttpError) throw error
-  if (error instanceof GitWorkspaceError) throw new HttpError(status, sanitizeError(error), { code: error.code || 'git_failed' })
+  // A run that is active where the mutation would change files is the same 409 the router answers up front.
+  if (error instanceof GitWorkspaceError) throw new HttpError(error.code === 'active_stream' ? 409 : status, sanitizeError(error), { code: error.code || 'git_failed' })
   // Python let anything that was not a `GitWorkspaceError` escape to the dispatcher's 500.
   throw error
 }
@@ -43,6 +44,18 @@ export function gitSession(ctx: RequestContext, sid: unknown): { session: Sessio
   if (!ctx.deps.profilesMatch(session.profile, ctx.deps.activeProfile())) throw new HttpError(404, 'Session not found')
   if (!ctx.deps.workspaces.profileSupportsLocalIo(session.profile)) throw new HttpError(400, REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE, { code: REMOTE_WORKSPACE_UNSUPPORTED_CODE })
   return { session, workspace: session.workspace }
+}
+
+/**
+ * `rejectDestructiveIfUnsafe` plus a hold on the enclosing repository for the whole mutation. The hold is taken in the
+ * same tick as the active-run check, before any Git command, so no chat run, terminal, or file write starts anywhere in
+ * the repository until the working tree stops changing.
+ */
+function workingTreeMutation<T>(ctx: RequestContext, session: Session, workspace: string, fn: () => Promise<T>): Promise<T> {
+  return ctx.deps.git.holdWorkspace(enclosingRepoRoot(workspace) ?? workspace, () => {
+    rejectDestructiveIfUnsafe(ctx, session)
+    return fn()
+  })
 }
 
 function rejectDestructiveIfUnsafe(ctx: RequestContext, session: Session): void {
@@ -75,65 +88,59 @@ function rollbackError(error: unknown): HttpError {
 }
 
 export const gitRouter = os.router({
-  gitInfo: os.gitInfo.handler(({ input, context: { ctx } }) => guard(() => {
+  gitInfo: os.gitInfo.handler(({ input, context: { ctx } }) => guard(async () => {
     const { workspace } = gitSession(ctx, input.session_id)
-    const status = ctx.deps.git.status(workspace, { useCache: true })
+    const status = await ctx.deps.git.status(workspace, { useCache: true })
     if (!status.is_git) return { git: null }
     const totals = status.totals ?? { changed: 0, staged: 0, unstaged: 0, untracked: 0, conflicts: 0 }
     return { git: { branch: status.branch ?? 'HEAD', dirty: totals.changed, modified: totals.staged + totals.unstaged, untracked: totals.untracked, ahead: status.ahead ?? 0, behind: status.behind ?? 0, is_git: true as const } }
   })),
   git: {
-    status: os.git.status.handler(({ input, context: { ctx } }) => guard(() => ({ git: asStatus(ctx.deps.git.status(gitSession(ctx, input.session_id).workspace, { useCache: true })) }))),
-    branches: os.git.branches.handler(({ input, context: { ctx } }) => guard(() => ({ branches: ctx.deps.git.branches(gitSession(ctx, input.session_id).workspace) }))),
-    diff: os.git.diff.handler(({ input, context: { ctx } }) => guard(() => {
+    status: os.git.status.handler(({ input, context: { ctx } }) => guard(async () => ({ git: asStatus(await ctx.deps.git.status(gitSession(ctx, input.session_id).workspace, { useCache: true })) }))),
+    branches: os.git.branches.handler(({ input, context: { ctx } }) => guard(async () => ({ branches: await ctx.deps.git.branches(gitSession(ctx, input.session_id).workspace) }))),
+    diff: os.git.diff.handler(({ input, context: { ctx } }) => guard(async () => {
       const { workspace } = gitSession(ctx, input.session_id)
       if (!input.path) throw new HttpError(400, 'path required')
       const kind = input.kind ?? (input.staged === '1' ? 'staged' : 'unstaged')
-      return { diff: ctx.deps.git.diff(workspace, input.path, kind) }
+      return { diff: await ctx.deps.git.diff(workspace, input.path, kind) }
     })),
     stage: os.git.stage.handler(({ input, context: { ctx } }) => guard(async () => {
       const paths = pathsFromBody(input)
       const { session, workspace } = gitSession(ctx, input.session_id)
-      rejectDestructiveIfUnsafe(ctx, session)
-      return { ok: true as const, git: await ctx.deps.git.stage(workspace, paths) }
+      return { ok: true as const, git: await workingTreeMutation(ctx, session, workspace, () => ctx.deps.git.stage(workspace, paths)) }
     })),
     unstage: os.git.unstage.handler(({ input, context: { ctx } }) => guard(async () => {
       const paths = pathsFromBody(input)
       const { session, workspace } = gitSession(ctx, input.session_id)
-      rejectDestructiveIfUnsafe(ctx, session)
-      return { ok: true as const, git: await ctx.deps.git.unstage(workspace, paths) }
+      return { ok: true as const, git: await workingTreeMutation(ctx, session, workspace, () => ctx.deps.git.unstage(workspace, paths)) }
     })),
     discard: os.git.discard.handler(({ input, context: { ctx } }) => guard(async () => {
       const paths = pathsFromBody(input)
       const { session, workspace } = gitSession(ctx, input.session_id)
-      rejectDestructiveIfUnsafe(ctx, session)
-      return { ok: true as const, git: await ctx.deps.git.discard(workspace, paths, { deleteUntracked: Boolean(input.delete_untracked) }) }
+      return { ok: true as const, git: await workingTreeMutation(ctx, session, workspace, () => ctx.deps.git.discard(workspace, paths, { deleteUntracked: Boolean(input.delete_untracked) })) }
     })),
     commit: os.git.commit.handler(({ input, context: { ctx } }) => guard(async () => {
       const { session, workspace } = gitSession(ctx, input.session_id)
-      rejectDestructiveIfUnsafe(ctx, session)
-      return ctx.deps.git.commit(workspace, input.message) as Promise<{ ok: true; commit: string; status: GitStatus }>
+      return workingTreeMutation(ctx, session, workspace, () => ctx.deps.git.commit(workspace, input.message)) as Promise<{ ok: true; commit: string; status: GitStatus }>
     })),
     commitSelected: os.git.commitSelected.handler(({ input, context: { ctx } }) => guard(async () => {
       const paths = pathsFromBody(input)
       const { session, workspace } = gitSession(ctx, input.session_id)
-      rejectDestructiveIfUnsafe(ctx, session)
-      return ctx.deps.git.commitSelected(workspace, input.message, paths) as Promise<{ ok: true; commit: string; paths: string[]; status: GitStatus }>
+      return workingTreeMutation(ctx, session, workspace, () => ctx.deps.git.commitSelected(workspace, input.message, paths)) as Promise<{ ok: true; commit: string; paths: string[]; status: GitStatus }>
     })),
-    commitMessage: os.git.commitMessage.handler(({ input, context: { ctx } }) => guard(() => {
+    commitMessage: os.git.commitMessage.handler(({ input, context: { ctx } }) => guard(async () => {
       const { session, workspace } = gitSession(ctx, input.session_id)
-      return generateCommitMessage(ctx, session, ctx.deps.git.stagedCommitMessagePrompt(workspace))
+      return generateCommitMessage(ctx, session, await ctx.deps.git.stagedCommitMessagePrompt(workspace))
     })),
-    commitMessageSelected: os.git.commitMessageSelected.handler(({ input, context: { ctx } }) => guard(() => {
+    commitMessageSelected: os.git.commitMessageSelected.handler(({ input, context: { ctx } }) => guard(async () => {
       const paths = pathsFromBody(input)
       const { session, workspace } = gitSession(ctx, input.session_id)
-      return generateCommitMessage(ctx, session, ctx.deps.git.selectedCommitMessagePrompt(workspace, paths))
+      return generateCommitMessage(ctx, session, await ctx.deps.git.selectedCommitMessagePrompt(workspace, paths))
     })),
     fetch: os.git.fetch.handler(({ input, context: { ctx } }) => guard(() => ctx.deps.git.fetch(gitSession(ctx, input.session_id).workspace) as Promise<{ ok: true; message: string; status: GitStatus }>)),
     pull: os.git.pull.handler(({ input, context: { ctx } }) => guard(() => {
       const { session, workspace } = gitSession(ctx, input.session_id)
-      rejectDestructiveIfUnsafe(ctx, session)
-      return ctx.deps.git.pull(workspace) as Promise<{ ok: true; message: string; status: GitStatus }>
+      return workingTreeMutation(ctx, session, workspace, () => ctx.deps.git.pull(workspace)) as Promise<{ ok: true; message: string; status: GitStatus }>
     })),
     push: os.git.push.handler(({ input, context: { ctx } }) => guard(() => {
       const { session, workspace } = gitSession(ctx, input.session_id)
@@ -143,16 +150,14 @@ export const gitRouter = os.router({
     checkout: os.git.checkout.handler(({ input, context: { ctx } }) => guard(async () => {
       requireFields(input, 'session_id', 'ref', 'mode')
       const { session, workspace } = gitSession(ctx, input.session_id)
-      rejectDestructiveIfUnsafe(ctx, session)
       // Python: `str(body.get("mode"))` / `str(body.get("dirty_mode", "block"))` verbatim (no trimming) and `bool(track)`.
-      const result = await ctx.deps.git.checkout(workspace, input.ref, input.mode, { newBranch: input.new_branch ?? null, track: Boolean(input.track), dirtyMode: input.dirty_mode ?? 'block' })
+      const result = await workingTreeMutation(ctx, session, workspace, () => ctx.deps.git.checkout(workspace, input.ref, input.mode, { newBranch: input.new_branch ?? null, track: Boolean(input.track), dirtyMode: input.dirty_mode ?? 'block' }))
       return { ok: true as const, git: result.status, branches: result.branches, current_branch: result.current_branch, message: result.message } as never
     })),
     stashCheckout: os.git.stashCheckout.handler(({ input, context: { ctx } }) => guard(async () => {
       requireFields(input, 'session_id', 'ref', 'mode')
       const { session, workspace } = gitSession(ctx, input.session_id)
-      rejectDestructiveIfUnsafe(ctx, session)
-      const r = await ctx.deps.git.stashAndCheckout(workspace, input.ref, input.mode, { newBranch: input.new_branch ?? null, track: Boolean(input.track) })
+      const r = await workingTreeMutation(ctx, session, workspace, () => ctx.deps.git.stashAndCheckout(workspace, input.ref, input.mode, { newBranch: input.new_branch ?? null, track: Boolean(input.track) }))
       return {
         ok: true as const, git: r.status, branches: r.branches, current_branch: r.current_branch, message: r.message, stash_name: r.stash_name, stashed: r.stashed,
         restored_stash: r.restored_stash, restore_failed: r.restore_failed, restore_error: r.restore_error, restore_stash: r.restore_stash,
@@ -181,6 +186,8 @@ export const gitRouter = os.router({
       if (!Object.keys(input).length) throw new HttpError(400, 'request body is required')
       const checkpoint = input.checkpoint ?? input.id
       if (!input.workspace || !checkpoint) throw new HttpError(400, 'workspace and checkpoint are required')
+      // The restore is synchronous, so refusing while Git holds the workspace keeps the two from overlapping.
+      if (ctx.deps.git.workspaceBusy(input.workspace)) throw new HttpError(409, WORKSPACE_BUSY_MESSAGE)
       try {
         return ctx.deps.rollback.restore(input.workspace, checkpoint) as never
       } catch (error) {
@@ -189,7 +196,7 @@ export const gitRouter = os.router({
     }),
   },
   worktree: {
-    status: os.worktree.status.handler(({ input, context: { ctx } }) => {
+    status: os.worktree.status.handler(async ({ input, context: { ctx } }) => {
       if (!input.session_id) throw new HttpError(400, 'session_id is required')
       let session: Session
       try {
@@ -199,13 +206,13 @@ export const gitRouter = os.router({
       }
       if (!ctx.deps.workspaces.profileSupportsLocalIo(session.profile)) throw new HttpError(400, REMOTE_WORKSPACE_UNSUPPORTED_CODE, { message: REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE })
       try {
-        return { status: worktreeStatusForSession(session, ctx.deps.worktreeLocks) }
+        return { status: await worktreeStatusForSession(session, ctx.deps.worktreeLocks) }
       } catch (error) {
         // Python: `ValueError` (every message `worktrees.ts` raises on purpose) → 400; anything else → 500 sanitised.
         throw error instanceof Error && !('code' in error) ? new HttpError(400, error.message) : new HttpError(500, sanitizeError(error))
       }
     }),
-    remove: os.worktree.remove.handler(({ input, context: { ctx } }) => {
+    remove: os.worktree.remove.handler(async ({ input, context: { ctx } }) => {
       const raw = input.session_id
       if (typeof raw !== 'string' || !raw.trim()) throw new HttpError(400, 'session_id must be a non-empty string')
       const sid = raw.trim()
@@ -218,8 +225,12 @@ export const gitRouter = os.router({
       }
       if (!ctx.deps.workspaces.profileSupportsLocalIo(session.profile)) throw new HttpError(400, REMOTE_WORKSPACE_UNSUPPORTED_CODE, { message: REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE })
       try {
-        return removeWorktreeForSession(session, ctx.deps.worktreeLocks, { force: Boolean(input.force) }) as { ok: true; removed_path: string; warnings: string[] | null }
+        // Serialized with Git mutations and held busy; its stream/terminal checks run synchronously inside the hold.
+        const remove = (): Promise<Record<string, unknown>> => removeWorktreeForSession(session, ctx.deps.worktreeLocks, { force: Boolean(input.force) })
+        const worktree = str(session.worktree_path)
+        return await (worktree ? ctx.deps.git.removeWorktreeExclusive(worktree, str(session.worktree_repo_root) || null, remove) : remove()) as { ok: true; removed_path: string; warnings: string[] | null }
       } catch (error) {
+        if (error instanceof GitWorkspaceError) gitBad(error)
         throw error instanceof Error && !('code' in error) ? new HttpError(400, error.message) : new HttpError(500, sanitizeError(error))
       }
     }),

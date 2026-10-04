@@ -32,6 +32,7 @@ import { maxIterationsFromConfig, maxTokensFromConfig, processWakeupMaxIteration
 import { agentSteerText, assistantReplyAddedAfterCurrentTurn, buildPartialMessage, escapeWorkspacePrefixPath, checkpointTurnStart, extractToolCallsFromMessages, injectMaxIterationSummaryFallback, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitDisplayText, joinReasoning, reasoningFieldsText, stoppedTurnContext, toolOutcome, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withToolCallOutcomes, workspaceContextPrefix } from './merge.js'
 import { mayBecomeSilentReply, turnOrigin, withBackgroundUpdates } from './background-updates.js'
 import { fallbackTitleFromExchange, firstExchangeSnippets, isGenericFallbackTitle, latestExchangeSnippets, looksInvalidGeneratedTitle, looksLikeDefaultCliTitle, sanitizeGeneratedTitle, titleLanguageMismatch, titlePrompts } from './titles.js'
+import { WORKSPACE_BUSY_MESSAGE } from '../workspace/git.js'
 import type { WorkspaceRegistry } from '../workspace/workspaces.js'
 import { str } from '../util.js'
 
@@ -68,6 +69,8 @@ export interface TurnRunnerDeps {
   /** Whether the profile's deletion RPC is in flight (its home must not be entered by a new turn). */
   profileDeleting?: (profile: string | null) => boolean
   updateInProgress?: () => boolean
+  /** Whether a Git mutation or worktree removal is changing this workspace; no run starts inside it meanwhile. */
+  workspaceBusy?: (workspace: string) => boolean
   /** Runs after the run is retired (Python teardown idle hook: deferred process wakeups). */
   onTurnEnd?: (sessionId: string) => void
   /** The profile's config.yaml (turn budgets, reasoning effort, personality, delivery context); null when unavailable. */
@@ -255,6 +258,7 @@ export class TurnRunner {
     const s = session
     if (this.deps.updateInProgress?.()) return { error: 'Web is updating. Retry after it restarts.', _status: 503 }
     if (this.deps.profileDeleting?.(s.profile ?? null)) return { error: `Profile '${str(s.profile)}' is being deleted.`, _status: 409 }
+    if (this.deps.workspaceBusy?.(opts.workspace)) return { error: WORKSPACE_BUSY_MESSAGE, _status: 409 }
     const locked = s.active_stream_id
     if (locked) {
       if (this.registry.liveIds.has(locked) || this.registry.activeRuns.has(locked)) return { error: 'session already has an active stream', active_stream_id: locked, _status: 409 }

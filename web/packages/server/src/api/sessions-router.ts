@@ -11,6 +11,7 @@ import { spawn } from 'node:child_process'
 import { ifNoneMatchMatches, type RequestContext } from '../http/context.js'
 import { SidecarError } from '../sidecar/client.js'
 import { HttpError, requireFields, type ApiContext } from './router.js'
+import { GitWorkspaceError, WORKSPACE_BUSY_MESSAGE } from '../workspace/git.js'
 import { requestSessionIdGuard } from './session-visibility.js'
 import { HttpFailure, sanitizePaths } from '../sessions/service.js'
 import { compressionStatusPayload } from '../sessions/compress.js'
@@ -155,8 +156,10 @@ export const sessionsRouter = os.router({
         try {
           let base = input.workspace ? ctx.deps.sessions.resolveNewSessionWorkspace(input, null, profile) : null
           base ??= ctx.deps.workspaces.resolveTrusted(ctx.deps.workspaces.lastWorkspace(profile), profile)
-          worktree = await ctx.deps.worktrees.create(base)
+          const repo = base
+          worktree = await ctx.deps.git.holdWrite(repo, () => ctx.deps.worktrees.create(repo))
         } catch (error) {
+          if (error instanceof GitWorkspaceError) throw new HttpError(409, error.message, { code: error.code })
           // Python: `ValueError`/`TypeError` (not a repo, not a directory) → 400 or a degraded plain session; the Agent
           // helper failing (`RuntimeError`) → 500 `Failed to create worktree: ...`.
           const valueError = error instanceof SidecarError ? (error.condition === 'not_a_repo' || error.condition === 'invalid_params' || error.code === -32602) : !(error instanceof Error && 'code' in error)
@@ -422,6 +425,7 @@ export const sessionsRouter = os.router({
           if (!(home !== '/' && (candidate === home || isWithin(candidate, home)))) throw new HttpError(400, `Path points to a system directory: ${candidate}`)
         }
         if (input.create) {
+          assertWorkspaceFree(ctx, candidate)
           try { mkdirSync(candidate, { recursive: true }) } catch (error) { throw new HttpError(400, `Could not create directory: ${sanitizeError(error)}`) }
         }
       }
@@ -503,6 +507,7 @@ export const sessionsRouter = os.router({
       try {
         if (['.docx', '.xlsx', '.pptx'].includes(extname(input.path).toLowerCase())) throw new HttpError(400, 'Office documents cannot be saved from the Web UI')
         const root = s.workspace
+        assertWorkspaceFree(ctx, root)
         const target = safeResolve(root, input.path)
         if (isSymlinkAt(join(root, input.path))) throw new HttpError(400, 'Cannot save to a symlinked entry')
         if (!existsSync(target)) throw new HttpError(404, 'File not found')
@@ -520,6 +525,7 @@ export const sessionsRouter = os.router({
       const s = fileOpsSession(ctx, input.session_id)
       try {
         const root = s.workspace
+        assertWorkspaceFree(ctx, root)
         const target = safeResolve(root, input.path)
         if (existsSync(target)) throw new HttpError(400, 'File already exists')
         const data = Buffer.from(input.content ?? '', 'utf8')
@@ -536,6 +542,7 @@ export const sessionsRouter = os.router({
       const s = fileOpsSession(ctx, input.session_id)
       try {
         const root = s.workspace
+        assertWorkspaceFree(ctx, root)
         const target = safeResolve(root, input.path)
         if (existsSync(target)) throw new HttpError(400, 'Path already exists')
         makeAnchoredDir(root, target)
@@ -549,6 +556,7 @@ export const sessionsRouter = os.router({
       const s = fileOpsSession(ctx, input.session_id)
       try {
         const root = s.workspace
+        assertWorkspaceFree(ctx, root)
         const target = safeResolve(root, input.path)
         if (isSymlinkAt(join(root, input.path))) throw new HttpError(400, 'Cannot delete a symlinked entry')
         if (!existsSync(target)) throw new HttpError(404, 'File not found')
@@ -566,6 +574,7 @@ export const sessionsRouter = os.router({
       const s = fileOpsSession(ctx, input.session_id)
       try {
         const root = s.workspace
+        assertWorkspaceFree(ctx, root)
         const rootResolved = resolvePathLikePython(root)
         const source = safeResolve(root, input.path)
         if (isSymlinkAt(join(root, input.path))) throw new HttpError(400, 'Cannot rename a symlinked entry')
@@ -587,6 +596,7 @@ export const sessionsRouter = os.router({
       const s = fileOpsSession(ctx, input.session_id)
       try {
         const root = s.workspace
+        assertWorkspaceFree(ctx, root)
         const rootResolved = resolvePathLikePython(root)
         const source = safeResolve(root, input.path)
         if (isSymlinkAt(join(root, input.path))) throw new HttpError(400, 'Cannot move a symlinked entry')
@@ -641,6 +651,11 @@ export const sessionsRouter = os.router({
 
 function isSymlinkAt(path: string): boolean {
   try { return lstatSync(path).isSymbolicLink() } catch { return false }
+}
+
+/** Workspace writes are synchronous, so refusing while Git holds the workspace keeps the two from overlapping. */
+function assertWorkspaceFree(ctx: RequestContext, path: string): void {
+  if (ctx.deps.git.workspaceBusy(path)) throw new HttpError(409, WORKSPACE_BUSY_MESSAGE)
 }
 
 function fileError(error: unknown, notFoundStatus = 400): Error {

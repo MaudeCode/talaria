@@ -38,7 +38,7 @@ import type { MediaAccessDeps, MediaPolicyDeps } from './workspace/media.js'
 import { accessSync, constants as fsConstants, existsSync, statSync } from 'node:fs'
 import { basename, delimiter, dirname, join } from 'node:path'
 import type { Session } from './sessions/session.js'
-import { GitRunner, GitWorkspaceError } from './workspace/git.js'
+import { GitRunner, GitWorkspaceError, pathsOverlap } from './workspace/git.js'
 import { RollbackStore } from './workspace/rollback.js'
 import { UploadInbox } from './workspace/upload.js'
 import type { SidecarLike } from './sidecar/client.js'
@@ -362,7 +362,8 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     },
     yolo: { isEnabled: (sid) => yoloSessions.has(sid), set: (sid, enabled) => { if (enabled) yoloSessions.add(sid); else yoloSessions.delete(sid) } },
   })
-  const git = new GitRunner({ env })
+  // A working-tree mutation refuses while a run is active anywhere it would change files.
+  const git = new GitRunner({ env, activeRunIn: (path) => [...registry.activeRuns.values()].some((run) => Boolean(run.workspace) && pathsOverlap(run.workspace, path)) })
   const rollback = new RollbackStore({ hermesHome: () => profileHome(activeProfile()), knownWorkspaces: () => workspaces.load(activeProfile()).map((w) => w.path) })
   const uploads = new UploadInbox(attachmentRoot)
   const channels = new SessionChannels()
@@ -390,6 +391,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     onTurnEnd: (sessionId) => { void completions.drainDeferred(sessionId) },
     profileDeleting: (profile) => profiles.isDeleting(profile),
     updateInProgress: () => deps.updates.blocksNewWork(),
+    workspaceBusy: (workspace) => deps.git.workspaceBusy(workspace),
     syncTitle: (session) => sessions.deps.syncTitle(session),
     profileConfig: async (profile) => { try { return await agentConfig.read(profileHome(profile ?? activeProfile())) } catch { return null } },
     env,
