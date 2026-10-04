@@ -38212,6 +38212,9 @@
                           "schedule_display": {
                             "type": "string"
                           },
+                          "schedule_input": {
+                            "type": "string"
+                          },
                           "enabled": {
                             "type": "boolean"
                           },
@@ -38480,6 +38483,10 @@
                             "type": "boolean"
                           }
                         },
+                        "required": [
+                          "schedule_display",
+                          "schedule_input"
+                        ],
                         "additionalProperties": {}
                       }
                     },
@@ -38911,6 +38918,9 @@
                         "schedule_display": {
                           "type": "string"
                         },
+                        "schedule_input": {
+                          "type": "string"
+                        },
                         "enabled": {
                           "type": "boolean"
                         },
@@ -39179,6 +39189,10 @@
                           "type": "boolean"
                         }
                       },
+                      "required": [
+                        "schedule_display",
+                        "schedule_input"
+                      ],
                       "additionalProperties": {}
                     },
                     "job_id": {
@@ -39495,6 +39509,9 @@
                         "schedule_display": {
                           "type": "string"
                         },
+                        "schedule_input": {
+                          "type": "string"
+                        },
                         "enabled": {
                           "type": "boolean"
                         },
@@ -39763,6 +39780,10 @@
                           "type": "boolean"
                         }
                       },
+                      "required": [
+                        "schedule_display",
+                        "schedule_input"
+                      ],
                       "additionalProperties": {}
                     },
                     "job_id": {
@@ -39883,6 +39904,9 @@
                         "schedule_display": {
                           "type": "string"
                         },
+                        "schedule_input": {
+                          "type": "string"
+                        },
                         "enabled": {
                           "type": "boolean"
                         },
@@ -40151,6 +40175,10 @@
                           "type": "boolean"
                         }
                       },
+                      "required": [
+                        "schedule_display",
+                        "schedule_input"
+                      ],
                       "additionalProperties": {}
                     },
                     "job_id": {
@@ -40272,6 +40300,9 @@
                         "schedule_display": {
                           "type": "string"
                         },
+                        "schedule_input": {
+                          "type": "string"
+                        },
                         "enabled": {
                           "type": "boolean"
                         },
@@ -40540,6 +40571,10 @@
                           "type": "boolean"
                         }
                       },
+                      "required": [
+                        "schedule_display",
+                        "schedule_input"
+                      ],
                       "additionalProperties": {}
                     },
                     "job_id": {
@@ -40671,6 +40706,9 @@
                         "schedule_display": {
                           "type": "string"
                         },
+                        "schedule_input": {
+                          "type": "string"
+                        },
                         "enabled": {
                           "type": "boolean"
                         },
@@ -40939,6 +40977,10 @@
                           "type": "boolean"
                         }
                       },
+                      "required": [
+                        "schedule_display",
+                        "schedule_input"
+                      ],
                       "additionalProperties": {}
                     },
                     "job_id": {
@@ -41060,6 +41102,9 @@
                         "schedule_display": {
                           "type": "string"
                         },
+                        "schedule_input": {
+                          "type": "string"
+                        },
                         "enabled": {
                           "type": "boolean"
                         },
@@ -41328,6 +41373,10 @@
                           "type": "boolean"
                         }
                       },
+                      "required": [
+                        "schedule_display",
+                        "schedule_input"
+                      ],
                       "additionalProperties": {}
                     },
                     "job_id": {

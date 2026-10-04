@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Tasks that repeat on an interval or run once now show their real schedule, such as every 30m or once at a set time, instead of a blank or the word interval.",
+      "highlight": false,
+      "components": ["app", "web"]
+    },
+    {
+      "category": "Fixed",
+      "summary": "Editing a one-time task now fills in its run time, so saving without changes keeps the task as it was.",
+      "highlight": false,
+      "components": ["app", "web"]
+    }
+  ]
+}

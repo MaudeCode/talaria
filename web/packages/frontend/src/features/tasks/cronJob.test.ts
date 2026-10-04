@@ -4,7 +4,7 @@ import { cronDiagnostics, cronState, modelOptionFor, runResponse, splitModelOpti
 
 // Persisted shape from cron.jobs.create_job with the WebUI projections applied.
 const recurring: CronJob = {
-  id: 'ab12cd34ef56', name: 'Digest', prompt: 'Summarise the inbox', schedule: { kind: 'cron', expr: '0 9 * * *', display: '0 9 * * *' }, schedule_display: '0 9 * * *',
+  id: 'ab12cd34ef56', name: 'Digest', prompt: 'Summarise the inbox', schedule: { kind: 'cron', expr: '0 9 * * *', display: '0 9 * * *' }, schedule_display: '0 9 * * *', schedule_input: '0 9 * * *',
   repeat: { times: null, completed: 12 }, enabled: true, state: 'scheduled', next_run_at: '2026-09-18T09:00:00+02:00', last_run_at: '2026-09-17T09:00:00+02:00',
   last_status: 'ok', last_error: null, last_delivery_error: null, deliver: 'local', origin: { secret: 'never-copied' },
 }

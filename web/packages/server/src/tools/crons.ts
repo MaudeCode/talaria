@@ -38,7 +38,24 @@ export function jobForApi(job: Dict, running = false): Dict {
   payload.needs_attention = state === 'needs_attention' || state === 'schedule_error'
   payload.resumable = payload.needs_attention || state === 'paused' || state === 'off'
   payload.running = running || job.running === true
+  Object.assign(payload, scheduleText(job))
   return payload
+}
+
+/** TAL-298: the schedule's display text and the editor's prefill, in the scheduler's own vocabulary (not localized copy). */
+function scheduleText(job: Dict): { schedule_display: string; schedule_input: string } {
+  const schedule = job.schedule
+  const legacy = typeof schedule === 'string' ? schedule : ''
+  const s: Dict = typeof schedule === 'object' && schedule ? schedule as Dict : {}
+  const minutes = typeof s.minutes === 'number' && s.minutes > 0 ? s.minutes : 0
+  const runAt = str(s.run_at)
+  let input = ''
+  let built = ''
+  if (s.kind === 'cron') input = built = str(s.expr)
+  else if (s.kind === 'interval' && minutes) [input, built] = [`every ${minutes}m`, minutes % 60 ? `every ${minutes}m` : `every ${minutes / 60}h`]
+  else if (s.kind === 'once' && runAt) [input, built] = [runAt, `once at ${runAt}`]
+  const display = str(job.schedule_display) || str(s.display) || legacy || built
+  return { schedule_display: display, schedule_input: input || legacy || display }
 }
 
 /** `repeat.times == null` means "forever" in the store; a missing record is not unlimited. */

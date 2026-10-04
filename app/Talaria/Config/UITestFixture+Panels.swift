@@ -156,14 +156,14 @@ extension UITestFixtureURLProtocol {
 
     private static let populatedCrons = """
     {"jobs":[
-      {"id":"ui-fixture-cron-digest","name":"Fixture Nightly Digest","prompt":"Summarize the deterministic fixture run.","schedule":"0 3 * * *","schedule_display":"Every day at 03:00","enabled":true,"state":"active","next_run_at":2000003600,"last_run_at":2000000000,"last_status":"success","deliver":"local","skills":["fixture-runner"],"model":"fixture-model","provider":"fixture-provider","profile":"fixture-profile","toast_notifications":true},
-      {"id":"ui-fixture-cron-sweep","name":"Fixture Weekly Sweep","prompt":"Sweep the deterministic fixture workspace.","schedule":"0 4 * * 1","schedule_display":"Every Monday at 04:00","enabled":false,"state":"paused","next_run_at":2000090000,"last_status":"paused","deliver":"local","toast_notifications":false}
+      {"id":"ui-fixture-cron-digest","name":"Fixture Nightly Digest","prompt":"Summarize the deterministic fixture run.","schedule":"0 3 * * *","schedule_display":"Every day at 03:00","schedule_input":"0 3 * * *","enabled":true,"state":"active","next_run_at":2000003600,"last_run_at":2000000000,"last_status":"success","deliver":"local","skills":["fixture-runner"],"model":"fixture-model","provider":"fixture-provider","profile":"fixture-profile","toast_notifications":true},
+      {"id":"ui-fixture-cron-sweep","name":"Fixture Weekly Sweep","prompt":"Sweep the deterministic fixture workspace.","schedule":"0 4 * * 1","schedule_display":"Every Monday at 04:00","schedule_input":"0 4 * * 1","enabled":false,"state":"paused","next_run_at":2000090000,"last_status":"paused","deliver":"local","toast_notifications":false}
     ]}
     """
 
     private static let cronsWithJobAddedElsewhere = populatedCrons.replacingOccurrences(
         of: "\n]}",
-        with: #",{"id":"ui-fixture-cron-elsewhere","name":"FixtureJobAddedElsewhere","prompt":"Added by another client.","schedule":"0 5 * * *","schedule_display":"Every day at 05:00","enabled":true,"state":"active","deliver":"local"}"# + "\n]}"
+        with: #",{"id":"ui-fixture-cron-elsewhere","name":"FixtureJobAddedElsewhere","prompt":"Added by another client.","schedule":"0 5 * * *","schedule_display":"Every day at 05:00","schedule_input":"0 5 * * *","enabled":true,"state":"active","deliver":"local"}"# + "\n]}"
     )
 
     private static let cronOutputs = """
