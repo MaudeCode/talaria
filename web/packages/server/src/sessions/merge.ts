@@ -499,11 +499,13 @@ export function splitThinkingFromContent(content: string, existingReasoning = ''
  * Python `merge_session_messages_append_only`, bounded to its load-bearing rules: state.db rows never delete a local
  * row; rows that replay the sidecar (same role, timestamp, and content) are skipped; rows at or before the sidecar's
  * newest timestamp are already represented locally; a truncation watermark hides rows the user cut (0 blocks every
- * replay). Rows past the sidecar tail (a conversation continued from the CLI) are appended in state.db order.
+ * replay): rows at or before it, and, for a truncation cut, rows after it until the sidecar advances past it (TAL-504).
+ * A compression watermark only covers the compressed rows. Rows past the sidecar tail (a conversation continued from the
+ * CLI) are appended in state.db order.
  * ponytail: the Python identity memo (api_content sidecars, message ids, workspace-prefix normalisation) is not ported;
  * add it if a mixed WebUI/CLI transcript shows duplicated turns.
  */
-export function mergeSessionMessagesAppendOnly(sidecar: Message[], state: Message[], opts: { truncationWatermark?: unknown } = {}): Message[] {
+export function mergeSessionMessagesAppendOnly(sidecar: Message[], state: Message[], opts: { truncationWatermark?: unknown; compressedWatermark?: boolean } = {}): Message[] {
   const watermark = Number(opts.truncationWatermark)
   const hasWatermark = opts.truncationWatermark !== null && opts.truncationWatermark !== undefined && Number.isFinite(watermark)
   if (!state.length) return sidecar
@@ -512,18 +514,20 @@ export function mergeSessionMessagesAppendOnly(sidecar: Message[], state: Messag
   if (!sidecar.length) {
     if (!hasWatermark) { const seen = new Set<string>(); return state.filter((m) => { const k = key(m); if (seen.has(k)) return false; seen.add(k); return true }) }
     if (watermark === 0) return []
-    return state.filter((m) => { const t = ts(m); return t !== null && t > watermark })
+    return state.filter((m) => { const t = ts(m); return t !== null && (opts.compressedWatermark === true ? t > watermark : t <= watermark) })
   }
   const seen = new Set(sidecar.map(key))
   let maxSidecar: number | null = null
   for (const m of sidecar) { const t = ts(m); if (t !== null && (maxSidecar === null || t > maxSidecar)) maxSidecar = t }
+  // Until a new turn lands in the sidecar, every state.db row past the watermark is the deleted suffix.
+  const advanced = !hasWatermark || opts.compressedWatermark === true || (maxSidecar !== null && maxSidecar > watermark)
   const merged = [...sidecar]
   for (const m of state) {
     const k = key(m)
     if (seen.has(k)) continue
     const t = ts(m)
     if (maxSidecar !== null && t !== null && t <= maxSidecar) continue
-    if (hasWatermark && t !== null && t <= watermark) continue
+    if (hasWatermark && t !== null && (t <= watermark || !advanced)) continue
     seen.add(k)
     merged.push(m)
   }
