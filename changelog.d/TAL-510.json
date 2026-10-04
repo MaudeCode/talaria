@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Web chats now switch to your configured fallback models when the primary provider is rate-limited or fails, instead of stopping with an error.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
