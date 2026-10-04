@@ -227,24 +227,33 @@ const SEQ_C0 = String.raw`\x00-\x17\x19\x1c-\x1f\x7f`
 /** Where a sequence ends early: CAN or SUB cancels it, and ESC, a C1 control or the end of the text interrupts it. */
 const SEQ_CUT = String.raw`(?:[\x18\x1a]|(?=[\x1b\x80-\x9f]|$))`
 const SEQ_ESC = String.raw`\x1b[${SEQ_C0}]*`
+const SEQ_CSI = String.raw`(?:${SEQ_ESC}\[|\x9b)[0-?${SEQ_C0}]*(?:[ -/][ -/${SEQ_C0}]*)?(?:[@-~]|${SEQ_CUT})`
+const SEQ_NF = String.raw`${SEQ_ESC}[ -/][ -/${SEQ_C0}]*(?:[0-~]|${SEQ_CUT})`
+const SEQ_SINGLE = String.raw`${SEQ_ESC}[0-OQ-WYZ\\\x60-~]`
 /**
  * An ECMA-48 escape sequence as a terminal parses it, or one control or zero-width character. The sequences, 7-bit
  * `ESC …` or the C1 code point: CSI (`ESC [` … final byte), the strings OSC (… BEL or ST) and DCS, SOS, PM and APC
  * (… ST), a character-set selection (`ESC ( B`), and a single-character escape (`ESC 7`); each also ends at `SEQ_CUT`.
- * A string's payload can hold a token itself (a terminal title), so this view is matched besides the control-only one.
  * No part of a sequence can start the part after it, which keeps the scan linear.
  */
 const ANSI_GAPS_RE = new RegExp(
   [
-    String.raw`(?:${SEQ_ESC}\[|\x9b)[0-?${SEQ_C0}]*(?:[ -/][ -/${SEQ_C0}]*)?(?:[@-~]|${SEQ_CUT})`,
+    SEQ_CSI,
     String.raw`(?:${SEQ_ESC}\]|\x9d)[^\x07\x18\x1a\x1b\x80-\x9f]*(?:\x07|\x1b\\|\x9c|${SEQ_CUT})`,
     String.raw`(?:${SEQ_ESC}[PX^_]|[\x90\x98\x9e\x9f])[^\x18\x1a\x1b\x80-\x9f]*(?:\x1b\\|\x9c|${SEQ_CUT})`,
-    String.raw`${SEQ_ESC}[ -/][ -/${SEQ_C0}]*(?:[0-~]|${SEQ_CUT})`,
-    String.raw`${SEQ_ESC}[0-OQ-WYZ\\\x60-~]`,
+    SEQ_NF,
+    SEQ_SINGLE,
     CONTROL_CHAR_RE.source,
   ].join('|'),
   'g',
 )
+/** `ANSI_GAPS_RE` with a string's payload kept: only its opener and terminator are gaps. */
+const ANSI_PAYLOAD_GAPS_RE = new RegExp([SEQ_CSI, String.raw`${SEQ_ESC}[\]PX^_]`, SEQ_NF, SEQ_SINGLE, CONTROL_CHAR_RE.source].join('|'), 'g')
+/**
+ * The views a split token is matched on: without whole escape sequences, without them but keeping string payloads (a
+ * terminal title can hold a token), and without control characters only (an escape's final byte can be a token's).
+ */
+const SPLIT_VIEWS = [ANSI_GAPS_RE, ANSI_PAYLOAD_GAPS_RE, CONTROL_CHARS_RE]
 const CRED_TEST_RE = new RegExp(CRED_RE.source)
 /** `CRED_RE`'s prefix and body from a position, without its boundaries (a split token checks the original ones). */
 const CRED_RUN_RE = new RegExp(CRED_RE.source.replace(/^\(\?<!\[A-Za-z0-9_-\]\)/, '').replace(/\(\?!\[A-Za-z0-9_-\]\)$/, ''), 'y')
@@ -294,13 +303,13 @@ function splitTokenEnd(text: string, stripped: string, kept: number[], i: number
 }
 
 /**
- * Prefixed credentials whose body a gap (`CONTROL_CHARS_RE` or `ANSI_GAPS_RE`) splits, matched on the text without those
- * gaps and masked in place. A token starts at a boundary of the stripped text, or where a stripped control hid the original
+ * The original spans, and the joined text, of prefixed credentials whose body a gap of one of `SPLIT_VIEWS` splits,
+ * matched on the text without those gaps. A token starts at a boundary of the stripped text, or where a stripped control hid the original
  * one (`note\nghp_…`); one starting inside a token already masked is part of it.
  */
-function maskSplitTokens(text: string, gaps: RegExp): string {
+function splitTokenSpans(text: string, gaps: RegExp): [number, number, string][] {
   const stripped = text.replace(gaps, '')
-  if (stripped.length === text.length) return text
+  if (stripped.length === text.length) return []
   // The original index of each kept character.
   const kept: number[] = []
   let at = 0
@@ -311,16 +320,32 @@ function maskSplitTokens(text: string, gaps: RegExp): string {
   while (at < text.length) kept.push(at++)
   const starts = [...stripped.matchAll(CRED_START_RE)].map((m) => m.index)
   for (let i = 1; i < kept.length; i += 1) if (kept[i]! - kept[i - 1]! > 1 && /[A-Za-z0-9_-]/.test(stripped[i - 1]!)) starts.push(i)
-  let out = ''
-  let last = 0
+  const spans: [number, number, string][] = []
   let scanned = 0
   for (const i of starts.sort((a, b) => a - b)) {
     if (i < scanned) continue
     const e = splitTokenEnd(text, stripped, kept, i)
     if (e === -1) continue
-    out += text.slice(last, kept[i]) + mask(stripped.slice(i, e))
-    last = kept[e - 1]! + 1
+    spans.push([kept[i]!, kept[e - 1]! + 1, stripped.slice(i, e)])
     scanned = e
+  }
+  return spans
+}
+
+/** Masks each union of the split-token spans every view finds, so no view masks a piece of a token another one joins. */
+function maskSplitTokens(text: string): string {
+  const spans = SPLIT_VIEWS.flatMap((gaps) => splitTokenSpans(text, gaps)).sort((a, b) => a[0] - b[0])
+  let out = ''
+  let last = 0
+  for (let k = 0; k < spans.length; ) {
+    let [start, end, token] = spans[k]!
+    for (k += 1; k < spans.length && spans[k]![0] < end; k += 1) {
+      const [, nextEnd, nextToken] = spans[k]!
+      end = Math.max(end, nextEnd)
+      if (nextToken.length > token.length) token = nextToken
+    }
+    out += text.slice(last, start) + mask(token)
+    last = end
   }
   return out + text.slice(last)
 }
@@ -1477,9 +1502,7 @@ export function redactSensitive(text: string): string {
 
 function redactRules(text: string): string {
   if (!text) return text
-  // The ANSI view joins across every gap the control-only one does, so it goes first and a piece that is a token by
-  // itself (`ghp_abcdefghij\x1b[31m…`) is not masked alone; the control-only view then adds tokens inside OSC payloads.
-  let out = maskSplitTokens(maskSplitTokens(text, ANSI_GAPS_RE), CONTROL_CHARS_RE).replace(CRED_RE, (_, t: string) => mask(t))
+  let out = maskSplitTokens(text).replace(CRED_RE, (_, t: string) => mask(t))
   out = out.replace(EMBEDDED_AWS_RE, (t) => mask(t))
   out = redactHeaderCredentials(out, AUTH_HDR_RE)
   out = out.replace(JWT_RE, (t) => mask(t))
@@ -1528,9 +1551,8 @@ export function mightContainSensitiveText(text: string): boolean {
   if (!text) return false
   // A control or zero-width character or an ANSI escape sequence inside a prefix (`x\u200bai-…`) does not hide it: the
   // redactor joins split tokens.
-  const joined = text.replace(CONTROL_CHARS_RE, '')
-  const plain = text.replace(ANSI_GAPS_RE, '')
-  if (CASE_MARKERS.some((m) => joined.includes(m) || plain.includes(m))) return true
+  const views = SPLIT_VIEWS.map((gaps) => text.replace(gaps, ''))
+  if (CASE_MARKERS.some((m) => views.some((view) => view.includes(m)))) return true
   const lower = text.toLowerCase()
   if (LOWER_MARKERS.some((m) => lower.includes(m))) return true
   if (CRED_KEY_NAME_RE.test(text)) return true
