@@ -118,8 +118,11 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   const onToggleYolo = useCallback(() => { if (!sessionId) return; void api.setSessionYolo(sessionId, !yolo).then((r) => setYolo(r.yolo_enabled)).catch((e: unknown) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error')) }, [sessionId, yolo])
 
   // Regenerate, `/retry`, and the error notice's Retry: the server drops the last exchange, then its prompt and files are resent.
+  // One at a time: a second retry while the first is pending would drop the exchange before it too.
+  const regenerating = useRef(false)
   const onRegenerate = useCallback(async () => {
-    if (!sessionId || !session) return
+    if (!sessionId || !session || regenerating.current) return
+    regenerating.current = true
     try {
       const r = await api.retrySession(sessionId)
       if ('error' in r) { showToast(r.error, 4000, 'error'); return }
@@ -131,7 +134,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
       await startTurn({ sessionId, message: r.last_user_prompt, request: { ...turnRequest(session, bootstrap.profile?.name ?? 'default'), ...(attachments.length ? { attachments } : {}) } })
     } catch (e) {
       showToast(e instanceof Error ? e.message : String(e), 4000, 'error')
-    }
+    } finally { regenerating.current = false }
   }, [sessionId, session, refresh, bootstrap.profile])
 
   // Manual compression: start, poll the job to done/error, then load the compacted session (a new id when the server forks).

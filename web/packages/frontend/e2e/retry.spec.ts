@@ -54,3 +54,17 @@ test('against a server without the resend fields, Regenerate puts the stored tex
   await expect(page.locator('#msg')).toHaveValue(stored)
   expect(starts).toEqual([])
 })
+
+test('a double-clicked Regenerate removes and resends one exchange', async ({ page }) => {
+  const starts = await mockRetry(page, 'double')
+  let retries = 0
+  await page.route('**/api/session/retry', async (route) => {
+    retries += 1
+    await new Promise((r) => setTimeout(r, 300))
+    await route.fulfill({ json: { ok: true, last_user_text: 'Summarize the logs', last_user_prompt: 'Summarize the logs', last_user_attachments: [], removed_count: 2 } })
+  })
+  await page.goto('/session/double')
+  await page.getByRole('button', { name: 'Regenerate response' }).dblclick()
+  await expect.poll(() => starts.length).toBe(1)
+  expect(retries).toBe(1)
+})
