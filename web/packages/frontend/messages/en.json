@@ -1003,6 +1003,7 @@
 	"login_btn": "Sign in",
 	"login_invalid_pw": "Invalid password",
 	"login_conn_failed": "Connection failed",
+	"login_sso_unavailable": "SSO is temporarily unavailable.",
 	"tab_chat": "Chat",
 	"tab_tasks": "Tasks",
 	"tab_skills": "Skills",

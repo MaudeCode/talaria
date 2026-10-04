@@ -293,6 +293,9 @@
                         "oidc_native_handoff_enabled": {
                           "type": "boolean"
                         },
+                        "oidc_unavailable": {
+                          "type": "boolean"
+                        },
                         "password_auth_enabled": {
                           "type": "boolean"
                         },
@@ -348,6 +351,7 @@
                         "logged_in",
                         "oidc_enabled",
                         "oidc_native_handoff_enabled",
+                        "oidc_unavailable",
                         "password_auth_enabled",
                         "passwordless_enabled",
                         "passkeys_enabled",
@@ -466,6 +470,9 @@
                     "oidc_native_handoff_enabled": {
                       "type": "boolean"
                     },
+                    "oidc_unavailable": {
+                      "type": "boolean"
+                    },
                     "password_auth_enabled": {
                       "type": "boolean"
                     },
@@ -521,6 +528,7 @@
                     "logged_in",
                     "oidc_enabled",
                     "oidc_native_handoff_enabled",
+                    "oidc_unavailable",
                     "password_auth_enabled",
                     "passwordless_enabled",
                     "passkeys_enabled",

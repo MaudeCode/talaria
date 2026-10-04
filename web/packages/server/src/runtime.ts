@@ -100,6 +100,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     stateDir: config.stateDir, env, settings, log, now,
     passkeysEnabled: () => passkeys.available(),
     oidcEnabled: () => oidc?.enabledSync() ?? false,
+    oidcAvailable: () => oidc?.availableSync() ?? false,
     oidcProbe: () => oidc?.resolve() ?? Promise.resolve(),
     passkeyConfigFlag: () => { const cfg = operatorConfigPeek(); return cfg === null ? null : cfg.webui_passkey_enabled },
   })
