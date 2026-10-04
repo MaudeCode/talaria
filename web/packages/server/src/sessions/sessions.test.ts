@@ -900,6 +900,22 @@ describe('session detail stamps compaction markers (TAL-305)', () => {
     expect(readFileSync(path).equals(before)).toBe(true)
   })
 
+  it('keeps a legacy turn scene on its reply when an assistant marker follows it', async () => {
+    const sid = String((await newSession(s)).session_id)
+    const session = s.deps.sessionStore.get(sid)
+    session.messages = [
+      { role: 'user', content: 'Check the build', timestamp: 1000 },
+      { role: 'assistant', content: 'Build passes.', reasoning: 'Ran the build.', timestamp: 1001 },
+      { role: 'assistant', content: '[CONTEXT COMPACTION] Earlier turns were summarised.', timestamp: 1002 },
+    ]
+    s.deps.sessionStore.save(session)
+    const messages = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).messages as Json[]
+    const [reply, marker] = [messages.find((m) => m.timestamp === 1001), messages.find((m) => m.timestamp === 1002)]
+    expect(marker?._marker_kind).toBe('context_compaction')
+    expect(marker).not.toHaveProperty('_anchor_activity_scene')
+    expect((reply?._anchor_activity_scene as Json | undefined)?.final_answer).toBe('Build passes.')
+  })
+
   it('serves the shared marker example exactly as the contract fixture records it', async () => {
     const fixture = (JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as Json).marker_session as Json
     const sid = String((await newSession(s)).session_id)
@@ -907,7 +923,6 @@ describe('session detail stamps compaction markers (TAL-305)', () => {
     session.messages = (fixture.messages as Json[]).map(({ role, content, timestamp, message_id }) => ({ role, content, timestamp, message_id }))
     s.deps.sessionStore.save(session)
     const served = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1&msg_limit=50`))).session as Json).messages
-    if (process.env.RECORD_TAL305) { const path = join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'); const all = JSON.parse(readFileSync(path, 'utf8')) as Json; (all.marker_session as Json).messages = served; writeFileSync(path, `${JSON.stringify(all, null, 2)}\n`) }
     expect(served).toEqual(fixture.messages)
   })
 })

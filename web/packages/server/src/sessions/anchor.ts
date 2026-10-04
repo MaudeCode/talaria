@@ -441,11 +441,11 @@ function withStoredOutcome(preview: Record<string, unknown>, built: Record<strin
   return next
 }
 
-/** Rows of the full transcript grouped by `_turn_id` (see withTurnIds), with their absolute indexes. */
+/** Rows of the full transcript grouped by `_turn_id` (see withTurnIds), with their absolute indexes. Marker rows render as their own cards, so no scene is built from or attached to one. */
 function turnsOf(messages: unknown[]): Map<string, [Record<string, unknown>, number][]> {
   const turns = new Map<string, [Record<string, unknown>, number][]>()
   messages.forEach((m, index) => {
-    if (!isDict(m)) return
+    if (!isDict(m) || markerKind(m)) return
     const id = str(m._turn_id)
     if (!id) return
     const rows = turns.get(id) ?? []
