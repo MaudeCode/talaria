@@ -94,6 +94,22 @@ def mark_consumed(process_id: str) -> bool:
         return False
 
 
+def consumed_ids(process_ids: list[str]) -> list[str]:
+    """The processes the agent already holds from its own turn: consumed via wait/log, or observed exiting via poll.
+    Checked at wakeup delivery, since the completion is usually drained before the agent's wait returns (TAL-532)."""
+    registry = _registry()
+    if registry is None:
+        return []
+    out = []
+    for process_id in process_ids:
+        try:
+            if registry.is_completion_consumed(process_id) or process_id in (getattr(registry, "_poll_observed", None) or ()):
+                out.append(process_id)
+        except Exception:  # noqa: BLE001
+            log.debug("Completion consumed check failed for %r", process_id, exc_info=True)
+    return out
+
+
 def _delivery_api():
     """The Agent's durable delivery ledger (``tools.async_delegation``), or None on an Agent without it."""
     try:
@@ -406,6 +422,13 @@ def register(registry_) -> None:
         if not process_id:
             raise InvalidParams("process_id is required")
         return {"ok": mark_consumed(process_id)}
+
+    @registry_.method("process.consumed")
+    def consumed_(ctx: CallContext, params: dict) -> dict:
+        ids = params.get("process_ids")
+        if not isinstance(ids, list) or not all(isinstance(i, str) and i for i in ids):
+            raise InvalidParams("process_ids must be a list of process ids")
+        return {"consumed": consumed_ids(ids)}
 
     def _delivery_params(params: dict) -> dict:
         evt = params.get("event")

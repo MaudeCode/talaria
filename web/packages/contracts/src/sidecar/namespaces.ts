@@ -203,6 +203,8 @@ export const PROCESS_METHODS = {
   'process.drain': { params: ProfileHomeParams.extend({ max_events: z.number().int().positive().optional() }), result: z.object({ events: z.array(ProcessEventSchema) }) },
   'process.requeue': { params: z.object({ events: z.array(Loose) }), result: z.object({ requeued: z.number().int() }) },
   'process.mark_consumed': { params: z.object({ process_id: z.string().min(1) }), result: Ok },
+  /** TAL-532: the subset the agent already holds from its own turn (consumed via wait/log, or poll-observed). */
+  'process.consumed': { params: z.object({ process_ids: z.array(z.string().min(1)) }), result: z.object({ consumed: z.array(z.string()) }) },
   /** TAL-459: the Agent's durable delivery ledger. A null claim means another consumer delivered (or holds) it; "" means nothing durable to acknowledge. */
   'process.claim_delivery': { params: ProfileHomeParams.extend({ event: Loose, consumer: z.string().min(1) }), result: z.object({ claim_id: z.string().nullable() }) },
   'process.complete_delivery': { params: ProfileHomeParams.extend({ event: Loose, claim_id: z.string() }), result: Ok },

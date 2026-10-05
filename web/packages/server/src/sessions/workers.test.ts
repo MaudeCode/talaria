@@ -272,6 +272,42 @@ describe('async delegation delivery claims (TAL-459)', () => {
       drain.stop()
     }
   })
+
+  it('drops a deferred completion the agent awaited in its own turn and still wakes for an unawaited sibling (TAL-532)', async () => {
+    const sid = await newSid()
+    ledger()
+    const consumed: string[] = []
+    sidecar.respond('process.mark_consumed', (params) => { consumed.push(str(params.process_id)); return { ok: true } })
+    // The Agent marks a process consumed (wait/log) or poll-observed only after its completion event was drained.
+    const awaited = new Set<string>()
+    sidecar.respond('process.consumed', (params) => ({ consumed: params.process_ids.filter((id) => awaited.has(id)) }))
+    const completion = (id: string): Json => ({ process_id: id, session_id: id, type: 'completion', command: `run ${id}`, exit_code: 0, output: 'ok', origin_ui_session_id: sid, consumed: false })
+    const attempts: string[] = []
+    const { drain, registry } = turnDrain((prompt) => { attempts.push(prompt); return { stream_id: 'wake' } })
+    holdTurn(registry, sid)
+    try {
+      expect(await drain.processOne(completion('proc_awaited'))).toBe(true)
+      expect(await drain.processOne(completion('proc_sibling'))).toBe(true)
+      expect(drain.deferredCount(sid)).toBe(2)
+      awaited.add('proc_awaited')
+      registry.activeRuns.delete('held')
+      expect(await drain.drainDeferred(sid)).toBe(1)
+      expect(attempts).toHaveLength(1)
+      expect(attempts[0]).toContain('Background process proc_sibling completed')
+      expect(attempts[0]).not.toContain('proc_awaited')
+      expect(consumed.sort()).toEqual(['proc_awaited', 'proc_sibling'])
+      // Only an awaited process pending: no wakeup turn at all.
+      holdTurn(registry, sid)
+      expect(await drain.processOne(completion('proc_waited'))).toBe(true)
+      awaited.add('proc_waited')
+      registry.activeRuns.delete('held')
+      expect(await drain.drainDeferred(sid)).toBe(0)
+      expect(attempts).toHaveLength(1)
+      expect(drain.deferredCount(sid)).toBe(0)
+    } finally {
+      drain.stop()
+    }
+  })
 })
 
 describe('background wakeups carry their update metadata (TAL-371)', () => {

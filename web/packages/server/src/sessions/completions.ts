@@ -299,6 +299,18 @@ export class CompletionDrain {
     return true
   }
 
+  /**
+   * TAL-532: the deferred process completions the agent already holds from its own turn (wait/log or poll). Checked at
+   * delivery, not drain: the completion is usually drained seconds before the agent's wait returns. Async delegations
+   * are settled by their delivery ledger instead. A failed check delivers everything rather than lose a result.
+   */
+  private async alreadyConsumed(entries: Deferred[]): Promise<Set<string>> {
+    const ids = entries.filter((e) => e.process_id && e.event?.type !== 'async_delegation').map((e) => e.process_id)
+    const sidecar = this.deps.sidecar()
+    if (!ids.length || !sidecar) return new Set()
+    try { const { consumed } = await sidecar.call('process.consumed', { process_ids: ids }); return new Set(ids.filter((id) => consumed.includes(id))) } catch { return new Set() }
+  }
+
   /** Python `drain_deferred_wakeups_for_session`: turn-teardown idle hook; only the last active stream's teardown fires. */
   async drainDeferred(sid: string): Promise<number> {
     if (!sid || this.hasActiveTurn(sid)) return 0
@@ -306,7 +318,13 @@ export class CompletionDrain {
     if (!entries?.length) return 0
     this.deferred.delete(sid)
     this.pendingSessions.delete(sid)
-    const pending = entries.filter((e) => e.wakeup_prompt.trim())
+    const prompted = entries.filter((e) => e.wakeup_prompt.trim())
+    const held = await this.alreadyConsumed(prompted)
+    if (held.size) {
+      await this.markConsumed([...held])
+      this.deps.log(`[webui] dropped ${String(held.size)} deferred wakeup(s) already consumed by the agent's own turn for session ${sid}: ${[...held].join(', ')}`)
+    }
+    const pending = prompted.filter((e) => !held.has(e.process_id))
     if (!pending.length) { this.retryAttempts.delete(sid); return 0 }
     const batch: Deferred[] = []
     let total = 0

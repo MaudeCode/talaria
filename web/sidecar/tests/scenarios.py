@@ -94,6 +94,7 @@ SCENARIOS: list[tuple[str, dict]] = [
     ("process.format_notification", {"event": {"type": "completion", "session_id": "proc_1", "command": "ls", "exit_code": 0, "output": "ok"}}),
     ("process.requeue", {"events": []}),
     ("process.mark_consumed", {"process_id": "proc_1"}),
+    ("process.consumed", {"process_ids": ["proc_1", "proc_2"]}),
     ("process.claim_delivery", {"profile_home": "{home}", "event": {"type": "async_delegation", "delegation_id": "deleg_fixture", "task_failure_notice": True}, "consumer": "webui"}),
     ("process.complete_delivery", {"profile_home": "{home}", "event": {"type": "async_delegation", "delegation_id": "deleg_fixture"}, "claim_id": ""}),
     ("process.release_delivery", {"profile_home": "{home}", "event": {"type": "async_delegation", "delegation_id": "deleg_fixture"}, "claim_id": ""}),
