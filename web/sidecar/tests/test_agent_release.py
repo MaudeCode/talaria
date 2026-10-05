@@ -257,3 +257,34 @@ def test_profile_deletion_is_refused_while_a_release_is_still_running(monkeypatc
     flushing.set()
     assert registry.methods["profiles.delete"](Ctx(), {"base_home": str(tmp_path), "name": "alpha"}) == {"ok": True}
     assert deleted == ["alpha"] and EVENTS == [("on_session_end", "slow", TRANSCRIPT, str(alpha)), ("release_clients", "slow")]
+
+
+def test_an_agent_evicted_during_a_memory_commit_is_released_after_the_commit(monkeypatch) -> None:
+    _setup(monkeypatch)
+    committing = threading.Event()
+    gate = threading.Event()
+
+    class CommittingAgent(MemoryAgent):
+        def commit_memory_session(self, messages=None):
+            committing.set()
+            gate.wait(5)
+            EVENTS.append(("commit", self.kwargs["session_id"]))
+
+    monkeypatch.setattr(chat, "_agent_class", lambda: CommittingAgent)
+    assert chat.start(Ctx(), _params("st-commit", "commit"))["status"] == "completed"
+    registry = Registry(runtime=None)  # type: ignore[arg-type]
+    chat.register(registry)
+    reply: dict = {}
+    worker = threading.Thread(target=lambda: reply.update(registry.methods["chat.commit_memory"](Ctx(), {"session_id": "commit"})))
+    worker.start()
+    assert committing.wait(5)
+    assert chat.evict_all_agents() == 1
+    time.sleep(0.2)
+    assert EVENTS == []  # the provider is not ended or shut down under the running commit
+    gate.set()
+    worker.join(5)
+    assert reply == {"committed": True}
+    deadline = time.monotonic() + 2
+    while len(EVENTS) < 3 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert EVENTS == [("commit", "commit"), *_released("commit")]

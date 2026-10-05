@@ -76,6 +76,8 @@ _AGENT_CACHE_LOCK = threading.Lock()
 # Running release thread -> the profile home it runs under.
 _RELEASES: dict[threading.Thread, Any] = {}
 _RELEASES_LOCK = threading.Lock()
+# Agents inside ``chat.commit_memory`` (guarded by ``_AGENT_CACHE_LOCK``): like a turn, a commit defers their release.
+_COMMITTING: list = []
 # Set (under ``_RUNS_LOCK``) when shutdown drains: no turn is admitted after the drain's snapshot of ``_RUNS``.
 _DRAINING = threading.Event()
 
@@ -567,8 +569,15 @@ def _release_agents_locked(entries) -> list[threading.Thread]:
     """Release cache entries that just left the cache (caller holds ``_AGENT_CACHE_LOCK``). An agent a turn still holds
     keeps its memory provider and clients; that turn releases it when it ends."""
     with _RUNS_LOCK:
-        held = [run.agent for run in _RUNS.values()]
+        held = [run.agent for run in _RUNS.values()] + _COMMITTING
     return [_release_agent(agent, home) for agent, _signature, home in entries if not any(agent is other for other in held)]
+
+
+def _release_if_dropped_locked(agent, home) -> None:
+    """A holder (turn or commit) is done with ``agent``: release it if it left the cache meanwhile and nothing else holds
+    it (caller holds ``_AGENT_CACHE_LOCK``)."""
+    if agent is not None and not any(entry[0] is agent for entry in _AGENT_CACHE.values()):
+        _release_agents_locked([(agent, None, home)])
 
 
 def _join(threads, deadline: float) -> None:
@@ -596,8 +605,8 @@ def drain_agents(timeout: float = _AGENT_RELEASE_TIMEOUT) -> None:
     for run in runs:
         run.cancel.set()
     while time.monotonic() < deadline:
-        with _RUNS_LOCK:
-            if not any(_RUNS.get(run.stream_id) is run for run in runs):
+        with _AGENT_CACHE_LOCK, _RUNS_LOCK:
+            if not _COMMITTING and not any(_RUNS.get(run.stream_id) is run for run in runs):
                 break
         time.sleep(0.05)
     # A turn may have cached its agent after the first eviction.
@@ -1020,8 +1029,7 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
                 if _RUNS_BY_SESSION.get(session_id) == stream_id:
                     _RUNS_BY_SESSION.pop(session_id, None)
             # An agent evicted or replaced while this turn held it is released now that the turn is over.
-            if run.agent is not None and not any(entry[0] is run.agent for entry in _AGENT_CACHE.values()):
-                _release_agents_locked([(run.agent, None, home)])
+            _release_if_dropped_locked(run.agent, home)
 
 
 def _checkpoint_required() -> bool:
@@ -1270,18 +1278,23 @@ def register(registry) -> None:
         home = profile_home_param(params)
         with _AGENT_CACHE_LOCK:
             cached = _AGENT_CACHE.get(session_id)
-        with _RUNS_LOCK:
-            busy = (_RUNS_BY_SESSION.get(session_id) or "") in _RUNS
-        agent = cached[0] if cached else None
-        commit = getattr(agent, "commit_memory_session", None) if agent is not None else None
-        if commit is None or busy:
-            return {"committed": False}
+            with _RUNS_LOCK:
+                busy = _DRAINING.is_set() or (_RUNS_BY_SESSION.get(session_id) or "") in _RUNS
+            agent = cached[0] if cached else None
+            commit = getattr(agent, "commit_memory_session", None) if agent is not None else None
+            if commit is None or busy:
+                return {"committed": False}
+            _COMMITTING.append(agent)
         try:
             with scoped_home(home):
                 commit(list(getattr(agent, "_session_messages", None) or []))
         except Exception as exc:  # noqa: BLE001
             log.warning("commit_memory_session() failed for session %s: %s", session_id, exc)
             return {"committed": False}
+        finally:
+            with _AGENT_CACHE_LOCK:
+                _COMMITTING.remove(agent)
+                _release_if_dropped_locked(agent, cached[2])
         return {"committed": True}
 
     @registry.method("approval.respond", requires_agent=True)
