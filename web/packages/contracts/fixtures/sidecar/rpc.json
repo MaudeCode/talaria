@@ -81,6 +81,7 @@
           "process.format_notification",
           "process.list",
           "process.mark_consumed",
+          "process.recover",
           "process.release_delivery",
           "process.requeue",
           "profiles.create",

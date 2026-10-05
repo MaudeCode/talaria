@@ -201,6 +201,8 @@ export const TEXT_METHODS = {
 export const ProcessEventSchema = z.object({ process_id: z.string(), consumed: z.boolean(), type: z.string().optional(), session_key: z.string().optional(), origin_ui_session_id: z.string().optional() }).catchall(Json)
 export const PROCESS_METHODS = {
   'process.drain': { params: ProfileHomeParams.extend({ max_events: z.number().int().positive().optional() }), result: z.object({ events: z.array(ProcessEventSchema) }) },
+  /** TAL-533: re-adopt the base home's and every named profile's checkpointed background processes in a fresh sidecar. */
+  'process.recover': { params: BaseHomeParams, result: z.object({ homes: z.number().int() }) },
   'process.requeue': { params: z.object({ events: z.array(Loose) }), result: z.object({ requeued: z.number().int() }) },
   'process.mark_consumed': { params: z.object({ process_id: z.string().min(1) }), result: Ok },
   /** TAL-532: the subset the agent already holds from its own turn (consumed via wait/log, or poll-observed). */

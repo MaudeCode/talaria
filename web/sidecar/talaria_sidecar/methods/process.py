@@ -12,7 +12,7 @@ import time
 from contextlib import closing
 from pathlib import Path
 
-from ..errors import InvalidParams
+from ..errors import InvalidParams, RpcError
 from ..home import profile_home_param, scoped_home
 from ..rpc import CallContext
 
@@ -54,6 +54,14 @@ def drain(max_events: int) -> list[dict]:
     completion_queue = getattr(registry, "completion_queue", None) if registry is not None else None
     if completion_queue is None:
         return []
+    try:
+        # A recovered process has no reader thread; only this probe notices its exit and queues its completion (TAL-533).
+        with registry._lock:
+            detached = [s for s in registry._running.values() if getattr(s, "detached", False)]
+        for session in detached:
+            registry._refresh_detached_session(session)
+    except Exception:  # noqa: BLE001
+        log.debug("Failed to reconcile recovered processes", exc_info=True)
     out = []
     while len(out) < max_events:
         try:
@@ -403,11 +411,39 @@ def delegation_result(home: Path, session_id: str, delegation_id: str) -> str:
     return format_notification(event) if event else ""
 
 
+def recover(base_home: Path) -> int:
+    """TAL-533: re-adopt every profile's checkpointed processes when a sidecar starts, so a process in a profile nobody
+    uses yet is watched (and its exit reported) from the start. Entering a home's scope recovers it once; a failed
+    recovery fails the call, so the server retries."""
+    from hermes_cli.profiles import _PROFILE_ID_RE
+
+    profiles_root = base_home / "profiles"
+    named = sorted(p for p in profiles_root.iterdir() if p.is_dir() and _PROFILE_ID_RE.match(p.name)) if profiles_root.is_dir() else []
+    failed = []
+    for home in [base_home, *named]:
+        try:
+            with scoped_home(home):
+                pass
+        except RpcError as exc:
+            if exc.data.get("condition") != "agent_incompatible":
+                failed.append(str(exc))
+                continue
+            # An Agent without profile isolation refuses named profiles for good; their processes stay unadopted.
+            log.warning("Background process recovery skipped for %s", home, exc_info=True)
+    if failed:
+        raise RpcError("; ".join(failed))
+    return 1 + len(named)
+
+
 def register(registry_) -> None:
     @registry_.method("process.drain")
     def drain_(ctx: CallContext, params: dict) -> dict:
         with scoped_home(profile_home_param(params)):
             return {"events": drain(int(params.get("max_events") or 256))}
+
+    @registry_.method("process.recover")
+    def recover_(ctx: CallContext, params: dict) -> dict:
+        return {"homes": recover(profile_home_param(params, "base_home"))}
 
     @registry_.method("process.requeue")
     def requeue_(ctx: CallContext, params: dict) -> dict:

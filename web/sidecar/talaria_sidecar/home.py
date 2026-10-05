@@ -25,6 +25,8 @@ from __future__ import annotations
 
 import contextlib
 import importlib
+import json
+import logging
 import os
 import sys
 import threading
@@ -32,7 +34,12 @@ from pathlib import Path
 
 from .errors import InvalidParams, RpcError
 
+log = logging.getLogger("talaria_sidecar.home")
+
 _ENV_LOCK = threading.RLock()
+_RECOVERY_LOCK = threading.Lock()
+_RECOVERED_HOMES: set[str] = set()
+_RECOVERY_WARNED: set[str] = set()
 _LAUNCH_ENV_LOCK = threading.Lock()
 _LAUNCH_ENV: dict[str, str] | None = None
 _PROCESS_HOME = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes").expanduser()
@@ -163,6 +170,36 @@ def profile_home_param(params: dict, key: str = "profile_home") -> Path:
     return Path(raw).expanduser()
 
 
+def _recover_processes(home: Path) -> None:
+    """Re-adopt the live processes a previous run checkpointed in ``home`` (TAL-533), once per home and before the
+    first call in it can spawn: a spawn rewrites ``processes.json`` from the registry and would orphan them. A failed
+    recovery fails the call (and every later one in that home until a retry succeeds), so nothing can overwrite the
+    checkpoint it could not read."""
+    key = str(home.resolve())
+    with _RECOVERY_LOCK:
+        if key in _RECOVERED_HOMES:
+            return
+        try:
+            from tools import process_registry as registry_module
+        except ImportError:  # an Agent without the registry has nothing to recover
+            _RECOVERED_HOMES.add(key)
+            return
+        try:
+            # The Agent reads an unreadable or malformed checkpoint as "nothing to recover"; that must not count as recovered.
+            checkpoint = registry_module._checkpoint_path()
+            if checkpoint.exists() and not isinstance(json.loads(checkpoint.read_text(encoding="utf-8")), list):
+                raise ValueError(f"{checkpoint} is not a list")
+            recovered = registry_module.process_registry.recover_from_checkpoint()
+        except Exception as exc:  # noqa: BLE001
+            # Retried on every call in the home; reported once per home so a lasting failure does not flood the log.
+            log.log(logging.DEBUG if key in _RECOVERY_WARNED else logging.WARNING, "Background process recovery failed for %s", home, exc_info=True)
+            _RECOVERY_WARNED.add(key)
+            raise RpcError(f"background process recovery failed for {home}; its processes.json could not be re-adopted: {exc}") from exc
+        _RECOVERED_HOMES.add(key)
+    if recovered:
+        log.info("Recovered %d background process(es) for %s", recovered, home)
+
+
 @contextlib.contextmanager
 def scoped_home(home: Path):
     """Run the body with Hermes Agent resolving ``get_hermes_home()`` to ``home``."""
@@ -175,6 +212,7 @@ def scoped_home(home: Path):
         token = set_hermes_home_override(home)
         try:
             with _secret_scope(home), _terminal_scope(home):
+                _recover_processes(home)
                 yield home
         finally:
             reset_hermes_home_override(token)
@@ -184,6 +222,7 @@ def scoped_home(home: Path):
         os.environ["HERMES_HOME"] = str(home)
         try:
             with _secret_scope(home), _terminal_scope(home):
+                _recover_processes(home)
                 yield home
         finally:
             if previous is None:

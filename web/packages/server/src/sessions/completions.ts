@@ -24,6 +24,8 @@ const WAKEUP_BATCH_MAX_CHARS = 24_000
 
 export interface CompletionDrainDeps {
   sidecar: () => SidecarLike | null
+  /** The base Hermes home: every profile under it has its background processes recovered in a new sidecar (TAL-533). */
+  baseHome: string
   profileHome: (profile: string | null) => string
   activeProfile: () => string
   store: SessionStore
@@ -71,6 +73,10 @@ export class CompletionDrain {
   private readonly retryTimers = new Map<string, NodeJS.Timeout>()
   private readonly lastEmitAt = new Map<string, number>()
   private readonly pendingEmit = new Map<string, { payload: Dict; timer: NodeJS.Timeout }>()
+  /** The handshake of the sidecar whose process registry already recovered every profile's checkpoint. */
+  private recoveredFor: unknown = null
+  private recoveryWarnedFor: unknown = null
+  private lastDrainError: string | null = null
 
   constructor(private readonly deps: CompletionDrainDeps) {}
 
@@ -78,7 +84,12 @@ export class CompletionDrain {
     if (this.timer || this.stopped) return
     const tick = (): void => {
       if (this.stopped) return
-      void this.drainOnce().catch((error: unknown) => { this.deps.log(`[webui] WARNING: bg_task_complete drain failed: ${(error as Error).message}`) }).finally(() => {
+      // A lasting failure (an unrecoverable checkpoint fails every call in its home, TAL-533) is logged once, not every poll.
+      void this.drainOnce().then(() => { this.lastDrainError = null }, (error: unknown) => {
+        const message = (error as Error).message
+        if (message !== this.lastDrainError) this.deps.log(`[webui] WARNING: bg_task_complete drain failed: ${message}`)
+        this.lastDrainError = message
+      }).finally(() => {
         if (this.stopped) return
         this.timer = setTimeout(tick, this.deps.pollMs ?? COMPLETION_POLL_MS)
         this.timer.unref()
@@ -98,6 +109,19 @@ export class CompletionDrain {
   async drainOnce(): Promise<number> {
     const sidecar = this.deps.sidecar()
     if (!sidecar) return 0
+    // Each sidecar handshake is a fresh process registry: re-adopt every profile's checkpointed processes before the first
+    // drain, so one that exits in a profile nobody has used since the restart still reports its completion.
+    const describe = sidecar.describe
+    if (describe && describe !== this.recoveredFor) {
+      try {
+        await sidecar.call('process.recover', { base_home: this.deps.baseHome })
+        this.recoveredFor = describe
+      } catch (error) {
+        // Retried on every pass; reported once per sidecar so a lasting failure does not flood the log.
+        if (this.recoveryWarnedFor !== describe) this.deps.log(`[webui] WARNING: background process recovery failed; retrying: ${(error as Error).message}`)
+        this.recoveryWarnedFor = describe
+      }
+    }
     const { events } = await sidecar.call('process.drain', { profile_home: this.deps.profileHome(this.deps.activeProfile()), max_events: 256 })
     let routed = 0
     const unrouted: Dict[] = []

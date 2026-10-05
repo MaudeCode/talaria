@@ -35,6 +35,16 @@
       }
     }
   ],
+  "process.recover": [
+    {
+      "params": {
+        "base_home": "<home>"
+      },
+      "result": {
+        "homes": 1
+      }
+    }
+  ],
   "process.requeue": [
     {
       "params": {
