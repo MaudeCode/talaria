@@ -2498,6 +2498,20 @@ describe('stale cross-provider session models at chat start (TAL-542)', () => {
     await s.sse(`/api/chat/stream?stream_id=${String(started.stream_id)}&replay=1`, (f) => f.event === 'done' || f.event === 'apperror')
   })
 
+  it('starts background tasks and side questions on the repaired pair', async () => {
+    useConfig('openai-codex', 'gpt-5.5')
+    for (const [path, field] of [['/api/background', 'prompt'], ['/api/btw', 'question']] as const) {
+      const sid = await sessionWith('gemini-3.1-pro-preview', null)
+      seen = {}
+      const res = await post(s, path, { session_id: sid, [field]: 'side work' })
+      expect(res.status, path).toBe(200)
+      const started = await json(res)
+      await vi.waitFor(() => { expect(seen.session_id, path).toBe(started.session_id) })
+      expect(seen, path).toMatchObject({ model: 'gpt-5.5', model_provider: 'openai-codex' })
+      await vi.waitFor(() => { expect(s.deps.registry.liveIds.has(String(started.stream_id))).toBe(false) })
+    }
+  })
+
   it('keeps a pair the catalog lists, an unknown vendor, and a `@provider:` pick', async () => {
     useConfig('openai-codex', 'gpt-5.5', { ollama: ['llama3.2'] })
     for (const [model, provider] of [['llama3.2', 'ollama'], ['lmstudio-community/Qwen2.5-Coder-7B-Instruct-GGUF', null], ['custom/my-local-llm', null]] as const) {

@@ -51,6 +51,11 @@ describe('stale session model repair (TAL-542)', () => {
     expect(repairSessionModel(catalog('openai-codex', 'gpt-5.5', { 'openai-codex': ['gpt-5.5', 'gpt-5.4-mini'] }), 'openai/gpt-5.4-mini', 'openai-codex')).toEqual(['gpt-5.4-mini', 'openai-codex'])
   })
 
+  it('starts a bare model on the vendor-prefixed id its own provider advertises', () => {
+    expect(repairSessionModel(catalog('openrouter', 'openai/gpt-5.5', { openrouter: ['openai/gpt-5.5', 'openai/gpt-5.4'] }), 'gpt-5.4', 'openrouter')).toEqual(['openai/gpt-5.4', 'openrouter'])
+    expect(repairSessionModel(catalog('ollama', 'llama3.2', { ollama: ['lmstudio-community/Qwen2.5-Coder'] }), 'Qwen2.5-Coder', 'ollama')).toBeNull()
+  })
+
   it('never treats a namespace other than a vendor prefix as the same model', () => {
     expect(repairSessionModel(catalog('kilocode', 'kilo/auto', { ollama: ['llama3.2'], kilocode: ['Qwen2.5-Coder'] }), 'lmstudio-community/Qwen2.5-Coder', 'ollama')).toBeNull()
     expect(repairSessionModel(catalog('kilocode', 'kilo/auto', { ollama: ['llama3.2'], kilocode: ['lmstudio-community/Qwen2.5-Coder'] }), 'Qwen2.5-Coder', 'ollama')).toBeNull()

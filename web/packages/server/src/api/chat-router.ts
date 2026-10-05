@@ -286,16 +286,19 @@ export const chatRouter = os.router({
     return payload
   })),
   background: {
-    start: os.background.start.handler(({ input, context: { ctx } }) => run(() => {
+    start: os.background.start.handler(({ input, context: { ctx } }) => run(async () => {
       const body = input as Record<string, unknown>
       requireField(body, 'session_id', 'prompt')
       // A subagent child's profile/workspace/context must never seed a runnable background session.
       if (ctx.deps.sessions.isSubagentViewOnly(str(body.session_id))) throw new HttpError(400, 'Subagent sessions are view-only and cannot run background tasks from WebUI')
+      // TAL-542: the background turn starts on the parent's repaired pair; the catalog is built before the parent is read.
+      await ctx.deps.sessions.deps.warmSessionModelRepair?.()
       const parent = getSession(ctx, str(body.session_id))
       if (ctx.deps.sessions.isReadOnly(parent) || parent.branchSourceReadonly) throw new HttpError(403, 'Read-only imported sessions cannot be continued from WebUI')
       const prompt = str(body.prompt).trim()
       if (!prompt) throw new HttpError(400, 'prompt is required')
-      const bg = ctx.deps.sessionStore.newSession({ workspace: parent.workspace, model: parent.model, modelProvider: parent.model_provider, profile: parent.profile })
+      const [model, modelProvider] = modelState(ctx, parent, {})
+      const bg = ctx.deps.sessionStore.newSession({ workspace: parent.workspace, model, modelProvider, profile: parent.profile })
       bg.title = `bg: ${prompt.slice(0, 60)}`
       ctx.deps.sessionStore.save(bg)
       // Python: `uuid.uuid4().hex[:8]`; a failed run still completes the task so `/api/background/status` can report it,
@@ -305,7 +308,7 @@ export const chatRouter = os.router({
       ctx.deps.background.trackCommand(parent.session_id, taskId, prompt)
       const cleanup = (): void => { try { ctx.deps.sessionStore.deleteFiles(bg.session_id, { tombstone: false }) } catch { /* best effort */ } }
       const started = ctx.deps.turns.start(bg, {
-        msg: prompt, attachments: [], workspace: parent.workspace, model: parent.model, modelProvider: parent.model_provider, source: 'webui',
+        msg: prompt, attachments: [], workspace: parent.workspace, model, modelProvider, source: 'webui',
         onDone: (answer) => { ctx.deps.background.settleCommand(parent.session_id, taskId, 'completed', answer); cleanup() },
         onFailed: () => { ctx.deps.background.settleCommand(parent.session_id, taskId, 'failed', '(background task failed)'); cleanup() },
       })
@@ -351,26 +354,29 @@ export const chatRouter = os.router({
       return { ok: true as const, session_id: s.session_id, task_id: pid, noop: true as const }
     })),
   },
-  btw: os.btw.handler(({ input, context: { ctx } }) => run(() => {
+  btw: os.btw.handler(({ input, context: { ctx } }) => run(async () => {
     const body = input as Record<string, unknown>
     requireField(body, 'session_id', 'question')
     const sid = str(body.session_id)
     if (!isSafeSessionId(sid)) throw new HttpError(404, 'Session not found')
     // Python: a subagent child's context must not be cloned into a runnable ephemeral session.
     if (ctx.deps.sessions.isSubagentViewOnly(sid)) throw new HttpError(400, 'Subagent sessions are view-only and cannot be used for /btw from WebUI')
+    // TAL-542: the side question starts on the chat's repaired pair; the catalog is built before the chat is read.
+    await ctx.deps.sessions.deps.warmSessionModelRepair?.()
     const s = getSession(ctx, sid)
     if (ctx.deps.sessions.isReadOnly(s) || s.branchSourceReadonly) throw new HttpError(403, 'Read-only imported sessions cannot be continued from WebUI')
     const question = str(body.question).trim()
     if (!question) throw new HttpError(400, 'question is required')
     // TAL-518: a side question runs in its own hidden session, so the chat's running turn does not block it.
-    const ephemeral = ctx.deps.sessionStore.newSession({ workspace: s.workspace, model: s.model, modelProvider: s.model_provider, profile: s.profile })
+    const [model, modelProvider] = modelState(ctx, s, {})
+    const ephemeral = ctx.deps.sessionStore.newSession({ workspace: s.workspace, model, modelProvider, profile: s.profile })
     ephemeral.messages = structuredClone(s.messages)
     ephemeral.context_messages = ctx.deps.sessions.sideQuestionContext(s)
     ephemeral.title = `btw: ${question.slice(0, 60)}`
     ctx.deps.sessionStore.save(ephemeral)
     // TAL-512: a failed or refused btw turn must not leave its copy of the parent conversation behind.
     const cleanup = (): void => { try { ctx.deps.sessionStore.deleteFiles(ephemeral.session_id, { tombstone: false }) } catch { /* best effort */ } }
-    const started = ctx.deps.turns.start(ephemeral, { msg: question, attachments: [], workspace: s.workspace, model: s.model, modelProvider: s.model_provider, source: 'webui', ephemeral: true, onFailed: cleanup })
+    const started = ctx.deps.turns.start(ephemeral, { msg: question, attachments: [], workspace: s.workspace, model, modelProvider, source: 'webui', ephemeral: true, onFailed: cleanup })
     if (started._status !== undefined && started._status >= 400) {
       cleanup()
       throw new HttpError(started._status, started.error ?? 'btw start failed')
