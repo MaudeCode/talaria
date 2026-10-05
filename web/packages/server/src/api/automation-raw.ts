@@ -50,7 +50,7 @@ export async function handleKanbanEventsStream(ctx: RequestContext): Promise<voi
     sse.start()
     sse.event('hello', { cursor, board: helloBoard })
     let lastWrite = Date.now()
-    while (!sse.isClosed && !abort.signal.aborted) {
+    while (await sse.ready() && !abort.signal.aborted) {
       let events: unknown[] = []
       try {
         const page = await ctx.deps.kanban.events(home, board, cursor, 200)
@@ -94,7 +94,7 @@ export async function handleTerminalOutput(ctx: RequestContext): Promise<void> {
   try {
     sse.start()
     let lastWrite = Date.now()
-    while (!sse.isClosed && !abort.signal.aborted) {
+    while (await sse.ready() && !abort.signal.aborted) {
       const item = queue.shift()
       if (item) {
         sse.event(item.event, item.data, String(item.seq))

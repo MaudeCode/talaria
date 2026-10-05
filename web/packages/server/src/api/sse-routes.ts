@@ -50,9 +50,10 @@ export function clientStreamKey(ctx: RequestContext): string {
   return `address:${ctx.peer || 'unknown'}`
 }
 
-/** Python served SSE on blocking sockets, so a slow reader stalled its own producer; Node buffers instead, and this bounds that buffer. */
-export const SSE_MAX_BUFFERED_BYTES = 4 * 1024 * 1024
-
+/**
+ * Python served SSE on blocking sockets, so a slow reader stalled its own producer. Writes here are buffered by Node, and
+ * every streaming loop awaits `ready()` before pulling its next frame, which restores that stall instead of disconnecting.
+ */
 export class SseWriter {
   private open = false
   private closed = false
@@ -83,17 +84,26 @@ export class SseWriter {
     this.write(`: ${text}\n\n`)
   }
 
-  /** Slow consumers are bounded: past `SSE_MAX_BUFFERED_BYTES` of unsent data the connection is closed instead of growing the response buffer. */
   private write(chunk: string): void {
     if (this.isClosed) return
-    if (this.ctx.res.writableLength > SSE_MAX_BUFFERED_BYTES) {
-      this.ctx.deps.log(`[webui] WARNING: closing slow event-stream client (${String(this.ctx.res.writableLength)} bytes unsent)`)
-      this.ctx.res.destroy()
-      this.closed = true
-      this.release()
-      return
-    }
     this.ctx.res.write(chunk)
+  }
+
+  /**
+   * Resolves once the socket has taken what was written, or the client left: true while it is still connected.
+   * ponytail: memory per stream is one replay (already materialized from the journal) plus the subscriber's bounded
+   * queue; frames that queue drops while this waits are backfilled from the journal (`recoverDropped`).
+   */
+  async ready(): Promise<boolean> {
+    const { res } = this.ctx
+    if (!this.isClosed && res.writableNeedDrain) {
+      await new Promise<void>((resolve) => {
+        const done = (): void => { res.off('drain', done); res.off('close', done); resolve() }
+        res.on('drain', done)
+        res.on('close', done)
+      })
+    }
+    return !this.isClosed
   }
 
   end(): void {
@@ -206,14 +216,40 @@ function journalCoversGap(ctx: RequestContext, streamId: string, afterSeq: numbe
   return seqs.size === cutoff - floor
 }
 
-async function drainStream(ctx: RequestContext, sse: SseWriter, sub: StreamSubscriber, streamId: string, replayCutoffSeq: number | null): Promise<void> {
+/** The recovery frame for live frames that are gone: the client restores the last saved transcript. */
+function interruptedFrame(sessionId: string, streamId: string, dropped: number, message: string): Record<string, unknown> {
+  return { type: 'interrupted', terminal_state: 'interrupted', recovery_control: true, message, hint: 'The transcript was restored to the last saved state.', session_id: sessionId, stream_id: streamId, offline_dropped_events: dropped }
+}
+
+/**
+ * Before sending the live frame `seq`, send what `sub`'s bounded queue dropped while its writer waited for a slow reader:
+ * `backfill` gets the journal range (rows at or below `floor` were already sent). When the journal cannot cover it, the
+ * interrupted recovery frame is sent instead and this returns false, ending the stream.
+ */
+function recoverDropped(ctx: RequestContext, sse: SseWriter, sub: StreamSubscriber, streamId: string, sessionId: string, seq: number | null, floor: number | null, backfill: (range: { afterSeq: number; maxSeq: number }) => void): boolean {
+  const gap = sub.gap
+  const from = sameRunSeq(gap?.firstEventId, streamId)
+  // The gap is bounded by the next journaled frame after it; a frame dequeued before the drops leaves it open.
+  if (!gap || (!gap.unjournaled && (seq === null || (from !== null && seq < from)))) return true
+  sub.gap = null
+  const afterSeq = Math.max((from ?? 1) - 1, floor ?? 0)
+  if (!gap.unjournaled && from !== null && seq !== null && journalCoversGap(ctx, streamId, afterSeq, seq - 1)) {
+    backfill({ afterSeq, maxSeq: seq - 1 })
+    return true
+  }
+  sse.event('apperror', interruptedFrame(sessionId, streamId, gap.dropped, 'The live stream fell behind a slow connection and the run journal cannot backfill the dropped frames.'))
+  return false
+}
+
+async function drainStream(ctx: RequestContext, sse: SseWriter, sub: StreamSubscriber, streamId: string, replayCutoffSeq: number | null, sessionId: string): Promise<void> {
   for (;;) {
-    if (sse.isClosed) return
+    if (!(await sse.ready())) return
     const item = await nextItem(sub, SSE_HEARTBEAT_INTERVAL_MS)
     if (sse.isClosed) return
     if (!item) { sse.comment('heartbeat'); continue }
     const [event, data, eventId, redacted] = item
     const seq = sameRunSeq(eventId, streamId)
+    if (!recoverDropped(ctx, sse, sub, streamId, sessionId, seq, replayCutoffSeq, (gap) => { replayRunJournal(ctx, sse, streamId, gap.afterSeq, { maxSeq: gap.maxSeq, includeStale: false }) })) return
     if (replayCutoffSeq !== null && seq !== null && seq <= replayCutoffSeq) {
       if (SSE_RELAY_CLOSE_EVENTS.has(event)) return
       continue
@@ -267,13 +303,13 @@ export async function handleChatStream(ctx: RequestContext): Promise<void> {
         if (replayed) replayCutoffSeq = replayMaxSeq
       }
       if (gapRequired && (!covered || !replayed)) {
-        sse.event('apperror', { type: 'interrupted', terminal_state: 'interrupted', recovery_control: true, message: "The live stream's replay buffer overflowed while no tab was attached and the run journal cannot backfill the dropped frames.", hint: 'The transcript was restored to the last saved state.', session_id: owner ?? '', stream_id: streamId, offline_dropped_events: snapshot.offline_dropped_events || Math.max(0, (replayMaxSeq ?? 0) - afterSeq) })
+        sse.event('apperror', interruptedFrame(owner ?? '', streamId, snapshot.offline_dropped_events || Math.max(0, (replayMaxSeq ?? 0) - afterSeq), "The live stream's replay buffer overflowed while no tab was attached and the run journal cannot backfill the dropped frames."))
         return
       }
       if (terminalReplayed) return
       if (afterSeq > 0 && (snapshotCutoff === null || afterSeq <= snapshotCutoff)) replayCutoffSeq = replayCutoffSeq === null ? afterSeq : Math.max(replayCutoffSeq, afterSeq)
     }
-    await drainStream(ctx, sse, sub, streamId, replayCutoffSeq)
+    await drainStream(ctx, sse, sub, streamId, replayCutoffSeq, owner ?? '')
   } finally {
     channel.unsubscribe(sub)
     sse.end()
@@ -307,7 +343,7 @@ export async function handleSessionStream(ctx: RequestContext): Promise<void> {
       if (persisted !== null && persisted > knownCount) sse.event('session-updated', { session_id: sid, message_count: persisted, known_count: knownCount, source: 'subscribe_recovery' })
     }
     for (;;) {
-      if (sse.isClosed) return
+      if (!(await sse.ready())) return
       const item = await nextSessionItem(sub, SSE_HEARTBEAT_INTERVAL_MS)
       if (sse.isClosed) return
       if (!item) { sse.comment('keepalive'); continue }
@@ -371,7 +407,7 @@ export async function handleSessionEvents(ctx: RequestContext): Promise<void> {
     if (gatewaySub) sse.event('sessions_changed', { type: 'sessions_changed', sessions: initialGatewaySessions(ctx), stream: 'gateway' })
     let lastWrite = Date.now()
     for (;;) {
-      if (sse.isClosed) return
+      if (!(await sse.ready())) return
       // ponytail: 250 ms alternating drain instead of a fan-in; the watcher polls on a multi-second cadence.
       if (gatewaySub) {
         for (;;) {
@@ -450,7 +486,7 @@ export async function handleSessionJournalStream(ctx: RequestContext, sessionId:
     if (!attached.sub) {
       if (replayOk) emitReplay(replayEvents, attached.streamId, null)
       for (;;) {
-        if (sse.isClosed) return
+        if (!(await sse.ready())) return
         attached = attach()
         if (attached.sub) break
         const fp = ctx.deps.journal.sessionJournalFingerprint(sessionId)
@@ -469,12 +505,13 @@ export async function handleSessionJournalStream(ctx: RequestContext, sessionId:
       else snapshot(streamId)
     }
     for (;;) {
-      if (sse.isClosed) return
+      if (!(await sse.ready())) return
       const item = await nextItem(sub, SSE_HEARTBEAT_INTERVAL_MS)
       if (sse.isClosed) return
       if (!item) { sse.comment('keepalive'); continue }
       const [event, data, eventId, redacted] = item
       const seq = sameRunSeq(eventId, streamId)
+      if (!recoverDropped(ctx, sse, sub, streamId, sessionId, seq, cutoff, (gap) => { emitReplay(ctx.deps.journal.readRunEvents(sessionId, streamId, gap), streamId, null) })) return
       const terminal = SSE_RELAY_CLOSE_EVENTS.has(event)
       const alreadySent = (cutoff !== null && seq !== null && seq <= cutoff) || (eventId !== null && sent.has(eventId))
       if (alreadySent) { if (terminal) return; continue }
@@ -499,7 +536,7 @@ async function promptStream(ctx: RequestContext, kind: 'approval' | 'clarify'): 
     sse.start()
     sse.event('initial', initial)
     for (;;) {
-      if (sse.isClosed) return
+      if (!(await sse.ready())) return
       const item = await nextPendingItem(sub, SSE_HEARTBEAT_INTERVAL_MS)
       if (sse.isClosed) return
       if (!item) { sse.comment('keepalive'); continue }

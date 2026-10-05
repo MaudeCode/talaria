@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Long chats no longer drop their live connection and reconnect in a loop when reopened; the full response streams in, even on a slow connection.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
