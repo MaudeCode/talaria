@@ -119,7 +119,7 @@ final class AppScreenVisualReferenceTests: XCTestCase {
             try VisualReference.assertMatchesReference(
                 thumbnail(for: image),
                 named: "attachment-image-\(name(for: scheme))",
-                size: CGSize(width: 140, height: 140),
+                size: CGSize(width: 240, height: 60),
                 colorScheme: scheme
             )
         }
@@ -127,7 +127,7 @@ final class AppScreenVisualReferenceTests: XCTestCase {
         try VisualReference.assertMatchesReference(
             thumbnail(for: document),
             named: "attachment-document-light",
-            size: CGSize(width: 260, height: 120)
+            size: CGSize(width: 260, height: 60)
         )
     }
 

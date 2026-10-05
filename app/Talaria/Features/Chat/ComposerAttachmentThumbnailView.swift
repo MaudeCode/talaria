@@ -1,135 +1,83 @@
 import SwiftUI
 import UIKit
-import UniformTypeIdentifiers
 import TalariaKit
 
+/// One pending attachment in the composer's attachment strip (TAL-634): a small thumbnail and the
+/// file name, which open its preview, and a remove button. No background of its own.
 struct ComposerAttachmentThumbnailView: View {
     let attachment: PendingAttachment
     let onRemove: () -> Void
     let onOpen: () -> Void
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @Environment(\.layoutDirection) private var layoutDirection
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
+        HStack(spacing: 6) {
             Button(action: onOpen) {
-                thumbnailContent
+                HStack(spacing: 8) {
+                    thumbnail
+                    Text(attachment.name)
+                        .font(AppFont.footnote())
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .frame(maxWidth: usesAccessibilityLayout ? 220 : 120, alignment: .leading)
+                }
+                .contentShape(Rectangle())
             }
-            .buttonStyle(.chatTactile(.thumbnail))
+            .buttonStyle(.plain)
             .accessibilityLabel("Open attachment \(attachment.name)")
 
             Button(action: onRemove) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 11, weight: .bold))
-                    .frame(width: 24, height: 24)
-                    .background(Circle().fill(Color(.systemBackground)))
-                    .foregroundStyle(Color(.label))
-                    .overlay(Circle().stroke(Color(.separator).opacity(0.35), lineWidth: 0.5))
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 18, height: 18)
+                    .chatMinimumHitTarget(horizontalPadding: 13, verticalPadding: 13, in: Rectangle())
             }
-            .buttonStyle(.chatTactile(
-                .icon,
-                shadow: ChatTactileButtonStyle.Shadow(
-                    color: .black,
-                    opacity: 0.12,
-                    radius: 3,
-                    y: 1,
-                    pressedOpacity: 0.06,
-                    pressedRadius: 1,
-                    pressedY: 0
-                )
-            ))
-            .offset(x: RTLLayout.horizontalOffset(6, isRightToLeft: layoutDirection == .rightToLeft), y: -6)
+            .buttonStyle(.plain)
             .accessibilityLabel("Remove attachment \(attachment.name)")
         }
+        // A full 44 pt row holds the remove button's hit area, so stacked chips never share one.
+        .frame(minHeight: 44)
+        // Size to the name (capped above) instead of stretching to whatever width is offered.
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     @ViewBuilder
-    private var thumbnailContent: some View {
-        if attachment.isImage {
-            imagePreview
-        } else {
-            filePreview
-        }
-    }
-
-    @ViewBuilder
-    private var imagePreview: some View {
+    private var thumbnail: some View {
         Group {
-            if let thumbnailData = attachment.thumbnailData,
-               let uiImage = UIImage(data: thumbnailData) {
+            if attachment.isImage, let thumbnailData = attachment.thumbnailData, let uiImage = UIImage(data: thumbnailData) {
                 Image(uiImage: uiImage)
                     .resizable()
                     .scaledToFill()
-            } else {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color(.systemFill))
+            } else if attachment.isImage {
+                Color(.systemFill)
                     .overlay(
                         Image(systemName: "photo")
-                            .font(.system(size: 30, weight: .regular))
+                            .font(.system(size: thumbnailSize * 0.42))
                             .foregroundStyle(Color(.tertiaryLabel))
+                    )
+            } else {
+                fileBadgeColor.opacity(0.15)
+                    .overlay(
+                        Image(systemName: fileIconName)
+                            .font(.system(size: thumbnailSize * 0.42, weight: .semibold))
+                            .foregroundStyle(fileBadgeColor)
                     )
             }
         }
-        .frame(width: imagePreviewSize, height: imagePreviewSize)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(previewBorder(cornerRadius: 14))
-        .accessibilityLabel("Image attachment \(attachment.name)")
-    }
-
-    private var filePreview: some View {
-        HStack(alignment: .center, spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(fileBadgeColor.opacity(0.15))
-
-                VStack(spacing: 3) {
-                    Image(systemName: fileIconName)
-                        .font(.system(size: 24, weight: .semibold))
-                    Text(fileExtensionLabel)
-                        .font(.system(size: 9, weight: .bold))
-                        .lineLimit(1)
-                }
-                .foregroundStyle(fileBadgeColor)
-            }
-            .frame(width: 58, height: 68)
-
-            VStack(alignment: .leading, spacing: 5) {
-                Text(attachment.name)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(Color(.label))
-                    .lineLimit(2)
-                    .truncationMode(.middle)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                Text(fileDetailText)
-                    .font(.caption)
-                    .foregroundStyle(Color(.secondaryLabel))
-                    .lineLimit(usesAccessibilityLayout ? 2 : 1)
-            }
-            .frame(width: usesAccessibilityLayout ? 160 : 128, alignment: .leading)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, usesAccessibilityLayout ? 10 : 0)
-        .frame(width: usesAccessibilityLayout ? 260 : 222)
-        .frame(minHeight: usesAccessibilityLayout ? 112 : 92)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color(.secondarySystemBackground))
+        .frame(width: thumbnailSize, height: thumbnailSize)
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .stroke(Color(.separator).opacity(0.25), lineWidth: 0.5)
         )
-        .overlay(previewBorder(cornerRadius: 14))
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("File attachment \(attachment.name), \(fileDetailText)")
+        .accessibilityHidden(true)
     }
 
-    private func previewBorder(cornerRadius: CGFloat) -> some View {
-        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            .stroke(Color(.separator).opacity(0.25), lineWidth: 0.5)
-    }
-
-    private var fileExtensionLabel: String {
-        let ext = URL(fileURLWithPath: attachment.name).pathExtension.uppercased()
-        return ext.isEmpty ? String(localized: "FILE") : String(ext.prefix(5))
+    private var thumbnailSize: CGFloat {
+        usesAccessibilityLayout ? 40 : 32
     }
 
     private var fileIconName: String {
@@ -160,19 +108,7 @@ struct ComposerAttachmentThumbnailView: View {
         }
     }
 
-    private var fileDetailText: String {
-        if let size = attachment.size {
-            ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)
-        } else {
-            fileExtensionLabel
-        }
-    }
-
     private var usesAccessibilityLayout: Bool {
         dynamicTypeSize.isAccessibilitySize
-    }
-
-    private var imagePreviewSize: CGFloat {
-        usesAccessibilityLayout ? 108 : 96
     }
 }

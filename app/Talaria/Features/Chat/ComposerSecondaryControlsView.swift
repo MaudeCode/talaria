@@ -24,7 +24,6 @@ enum ComposerControlStrip {
 /// profile. The strip is the only background; its controls are plain buttons, like T3 Code's footer.
 struct ComposerSecondaryControlsView<Leading: View>: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @Environment(\.colorScheme) private var colorScheme
 
     let state: ComposerSecondaryControlsState
     let onChooseWorkspace: () -> Void
@@ -33,8 +32,6 @@ struct ComposerSecondaryControlsView<Leading: View>: View {
     let onCreateGitBranch: (GitCheckoutTarget) -> Void
     let onRefreshGitBranches: () -> Void
     @ViewBuilder let leading: Leading
-
-    @State private var edgeFades = ComposerStripEdgeFades(leading: false, trailing: false)
 
     var body: some View {
         Group {
@@ -49,7 +46,7 @@ struct ComposerSecondaryControlsView<Leading: View>: View {
                 .padding(.vertical, 7)
                 .frame(maxWidth: .infinity, alignment: .leading)
             } else {
-                ScrollView(.horizontal) {
+                ComposerStripScrollRow(accessibilityIdentifier: "composer-control-strip") {
                     HStack(spacing: 12) {
                         leading
                         if !state.selectors.isEmpty {
@@ -59,56 +56,11 @@ struct ComposerSecondaryControlsView<Leading: View>: View {
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 7)
-                    // The scroll view itself inherits the chat screen's identifier, so the row carries the strip's.
-                    .accessibilityElement(children: .contain)
-                    .accessibilityIdentifier("composer-control-strip")
                 }
-                .scrollIndicators(.hidden)
-                .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
-                .scrollDismissesKeyboard(.never)
-                .onScrollGeometryChange(for: ComposerStripEdgeFades.self) { geometry in
-                    ComposerStripEdgeFades(
-                        contentOffset: geometry.contentOffset.x,
-                        contentWidth: geometry.contentSize.width,
-                        containerWidth: geometry.containerSize.width
-                    )
-                } action: { _, fades in
-                    edgeFades = fades
-                }
-                .mask { edgeFadeMask }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        // A material, not Liquid Glass: glass shapes in the composer's glass container melt into
-        // the card, and the strip has to read as a separate piece hanging below it.
-        .background(ComposerControlStrip.recessTint(for: colorScheme), in: stripShape)
-        .background(.regularMaterial, in: stripShape)
-        .overlay {
-            ComposerStripBorder(cornerRadius: ComposerControlStrip.cornerRadius)
-                .stroke(ComposerControlStrip.borderColor(for: colorScheme), lineWidth: 1)
-        }
+        .composerStripChrome(hangingFrom: .bottom)
     }
-
-    private var stripShape: UnevenRoundedRectangle {
-        UnevenRoundedRectangle(
-            bottomLeadingRadius: ComposerControlStrip.cornerRadius,
-            bottomTrailingRadius: ComposerControlStrip.cornerRadius,
-            style: .continuous
-        )
-    }
-
-    /// Fades only an edge that hides controls, so the cut-off one reads as "scroll for more".
-    private var edgeFadeMask: some View {
-        HStack(spacing: 0) {
-            LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing)
-                .frame(width: edgeFades.leading ? edgeFadeWidth : 0)
-            Rectangle()
-            LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
-                .frame(width: edgeFades.trailing ? edgeFadeWidth : 0)
-        }
-    }
-
-    private var edgeFadeWidth: CGFloat { 18 }
 
     private var groupDivider: some View {
         Rectangle()
@@ -158,9 +110,89 @@ struct ComposerSecondaryControlsView<Leading: View>: View {
     }
 }
 
-/// The strip's outline: both sides and the rounded bottom, open at the top where it meets the card.
+/// Which edge of the composer card a strip hangs from: the controls hang below it, the pending
+/// attachments above it (TAL-629, TAL-634).
+enum ComposerStripEdge {
+    case top
+    case bottom
+}
+
+extension View {
+    /// A strip's panel: a material a shade back from the card (not Liquid Glass, whose shapes melt
+    /// into the card's), rounded on its free edge and outlined everywhere but the card side.
+    func composerStripChrome(hangingFrom edge: ComposerStripEdge) -> some View {
+        modifier(ComposerStripChrome(edge: edge))
+    }
+}
+
+private struct ComposerStripChrome: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+    let edge: ComposerStripEdge
+
+    func body(content: Content) -> some View {
+        content
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(ComposerControlStrip.recessTint(for: colorScheme), in: shape)
+            .background(.regularMaterial, in: shape)
+            .overlay {
+                ComposerStripBorder(cornerRadius: ComposerControlStrip.cornerRadius, edge: edge)
+                    .stroke(ComposerControlStrip.borderColor(for: colorScheme), lineWidth: 1)
+            }
+    }
+
+    private var shape: UnevenRoundedRectangle {
+        let radius = ComposerControlStrip.cornerRadius
+        return edge == .bottom
+            ? UnevenRoundedRectangle(bottomLeadingRadius: radius, bottomTrailingRadius: radius, style: .continuous)
+            : UnevenRoundedRectangle(topLeadingRadius: radius, topTrailingRadius: radius, style: .continuous)
+    }
+}
+
+/// A strip's horizontally scrolling row, fading only an edge that hides content so the cut-off one
+/// reads as "scroll for more".
+struct ComposerStripScrollRow<Content: View>: View {
+    let accessibilityIdentifier: String
+    @ViewBuilder let content: Content
+
+    @State private var edgeFades = ComposerStripEdgeFades(leading: false, trailing: false)
+
+    var body: some View {
+        ScrollView(.horizontal) {
+            content
+                // The scroll view itself inherits the chat screen's identifier, so the row carries the strip's.
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier(accessibilityIdentifier)
+        }
+        .scrollIndicators(.hidden)
+        .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+        .scrollDismissesKeyboard(.never)
+        .onScrollGeometryChange(for: ComposerStripEdgeFades.self) { geometry in
+            ComposerStripEdgeFades(
+                contentOffset: geometry.contentOffset.x,
+                contentWidth: geometry.contentSize.width,
+                containerWidth: geometry.containerSize.width
+            )
+        } action: { _, fades in
+            edgeFades = fades
+        }
+        .mask {
+            HStack(spacing: 0) {
+                LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing)
+                    .frame(width: edgeFades.leading ? edgeFadeWidth : 0)
+                Rectangle()
+                LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
+                    .frame(width: edgeFades.trailing ? edgeFadeWidth : 0)
+            }
+        }
+    }
+
+    private var edgeFadeWidth: CGFloat { 18 }
+}
+
+/// A strip's outline: both sides and the rounded free edge, open where it meets the card.
 struct ComposerStripBorder: Shape {
     let cornerRadius: CGFloat
+    var edge: ComposerStripEdge = .bottom
 
     func path(in rect: CGRect) -> Path {
         let radius = min(cornerRadius, rect.width / 2, rect.height)
@@ -177,6 +209,8 @@ struct ComposerStripBorder: Shape {
             control: CGPoint(x: rect.maxX, y: rect.maxY)
         )
         path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
-        return path
+        guard edge == .top else { return path }
+        // Hanging above the card: the same outline, flipped so it opens at the bottom.
+        return path.applying(CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: 0, ty: rect.minY + rect.maxY))
     }
 }

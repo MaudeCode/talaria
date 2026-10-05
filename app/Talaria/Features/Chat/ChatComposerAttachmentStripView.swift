@@ -2,6 +2,8 @@ import SwiftUI
 import UIKit
 import TalariaKit
 
+/// Pending attachments in a strip hanging from the composer card's top edge, the mirror of the
+/// control strip under it (TAL-634). The strip is the only background; each attachment is a plain chip.
 struct ComposerAttachmentStripView: View {
     let attachments: [PendingAttachment]
     let onRemove: (UUID) -> Void
@@ -10,26 +12,29 @@ struct ComposerAttachmentStripView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        if !attachments.isEmpty {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    ForEach(attachments) { attachment in
-                        ComposerAttachmentThumbnailView(
-                            attachment: attachment,
-                            onRemove: { onRemove(attachment.id) },
-                            onOpen: { onPreview(attachment) }
-                        )
-                    }
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                // Large text stacks the chips instead of scrolling them.
+                VStack(alignment: .leading, spacing: 0) { chips }
+                    .padding(.horizontal, 10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                ComposerStripScrollRow(accessibilityIdentifier: "composer-attachment-strip") {
+                    HStack(spacing: 14) { chips }
+                        .padding(.horizontal, 10)
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-                .padding(.bottom, 4)
             }
-            .frame(height: stripHeight)
         }
+        .composerStripChrome(hangingFrom: .top)
     }
 
-    private var stripHeight: CGFloat {
-        dynamicTypeSize.isAccessibilitySize ? 132 : 108
+    private var chips: some View {
+        ForEach(attachments) { attachment in
+            ComposerAttachmentThumbnailView(
+                attachment: attachment,
+                onRemove: { onRemove(attachment.id) },
+                onOpen: { onPreview(attachment) }
+            )
+        }
     }
 }

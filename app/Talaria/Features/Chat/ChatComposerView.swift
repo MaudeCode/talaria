@@ -282,6 +282,18 @@ struct MessageComposerView: View {
                 // The control strip hangs from the card's bottom edge (Web's `.composer-strip`); the
                 // card's outline runs across its top.
                 VStack(spacing: 0) {
+                    // Pending attachments hang from the card's top edge, the mirror of the control strip
+                    // (TAL-634); inset the same way so the strip's sides meet the card where its corners end.
+                    if !isAnsweringClarification && !pendingAttachments.isEmpty {
+                        ComposerAttachmentStripView(
+                            attachments: pendingAttachments,
+                            onRemove: onRemoveAttachment,
+                            onPreview: onPreviewAttachment
+                        )
+                        .padding(.horizontal, composerCornerRadius)
+                        .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
+                    }
+
                     composerChrome
                     .adaptiveGlass(
                         .regular,
@@ -307,6 +319,7 @@ struct MessageComposerView: View {
                 .padding(.bottom, showsControlStrip ? 4 : 0)
                 .animation(ChatMotion.composerChrome(reduceMotion: reduceMotion), value: usesSingleLineShell)
                 .animation(ChatMotion.composerChrome(reduceMotion: reduceMotion), value: showsControlStrip)
+                .animation(ChatMotion.composerChrome(reduceMotion: reduceMotion), value: pendingAttachments.isEmpty)
             }
         }
         .background(
@@ -619,14 +632,6 @@ struct MessageComposerView: View {
             .padding(.vertical, 8)
         } else {
             VStack(spacing: 0) {
-                if !isAnsweringClarification {
-                    ComposerAttachmentStripView(
-                        attachments: pendingAttachments,
-                        onRemove: onRemoveAttachment,
-                        onPreview: onPreviewAttachment
-                    )
-                }
-
                 ComposerTextInputView(
                     text: $draftMessage,
                     revision: draftWriteRevision,

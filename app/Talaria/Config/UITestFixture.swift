@@ -631,11 +631,15 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         case "/api/upload":
             // Shared attachments upload before the composer can show them, so the
             // fixture has to accept one (TAL-81). Only a non-empty path is required;
-            // the composer labels the chip with the local filename.
+            // the composer labels the chip with the local filename. An image upload
+            // reports itself as one, as the server does, so the composer shows its
+            // thumbnail (TAL-634).
+            let body = requestBody(request).map { String(decoding: $0, as: UTF8.self) } ?? ""
+            let isImage = [".jpg\"", ".jpeg\"", ".png\"", ".heic\""].contains { body.localizedCaseInsensitiveContains($0) }
             return json([
                 "path": "/fixture/uploads/shared",
-                "mime": "application/octet-stream",
-                "is_image": false
+                "mime": isImage ? "image/jpeg" : "application/octet-stream",
+                "is_image": isImage
             ])
         case "/api/projects":
             return json(["projects": UITestFixtureEnvironment.hasProjects
