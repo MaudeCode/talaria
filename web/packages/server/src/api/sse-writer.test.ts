@@ -10,24 +10,32 @@ const FRAME_TEXT = 'x'.repeat(2000)
 const TOOL_TEXT = 'tool output line '.repeat(118)
 const frameBytes = (i: number): number => Buffer.byteLength(`id: run:${String(i)}\nevent: token\ndata: ${JSON.stringify({ text: FRAME_TEXT })}\n\n`)
 
-/** A reader on a real local socket; `paused` holds it until `resume()`, so the server's socket buffer fills. */
-function read(url: string, paused = false): { done: Promise<{ text: string; error: string | null }>; resume: () => void; destroy: () => void } {
+/**
+ * A reader on a real local socket; `paused` holds it until `resume()`, so the server's socket buffer fills. The server
+ * shares this process, so its response can arrive after a `resume()`: the call is remembered, and `opened` resolves once
+ * the response has.
+ */
+function read(url: string, paused = false): { done: Promise<{ text: string; error: string | null }>; opened: Promise<void>; resume: () => void; destroy: () => void } {
   let res: IncomingMessage | null = null
+  let hold = paused
   let text = ''
+  let onOpen: () => void = () => undefined
+  const opened = new Promise<void>((resolve) => { onOpen = resolve })
   const req = get(url)
   const done = new Promise<{ text: string; error: string | null }>((resolve) => {
     let error: string | null = null
-    req.on('error', (e: NodeJS.ErrnoException) => { error = e.code ?? e.message; resolve({ text, error }) })
+    req.on('error', (e: NodeJS.ErrnoException) => { error = e.code ?? e.message; onOpen(); resolve({ text, error }) })
     req.on('response', (r) => {
       res = r
       r.setEncoding('utf8')
-      if (paused) r.pause()
+      if (hold) r.pause()
       r.on('data', (chunk: string) => { text += chunk })
       r.on('error', (e: NodeJS.ErrnoException) => { error = e.code ?? e.message })
       r.on('close', () => { resolve({ text, error: error ?? (r.complete ? null : 'aborted') }) })
+      onOpen()
     })
   })
-  return { done, resume: () => { res?.resume() }, destroy: () => { req.destroy() } }
+  return { done, opened, resume: () => { hold = false; res?.resume() }, destroy: () => { req.destroy() } }
 }
 
 /** One `SseWriter` per request on a real HTTP server, so backpressure comes from a real socket. */
@@ -137,6 +145,7 @@ describe('event streams deliver past the old 4 MiB cut-off', () => {
     const spy = vi.spyOn(SseWriter.prototype, 'event')
     try {
       const client = read(`${s.base}/api/chat/stream?stream_id=run-paused&replay=1`, true)
+      await client.opened
       await new Promise((r) => setTimeout(r, 300))
       const writer = spy.mock.contexts.at(-1) as { ctx: RequestContext }
       expect(writer.ctx.res.writableLength).toBeLessThan(1024 * 1024)
@@ -171,6 +180,7 @@ describe('event streams deliver past the old 4 MiB cut-off', () => {
     const event = vi.spyOn(SseWriter.prototype, 'event')
     try {
       const client = read(`${s.base}/api/chat/stream?stream_id=${runId}&replay=1`, true)
+      await client.opened
       await new Promise((r) => setTimeout(r, 300))
       const parsedRows = parse.mock.calls.filter(([text]) => typeof text === 'string' && text.includes(`"run_id":"${runId}"`)).length
       expect(parsedRows - readsPerRow * event.mock.calls.length).toBeLessThan(2500)
@@ -180,8 +190,7 @@ describe('event streams deliver past the old 4 MiB cut-off', () => {
       parse.mockRestore()
       event.mockRestore()
     }
-  // Redacting 12 MB of tool frames is several times slower on a CI runner than locally.
-  }, 60_000)
+  })
 
   it('a pre-id tool journal replays each completion with its call\'s id', async () => {
     legacyRun('run-legacy-ids', 40)
