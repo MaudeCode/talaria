@@ -24,7 +24,7 @@ struct TranscriptLinkPreviewView: View {
         .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
-        .accessibilityHint("Opens in the external browser")
+        .accessibilityHint("Opens the page in Talaria")
         .task(id: url.absoluteString) {
             await loadMetadataIfNeeded()
         }
