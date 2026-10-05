@@ -942,6 +942,7 @@ describe('OpenRouter cost history accrues on quota reads and ships server-comput
   let usage: number | null = 2.52
   let keyAvailable = true
   let snapshotFile = ''
+  let configs: Map<string, Json>
   const seed = (snapshots: { date: string; used: number | null }[]): void => { mkdirSync(join(s.state, 'cost-snapshots'), { recursive: true }); writeFileSync(snapshotFile, JSON.stringify({ provider: 'openrouter', snapshots: snapshots.map((e) => ({ ...e, limit: null })) })) }
   const stored = (): { date: string; used: number | null }[] => (JSON.parse(readFileSync(snapshotFile, 'utf8')) as { snapshots: { date: string; used: number | null }[] }).snapshots
   const history = async (): Promise<Json> => json(await s.get('/api/provider/cost-history?provider=openrouter'))
@@ -949,7 +950,7 @@ describe('OpenRouter cost history accrues on quota reads and ships server-comput
     const sidecar = new FakeSidecar()
     s = await bootTestServer({ sidecar, now: () => NOW })
     snapshotFile = join(s.state, 'cost-snapshots', 'openrouter.json')
-    const configs = fakeConfigStore(sidecar)
+    configs = fakeConfigStore(sidecar)
     writeFileSync(join(s.state, 'config.yaml'), '# seed\n')
     configs.set(s.state, { model: { default: 'anthropic/claude-sonnet-4.6', provider: 'openrouter' } })
     writeEnvFile(join(s.state, '.env'), { OPENROUTER_API_KEY: 'sk-or-synthetic-cost-history-1234' })
@@ -1015,6 +1016,27 @@ describe('OpenRouter cost history accrues on quota reads and ships server-comput
     await s.get('/api/provider/quota?provider=openrouter')
     expect(await history()).toMatchObject({ monthly_budget: 50, snapshots: [{ date: '2026-09-28', used: 2.52, delta: null, bar_percent: 0 }], monthly_pace: null, has_enough_data: false, budget_percent: null, budget_level: null })
     await post(s, '/api/settings', { provider_cost_budget: null })
+  })
+
+  it('a key stored as config.yaml model.api_key or under a provider alias records and shows history too', async () => {
+    const envFile = join(s.state, '.env')
+    writeEnvFile(envFile, { OPENROUTER_API_KEY: null })
+    try {
+      for (const config of [{ model: { default: 'anthropic/claude-sonnet-4.6', provider: 'openrouter', api_key: 'sk-or-synthetic-model-key-1234' } }, { model: { default: 'claude-sonnet-4-6', provider: 'anthropic' }, providers: { OpenRouter: { api_key: 'sk-or-synthetic-alias-key-1234' } } }]) {
+        configs.set(s.state, config)
+        s.deps.agentConfig.invalidate()
+        s.deps.catalog.invalidate()
+        rmSync(snapshotFile, { force: true })
+        expect((await json(await s.get('/api/provider/quota?provider=openrouter'))).status).toBe('available')
+        expect(stored()).toEqual([{ date: '2026-09-28', used: 2.52, limit: 100 }])
+        expect(await history()).toMatchObject({ ok: true, status: 'available' })
+      }
+    } finally {
+      writeEnvFile(envFile, { OPENROUTER_API_KEY: 'sk-or-synthetic-cost-history-1234' })
+      configs.set(s.state, { model: { default: 'anthropic/claude-sonnet-4.6', provider: 'openrouter' } })
+      s.deps.agentConfig.invalidate()
+      s.deps.catalog.invalidate()
+    }
   })
 
   it('every cost-history branch answers its contract', async () => {

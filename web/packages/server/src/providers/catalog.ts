@@ -850,8 +850,13 @@ export class ProviderCatalog {
         if (v) return v
       }
     }
-    const p = dict(dict(config.providers)[pid])
-    return str(p.api_key).trim() || null
+    // The same config sources `providerHasKey` counts, so a provider shown as keyed resolves its key.
+    const model = modelSection(config)
+    if (canonicaliseProviderId(model.provider) === canonicaliseProviderId(pid) && valueCountsAsApiKey(pid, model.api_key)) return str(model.api_key).trim()
+    for (const [key, value] of Object.entries(dict(config.providers))) {
+      if (providerIdentity(key) === providerIdentity(pid) && isDict(value) && valueCountsAsApiKey(pid, value.api_key)) return str(value.api_key).trim()
+    }
+    return null
   }
 
   /** Python `get_provider_quota`. */
