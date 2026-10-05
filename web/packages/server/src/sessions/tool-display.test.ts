@@ -75,8 +75,8 @@ describe('toolEditDiff (TAL-448)', () => {
     expect(edit).toMatchObject({ added: 451, removed: 2, truncated: true })
     expect(edit.diff.split('\n')).toHaveLength(EDIT_DIFF_MAX_LINES)
     expect(edit.diff.split('\n').at(-1)).toBe(`+line ${String(EDIT_DIFF_MAX_LINES - 13)}`)
-    // A few enormous lines are capped too.
-    expect(toolEditDiff('edit_file', { diff: `@@ -1 +1 @@\n-a\n+${'x'.repeat(100_000)}` })).toMatchObject({ added: 1, removed: 1, truncated: true })
+    // A few enormous lines are capped too, at a line boundary.
+    expect(toolEditDiff('edit_file', { diff: `@@ -1 +1 @@\n-a\n+${'x'.repeat(100_000)}` })).toEqual({ added: 1, removed: 1, diff: '@@ -1 +1 @@\n-a', truncated: true })
   })
 
   it('is absent for a result without a diff, a non-JSON result, and a call that is not a file edit', () => {

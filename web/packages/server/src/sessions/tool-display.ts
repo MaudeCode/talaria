@@ -112,7 +112,7 @@ export function toolName(call: Record<string, unknown>): string {
   return str(call.name) || str(call.tool_name) || (isDict(call.function) ? str(call.function.name) : '')
 }
 
-/** TAL-448: the most diff lines (and code points) an `edit_diff` carries; its counts always cover the whole diff. */
+/** TAL-448: the most diff lines (and characters) an `edit_diff` carries; its counts always cover the whole diff. */
 export const EDIT_DIFF_MAX_LINES = 400
 const EDIT_DIFF_MAX_CHARS = 64_000
 
@@ -141,10 +141,15 @@ export function toolEditDiff(name: unknown, result: unknown): ToolEditDiff | und
     if (oldLeft <= 0 && newLeft <= 0) continue
     if (line.startsWith('+')) { added += 1; newLeft -= 1 } else if (line.startsWith('-')) { removed += 1; oldLeft -= 1 } else if (line.startsWith(' ') || line === '') { oldLeft -= 1; newLeft -= 1 }
   }
-  let shown = lines.slice(0, EDIT_DIFF_MAX_LINES).join('\n')
-  const chars = Array.from(shown)
-  if (chars.length > EDIT_DIFF_MAX_CHARS) shown = chars.slice(0, EDIT_DIFF_MAX_CHARS).join('')
-  return { added, removed, diff: shown, truncated: lines.length > EDIT_DIFF_MAX_LINES || chars.length > EDIT_DIFF_MAX_CHARS }
+  // Whole lines only, so redaction never sees a credential cut short.
+  const shown: string[] = []
+  let size = 0
+  for (const line of lines.slice(0, EDIT_DIFF_MAX_LINES)) {
+    size += line.length + 1
+    if (size > EDIT_DIFF_MAX_CHARS) break
+    shown.push(line)
+  }
+  return { added, removed, diff: shown.join('\n'), truncated: shown.length < lines.length }
 }
 
 /** A decided `edit_diff` (one a live call or a built scene row already carries), kept only when well-formed. */

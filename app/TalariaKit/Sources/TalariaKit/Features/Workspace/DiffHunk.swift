@@ -52,10 +52,16 @@ public struct DiffHunk: Identifiable, Equatable {
 
         return headerIndexes.enumerated().map { offset, index in
             let end = offset + 1 < headerIndexes.count ? headerIndexes[offset + 1] : allLines.endIndex
+            var rawLines = Array(allLines[(index + 1)..<end])
+            // A multi-file diff (TAL-448): the next file's `---` / `+++` header and the blank line joining files are no change.
+            if rawLines.count >= 2, rawLines[rawLines.count - 2].hasPrefix("--- "), rawLines[rawLines.count - 1].hasPrefix("+++ ") {
+                rawLines.removeLast(2)
+                while rawLines.last?.isEmpty == true { rawLines.removeLast() }
+            }
             return makeHunk(
                 id: offset,
                 header: allLines[index],
-                rawLines: Array(allLines[(index + 1)..<end]),
+                rawLines: rawLines,
                 synthetic: false,
                 patchNumber: offset + 1,
                 patchCount: headerIndexes.count

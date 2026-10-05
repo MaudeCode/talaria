@@ -567,6 +567,16 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
         XCTAssertEqual(hunks[1].lines[1].newLineNumber, 11)
     }
 
+    func testDiffParserKeepsTheNextFilesHeaderOutOfAMultiFileDiff() {
+        // The Agent's multi-file patch result joins each file's diff with a blank line (TAL-448).
+        let raw = "--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-old\n+new\n\n--- a/b.txt\n+++ b/b.txt\n@@ -0,0 +1 @@\n+added\n"
+        let hunks = DiffHunk.parse(raw)
+
+        XCTAssertEqual(hunks.map(\.additions), [1, 1])
+        XCTAssertEqual(hunks.map(\.deletions), [1, 0])
+        XCTAssertEqual(hunks[0].lines.map(\.text), ["-old", "+new"])
+    }
+
     func testDiffParserCreatesSyntheticPatchWithoutHunkHeader() {
         let hunks = DiffHunk.parse("--- a/a.txt\n+++ b/a.txt\n-old\n+new")
 
