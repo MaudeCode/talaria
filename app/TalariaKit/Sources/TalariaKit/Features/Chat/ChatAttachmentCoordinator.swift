@@ -61,10 +61,8 @@ final class ChatAttachmentCoordinator {
             uploadAttachmentErrorMessage = PendingAttachment.uploadTooLargeMessage(filename: filename)
             return nil
         }
-        // The server keeps only this many attachments on a message; one more would be dropped
-        // silently, so refuse it here instead (TAL-635).
-        if let maxAttachmentsPerMessage, pendingAttachments.count + activeUploadCount >= maxAttachmentsPerMessage {
-            uploadAttachmentErrorMessage = String(localized: "A message can carry up to \(maxAttachmentsPerMessage) attachments.")
+        if let cap = reachedAttachmentCap {
+            uploadAttachmentErrorMessage = String(localized: "A message can carry up to \(cap) attachments.")
             return nil
         }
 
@@ -102,6 +100,8 @@ final class ChatAttachmentCoordinator {
     /// reports them in aggregate and keeps the record for a later retry.
     @discardableResult
     func reuploadDraftAttachment(data: Data, draftAttachment: ChatDraftAttachment) async -> PendingAttachment? {
+        // A draft saved before the cap can hold more; the rest stay in the draft (TAL-635).
+        guard reachedAttachmentCap == nil else { return nil }
         guard let attachment = await performUpload(
             data: data,
             filename: draftAttachment.name,
@@ -114,6 +114,15 @@ final class ChatAttachmentCoordinator {
         }
         pendingAttachments.append(attachment)
         return attachment
+    }
+
+    /// The server keeps only this many attachments on a message, so one more would be dropped
+    /// silently on send; staging stops at the cap instead (TAL-635). Nil while there is room.
+    private var reachedAttachmentCap: Int? {
+        guard let maxAttachmentsPerMessage,
+              pendingAttachments.count + activeUploadCount >= maxAttachmentsPerMessage
+        else { return nil }
+        return maxAttachmentsPerMessage
     }
 
     /// Uploads a single file and returns it as a `PendingAttachment` *without*

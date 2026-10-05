@@ -423,6 +423,42 @@ final class ChatAttachmentCoordinatorTests: APIClientTestCase {
         XCTAssertTrue(delegate.failedErrors.isEmpty)
     }
 
+    /// TAL-635: a draft saved before the server's attachment cap can hold more; restoring stops at
+    /// the cap and leaves the rest in the draft, quietly, so a send never loses one.
+    func testReuploadDraftAttachmentStopsAtTheServerCap() async throws {
+        func record(_ name: String) -> ChatDraftAttachment {
+            ChatDraftAttachment(id: UUID(), name: name, mime: "text/plain", size: 5, isImage: false, file: "abc-\(name)")
+        }
+        var uploads = 0
+        let client = makeClient { request in
+            uploads += 1
+            return apiTestJSONResponse(
+                """
+                {
+                  "filename": "notes-\(uploads).txt",
+                  "path": "/tmp/workspace/notes-\(uploads).txt",
+                  "size": 5,
+                  "mime": "text/plain",
+                  "is_image": false,
+                  "named_in_prompt": true,
+                  "max_attachments_per_message": 1
+                }
+                """,
+                for: request
+            )
+        }
+        let coordinator = makeCoordinator(client: client)
+
+        let first = await coordinator.reuploadDraftAttachment(data: Data("a".utf8), draftAttachment: record("a.txt"))
+        let second = await coordinator.reuploadDraftAttachment(data: Data("b".utf8), draftAttachment: record("b.txt"))
+
+        XCTAssertNotNil(first)
+        XCTAssertNil(second)
+        XCTAssertEqual(uploads, 1, "The attachment past the cap must not be uploaded")
+        XCTAssertEqual(coordinator.pendingAttachments.count, 1)
+        XCTAssertNil(coordinator.uploadAttachmentErrorMessage)
+    }
+
     private func makeCoordinator(
         client: APIClient,
         attachmentStore: (any ChatDraftAttachmentStoring)? = nil
