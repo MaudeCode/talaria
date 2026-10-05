@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "With Sync to insights on, each finished chat turn now records its token, cost, and model usage in Hermes insights again.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

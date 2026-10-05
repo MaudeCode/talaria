@@ -186,6 +186,32 @@ describe('runtime seams from review round 10', () => {
     await s.deps.settings.save({ sync_to_insights: false })
   })
 
+  it('a settled turn syncs the session usage to state.db only when sync_to_insights is on', async () => {
+    const usageSynced: Json[] = []
+    sidecar.respond('state_db.sync_usage', (params) => { usageSynced.push(params); return { ok: true as const } })
+    sidecar.respond('chat.start', (params) => ({ status: 'completed', messages: [...(params.conversation_history as Json[]), { role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'ok' }], final_response: 'ok', error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, usage: { prompt_tokens: 120, completion_tokens: 30, cache_read_tokens: 40, cache_write_tokens: 8, estimated_cost_usd: 0.0125 }, context: {}, model: 'used-model', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] }))
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    const turn = async (message: string): Promise<void> => {
+      const started = await json(await post(s, '/api/chat/start', { session_id: sid, message }))
+      await s.sse(`/api/chat/stream?stream_id=${String(started.stream_id)}&replay=1`, (f) => f.event === 'stream_end')
+    }
+    await turn('quiet turn')
+    expect(usageSynced).toEqual([])
+    await s.deps.settings.save({ sync_to_insights: true })
+    try {
+      await turn('loud turn')
+      expect(usageSynced).toHaveLength(1)
+      const session = s.deps.sessionStore.get(sid)
+      expect(usageSynced[0]).toMatchObject({
+        profile_home: s.state, session_id: sid, input_tokens: 120, output_tokens: 30, cache_read_tokens: 40, cache_write_tokens: 8,
+        estimated_cost: 0.0125, model: 'used-model', title: session.title, message_count: session.messages.length,
+      })
+      expect(session.messages.length).toBeGreaterThan(0)
+    } finally {
+      await s.deps.settings.save({ sync_to_insights: false })
+    }
+  })
+
   it('the bootstrap feature flags come from runtime state', async () => {
     const features = (await json(await s.get('/api/bootstrap'))).features as Json
     expect(features).toEqual({ dashboard: false, terminal_remote_backend: false, extensions: false, single_profile_mode: false })
