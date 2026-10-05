@@ -171,7 +171,8 @@ def profile_home_param(params: dict, key: str = "profile_home") -> Path:
 def _recover_processes(home: Path) -> None:
     """Re-adopt the live processes a previous run checkpointed in ``home`` (TAL-533), once per home and before the
     first call in it can spawn: a spawn rewrites ``processes.json`` from the registry and would orphan them. A failed
-    recovery is retried by the next call in that home."""
+    recovery fails the call (and every later one in that home until a retry succeeds), so nothing can overwrite the
+    checkpoint it could not read."""
     key = str(home.resolve())
     with _RECOVERY_LOCK:
         if key in _RECOVERED_HOMES:
@@ -183,17 +184,12 @@ def _recover_processes(home: Path) -> None:
             return
         try:
             recovered = process_registry.recover_from_checkpoint()
-        except Exception:  # noqa: BLE001 - the call itself goes ahead; the next one retries
+        except Exception as exc:  # noqa: BLE001
             log.warning("Background process recovery failed for %s", home, exc_info=True)
-            return
+            raise RpcError(f"background process recovery failed for {home}; its processes.json could not be re-adopted: {exc}") from exc
         _RECOVERED_HOMES.add(key)
     if recovered:
         log.info("Recovered %d background process(es) for %s", recovered, home)
-
-
-def processes_recovered(home: Path) -> bool:
-    with _RECOVERY_LOCK:
-        return str(Path(home).expanduser().resolve()) in _RECOVERED_HOMES
 
 
 @contextlib.contextmanager
