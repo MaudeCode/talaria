@@ -64,7 +64,6 @@ export interface TurnRunnerDeps {
   /** Per-session toolsets override; null makes the sidecar resolve the profile's configured toolsets. */
   toolsetsFor: (session: Session) => string[] | null
   attachmentDir: (sid: string) => string
-  titleGenerationEnabled: () => boolean
   /** Terminal relay phase per stream (`completed`/`cancelled`/`failed`); Python `note_talaria_terminal`. */
   onTerminal?: (streamId: string, phase: string) => void
   /** Insights title sync (Python `sync_session_title`), gated on `sync_to_insights` by the runtime. */
@@ -229,6 +228,17 @@ export function isGenericContinuationIntent(text: string): boolean {
   if (GENERIC_CONTINUATION_INTENTS.has(normalized)) return true
   const parts = normalized.split(' ')
   return parts.length > 0 && parts.length <= 2 && parts.every((p) => GENERIC_CONTINUATION_INTENTS.has(p))
+}
+
+/**
+ * Python `_aux_title_generation_enabled`: `auxiliary.title_generation.enabled` with the Agent's
+ * `is_truthy_value(default=True)` semantics. Missing/null enables; a string enables only as 1/true/yes/on.
+ */
+export function titleGenerationEnabled(cfg: Config): boolean {
+  const value = dict(dict(cfg.auxiliary).title_generation).enabled
+  if (value === undefined || value === null) return true
+  if (typeof value === 'string') return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase())
+  return Boolean(value)
 }
 
 /** Python `_explicit_text_signal`: `agent.image_input_mode: text` or a configured `auxiliary.vision` backend. */
@@ -1092,11 +1102,13 @@ export class TurnRunner {
     return { title: '', status, rawPreview: '' }
   }
 
-  /** Python `generate_session_title_for_session`: on-demand title from the persisted transcript; never touches `llm_title_generated`. */
+  /**
+   * Python `generate_session_title_for_session`: on-demand title from the persisted transcript; never touches
+   * `llm_title_generated`. An explicit regenerate runs even with `auxiliary.title_generation.enabled` off (TAL-531).
+   */
   async generateTitle(s: Session, opts: { preferLatest?: boolean } = {}): Promise<{ title: string | null; status: string; rawPreview: string }> {
     const [userText, assistantText] = opts.preferLatest ? latestExchangeSnippets(s.messages) : firstExchangeSnippets(s.messages, { scanPastConsecutiveUsers: true })
     if (!userText) return { title: null, status: 'empty_user_message', rawPreview: '' }
-    if (!this.deps.titleGenerationEnabled()) return { title: null, status: 'title_generation_disabled', rawPreview: '' }
     let next = ''
     let llmStatus = 'empty_assistant_message'
     let rawPreview = ''
@@ -1122,7 +1134,7 @@ export class TurnRunner {
     }
     if (!eligible || (s.llm_title_generated && !invalidExisting) || !userText || !assistantText) return
     if (s.manual_title) { status('skipped', 'manual_title', placeholder); return }
-    if (!this.deps.titleGenerationEnabled()) { status('skipped', 'title_generation_disabled', placeholder); return }
+    if (!titleGenerationEnabled((await this.deps.profileConfig?.(s.profile ?? null)) ?? {})) { status('skipped', 'title_generation_disabled', placeholder); return }
     const generated = await this.llmTitle(s, userText, assistantText)
     const { status: llmStatus, rawPreview } = generated
     let next = generated.title

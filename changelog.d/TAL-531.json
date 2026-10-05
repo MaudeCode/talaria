@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Turning off title generation in the Agent settings stops automatic chat titles again; regenerating a title by hand still works.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

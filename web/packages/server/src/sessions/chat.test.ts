@@ -647,6 +647,31 @@ describe('chat turns through the sidecar', () => {
     expect(await json(await post(s, '/api/approval/respond', { session_id: sid, choice: 'deny', approval_id: 'old' }))).toEqual({ ok: true, choice: 'deny', stale_cleared: true })
   })
 
+  it('skips background titling when the profile turns auxiliary.title_generation.enabled off; manual regenerate still titles (TAL-531)', async () => {
+    const turns = s.deps.turns as unknown as { deps: { profileConfig: ((profile: string | null) => Promise<Record<string, unknown> | null>) | undefined } }
+    const original = turns.deps.profileConfig
+    sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Use a feature flag and roll it out per tenant.' }]))
+    sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Tenant rollout"', usage: null }))
+    // The Agent's `is_truthy_value(default=True)` allowlist: only 1/true/yes/on enable, so an empty string disables too.
+    for (const enabled of [false, 'off', '']) {
+      turns.deps.profileConfig = () => Promise.resolve({ auxiliary: { title_generation: { enabled } } })
+      try {
+        const sid = await newSession(s)
+        const before = sidecar.calls.filter((c) => c.method === 'aux.complete').length
+        const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'how should we roll out the tenant migration' }))
+        const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+        expect(sidecar.calls.filter((c) => c.method === 'aux.complete').length, `enabled=${JSON.stringify(enabled)}`).toBe(before)
+        expect(frames.find((f) => f.event === 'title_status')?.data as Json).toMatchObject({ status: 'skipped', reason: 'title_generation_disabled' })
+        expect(eventNames(frames)).not.toContain('title')
+        const regenerated = await post(s, '/api/session/title/regenerate', { session_id: sid })
+        expect(regenerated.status, await regenerated.clone().text()).toBe(200)
+        expect((await json(regenerated)).title).toBe('Tenant rollout')
+      } finally {
+        turns.deps.profileConfig = original
+      }
+    }
+  })
+
   it('cancels a running turn, persists the partial, and refuses a second concurrent start', async () => {
     const sid = await newSession(s)
     let interrupted = false

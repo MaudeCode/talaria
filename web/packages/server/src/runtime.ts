@@ -411,7 +411,6 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     saveMode: () => ((env.HERMES_WEBUI_SESSION_SAVE_MODE ?? '').trim().toLowerCase() === 'eager' ? 'eager' : 'deferred'),
     toolsetsFor: (session) => session.enabled_toolsets,
     attachmentDir,
-    titleGenerationEnabled: () => { try { return settings.load().auto_title_generation !== false } catch { return true } },
   })
   // Services read `deps.fetch` lazily so tests can swap the outbound HTTP client after boot.
   const lazyFetch: typeof fetch = (input, init) => deps.fetch(input, init)
