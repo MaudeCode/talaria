@@ -532,7 +532,7 @@ export function stateDbSessionMessages(dbPath: string, sid: string, opts: { stit
  * `stateDbSessionMessages`, whether the read succeeded (`ok`), and whether its `messages` table has an `id` column
  * (TAL-493: an empty id-capable read is a baseline of 0; a missing database or a failed read says nothing).
  */
-export function stateDbSessionRead(dbPath: string, sid: string, opts: { stitch?: boolean } = {}): StateDbRead {
+export function stateDbSessionRead(dbPath: string, sid: string, opts: { stitch?: boolean; lineage?: string[] | null } = {}): StateDbRead {
   const none = { rows: [], idCapable: false, ok: false }
   const id = sid.trim()
   if (!id || !existsSync(dbPath)) return none
@@ -543,8 +543,9 @@ export function stateDbSessionRead(dbPath: string, sid: string, opts: { stitch?:
     if (!['role', 'content', 'timestamp'].every((c) => available.has(c))) return { ...none, ok: available.size > 0 }
     const hasId = available.has('id')
     const selected = [...(hasId ? ['id'] : []), 'role', 'content', 'timestamp', ...OPTIONAL_MESSAGE_COLUMNS.filter((c) => available.has(c))]
-    const chain = [id]
-    if (opts.stitch ?? true) {
+    // TAL-529: an explicit lineage (the session and its compression continuations) replaces the parent walk.
+    const chain = opts.lineage?.length ? [...opts.lineage] : [id]
+    if (!opts.lineage?.length && (opts.stitch ?? true)) {
       const sessionCols = tableColumns(db, 'sessions')
       if (['parent_session_id', 'end_reason', 'started_at', 'source'].every((c) => sessionCols.has(c))) {
         const select = db.prepare('SELECT id, source, started_at, parent_session_id, ended_at, end_reason FROM sessions WHERE id = ?')
@@ -573,6 +574,38 @@ export function stateDbSessionRead(dbPath: string, sid: string, opts: { stitch?:
     return { rows: projected, idCapable: hasId, ok: true }
   } catch {
     return none
+  } finally {
+    db.close()
+  }
+}
+
+/**
+ * TAL-529: `sid` and each compression continuation the Agent rotated it to, down to the live tip (Python
+ * `resolve_live_compression_tip`). The walk stops at the last unambiguous row: no continuation, several, a cycle, or 20
+ * hops. A missing or unreadable database is `[sid]`.
+ */
+export function stateDbCompressionLineage(dbPath: string, sid: string): string[] {
+  const lineage = [sid.trim()]
+  if (!lineage[0] || !existsSync(dbPath)) return lineage
+  let db: DatabaseSync
+  try { db = openStateDbReadonly(dbPath) } catch { return lineage }
+  try {
+    const sessionCols = tableColumns(db, 'sessions')
+    if (!['id', 'parent_session_id', 'end_reason', 'ended_at', 'started_at', 'source'].every((c) => sessionCols.has(c))) return lineage
+    const sessionSource = sessionCols.has('session_source') ? 'session_source' : 'NULL AS session_source'
+    const cols = `id, source, ${sessionSource}, started_at, parent_session_id, ended_at, end_reason`
+    let current = db.prepare(`SELECT ${cols} FROM sessions WHERE id = ?`).get(lineage[0]) as Dict | undefined
+    const children = db.prepare(`SELECT ${cols} FROM sessions WHERE parent_session_id = ?`)
+    for (let hop = 0; hop < 20 && current; hop += 1) {
+      const parent = current
+      const next = (children.all(str(parent.id)) as Dict[]).filter((child) => isContinuationSession(parent, child))
+      if (next.length !== 1 || lineage.includes(str(next[0]!.id))) break
+      current = next[0]
+      lineage.push(str(current!.id))
+    }
+    return lineage
+  } catch {
+    return lineage.slice(0, 1)
   } finally {
     db.close()
   }

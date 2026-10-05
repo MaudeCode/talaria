@@ -33,6 +33,7 @@ export const METADATA_FIELDS = [
   'state_db_seen_id',
   'state_db_seen_boundary',
   'state_db_seen_stamp',
+  'state_db_lineage',
   'clear_generation',
   'intentional_shrink_generation',
   'gateway_routing', 'gateway_routing_history', 'llm_title_generated', 'manual_title',
@@ -234,6 +235,8 @@ export class Session {
   state_db_seen_boundary: string | null
   /** TAL-493: `updated_at` while the marker is current; this version's saves carry it forward, an older release's do not. */
   state_db_seen_stamp: number | null
+  /** TAL-529: the state.db sessions this session's Agent wrote through compression (this id first, the live tip last). */
+  state_db_lineage: string[] | null
   clear_generation: unknown
   intentional_shrink_generation: unknown
   gateway_routing: Record<string, unknown> | null
@@ -351,6 +354,8 @@ export class Session {
     this.state_db_seen_boundary = typeof seenBoundary === 'string' ? seenBoundary : null
     const seenStamp = take('state_db_seen_stamp', null)
     this.state_db_seen_stamp = typeof seenStamp === 'number' && Number.isFinite(seenStamp) ? seenStamp : null
+    const lineage = take('state_db_lineage', null)
+    this.state_db_lineage = Array.isArray(lineage) && lineage.length > 1 && lineage.every((id) => typeof id === 'string' && id) ? lineage as string[] : null
     this.clear_generation = take('clear_generation', null)
     this.intentional_shrink_generation = take('intentional_shrink_generation', null)
     const routing = take('gateway_routing', null)
