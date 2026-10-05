@@ -2356,6 +2356,31 @@ describe('stale cross-provider session models at chat start (TAL-542)', () => {
     expect(seen).toMatchObject({ model: 'claude-sonnet-4', model_provider: 'anthropic' })
   })
 
+  it('repairs a goal kickoff on a cold catalog', async () => {
+    useConfig('openai-codex', 'gpt-5.5')
+    sidecar.respond('goals.snapshot', () => ({ goal: null, snapshot: null }))
+    sidecar.respond('goals.command', (params) => ({ ok: true, action: 'set', message: `Goal set: ${params.args}`, goal: null, kickoff_prompt: params.args }))
+    const sid = await sessionWith('gemini-3.1-pro-preview', null)
+    s.deps.catalog.invalidate()
+    const res = await post(s, '/api/goal', { session_id: sid, args: 'ship it' })
+    expect(res.status).toBe(200)
+    const started = await json(res)
+    expect(started).toMatchObject({ effective_model: 'gpt-5.5', effective_model_provider: 'openai-codex' })
+    await s.sse(`/api/chat/stream?stream_id=${String(started.stream_id)}&replay=1`, (f) => f.event === 'done' || f.event === 'apperror')
+    expect(s.deps.sessionStore.get(sid)).toMatchObject({ model: 'gpt-5.5', model_provider: 'openai-codex' })
+  })
+
+  it('repairs against config.yaml as it is now, after an edit outside Web', async () => {
+    useConfig('anthropic', 'claude-sonnet-4')
+    await start({ session_id: await sessionWith('claude-sonnet-4', 'anthropic') })
+    // Edited outside Web: nothing invalidates the catalog, only the file changes.
+    const config = { model: { provider: 'openai-codex', default: 'gpt-5.5' } }
+    sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config }))
+    writeFileSync(join(s.state, 'config.yaml'), '# edited outside Web\n')
+    const started = await start({ session_id: await sessionWith('gemini-3.1-pro-preview', null) })
+    expect(started).toMatchObject({ effective_model: 'gpt-5.5', effective_model_provider: 'openai-codex' })
+  })
+
   it('keeps a pair the catalog lists, an unknown vendor, and a `@provider:` pick', async () => {
     useConfig('openai-codex', 'gpt-5.5', { ollama: ['llama3.2'] })
     for (const [model, provider] of [['llama3.2', 'ollama'], ['lmstudio-community/Qwen2.5-Coder-7B-Instruct-GGUF', null], ['custom/my-local-llm', null]] as const) {

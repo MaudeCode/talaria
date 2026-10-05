@@ -452,6 +452,8 @@ export class ProviderCatalog {
   private readonly providersCache = new Map<string, { at: number; key: string; payload: { providers: Dict[]; active_provider: string | null } }>()
   /** TAL-301: the last catalog served per profile home, for the sync session payloads' `model_option_id`. */
   private readonly lastModels = new Map<string, ModelsCatalog>()
+  /** TAL-542: the config.yaml fingerprint each `lastModels` catalog was built from. */
+  private readonly lastModelsConfig = new Map<string, string>()
 
   constructor(private readonly deps: CatalogDeps) {}
 
@@ -471,8 +473,7 @@ export class ProviderCatalog {
     }
     this.providersCache.clear()
     // The picker catalog changed: option ids rebuild on the next read rather than pairing against the old one.
-    if (profileHome) this.lastModels.delete(profileHome)
-    else this.lastModels.clear()
+    if (profileHome) { this.lastModels.delete(profileHome); this.lastModelsConfig.delete(profileHome) } else { this.lastModels.clear(); this.lastModelsConfig.clear() }
   }
 
   /** TAL-301: the entry id a stored `(model, provider)` pair selects in the last catalog built for this home; a cold home starts building one. */
@@ -482,18 +483,23 @@ export class ProviderCatalog {
     return catalogOptionId(catalog, model, provider)
   }
 
-  /** TAL-542: `repairSessionModel` against the last catalog built for this home; a cold home keeps the pair and starts building one. */
+  /** The last catalog built for this home while config.yaml is unchanged since; an outside edit makes it stale (TAL-542). */
+  private currentModels(profileHome: string): ModelsCatalog | undefined {
+    return this.lastModelsConfig.get(profileHome) === this.deps.config.fingerprint(profileHome) ? this.lastModels.get(profileHome) : undefined
+  }
+
+  /** TAL-542: `repairSessionModel` against the current catalog for this home; a cold or stale one keeps the pair and starts a rebuild. */
   sessionModelRepair(profileHome: string, model: string, provider: string | null): [string, string] | null {
-    const catalog = this.lastModels.get(profileHome)
+    const catalog = this.currentModels(profileHome)
     if (!catalog) { void this.warmModelOptions(profileHome); return null }
     const prefix = `${profileHome}\0`
     const failed = new Set([...this.liveFailed].filter((k) => k.startsWith(prefix)).map((k) => k.slice(prefix.length)))
     return repairSessionModel(catalog, model, provider, failed)
   }
 
-  /** Builds the catalog `modelOptionFor` reads once per home; an unavailable catalog leaves every option id null. */
+  /** Builds the catalog `modelOptionFor` reads once per home, again after config.yaml changes; an unavailable catalog leaves every option id null. */
   async warmModelOptions(profileHome: string): Promise<void> {
-    if (this.lastModels.has(profileHome)) return
+    if (this.currentModels(profileHome)) return
     try { await this.models(profileHome) } catch { /* fail closed: no option ids */ }
   }
 
@@ -710,6 +716,7 @@ export class ProviderCatalog {
 
   /** Python `get_available_models` (static catalog + live ids for keyed providers). */
   async models(profileHome: string): Promise<ModelsCatalog> {
+    const configFingerprint = this.deps.config.fingerprint(profileHome)
     const config = await this.deps.config.read(profileHome)
     const envValues = loadEnvFile(join(profileHome, '.env'))
     const active = activeProviderFromConfig(config)
@@ -835,16 +842,17 @@ export class ProviderCatalog {
     const defaults = { active_provider: active, default_model: defaultModel, default_provider_id: defaultProvider, default_bare_id: defaultBare }
     if (!kept.length && defaultModel) {
       const providerId = active ?? 'default'
-      return this.remember(profileHome, { ...defaults, groups: [{ provider: 'Default', provider_id: providerId, models: stampModelEntries([{ id: defaultModel, label: labelForModel(defaultModel, []) }], providerId) }], aliases: {}, configured_model_badges: {} })
+      return this.remember(profileHome, configFingerprint, { ...defaults, groups: [{ provider: 'Default', provider_id: providerId, models: stampModelEntries([{ id: defaultModel, label: labelForModel(defaultModel, []) }], providerId) }], aliases: {}, configured_model_badges: {} })
     }
     const stamped = kept.map((g) => ({ ...g, models: stampModelEntries(g.models, g.provider_id), ...(g.extra_models ? { extra_models: stampModelEntries(g.extra_models, g.provider_id) } : {}) }))
-    return this.remember(profileHome, { ...defaults, groups: stamped, aliases, configured_model_badges: this.badges(kept, active, defaultModel, fallbackCfg) })
+    return this.remember(profileHome, configFingerprint, { ...defaults, groups: stamped, aliases, configured_model_badges: this.badges(kept, active, defaultModel, fallbackCfg) })
   }
 
   /** Stamps the default's entry id and keeps the catalog for `modelOptionFor`. */
-  private remember(profileHome: string, catalog: ModelsCatalog): ModelsCatalog {
+  private remember(profileHome: string, configFingerprint: string, catalog: ModelsCatalog): ModelsCatalog {
     catalog.default_option_id = catalogOptionId(catalog, catalog.default_bare_id ?? null, catalog.default_provider_id ?? null)
     this.lastModels.set(profileHome, catalog)
+    this.lastModelsConfig.set(profileHome, configFingerprint)
     return structuredClone(catalog)
   }
 
