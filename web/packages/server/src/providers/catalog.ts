@@ -17,6 +17,7 @@ import { atomicWriteText } from '../fs/atomic.js'
 import type { SidecarLike } from '../sidecar/client.js'
 import type { SidecarResult } from '@maudecode/talaria-web-contracts'
 import { str } from '../util.js'
+import { QUOTA_THRESHOLD_DEFAULTS, type QuotaThresholds } from '../settings.js'
 import { loadEnvFile } from './env-file.js'
 import {
   ACCOUNT_USAGE_PROVIDERS, FALLBACK_MODELS, OAUTH_PROVIDERS, PORTAL_PROVIDERS, PROVIDER_DISPLAY, PROVIDER_ENV_VAR, PROVIDER_ENV_VAR_ALIASES, PROVIDER_MODELS, SELF_HOSTED_PROVIDER_IDS,
@@ -113,6 +114,8 @@ export interface CatalogDeps {
   isRootProfileHome: (profileHome: string) => boolean
   /** WebUI state directory; holds `.quota_scope_id`, the stable public identity namespace for quota sources. */
   stateDir?: string
+  /** Settings `provider_quota_thresholds` for a profile; defaults when absent. */
+  quotaThresholds?: (profile: string) => QuotaThresholds
 }
 
 /** Python `_BESPOKE_CATALOG_PROVIDERS`: cards whose catalog is resolved by their own rule, never the generic live probe. */
@@ -267,6 +270,51 @@ export function normalizeQuotaWindows(raw: unknown, nowSeconds: number): QuotaWi
     pace_window_index: index(labelHas('week')) ?? index(knownPace),
     session_window_index: index(labelHas('session')) ?? index(labelHas('5h')),
     weekly_window_index: index(labelHas('week')),
+  }
+}
+
+export type QuotaLevel = 'healthy' | 'warning' | 'critical' | 'stale' | 'unavailable'
+export interface QuotaUrgency { remaining: QuotaLevel; pace: QuotaLevel }
+
+/** The burn-rate breakpoints apply once the window is old and used enough and the projection empties it before reset. */
+function projectionEligible(pace: QuotaPace, usedPercent: number, minimumElapsedHours: number): boolean {
+  return pace.elapsed_minutes >= Math.max(0, minimumElapsedHours) * 60 && usedPercent >= 5 && pace.minutes_to_reset > 20
+    && (pace.projected_minutes_to_empty ?? Infinity) < pace.minutes_to_reset
+}
+
+/** The App's former `ProviderQuotaUrgencyCalculator.urgency` for one colour basis; a pace basis without a pace falls back to remaining. */
+function quotaLevel(window: QuotaWindow | undefined, status: string, basis: keyof QuotaUrgency, t: QuotaThresholds): QuotaLevel {
+  if (status === 'stale') return 'stale'
+  const remaining = window?.remaining_percent ?? null
+  if (status !== 'available' || remaining === null) return status === 'available' ? 'healthy' : 'unavailable'
+  const pace = window?.pace ?? null
+  if (basis === 'pace' && pace) {
+    const eligible = projectionEligible(pace, 100 - remaining, t.pace_minimum_elapsed_hours)
+    if (eligible && pace.burn_rate >= Math.max(0, t.pace_critical_burn_rate_percent) / 100) return 'critical'
+    if (eligible && pace.burn_rate >= Math.max(0, t.pace_warning_burn_rate_percent) / 100) return 'warning'
+    return pace.pace_delta_percent <= -Math.max(0, t.pace_tolerance_percent) ? 'warning' : 'healthy'
+  }
+  if (remaining <= Math.max(0, t.critical_remaining_percent)) return 'critical'
+  if (remaining <= Math.max(0, t.warning_remaining_percent)) return 'warning'
+  return 'healthy'
+}
+
+/**
+ * TAL-411: each window's `projection_eligible`, `urgency` per colour basis, and `pace.status` (over/on/under the
+ * tolerance), and the source's `urgency` on the windows a widget shows by default (the first; the pace window for pace).
+ */
+export interface ClassifiedQuotaWindow extends Omit<QuotaWindow, 'pace'> { pace: (QuotaPace & { status: 'over' | 'on' | 'under' }) | null; projection_eligible: boolean; urgency: QuotaUrgency }
+export function classifyQuotaSource<T extends { status: string; windows: QuotaWindow[]; pace_window_index: number | null }>(source: T, t: QuotaThresholds): Omit<T, 'windows'> & { windows: ClassifiedQuotaWindow[]; urgency: QuotaUrgency } {
+  const urgency = (w: QuotaWindow | undefined): QuotaUrgency => ({ remaining: quotaLevel(w, source.status, 'remaining', t), pace: quotaLevel(w, source.status, 'pace', t) })
+  return {
+    ...source,
+    windows: source.windows.map((w) => ({
+      ...w,
+      pace: w.pace && { ...w.pace, status: w.pace.pace_delta_percent <= -Math.max(0, t.pace_tolerance_percent) ? 'over' : w.pace.pace_delta_percent > 1 ? 'under' : 'on' },
+      projection_eligible: w.pace !== null && w.remaining_percent !== null && projectionEligible(w.pace, 100 - w.remaining_percent, t.pace_minimum_elapsed_hours),
+      urgency: urgency(w),
+    })),
+    urgency: { remaining: urgency(source.windows[0]).remaining, pace: urgency(source.windows[source.pace_window_index ?? 0]).pace },
   }
 }
 
@@ -962,15 +1010,16 @@ export class ProviderCatalog {
     let descriptors = uniqueQuotaSources(status.providers.filter((p) => p.has_key || p.is_custom).map((p) => ({ source_id: sourceId(str(p.id)), provider_id: str(p.id), provider_label: str(p.display_name) || str(p.id), account_label: str(p.display_name) || str(p.id) })))
     const requested = str(opts.sourceId).trim() || null
     if (requested) descriptors = descriptors.filter((d) => d.source_id === requested)
+    const thresholds = this.deps.quotaThresholds?.(profile) ?? QUOTA_THRESHOLD_DEFAULTS
     const sources = await Promise.all(descriptors.map(async (d) => {
       const q = await this.quota(profileHome, d.provider_id, { refresh: opts.refresh ?? false, at })
       const limits = dict(q.account_limits)
-      return {
+      return classifyQuotaSource({
         source_id: d.source_id, provider_id: d.provider_id, provider_label: d.provider_label, account_label: d.account_label,
         is_active_provider: d.provider_id === active, supported: q.supported === true, status: str(limits.status) || str(q.status) || 'unavailable',
-        plan: limits.plan ?? null, windows: limits.windows ?? [], pace_window_index: limits.pace_window_index ?? null, session_window_index: limits.session_window_index ?? null, weekly_window_index: limits.weekly_window_index ?? null, quota: q.quota ?? null, balances: q.balances ?? [], details: limits.details ?? [],
+        plan: limits.plan ?? null, windows: (limits.windows ?? []) as QuotaWindow[], pace_window_index: (limits.pace_window_index ?? null) as number | null, session_window_index: limits.session_window_index ?? null, weekly_window_index: limits.weekly_window_index ?? null, quota: q.quota ?? null, balances: q.balances ?? [], details: limits.details ?? [],
         unavailable_reason: limits.unavailable_reason ?? null, retry_after: limits.retry_after ?? null, fetched_at: limits.fetched_at ?? null, message: q.message ?? null,
-      }
+      }, thresholds)
     }))
     return { version: 1, computed_at: isoAt(at), scope_id: scopeId, profile_id: profile, active_provider: active, requested_source_id: requested, missing_source: Boolean(requested && !descriptors.length), sources }
   }

@@ -19,7 +19,7 @@ import { OnboardingError } from '../onboarding.js'
 import { writeEnvFile } from '../providers/env-file.js'
 import { displayName, providerEnvVar, stampAuxiliarySelections } from '../providers/catalog.js'
 import { OAUTH_PROVIDERS, SUPPORTED_PROVIDER_SETUPS } from '../providers/tables.js'
-import { displayBotName, SETTINGS_SPEECH_KEYS, pyBool } from '../settings.js'
+import { displayBotName, QUOTA_THRESHOLDS_BY_PROFILE_KEY, SETTINGS_SPEECH_KEYS, pyBool } from '../settings.js'
 import { str } from '../util.js'
 import { checkExternalLink, linkPreferences } from '../links.js'
 
@@ -111,6 +111,8 @@ function derivedFields(ctx: RequestContext, into: Dict): void {
   into.agent_version = deps.agentVersion()
   into.update_channel = str(into.update_channel) || 'stable'
   into.update_channel_version = deps.version
+  Reflect.deleteProperty(into, QUOTA_THRESHOLDS_BY_PROFILE_KEY)
+  into.provider_quota_thresholds = deps.settings.quotaThresholds(activeProfileName(ctx))
 }
 
 async function saveSettings(ctx: RequestContext, input: Dict): Promise<Dict> {
@@ -155,7 +157,7 @@ async function saveSettings(ctx: RequestContext, input: Dict): Promise<Dict> {
   if (ack !== undefined && ack !== null && !(await auth.isAuthEnabled())) body.auth_disabled_acknowledged = pyBool(ack)
   else if ((await auth.isAuthEnabled()) || requestedPassword) body.auth_disabled_acknowledged = false
 
-  const saved: Dict = await deps.settings.save(body)
+  const saved: Dict = await deps.settings.save(body, { profile: activeProfileName(ctx) })
   saved.persisted_speech_keys = [...SETTINGS_SPEECH_KEYS].filter((k) => k in deps.settings.readRaw()).sort()
   Reflect.deleteProperty(saved, 'password_hash')
   const cfgHome = home(ctx)

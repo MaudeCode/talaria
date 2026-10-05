@@ -204,6 +204,45 @@ export function coerceProviderCostBudget(value: unknown): number | null {
   return rounded
 }
 
+/** TAL-411: the quota urgency thresholds, one set per profile; the App's former defaults and stepper ranges. */
+export interface QuotaThresholds {
+  warning_remaining_percent: number
+  critical_remaining_percent: number
+  pace_tolerance_percent: number
+  pace_warning_burn_rate_percent: number
+  pace_critical_burn_rate_percent: number
+  pace_minimum_elapsed_hours: number
+}
+export const QUOTA_THRESHOLD_DEFAULTS: QuotaThresholds = {
+  warning_remaining_percent: 25, critical_remaining_percent: 10, pace_tolerance_percent: 3,
+  pace_warning_burn_rate_percent: 125, pace_critical_burn_rate_percent: 175, pace_minimum_elapsed_hours: 12,
+}
+const QUOTA_THRESHOLD_RANGES: Record<keyof QuotaThresholds, [number, number]> = {
+  warning_remaining_percent: [1, 99], critical_remaining_percent: [0, 99], pace_tolerance_percent: [0, 25],
+  pace_warning_burn_rate_percent: [100, 300], pace_critical_burn_rate_percent: [100, 400], pace_minimum_elapsed_hours: [0, 72],
+}
+/** settings.json key of the per-profile sets; `/api/settings` answers the request profile's set as `provider_quota_thresholds`. */
+export const QUOTA_THRESHOLDS_BY_PROFILE_KEY = 'provider_quota_thresholds_by_profile'
+
+/** `patch`'s in-range integers over `base`; critical never sits below warning (remaining) or under it (burn rate). */
+export function mergeQuotaThresholds(base: QuotaThresholds, patch: unknown): QuotaThresholds {
+  const next = { ...base }
+  if (typeof patch === 'object' && patch !== null && !Array.isArray(patch)) {
+    for (const [key, [min, max]] of Object.entries(QUOTA_THRESHOLD_RANGES) as [keyof QuotaThresholds, [number, number]][]) {
+      const value = (patch as Settings)[key]
+      if (typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max) next[key] = value
+    }
+  }
+  next.critical_remaining_percent = Math.min(next.critical_remaining_percent, next.warning_remaining_percent)
+  next.pace_critical_burn_rate_percent = Math.max(next.pace_critical_burn_rate_percent, next.pace_warning_burn_rate_percent)
+  return next
+}
+
+function thresholdsByProfile(settings: Settings): Settings {
+  const stored = settings[QUOTA_THRESHOLDS_BY_PROFILE_KEY]
+  return typeof stored === 'object' && stored !== null && !Array.isArray(stored) ? { ...(stored as Settings) } : {}
+}
+
 export interface SettingsHooks {
   hashPassword?: (password: string) => Promise<string>
   onPasswordChanged?: () => void
@@ -243,6 +282,11 @@ export class SettingsStore {
 
   defaults(): Settings {
     return settingsDefaults({ defaultWorkspace: this.defaultWorkspace, botName: this.botName })
+  }
+
+  /** The profile's quota thresholds, defaults filled in. */
+  quotaThresholds(profile: string): QuotaThresholds {
+    return mergeQuotaThresholds(QUOTA_THRESHOLD_DEFAULTS, thresholdsByProfile(this.readRaw())[profile])
   }
 
   /** Read settings.json; `strict` callers distinguish absence from an unreadable file. */
@@ -315,8 +359,8 @@ export class SettingsStore {
     this.writeVersion += 1
   }
 
-  /** Save a patch, ignoring unknown keys and invalid values. Returns the merged settings. */
-  async save(input: Settings): Promise<Settings> {
+  /** Save a patch, ignoring unknown keys and invalid values. `provider_quota_thresholds` patches `profile`'s set. Returns the merged settings. */
+  async save(input: Settings, opts: { profile?: string } = {}): Promise<Settings> {
     const settings: Settings = { ...input }
     // Hash before snapshotting the file: the PBKDF2 await is the only yield in this method, so once `readRaw()`
     // runs the read/merge/write below is atomic with respect to concurrent saves.
@@ -370,6 +414,12 @@ export class SettingsStore {
     for (const [k, rawValue] of Object.entries(settings)) {
       let v: unknown = rawValue
       if (k === 'auto_apply_updates' && typeof v !== 'boolean') continue
+      if (k === 'provider_quota_thresholds' && opts.profile !== undefined) {
+        const byProfile = thresholdsByProfile(current)
+        byProfile[opts.profile] = mergeQuotaThresholds(mergeQuotaThresholds(QUOTA_THRESHOLD_DEFAULTS, byProfile[opts.profile]), v)
+        current[QUOTA_THRESHOLDS_BY_PROFILE_KEY] = byProfile
+        continue
+      }
       if (k === 'dashboard_plugins' || !allowed.has(k)) continue
       if (k === 'theme') {
         if (typeof v === 'string' && v.trim()) { pendingTheme = v; themeExplicit = true }

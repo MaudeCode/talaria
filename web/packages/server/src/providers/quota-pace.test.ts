@@ -1,6 +1,7 @@
 /** TAL-409: the App's pace and forecast cases (`ProviderQuotaWidgetTests`), ported to the server normaliser. */
 import { describe, expect, it } from 'vitest'
-import { isoUtc, normalizeQuotaWindows, quotaForecast } from './catalog.js'
+import { classifyQuotaSource, isoUtc, normalizeQuotaWindows, quotaForecast } from './catalog.js'
+import { QUOTA_THRESHOLD_DEFAULTS } from '../settings.js'
 
 const NOW = 1_900_000_000
 const resetIn = (seconds: number): string => new Date((NOW + seconds) * 1000).toISOString()
@@ -59,5 +60,56 @@ describe('quota window pace', () => {
     expect(isoUtc('soon')).toBeNull()
     expect(isoUtc(1_900_000_000)).toBeNull()
     expect(normalizeQuotaWindows([{ label: ' ' }, { label: ' 5h ' }, 'junk'], NOW).windows.map((w) => w.label)).toEqual(['5h'])
+  })
+})
+
+describe('quota urgency (TAL-411)', () => {
+  // The App calculator's cases (`ProviderQuotaWidgetTests`): 10%, 30%, 32% and 90% used five days before a weekly reset.
+  const weekly = (used: number) => ({ label: 'Weekly', used_percent: used, reset_at: resetIn(5 * 86_400) })
+  const classify = (raw: Record<string, unknown>[], status = 'available', thresholds = QUOTA_THRESHOLD_DEFAULTS) => {
+    const { windows, pace_window_index } = normalizeQuotaWindows(raw, NOW)
+    return classifyQuotaSource({ status, windows, pace_window_index }, thresholds)
+  }
+
+  it('matches the App calculator at default thresholds on both bases', () => {
+    expect(classify([weekly(10)]).urgency).toEqual({ remaining: 'healthy', pace: 'healthy' })
+    expect(classify([weekly(30)]).urgency).toEqual({ remaining: 'healthy', pace: 'healthy' })
+    expect(classify([weekly(32)]).urgency).toEqual({ remaining: 'healthy', pace: 'warning' })
+    expect(classify([weekly(90)]).urgency).toEqual({ remaining: 'critical', pace: 'critical' })
+    expect(classify([weekly(80)]).urgency.remaining).toBe('warning')
+  })
+
+  it('applies each threshold at its edge', () => {
+    // 32% used: 3.4 points over pace at a 1.12x burn, projected empty before reset after 48h elapsed.
+    expect(classify([weekly(32)], 'available', { ...QUOTA_THRESHOLD_DEFAULTS, pace_tolerance_percent: 4 }).urgency.pace).toBe('healthy')
+    expect(classify([weekly(32)], 'available', { ...QUOTA_THRESHOLD_DEFAULTS, pace_tolerance_percent: 4, pace_warning_burn_rate_percent: 112 }).urgency.pace).toBe('warning')
+    expect(classify([weekly(32)], 'available', { ...QUOTA_THRESHOLD_DEFAULTS, pace_warning_burn_rate_percent: 100, pace_critical_burn_rate_percent: 112 }).urgency.pace).toBe('critical')
+    // The burn-rate breakpoints wait for the minimum elapsed time; tolerance still applies.
+    const late = classify([weekly(32)], 'available', { ...QUOTA_THRESHOLD_DEFAULTS, pace_tolerance_percent: 4, pace_warning_burn_rate_percent: 100, pace_minimum_elapsed_hours: 49 })
+    expect(late.windows[0]).toMatchObject({ projection_eligible: false, urgency: { pace: 'healthy' } })
+    expect(classify([weekly(75)], 'available', { ...QUOTA_THRESHOLD_DEFAULTS, warning_remaining_percent: 25 }).urgency.remaining).toBe('warning')
+    expect(classify([weekly(74)], 'available', { ...QUOTA_THRESHOLD_DEFAULTS, warning_remaining_percent: 25 }).urgency.remaining).toBe('healthy')
+    expect(classify([weekly(90)], 'available', { ...QUOTA_THRESHOLD_DEFAULTS, critical_remaining_percent: 9 }).urgency.remaining).toBe('warning')
+  })
+
+  it('names pace over, on, or under the tolerance', () => {
+    const status = (used: number, tolerance = 3) => classify([weekly(used)], 'available', { ...QUOTA_THRESHOLD_DEFAULTS, pace_tolerance_percent: tolerance }).windows[0]!.pace?.status
+    expect(status(32)).toBe('over')
+    expect(status(32, 4)).toBe('on')
+    expect(status(10)).toBe('under')
+  })
+
+  it('a source without windows, an unavailable status, and a stale refresh classify without thresholds', () => {
+    expect(classify([]).urgency).toEqual({ remaining: 'healthy', pace: 'healthy' })
+    expect(classify([weekly(90)], 'exhausted').urgency).toEqual({ remaining: 'unavailable', pace: 'unavailable' })
+    expect(classify([weekly(90)], 'stale').urgency).toEqual({ remaining: 'stale', pace: 'stale' })
+    // Without a pace the pace basis falls back to remaining.
+    expect(classify([{ label: 'Monthly', used_percent: 95 }]).urgency).toEqual({ remaining: 'critical', pace: 'critical' })
+  })
+
+  it('the source urgency reads the first window for remaining and the pace window for pace', () => {
+    const source = classify([{ label: 'Session', used_percent: 95, reset_at: resetIn(3600) }, weekly(10)])
+    expect(source.urgency).toEqual({ remaining: 'critical', pace: 'healthy' })
+    expect(source.windows.map((w) => w.urgency.remaining)).toEqual(['critical', 'healthy'])
   })
 })

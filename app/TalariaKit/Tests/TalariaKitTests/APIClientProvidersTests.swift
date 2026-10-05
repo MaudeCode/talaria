@@ -152,7 +152,8 @@ final class APIClientProvidersTests: APIClientTestCase {
             minutesToReset: 7200,
             projectedMinutesToEmpty: 6120,
             elapsedMinutes: 2880,
-            validUntil: "2026-10-03T08:00:00Z"
+            validUntil: "2026-10-03T08:00:00Z",
+            status: "over"
         ))
         XCTAssertEqual(weekly.forecast, ProviderQuotaWindowForecast(
             outcome: .warning,
@@ -162,6 +163,10 @@ final class APIClientProvidersTests: APIClientTestCase {
         ))
         XCTAssertNil(source.windows[2].pace)
         XCTAssertNil(source.windows[2].forecast)
+        // TAL-411: the server's classification at default thresholds, per window and for the source.
+        XCTAssertEqual(source.windows.map(\.projectionEligible), [false, true, false])
+        XCTAssertEqual(weekly.urgency, ProviderQuotaUrgencyLevels(remaining: .healthy, pace: .warning))
+        XCTAssertEqual(source.urgency, ProviderQuotaUrgencyLevels(remaining: .healthy, pace: .warning))
     }
 
     func testWidgetSnapshotPersistsServerPaceAndStillLoadsALegacyV1Snapshot() throws {
@@ -180,6 +185,9 @@ final class APIClientProvidersTests: APIClientTestCase {
         XCTAssertEqual(loaded.computedAt, "2026-09-28T08:00:00Z")
         XCTAssertEqual(loaded.paceWindowIndex, 1)
         XCTAssertEqual(loaded.windows[1].forecast?.outcome, .warning)
+        XCTAssertEqual(loaded.urgency, ProviderQuotaUrgencyLevels(remaining: .healthy, pace: .warning))
+        XCTAssertEqual(loaded.windows[1].urgency?.pace, .warning)
+        XCTAssertEqual(loaded.windows[1].projectionEligible, true)
 
         // Written by a build before the server shipped pace: no pace, forecast, indexes, or computedAt.
         defaults.set(Data("""
@@ -207,6 +215,8 @@ final class APIClientProvidersTests: APIClientTestCase {
         XCTAssertNil(legacy.windows.first?.pace)
         XCTAssertNil(legacy.paceWindowIndex)
         XCTAssertNil(legacy.computedAt)
+        XCTAssertNil(legacy.urgency)
+        XCTAssertNil(legacy.windows.first?.urgency)
     }
 
     private func decodedQuotaFixture() throws -> ProviderQuotasResponse {

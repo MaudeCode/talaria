@@ -153,12 +153,6 @@ public enum ProviderQuotaWidgetAppearanceSettings {
     public static let criticalColorKey = "providerQuota.widgetCriticalColor"
     public static let staleColorKey = "providerQuota.widgetStaleColor"
     public static let unavailableColorKey = "providerQuota.widgetUnavailableColor"
-    public static let warningRemainingPercentKey = "providerQuota.widgetWarningRemainingPercent"
-    public static let criticalRemainingPercentKey = "providerQuota.widgetCriticalRemainingPercent"
-    public static let paceTolerancePercentKey = "providerQuota.widgetPaceTolerancePercent"
-    public static let paceWarningBurnRatePercentKey = "providerQuota.widgetPaceWarningBurnRatePercent"
-    public static let paceCriticalBurnRatePercentKey = "providerQuota.widgetPaceCriticalBurnRatePercent"
-    public static let paceMinimumElapsedHoursKey = "providerQuota.widgetPaceMinimumElapsedHours"
     public static let showsPaceMarkerKey = "providerQuota.widgetShowsPaceMarker"
     public static let trackColorKey = "providerQuota.widgetTrackColor"
     public static let trackOpacityPercentKey = "providerQuota.widgetTrackOpacityPercent"
@@ -177,12 +171,6 @@ public enum ProviderQuotaWidgetAppearanceSettings {
     public static let defaultCriticalColor = ProviderQuotaWidgetArcColor.red
     public static let defaultStaleColor = ProviderQuotaWidgetArcColor.orange
     public static let defaultUnavailableColor = ProviderQuotaWidgetArcColor.orange
-    public static let defaultWarningRemainingPercent = 25
-    public static let defaultCriticalRemainingPercent = 10
-    public static let defaultPaceTolerancePercent = 3
-    public static let defaultPaceWarningBurnRatePercent = 125
-    public static let defaultPaceCriticalBurnRatePercent = 175
-    public static let defaultPaceMinimumElapsedHours = 12
     public static let defaultShowsPaceMarker = true
     public static let defaultTrackColor = ProviderQuotaWidgetArcColor.automatic
     public static let defaultTrackOpacityPercent = 18
@@ -193,6 +181,43 @@ public enum ProviderQuotaWidgetAppearanceSettings {
     public static let defaultCustomCriticalColorHex = "#FF453A"
     public static let defaultCustomStaleColorHex = "#8E8E93"
     public static let defaultCustomUnavailableColorHex = "#8E8E93"
+}
+
+/// The server's per-profile quota thresholds (`provider_quota_thresholds`, TAL-411). The server classifies with them;
+/// the App only edits them through `/api/settings` and caches the last read for read-only offline display.
+public struct ProviderQuotaThresholds: Codable, Equatable, Sendable {
+    public var warningRemainingPercent: Int
+    public var criticalRemainingPercent: Int
+    public var paceTolerancePercent: Int
+    public var paceWarningBurnRatePercent: Int
+    public var paceCriticalBurnRatePercent: Int
+    public var paceMinimumElapsedHours: Int
+
+    public static let cacheKey = "providerQuota.serverThresholdsCache"
+
+    public init(
+        warningRemainingPercent: Int,
+        criticalRemainingPercent: Int,
+        paceTolerancePercent: Int,
+        paceWarningBurnRatePercent: Int,
+        paceCriticalBurnRatePercent: Int,
+        paceMinimumElapsedHours: Int
+    ) {
+        self.warningRemainingPercent = warningRemainingPercent
+        self.criticalRemainingPercent = criticalRemainingPercent
+        self.paceTolerancePercent = paceTolerancePercent
+        self.paceWarningBurnRatePercent = paceWarningBurnRatePercent
+        self.paceCriticalBurnRatePercent = paceCriticalBurnRatePercent
+        self.paceMinimumElapsedHours = paceMinimumElapsedHours
+    }
+
+    public static func cached(defaults: UserDefaults) -> ProviderQuotaThresholds? {
+        defaults.data(forKey: cacheKey).flatMap { try? JSONDecoder().decode(Self.self, from: $0) }
+    }
+
+    public func cache(defaults: UserDefaults) {
+        defaults.set(try? JSONEncoder().encode(self), forKey: Self.cacheKey)
+    }
 }
 
 public enum ProviderQuotaLockScreenPaceDetail: String, CaseIterable, Identifiable {

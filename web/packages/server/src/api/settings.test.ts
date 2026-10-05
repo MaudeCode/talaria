@@ -916,8 +916,13 @@ describe('provider quota windows carry server-computed pace (TAL-409)', () => {
   it('both quota endpoints normalise windows and ship pace, forecast, window indexes and computed_at', async () => {
     const quotas = await json(await s.get('/api/provider/quotas'))
     const anthropic = (quotas.sources as Json[]).find((q) => q.provider_id === 'anthropic')
-    expect(anthropic?.windows).toEqual([session, weekly, monthly])
-    expect(anthropic).toMatchObject({ pace_window_index: 1, session_window_index: 0, weekly_window_index: 1, fetched_at: '2026-09-28T07:59:30Z' })
+    // TAL-411 classifies the quotas windows at the default thresholds; the singular route's are unclassified.
+    expect(anthropic?.windows).toEqual([
+      { ...session, pace: { ...session.pace, status: 'under' }, projection_eligible: false, urgency: { remaining: 'healthy', pace: 'healthy' } },
+      { ...weekly, pace: { ...weekly.pace, status: 'over' }, projection_eligible: true, urgency: { remaining: 'healthy', pace: 'warning' } },
+      { ...monthly, projection_eligible: false, urgency: { remaining: 'healthy', pace: 'healthy' } },
+    ])
+    expect(anthropic).toMatchObject({ urgency: { remaining: 'healthy', pace: 'warning' }, pace_window_index: 1, session_window_index: 0, weekly_window_index: 1, fetched_at: '2026-09-28T07:59:30Z' })
     expect(quotas.computed_at).toBe('2026-09-28T08:00:00Z')
 
     const quota = await json(await s.get('/api/provider/quota?provider=anthropic'))
@@ -933,6 +938,35 @@ describe('provider quota windows carry server-computed pace (TAL-409)', () => {
     // The shared fixture the App and Web decode is this exact response (`RECORD_TAL409=1` rewrites it).
     if (process.env.RECORD_TAL409) writeFileSync(FIXTURE, `${JSON.stringify(quotas, null, 2)}\n`)
     expect(quotas).toEqual(JSON.parse(readFileSync(FIXTURE, 'utf8')))
+  })
+
+  it('urgency, projection eligibility and pace status follow the profile thresholds saved through /api/settings (TAL-411)', async () => {
+    const DEFAULTS = { warning_remaining_percent: 25, critical_remaining_percent: 10, pace_tolerance_percent: 3, pace_warning_burn_rate_percent: 125, pace_critical_burn_rate_percent: 175, pace_minimum_elapsed_hours: 12 }
+    const classified = async () => {
+      const source = ((await json(await s.get('/api/provider/quotas'))).sources as Json[]).find((q) => q.provider_id === 'anthropic')!
+      return { urgency: source.urgency, windows: (source.windows as Json[]).map((w) => [w.projection_eligible, w.urgency, w.pace === null ? null : dictOf(w.pace).status]) }
+    }
+    // Session: 10% used, 1h into its 5h window. Weekly: 32% used, 3.4 points over pace at a 1.12x burn. Monthly: no pace.
+    expect(await classified()).toEqual({ urgency: { remaining: 'healthy', pace: 'warning' }, windows: [
+      [false, { remaining: 'healthy', pace: 'healthy' }, 'under'],
+      [true, { remaining: 'healthy', pace: 'warning' }, 'over'],
+      [false, { remaining: 'healthy', pace: 'healthy' }, null],
+    ] })
+    expect(dictOf(await json(await s.get('/api/settings'))).provider_quota_thresholds).toEqual(DEFAULTS)
+
+    // Critical clamps to at most warning; an out-of-range value keeps the stored one.
+    const saved = await json(await post(s, '/api/settings', { provider_quota_thresholds: { warning_remaining_percent: 95, critical_remaining_percent: 99, pace_tolerance_percent: 4, pace_minimum_elapsed_hours: 500 } }))
+    const changed = { ...DEFAULTS, warning_remaining_percent: 95, critical_remaining_percent: 95, pace_tolerance_percent: 4 }
+    expect(saved.provider_quota_thresholds).toEqual(changed)
+    expect(dictOf(await json(await s.get('/api/settings'))).provider_quota_thresholds).toEqual(changed)
+    expect(await classified()).toEqual({ urgency: { remaining: 'critical', pace: 'healthy' }, windows: [
+      [false, { remaining: 'critical', pace: 'healthy' }, 'under'],
+      [true, { remaining: 'critical', pace: 'healthy' }, 'on'],
+      [false, { remaining: 'critical', pace: 'critical' }, null],
+    ] })
+
+    await post(s, '/api/settings', { provider_quota_thresholds: DEFAULTS })
+    expect((await classified()).urgency).toEqual({ remaining: 'healthy', pace: 'warning' })
   })
 })
 

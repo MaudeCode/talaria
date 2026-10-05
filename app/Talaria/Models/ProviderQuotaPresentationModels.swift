@@ -8,12 +8,6 @@ struct ProviderQuotaEvaluationSettings: Equatable {
     let percentageMode: ProviderQuotaPercentageMode
     let colorBasis: ProviderQuotaWidgetColorBasis
     let windowSelection: ProviderQuotaWidgetWindowSelection
-    let warningRemainingPercent: Int
-    let criticalRemainingPercent: Int
-    let paceTolerancePercent: Int
-    let paceWarningBurnRatePercent: Int
-    let paceCriticalBurnRatePercent: Int
-    let paceMinimumElapsedHours: Int
 
     static func stored(
         defaults: UserDefaults = ProviderQuotaWidgetSnapshotStore.appGroupDefaults,
@@ -38,23 +32,9 @@ struct ProviderQuotaEvaluationSettings: Equatable {
             colorBasis: usesSavedProfile ? defaultBasis : configuration?.colorBasis.resolved(default: defaultBasis) ?? defaultBasis,
             windowSelection: usesSavedProfile
                 ? ProviderQuotaWidgetWindowSelection(rawValue: profile.string(ProviderQuotaWidgetWindowSelection.storageKey)) ?? .defaultValue
-                : configuration?.windowSelection ?? .defaultValue,
-            warningRemainingPercent: profile.integer(ProviderQuotaWidgetAppearanceSettings.warningRemainingPercentKey),
-            criticalRemainingPercent: profile.integer(ProviderQuotaWidgetAppearanceSettings.criticalRemainingPercentKey),
-            paceTolerancePercent: profile.integer(ProviderQuotaWidgetAppearanceSettings.paceTolerancePercentKey),
-            paceWarningBurnRatePercent: profile.integer(ProviderQuotaWidgetAppearanceSettings.paceWarningBurnRatePercentKey),
-            paceCriticalBurnRatePercent: profile.integer(ProviderQuotaWidgetAppearanceSettings.paceCriticalBurnRatePercentKey),
-            paceMinimumElapsedHours: profile.integer(ProviderQuotaWidgetAppearanceSettings.paceMinimumElapsedHoursKey)
+                : configuration?.windowSelection ?? .defaultValue
         )
     }
-}
-
-enum ProviderQuotaUrgency: Equatable {
-    case healthy
-    case warning
-    case critical
-    case stale
-    case unavailable
 }
 
 struct ProviderQuotaPresentationState: Equatable {
@@ -84,14 +64,16 @@ struct ProviderQuotaPresentationState: Equatable {
         settings.percentageMode == .used ? String(localized: "used") : String(localized: "remaining")
     }
 
+    /// Wording for the server's `pace.status`; nil from a server that predates it.
     var paceLabel: String? {
-        guard let delta = pace?.paceDeltaPercent else { return nil }
-        let value = abs(delta).formatted(.percent.scale(1).precision(.fractionLength(0...1)))
-        if delta <= -Double(max(0, settings.paceTolerancePercent)) {
-            return String(localized: "\(value) over pace")
+        guard let pace, let status = pace.status else { return nil }
+        let value = abs(pace.paceDeltaPercent).formatted(.percent.scale(1).precision(.fractionLength(0...1)))
+        return switch status {
+        case "over": String(localized: "\(value) over pace")
+        case "under": String(localized: "\(value) under pace")
+        case "on": String(localized: "On pace")
+        default: nil
         }
-        if delta > 1 { return String(localized: "\(value) under pace") }
-        return String(localized: "On pace")
     }
 
     func withUrgency(_ urgency: ProviderQuotaUrgency) -> ProviderQuotaPresentationState {

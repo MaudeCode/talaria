@@ -423,6 +423,12 @@ export const TranscribeCapabilitySchema = z.looseObject({ ok: z.literal(true), a
 
 // ── settings, profiles, models, providers ───────────────────────────────
 
+/** TAL-411: the request profile's quota urgency thresholds. A save patches valid fields and clamps critical to at most warning. */
+export const QuotaThresholdsSchema = z.object({
+  warning_remaining_percent: z.number().int().min(1).max(99), critical_remaining_percent: z.number().int().min(0).max(99), pace_tolerance_percent: z.number().int().min(0).max(25),
+  pace_warning_burn_rate_percent: z.number().int().min(100).max(300), pace_critical_burn_rate_percent: z.number().int().min(100).max(400), pace_minimum_elapsed_hours: z.number().int().min(0).max(72),
+})
+export type QuotaThresholds = z.infer<typeof QuotaThresholdsSchema>
 export const LoginResponseSchema = z.looseObject({ ok: z.literal(true), message: z.string().optional() })
 export const SettingsSchema = z.looseObject({
   bot_name: z.string().optional(), default_model: z.string().optional(), default_workspace: z.string().optional(), language: z.string().optional(), send_key: z.string().optional(), font_size: z.string().optional(),
@@ -435,6 +441,7 @@ export const SettingsSchema = z.looseObject({
   dictation_append: z.boolean().optional(), persisted_speech_keys: z.array(z.string()).optional(),
   /** TAL-279: ask before opening external chat links; `trusted_link_hosts` are exact, server-normalized hostnames that skip the ask. */
   confirm_external_links: z.boolean().optional(), trusted_link_hosts: z.array(z.string()).optional(),
+  provider_quota_thresholds: QuotaThresholdsSchema.optional(),
 })
 export type Settings = z.infer<typeof SettingsSchema>
 export const ProfileSchema = z.looseObject({
@@ -458,11 +465,16 @@ export const ProviderSchema = z.looseObject({
   is_custom: z.boolean().optional(), key_source: z.string().optional(), base_url: NullableString.optional(), auth_error: NullableString.optional(), env_var: NullableString.optional(), models: z.array(ModelEntrySchema).optional(), models_total: z.number().optional(),
 })
 export const ProvidersSchema = z.looseObject({ providers: z.array(ProviderSchema), active_provider: NullableString.optional() })
+export const QuotaLevelSchema = z.enum(['healthy', 'warning', 'critical', 'stale', 'unavailable'])
+export type QuotaLevel = z.infer<typeof QuotaLevelSchema>
+/** TAL-411: the server's classification per colour basis; `/api/provider/quotas` only, at the profile's thresholds. */
+export const QuotaUrgencySchema = z.looseObject({ remaining: QuotaLevelSchema, pace: QuotaLevelSchema.describe('Burn rate and pace tolerance; the remaining classification when the window has no pace.') })
 /** TAL-409: a window's pace as of the envelope's `computed_at`. Stale once `valid_until` (the window's reset) passes. */
 export const QuotaPaceSchema = z.looseObject({
   expected_remaining_percent: z.number(), pace_delta_percent: z.number(), burn_rate: z.number(), minutes_to_reset: z.number(),
   projected_minutes_to_empty: NullableNumber.describe('Minutes until the window empties at the current burn; null when nothing has been used.'),
   elapsed_minutes: z.number(), valid_until: z.string(),
+  status: z.enum(['over', 'on', 'under']).optional().describe('TAL-411, `/api/provider/quotas` only: over when behind pace by at least the tolerance, under when more than 1 point ahead.'),
 })
 export const QuotaForecastSchema = z.looseObject({
   outcome: z.enum(['safe', 'warning']).describe('`warning` when the projection empties the window before it resets.'),
@@ -474,6 +486,8 @@ export const QuotaWindowSchema = z.looseObject({
   window_seconds: NullableNumber.describe('The provider value, else 5h or weekly from the label; null when unknown.'),
   pace: QuotaPaceSchema.nullable().describe('Null for a window without a future reset, a usage value, or a 5h/weekly length.'),
   forecast: QuotaForecastSchema.nullable(),
+  projection_eligible: z.boolean().optional().describe('TAL-411, `/api/provider/quotas` only: the burn-rate breakpoints apply (enough elapsed time and use, and the projection empties the window before reset).'),
+  urgency: QuotaUrgencySchema.optional(),
 })
 const QuotaWindowIndex = z.number().int().nullable().optional()
 export const QuotaSourceSchema = z.looseObject({
@@ -481,6 +495,7 @@ export const QuotaSourceSchema = z.looseObject({
   is_active_provider: z.boolean().optional(), quota: Json.optional(), windows: z.array(QuotaWindowSchema).optional(), balances: Json.optional(), plan: Json.optional(), details: Json.optional(), unavailable_reason: Json.optional(), retry_after: Json.optional(), fetched_at: Json.optional(),
   pace_window_index: QuotaWindowIndex.describe('The window a pace-coloured widget shows: the weekly one, else the first 5h/session window.'),
   session_window_index: QuotaWindowIndex.describe('The session (else 5h) window.'), weekly_window_index: QuotaWindowIndex.describe('The weekly window.'),
+  urgency: QuotaUrgencySchema.optional().describe('TAL-411: `remaining` of the first window, `pace` of the pace window; alerts and the source colour follow it.'),
 })
 /** An account-usage provider's normalised snapshot on `/api/provider/quota` (the same windows and indexes as a quotas source). */
 export const QuotaAccountLimitsSchema = z.looseObject({

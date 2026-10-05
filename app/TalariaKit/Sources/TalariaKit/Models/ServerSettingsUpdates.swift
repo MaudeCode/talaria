@@ -12,6 +12,8 @@ public struct SettingsResponse: Decodable, Equatable {
     let passwordAuthEnabled: Bool?
     let passkeysEnabled: Bool?
     let passwordlessEnabled: Bool?
+    /// The request profile's quota thresholds; nil from a server that predates TAL-411.
+    public let providerQuotaThresholds: ProviderQuotaThresholds?
 
     private enum CodingKeys: String, CodingKey {
         case botName
@@ -25,6 +27,7 @@ public struct SettingsResponse: Decodable, Equatable {
         case passwordAuthEnabled
         case passkeysEnabled
         case passwordlessEnabled
+        case providerQuotaThresholds
     }
 
     public init(from decoder: Decoder) throws {
@@ -40,6 +43,7 @@ public struct SettingsResponse: Decodable, Equatable {
         passwordAuthEnabled = container.decodeLossyBoolIfPresent(forKey: .passwordAuthEnabled)
         passkeysEnabled = container.decodeLossyBoolIfPresent(forKey: .passkeysEnabled)
         passwordlessEnabled = container.decodeLossyBoolIfPresent(forKey: .passwordlessEnabled)
+        providerQuotaThresholds = try? container.decodeIfPresent(ProviderQuotaThresholds.self, forKey: .providerQuotaThresholds)
     }
 }
 

@@ -1,0 +1,22 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Quota warning and critical breakpoints now live on your server for each profile, so the App, its widgets, quota alerts, and Talaria Web always agree on a quota's state.",
+      "highlight": false,
+      "components": ["app", "web"]
+    },
+    {
+      "category": "Added",
+      "summary": "Set quota breakpoints and see each provider's quota state in Talaria Web's Providers settings.",
+      "highlight": false,
+      "components": ["web"]
+    },
+    {
+      "category": "Changed",
+      "summary": "While your server is unreachable, widgets keep showing the last quota state it reported, and quota alerts wait for fresh data.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

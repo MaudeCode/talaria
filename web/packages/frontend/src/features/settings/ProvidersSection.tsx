@@ -14,6 +14,7 @@ import { cn } from '../../ui/cn'
 import { useSettingField } from './useSettingField'
 import { OpenRouterCost } from './OpenRouterCost'
 import { ProviderQuotaPace } from './ProviderQuotaPace'
+import { QuotaThresholdsForm } from './QuotaThresholds'
 
 const setProviderKey = (provider: string, api_key: string | null) => post('api/providers', { provider, api_key }, OkSchema, { retries: 0 })
 
@@ -38,6 +39,7 @@ export function ProvidersSection() {
         <span>{m.providers_active()}: <strong className="text-text">{active ?? '—'}</strong></span>
         <Button onClick={() => { void api.fetchProviderQuotas(true).then((d) => { qc.setQueryData(keys.providerQuotas, d); void qc.invalidateQueries({ queryKey: keys.providerCostHistory }) }).catch(() => undefined) }}>{m.providers_quota_refresh()}</Button>
       </div>
+      <QuotaThresholdsForm />
       <ul className="flex flex-col gap-2">
         {providers.data.providers.map((p) => {
           const sources = quotas.data?.sources.filter((s) => s.provider_id === p.id) ?? []

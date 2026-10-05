@@ -83,15 +83,11 @@ enum ProviderQuotaWidgetProfileStore {
         ]
         let integerKeys: Set<String> = [
             ProviderQuotaWidgetBackground.opacityPercentKey,
-            ProviderQuotaWidgetAppearanceSettings.warningRemainingPercentKey,
-            ProviderQuotaWidgetAppearanceSettings.criticalRemainingPercentKey,
-            ProviderQuotaWidgetAppearanceSettings.paceTolerancePercentKey,
-            ProviderQuotaWidgetAppearanceSettings.paceWarningBurnRatePercentKey,
-            ProviderQuotaWidgetAppearanceSettings.paceCriticalBurnRatePercentKey,
-            ProviderQuotaWidgetAppearanceSettings.paceMinimumElapsedHoursKey,
             ProviderQuotaWidgetAppearanceSettings.trackOpacityPercentKey,
         ]
-        for (key, value) in profile.values {
+        // A profile saved before TAL-411 may hold the former local quota thresholds; the server owns those now.
+        let knownKeys = defaultValues
+        for (key, value) in profile.values where knownKeys[key] != nil {
             if booleanKeys.contains(key) {
                 defaults.set(["1", "true", "yes", "on"].contains(value.lowercased()), forKey: key)
             } else if integerKeys.contains(key), let integer = Int(value) {
@@ -145,12 +141,6 @@ enum ProviderQuotaWidgetProfileStore {
             ProviderQuotaWidgetAppearanceSettings.criticalColorKey: ProviderQuotaWidgetAppearanceSettings.defaultCriticalColor.rawValue,
             ProviderQuotaWidgetAppearanceSettings.staleColorKey: ProviderQuotaWidgetAppearanceSettings.defaultStaleColor.rawValue,
             ProviderQuotaWidgetAppearanceSettings.unavailableColorKey: ProviderQuotaWidgetAppearanceSettings.defaultUnavailableColor.rawValue,
-            ProviderQuotaWidgetAppearanceSettings.warningRemainingPercentKey: String(ProviderQuotaWidgetAppearanceSettings.defaultWarningRemainingPercent),
-            ProviderQuotaWidgetAppearanceSettings.criticalRemainingPercentKey: String(ProviderQuotaWidgetAppearanceSettings.defaultCriticalRemainingPercent),
-            ProviderQuotaWidgetAppearanceSettings.paceTolerancePercentKey: String(ProviderQuotaWidgetAppearanceSettings.defaultPaceTolerancePercent),
-            ProviderQuotaWidgetAppearanceSettings.paceWarningBurnRatePercentKey: String(ProviderQuotaWidgetAppearanceSettings.defaultPaceWarningBurnRatePercent),
-            ProviderQuotaWidgetAppearanceSettings.paceCriticalBurnRatePercentKey: String(ProviderQuotaWidgetAppearanceSettings.defaultPaceCriticalBurnRatePercent),
-            ProviderQuotaWidgetAppearanceSettings.paceMinimumElapsedHoursKey: String(ProviderQuotaWidgetAppearanceSettings.defaultPaceMinimumElapsedHours),
             ProviderQuotaWidgetAppearanceSettings.showsPaceMarkerKey: String(ProviderQuotaWidgetAppearanceSettings.defaultShowsPaceMarker),
             ProviderQuotaWidgetAppearanceSettings.trackColorKey: ProviderQuotaWidgetAppearanceSettings.defaultTrackColor.rawValue,
             ProviderQuotaWidgetAppearanceSettings.trackOpacityPercentKey: String(ProviderQuotaWidgetAppearanceSettings.defaultTrackOpacityPercent),

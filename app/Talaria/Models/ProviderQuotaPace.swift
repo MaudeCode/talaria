@@ -64,9 +64,9 @@ struct ProviderQuotaForecastSummary {
     }
 }
 
-enum ProviderQuotaUrgencyCalculator {
+enum ProviderQuotaDisplayWindow {
     /// The server names the pace, session, and weekly windows; `automatic` otherwise shows the first window.
-    static func displayWindow(
+    static func window(
         for source: ProviderQuotaWidgetSource,
         basis: ProviderQuotaWidgetColorBasis,
         selection: ProviderQuotaWidgetWindowSelection = .automatic
@@ -78,58 +78,5 @@ enum ProviderQuotaUrgencyCalculator {
         }
         guard let index, source.windows.indices.contains(index) else { return nil }
         return source.windows[index]
-    }
-
-    static func urgency(
-        window: ProviderQuotaWindow?,
-        pace: ProviderQuotaWindowPace?,
-        status: String,
-        isStale: Bool,
-        basis: ProviderQuotaWidgetColorBasis,
-        warningRemainingPercent: Int,
-        criticalRemainingPercent: Int,
-        paceTolerancePercent: Int,
-        paceWarningBurnRatePercent: Int,
-        paceCriticalBurnRatePercent: Int,
-        paceMinimumElapsedHours: Int
-    ) -> ProviderQuotaUrgency {
-        if isStale { return .stale }
-        guard status == "available",
-              let window,
-              let remaining = ProviderQuotaPresentation.percent(window, mode: .remaining)
-        else {
-            return status == "available" ? .healthy : .unavailable
-        }
-
-        if basis == .pace, let pace {
-            let projectionEligible = projectionEligible(
-                pace,
-                usedPercent: 100 - remaining,
-                minimumElapsedHours: paceMinimumElapsedHours
-            )
-            if projectionEligible && pace.burnRate >= Double(max(0, paceCriticalBurnRatePercent)) / 100 {
-                return .critical
-            }
-            if projectionEligible && pace.burnRate >= Double(max(0, paceWarningBurnRatePercent)) / 100 {
-                return .warning
-            }
-            return pace.paceDeltaPercent <= -Double(max(0, paceTolerancePercent)) ? .warning : .healthy
-        }
-
-        if remaining <= Double(max(0, criticalRemainingPercent)) { return .critical }
-        if remaining <= Double(max(0, warningRemainingPercent)) { return .warning }
-        return .healthy
-    }
-
-    // TAL-411 moves this threshold and the urgency above to the server.
-    private static func projectionEligible(
-        _ pace: ProviderQuotaWindowPace,
-        usedPercent: Double,
-        minimumElapsedHours: Int
-    ) -> Bool {
-        pace.elapsedMinutes >= Double(max(0, minimumElapsedHours) * 60)
-            && usedPercent >= 5
-            && pace.minutesToReset > 20
-            && (pace.projectedMinutesToEmpty ?? .infinity) < pace.minutesToReset
     }
 }
