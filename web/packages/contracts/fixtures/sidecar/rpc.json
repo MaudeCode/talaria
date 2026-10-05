@@ -74,6 +74,7 @@
           "process.background_list",
           "process.claim_delivery",
           "process.complete_delivery",
+          "process.consumed",
           "process.defer_delivery",
           "process.delegation_result",
           "process.drain",

@@ -110,7 +110,7 @@ under Hermes Agent's context-local home override (`talaria_sidecar/home.py`).
 | `models` | `context_length`, `estimate_tokens`, `capabilities`, `reasoning_efforts` | |
 | `aux` | `complete`, `resolve` | `complete`: `token` |
 | `text` | `image_mode`, `portal_tags` | |
-| `process` | `drain`, `requeue`, `mark_consumed`, `format_notification`, `list` | |
+| `process` | `drain`, `requeue`, `mark_consumed`, `consumed`, `format_notification`, `list` | |
 | `usage` | `account` | |
 | `gateway` | `restart` | `restart`: `progress` |
 | `chat` | `start`, `interrupt`, `steer`, `evict_agent` | `start`: `token`, `reasoning`, `interim_assistant`, `tool`, `tool_complete`, `approval`, `clarify`, `clarify_resolved`, `compressing`, `warning`, `status`, `context_status`; the settled transcript, usage, and terminal status come back as the result |

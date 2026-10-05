@@ -55,6 +55,21 @@
       }
     }
   ],
+  "process.consumed": [
+    {
+      "params": {
+        "process_ids": [
+          "proc_1",
+          "proc_2"
+        ]
+      },
+      "result": {
+        "consumed": [
+          "proc_1"
+        ]
+      }
+    }
+  ],
   "process.claim_delivery": [
     {
       "params": {

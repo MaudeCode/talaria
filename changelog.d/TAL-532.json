@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "When the assistant waits for its own background command to finish, it no longer starts an extra reply repeating that result after the turn ends.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
