@@ -1581,3 +1581,41 @@ describe('session detail ships each tool result view (TAL-315)', () => {
     }
   })
 })
+
+describe('session detail ships each file edit\'s diff (TAL-448)', () => {
+  let s: TestServer
+  beforeAll(async () => { s = await bootTestServer() })
+  afterAll(() => s.close())
+
+  const fixturePath = join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json')
+  const call = (id: string, name: string, args: Json): Json => ({ id, type: 'function', function: { name, arguments: JSON.stringify(args) } })
+  const diff = '--- a/src/app.ts\n+++ b/src/app.ts\n@@ -1,3 +1,4 @@\n import { run } from \'./run\'\n-run(1)\n+run(2)\n+run(3)\n export {}\n'
+  /** A patch whose result carries a unified diff, and a write whose result has none. */
+  const transcript: Json[] = [
+    { role: 'user', content: 'Edit app.ts and write notes', message_id: 'edit-user', timestamp: 4000, _turn_id: 'edit-run' },
+    { role: 'assistant', content: '', message_id: 'edit-calls', timestamp: 4001, _turn_id: 'edit-run', tool_calls: [call('call-patch', 'patch', { path: 'src/app.ts' }), call('call-write', 'write_file', { path: 'notes.txt' })] },
+    { role: 'tool', tool_call_id: 'call-patch', content: JSON.stringify({ success: true, diff, files_modified: ['src/app.ts'] }), timestamp: 4002, _turn_id: 'edit-run' },
+    { role: 'tool', tool_call_id: 'call-write', content: JSON.stringify({ bytes_written: 5, dirs_created: false }), timestamp: 4003, _turn_id: 'edit-run' },
+    { role: 'assistant', content: 'Done.', message_id: 'edit-answer', timestamp: 4004, _turn_id: 'edit-run' },
+  ]
+
+  it('matches the shared contract fixture in full detail and every window, on the calls and the scene alike', async () => {
+    const sid = String((await newSession(s)).session_id)
+    const session = s.deps.sessionStore.get(sid)
+    session.messages = structuredClone(transcript)
+    session.title = 'Tool edit diffs'
+    s.deps.sessionStore.save(session)
+    const fixture = (JSON.parse(readFileSync(fixturePath, 'utf8')) as Json).tool_edit_diffs as Json
+    const expected = fixture.expected as Json
+    expect(expected).toEqual({ 'call-patch': { added: 2, removed: 1, diff: diff.trimEnd(), truncated: false } })
+    for (const query of ['', '&msg_limit=50']) {
+      const served = (await json(await s.get(`/api/session?session_id=${sid}&messages=1${query}`))).session as Json
+      const messages = served.messages as Json[]
+      expect(messages, query).toEqual((fixture.session as Json).messages)
+      const edits = (calls: Json[]): Json => Object.fromEntries(calls.filter((c) => c.edit_diff !== undefined).map((c) => [String(c.id), c.edit_diff] as const))
+      expect(edits(messages.find((m) => m.message_id === 'edit-calls')?.tool_calls as Json[]), query).toEqual(expected)
+      const rows = ((messages.find((m) => m.message_id === 'edit-answer')?._anchor_activity_scene as Json).activity_rows as Json[]).filter((r) => r.role === 'tool')
+      expect(edits(rows.map((r) => r.tool as Json)), query).toEqual(expected)
+    }
+  })
+})

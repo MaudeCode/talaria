@@ -27,6 +27,15 @@ describe('shared monorepo contracts', () => {
     expect(turns[2]?.assistantRows?.map((row) => row.message.message_id)).toEqual(['contract-run-a-1', 'contract-run-a-2'])
   })
 
+  it('accepts each file edit\'s server diff on its call and scene row (TAL-448)', () => {
+    const fixture = (JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as { tool_edit_diffs: { expected: Record<string, unknown>; session: { messages: unknown } } }).tool_edit_diffs
+    const messages = MessageSchema.array().parse(fixture.session.messages)
+    const calls = messages.find((m) => m.message_id === 'edit-calls')?.tool_calls ?? []
+    expect(Object.fromEntries(calls.flatMap((call) => (call.edit_diff ? [[call.id, call.edit_diff]] : [])))).toEqual(fixture.expected)
+    const scene = messages.find((m) => m.message_id === 'edit-answer')?._anchor_activity_scene
+    expect(scene?.activity_rows.flatMap((row) => (row.tool?.edit_diff ? [[row.tool.id, row.tool.edit_diff]] : []))).toEqual(Object.entries(fixture.expected))
+  })
+
   it('renders each completed turn from its server scene', () => {
     const fixture: unknown = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8'))
     const session = SessionSchema.parse((fixture as { session: unknown }).session)

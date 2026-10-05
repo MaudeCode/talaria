@@ -2858,6 +2858,33 @@
                                     "target": {
                                       "type": "string"
                                     },
+                                    "edit_diff": {
+                                      "type": "object",
+                                      "properties": {
+                                        "added": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "removed": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "diff": {
+                                          "type": "string"
+                                        },
+                                        "truncated": {
+                                          "type": "boolean"
+                                        }
+                                      },
+                                      "required": [
+                                        "added",
+                                        "removed",
+                                        "diff",
+                                        "truncated"
+                                      ]
+                                    },
                                     "name": {
                                       "type": "string"
                                     },
@@ -3090,6 +3117,33 @@
                                             },
                                             "target": {
                                               "type": "string"
+                                            },
+                                            "edit_diff": {
+                                              "type": "object",
+                                              "properties": {
+                                                "added": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                "removed": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                "diff": {
+                                                  "type": "string"
+                                                },
+                                                "truncated": {
+                                                  "type": "boolean"
+                                                }
+                                              },
+                                              "required": [
+                                                "added",
+                                                "removed",
+                                                "diff",
+                                                "truncated"
+                                              ]
                                             },
                                             "args": {},
                                             "preview": {
@@ -3619,6 +3673,33 @@
                               },
                               "target": {
                                 "type": "string"
+                              },
+                              "edit_diff": {
+                                "type": "object",
+                                "properties": {
+                                  "added": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "removed": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "diff": {
+                                    "type": "string"
+                                  },
+                                  "truncated": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "added",
+                                  "removed",
+                                  "diff",
+                                  "truncated"
+                                ]
                               },
                               "name": {
                                 "type": "string"
@@ -4826,6 +4907,33 @@
                                     "target": {
                                       "type": "string"
                                     },
+                                    "edit_diff": {
+                                      "type": "object",
+                                      "properties": {
+                                        "added": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "removed": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "diff": {
+                                          "type": "string"
+                                        },
+                                        "truncated": {
+                                          "type": "boolean"
+                                        }
+                                      },
+                                      "required": [
+                                        "added",
+                                        "removed",
+                                        "diff",
+                                        "truncated"
+                                      ]
+                                    },
                                     "name": {
                                       "type": "string"
                                     },
@@ -5058,6 +5166,33 @@
                                             },
                                             "target": {
                                               "type": "string"
+                                            },
+                                            "edit_diff": {
+                                              "type": "object",
+                                              "properties": {
+                                                "added": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                "removed": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                "diff": {
+                                                  "type": "string"
+                                                },
+                                                "truncated": {
+                                                  "type": "boolean"
+                                                }
+                                              },
+                                              "required": [
+                                                "added",
+                                                "removed",
+                                                "diff",
+                                                "truncated"
+                                              ]
                                             },
                                             "args": {},
                                             "preview": {
@@ -5587,6 +5722,33 @@
                               },
                               "target": {
                                 "type": "string"
+                              },
+                              "edit_diff": {
+                                "type": "object",
+                                "properties": {
+                                  "added": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "removed": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "diff": {
+                                    "type": "string"
+                                  },
+                                  "truncated": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "added",
+                                  "removed",
+                                  "diff",
+                                  "truncated"
+                                ]
                               },
                               "name": {
                                 "type": "string"
@@ -6540,6 +6702,33 @@
                                     "target": {
                                       "type": "string"
                                     },
+                                    "edit_diff": {
+                                      "type": "object",
+                                      "properties": {
+                                        "added": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "removed": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "diff": {
+                                          "type": "string"
+                                        },
+                                        "truncated": {
+                                          "type": "boolean"
+                                        }
+                                      },
+                                      "required": [
+                                        "added",
+                                        "removed",
+                                        "diff",
+                                        "truncated"
+                                      ]
+                                    },
                                     "name": {
                                       "type": "string"
                                     },
@@ -6772,6 +6961,33 @@
                                             },
                                             "target": {
                                               "type": "string"
+                                            },
+                                            "edit_diff": {
+                                              "type": "object",
+                                              "properties": {
+                                                "added": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                "removed": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                "diff": {
+                                                  "type": "string"
+                                                },
+                                                "truncated": {
+                                                  "type": "boolean"
+                                                }
+                                              },
+                                              "required": [
+                                                "added",
+                                                "removed",
+                                                "diff",
+                                                "truncated"
+                                              ]
                                             },
                                             "args": {},
                                             "preview": {
@@ -7301,6 +7517,33 @@
                               },
                               "target": {
                                 "type": "string"
+                              },
+                              "edit_diff": {
+                                "type": "object",
+                                "properties": {
+                                  "added": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "removed": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "diff": {
+                                    "type": "string"
+                                  },
+                                  "truncated": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "added",
+                                  "removed",
+                                  "diff",
+                                  "truncated"
+                                ]
                               },
                               "name": {
                                 "type": "string"
@@ -9407,6 +9650,33 @@
                                     "target": {
                                       "type": "string"
                                     },
+                                    "edit_diff": {
+                                      "type": "object",
+                                      "properties": {
+                                        "added": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "removed": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "diff": {
+                                          "type": "string"
+                                        },
+                                        "truncated": {
+                                          "type": "boolean"
+                                        }
+                                      },
+                                      "required": [
+                                        "added",
+                                        "removed",
+                                        "diff",
+                                        "truncated"
+                                      ]
+                                    },
                                     "name": {
                                       "type": "string"
                                     },
@@ -9639,6 +9909,33 @@
                                             },
                                             "target": {
                                               "type": "string"
+                                            },
+                                            "edit_diff": {
+                                              "type": "object",
+                                              "properties": {
+                                                "added": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                "removed": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                "diff": {
+                                                  "type": "string"
+                                                },
+                                                "truncated": {
+                                                  "type": "boolean"
+                                                }
+                                              },
+                                              "required": [
+                                                "added",
+                                                "removed",
+                                                "diff",
+                                                "truncated"
+                                              ]
                                             },
                                             "args": {},
                                             "preview": {
@@ -10168,6 +10465,33 @@
                               },
                               "target": {
                                 "type": "string"
+                              },
+                              "edit_diff": {
+                                "type": "object",
+                                "properties": {
+                                  "added": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "removed": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "diff": {
+                                    "type": "string"
+                                  },
+                                  "truncated": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "added",
+                                  "removed",
+                                  "diff",
+                                  "truncated"
+                                ]
                               },
                               "name": {
                                 "type": "string"
@@ -12123,6 +12447,33 @@
                                     "target": {
                                       "type": "string"
                                     },
+                                    "edit_diff": {
+                                      "type": "object",
+                                      "properties": {
+                                        "added": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "removed": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "diff": {
+                                          "type": "string"
+                                        },
+                                        "truncated": {
+                                          "type": "boolean"
+                                        }
+                                      },
+                                      "required": [
+                                        "added",
+                                        "removed",
+                                        "diff",
+                                        "truncated"
+                                      ]
+                                    },
                                     "name": {
                                       "type": "string"
                                     },
@@ -12355,6 +12706,33 @@
                                             },
                                             "target": {
                                               "type": "string"
+                                            },
+                                            "edit_diff": {
+                                              "type": "object",
+                                              "properties": {
+                                                "added": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                "removed": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                "diff": {
+                                                  "type": "string"
+                                                },
+                                                "truncated": {
+                                                  "type": "boolean"
+                                                }
+                                              },
+                                              "required": [
+                                                "added",
+                                                "removed",
+                                                "diff",
+                                                "truncated"
+                                              ]
                                             },
                                             "args": {},
                                             "preview": {
@@ -12884,6 +13262,33 @@
                               },
                               "target": {
                                 "type": "string"
+                              },
+                              "edit_diff": {
+                                "type": "object",
+                                "properties": {
+                                  "added": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "removed": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "diff": {
+                                    "type": "string"
+                                  },
+                                  "truncated": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "added",
+                                  "removed",
+                                  "diff",
+                                  "truncated"
+                                ]
                               },
                               "name": {
                                 "type": "string"
@@ -14766,6 +15171,33 @@
                                     "target": {
                                       "type": "string"
                                     },
+                                    "edit_diff": {
+                                      "type": "object",
+                                      "properties": {
+                                        "added": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "removed": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "diff": {
+                                          "type": "string"
+                                        },
+                                        "truncated": {
+                                          "type": "boolean"
+                                        }
+                                      },
+                                      "required": [
+                                        "added",
+                                        "removed",
+                                        "diff",
+                                        "truncated"
+                                      ]
+                                    },
                                     "name": {
                                       "type": "string"
                                     },
@@ -14998,6 +15430,33 @@
                                             },
                                             "target": {
                                               "type": "string"
+                                            },
+                                            "edit_diff": {
+                                              "type": "object",
+                                              "properties": {
+                                                "added": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                "removed": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                "diff": {
+                                                  "type": "string"
+                                                },
+                                                "truncated": {
+                                                  "type": "boolean"
+                                                }
+                                              },
+                                              "required": [
+                                                "added",
+                                                "removed",
+                                                "diff",
+                                                "truncated"
+                                              ]
                                             },
                                             "args": {},
                                             "preview": {
@@ -15527,6 +15986,33 @@
                               },
                               "target": {
                                 "type": "string"
+                              },
+                              "edit_diff": {
+                                "type": "object",
+                                "properties": {
+                                  "added": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "removed": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "diff": {
+                                    "type": "string"
+                                  },
+                                  "truncated": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "added",
+                                  "removed",
+                                  "diff",
+                                  "truncated"
+                                ]
                               },
                               "name": {
                                 "type": "string"
@@ -16567,6 +17053,33 @@
                                     "target": {
                                       "type": "string"
                                     },
+                                    "edit_diff": {
+                                      "type": "object",
+                                      "properties": {
+                                        "added": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "removed": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "diff": {
+                                          "type": "string"
+                                        },
+                                        "truncated": {
+                                          "type": "boolean"
+                                        }
+                                      },
+                                      "required": [
+                                        "added",
+                                        "removed",
+                                        "diff",
+                                        "truncated"
+                                      ]
+                                    },
                                     "name": {
                                       "type": "string"
                                     },
@@ -16799,6 +17312,33 @@
                                             },
                                             "target": {
                                               "type": "string"
+                                            },
+                                            "edit_diff": {
+                                              "type": "object",
+                                              "properties": {
+                                                "added": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                "removed": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                "diff": {
+                                                  "type": "string"
+                                                },
+                                                "truncated": {
+                                                  "type": "boolean"
+                                                }
+                                              },
+                                              "required": [
+                                                "added",
+                                                "removed",
+                                                "diff",
+                                                "truncated"
+                                              ]
                                             },
                                             "args": {},
                                             "preview": {
@@ -17328,6 +17868,33 @@
                               },
                               "target": {
                                 "type": "string"
+                              },
+                              "edit_diff": {
+                                "type": "object",
+                                "properties": {
+                                  "added": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "removed": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "diff": {
+                                    "type": "string"
+                                  },
+                                  "truncated": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "added",
+                                  "removed",
+                                  "diff",
+                                  "truncated"
+                                ]
                               },
                               "name": {
                                 "type": "string"
@@ -18355,6 +18922,33 @@
                                     "target": {
                                       "type": "string"
                                     },
+                                    "edit_diff": {
+                                      "type": "object",
+                                      "properties": {
+                                        "added": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "removed": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "diff": {
+                                          "type": "string"
+                                        },
+                                        "truncated": {
+                                          "type": "boolean"
+                                        }
+                                      },
+                                      "required": [
+                                        "added",
+                                        "removed",
+                                        "diff",
+                                        "truncated"
+                                      ]
+                                    },
                                     "name": {
                                       "type": "string"
                                     },
@@ -18587,6 +19181,33 @@
                                             },
                                             "target": {
                                               "type": "string"
+                                            },
+                                            "edit_diff": {
+                                              "type": "object",
+                                              "properties": {
+                                                "added": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                "removed": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                "diff": {
+                                                  "type": "string"
+                                                },
+                                                "truncated": {
+                                                  "type": "boolean"
+                                                }
+                                              },
+                                              "required": [
+                                                "added",
+                                                "removed",
+                                                "diff",
+                                                "truncated"
+                                              ]
                                             },
                                             "args": {},
                                             "preview": {
@@ -19116,6 +19737,33 @@
                               },
                               "target": {
                                 "type": "string"
+                              },
+                              "edit_diff": {
+                                "type": "object",
+                                "properties": {
+                                  "added": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "removed": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "diff": {
+                                    "type": "string"
+                                  },
+                                  "truncated": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "added",
+                                  "removed",
+                                  "diff",
+                                  "truncated"
+                                ]
                               },
                               "name": {
                                 "type": "string"
@@ -20236,6 +20884,33 @@
                               },
                               "target": {
                                 "type": "string"
+                              },
+                              "edit_diff": {
+                                "type": "object",
+                                "properties": {
+                                  "added": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "removed": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "diff": {
+                                    "type": "string"
+                                  },
+                                  "truncated": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "added",
+                                  "removed",
+                                  "diff",
+                                  "truncated"
+                                ]
                               },
                               "args": {},
                               "preview": {
@@ -27052,6 +27727,33 @@
                                     "target": {
                                       "type": "string"
                                     },
+                                    "edit_diff": {
+                                      "type": "object",
+                                      "properties": {
+                                        "added": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "removed": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "diff": {
+                                          "type": "string"
+                                        },
+                                        "truncated": {
+                                          "type": "boolean"
+                                        }
+                                      },
+                                      "required": [
+                                        "added",
+                                        "removed",
+                                        "diff",
+                                        "truncated"
+                                      ]
+                                    },
                                     "name": {
                                       "type": "string"
                                     },
@@ -27284,6 +27986,33 @@
                                             },
                                             "target": {
                                               "type": "string"
+                                            },
+                                            "edit_diff": {
+                                              "type": "object",
+                                              "properties": {
+                                                "added": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                "removed": {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                "diff": {
+                                                  "type": "string"
+                                                },
+                                                "truncated": {
+                                                  "type": "boolean"
+                                                }
+                                              },
+                                              "required": [
+                                                "added",
+                                                "removed",
+                                                "diff",
+                                                "truncated"
+                                              ]
                                             },
                                             "args": {},
                                             "preview": {
@@ -27813,6 +28542,33 @@
                               },
                               "target": {
                                 "type": "string"
+                              },
+                              "edit_diff": {
+                                "type": "object",
+                                "properties": {
+                                  "added": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "removed": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "diff": {
+                                    "type": "string"
+                                  },
+                                  "truncated": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "added",
+                                  "removed",
+                                  "diff",
+                                  "truncated"
+                                ]
                               },
                               "name": {
                                 "type": "string"
@@ -28849,6 +29605,33 @@
                                         "target": {
                                           "type": "string"
                                         },
+                                        "edit_diff": {
+                                          "type": "object",
+                                          "properties": {
+                                            "added": {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            "removed": {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            "diff": {
+                                              "type": "string"
+                                            },
+                                            "truncated": {
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "added",
+                                            "removed",
+                                            "diff",
+                                            "truncated"
+                                          ]
+                                        },
                                         "name": {
                                           "type": "string"
                                         },
@@ -29081,6 +29864,33 @@
                                                 },
                                                 "target": {
                                                   "type": "string"
+                                                },
+                                                "edit_diff": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "added": {
+                                                      "type": "integer",
+                                                      "minimum": -9007199254740991,
+                                                      "maximum": 9007199254740991
+                                                    },
+                                                    "removed": {
+                                                      "type": "integer",
+                                                      "minimum": -9007199254740991,
+                                                      "maximum": 9007199254740991
+                                                    },
+                                                    "diff": {
+                                                      "type": "string"
+                                                    },
+                                                    "truncated": {
+                                                      "type": "boolean"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "added",
+                                                    "removed",
+                                                    "diff",
+                                                    "truncated"
+                                                  ]
                                                 },
                                                 "args": {},
                                                 "preview": {
@@ -29593,6 +30403,33 @@
                                   },
                                   "target": {
                                     "type": "string"
+                                  },
+                                  "edit_diff": {
+                                    "type": "object",
+                                    "properties": {
+                                      "added": {
+                                        "type": "integer",
+                                        "minimum": -9007199254740991,
+                                        "maximum": 9007199254740991
+                                      },
+                                      "removed": {
+                                        "type": "integer",
+                                        "minimum": -9007199254740991,
+                                        "maximum": 9007199254740991
+                                      },
+                                      "diff": {
+                                        "type": "string"
+                                      },
+                                      "truncated": {
+                                        "type": "boolean"
+                                      }
+                                    },
+                                    "required": [
+                                      "added",
+                                      "removed",
+                                      "diff",
+                                      "truncated"
+                                    ]
                                   },
                                   "name": {
                                     "type": "string"

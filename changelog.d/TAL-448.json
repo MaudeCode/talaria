@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "File-edit tool rows in a conversation show added and removed line counts and expand to the change's diff.",
+      "highlight": false,
+      "components": ["web", "app"]
+    }
+  ]
+}

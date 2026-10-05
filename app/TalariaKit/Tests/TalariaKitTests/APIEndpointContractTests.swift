@@ -806,6 +806,33 @@ final class SharedContractTests: XCTestCase {
         XCTAssertEqual(results(groups.first { $0.anchorMessageID == "view-calls" }?.toolCalls ?? []), expected)
     }
 
+    func testSharedWebSessionCarriesEachFileEditsDiff() throws {
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
+        // A release checks this App against every retained Web; one from before TAL-448 has no such example.
+        guard let example = object["tool_edit_diffs"] as? [String: Any] else { return }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let session = try decoder.decode(SessionDetail.self, from: JSONSerialization.data(withJSONObject: example["session"] as Any))
+        let messages = try XCTUnwrap(session.messages)
+        let want = ToolEditDiff(
+            added: 2,
+            removed: 1,
+            diff: "--- a/src/app.ts\n+++ b/src/app.ts\n@@ -1,3 +1,4 @@\n import { run } from './run'\n-run(1)\n+run(2)\n+run(3)\n export {}",
+            truncated: false
+        )
+        let expected = try XCTUnwrap(example["expected"] as? [String: Any])
+        XCTAssertEqual(ToolEditDiff(try JSONDecoder().decode(JSONValue.self, from: JSONSerialization.data(withJSONObject: expected["call-patch"] as Any))), want)
+        func edits(_ calls: [ToolCall]) -> [String: ToolEditDiff?] {
+            Dictionary(uniqueKeysWithValues: calls.map { ($0.id, $0.editDiff) })
+        }
+        // The patch carries its change on the call and its scene row alike; the write, whose result has no diff, carries none.
+        let answer = try XCTUnwrap(messages.first { $0.messageId == "edit-answer" })
+        let timeline = try XCTUnwrap(AssistantActivityTimeline.authoritativeScene(message: answer))
+        XCTAssertEqual(edits(timeline.toolCalls), ["call-patch": want, "call-write": nil])
+        let groups = ToolCallGroup.groups(messages: messages, messageOffset: nil)
+        XCTAssertEqual(edits(groups.first { $0.anchorMessageID == "edit-calls" }?.toolCalls ?? []), ["call-patch": want, "call-write": nil])
+    }
+
     func testSharedWebSessionRendersServerBuiltTurnScenes() async throws {
         let data = try fixture("web-session")
         let session = session { request in

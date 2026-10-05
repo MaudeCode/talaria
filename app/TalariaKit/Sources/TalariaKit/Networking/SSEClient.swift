@@ -240,6 +240,8 @@ public struct ToolStreamEvent: Decodable, Equatable {
     public let target: String?
     /// TAL-315: the server's result sections, on a completion.
     public let resultView: ToolResultView?
+    /// TAL-448: a file edit's change, on a completion.
+    public let editDiff: ToolEditDiff?
 
     enum CodingKeys: String, CodingKey {
         case eventType = "event_type"
@@ -249,6 +251,7 @@ public struct ToolStreamEvent: Decodable, Equatable {
         case kind
         case target
         case resultView = "result_view"
+        case editDiff = "edit_diff"
         case duration
         case isError = "is_error"
         case stableID = "id"
@@ -264,7 +267,8 @@ public struct ToolStreamEvent: Decodable, Equatable {
         stableID: String? = nil,
         kind: ToolDisplayKind? = nil,
         target: String? = nil,
-        resultView: ToolResultView? = nil
+        resultView: ToolResultView? = nil,
+        editDiff: ToolEditDiff? = nil
     ) {
         self.eventType = eventType
         self.name = name
@@ -276,6 +280,7 @@ public struct ToolStreamEvent: Decodable, Equatable {
         self.kind = kind
         self.target = target
         self.resultView = resultView
+        self.editDiff = editDiff
     }
 
     public init(from decoder: Decoder) throws {
@@ -289,6 +294,7 @@ public struct ToolStreamEvent: Decodable, Equatable {
         kind = ToolDisplayKind(serverValue: container.decodeLossyStringIfPresent(forKey: .kind))
         target = container.decodeLossyStringIfPresent(forKey: .target)
         resultView = try? container.decodeIfPresent(ToolResultView.self, forKey: .resultView)
+        editDiff = try? container.decodeIfPresent(ToolEditDiff.self, forKey: .editDiff)
         stableID = container.decodeLossyStringIfPresent(forKey: .stableID)?.nonEmptyToolStreamID
     }
 }
@@ -527,6 +533,7 @@ private extension ToolStreamEvent {
         kind = nil
         target = nil
         resultView = nil
+        editDiff = nil
     }
 }
 

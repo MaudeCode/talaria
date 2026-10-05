@@ -1023,6 +1023,30 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
                                 "result_truncated": true,
                                 "result_chars": 26
                             ]
+                        ],
+                        // Prose on both sides keeps the edit its own row, not a group with the tool before it.
+                        ["row_id": "prose-3", "order_index": 4, "role": "prose", "text": "Fixture edit."],
+                        [
+                            "row_id": "tool:ui-fixture-edit",
+                            "order_index": 5,
+                            "role": "tool",
+                            "tool": [
+                                "id": "ui-fixture-edit",
+                                "name": "patch",
+                                "kind": "write",
+                                "target": "src/app.ts",
+                                "preview": "{\"success\": true}",
+                                "result": "{\"success\": true}",
+                                "done": true,
+                                "is_error": false,
+                                // TAL-448: the server's counts cover the whole diff; the shown diff was cut.
+                                "edit_diff": [
+                                    "added": 2,
+                                    "removed": 1,
+                                    "diff": "--- a/src/app.ts\n+++ b/src/app.ts\n@@ -1,3 +1,4 @@\n import { run } from './run'\n-run(1)\n+run(2)\n+run(3)",
+                                    "truncated": true
+                                ]
+                            ]
                         ]
                     ]
                 ]

@@ -5168,6 +5168,7 @@ public final class ChatViewModel {
                     kind: payload.kind,
                     target: payload.target,
                     resultView: payload.resultView,
+                    editDiff: payload.editDiff,
                     duration: payload.duration,
                     isError: payload.isError,
                     isCompleted: true

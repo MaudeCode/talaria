@@ -35,6 +35,7 @@ import { fallbackTitleFromExchange, firstExchangeSnippets, isGenericFallbackTitl
 import { WORKSPACE_BUSY_MESSAGE } from '../workspace/git.js'
 import type { WorkspaceRegistry } from '../workspace/workspaces.js'
 import { str } from '../util.js'
+import { toolEditDiff } from './tool-display.js'
 
 export const CHAT_LOCK_WAIT_SECONDS = 2
 const IMAGE_MODE_TIMEOUT_MS = 15_000
@@ -519,16 +520,19 @@ export class TurnRunner {
             case 'tool_complete': {
               // TAL-313: the server decides failure from the sidecar's raw result, which never leaves the server; TAL-315: so
               // are its display sections, which keep the stderr and exit code the flat preview drops.
-              const { raw_result: rawResult, todo_result: todoResult, ...complete } = data
+              const { raw_result: rawResult, todo_result: todoResult, result_diff: resultDiff, ...complete } = data
               const outcome = toolOutcome(rawResult)
               complete.is_error = outcome.is_error
               if (rawResult !== undefined) complete.result_view = outcome.result_view
+              // TAL-448: a file edit's change, counted over the whole diff the sidecar forwards; redacted with the frame.
+              const editDiff = toolEditDiff(data.name, { diff: resultDiff })
+              if (editDiff) complete.edit_diff = editDiff
               const tc = liveToolCalls[completedToolIndex(liveToolCalls, str(data.tid), data.name)]
               if (tc) {
                 const startedAt = toolStartedAt.get(tc)
                 if (startedAt !== undefined) complete.duration = Math.round(Math.max(0, deps.now() - startedAt) * 1000) / 1000
                 // TAL-315: the decided view too, so a failed or cancelled turn's snapshot keeps the sections shown live.
-                Object.assign(tc, { done: true, snippet: data.preview, is_error: complete.is_error, duration: complete.duration ?? null, ...(complete.result_view ? { result_view: complete.result_view } : {}) })
+                Object.assign(tc, { done: true, snippet: data.preview, is_error: complete.is_error, duration: complete.duration ?? null, ...(complete.result_view ? { result_view: complete.result_view } : {}), ...(editDiff ? { edit_diff: editDiff } : {}) })
               }
               const id = (tc && toolIds.get(tc)) || str(data.tid) || mintToolId()
               this.lastCompletedTool.set(streamId, id)
