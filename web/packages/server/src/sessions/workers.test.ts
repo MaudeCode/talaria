@@ -133,19 +133,21 @@ describe('async delegation delivery claims (TAL-459)', () => {
     const fresh = new FakeSidecar()
     const handshake = (): RuntimeDescribe => ({ rpc_version: SIDECAR_RPC_VERSION }) as RuntimeDescribe
     fresh.describe = handshake()
-    let failures = 1
+    let failures = 2
     fresh.respond('process.recover', () => { if (failures-- > 0) throw new Error('busy'); return { homes: 2 } })
+    const logged: string[] = []
     fresh.respond('process.drain', () => ({ events: [] }))
     const drain = new CompletionDrain({
       sidecar: () => fresh, baseHome: '/base', profileHome: () => '/base/profiles/work', activeProfile: () => 'work', store: s.deps.sessionStore, channels: s.deps.channels,
-      registry: s.deps.registry, startTurn: () => ({}), now: () => 0, log: () => undefined,
+      registry: s.deps.registry, startTurn: () => ({}), now: () => 0, log: (line) => { logged.push(line) },
     })
-    // A failed recovery still drains and is retried on the next pass; a recovered sidecar is not asked again until it restarts.
+    // A failed recovery still drains and is retried on every pass (warned once); a recovered sidecar is not asked again until it restarts.
     for (let i = 0; i < 3; i += 1) await drain.drainOnce()
     fresh.describe = handshake()
     await drain.drainOnce()
-    expect(fresh.calls.map((c) => c.method)).toEqual(['process.recover', 'process.drain', 'process.recover', 'process.drain', 'process.drain', 'process.recover', 'process.drain'])
-    expect(fresh.calls.filter((c) => c.method === 'process.recover').map((c) => c.params)).toEqual(Array(3).fill({ base_home: '/base' }))
+    expect(fresh.calls.map((c) => c.method)).toEqual(['process.recover', 'process.drain', 'process.recover', 'process.drain', 'process.recover', 'process.drain', 'process.recover', 'process.drain'])
+    expect(fresh.calls.filter((c) => c.method === 'process.recover').map((c) => c.params)).toEqual(Array(4).fill({ base_home: '/base' }))
+    expect(logged.filter((l) => l.includes('recovery failed'))).toHaveLength(1)
   })
 
   it('a restarted server does not deliver a delegation the previous one already delivered', async () => {

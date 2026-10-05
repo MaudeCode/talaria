@@ -13,7 +13,7 @@ from contextlib import closing
 from pathlib import Path
 
 from ..errors import InvalidParams, RpcError
-from ..home import profile_home_param, scoped_home
+from ..home import processes_recovered, profile_home_param, scoped_home
 from ..rpc import CallContext
 
 log = logging.getLogger("talaria_sidecar.process")
@@ -413,17 +413,24 @@ def delegation_result(home: Path, session_id: str, delegation_id: str) -> str:
 
 def recover(base_home: Path) -> int:
     """TAL-533: re-adopt every profile's checkpointed processes when a sidecar starts, so a process in a profile nobody
-    uses yet is watched (and its exit reported) from the start. Entering a home's scope recovers it once."""
+    uses yet is watched (and its exit reported) from the start. Entering a home's scope recovers it once; a home that
+    failed fails the call, so the server retries."""
     from hermes_cli.profiles import _PROFILE_ID_RE
 
     profiles_root = base_home / "profiles"
     named = sorted(p for p in profiles_root.iterdir() if p.is_dir() and _PROFILE_ID_RE.match(p.name)) if profiles_root.is_dir() else []
+    failed = []
     for home in [base_home, *named]:
         try:
             with scoped_home(home):
                 pass
-        except RpcError:  # an Agent without profile isolation refuses named profiles; their processes stay unadopted
+        except RpcError:  # an Agent without profile isolation refuses named profiles for good; their processes stay unadopted
             log.warning("Background process recovery skipped for %s", home, exc_info=True)
+            continue
+        if not processes_recovered(home):
+            failed.append(str(home))
+    if failed:
+        raise RpcError(f"background process recovery failed for {', '.join(failed)}")
     return 1 + len(named)
 
 

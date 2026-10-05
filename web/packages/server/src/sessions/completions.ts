@@ -75,6 +75,7 @@ export class CompletionDrain {
   private readonly pendingEmit = new Map<string, { payload: Dict; timer: NodeJS.Timeout }>()
   /** The handshake of the sidecar whose process registry already recovered every profile's checkpoint. */
   private recoveredFor: unknown = null
+  private recoveryWarnedFor: unknown = null
 
   constructor(private readonly deps: CompletionDrainDeps) {}
 
@@ -110,7 +111,9 @@ export class CompletionDrain {
         await sidecar.call('process.recover', { base_home: this.deps.baseHome })
         this.recoveredFor = describe
       } catch (error) {
-        this.deps.log(`[webui] WARNING: background process recovery failed; retrying: ${(error as Error).message}`)
+        // Retried on every pass; reported once per sidecar so a lasting failure does not flood the log.
+        if (this.recoveryWarnedFor !== describe) this.deps.log(`[webui] WARNING: background process recovery failed; retrying: ${(error as Error).message}`)
+        this.recoveryWarnedFor = describe
       }
     }
     const { events } = await sidecar.call('process.drain', { profile_home: this.deps.profileHome(this.deps.activeProfile()), max_events: 256 })

@@ -185,18 +185,20 @@ Background processes survive a sidecar restart through the Agent's
 each home's checkpoint. The registry is process-global, and a spawn rewrites
 the active home's checkpoint from it. So the server's completion drain calls
 `process.recover` with its base home once per sidecar handshake, before its
-first `process.drain`; a failed call is logged and retried on the next pass.
-The sidecar enters the base home and every `profiles/*` home under it, and
-entering a home's scope (`scoped_home`) runs
-`process_registry.recover_from_checkpoint()` there once per sidecar process, so
-a home first used later is still recovered before any call in it can spawn.
-Recovery adopts only a live PID whose recorded start time still matches, and it
-restores the `session_key` (the WebUI session id) that the server routes
-completions and Background rows by, so no server index is rebuilt. An adopted
-process has no reader thread: `process.drain` probes it on every pass, so a
-process in a profile nobody has used since the restart still reports its exit.
-That completion has an unknown exit code and no output history. A process that
-exited while no sidecar was running is not adopted and reports nothing.
+first `process.drain`, and retries it on every pass until it succeeds, logging
+the failure once per sidecar. The sidecar enters the base home and every
+`profiles/*` home under it, and entering a home's scope (`scoped_home`) runs
+`process_registry.recover_from_checkpoint()` there until it succeeds once per
+sidecar process, so a home first used later is still recovered before any call
+in it can spawn. A home whose recovery raised is not marked recovered: its next
+call retries, and `process.recover` fails. Recovery adopts only a live PID
+whose recorded start time still matches, and it restores the `session_key` (the
+WebUI session id) that the server routes completions and Background rows by, so
+no server index is rebuilt. An adopted process has no reader thread:
+`process.drain` probes it on every pass, so a process in a profile nobody has
+used since the restart still reports its exit. That completion has an unknown
+exit code and no output history. A process that exited while no sidecar was
+running is not adopted and reports nothing.
 
 ## Versioning
 

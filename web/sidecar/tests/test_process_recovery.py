@@ -85,3 +85,23 @@ def test_startup_recovery_reports_an_inactive_profiles_exit_before_that_profile_
         sidecar.close()
         sleeper.kill()
         sleeper.wait()
+
+
+@requires_agent
+def test_a_failed_recovery_is_retried_by_the_next_call(hermes_home: pathlib.Path) -> None:
+    sleeper = subprocess.Popen(["sleep", "300"])
+    # An entry the Agent cannot adopt makes its recovery raise; the home must not count as recovered.
+    (hermes_home / "processes.json").write_text(json.dumps([{"pid": sleeper.pid, "command": "sleep 300"}]))
+    sidecar = SidecarProcess(hermes_home)
+    try:
+        assert sidecar.result("runtime.handshake", {"rpc_version": SIDECAR_RPC_VERSION})["compatible"]
+        failed, _ = sidecar.call("process.recover", {"base_home": str(hermes_home)})
+        assert "error" in failed, failed
+        _checkpoint(hermes_home, "proc_retry", sleeper.pid, "web-a")
+        assert sidecar.result("process.recover", {"base_home": str(hermes_home)}) == {"homes": 1}
+        listed = sidecar.result("process.background_list", {"profile_home": str(hermes_home), "session_ids": ["web-a"]})["processes"]
+        assert [(p["process_id"], p["exited"]) for p in listed] == [("proc_retry", False)]
+    finally:
+        sidecar.close()
+        sleeper.kill()
+        sleeper.wait()
