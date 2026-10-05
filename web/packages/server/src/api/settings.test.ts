@@ -936,6 +936,118 @@ describe('provider quota windows carry server-computed pace (TAL-409)', () => {
   })
 })
 
+describe('OpenRouter cost history accrues on quota reads and ships server-computed pace (TAL-412)', () => {
+  const NOW = Date.parse('2026-09-28T08:00:00Z') / 1000
+  let s: TestServer
+  let usage: number | null = 2.52
+  let keyAvailable = true
+  let snapshotFile = ''
+  let configs: Map<string, Json>
+  const seed = (snapshots: { date: string; used: number | null }[]): void => { mkdirSync(join(s.state, 'cost-snapshots'), { recursive: true }); writeFileSync(snapshotFile, JSON.stringify({ provider: 'openrouter', snapshots: snapshots.map((e) => ({ ...e, limit: null })) })) }
+  const stored = (): { date: string; used: number | null }[] => (JSON.parse(readFileSync(snapshotFile, 'utf8')) as { snapshots: { date: string; used: number | null }[] }).snapshots
+  const history = async (): Promise<Json> => json(await s.get('/api/provider/cost-history?provider=openrouter'))
+  beforeAll(async () => {
+    const sidecar = new FakeSidecar()
+    s = await bootTestServer({ sidecar, now: () => NOW })
+    snapshotFile = join(s.state, 'cost-snapshots', 'openrouter.json')
+    configs = fakeConfigStore(sidecar)
+    writeFileSync(join(s.state, 'config.yaml'), '# seed\n')
+    configs.set(s.state, { model: { default: 'anthropic/claude-sonnet-4.6', provider: 'openrouter' } })
+    writeEnvFile(join(s.state, '.env'), { OPENROUTER_API_KEY: 'sk-or-synthetic-cost-history-1234' })
+    sidecar.respond('providers.model_ids', (params) => ({ provider: params.provider, model_ids: [] }))
+    sidecar.respond('providers.auth_status', (params) => ({ status: { logged_in: false, provider: params.provider ?? '', error: 'not logged in' } }))
+    const real = s.deps.fetch
+    s.deps.fetch = (input, init) => {
+      if (String(input instanceof Request ? input.url : input) !== 'https://openrouter.ai/api/v1/key') return real(input, init)
+      return Promise.resolve(keyAvailable ? Response.json({ data: { usage, limit: 100, limit_remaining: 50, label: 'synthetic' } }) : new Response('down', { status: 503 }))
+    }
+  })
+  afterAll(() => s.close())
+
+  it('a quota read records today\'s snapshot, so cost history shows it without being called first', async () => {
+    seed([{ date: '2026-09-27', used: 1.5 }])
+    usage = 2.52
+    expect((await json(await s.get('/api/provider/quota?provider=openrouter'))).status).toBe('available')
+    expect(stored()).toEqual([{ date: '2026-09-27', used: 1.5, limit: null }, { date: '2026-09-28', used: 2.52, limit: 100 }])
+    // The batched route updates the same day's snapshot in place.
+    usage = 3
+    const quotas = await json(await s.get('/api/provider/quotas'))
+    expect((quotas.sources as Json[]).find((q) => q.provider_id === 'openrouter')).toMatchObject({ status: 'available' })
+    expect(stored().at(-1)).toEqual({ date: '2026-09-28', used: 3, limit: 100 })
+    // An unavailable key endpoint writes nothing, yet history still shows the snapshot the quota reads recorded.
+    keyAvailable = false
+    try {
+      expect(await history()).toMatchObject({ status: 'unavailable', snapshots: [{ date: '2026-09-27', used: 1.5, delta: null, bar_percent: 0 }, { date: '2026-09-28', used: 3, delta: 1.5, bar_percent: 100 }], monthly_pace: 45, has_enough_data: true })
+    } finally {
+      keyAvailable = true
+    }
+  })
+
+  it('pace, budget percent and level, and bar heights follow the legacy formulas', async () => {
+    // A null `used` breaks two deltas, a drop resets the delta to `used`, and a tiny positive delta takes the 2% floor.
+    seed([{ date: '2026-09-22', used: 10 }, { date: '2026-09-23', used: null }, { date: '2026-09-24', used: 11 }, { date: '2026-09-25', used: 13 }, { date: '2026-09-26', used: 0.5 }, { date: '2026-09-27', used: 0.52 }])
+    usage = 2.52
+    await post(s, '/api/settings', { provider_cost_budget: null })
+    const body = await history()
+    expect(body).toMatchObject({ ok: true, status: 'available', window_days: 7, monthly_budget: null, monthly_pace: 33.9, has_enough_data: true, budget_percent: null, budget_level: null })
+    expect(body.snapshots).toEqual([
+      { date: '2026-09-22', used: 10, delta: null, bar_percent: 0 },
+      { date: '2026-09-23', used: null, delta: null, bar_percent: 0 },
+      { date: '2026-09-24', used: 11, delta: null, bar_percent: 0 },
+      { date: '2026-09-25', used: 13, delta: 2, bar_percent: 100 },
+      { date: '2026-09-26', used: 0.5, delta: 0.5, bar_percent: 25 },
+      { date: '2026-09-27', used: 0.52, delta: 0.02, bar_percent: 2 },
+      { date: '2026-09-28', used: 2.52, delta: 2, bar_percent: 100 },
+    ])
+    // round(33.9 / budget × 100): 79 is ok, 80 starts warn, 99 is still warn, 100 is over.
+    for (const [budget, percent, level] of [[42.91, 79, 'ok'], [42.37, 80, 'warn'], [34.24, 99, 'warn'], [33.9, 100, 'over']] as const) {
+      await post(s, '/api/settings', { provider_cost_budget: budget })
+      expect(await history()).toMatchObject({ monthly_budget: budget, monthly_pace: 33.9, budget_percent: percent, budget_level: level })
+    }
+    // The live fixture the Web contract test parses is this exact response.
+    await post(s, '/api/settings', { provider_cost_budget: 42.37 })
+    expect(await history()).toEqual((JSON.parse(readFileSync(join(import.meta.dirname, '../../../frontend/src/contracts/__fixtures__/live/provider_cost_history.json'), 'utf8')) as { body: unknown }).body)
+    await post(s, '/api/settings', { provider_cost_budget: null })
+  })
+
+  it('a single snapshot has no delta, so there is no pace, budget percent, or level', async () => {
+    rmSync(snapshotFile, { force: true })
+    await post(s, '/api/settings', { provider_cost_budget: 50 })
+    await s.get('/api/provider/quota?provider=openrouter')
+    expect(await history()).toMatchObject({ monthly_budget: 50, snapshots: [{ date: '2026-09-28', used: 2.52, delta: null, bar_percent: 0 }], monthly_pace: null, has_enough_data: false, budget_percent: null, budget_level: null })
+    await post(s, '/api/settings', { provider_cost_budget: null })
+  })
+
+  it('a key stored as config.yaml model.api_key or under a provider alias records and shows history too', async () => {
+    const envFile = join(s.state, '.env')
+    writeEnvFile(envFile, { OPENROUTER_API_KEY: null })
+    try {
+      for (const config of [{ model: { default: 'anthropic/claude-sonnet-4.6', provider: 'openrouter', api_key: 'sk-or-synthetic-model-key-1234' } }, { model: { default: 'claude-sonnet-4-6', provider: 'anthropic' }, providers: { OpenRouter: { api_key: 'sk-or-synthetic-alias-key-1234' } } }]) {
+        configs.set(s.state, config)
+        s.deps.agentConfig.invalidate()
+        s.deps.catalog.invalidate()
+        rmSync(snapshotFile, { force: true })
+        expect((await json(await s.get('/api/provider/quota?provider=openrouter'))).status).toBe('available')
+        expect(stored()).toEqual([{ date: '2026-09-28', used: 2.52, limit: 100 }])
+        expect(await history()).toMatchObject({ ok: true, status: 'available' })
+      }
+    } finally {
+      writeEnvFile(envFile, { OPENROUTER_API_KEY: 'sk-or-synthetic-cost-history-1234' })
+      configs.set(s.state, { model: { default: 'anthropic/claude-sonnet-4.6', provider: 'openrouter' } })
+      s.deps.agentConfig.invalidate()
+      s.deps.catalog.invalidate()
+    }
+  })
+
+  it('every cost-history branch answers its contract', async () => {
+    const { ProviderCostHistorySchema } = await import('@maudecode/talaria-web-contracts')
+    for (const provider of ['openrouter', 'zai', '']) {
+      const res = await s.get(`/api/provider/cost-history?provider=${provider}`)
+      expect(ProviderCostHistorySchema.safeParse(await res.json()).success).toBe(true)
+    }
+  })
+})
+
 describe('env file writer', () => {
   it('preserves comments and order, removes keys, appends new ones, and refuses newlines', () => {
     const dir = join(process.env.TMPDIR ?? '/tmp', `talaria-env-${String(process.pid)}-${String(Date.now())}`)

@@ -34654,29 +34654,162 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "history": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "provider": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "display_name": {
+                      "type": "string"
+                    },
+                    "supported": {
+                      "type": "boolean"
+                    },
+                    "status": {
+                      "type": "string",
+                      "description": "`available`, `unavailable` (the snapshots are the last known data), `no_key`, `unsupported`, or `missing_provider`."
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "window_days": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "snapshots": {
                       "type": "array",
                       "items": {
-                        "anyOf": [
-                          {},
-                          {
-                            "type": "null"
+                        "type": "object",
+                        "properties": {
+                          "date": {
+                            "type": "string",
+                            "description": "UTC day, `YYYY-MM-DD`."
+                          },
+                          "used": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "Cumulative OpenRouter usage in USD that day."
+                          },
+                          "delta": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "Spend since the previous day; the day's `used` after a credit reset; null for the first day or a missing `used`."
+                          },
+                          "bar_percent": {
+                            "type": "number",
+                            "description": "Bar height: `delta` as a percent of the window's largest delta, at least 2 for any positive delta, 0 for a null delta."
                           }
-                        ]
+                        },
+                        "required": [
+                          "date",
+                          "used",
+                          "delta",
+                          "bar_percent"
+                        ],
+                        "additionalProperties": {}
                       }
                     },
-                    "days": {
-                      "type": "array",
-                      "items": {
-                        "anyOf": [
-                          {},
-                          {
-                            "type": "null"
-                          }
-                        ]
-                      }
+                    "limit": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "label": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "monthly_budget": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Settings `provider_cost_budget`."
+                    },
+                    "monthly_pace": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Mean of the non-null deltas × 30, in USD rounded to cents; null without a delta."
+                    },
+                    "has_enough_data": {
+                      "type": "boolean",
+                      "description": "At least one non-null delta (two daily snapshots)."
+                    },
+                    "budget_percent": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "round(pace / budget × 100); null without a positive pace and a budget."
+                    },
+                    "budget_level": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "ok",
+                            "warn",
+                            "over"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "`warn` from 80%, `over` from 100%; null without `budget_percent`."
                     }
                   },
+                  "required": [
+                    "ok",
+                    "provider",
+                    "status",
+                    "message"
+                  ],
                   "additionalProperties": {}
                 }
               }

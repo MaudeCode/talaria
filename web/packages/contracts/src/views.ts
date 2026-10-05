@@ -494,6 +494,23 @@ export const ProviderQuotasSchema = z.looseObject({
   missing_source: z.boolean().describe('True when `?source=` names a source id this scope no longer has; `sources` is then empty.'),
   sources: z.array(QuotaSourceSchema).describe('Each live source id exactly once, ordered by `provider_id`, then `account_label`, then `source_id`. Clients render this list as-is; a `?source=` read returns that one row.'),
 })
+/** One day of OpenRouter spend on `/api/provider/cost-history` (TAL-412). */
+export const CostSnapshotSchema = z.looseObject({
+  date: z.string().describe('UTC day, `YYYY-MM-DD`.'), used: NullableNumber.describe('Cumulative OpenRouter usage in USD that day.'),
+  delta: NullableNumber.describe("Spend since the previous day; the day's `used` after a credit reset; null for the first day or a missing `used`."),
+  bar_percent: z.number().describe('Bar height: `delta` as a percent of the window\'s largest delta, at least 2 for any positive delta, 0 for a null delta.'),
+})
+/** Python `get_provider_cost_history`: OpenRouter daily spend with the server-computed monthly pace and budget standing. */
+export const ProviderCostHistorySchema = z.looseObject({
+  ok: z.boolean(), provider: NullableString, display_name: z.string().optional(), supported: z.boolean().optional(), status: z.string().describe('`available`, `unavailable` (the snapshots are the last known data), `no_key`, `unsupported`, or `missing_provider`.'), message: z.string(),
+  window_days: z.number().int().optional(), snapshots: z.array(CostSnapshotSchema).optional(), limit: NullableNumber.optional(), label: NullableString.optional(),
+  monthly_budget: NullableNumber.optional().describe('Settings `provider_cost_budget`.'),
+  monthly_pace: NullableNumber.optional().describe('Mean of the non-null deltas × 30, in USD rounded to cents; null without a delta.'),
+  has_enough_data: z.boolean().optional().describe('At least one non-null delta (two daily snapshots).'),
+  budget_percent: NullableNumber.optional().describe('round(pace / budget × 100); null without a positive pace and a budget.'),
+  budget_level: z.enum(['ok', 'warn', 'over']).nullable().optional().describe('`warn` from 80%, `over` from 100%; null without `budget_percent`.'),
+})
+export type ProviderCostHistory = z.infer<typeof ProviderCostHistorySchema>
 export const PersonalitiesSchema = z.looseObject({ personalities: z.array(z.looseObject({ name: z.string(), description: z.string().optional() })) })
 /** One auxiliary task slot in server order (TAL-388). The server owns ordering, normalization, and catalog matching. */
 export const AuxiliaryTaskSchema = z.looseObject({
