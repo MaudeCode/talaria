@@ -2462,7 +2462,8 @@ struct ChatView: View {
     }
 
     private func handleResponseCompletionSideEffects() {
-        if !viewModel.responseCompletionNeedsTranscriptRefresh {
+        let outcome = viewModel.responseCompletionOutcome
+        if outcome == .completed, !viewModel.responseCompletionNeedsTranscriptRefresh {
             viewModel.cacheCompletedResponse(modelContext: modelContext)
         }
 
@@ -2473,7 +2474,9 @@ struct ChatView: View {
             return
         }
 
-        ChatHaptics.assistantResponseCompleted(isEnabled: isHapticsEnabled)
+        if outcome == .completed {
+            ChatHaptics.assistantResponseCompleted(isEnabled: isHapticsEnabled)
+        }
 
         Task { @MainActor in
             defer { endResponseCompletionBackgroundTask() }
@@ -2484,9 +2487,10 @@ struct ChatView: View {
 
             await ResponseCompletionNotificationService.scheduleResponseCompletedIfAllowed(
                 sessionID: session.sessionId,
+                chatTitle: viewModel.displayTitle,
+                outcome: outcome,
                 preferenceEnabled: isResponseCompletionNotificationsEnabled
                     && !TalariaRelayConfigurationStore.ownsCompletionAlerts(for: server),
-                completedNormally: true,
                 sceneIsActive: completionContext.sceneIsActive
             )
         }

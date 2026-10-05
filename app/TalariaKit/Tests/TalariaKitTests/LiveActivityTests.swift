@@ -2055,7 +2055,7 @@ final class LiveActivityTests: XCTestCase {
                 }
             },
             endOrphan: { orphan, _ in ended.append(orphan.streamID); return true },
-            notify: { _ in }
+            notify: { _, _ in }
         )
 
         XCTAssertEqual(ended, ["done"])
@@ -2071,7 +2071,7 @@ final class LiveActivityTests: XCTestCase {
             notifiesOnCompletion: true,
             streamStatus: { _ in self.statusResponse(active: false) },
             endOrphan: { _, _ in endCount += 1; return true },
-            notify: { _ in }
+            notify: { _, _ in }
         )
 
         XCTAssertEqual(endCount, 0)
@@ -2092,7 +2092,7 @@ final class LiveActivityTests: XCTestCase {
             notifiesOnCompletion: true,
             streamStatus: { _ in self.statusResponse(active: false) },
             endOrphan: { _, _ in true },
-            notify: { notified.append($0.sessionID) }
+            notify: { orphan, _ in notified.append(orphan.sessionID) }
         )
 
         XCTAssertEqual(notified, ["s-recent"])
@@ -2117,7 +2117,7 @@ final class LiveActivityTests: XCTestCase {
             notifiesOnCompletion: true,
             streamStatus: { _ in self.statusResponse(active: false) },
             endOrphan: { orphan, _ in ended.append(orphan.streamID); return true },
-            notify: { notified.append($0.sessionID) }
+            notify: { orphan, _ in notified.append(orphan.sessionID) }
         )
 
         XCTAssertEqual(ended, ["stale"])
@@ -2139,7 +2139,7 @@ final class LiveActivityTests: XCTestCase {
             notifiesOnCompletion: true,
             streamStatus: { _ in self.statusResponse(active: false) },
             endOrphan: { _, _ in false },   // already final — nothing transitioned here
-            notify: { notified.append($0.sessionID) }
+            notify: { orphan, _ in notified.append(orphan.sessionID) }
         )
 
         XCTAssertTrue(notified.isEmpty)
@@ -2161,7 +2161,7 @@ final class LiveActivityTests: XCTestCase {
             notifiesOnCompletion: false,
             streamStatus: { _ in self.statusResponse(active: false) },
             endOrphan: { orphan, _ in ended.append(orphan.streamID); return true },
-            notify: { notified.append($0.sessionID) }
+            notify: { orphan, _ in notified.append(orphan.sessionID) }
         )
 
         XCTAssertEqual(ended, ["recent"])
@@ -2182,7 +2182,7 @@ final class LiveActivityTests: XCTestCase {
             notifiesOnCompletion: true,
             streamStatus: { _ in self.statusResponse(active: false) },
             endOrphan: { _, _ in true },
-            notify: { notified.append($0.sessionID) }
+            notify: { orphan, _ in notified.append(orphan.sessionID) }
         )
 
         XCTAssertTrue(notified.isEmpty)
@@ -2245,7 +2245,7 @@ final class LiveActivityTests: XCTestCase {
                 }
             },
             endOrphan: { orphan, outcome in endedWith[orphan.streamID] = outcome.status; return true },
-            notify: { _ in }
+            notify: { _, _ in }
         )
 
         XCTAssertEqual(endedWith["ok"], .complete)
@@ -2253,33 +2253,75 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertEqual(endedWith["stopped"], .cancelled)
     }
 
-    // #267: a recently silently-failed run must still be finalized but must NOT
-    // fire a "response complete" notification on the cold-launch pass — only a
-    // run that mapped to `.complete` notifies.
+    // A recently failed run notifies "Response failed"; a user Stop is finalized silently.
     @MainActor
-    func testReconcilerNotifiesOnlyCompletedTerminalStateOnColdLaunch() async {
+    func testReconcilerNotifiesCompletedAndFailedButNotStoppedOnColdLaunch() async {
         let now = Date(timeIntervalSince1970: 10_000)
         var ended: [String] = []
         var notified: [String] = []
+        var outcomes: [ResponseCompletionOutcome] = []
 
         await LiveActivityReconciler.reconcileOrphanedActivities(
             orphans: [
                 OrphanedLiveActivity(streamID: "failed", sessionID: "s-failed", updatedAt: now.addingTimeInterval(-60)),
-                OrphanedLiveActivity(streamID: "done", sessionID: "s-done", updatedAt: now.addingTimeInterval(-60))
+                OrphanedLiveActivity(streamID: "done", sessionID: "s-done", updatedAt: now.addingTimeInterval(-60)),
+                OrphanedLiveActivity(streamID: "stopped", sessionID: "s-stopped", updatedAt: now.addingTimeInterval(-60))
             ],
             now: now,
             notifiesOnCompletion: true,
             streamStatus: { streamID in
-                streamID == "failed"
-                    ? self.statusResponse(active: false, terminalState: "errored")
-                    : self.statusResponse(active: false, terminalState: "completed")
+                switch streamID {
+                case "failed": self.statusResponse(active: false, terminalState: "errored")
+                case "done": self.statusResponse(active: false, terminalState: "completed")
+                default: self.statusResponse(active: false, terminalState: "interrupted-by-user")
+                }
             },
             endOrphan: { orphan, _ in ended.append(orphan.streamID); return true },
-            notify: { notified.append($0.sessionID) }
+            notify: { orphan, outcome in
+                notified.append(orphan.sessionID)
+                outcomes.append(outcome)
+            }
         )
 
-        XCTAssertEqual(ended.sorted(), ["done", "failed"])  // both finalized
-        XCTAssertEqual(notified, ["s-done"])                // only the completed one notifies
+        XCTAssertEqual(ended.sorted(), ["done", "failed", "stopped"])  // all finalized
+        XCTAssertEqual(notified, ["s-failed", "s-done"])
+        XCTAssertEqual(outcomes, [.failed, .completed])
+    }
+
+    // An orphan the journal maps to failed schedules exactly one "Response failed"
+    // notification naming its chat.
+    @MainActor
+    func testReconcilerSchedulesOneFailedNotificationForAFailedOrphan() async {
+        let now = Date(timeIntervalSince1970: 10_000)
+        let scheduler = SpyResponseCompletionNotificationScheduler(status: .authorized)
+
+        await LiveActivityReconciler.reconcileOrphanedActivities(
+            orphans: [
+                OrphanedLiveActivity(
+                    streamID: "lost",
+                    sessionID: "s-lost",
+                    updatedAt: now.addingTimeInterval(-60),
+                    sessionTitle: "Deploy plan"
+                )
+            ],
+            now: now,
+            notifiesOnCompletion: true,
+            streamStatus: { _ in self.statusResponse(active: false, terminalState: "lost-worker-bookkeeping") },
+            endOrphan: { _, _ in true },
+            notify: { orphan, outcome in
+                await ResponseCompletionNotificationService.scheduleResponseCompletedIfAllowed(
+                    sessionID: orphan.sessionID,
+                    chatTitle: orphan.sessionTitle,
+                    outcome: outcome,
+                    preferenceEnabled: true,
+                    sceneIsActive: false,
+                    scheduler: scheduler
+                )
+            }
+        )
+
+        XCTAssertEqual(scheduler.scheduledRequests.map(\.title), ["Deploy plan"])
+        XCTAssertEqual(scheduler.scheduledRequests.map(\.body), ["Response failed"])
     }
 
 }

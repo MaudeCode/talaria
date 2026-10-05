@@ -84,7 +84,7 @@ final class ApprovalNotificationService {
             // Recheck device state after the permission read yields, before scheduling a banner.
             guard ResponseCompletionNotificationPolicy.shouldSchedule(
                 preferenceEnabled: preferenceEnabled() && !relayOwnsAlerts(server),
-                authorizationStatus: status, completedNormally: true, sceneIsActive: sceneIsActive()
+                authorizationStatus: status, sceneIsActive: sceneIsActive()
             ) else { return }
             await scheduler.schedule(ApprovalNotificationRequest(
                 sessionID: prompt.sessionID, publisherID: TalariaRelayClient.originURL(server)?.absoluteString

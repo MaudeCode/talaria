@@ -20,11 +20,14 @@ public struct OrphanedLiveActivity: Equatable {
     public let streamID: String
     public let sessionID: String
     public let updatedAt: Date
+    /// The chat title the activity last showed, for naming the chat in a reply notification.
+    public let sessionTitle: String
 
-    public init(streamID: String, sessionID: String, updatedAt: Date) {
+    public init(streamID: String, sessionID: String, updatedAt: Date, sessionTitle: String = "") {
         self.streamID = streamID
         self.sessionID = sessionID
         self.updatedAt = updatedAt
+        self.sessionTitle = sessionTitle
     }
 }
 

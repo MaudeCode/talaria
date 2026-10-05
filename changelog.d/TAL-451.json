@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Reply notifications sent by the app now name the chat, and a reply that fails while you are away now notifies you too.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}
