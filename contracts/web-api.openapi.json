@@ -1448,6 +1448,10 @@
                             "type": "boolean",
                             "description": "Web may archive or unarchive this session: never a subagent child."
                           },
+                          "can_delete": {
+                            "type": "boolean",
+                            "description": "Web may delete this session: never a read-only session (a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming)."
+                          },
                           "can_duplicate": {
                             "type": "boolean",
                             "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
@@ -1642,6 +1646,7 @@
                           "can_branch",
                           "can_pin",
                           "can_archive",
+                          "can_delete",
                           "can_duplicate"
                         ],
                         "additionalProperties": {}
@@ -1768,6 +1773,10 @@
                             "type": "boolean",
                             "description": "Web may archive or unarchive this session: never a subagent child."
                           },
+                          "can_delete": {
+                            "type": "boolean",
+                            "description": "Web may delete this session: never a read-only session (a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming)."
+                          },
                           "can_duplicate": {
                             "type": "boolean",
                             "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
@@ -1962,6 +1971,7 @@
                           "can_branch",
                           "can_pin",
                           "can_archive",
+                          "can_delete",
                           "can_duplicate"
                         ],
                         "additionalProperties": {}
@@ -2333,6 +2343,10 @@
                             "type": "boolean",
                             "description": "Web may archive or unarchive this session: never a subagent child."
                           },
+                          "can_delete": {
+                            "type": "boolean",
+                            "description": "Web may delete this session: never a read-only session (a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming)."
+                          },
                           "can_duplicate": {
                             "type": "boolean",
                             "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
@@ -2527,6 +2541,7 @@
                           "can_branch",
                           "can_pin",
                           "can_archive",
+                          "can_delete",
                           "can_duplicate"
                         ],
                         "additionalProperties": {}
@@ -2556,6 +2571,94 @@
                     "active_profile"
                   ],
                   "additionalProperties": {}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/bulk": {
+      "post": {
+        "operationId": "sessions.bulk",
+        "summary": "Archive, unarchive or delete up to 200 sessions, one ordered result per id.",
+        "tags": [
+          "sessions"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "action": {
+                    "enum": [
+                      "archive",
+                      "unarchive",
+                      "delete"
+                    ],
+                    "type": "string"
+                  },
+                  "session_ids": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 200,
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
+                    }
+                  }
+                },
+                "required": [
+                  "action",
+                  "session_ids"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "session_id": {
+                            "type": "string"
+                          },
+                          "ok": {
+                            "type": "boolean"
+                          },
+                          "status": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "error": {
+                            "type": "string"
+                          },
+                          "state_db_cleanup_failed": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "session_id",
+                          "ok"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "results"
+                  ]
                 }
               }
             }
@@ -4208,6 +4311,10 @@
                           "type": "boolean",
                           "description": "Web may archive or unarchive this session: never a subagent child."
                         },
+                        "can_delete": {
+                          "type": "boolean",
+                          "description": "Web may delete this session: never a read-only session (a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming)."
+                        },
                         "can_duplicate": {
                           "type": "boolean",
                           "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
@@ -4424,6 +4531,7 @@
                         "can_branch",
                         "can_pin",
                         "can_archive",
+                        "can_delete",
                         "can_duplicate"
                       ],
                       "additionalProperties": {}
@@ -6257,6 +6365,10 @@
                           "type": "boolean",
                           "description": "Web may archive or unarchive this session: never a subagent child."
                         },
+                        "can_delete": {
+                          "type": "boolean",
+                          "description": "Web may delete this session: never a read-only session (a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming)."
+                        },
                         "can_duplicate": {
                           "type": "boolean",
                           "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
@@ -6473,6 +6585,7 @@
                         "can_branch",
                         "can_pin",
                         "can_archive",
+                        "can_delete",
                         "can_duplicate"
                       ],
                       "additionalProperties": {}
@@ -8052,6 +8165,10 @@
                           "type": "boolean",
                           "description": "Web may archive or unarchive this session: never a subagent child."
                         },
+                        "can_delete": {
+                          "type": "boolean",
+                          "description": "Web may delete this session: never a read-only session (a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming)."
+                        },
                         "can_duplicate": {
                           "type": "boolean",
                           "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
@@ -8268,6 +8385,7 @@
                         "can_branch",
                         "can_pin",
                         "can_archive",
+                        "can_delete",
                         "can_duplicate"
                       ],
                       "additionalProperties": {}
@@ -8491,6 +8609,10 @@
                           "type": "boolean",
                           "description": "Web may archive or unarchive this session: never a subagent child."
                         },
+                        "can_delete": {
+                          "type": "boolean",
+                          "description": "Web may delete this session: never a read-only session (a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming)."
+                        },
                         "can_duplicate": {
                           "type": "boolean",
                           "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
@@ -8685,6 +8807,7 @@
                         "can_branch",
                         "can_pin",
                         "can_archive",
+                        "can_delete",
                         "can_duplicate"
                       ],
                       "additionalProperties": {}
@@ -8859,6 +8982,10 @@
                           "type": "boolean",
                           "description": "Web may archive or unarchive this session: never a subagent child."
                         },
+                        "can_delete": {
+                          "type": "boolean",
+                          "description": "Web may delete this session: never a read-only session (a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming)."
+                        },
                         "can_duplicate": {
                           "type": "boolean",
                           "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
@@ -9053,6 +9180,7 @@
                         "can_branch",
                         "can_pin",
                         "can_archive",
+                        "can_delete",
                         "can_duplicate"
                       ],
                       "additionalProperties": {}
@@ -9234,6 +9362,10 @@
                           "type": "boolean",
                           "description": "Web may archive or unarchive this session: never a subagent child."
                         },
+                        "can_delete": {
+                          "type": "boolean",
+                          "description": "Web may delete this session: never a read-only session (a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming)."
+                        },
                         "can_duplicate": {
                           "type": "boolean",
                           "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
@@ -9428,6 +9560,7 @@
                         "can_branch",
                         "can_pin",
                         "can_archive",
+                        "can_delete",
                         "can_duplicate"
                       ],
                       "additionalProperties": {}
@@ -11000,6 +11133,10 @@
                           "type": "boolean",
                           "description": "Web may archive or unarchive this session: never a subagent child."
                         },
+                        "can_delete": {
+                          "type": "boolean",
+                          "description": "Web may delete this session: never a read-only session (a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming)."
+                        },
                         "can_duplicate": {
                           "type": "boolean",
                           "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
@@ -11216,6 +11353,7 @@
                         "can_branch",
                         "can_pin",
                         "can_archive",
+                        "can_delete",
                         "can_duplicate"
                       ],
                       "additionalProperties": {}
@@ -11464,6 +11602,10 @@
                           "type": "boolean",
                           "description": "Web may archive or unarchive this session: never a subagent child."
                         },
+                        "can_delete": {
+                          "type": "boolean",
+                          "description": "Web may delete this session: never a read-only session (a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming)."
+                        },
                         "can_duplicate": {
                           "type": "boolean",
                           "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
@@ -11658,6 +11800,7 @@
                         "can_branch",
                         "can_pin",
                         "can_archive",
+                        "can_delete",
                         "can_duplicate"
                       ],
                       "additionalProperties": {}
@@ -11829,6 +11972,10 @@
                           "type": "boolean",
                           "description": "Web may archive or unarchive this session: never a subagent child."
                         },
+                        "can_delete": {
+                          "type": "boolean",
+                          "description": "Web may delete this session: never a read-only session (a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming)."
+                        },
                         "can_duplicate": {
                           "type": "boolean",
                           "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
@@ -12023,6 +12170,7 @@
                         "can_branch",
                         "can_pin",
                         "can_archive",
+                        "can_delete",
                         "can_duplicate"
                       ],
                       "additionalProperties": {}
@@ -13797,6 +13945,10 @@
                           "type": "boolean",
                           "description": "Web may archive or unarchive this session: never a subagent child."
                         },
+                        "can_delete": {
+                          "type": "boolean",
+                          "description": "Web may delete this session: never a read-only session (a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming)."
+                        },
                         "can_duplicate": {
                           "type": "boolean",
                           "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
@@ -14013,6 +14165,7 @@
                         "can_branch",
                         "can_pin",
                         "can_archive",
+                        "can_delete",
                         "can_duplicate"
                       ],
                       "additionalProperties": {}
@@ -14357,6 +14510,10 @@
                           "type": "boolean",
                           "description": "Web may archive or unarchive this session: never a subagent child."
                         },
+                        "can_delete": {
+                          "type": "boolean",
+                          "description": "Web may delete this session: never a read-only session (a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming)."
+                        },
                         "can_duplicate": {
                           "type": "boolean",
                           "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
@@ -14551,6 +14708,7 @@
                         "can_branch",
                         "can_pin",
                         "can_archive",
+                        "can_delete",
                         "can_duplicate"
                       ],
                       "additionalProperties": {}
@@ -14723,6 +14881,10 @@
                           "type": "boolean",
                           "description": "Web may archive or unarchive this session: never a subagent child."
                         },
+                        "can_delete": {
+                          "type": "boolean",
+                          "description": "Web may delete this session: never a read-only session (a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming)."
+                        },
                         "can_duplicate": {
                           "type": "boolean",
                           "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
@@ -14917,6 +15079,7 @@
                         "can_branch",
                         "can_pin",
                         "can_archive",
+                        "can_delete",
                         "can_duplicate"
                       ],
                       "additionalProperties": {}
@@ -16521,6 +16684,10 @@
                           "type": "boolean",
                           "description": "Web may archive or unarchive this session: never a subagent child."
                         },
+                        "can_delete": {
+                          "type": "boolean",
+                          "description": "Web may delete this session: never a read-only session (a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming)."
+                        },
                         "can_duplicate": {
                           "type": "boolean",
                           "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
@@ -16737,6 +16904,7 @@
                         "can_branch",
                         "can_pin",
                         "can_archive",
+                        "can_delete",
                         "can_duplicate"
                       ],
                       "additionalProperties": {}
@@ -18403,6 +18571,10 @@
                           "type": "boolean",
                           "description": "Web may archive or unarchive this session: never a subagent child."
                         },
+                        "can_delete": {
+                          "type": "boolean",
+                          "description": "Web may delete this session: never a read-only session (a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming)."
+                        },
                         "can_duplicate": {
                           "type": "boolean",
                           "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
@@ -18619,6 +18791,7 @@
                         "can_branch",
                         "can_pin",
                         "can_archive",
+                        "can_delete",
                         "can_duplicate"
                       ],
                       "additionalProperties": {}
@@ -20272,6 +20445,10 @@
                           "type": "boolean",
                           "description": "Web may archive or unarchive this session: never a subagent child."
                         },
+                        "can_delete": {
+                          "type": "boolean",
+                          "description": "Web may delete this session: never a read-only session (a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming)."
+                        },
                         "can_duplicate": {
                           "type": "boolean",
                           "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
@@ -20488,6 +20665,7 @@
                         "can_branch",
                         "can_pin",
                         "can_archive",
+                        "can_delete",
                         "can_duplicate"
                       ],
                       "additionalProperties": {}
@@ -21829,6 +22007,10 @@
                           "type": "boolean",
                           "description": "Web may archive or unarchive this session: never a subagent child."
                         },
+                        "can_delete": {
+                          "type": "boolean",
+                          "description": "Web may delete this session: never a read-only session (a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming)."
+                        },
                         "can_duplicate": {
                           "type": "boolean",
                           "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
@@ -22023,6 +22205,7 @@
                         "can_branch",
                         "can_pin",
                         "can_archive",
+                        "can_delete",
                         "can_duplicate"
                       ],
                       "additionalProperties": {}
@@ -22194,6 +22377,10 @@
                           "type": "boolean",
                           "description": "Web may archive or unarchive this session: never a subagent child."
                         },
+                        "can_delete": {
+                          "type": "boolean",
+                          "description": "Web may delete this session: never a read-only session (a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming)."
+                        },
                         "can_duplicate": {
                           "type": "boolean",
                           "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
@@ -22388,6 +22575,7 @@
                         "can_branch",
                         "can_pin",
                         "can_archive",
+                        "can_delete",
                         "can_duplicate"
                       ],
                       "additionalProperties": {}
@@ -29077,6 +29265,10 @@
                           "type": "boolean",
                           "description": "Web may archive or unarchive this session: never a subagent child."
                         },
+                        "can_delete": {
+                          "type": "boolean",
+                          "description": "Web may delete this session: never a read-only session (a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming)."
+                        },
                         "can_duplicate": {
                           "type": "boolean",
                           "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
@@ -29293,6 +29485,7 @@
                         "can_branch",
                         "can_pin",
                         "can_archive",
+                        "can_delete",
                         "can_duplicate"
                       ],
                       "additionalProperties": {}
@@ -30938,6 +31131,10 @@
                               "type": "boolean",
                               "description": "Web may archive or unarchive this session: never a subagent child."
                             },
+                            "can_delete": {
+                              "type": "boolean",
+                              "description": "Web may delete this session: never a read-only session (a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming)."
+                            },
                             "can_duplicate": {
                               "type": "boolean",
                               "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
@@ -31154,6 +31351,7 @@
                             "can_branch",
                             "can_pin",
                             "can_archive",
+                            "can_delete",
                             "can_duplicate"
                           ],
                           "additionalProperties": {}

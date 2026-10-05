@@ -114,6 +114,30 @@ export const sessionsRouter = os.router({
       return ctx.deps.sessions.search(input.q ?? '', opts) as { sessions: Record<string, unknown>[]; all_profiles: boolean; active_profile: string; query?: string; count?: number }
     })),
     cleanupZeroMessage: os.sessions.cleanupZeroMessage.handler(({ context: { ctx } }) => run(() => ctx.deps.sessions.cleanup(true) as { ok: true; cleaned: number })),
+    // TAL-627: each id runs the single-session route's own guards, lock and cleanup, one at a time; a failure becomes
+    // that id's result and the rest still run.
+    bulk: os.sessions.bulk.handler(async ({ input, context: { ctx } }) => {
+      const results = []
+      for (const sid of input.session_ids) {
+        try {
+          guardVisibility(ctx, sid)
+          if (input.action === 'delete') {
+            const { state_db_cleanup_failed } = await ctx.deps.sessions.delete(sid)
+            results.push({ session_id: sid, ok: true, state_db_cleanup_failed: Boolean(state_db_cleanup_failed) })
+          } else {
+            await ctx.deps.sessions.archive(sid, input.action === 'archive')
+            results.push({ session_id: sid, ok: true })
+          }
+        } catch (error) {
+          const [status, message] = error instanceof HttpError ? [error.status, error.message]
+            : error instanceof HttpFailure ? [error.status, error.message]
+              : error instanceof SessionNotFound ? [404, 'Session not found']
+                : [500, sanitizeError(error)]
+          results.push({ session_id: sid, ok: false, status, error: message })
+        }
+      }
+      return { results }
+    }),
   },
   session: {
     // No visibility guard here: `detail()` answers 409 `session_profile_mismatch` so the frontend can switch to the owning profile.

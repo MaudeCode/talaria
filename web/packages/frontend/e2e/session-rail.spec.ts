@@ -8,7 +8,7 @@ test.use({ serviceWorkers: 'block' })
 const now = Math.floor(Date.now() / 1000)
 const row = (session_id: string, title: string, extra: Record<string, unknown> = {}) => ({
   session_id, title, is_streaming: false, attention: null, last_message_at: now - 600, updated_at: now - 600, pinned: false, archived: false, project_id: null,
-  is_cli_session: false, source_kind: 'webui', is_messaging_session: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_duplicate: true, ...extra,
+  is_cli_session: false, source_kind: 'webui', is_messaging_session: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, ...extra,
 })
 const ROWS = [
   row('rail-idle', 'Idle and selected'),

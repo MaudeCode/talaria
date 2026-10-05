@@ -13,6 +13,7 @@ const persisted = {
   can_branch: true,
   can_pin: true,
   can_archive: true,
+  can_delete: true,
   can_duplicate: true,
   source_kind: 'webui',
   is_messaging_session: false,
@@ -136,7 +137,7 @@ describe('canonical scene boundaries', () => {
     { name: 'emptyRows', kinds: ['tool'], final: 'Done.' },
   ])('preserves $name', async ({ name, kinds, final }) => {
     const { persistedActivity } = await import('./turnActivity')
-    const session = SessionSchema.parse({ session_id: 'fixture', title: 'Scene', is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_duplicate: true, source_kind: 'webui', is_messaging_session: false, sort_ts: 0, messages: [sceneCases[name as keyof typeof sceneCases]] })
+    const session = SessionSchema.parse({ session_id: 'fixture', title: 'Scene', is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, source_kind: 'webui', is_messaging_session: false, sort_ts: 0, messages: [sceneCases[name as keyof typeof sceneCases]] })
     const activity = persistedActivity(projectMessages(session.messages ?? [])[0]!)
     expect(activity.items.map((item) => item.kind)).toEqual(kinds)
     expect(activity.finalAnswer).toBe(final)

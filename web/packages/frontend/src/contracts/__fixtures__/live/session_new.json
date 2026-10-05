@@ -8,6 +8,7 @@
       "cache_write_tokens": 0,
       "can_archive": true,
       "can_branch": true,
+      "can_delete": true,
       "can_duplicate": true,
       "can_pin": true,
       "composer_draft": {},

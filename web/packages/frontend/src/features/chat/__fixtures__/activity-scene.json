@@ -6,6 +6,7 @@
     "can_branch": true,
     "can_pin": true,
     "can_archive": true,
+    "can_delete": true,
     "can_duplicate": true,
     "messages": [
       {

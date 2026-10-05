@@ -342,6 +342,58 @@ describe('session lifecycle over HTTP', () => {
     expect((await post(s, '/api/session/delete', { session_id: sid })).status).toBe(200)
   })
 
+  it('archives, unarchives and deletes many sessions in one bulk call, one ordered result per id (TAL-627)', async () => {
+    const persisted = async (): Promise<string> => {
+      const sid = String((await newSession(s)).session_id)
+      writeMessages(s, sid, [{ role: 'user', content: 'bulkprobe' }])
+      return sid
+    }
+    const [first, readOnly, subagent, running, last] = [await persisted(), await persisted(), await persisted(), await persisted(), await persisted()]
+    const tweak = (sid: string, apply: (x: Session) => void): void => { const stored = s.deps.sessionStore.get(sid); apply(stored); s.deps.sessionStore.save(stored) }
+    tweak(readOnly, (x) => { x.read_only = true })
+    tweak(subagent, (x) => { x.source_tag = 'subagent' })
+    tweak(running, (x) => { x.active_stream_id = 'bulkprobe-run' })
+    const bulk = (action: string, session_ids: string[]): Promise<Response> => post(s, '/api/sessions/bulk', { action, session_ids })
+    const archived = (sid: string): unknown => s.deps.sessionStore.get(sid).archived
+    const rows = (await json(await s.get('/api/sessions'))).sessions as Json[]
+    expect([first, readOnly, subagent].map((sid) => rows.find((r) => r.session_id === sid)?.can_delete)).toEqual([true, false, false])
+
+    const archive = await bulk('archive', [first, subagent, 'bulkprobe-unknown', last])
+    expect(archive.status, await archive.clone().text()).toBe(200)
+    expect((await json(archive)).results).toEqual([
+      { session_id: first, ok: true },
+      { session_id: subagent, ok: false, status: 400, error: 'Subagent sessions are view-only and cannot be archived from WebUI' },
+      { session_id: 'bulkprobe-unknown', ok: false, status: 404, error: 'Session not found' },
+      { session_id: last, ok: true },
+    ])
+    expect([archived(first), archived(subagent), archived(last)]).toEqual([true, false, true])
+
+    const unarchive = await json(await bulk('unarchive', [first, last]))
+    expect(unarchive.results).toEqual([{ session_id: first, ok: true }, { session_id: last, ok: true }])
+    expect([archived(first), archived(last)]).toEqual([false, false])
+
+    s.deps.registry.liveIds.add('bulkprobe-run')
+    try {
+      const del = await json(await bulk('delete', [readOnly, first, running, subagent, last]))
+      // No sidecar in this harness, so each delete reports its state.db cleanup as failed, as the single route does.
+      expect(del.results).toEqual([
+        { session_id: readOnly, ok: false, status: 400, error: 'Read-only imported sessions cannot be deleted from WebUI' },
+        { session_id: first, ok: true, state_db_cleanup_failed: true },
+        { session_id: running, ok: false, status: 409, error: 'Session has an active run; stop it before deleting' },
+        { session_id: subagent, ok: false, status: 400, error: 'Subagent sessions are view-only and cannot be deleted from WebUI' },
+        { session_id: last, ok: true, state_db_cleanup_failed: true },
+      ])
+    } finally {
+      s.deps.registry.liveIds.delete('bulkprobe-run')
+    }
+    for (const sid of [first, last]) expect(existsSync(join(s.state, 'sessions', `${sid}.json`)), sid).toBe(false)
+    for (const sid of [readOnly, running, subagent]) expect(existsSync(join(s.state, 'sessions', `${sid}.json`)), sid).toBe(true)
+
+    for (const body of [{ action: 'archive', session_ids: [] }, { action: 'archive', session_ids: [running, running] }, { action: 'archive', session_ids: Array.from({ length: 201 }, (_, i) => `bulk-${i}`) }, { action: 'pin', session_ids: [running] }, { action: 'archive', session_ids: ['../escape'] }]) {
+      expect((await post(s, '/api/sessions/bulk', body)).status, JSON.stringify(body).slice(0, 80)).toBe(400)
+    }
+  })
+
   it('imports, searches, and reports status and usage', async () => {
     let res = await post(s, '/api/session/import', { title: 'Imported', messages: [{ role: 'user', content: 'needle in the hay' }, { role: 'assistant', content: 'found' }] })
     expect(res.status).toBe(200)
@@ -430,7 +482,7 @@ describe('session lifecycle over HTTP', () => {
       expect((await post(s, '/api/session/branch', { session_id: sid })).status, sid).toBeGreaterThanOrEqual(400)
       // Pin, archive and duplicate refuse only the subagent child; each flag matches its endpoint's outcome.
       const allowed = sid === readOnly
-      for (const payload of [detail, hit]) expect(payload, sid).toMatchObject({ can_pin: allowed, can_archive: allowed, can_duplicate: allowed })
+      for (const payload of [detail, hit]) expect(payload, sid).toMatchObject({ can_pin: allowed, can_archive: allowed, can_duplicate: allowed, can_delete: false })
       for (const [path, body] of [['/api/session/pin', { session_id: sid, pinned: false }], ['/api/session/archive', { session_id: sid, archived: false }], ['/api/session/duplicate', { session_id: sid }]] as const) {
         expect((await post(s, path, body)).status === 200, `${sid} ${path}`).toBe(allowed)
       }

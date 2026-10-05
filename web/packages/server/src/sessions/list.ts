@@ -354,7 +354,7 @@ export const SIDEBAR_SESSION_RESPONSE_FIELDS = new Set([
   'is_cli_session', 'is_messaging_session', 'is_streaming', 'cron_running', 'active_stream_id', 'has_pending_user_message', 'pending_started_at', 'default_hidden',
   'worktree_path', 'worktree_branch', 'parent_session_id', 'parent_title', 'parent_source', 'relationship_type', 'pre_compression_snapshot', '_lineage_root_id',
   '_lineage_tip_id', '_compression_segment_count', '_lineage_collapsed_count', '_parent_lineage_root_id', '_parent_lineage_tip_id', '_cross_surface_child_session',
-  'match_type', 'match_preview', 'read_only', 'can_branch', 'can_pin', 'can_archive', 'can_duplicate', 'gateway_routing',
+  'match_type', 'match_preview', 'read_only', 'can_branch', 'can_pin', 'can_archive', 'can_delete', 'can_duplicate', 'gateway_routing',
 ])
 
 export function isCliSessionRow(row: Row): boolean {
@@ -500,7 +500,7 @@ export function isSubagentRow(row: Row): boolean {
  * TAL-312: the streaming and read-only flags every session payload ships. `is_streaming` holds only while the row's
  * `active_stream_id` is a live runtime stream, and a stale id goes out as `null`; `read_only` folds the persisted flag
  * with the view-only subagent rule (a not-claimable foreign row or owner-locked sidecar arrives already marked); the
- * `can_*` flags mirror the branch, pin, archive and duplicate gates; `sort_ts` is the time the row sorts and
+ * `can_*` flags mirror the branch, pin, archive, delete and duplicate gates; `sort_ts` is the time the row sorts and
  * date-buckets by (TAL-306). Clients render these as-is.
  */
 export function withSessionWireFlags<T extends Row>(row: T, activeStreamIds: ReadonlySet<string>): T {
@@ -523,6 +523,7 @@ export function withSessionWireFlags<T extends Row>(row: T, activeStreamIds: Rea
   // foreign row arrives with `can_duplicate: false`. Rename, move and delete follow `read_only` (the mutation gate).
   r.can_pin = !subagent
   r.can_archive = !subagent
+  r.can_delete = !r.read_only
   r.can_duplicate = !subagent && r.can_duplicate !== false
   r.sort_ts = sessionSortTimestamp(r)
   return row

@@ -7,7 +7,7 @@ import type { SessionRow } from '../../contracts'
 vi.mock(import('@tanstack/react-router'), async (importOriginal) => ({ ...(await importOriginal()), useNavigate: () => vi.fn() }))
 import { SessionContextMenu } from './SessionContextMenu'
 
-const writable: SessionRow = { session_id: 'mine', title: 'Mine', is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_duplicate: true, source_kind: 'webui', is_messaging_session: false, sort_ts: 0 }
+const writable: SessionRow = { session_id: 'mine', title: 'Mine', is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, source_kind: 'webui', is_messaging_session: false, sort_ts: 0 }
 
 async function menuItems(row: SessionRow): Promise<string[]> {
   render(<QueryClientProvider client={new QueryClient()}><SessionContextMenu row={row} active={false} /></QueryClientProvider>)
@@ -17,7 +17,7 @@ async function menuItems(row: SessionRow): Promise<string[]> {
 
 describe('SessionContextMenu', () => {
   it('offers only the actions the server allows for a delegated subagent child (TAL-312)', async () => {
-    const items = await menuItems({ ...writable, session_id: 'child', source_tag: 'subagent', read_only: true, can_branch: false, can_pin: false, can_archive: false, can_duplicate: false })
+    const items = await menuItems({ ...writable, session_id: 'child', source_tag: 'subagent', read_only: true, can_branch: false, can_pin: false, can_archive: false, can_delete: false, can_duplicate: false })
     for (const refused of ['Rename', 'Pin', 'Move', 'Duplicate', 'Archive', 'Delete']) expect(items.some((t) => t.startsWith(refused)), refused).toBe(false)
     expect(items.some((t) => t.startsWith('Export'))).toBe(true)
   })
