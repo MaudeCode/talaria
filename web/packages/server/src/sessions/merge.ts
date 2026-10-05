@@ -1129,8 +1129,10 @@ function stripOobBlocks(content: unknown): unknown {
  * reasoning-only assistants), orphaned tool rows and unanswered tool calls, keeps only API-safe keys, strips consumed
  * out-of-band blocks, and keeps a cancelled (`_recovered`) user prompt only where it separates two assistant turns —
  * otherwise the neighbours fuse cleanly or the prompt is stale, and replaying it would answer it again.
+ * `preserveApiContent` (Python `_sanitize_messages_for_agent`) keeps the Agent's `api_content` replay sidecar on
+ * user/assistant rows for turn history; compression and other projections strip it.
  */
-export function sanitizeMessagesForApi(messages: Message[]): Message[] {
+export function sanitizeMessagesForApi(messages: Message[], { preserveApiContent = false } = {}): Message[] {
   // Calls are OpenAI `tool_calls` or Anthropic-style `tool_use` content blocks; results name them by `tool_call_id`,
   // `tool_use_id`, or a user row's `tool_result` blocks.
   const toolUseIds = (msg: Message): string[] => (Array.isArray(msg.content) ? msg.content.flatMap((part) => (isDict(part) && part.type === 'tool_use' && str(part.id) ? [str(part.id)] : [])) : [])
@@ -1151,6 +1153,7 @@ export function sanitizeMessagesForApi(messages: Message[]): Message[] {
     if (msg.role === 'tool') { const tid = str(msg.tool_call_id) || str(msg.tool_use_id); if (!tid || !validToolCallIds.has(tid)) continue }
     const sanitized = Object.fromEntries(Object.entries(msg).filter(([k]) => API_SAFE_MSG_KEYS.has(k)))
     if (Array.isArray(sanitized.tool_calls) && !sanitized.tool_calls.length) Reflect.deleteProperty(sanitized, 'tool_calls')
+    if (preserveApiContent && (msg.role === 'user' || msg.role === 'assistant') && typeof msg.api_content === 'string' && msg.api_content) sanitized.api_content = msg.api_content
     if (recovered) sanitized._recovered = true
     if ('content' in sanitized) sanitized.content = stripOobBlocks(sanitized.content)
     if (sanitized.role) clean.push(sanitized)

@@ -404,8 +404,9 @@ export class TurnRunner {
     // TAL-493: one state.db read builds the history and marks where this turn's own rows begin.
     const startRead = deps.service().stateDbRead(s)
     const previousContext = structuredClone(deps.service().modelContext(s, startRead.rows))
-    // Python `_sanitize_messages_for_api`: the model never sees display-only rows or a replayed cancelled prompt.
-    const apiHistory = sanitizeMessagesForApi(previousContext)
+    // Python `_sanitize_messages_for_agent`: the model never sees display-only rows or a replayed cancelled prompt, and
+    // the Agent gets back the exact bytes it sent (TAL-541).
+    const apiHistory = sanitizeMessagesForApi(previousContext, { preserveApiContent: true })
     const workspaceCtx = workspaceContextPrefix(opts.workspace)
     // Before the first await: a Stop can land at any point after admission.
     // An eager save already put this turn's prompt in the transcript; the Stop fallback appends it once itself.

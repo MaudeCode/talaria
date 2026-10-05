@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Later messages in a chat keep the memory and plugin context the agent recalled for earlier messages.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

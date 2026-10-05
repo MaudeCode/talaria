@@ -1996,6 +1996,24 @@ describe('chat turns through the sidecar', () => {
     expect(history.map((m) => m.content)).toEqual(['from web', 'web reply', 'asked in the CLI', 'answered in the CLI'])
   })
 
+  it('replays the api_content the Agent stamped on a user row so later turns keep its recall context (TAL-541)', async () => {
+    const sid = await newSession(s)
+    const recall = 'what did we decide?\n\n<memory-context>use postgres</memory-context>'
+    let history: Json[] = []
+    sidecar.respond('chat.start', (params) => {
+      history = params.conversation_history
+      const user = history.length ? { role: 'user', content: str(params.user_message) } : { role: 'user', content: str(params.user_message), api_content: recall }
+      return completed([...history, user, { role: 'assistant', content: 'ok', api_content: '' }])
+    })
+    for (const message of ['what did we decide?', 'and then?']) {
+      const start = await json(await post(s, '/api/chat/start', { session_id: sid, message }))
+      await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    }
+    expect(history.map((m) => m.role)).toEqual(['user', 'assistant'])
+    expect(history[0]?.api_content).toBe(recall)
+    expect(history[1]).not.toHaveProperty('api_content')
+  })
+
   it('a persisted read-only session (an inherited messaging/Claude Code import) is never continued', async () => {
     const sid = await newSession(s)
     const imported = s.deps.sessionStore.get(sid)
@@ -2287,7 +2305,7 @@ describe('model-facing history (Python `_sanitize_messages_for_api`)', () => {
   it('drops display-only rows, orphaned tool traffic and a stale cancelled prompt, keeps API-safe keys', () => {
     const history = sanitizeMessagesForApi([
       { role: 'user', content: 'A', timestamp: 1, _recovered: true },
-      { role: 'user', content: 'B', timestamp: 2, attachments: [{ path: '/x' }] },
+      { role: 'user', content: 'B', timestamp: 2, attachments: [{ path: '/x' }], api_content: 'B + recall' },
       { role: 'assistant', content: '', reasoning: 'thinking only', timestamp: 3 },
       { role: 'assistant', content: 'partial', _partial: true, timestamp: 4 },
       { role: 'assistant', content: '', _error: true, timestamp: 5 },
@@ -2302,7 +2320,7 @@ describe('model-facing history (Python `_sanitize_messages_for_api`)', () => {
       ['user', 'B'], ['assistant', 'partial'], ['assistant', 'calls'], ['tool', 'ok'], ['assistant', 'one  two'], ['user', 'C'], ['assistant', 'after C'],
     ])
     // The recovered prompt A had no assistant on both sides (stale), C separates two assistant turns and stays (marker gone).
-    expect(history.every((m) => !('_recovered' in m) && !('attachments' in m) && !('timestamp' in m))).toBe(true)
+    expect(history.every((m) => !('_recovered' in m) && !('attachments' in m) && !('timestamp' in m) && !('api_content' in m))).toBe(true)
     expect((history[2]?.tool_calls as { id: string }[]).map((t) => t.id)).toEqual(['t1'])
   })
 
