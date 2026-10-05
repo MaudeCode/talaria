@@ -3591,5 +3591,175 @@
         "_turn_id": "contract-run-r"
       }
     ]
+  },
+  "tool_edit_diffs": {
+    "expected": {
+      "call-patch": {
+        "added": 2,
+        "removed": 1,
+        "diff": "--- a/src/app.ts\n+++ b/src/app.ts\n@@ -1,3 +1,4 @@\n import { run } from './run'\n-run(1)\n+run(2)\n+run(3)\n export {}",
+        "truncated": false
+      }
+    },
+    "session": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "Edit app.ts and write notes",
+          "message_id": "edit-user",
+          "timestamp": 4000,
+          "_turn_id": "edit-run"
+        },
+        {
+          "role": "assistant",
+          "content": "",
+          "message_id": "edit-calls",
+          "timestamp": 4001,
+          "tool_calls": [
+            {
+              "kind": "write",
+              "target": "src/app.ts",
+              "edit_diff": {
+                "added": 2,
+                "removed": 1,
+                "diff": "--- a/src/app.ts\n+++ b/src/app.ts\n@@ -1,3 +1,4 @@\n import { run } from './run'\n-run(1)\n+run(2)\n+run(3)\n export {}",
+                "truncated": false
+              },
+              "function": {
+                "name": "patch",
+                "arguments": "{\"path\":\"src/app.ts\"}"
+              },
+              "id": "call-patch",
+              "done": true,
+              "is_error": false,
+              "result": "{\"success\":true,\"diff\":\"--- a/src/app.ts\\n+++ b/src/app.ts\\n@@ -1,3 +1,4 @@\\n import { run } from './run'\\n-run(1)\\n+run(2)\\n+run(3)\\n export {}\\n\",\"files_modified\":[\"src/app.ts\"]}",
+              "result_view": {
+                "text": "{\n  \"success\": true,\n  \"diff\": \"--- a/src/app.ts\\n+++ b/src/app.ts\\n@@ -1,3 +1,4 @@\\n import { run } from './run'\\n-run(1)\\n+run(2)\\n+run(3)\\n export {}\\n\",\n  \"files_modified\": [\n    \"src/app.ts\"\n  ]\n}"
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "kind": "write",
+              "target": "notes.txt",
+              "function": {
+                "name": "write_file",
+                "arguments": "{\"path\":\"notes.txt\"}"
+              },
+              "id": "call-write",
+              "done": true,
+              "is_error": false,
+              "result": "{\"bytes_written\":5,\"dirs_created\":false}",
+              "result_view": {
+                "text": "{\n  \"bytes_written\": 5,\n  \"dirs_created\": false\n}"
+              },
+              "duration": null,
+              "type": "function"
+            }
+          ],
+          "_turn_id": "edit-run"
+        },
+        {
+          "role": "tool",
+          "content": "{\"success\":true,\"diff\":\"--- a/src/app.ts\\n+++ b/src/app.ts\\n@@ -1,3 +1,4 @@\\n import { run } from './run'\\n-run(1)\\n+run(2)\\n+run(3)\\n export {}\\n\",\"files_modified\":[\"src/app.ts\"]}",
+          "timestamp": 4002,
+          "tool_call_id": "call-patch",
+          "_turn_id": "edit-run"
+        },
+        {
+          "role": "tool",
+          "content": "{\"bytes_written\":5,\"dirs_created\":false}",
+          "timestamp": 4003,
+          "tool_call_id": "call-write",
+          "_turn_id": "edit-run"
+        },
+        {
+          "role": "assistant",
+          "content": "Done.",
+          "message_id": "edit-answer",
+          "timestamp": 4004,
+          "_anchor_activity_scene": {
+            "version": "activity_scene_v1",
+            "activity_rows": [
+              {
+                "row_id": "tool:call-patch",
+                "order_index": 0,
+                "role": "tool",
+                "created_at": 4001,
+                "tool": {
+                  "id": "call-patch",
+                  "name": "patch",
+                  "kind": "write",
+                  "target": "src/app.ts",
+                  "edit_diff": {
+                    "added": 2,
+                    "removed": 1,
+                    "diff": "--- a/src/app.ts\n+++ b/src/app.ts\n@@ -1,3 +1,4 @@\n import { run } from './run'\n-run(1)\n+run(2)\n+run(3)\n export {}",
+                    "truncated": false
+                  },
+                  "args": {
+                    "path": "src/app.ts"
+                  },
+                  "preview": null,
+                  "result": "{\"success\":true,\"diff\":\"--- a/src/app.ts\\n+++ b/src/app.ts\\n@@ -1,3 +1,4 @@\\n import { run } from './run'\\n-run(1)\\n+run(2)\\n+run(3)\\n export {}\\n\",\"files_modified\":[\"src/app.ts\"]}",
+                  "result_view": {
+                    "text": "{\n  \"success\": true,\n  \"diff\": \"--- a/src/app.ts\\n+++ b/src/app.ts\\n@@ -1,3 +1,4 @@\\n import { run } from './run'\\n-run(1)\\n+run(2)\\n+run(3)\\n export {}\\n\",\n  \"files_modified\": [\n    \"src/app.ts\"\n  ]\n}"
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                }
+              },
+              {
+                "row_id": "tool:call-write",
+                "order_index": 1,
+                "role": "tool",
+                "created_at": 4001,
+                "tool": {
+                  "id": "call-write",
+                  "name": "write_file",
+                  "kind": "write",
+                  "target": "notes.txt",
+                  "args": {
+                    "path": "notes.txt"
+                  },
+                  "preview": null,
+                  "result": "{\"bytes_written\":5,\"dirs_created\":false}",
+                  "result_view": {
+                    "text": "{\n  \"bytes_written\": 5,\n  \"dirs_created\": false\n}"
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                }
+              }
+            ],
+            "final_answer": "Done.",
+            "turn_duration": null,
+            "terminal_state": "completed",
+            "expanded_by_default": false,
+            "has_consumed_steering": false,
+            "file_changes": [
+              {
+                "path": "src/app.ts",
+                "action": "edited"
+              },
+              {
+                "path": "notes.txt",
+                "action": "edited"
+              }
+            ],
+            "activity_rows_total": 2,
+            "activity_rows_offset": 0,
+            "activity_rows_complete": true,
+            "activity_rows_omitted": 0,
+            "activity_scene_ref": "bf09e287ec6d6c164a72756617d81100e9aa4b4ea9acdf2d98cbae38cda5faf5"
+          },
+          "_turn_id": "edit-run"
+        }
+      ]
+    }
   }
 }

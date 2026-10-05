@@ -460,6 +460,27 @@ def test_tool_complete_ships_the_raw_result_and_no_error_decision(monkeypatch) -
     assert frames[3]["raw_result"] == ""
 
 
+def test_a_result_diff_reaches_the_server_whole(monkeypatch) -> None:
+    """TAL-448: a result's string ``diff`` travels whole as ``result_diff``; other results carry none."""
+    _patch(monkeypatch)
+    diff = "--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+" + "b" * 5000 + "\n"
+    results = [json.dumps({"success": True, "diff": diff}), {"diff": diff}, json.dumps({"bytes_written": 3}), "plain", {"diff": 3}]
+
+    class EditAgent(FakeAgent):
+        def run_conversation(self, **kwargs):
+            for i, result in enumerate(results):
+                self.kwargs["tool_start_callback"](f"t{i}", "patch", {"path": "x"})
+                self.kwargs["tool_complete_callback"](f"t{i}", "patch", {"path": "x"}, result)
+            return super().run_conversation(**kwargs)
+
+    monkeypatch.setattr(chat, "_agent_class", lambda: EditAgent)
+    ctx = Ctx()
+    assert chat.start(ctx, _params("st-diff"))["status"] == "completed"
+    frames = [data for event, data in ctx.frames if event == "tool_complete"]
+    assert [frame.get("result_diff") for frame in frames] == [diff, diff, None, None, None]
+    assert len(frames[0]["raw_result"]["diff"]) == 4000
+
+
 def test_usage_changes_and_the_full_todo_result_reach_the_server(monkeypatch) -> None:
     """TAL-397: a counter change is reported before the next content frame; the todo tool's result travels whole."""
     _patch(monkeypatch)

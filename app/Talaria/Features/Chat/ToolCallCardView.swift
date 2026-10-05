@@ -34,7 +34,7 @@ struct ToolCallCardView: View {
                 header
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(accessibilityText(statusDisplay))
+            .accessibilityLabel(Self.accessibilityText(for: toolCall, detail: statusDisplay.detailText))
             .accessibilityHint(isExpanded ? "Double tap to collapse details." : "Double tap to expand details.")
 
             if isExpanded {
@@ -55,12 +55,17 @@ struct ToolCallCardView: View {
         let displayContent = ToolCallDisplayFormatter.content(for: shownCall)
 
         return VStack(alignment: .leading, spacing: 7) {
-            if !displayContent.argumentRows.isEmpty {
-                argumentsSection(displayContent.argumentRows)
-            }
+            // TAL-448: a file edit shows its change; its arguments and result restate the same diff.
+            if let editDiff = toolCall.editDiff {
+                editDiffSection(editDiff)
+            } else {
+                if !displayContent.argumentRows.isEmpty {
+                    argumentsSection(displayContent.argumentRows)
+                }
 
-            if let result = displayContent.result {
-                resultSection(result)
+                if let result = displayContent.result {
+                    resultSection(result)
+                }
             }
 
             if toolCall.resultTruncated, fullResult == nil, loadFullToolResult != nil {
@@ -86,6 +91,12 @@ struct ToolCallCardView: View {
 
             titleText
 
+            // TAL-448: a file edit's added and removed line counts, beside its label.
+            if let editDiff = toolCall.editDiff {
+                DiffCountsLabel(additions: editDiff.added, deletions: editDiff.removed)
+                    .fixedSize()
+            }
+
             Spacer(minLength: 6)
 
             // TAL-372: a delegation row shows its subagents' progress, updated in place as they finish.
@@ -107,8 +118,12 @@ struct ToolCallCardView: View {
         .contentShape(Rectangle())
     }
 
-    private func accessibilityText(_ statusDisplay: ToolCallStatusDisplay) -> String {
-        let label = String(localized: "\(AssistantActivitySummary.label(for: toolCall)), \(statusDisplay.detailText)")
+    /// The row's spoken label: what the call did, its status, a file edit's counts, and a delegation's progress.
+    static func accessibilityText(for toolCall: ToolCall, detail: String) -> String {
+        var label = String(localized: "\(AssistantActivitySummary.label(for: toolCall)), \(detail)")
+        if let editDiff = toolCall.editDiff {
+            label += ", \(String(localized: "\(editDiff.added) added")), \(String(localized: "\(editDiff.removed) removed"))"
+        }
         guard let background = toolCall.background else { return label }
         return "\(label), \(Self.backgroundSummary(background))"
     }
@@ -149,11 +164,11 @@ struct ToolCallCardView: View {
 
     private var hasExpandableContent: Bool {
         let content = ToolCallDisplayFormatter.content(for: toolCall)
-        return !content.argumentRows.isEmpty || content.result != nil || shouldShowStatusDetail(displayContent: content)
+        return toolCall.editDiff != nil || !content.argumentRows.isEmpty || content.result != nil || shouldShowStatusDetail(displayContent: content)
     }
 
     private func shouldShowStatusDetail(displayContent: ToolCallDisplayContent) -> Bool {
-        let hasPrimaryContent = !displayContent.argumentRows.isEmpty || displayContent.result != nil
+        let hasPrimaryContent = toolCall.editDiff != nil || !displayContent.argumentRows.isEmpty || displayContent.result != nil
         return !hasPrimaryContent || !toolCall.isCompleted || toolCall.isError == true || toolCall.duration != nil
     }
 
@@ -226,6 +241,36 @@ struct ToolCallCardView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(7)
                 .chatTimelineAccessoryInsetSurface()
+        }
+    }
+
+    /// The diff in the workspace diff view's rows, each hunk under its line label; long lines wrap.
+    private func editDiffSection(_ editDiff: ToolEditDiff) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text("Changes")
+                .font(AppFont.caption2(weight: .semibold))
+                .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(DiffHunk.parse(editDiff.diff)) { hunk in
+                    Text(hunk.displayLabel)
+                        .font(AppFont.mono(style: .caption))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color(.tertiarySystemBackground))
+                    ForEach(hunk.lines) { DiffLineRow(line: $0) }
+                }
+            }
+            .textSelection(.enabled)
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+
+            if editDiff.truncated {
+                Text("Diff truncated")
+                    .font(AppFont.caption())
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 

@@ -274,6 +274,62 @@ describe('chat turns through the sidecar', () => {
     }
   })
 
+  it('ships a file edit\'s redacted, capped diff with whole-diff counts live and after reload (TAL-448)', async () => {
+    const secret = 'ghp_0123456789abcdefghijABCDEFGHIJ012345'
+    const added = Array.from({ length: 450 }, (_, i) => `+line ${String(i)}`)
+    const diff = ['--- a/app.env', '+++ b/app.env', '@@ -1,2 +1,2 @@', ' KEEP=1', '-OLD=1', `+GITHUB_TOKEN=${secret}`,
+      '--- a/notes.md', '+++ b/notes.md', '@@ -1,1 +1,451 @@', '--- dashes', ...added].join('\n') + '\n'
+    const patchResult = JSON.stringify({ success: true, diff, files_modified: ['app.env', 'notes.md'] })
+    const writeResult = JSON.stringify({ bytes_written: 3 })
+    const run = async () => {
+      const sid = await newSession(s)
+      sidecar.respond('chat.start', (params, emit) => {
+        emit({ event: 'tool', data: { event_type: 'tool.started', name: 'patch', args: { path: 'app.env' }, tid: 'call_patch' } })
+        // The sidecar's `raw_result` caps the diff; its whole text rides as `result_diff`.
+        emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'patch', preview: 'ok', args: { path: 'app.env' }, tid: 'call_patch', raw_result: { success: true, diff: diff.slice(0, 4000) }, result_diff: diff } })
+        emit({ event: 'tool', data: { event_type: 'tool.started', name: 'write_file', args: { path: 'b.txt' }, tid: 'call_write' } })
+        emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'write_file', preview: writeResult, args: { path: 'b.txt' }, tid: 'call_write', raw_result: { bytes_written: 3 } } })
+        return completed([
+          { role: 'user', content: str(params.user_message) },
+          { role: 'assistant', content: '', tool_calls: [
+            { id: 'call_patch', type: 'function', function: { name: 'patch', arguments: JSON.stringify({ path: 'app.env' }) } },
+            { id: 'call_write', type: 'function', function: { name: 'write_file', arguments: JSON.stringify({ path: 'b.txt' }) } },
+          ] },
+          { role: 'tool', tool_call_id: 'call_patch', content: patchResult },
+          { role: 'tool', tool_call_id: 'call_write', content: writeResult },
+          { role: 'assistant', content: 'Edited.' },
+        ])
+      })
+      sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Edit"', usage: null }))
+      const streamId = String((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'edit it' }))).stream_id)
+      const frames = (await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'stream_end')).filter((f) => f.event === 'tool_complete').map((f) => f.data as Json)
+      const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
+      const messages = detail.messages as Json[]
+      const scene = ((messages.at(-1)?._anchor_activity_scene as Json).activity_rows as Json[]).filter((row) => row.role === 'tool').map((row) => row.tool as Json)
+      return { frames, calls: messages[1]?.tool_calls as Json[], scene }
+    }
+
+    const { frames, calls, scene } = await run()
+    const live = frames[0]?.edit_diff as Json
+    expect(live).toMatchObject({ added: 451, removed: 2, truncated: true })
+    expect(String(live.diff).split('\n')).toHaveLength(400)
+    expect(String(live.diff)).toContain('+GITHUB_TOKEN=')
+    expect(String(live.diff)).not.toContain(secret)
+    expect(JSON.stringify(frames)).not.toContain('result_diff')
+    // After reload the persisted call and its scene row carry the same change; a write without a diff carries none.
+    for (const shown of [frames, calls, scene]) {
+      expect(shown.map((call) => call.edit_diff)).toEqual([live, undefined])
+    }
+    // With redaction off the diff shows as written, like the rest of the call.
+    s.deps.settings.save({ api_redact_enabled: false })
+    try {
+      const off = await run()
+      for (const shown of [off.frames, off.calls, off.scene]) expect(String(shown[0]?.edit_diff && (shown[0].edit_diff as Json).diff)).toContain(secret)
+    } finally {
+      s.deps.settings.save({ api_redact_enabled: true })
+    }
+  })
+
   it('ships one canonical tool-call id on live, replayed and pre-change journal tool frames', async () => {
     const sid = await newSession(s)
     sidecar.respond('chat.start', (params, emit) => {

@@ -43,3 +43,16 @@ final class ReasoningBlockViewTests: XCTestCase {
         return try XCTUnwrap(renderer.uiImage).size
     }
 }
+
+// TAL-448: a file edit's row speaks the server's counts beside its label; any other row is unchanged.
+final class ToolCallCardViewTests: XCTestCase {
+    func testAFileEditRowSpeaksItsAddedAndRemovedCounts() {
+        var edit = ToolCall(id: "call-patch", name: "patch", preview: nil, args: nil, kind: .write, target: "src/app.ts", isCompleted: true)
+        XCTAssertEqual(ToolCallCardView.accessibilityText(for: edit, detail: "Completed"), "Edited src/app.ts, Completed")
+        edit.editDiff = ToolEditDiff(added: 12, removed: 3, diff: "@@ -1 +1 @@\n-a\n+b", truncated: false)
+        XCTAssertEqual(
+            ToolCallCardView.accessibilityText(for: edit, detail: "Completed"),
+            "Edited src/app.ts, Completed, 12 added, 3 removed"
+        )
+    }
+}

@@ -14,6 +14,7 @@ extension ToolCall {
             kind: payload.kind ?? kind,
             target: payload.target ?? target,
             resultView: payload.resultView ?? resultView,
+            editDiff: payload.editDiff ?? editDiff,
             duration: payload.duration,
             isError: payload.isError,
             isCompleted: true,

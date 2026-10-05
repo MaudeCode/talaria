@@ -25,8 +25,15 @@ export type Attachment = z.infer<typeof AttachmentSchema>
 /** The server's display class for a tool call: clients map it to an icon and localized verb, and never classify names themselves. */
 export const ToolKindSchema = z.enum(['shell', 'read', 'list', 'search', 'web', 'write', 'skill', 'memory', 'delegate', 'unknown'])
 export type ToolKind = z.infer<typeof ToolKindSchema>
-/** Server-derived display fields every tool call carries: the kind, and the redacted first-line label of its main argument (`''` when none; omitted on a live frame with none, which keeps its start frame's target). */
-export const ToolDisplayFields = { kind: ToolKindSchema.optional(), target: z.string().optional() }
+/**
+ * TAL-448: a completed file-edit call's change, from its result's unified diff: `added` / `removed` count the whole diff's
+ * lines (file headers excluded); `diff` is the redacted diff, capped at 400 lines, with `truncated` when cut. Absent on a
+ * call whose result has no diff.
+ */
+export const ToolEditDiffSchema = z.object({ added: z.number().int(), removed: z.number().int(), diff: z.string(), truncated: z.boolean() })
+export type ToolEditDiff = z.infer<typeof ToolEditDiffSchema>
+/** Server-derived display fields every tool call carries: the kind, and the redacted first-line label of its main argument (`''` when none; omitted on a live frame with none, which keeps its start frame's target), and a file edit's `edit_diff`. */
+export const ToolDisplayFields = { kind: ToolKindSchema.optional(), target: z.string().optional(), edit_diff: ToolEditDiffSchema.optional() }
 
 /**
  * TAL-315: a tool result's display sections, decided by the server's one rule for live, replayed and persisted results

@@ -237,6 +237,19 @@ func testToolStreamEventDecodesTheServerResultView() throws {
     XCTAssertEqual(ToolCallDisplayFormatter.content(for: completed).result?.text, "built\nwarn\nExit code: 2")
 }
 
+func testToolStreamEventCarriesAFileEditsDiffOntoItsCall() throws {
+    let data = Data(#"{"id":"call-patch","name":"patch","kind":"write","target":"a.txt","edit_diff":{"added":2,"removed":1,"diff":"@@ -1 +1,2 @@\n-a\n+b\n+c","truncated":true}}"#.utf8)
+    let event = try JSONDecoder().decode(ToolStreamEvent.self, from: data)
+    let expected = ToolEditDiff(added: 2, removed: 1, diff: "@@ -1 +1,2 @@\n-a\n+b\n+c", truncated: true)
+    XCTAssertEqual(event.editDiff, expected)
+    let completed = ToolCall(id: "call-patch", name: "patch", preview: nil, args: nil).applyingCompletionPayload(event)
+    XCTAssertEqual(completed.editDiff, expected)
+    // A malformed field is dropped, never fatal to the frame.
+    let malformed = try JSONDecoder().decode(ToolStreamEvent.self, from: Data(#"{"id":"x","name":"patch","edit_diff":{"diff":"d"}}"#.utf8))
+    XCTAssertNil(malformed.editDiff)
+    XCTAssertEqual(malformed.name, "patch")
+}
+
 func testToolCallDisplayFormatterShowsNestedArgumentsReadably() {
     let rows = ToolCallDisplayFormatter.argumentRows(from: [
         "input": .object([

@@ -16,6 +16,8 @@ public struct ToolCall: Identifiable, Equatable {
     public var background: BackgroundLink?
     /// TAL-315: the server's result sections; nil from an older server, which shows `preview` as sent.
     public var resultView: ToolResultView?
+    /// TAL-448: a completed file edit's change (server field); nil on any other call, or from an older server.
+    public var editDiff: ToolEditDiff?
     /// TAL-331: a limited response clipped this call's result (server scene field); `GET /api/session/tool-result` has it whole.
     public var resultTruncated = false
 
@@ -27,6 +29,7 @@ public struct ToolCall: Identifiable, Equatable {
         kind: ToolDisplayKind? = nil,
         target: String? = nil,
         resultView: ToolResultView? = nil,
+        editDiff: ToolEditDiff? = nil,
         duration: Double? = nil,
         isError: Bool? = nil,
         isCompleted: Bool = false,
@@ -39,6 +42,7 @@ public struct ToolCall: Identifiable, Equatable {
         self.kind = kind
         self.target = target
         self.resultView = resultView
+        self.editDiff = editDiff
         self.duration = duration
         self.isError = isError
         self.isCompleted = isCompleted
@@ -92,6 +96,48 @@ public struct ToolResultView: Decodable, Equatable {
               let view = try? JSONDecoder().decode(ToolResultView.self, from: data)
         else { return nil }
         self = view
+    }
+}
+
+/// TAL-448: a file edit's change, decided on the server: `added` / `removed` count the whole diff, and `diff` is the
+/// redacted unified diff, cut to 400 lines when `truncated`.
+public struct ToolEditDiff: Decodable, Equatable {
+    public let added: Int
+    public let removed: Int
+    public let diff: String
+    public let truncated: Bool
+
+    public init(added: Int, removed: Int, diff: String, truncated: Bool) {
+        self.added = added
+        self.removed = removed
+        self.diff = diff
+        self.truncated = truncated
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case added, removed, diff, truncated
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        guard let added = container.decodeLossyIntIfPresent(forKey: .added),
+              let removed = container.decodeLossyIntIfPresent(forKey: .removed)
+        else {
+            throw DecodingError.dataCorruptedError(forKey: .added, in: container, debugDescription: "edit_diff without counts")
+        }
+        self.added = added
+        self.removed = removed
+        diff = container.decodeLossyStringIfPresent(forKey: .diff) ?? ""
+        truncated = container.decodeLossyBoolIfPresent(forKey: .truncated) ?? false
+    }
+
+    /// The change a decoded JSON field holds; nil when the server sent none.
+    init?(_ value: JSONValue?) {
+        guard case .object = value,
+              let data = try? JSONEncoder().encode(value),
+              let edit = try? JSONDecoder().decode(ToolEditDiff.self, from: data)
+        else { return nil }
+        self = edit
     }
 }
 
@@ -215,6 +261,7 @@ public struct ToolCallGroup: Identifiable, Equatable {
             kind: ToolDisplayKind(serverValue: object["kind"]?.stringValue),
             target: object["target"]?.stringValue,
             resultView: ToolResultView(object["result_view"]),
+            editDiff: ToolEditDiff(object["edit_diff"]),
             duration: object["duration"]?.numberValue,
             isError: object["is_error"]?.boolValue,
             isCompleted: object["done"]?.boolValue ?? true

@@ -136,6 +136,7 @@ public struct AssistantTurnLayout: Equatable {
         merged.duration = live.duration ?? call.duration
         merged.preview = live.preview ?? call.preview
         merged.resultView = live.resultView ?? call.resultView
+        merged.editDiff = live.editDiff ?? call.editDiff
         return merged
     }
 }
@@ -543,6 +544,7 @@ public struct AssistantActivityTimeline: Equatable {
                     kind: toolCall.kind ?? resolved.kind,
                     target: toolCall.target ?? resolved.target,
                     resultView: resolved.resultView ?? toolCall.resultView,
+                    editDiff: resolved.editDiff ?? toolCall.editDiff,
                     duration: resolved.duration ?? toolCall.duration,
                     isError: resolved.isError ?? toolCall.isError,
                     isCompleted: toolCall.isCompleted || resolved.isCompleted,
@@ -706,6 +708,7 @@ public struct AssistantActivityTimeline: Equatable {
             kind: ToolDisplayKind(serverValue: Self.string(object["kind"])),
             target: Self.string(object["target"]),
             resultView: ToolResultView(object["result_view"]),
+            editDiff: ToolEditDiff(object["edit_diff"]),
             duration: Self.number(object["duration"]),
             isError: Self.bool(object["is_error"]),
             isCompleted: Self.bool(object["done"]) == true
@@ -754,6 +757,7 @@ public struct AssistantActivityTimeline: Equatable {
             kind: ToolDisplayKind(serverValue: Self.string(object["kind"])),
             target: Self.string(object["target"]),
             resultView: ToolResultView(object["result_view"]),
+            editDiff: ToolEditDiff(object["edit_diff"]),
             duration: Self.number(object["duration"]),
             isError: isError,
             isCompleted: status == "completed" || Self.bool(object["done"]) == true

@@ -3,9 +3,9 @@
  * module computes for live frames and the public projection of persisted calls (`redact.ts` stamps them). Callers pass
  * redacted args, so the target never shows more than the arguments it came from.
  */
-import type { ToolKind } from '@maudecode/talaria-web-contracts'
+import type { ToolEditDiff, ToolKind } from '@maudecode/talaria-web-contracts'
 import { str } from '../util.js'
-import { isDict, TOOL_ARG_CONTENT_CAP, TOOL_ARG_CONTENT_KEYS } from './merge.js'
+import { isDict, messageText, TOOL_ARG_CONTENT_CAP, TOOL_ARG_CONTENT_KEYS } from './merge.js'
 
 /** Ordered rules over whole `_`-separated name tokens (a substring match would read `merge` as `rg`). */
 const RULES: [ToolKind, (tokens: Set<string>, name: string) => boolean][] = [
@@ -110,4 +110,46 @@ export function toolArgs(call: Record<string, unknown>): unknown {
 /** A live frame's or persisted call's tool name, in any of the shapes the transcript carries. */
 export function toolName(call: Record<string, unknown>): string {
   return str(call.name) || str(call.tool_name) || (isDict(call.function) ? str(call.function.name) : '')
+}
+
+/** TAL-448: the most diff lines (and code points) an `edit_diff` carries; its counts always cover the whole diff. */
+export const EDIT_DIFF_MAX_LINES = 400
+const EDIT_DIFF_MAX_CHARS = 64_000
+
+/**
+ * TAL-448: a file-edit call's change, from its completed result's unified `diff` (the Agent's `patch` result): added and
+ * removed lines counted over the whole diff, `---` / `+++` file headers excluded by walking each `@@` hunk's line counts,
+ * and the diff itself capped. Undefined for any other call, or a result without a string `diff` (`write_file`). Callers
+ * redact the returned `diff` with the rest of the call.
+ */
+export function toolEditDiff(name: unknown, result: unknown): ToolEditDiff | undefined {
+  if (toolKind(name) !== 'write') return undefined
+  let data: unknown = Array.isArray(result) ? messageText(result) : result
+  if (typeof data === 'string') { try { data = JSON.parse(data) } catch { return undefined } }
+  const diff = isDict(data) ? data.diff : undefined
+  if (typeof diff !== 'string' || !diff.trim()) return undefined
+  const lines = diff.replace(/\n$/, '').split('\n')
+  let added = 0
+  let removed = 0
+  let oldLeft = 0
+  let newLeft = 0
+  for (const [i, line] of lines.entries()) {
+    const hunk = /^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@/.exec(line)
+    if (hunk) { oldLeft = Number(hunk[1] ?? 1); newLeft = Number(hunk[2] ?? 1); continue }
+    // A file header pair always ends the hunk before it (a final line without a newline leaves its count short).
+    if (line.startsWith('--- ') && lines[i + 1]?.startsWith('+++ ')) { oldLeft = 0; newLeft = 0; continue }
+    if (oldLeft <= 0 && newLeft <= 0) continue
+    if (line.startsWith('+')) { added += 1; newLeft -= 1 } else if (line.startsWith('-')) { removed += 1; oldLeft -= 1 } else if (line.startsWith(' ') || line === '') { oldLeft -= 1; newLeft -= 1 }
+  }
+  let shown = lines.slice(0, EDIT_DIFF_MAX_LINES).join('\n')
+  const chars = Array.from(shown)
+  if (chars.length > EDIT_DIFF_MAX_CHARS) shown = chars.slice(0, EDIT_DIFF_MAX_CHARS).join('')
+  return { added, removed, diff: shown, truncated: lines.length > EDIT_DIFF_MAX_LINES || chars.length > EDIT_DIFF_MAX_CHARS }
+}
+
+/** A decided `edit_diff` (one a live call or a built scene row already carries), kept only when well-formed. */
+export function decidedEditDiff(value: unknown): ToolEditDiff | undefined {
+  if (!isDict(value)) return undefined
+  const { added, removed, diff, truncated } = value
+  return Number.isSafeInteger(added) && Number.isSafeInteger(removed) && typeof diff === 'string' && typeof truncated === 'boolean' ? { added: added as number, removed: removed as number, diff, truncated } : undefined
 }

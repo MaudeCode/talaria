@@ -7,6 +7,7 @@ import { buildActiveTurnToken } from '../redact.js'
 import { str } from '../util.js'
 import { stripAttachedFilesMarker, type Message } from './session.js'
 import type { MediaProjection } from '../workspace/media-refs.js'
+import { decidedEditDiff, toolEditDiff, toolName } from './tool-display.js'
 
 export const WORKSPACE_PREFIX_RE = /^\s*\[Workspace::v1:\s*(?:\\.|[^\]\\])+\]\s*/
 const LEGACY_WORKSPACE_PREFIX_RE = /^\s*\[Workspace:[^\]]+\]\s*/
@@ -594,21 +595,24 @@ export function withToolCallOutcomes<T>(messages: T[], sessionToolCalls: unknown
     }
     if (!calls.length && !records.length) return m
     const running = Boolean(activeTurnId) && m._turn_id === activeTurnId
-    const resolve = (id: string, rec: Record<string, unknown> | undefined, answered: boolean) => {
+    const resolve = (id: string, name: unknown, rec: Record<string, unknown> | undefined, answered: boolean) => {
       const reply = id ? replies.get(key(index, id)) : undefined
       const outcome = reply ? { ...toolOutcome(reply.content), flagged: reply.is_error } : null
+      // TAL-448: a file edit's change, from its full reply, else the one its live record decided.
+      const editDiff = reply ? toolEditDiff(name, reply.content) : decidedEditDiff(rec?.edit_diff)
       return {
+        ...(editDiff ? { edit_diff: editDiff } : {}),
         done: Boolean(reply) || answered || !running, is_error: outcome ? outcome.flagged || outcome.is_error : rec?.is_error === true,
         duration: finiteOrNull(rec?.duration), result: outcome ? outcome.result_text : typeof rec?.snippet === 'string' ? rec.snippet : null,
         result_view: outcome ? outcome.result_view : isDict(rec?.result_view) ? decidedResultView(rec.result_view) : typeof rec?.snippet === 'string' ? toolResultView(rec.snippet) : null,
       }
     }
     const projected = [
-      ...calls.map((call) => (isDict(call) ? { ...call, ...resolve(callId(call), recorded.get(callId(call)), false) } : call)),
+      ...calls.map((call) => (isDict(call) ? { ...call, ...resolve(callId(call), toolName(call), recorded.get(callId(call)), false) } : call)),
       ...records.map((tc) => ({
         ...(str(tc.tid) ? { id: str(tc.tid) } : {}), type: 'function', function: { name: str(tc.name), arguments: JSON.stringify(tc.args ?? {}) },
         // A session-level entry was answered; a live call says whether it completed.
-        ...resolve(str(tc.tid), tc, typeof tc.done === 'boolean' ? tc.done : true),
+        ...resolve(str(tc.tid), tc.name, tc, typeof tc.done === 'boolean' ? tc.done : true),
       })),
     ]
     return { ...m, tool_calls: projected }

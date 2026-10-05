@@ -88,6 +88,16 @@ _RAW_RESULT_MAX_KEYS = 64
 _RAW_RESULT_OUTCOME_KEYS = ("error", "exit_code", "exitCode", "success")
 
 
+def _result_diff(raw: Any) -> str | None:
+    """A dict (or JSON-object text) result's string ``diff`` field, whole; the server decides what it shows."""
+    try:
+        data = raw if isinstance(raw, dict) else json.loads(str(raw or ""))
+    except Exception:  # noqa: BLE001
+        return None
+    diff = data.get("diff") if isinstance(data, dict) else None
+    return diff if isinstance(diff, str) else None
+
+
 def _raw_result(raw: Any, limit: int = _TOOL_RESULT_SNIPPET_MAX) -> Any:
     """The tool result as the server's outcome rule reads it, bounded: a dict (or JSON-object text) keeps its first
     ``_RAW_RESULT_MAX_KEYS`` top-level fields plus its outcome fields, scalars as they are, text and non-empty nested
@@ -662,6 +672,10 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             # TAL-397: ``raw_result`` caps nested values, so the todo tool's list travels whole for the server's ``todo_state``.
             if name == "todo" and function_result is not None:
                 payload["todo_result"] = function_result if isinstance(function_result, str) else json.dumps(function_result, default=str)
+            # TAL-448: likewise a result's unified ``diff``, so the server's ``edit_diff`` counts cover the whole change.
+            diff = _result_diff(function_result)
+            if diff is not None:
+                payload["result_diff"] = diff
             cost = _delegation_cost_usd(name, function_result)
             if cost is not None:
                 payload["cost_usd"] = cost

@@ -493,6 +493,19 @@ final class ChatPrimaryStreamUITests: ChatUITestCase {
         XCTAssertTrue(app.staticTexts["fixture result, in full"].awaitExistence(timeout: 5))
         XCTAssertFalse(showFullOutput.exists)
         attachScreenshot(named: "Full tool result")
+
+        // TAL-448: a file edit shows the server's counts and expands to its diff, then collapses again.
+        let editRow = element(labelContaining: "Edited src/app.ts, Completed, 2 added, 1 removed")
+        XCTAssertTrue(editRow.awaitExistence(timeout: 5))
+        let addedLine = app.staticTexts["+run(2)"]
+        XCTAssertFalse(addedLine.exists)
+        tapCenter(of: editRow)
+        XCTAssertTrue(addedLine.awaitExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["-run(1)"].exists)
+        XCTAssertTrue(app.staticTexts["Diff truncated"].exists)
+        attachScreenshot(named: "Edit diff expanded")
+        tapCenter(of: editRow)
+        XCTAssertTrue(addedLine.awaitNonExistence(timeout: 5))
         XCTAssertNotNil(waitForComposer(timeout: 5))
     }
 
