@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Session search now finds chats that contain every word you type, in any order.",
+      "highlight": false,
+      "components": ["app", "web"]
+    }
+  ]
+}

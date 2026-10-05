@@ -581,6 +581,48 @@ describe('sidebar search filters (TAL-308)', () => {
   })
 })
 
+describe('multi-word session search (TAL-453)', () => {
+  let s: TestServer
+  beforeAll(async () => { s = await bootTestServer() })
+  afterAll(() => s.close())
+
+  it('matches every term in any order within the title, one message or one metadata field', async () => {
+    const seed = async (title: string, texts: string[], fields: Partial<Session> = {}): Promise<string> => {
+      const sid = String((await newSession(s)).session_id)
+      const stored = s.deps.sessionStore.get(sid)
+      Object.assign(stored, { title, ...fields })
+      stored.messages = texts.map((content, i) => ({ role: i % 2 ? 'assistant' : 'user', content, timestamp: 9000 + i }))
+      s.deps.sessionStore.save(stored)
+      return sid
+    }
+    const titled = await seed('Relay deploy checklist', ['nothing here'])
+    const content = await seed('Login', ['the bug in auth', 'fixed'])
+    const split = await seed('Split', ['auth is down', 'found a bug'])
+    const late = await seed('Long', [`a bug ${'filler '.repeat(30)}somewhere in auth`])
+    const metadata = await seed('Model', ['hello'], { model: 'quasar-turbo-max' })
+    const hits = async (q: string, extra = ''): Promise<Json[]> => (await json(await s.get(`/api/sessions/search?q=${encodeURIComponent(q)}${extra}`))).sessions as Json[]
+    const ids = (rows: Json[]): string[] => rows.map((r) => String(r.session_id))
+
+    expect(await hits('deploy relay')).toEqual([expect.objectContaining({ session_id: titled, match_type: 'title' })])
+    const authBug = await hits('auth bug')
+    expect(ids(authBug)).toEqual(expect.arrayContaining([content, late]))
+    expect(ids(authBug)).not.toContain(split)
+    expect(authBug.find((r) => r.session_id === content)).toMatchObject({ match_type: 'content', match_preview: 'the bug in auth' })
+    // The preview centres on the earliest term, even when a later term falls outside the excerpt.
+    expect(String(authBug.find((r) => r.session_id === late)?.match_preview)).toMatch(/^a bug filler/)
+    // Extra whitespace and duplicate terms do not change the result; one term behaves as an exact substring.
+    expect(ids(await hits('  relay   deploy relay '))).toEqual([titled])
+    expect(ids(await hits('checklist'))).toEqual([titled])
+    expect(ids(await hits('lay dep'))).toEqual([titled])
+    expect(ids(await hits('deploy-relay'))).toEqual([])
+    // The sidebar search applies the same rule to titles, metadata fields and messages.
+    const sidebar = '&project_id=none&include_archived=0'
+    expect(ids(await hits('checklist relay', sidebar))).toEqual([titled])
+    expect(await hits('max quasar', sidebar)).toEqual([expect.objectContaining({ session_id: metadata, match_type: 'metadata' })])
+    expect(ids(await hits('bug auth', sidebar)).sort()).toEqual([content, late].sort())
+  })
+})
+
 describe('session store disk freshness', () => {
   let s: TestServer
   beforeAll(async () => { s = await bootTestServer() })

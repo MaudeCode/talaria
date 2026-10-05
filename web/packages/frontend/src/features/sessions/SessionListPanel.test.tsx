@@ -48,6 +48,14 @@ describe('SessionListPanel search (TAL-308)', () => {
     await waitFor(() => { expect(shown()).toEqual(['delta', 'alpha']) })
     expect(screen.getByText('a zebra here')).toBeInTheDocument()
   })
+
+  it('shows a server match for words in another order (TAL-453)', async () => {
+    vi.mocked(api.searchSessions).mockResolvedValue({ sessions: [{ ...alpha, match_type: 'title' }], sidebar_filtered: true, all_profiles: false, active_profile: 'default' } as never)
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SessionListPanel /></QueryClientProvider>)
+    await screen.findByRole('button', { name: 'Proj' })
+    await userEvent.type(screen.getByRole('searchbox'), 'zebra alpha')
+    await waitFor(() => { expect(shown()).toEqual(['alpha']) })
+  })
 })
 
 describe('session list date groups (TAL-306)', () => {
