@@ -48,6 +48,11 @@ export class AgentConfig {
     }
   }
 
+  /** The config file's current fingerprint, so a value derived from it can tell it is stale; `unreadable` on a stat failure. */
+  fingerprint(profileHome: string): string {
+    try { return this.statKey(profileHome) } catch { return 'unreadable' }
+  }
+
   /** Parsed config.yaml (empty object when the file is missing). */
   async read(profileHome: string, opts: ConfigFileOptions = {}): Promise<Config> {
     const file = this.path(profileHome, opts)

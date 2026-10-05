@@ -101,11 +101,14 @@ function resolveWorkspace(ctx: RequestContext, s: Session, requested: unknown): 
   }
 }
 
+/** A `@provider:` id is split; any other model an explicit pick did not just choose is checked against the catalog (TAL-542). */
 function modelState(ctx: RequestContext, s: Session, body: Record<string, unknown>): [string | null, string | null, boolean] {
   const requestedModel = str(body.model) || s.model
   const requestedProvider = 'model_provider' in body ? (body.model_provider as string | null) : s.model_provider
   const [model, provider] = ctx.deps.sessions.deps.modelStateFromRequest(requestedModel, requestedProvider, s.model_provider)
-  return [model, provider, model !== requestedModel]
+  if (model !== requestedModel || !model || body.explicit_model_pick === true) return [model, provider, model !== requestedModel]
+  const repaired = ctx.deps.sessions.deps.repairSessionModel?.(s.profile ?? null, model, provider)
+  return repaired ? [repaired[0], repaired[1], true] : [model, provider, false]
 }
 
 /** `chat.start`; a `chat.steer` sent while a background turn runs starts the user's turn through it too (TAL-460). */
@@ -117,6 +120,8 @@ async function startChat(ctx: RequestContext, body: Record<string, unknown>): Pr
   // Python `_agent_runtime_barrier_response`: a stale local Agent checkout is refused with a typed 409 before any
   // session state is materialised, claimed, or mutated.
   await ensureAgentRuntimeCurrent(ctx.deps.sidecar())
+  // TAL-542: the stale-model check reads this catalog; it is built before the session is read so no await follows that read.
+  await ctx.deps.sessions.deps.warmSessionModelRepair?.()
   let s: Session
   try {
     s = ctx.deps.sessionStore.get(sid)
@@ -140,7 +145,10 @@ async function startChat(ctx: RequestContext, body: Record<string, unknown>): Pr
   // TAL-276: an attached file alone makes a turn; one with neither text nor a file path is refused.
   if (!msg && !attachments.some((att) => str(att.path))) throw new HttpError(400, 'message is required')
   // TAL-460: the user's message never joins a background turn; that turn stops quietly and this one takes its place.
-  if (await ctx.deps.turns.yieldBackgroundTurn(sid)) s = ctx.deps.sessionStore.get(sid)
+  if (await ctx.deps.turns.yieldBackgroundTurn(sid)) {
+    await ctx.deps.sessions.deps.warmSessionModelRepair?.()
+    s = ctx.deps.sessionStore.get(sid)
+  }
   // Python `compression_recovery_payload_for_session` + `is_generic_continuation_intent`.
   const recovery = s.compression_recovery
   const recoveryLive = recovery.terminal_state === 'compression_exhausted' && str(recovery.recommended_action || s.recommended_recovery_action) === 'start_focused_continuation'
@@ -264,6 +272,8 @@ export const chatRouter = os.router({
     if (payload.ok === false) throw new HttpError(payload.error === 'agent_running' ? 409 : 400, str(payload.message || payload.error || 'goal command failed'), payload)
     const kickoff = str(payload.kickoff_prompt).trim()
     if (kickoff) {
+      // TAL-542: after the goal RPCs, so the stale-model check reads a catalog for the profile the session now runs under.
+      await ctx.deps.sessions.deps.warmSessionModelRepair?.(s.profile)
       const workspace = resolveWorkspace(ctx, s, body.workspace)
       const [model, provider, normalized] = modelState(ctx, s, body)
       const started = ctx.deps.turns.start(s, { msg: kickoff, attachments: [], workspace, model, modelProvider: provider, normalizedModel: normalized, source: 'webui', goalRelated: true })
@@ -276,16 +286,19 @@ export const chatRouter = os.router({
     return payload
   })),
   background: {
-    start: os.background.start.handler(({ input, context: { ctx } }) => run(() => {
+    start: os.background.start.handler(({ input, context: { ctx } }) => run(async () => {
       const body = input as Record<string, unknown>
       requireField(body, 'session_id', 'prompt')
       // A subagent child's profile/workspace/context must never seed a runnable background session.
       if (ctx.deps.sessions.isSubagentViewOnly(str(body.session_id))) throw new HttpError(400, 'Subagent sessions are view-only and cannot run background tasks from WebUI')
+      // TAL-542: the background turn starts on the parent's repaired pair; the catalog is built before the parent is read.
+      await ctx.deps.sessions.deps.warmSessionModelRepair?.()
       const parent = getSession(ctx, str(body.session_id))
       if (ctx.deps.sessions.isReadOnly(parent) || parent.branchSourceReadonly) throw new HttpError(403, 'Read-only imported sessions cannot be continued from WebUI')
       const prompt = str(body.prompt).trim()
       if (!prompt) throw new HttpError(400, 'prompt is required')
-      const bg = ctx.deps.sessionStore.newSession({ workspace: parent.workspace, model: parent.model, modelProvider: parent.model_provider, profile: parent.profile })
+      const [model, modelProvider] = modelState(ctx, parent, {})
+      const bg = ctx.deps.sessionStore.newSession({ workspace: parent.workspace, model, modelProvider, profile: parent.profile })
       bg.title = `bg: ${prompt.slice(0, 60)}`
       ctx.deps.sessionStore.save(bg)
       // Python: `uuid.uuid4().hex[:8]`; a failed run still completes the task so `/api/background/status` can report it,
@@ -295,7 +308,7 @@ export const chatRouter = os.router({
       ctx.deps.background.trackCommand(parent.session_id, taskId, prompt)
       const cleanup = (): void => { try { ctx.deps.sessionStore.deleteFiles(bg.session_id, { tombstone: false }) } catch { /* best effort */ } }
       const started = ctx.deps.turns.start(bg, {
-        msg: prompt, attachments: [], workspace: parent.workspace, model: parent.model, modelProvider: parent.model_provider, source: 'webui',
+        msg: prompt, attachments: [], workspace: parent.workspace, model, modelProvider, source: 'webui',
         onDone: (answer) => { ctx.deps.background.settleCommand(parent.session_id, taskId, 'completed', answer); cleanup() },
         onFailed: () => { ctx.deps.background.settleCommand(parent.session_id, taskId, 'failed', '(background task failed)'); cleanup() },
       })
@@ -341,26 +354,29 @@ export const chatRouter = os.router({
       return { ok: true as const, session_id: s.session_id, task_id: pid, noop: true as const }
     })),
   },
-  btw: os.btw.handler(({ input, context: { ctx } }) => run(() => {
+  btw: os.btw.handler(({ input, context: { ctx } }) => run(async () => {
     const body = input as Record<string, unknown>
     requireField(body, 'session_id', 'question')
     const sid = str(body.session_id)
     if (!isSafeSessionId(sid)) throw new HttpError(404, 'Session not found')
     // Python: a subagent child's context must not be cloned into a runnable ephemeral session.
     if (ctx.deps.sessions.isSubagentViewOnly(sid)) throw new HttpError(400, 'Subagent sessions are view-only and cannot be used for /btw from WebUI')
+    // TAL-542: the side question starts on the chat's repaired pair; the catalog is built before the chat is read.
+    await ctx.deps.sessions.deps.warmSessionModelRepair?.()
     const s = getSession(ctx, sid)
     if (ctx.deps.sessions.isReadOnly(s) || s.branchSourceReadonly) throw new HttpError(403, 'Read-only imported sessions cannot be continued from WebUI')
     const question = str(body.question).trim()
     if (!question) throw new HttpError(400, 'question is required')
     // TAL-518: a side question runs in its own hidden session, so the chat's running turn does not block it.
-    const ephemeral = ctx.deps.sessionStore.newSession({ workspace: s.workspace, model: s.model, modelProvider: s.model_provider, profile: s.profile })
+    const [model, modelProvider] = modelState(ctx, s, {})
+    const ephemeral = ctx.deps.sessionStore.newSession({ workspace: s.workspace, model, modelProvider, profile: s.profile })
     ephemeral.messages = structuredClone(s.messages)
     ephemeral.context_messages = ctx.deps.sessions.sideQuestionContext(s)
     ephemeral.title = `btw: ${question.slice(0, 60)}`
     ctx.deps.sessionStore.save(ephemeral)
     // TAL-512: a failed or refused btw turn must not leave its copy of the parent conversation behind.
     const cleanup = (): void => { try { ctx.deps.sessionStore.deleteFiles(ephemeral.session_id, { tombstone: false }) } catch { /* best effort */ } }
-    const started = ctx.deps.turns.start(ephemeral, { msg: question, attachments: [], workspace: s.workspace, model: s.model, modelProvider: s.model_provider, source: 'webui', ephemeral: true, onFailed: cleanup })
+    const started = ctx.deps.turns.start(ephemeral, { msg: question, attachments: [], workspace: s.workspace, model, modelProvider, source: 'webui', ephemeral: true, onFailed: cleanup })
     if (started._status !== undefined && started._status >= 400) {
       cleanup()
       throw new HttpError(started._status, started.error ?? 'btw start failed')

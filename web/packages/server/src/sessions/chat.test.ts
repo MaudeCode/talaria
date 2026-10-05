@@ -2286,6 +2286,292 @@ describe('chat turns through the sidecar', () => {
   })
 })
 
+describe('stale cross-provider session models at chat start (TAL-542)', () => {
+  let s: TestServer
+  let sidecar: FakeSidecar
+  let seen: Json
+  beforeAll(async () => {
+    sidecar = new FakeSidecar()
+    s = await bootTestServer({ sidecar })
+    sidecar.respond('chat.start', (params, emit) => { seen = params; emit({ event: 'token', data: { text: 'ok' } }); return completed([{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'ok' }]) })
+    sidecar.respond('providers.auth_status', (p) => ({ status: { logged_in: false, provider: p.provider ?? '' } }))
+    sidecar.respond('plugins.providers', () => ({ providers: [] }))
+    sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: [] }))
+    writeFileSync(join(s.state, 'config.yaml'), '# seed\n')
+  })
+  afterAll(() => s.close())
+
+  /** The profile's config.yaml: its provider and default model, and each configured provider's model list. */
+  const useConfig = (provider: string, defaultModel: string, providers: Record<string, string[]> = {}): void => {
+    const config = { model: { provider, default: defaultModel }, providers: Object.fromEntries(Object.entries(providers).map(([pid, models]) => [pid, { base_url: `http://${pid}.test/v1`, models }])) }
+    sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config }))
+    s.deps.agentConfig.invalidate()
+    s.deps.catalog.invalidate()
+  }
+  const sessionWith = async (model: string, provider: string | null): Promise<string> => {
+    const sid = await newSession(s)
+    const session = s.deps.sessionStore.get(sid)
+    session.model = model
+    session.model_provider = provider
+    s.deps.sessionStore.save(session)
+    return sid
+  }
+  const start = async (body: Json): Promise<Json> => {
+    const res = await post(s, '/api/chat/start', { message: 'continue', ...body })
+    expect(res.status).toBe(200)
+    const started = await json(res)
+    await s.sse(`/api/chat/stream?stream_id=${String(started.stream_id)}&replay=1`, (f) => f.event === 'done' || f.event === 'apperror')
+    return started
+  }
+
+  it('moves a poisoned pair to the one provider whose catalog lists the model, and persists it (#5731)', async () => {
+    useConfig('kilocode', 'kilo/auto', { ollama: ['llama3.2'], kilocode: ['kilo/auto', 'kilo/minimax/minimax-m3'] })
+    const sid = await sessionWith('kilo/minimax/minimax-m3', 'ollama')
+    const started = await start({ session_id: sid })
+    expect(started).toMatchObject({ effective_model: 'kilo/minimax/minimax-m3', effective_model_provider: 'kilocode' })
+    expect(seen).toMatchObject({ model: 'kilo/minimax/minimax-m3', model_provider: 'kilocode' })
+    expect(s.deps.sessionStore.get(sid)).toMatchObject({ model: 'kilo/minimax/minimax-m3', model_provider: 'kilocode' })
+  })
+
+  it('switches a providerless model from another vendor to the profile default, and persists it (#1734)', async () => {
+    useConfig('openai-codex', 'gpt-5.5')
+    // Codex lists `gpt-5.4-mini` under its own bare id, so the stale `openai/` id starts on that one rather than the default.
+    for (const [stale, effective] of [['gemini-3.1-pro-preview', 'gpt-5.5'], ['google/gemini-3.1-pro-preview', 'gpt-5.5'], ['openai/gpt-5.4-mini', 'gpt-5.4-mini']]) {
+      const sid = await sessionWith(stale!, null)
+      const started = await start({ session_id: sid })
+      expect(started).toMatchObject({ effective_model: effective, effective_model_provider: 'openai-codex' })
+      expect(seen).toMatchObject({ model: effective, model_provider: 'openai-codex' })
+      expect(s.deps.sessionStore.get(sid)).toMatchObject({ model: effective, model_provider: 'openai-codex' })
+    }
+  })
+
+  it('keeps an explicit cross-vendor pick and normalizes the same model on a plain send (#5924)', async () => {
+    useConfig('anthropic', 'claude-sonnet-4')
+    let sid = await sessionWith('claude-sonnet-4', 'anthropic')
+    let started = await start({ session_id: sid, model: 'gpt-5.4-mini', model_provider: null, explicit_model_pick: true })
+    expect(started.effective_model).toBeUndefined()
+    expect(seen.model).toBe('gpt-5.4-mini')
+    sid = await sessionWith('gpt-5.4-mini', null)
+    started = await start({ session_id: sid })
+    expect(started).toMatchObject({ effective_model: 'claude-sonnet-4', effective_model_provider: 'anthropic' })
+    expect(seen).toMatchObject({ model: 'claude-sonnet-4', model_provider: 'anthropic' })
+  })
+
+  it('repairs a goal kickoff on a cold catalog', async () => {
+    useConfig('openai-codex', 'gpt-5.5')
+    sidecar.respond('goals.snapshot', () => ({ goal: null, snapshot: null }))
+    sidecar.respond('goals.command', (params) => ({ ok: true, action: 'set', message: `Goal set: ${params.args}`, goal: null, kickoff_prompt: params.args }))
+    const sid = await sessionWith('gemini-3.1-pro-preview', null)
+    s.deps.catalog.invalidate()
+    const res = await post(s, '/api/goal', { session_id: sid, args: 'ship it' })
+    expect(res.status).toBe(200)
+    const started = await json(res)
+    expect(started).toMatchObject({ effective_model: 'gpt-5.5', effective_model_provider: 'openai-codex' })
+    await s.sse(`/api/chat/stream?stream_id=${String(started.stream_id)}&replay=1`, (f) => f.event === 'done' || f.event === 'apperror')
+    expect(s.deps.sessionStore.get(sid)).toMatchObject({ model: 'gpt-5.5', model_provider: 'openai-codex' })
+  })
+
+  it('repairs against config.yaml as it is now, after an edit outside Web', async () => {
+    useConfig('anthropic', 'claude-sonnet-4')
+    await start({ session_id: await sessionWith('claude-sonnet-4', 'anthropic') })
+    // Edited outside Web: nothing invalidates the catalog, only the file changes.
+    const config = { model: { provider: 'openai-codex', default: 'gpt-5.5' } }
+    sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config }))
+    writeFileSync(join(s.state, 'config.yaml'), '# edited outside Web\n')
+    const started = await start({ session_id: await sessionWith('gemini-3.1-pro-preview', null) })
+    expect(started).toMatchObject({ effective_model: 'gpt-5.5', effective_model_provider: 'openai-codex' })
+  })
+
+  it('re-reads live model ids after config.yaml or .env changes outside Web', async () => {
+    let ids = ['ds-old']
+    sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: p.provider === 'deepseek' ? ids : [] }))
+    const configFor = (url: string): Json => ({ model: { provider: 'anthropic', default: 'claude-sonnet-4' }, providers: { ollama: { base_url: 'http://ollama.test/v1', models: ['llama3.2'] }, deepseek: { base_url: url, api_key: 'sk-deepseek-12345' } } })
+    let config = configFor('https://one.test/v1')
+    sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config }))
+    s.deps.agentConfig.invalidate()
+    s.deps.catalog.invalidate()
+    try {
+      await start({ session_id: await sessionWith('claude-sonnet-4', 'anthropic') })
+      // The provider moves to another endpoint in config.yaml; its cached ids describe the old one.
+      ids = ['ds-new']
+      config = configFor('https://two.test/v1')
+      writeFileSync(join(s.state, 'config.yaml'), '# deepseek moved\n')
+      expect(await start({ session_id: await sessionWith('ds-new', 'ollama') })).toMatchObject({ effective_model: 'ds-new', effective_model_provider: 'deepseek' })
+      // A credential edit in .env alone does the same.
+      ids = ['ds-newer']
+      writeFileSync(join(s.state, '.env'), 'TALARIA_TEST_EDIT=1\n')
+      expect(await start({ session_id: await sessionWith('ds-newer', 'ollama') })).toMatchObject({ effective_model: 'ds-newer', effective_model_provider: 'deepseek' })
+    } finally {
+      sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: [] }))
+    }
+  })
+
+  it('repairs a goal kickoff against the catalog of the profile the session is retagged to', async () => {
+    useConfig('openai-codex', 'gpt-5.5')
+    mkdirSync(join(s.state, 'profiles', 'other'), { recursive: true })
+    writeFileSync(join(s.state, 'profiles', 'other', 'config.yaml'), '# other\n')
+    sidecar.respond('goals.snapshot', () => ({ goal: null, snapshot: null }))
+    sidecar.respond('goals.command', (params) => ({ ok: true, action: 'set', message: `Goal set: ${params.args}`, goal: null, kickoff_prompt: params.args }))
+    const sid = await sessionWith('gemini-3.1-pro-preview', null)
+    s.deps.catalog.invalidate()
+    await s.deps.catalog.warmModelOptions(s.state)
+    const started = await json(await post(s, '/api/goal', { session_id: sid, args: 'ship it', profile: 'other' }))
+    expect(started).toMatchObject({ effective_model: 'gpt-5.5', effective_model_provider: 'openai-codex' })
+    await vi.waitFor(() => { expect(s.deps.registry.liveIds.has(String(started.stream_id))).toBe(false) })
+  })
+
+  it('trusts a provider again once config.yaml lists its models after a failed live lookup', async () => {
+    sidecar.respond('providers.model_ids', (p) => { if (p.provider === 'deepseek') throw new SidecarError('lookup failed', { condition: 'sidecar_error' }); return { provider: p.provider, model_ids: [] } })
+    const configWith = (deepseek: Json): Json => ({ model: { provider: 'anthropic', default: 'claude-sonnet-4' }, providers: { ollama: { base_url: 'http://ollama.test/v1', models: ['llama3.2'] }, deepseek: { api_key: 'sk-deepseek-12345', ...deepseek } } })
+    let config = configWith({})
+    sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config }))
+    s.deps.agentConfig.invalidate()
+    s.deps.catalog.invalidate()
+    try {
+      await start({ session_id: await sessionWith('claude-sonnet-4', 'anthropic') })
+      config = configWith({ models: ['ds-listed'] })
+      writeFileSync(join(s.state, 'config.yaml'), '# deepseek models listed\n')
+      expect(await start({ session_id: await sessionWith('ds-listed', 'ollama') })).toMatchObject({ effective_model: 'ds-listed', effective_model_provider: 'deepseek' })
+    } finally {
+      sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: [] }))
+    }
+  })
+
+  it('does not join a live lookup started before config.yaml or .env changed', async () => {
+    useConfig('anthropic', 'claude-sonnet-4', {})
+    const pending: ((ids: string[]) => void)[] = []
+    sidecar.respond('providers.model_ids', (p) => new Promise((resolve) => { pending.push((ids) => { resolve({ provider: p.provider, model_ids: ids }) }) }))
+    try {
+      const first = s.deps.catalog.liveModelIds(s.state, 'deepseek')
+      writeFileSync(join(s.state, '.env'), 'TALARIA_TEST_EDIT=2\n')
+      const second = s.deps.catalog.liveModelIds(s.state, 'deepseek')
+      await vi.waitFor(() => { expect(pending).toHaveLength(2) })
+      pending[0]?.(['ds-old'])
+      pending[1]?.(['ds-new'])
+      expect(await first).toEqual(['ds-old'])
+      expect(await second).toEqual(['ds-new'])
+    } finally {
+      sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: [] }))
+    }
+  })
+
+  it('ignores a live-lookup failure from before config.yaml or .env changed', async () => {
+    const config = { model: { provider: 'anthropic', default: 'claude-sonnet-4' }, providers: { ollama: { base_url: 'http://ollama.test/v1', models: ['llama3.2'] }, deepseek: { api_key: 'sk-deepseek-12345' } } }
+    sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config }))
+    s.deps.agentConfig.invalidate()
+    s.deps.catalog.invalidate()
+    const pending: { resolve: (ids: string[]) => void; reject: (error: Error) => void }[] = []
+    sidecar.respond('providers.model_ids', (p) => (p.provider === 'deepseek' ? new Promise((resolve, reject) => { pending.push({ resolve: (ids) => { resolve({ provider: p.provider, model_ids: ids }) }, reject }) }) : { provider: p.provider, model_ids: [] }))
+    try {
+      const old = s.deps.catalog.liveModelIds(s.state, 'deepseek')
+      writeFileSync(join(s.state, '.env'), 'TALARIA_TEST_EDIT=3\n')
+      const current = s.deps.catalog.liveModelIds(s.state, 'deepseek')
+      await vi.waitFor(() => { expect(pending).toHaveLength(2) })
+      pending[1]?.resolve(['ds-ok'])
+      await current
+      // The lookup against the old credential fails after the current one succeeded.
+      pending[0]?.reject(new SidecarError('old credential refused', { condition: 'sidecar_error' }))
+      await old
+      expect(await start({ session_id: await sessionWith('ds-ok', 'ollama') })).toMatchObject({ effective_model: 'ds-ok', effective_model_provider: 'deepseek' })
+    } finally {
+      sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: [] }))
+    }
+  })
+
+  it('repairs a goal kickoff against config.yaml as edited while the goal command ran', async () => {
+    let config: Json = { model: { provider: 'anthropic', default: 'claude-sonnet-4' } }
+    sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config }))
+    s.deps.agentConfig.invalidate()
+    s.deps.catalog.invalidate()
+    await s.deps.catalog.warmSessionModelRepair(s.state)
+    sidecar.respond('goals.snapshot', () => ({ goal: null, snapshot: null }))
+    sidecar.respond('goals.command', async (params) => {
+      config = { model: { provider: 'openai-codex', default: 'gpt-5.5' } }
+      writeFileSync(join(s.state, 'config.yaml'), '# moved to codex during the goal command\n')
+      // Workspace resolution reads the new file too; only the catalog is left behind.
+      await s.deps.agentConfig.read(s.state)
+      return { ok: true, action: 'set', message: `Goal set: ${params.args}`, goal: null, kickoff_prompt: params.args }
+    })
+    const sid = await sessionWith('gemini-3.1-pro-preview', null)
+    const started = await json(await post(s, '/api/goal', { session_id: sid, args: 'ship it' }))
+    expect(started).toMatchObject({ effective_model: 'gpt-5.5', effective_model_provider: 'openai-codex' })
+    await s.sse(`/api/chat/stream?stream_id=${String(started.stream_id)}&replay=1`, (f) => f.event === 'done' || f.event === 'apperror')
+  })
+
+  it('starts background tasks and side questions on the repaired pair', async () => {
+    useConfig('openai-codex', 'gpt-5.5')
+    for (const [path, field] of [['/api/background', 'prompt'], ['/api/btw', 'question']] as const) {
+      const sid = await sessionWith('gemini-3.1-pro-preview', null)
+      seen = {}
+      const res = await post(s, path, { session_id: sid, [field]: 'side work' })
+      expect(res.status, path).toBe(200)
+      const started = await json(res)
+      await vi.waitFor(() => { expect(seen.session_id, path).toBe(started.session_id) })
+      expect(seen, path).toMatchObject({ model: 'gpt-5.5', model_provider: 'openai-codex' })
+      await vi.waitFor(() => { expect(s.deps.registry.liveIds.has(String(started.stream_id))).toBe(false) })
+    }
+  })
+
+  it('starts a background-process wakeup on the repaired pair from the cached catalog', async () => {
+    useConfig('openai-codex', 'gpt-5.5')
+    await s.deps.catalog.warmSessionModelRepair(s.state)
+    sidecar.respond('process.mark_consumed', () => ({ ok: true }))
+    const sid = await sessionWith('gemini-3.1-pro-preview', null)
+    seen = {}
+    expect(await s.deps.completions.processOne({ process_id: 'proc_542', session_id: 'proc_542', type: 'completion', command: 'make', exit_code: 0, output: 'ok', origin_ui_session_id: sid, consumed: false })).toBe(true)
+    await vi.waitFor(() => { expect(seen.session_id).toBe(sid) })
+    expect(seen).toMatchObject({ model: 'gpt-5.5', model_provider: 'openai-codex' })
+    await vi.waitFor(() => { expect(s.deps.registry.activeRunStreamForSession(sid)).toBeFalsy() })
+    expect(s.deps.sessionStore.get(sid)).toMatchObject({ model: 'gpt-5.5', model_provider: 'openai-codex' })
+  })
+
+  it('keeps a pair the catalog lists, an unknown vendor, and a `@provider:` pick', async () => {
+    useConfig('openai-codex', 'gpt-5.5', { ollama: ['llama3.2'] })
+    for (const [model, provider] of [['llama3.2', 'ollama'], ['lmstudio-community/Qwen2.5-Coder-7B-Instruct-GGUF', null], ['custom/my-local-llm', null]] as const) {
+      const started = await start({ session_id: await sessionWith(model, provider) })
+      expect(started.effective_model).toBeUndefined()
+      expect(seen.model).toBe(model)
+    }
+    const started = await start({ session_id: await sessionWith('gpt-5.5', 'openai-codex'), model: '@gemini:gemini-3.1-pro-preview' })
+    expect(started).toMatchObject({ effective_model: 'gemini-3.1-pro-preview', effective_model_provider: 'gemini' })
+  })
+})
+
+describe('stale session models after an Agent sign-in change (TAL-542)', () => {
+  it('re-reads a catalog older than the providers listing before repairing', async () => {
+    let clock = 1_800_000_000
+    const sidecar = new FakeSidecar()
+    const s = await bootTestServer({ sidecar, now: () => clock })
+    try {
+      let signedIn = false
+      const config = { model: { provider: 'anthropic', default: 'claude-sonnet-4' }, providers: { ollama: { base_url: 'http://ollama.test/v1', models: ['llama3.2'] } } }
+      sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config }))
+      sidecar.respond('providers.auth_status', (p) => ({ status: { logged_in: signedIn && p.provider === 'copilot', provider: p.provider ?? '' } }))
+      sidecar.respond('plugins.providers', () => ({ providers: [] }))
+      sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: p.provider === 'copilot' ? ['cp-model'] : [] }))
+      sidecar.respond('chat.start', (_params, emit) => { emit({ event: 'token', data: { text: 'ok' } }); return completed([{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'ok' }]) })
+      writeFileSync(join(s.state, 'config.yaml'), '# seed\n')
+      const startWith = async (model: string, provider: string | null): Promise<Json> => {
+        const sid = await newSession(s)
+        const session = s.deps.sessionStore.get(sid)
+        session.model = model
+        session.model_provider = provider
+        s.deps.sessionStore.save(session)
+        const started = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'continue' }))
+        await s.sse(`/api/chat/stream?stream_id=${String(started.stream_id)}&replay=1`, (f) => f.event === 'done' || f.event === 'apperror')
+        return started
+      }
+      await startWith('claude-sonnet-4', 'anthropic')
+      // Signed in to Copilot outside Web: no config.yaml or .env change, only the Agent's auth state.
+      signedIn = true
+      clock += 31
+      expect(await startWith('cp-model', 'ollama')).toMatchObject({ effective_model: 'cp-model', effective_model_provider: 'copilot' })
+    } finally {
+      await s.close()
+    }
+  })
+})
+
 describe('chat without a sidecar', () => {
   it('fails closed with a sidecar_unavailable apperror and 503 goal controls', async () => {
     const s = await bootTestServer()

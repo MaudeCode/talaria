@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Continuing an older or imported chat whose model belongs to a provider you no longer use now switches it to a provider that offers the model, or to your default model, instead of failing.",
+      "highlight": false
+    }
+  ]
+}

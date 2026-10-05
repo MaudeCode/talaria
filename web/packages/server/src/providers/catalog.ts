@@ -10,7 +10,7 @@
  */
 import { readCapped } from '../http/capped.js'
 import { homeDotenvKeys } from '../cli/dotenv.js'
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { atomicWriteText } from '../fs/atomic.js'
@@ -57,6 +57,53 @@ export function catalogOptionId(catalog: ModelsCatalog, model: string | null, pr
   if (!bare || !pid) return null
   for (const g of catalog.groups) for (const e of [...g.models, ...(g.extra_models ?? [])]) if (e.bare_id === bare && str(e.provider_id).toLowerCase() === pid) return e.id
   return null
+}
+
+/** TAL-542: the vendor a first-party provider serves, or a model id names by prefix; '' when neither says. */
+const PROVIDER_VENDOR: Record<string, string> = { openai: 'openai', 'openai-api': 'openai', 'openai-codex': 'openai', anthropic: 'anthropic', gemini: 'google', google: 'google' }
+function modelVendor(model: string): string {
+  const m = model.trim().toLowerCase()
+  if (m.includes('/')) return ({ openai: 'openai', anthropic: 'anthropic', google: 'google', gemini: 'google' } as Record<string, string>)[m.slice(0, m.indexOf('/'))] ?? ''
+  return m.startsWith('gpt') ? 'openai' : m.startsWith('claude') ? 'anthropic' : m.startsWith('gemini') ? 'google' : ''
+}
+
+/**
+ * TAL-542 (Python `_resolve_compatible_session_model_state` + `_repair_foreign_session_model_provider`): the pair a
+ * session's stale model starts on. A model its provider's catalog group does not list moves to the one other provider
+ * that lists it; else, when the model names another vendor than a first-party provider, to the profile default. No
+ * evidence (no group for the provider, a group built from a failed live lookup in `unlisted`, which never names an owner either) keeps the pair, and so does a stored
+ * provider that is the profile's own unless the model names another vendor. `null` keeps the pair.
+ */
+export function repairSessionModel(catalog: ModelsCatalog, model: string, provider: string | null, unlisted: ReadonlySet<string> = new Set()): [string, string] | null {
+  const active = canonicaliseProviderId(catalog.active_provider)
+  const pid = canonicaliseProviderId(provider) || active
+  if (!model.trim() || !pid || unlisted.has(pid) || !catalog.groups.some((g) => canonicaliseProviderId(g.provider_id) === pid)) return null
+  const loose = (id: string): string => id.trim().toLowerCase().replaceAll('-', '.')
+  const want = loose(model)
+  const entries = catalog.groups.flatMap((g) => [...g.models, ...(g.extra_models ?? [])])
+  const tail = (id: string): string => loose(id.slice(id.indexOf('/') + 1))
+  const own = entries.filter((e) => canonicaliseProviderId(e.provider_id) === pid).map((e) => str(e.bare_id))
+  if (own.some((bare) => loose(bare) === want)) return null
+  // Equivalence across ids only drops a recognised vendor prefix; another namespace is no evidence. A match starts on the
+  // matching entry's own id, so the turn runs on the id that provider advertises.
+  const vendorless = (id: string): string => loose(id.replace(/^(openai|anthropic|google|gemini)\//i, ''))
+  const same = (bare: string): boolean => vendorless(bare) === vendorless(model)
+  const here = own.find(same)
+  if (here) return [here, pid]
+  // Python `_catalog_model_id_matches`: a model the provider lists under another namespace is kept, never moved.
+  if (own.some((bare) => tail(bare) === want)) return null
+  if (!provider || pid !== active) {
+    const owners = new Map(entries.filter((e) => same(str(e.bare_id)) && !unlisted.has(canonicaliseProviderId(e.provider_id))).map((e) => [canonicaliseProviderId(e.provider_id), str(e.bare_id)] as const))
+    const [only] = owners.size === 1 ? [...owners] : []
+    if (only) return [only[1], only[0]]
+  }
+  const vendor = PROVIDER_VENDOR[pid] ?? ''
+  const named = modelVendor(model)
+  // Python: Codex takes bare ids, so an `openai/` id on it is stale too.
+  if (!vendor || !named || (named === vendor && !(pid === 'openai-codex' && model.includes('/')))) return null
+  const defaultModel = str(catalog.default_bare_id).trim()
+  const defaultProvider = canonicaliseProviderId(catalog.default_provider_id) || active
+  return defaultModel && defaultProvider && (defaultModel !== model || defaultProvider !== pid) ? [defaultModel, defaultProvider] : null
 }
 
 /** Python `_split_picker_overflow_models`: past 25 rows the picker shows 15, keeping the selected model visible. */
@@ -407,12 +454,16 @@ export function uniqueQuotaSources<T extends { source_id: string; provider_id: s
 interface KeyProbe { hasKey: boolean; keySource: string; authError: string | null; isOauth: boolean }
 
 export class ProviderCatalog {
+  /** Failed live lookups by home, provider, and the `sourceFingerprint` they ran under (TAL-542). */
   private readonly liveFailed = new Set<string>()
-  private readonly liveIds = new Map<string, { at: number; ids: string[] }>()
+  /** `source`: the `sourceFingerprint` the ids were fetched under; another one makes them stale (TAL-542). */
+  private readonly liveIds = new Map<string, { at: number; ids: string[]; source: string }>()
   private readonly liveInflight = new Map<string, Promise<string[]>>()
   private readonly providersCache = new Map<string, { at: number; key: string; payload: { providers: Dict[]; active_provider: string | null } }>()
   /** TAL-301: the last catalog served per profile home, for the sync session payloads' `model_option_id`. */
   private readonly lastModels = new Map<string, ModelsCatalog>()
+  /** TAL-542: per `lastModels` catalog, the `sourceFingerprint` it was built from, when, and the providers whose group came from a failed live lookup. */
+  private readonly lastModelsMeta = new Map<string, { source: string; unconfirmed: ReadonlySet<string>; at: number }>()
 
   constructor(private readonly deps: CatalogDeps) {}
 
@@ -432,8 +483,7 @@ export class ProviderCatalog {
     }
     this.providersCache.clear()
     // The picker catalog changed: option ids rebuild on the next read rather than pairing against the old one.
-    if (profileHome) this.lastModels.delete(profileHome)
-    else this.lastModels.clear()
+    if (profileHome) { this.lastModels.delete(profileHome); this.lastModelsMeta.delete(profileHome) } else { this.lastModels.clear(); this.lastModelsMeta.clear() }
   }
 
   /** TAL-301: the entry id a stored `(model, provider)` pair selects in the last catalog built for this home; a cold home starts building one. */
@@ -443,9 +493,48 @@ export class ProviderCatalog {
     return catalogOptionId(catalog, model, provider)
   }
 
-  /** Builds the catalog `modelOptionFor` reads once per home; an unavailable catalog leaves every option id null. */
+  /**
+   * TAL-542: the identity of the files a catalog and its live ids derive from: config.yaml, `.env`, the Agent's sign-in
+   * store (`auth.json`, rewritten by an account switch), and the installed plugins directory, so a change outside Web
+   * makes both stale.
+   */
+  private sourceFingerprint(profileHome: string): string {
+    const stamp = (name: string): string => {
+      try { const st = statSync(join(profileHome, name), { bigint: true }); return `${String(st.mtimeNs)}:${String(st.size)}:${String(st.ino)}` } catch { return 'missing' }
+    }
+    return [this.deps.config.fingerprint(profileHome), ...['.env', 'auth.json', 'plugins'].map(stamp)].join('|')
+  }
+
+  /** The last catalog built for this home, younger than `maxAgeS`, while its source files are unchanged since (TAL-542). */
+  private currentModels(profileHome: string, maxAgeS = Infinity): ModelsCatalog | undefined {
+    const meta = this.lastModelsMeta.get(profileHome)
+    return meta?.source === this.sourceFingerprint(profileHome) && this.deps.now() - meta.at < maxAgeS ? this.lastModels.get(profileHome) : undefined
+  }
+
+  /**
+   * TAL-542: `repairSessionModel` against this home's catalog. Agent-owned sign-in and plugin state has no file to
+   * fingerprint, so the repair also needs a catalog no older than the providers listing it read (`PROVIDERS_TTL_S`);
+   * a cold or stale one keeps the pair and starts a rebuild.
+   */
+  sessionModelRepair(profileHome: string, model: string, provider: string | null): [string, string] | null {
+    const catalog = this.currentModels(profileHome, PROVIDERS_TTL_S)
+    if (!catalog) { void this.warmSessionModelRepair(profileHome); return null }
+    return repairSessionModel(catalog, model, provider, this.lastModelsMeta.get(profileHome)?.unconfirmed)
+  }
+
+  /**
+   * Builds the catalog `sessionModelRepair` reads unless a fresh enough one exists; call it after the request's last
+   * await. A source that changed while the build awaited makes that build stale, so it is rebuilt once.
+   */
+  async warmSessionModelRepair(profileHome: string): Promise<void> {
+    for (let attempt = 0; attempt < 2 && !this.currentModels(profileHome, PROVIDERS_TTL_S); attempt += 1) {
+      try { await this.models(profileHome) } catch { return /* fail closed: the pair is kept */ }
+    }
+  }
+
+  /** Builds the catalog `modelOptionFor` reads once per home, again after config.yaml or `.env` changes; an unavailable catalog leaves every option id null. */
   async warmModelOptions(profileHome: string): Promise<void> {
-    if (this.lastModels.has(profileHome)) return
+    if (this.currentModels(profileHome)) return
     try { await this.models(profileHome) } catch { /* fail closed: no option ids */ }
   }
 
@@ -535,17 +624,21 @@ export class ProviderCatalog {
   /** Live model ids from the Agent for one provider, cached per profile home. */
   async liveModelIds(profileHome: string, pid: string, opts: { force?: boolean } = {}): Promise<string[]> {
     const key = `${profileHome}\0${pid}`
+    const source = this.sourceFingerprint(profileHome)
     const hit = this.liveIds.get(key)
-    if (hit && !opts.force && this.deps.now() - hit.at < LIVE_TTL_S) return hit.ids
-    const inflight = this.liveInflight.get(key)
+    if (hit?.source === source && !opts.force && this.deps.now() - hit.at < LIVE_TTL_S) return hit.ids
+    // A lookup started under another source answers for the old endpoint or credential; this one starts its own.
+    const flightKey = `${key}\0${source}`
+    const inflight = this.liveInflight.get(flightKey)
     if (inflight && !opts.force) return inflight
     const sidecar = this.deps.sidecar()
-    if (!sidecar) return hit?.ids ?? []
+    // No sidecar is a failed lookup for this source: the ids it keeps showing never confirm a stale-model repair (TAL-542).
+    if (!sidecar) { this.liveFailed.add(flightKey); return hit?.ids ?? [] }
     const run = sidecar.call('providers.model_ids', { profile_home: profileHome, provider: pid, ...(opts.force ? { force_refresh: true } : {}) }, { timeoutMs: 30_000 })
-      .then((r) => { this.liveIds.set(key, { at: this.deps.now(), ids: r.model_ids }); this.liveFailed.delete(key); return r.model_ids })
-      .catch((error: unknown) => { this.deps.log(`[catalog] live model ids for ${pid} failed: ${str((error as Error).message)}`); this.liveFailed.add(key); return hit?.ids ?? [] })
-      .finally(() => { this.liveInflight.delete(key) })
-    this.liveInflight.set(key, run)
+      .then((r) => { this.liveIds.set(key, { at: this.deps.now(), ids: r.model_ids, source }); this.liveFailed.delete(flightKey); return r.model_ids })
+      .catch((error: unknown) => { this.deps.log(`[catalog] live model ids for ${pid} failed: ${str((error as Error).message)}`); this.liveFailed.add(flightKey); return hit?.ids ?? [] })
+      .finally(() => { this.liveInflight.delete(flightKey) })
+    this.liveInflight.set(flightKey, run)
     return run
   }
 
@@ -662,6 +755,8 @@ export class ProviderCatalog {
 
   /** Python `get_available_models` (static catalog + live ids for keyed providers). */
   async models(profileHome: string): Promise<ModelsCatalog> {
+    const source = this.sourceFingerprint(profileHome)
+    const unconfirmed = new Set<string>()
     const config = await this.deps.config.read(profileHome)
     const envValues = loadEnvFile(join(profileHome, '.env'))
     const active = activeProviderFromConfig(config)
@@ -746,9 +841,11 @@ export class ProviderCatalog {
       if ('models' in providerCfg && providerCfg.models_discovered !== true) raw = configuredModelOptions(providerCfg.models)
       if (!raw.length && (this.providerHasKey(pid, config, envValues, profileHome) || signedIn.has(pid))) {
         const live = await this.liveModelIds(profileHome, pid)
+        // TAL-542: a failed lookup leaves this group's list unconfirmed, so the stale-model repair never trusts it.
+        if (this.liveFailed.has(`${profileHome}\0${pid}\0${source}`)) unconfirmed.add(pid)
         if (live.length) raw = live.map((id) => ({ id, label: pid === 'nous' ? `${formatOllamaLabel(id.includes('/') ? id.slice(id.indexOf('/') + 1) : id)} (via Nous)` : labelForModel(id, []) }))
         // Python (#1567): an authenticated Nous account with an empty live catalog shows no group; only a failed lookup falls back to the curated list.
-        else if (pid === 'nous' && !this.liveFailed.has(`${profileHome}\0${pid}`)) continue
+        else if (pid === 'nous' && !this.liveFailed.has(`${profileHome}\0${pid}\0${source}`)) continue
       }
       if (!raw.length) raw = pid === 'openrouter' ? FALLBACK_MODELS.map((m) => ({ id: m.id, label: m.label })) : [...(PROVIDER_MODELS[pid] ?? [])]
       for (const id of configuredIds.get(pid) ?? []) if (!raw.some((m) => m.id === id)) raw.push({ id, label: labelForModel(id, groups) })
@@ -787,16 +884,17 @@ export class ProviderCatalog {
     const defaults = { active_provider: active, default_model: defaultModel, default_provider_id: defaultProvider, default_bare_id: defaultBare }
     if (!kept.length && defaultModel) {
       const providerId = active ?? 'default'
-      return this.remember(profileHome, { ...defaults, groups: [{ provider: 'Default', provider_id: providerId, models: stampModelEntries([{ id: defaultModel, label: labelForModel(defaultModel, []) }], providerId) }], aliases: {}, configured_model_badges: {} })
+      return this.remember(profileHome, { source, unconfirmed }, { ...defaults, groups: [{ provider: 'Default', provider_id: providerId, models: stampModelEntries([{ id: defaultModel, label: labelForModel(defaultModel, []) }], providerId) }], aliases: {}, configured_model_badges: {} })
     }
     const stamped = kept.map((g) => ({ ...g, models: stampModelEntries(g.models, g.provider_id), ...(g.extra_models ? { extra_models: stampModelEntries(g.extra_models, g.provider_id) } : {}) }))
-    return this.remember(profileHome, { ...defaults, groups: stamped, aliases, configured_model_badges: this.badges(kept, active, defaultModel, fallbackCfg) })
+    return this.remember(profileHome, { source, unconfirmed }, { ...defaults, groups: stamped, aliases, configured_model_badges: this.badges(kept, active, defaultModel, fallbackCfg) })
   }
 
   /** Stamps the default's entry id and keeps the catalog for `modelOptionFor`. */
-  private remember(profileHome: string, catalog: ModelsCatalog): ModelsCatalog {
+  private remember(profileHome: string, meta: { source: string; unconfirmed: ReadonlySet<string> }, catalog: ModelsCatalog): ModelsCatalog {
     catalog.default_option_id = catalogOptionId(catalog, catalog.default_bare_id ?? null, catalog.default_provider_id ?? null)
     this.lastModels.set(profileHome, catalog)
+    this.lastModelsMeta.set(profileHome, { ...meta, at: this.deps.now() })
     return structuredClone(catalog)
   }
 
