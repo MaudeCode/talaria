@@ -12,6 +12,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+PUBLISHER_TEST = "src/sessions/relay.contract.test.ts"
+
+
+def publisher_test_required(web_ref):
+    """A Web ref containing the commit that added the publisher test must run it; vitest fails if the file is gone."""
+    added = subprocess.check_output(["git", "-C", str(ROOT), "log", "--diff-filter=A", "--format=%H", "-1", "--",
+                                     f"web/packages/server/{PUBLISHER_TEST}"], text=True).strip()
+    return not added or subprocess.run(["git", "-C", str(ROOT), "merge-base", "--is-ancestor", added, web_ref]).returncode == 0
+
+
 def verify_app_web(plan, output):
     app = plan["components"]["app"]["sourceRevision"]
     web_refs = list(dict.fromkeys([plan["components"]["web"]["sourceRevision"], *plan["supportedWebSources"]]))
@@ -65,10 +75,8 @@ def main():
                         subprocess.run(["npm", "ci", "--no-audit", "--no-fund"], cwd=checkout / "web", env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
                         subprocess.run(["npm", "run", "build", "-w", "packages/contracts"], cwd=checkout / "web", env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
                         subprocess.run(["npm", "test", "-w", "packages/contracts"], cwd=checkout / "web", env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
-                        publisher_test = "src/sessions/relay.contract.test.ts"
-                        # A Web ref released before TAL-547 has no publisher test to run.
-                        if (checkout / "web/packages/server" / publisher_test).exists():
-                            subprocess.run(["npm", "test", "-w", "packages/server", "--", publisher_test], cwd=checkout / "web", env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
+                        if publisher_test_required(refs["web"]):
+                            subprocess.run(["npm", "test", "-w", "packages/server", "--", PUBLISHER_TEST], cwd=checkout / "web", env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
                     else:
                         # Producer and consumer fixtures come from their actual refs,
                         # not whichever unreleased code happens to be on main.

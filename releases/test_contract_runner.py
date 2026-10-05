@@ -89,18 +89,19 @@ class ContractRunnerTests(unittest.TestCase):
             stderr = io.StringIO()
             with patch.object(sys, "argv", argv), patch.object(runner.subprocess, "run", side_effect=run), \
                     patch.object(runner.subprocess, "check_output", return_value=b"{}"), \
+                    patch.object(runner, "publisher_test_required", return_value=True), \
                     contextlib.redirect_stderr(stderr), self.assertRaises(subprocess.CalledProcessError):
                 runner.main()
             self.assertIn("AssertionError: expected 400 to be 200", stderr.getvalue())
 
-    def test_web_gate_pins_the_publisher_body_when_its_ref_has_the_test(self):
-        # A drifted publisher body is rejected by the Relay as a permanent 400 (TAL-547); refs released before the
-        # test existed have nothing to run.
+    def test_web_gate_pins_the_publisher_body_from_the_commit_that_added_its_test(self):
+        # A drifted publisher body is rejected by the Relay as a permanent 400 (TAL-547). Refs released before the test
+        # existed have nothing to run; any later ref runs it, so deleting or renaming the test fails the gate.
         plan = {"components": {"app": {"sourceRevision": "a" * 40}, "web": {"sourceRevision": "b" * 40},
                                "relay": {"sourceRevision": "c" * 40}}, "supportedWebSources": ["b" * 40]}
-        publisher = ["npm", "test", "-w", "packages/server", "--", "src/sessions/relay.contract.test.ts"]
-        for present in (True, False):
-            with self.subTest(present=present), tempfile.TemporaryDirectory() as temporary:
+        publisher = ["npm", "test", "-w", "packages/server", "--", runner.PUBLISHER_TEST]
+        for required in (True, False):
+            with self.subTest(required=required), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
                 (root / "plan.json").write_text(json.dumps(plan))
                 argv = ["check", "--plan", str(root / "plan.json"), "--output", str(root / "out"), "--only", "fixtures"]
@@ -109,17 +110,37 @@ class ContractRunnerTests(unittest.TestCase):
                 def run(command, **kwargs):
                     commands.append(command)
                     if command[:2] == ["git", "clone"]:
-                        checkout = Path(command[-1])
-                        (checkout / "contracts/fixtures").mkdir(parents=True)
-                        if present and checkout.name == "web":
-                            (checkout / "web/packages/server/src/sessions").mkdir(parents=True)
-                            (checkout / "web/packages/server" / publisher[-1]).touch()
+                        (Path(command[-1]) / "contracts/fixtures").mkdir(parents=True)
 
                 with patch.object(sys, "argv", argv), patch.object(runner.subprocess, "run", side_effect=run), \
-                        patch.object(runner.subprocess, "check_output", return_value=b"{}"):
+                        patch.object(runner.subprocess, "check_output", return_value=b"{}"), \
+                        patch.object(runner, "publisher_test_required", return_value=required) as check:
                     runner.main()
-                self.assertEqual(publisher in commands, present)
+                check.assert_called_once_with("b" * 40)
+                self.assertEqual(publisher in commands, required)
                 self.assertIn(["npm", "test", "-w", "packages/contracts"], commands)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary)
+
+            def git(*args):
+                return subprocess.check_output(["git", "-C", str(repo), *args], text=True).strip()
+
+            def commit(message):
+                git("add", "-A")
+                git("-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-qm", message)
+                return git("rev-parse", "HEAD")
+
+            git("init", "-q")
+            before = commit("before")
+            test = repo / "web/packages/server" / runner.PUBLISHER_TEST
+            test.parent.mkdir(parents=True)
+            test.touch()
+            added = commit("add")
+            test.unlink()
+            removed = commit("remove")
+            with patch.object(runner, "ROOT", repo):
+                self.assertEqual([runner.publisher_test_required(ref) for ref in (before, added, removed)], [False, True, True])
 
     def test_old_app_runner_runs_one_worker_without_a_simulator_clone(self):
         # The previous App's own test-ios hardcodes parallel testing, which clones the leased simulator even for
@@ -332,7 +353,8 @@ class ContractRunnerTests(unittest.TestCase):
                         (Path(command[-1]) / "contracts/fixtures").mkdir(parents=True)
 
                 with patch.object(sys, "argv", argv), patch.object(runner.subprocess, "run", side_effect=run), \
-                        patch.object(runner.subprocess, "check_output", return_value=b"{}"):
+                        patch.object(runner.subprocess, "check_output", return_value=b"{}"), \
+                        patch.object(runner, "publisher_test_required", return_value=True):
                     runner.main()
                 self.assertEqual(any("check-previous-app.py" in str(command[1]) for command in commands), native)
                 self.assertEqual(any(command[:2] == ["pnpm", "install"] for command in commands), portable)
