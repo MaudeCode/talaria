@@ -1393,7 +1393,7 @@ describe('a compressed Web session follows its state.db lineage (TAL-529)', () =
     const settled = await served(sid)
     expect(settled.slice(-2)).toEqual(['next', 'next answered'])
     expect(settled).not.toContain('[summary] u1/a1')
-    db((conn) => insert(conn, `${sid}-tip`, [['user', 'CLI on tip', 300], ['assistant', 'CLI reply', 301]]))
+    db((conn) => { insert(conn, `${sid}-tip`, [['user', 'CLI on tip', 300], ['assistant', 'CLI reply', 301]]) })
     expect(await served(sid)).toEqual([...settled, 'CLI on tip', 'CLI reply'])
   })
 
