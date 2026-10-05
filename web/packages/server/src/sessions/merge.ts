@@ -769,13 +769,16 @@ export function mergeSessionMessagesAppendOnly(sidecar: Message[], state: Messag
   const key = (m: Message): string => `${String(m.role)}\0${String(ts(m) ?? '')}\0${typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? null)}`
   const seenId = opts.stateDbSeenId
   if (typeof seenId === 'number' && Number.isFinite(seenId) && state.some((m) => stateDbRowId(m) !== null)) {
-    const seen = new Set(sidecar.map(key))
+    // Each local row stands for at most one new state.db row: a persisted copy by its id, any other by its key.
+    const localIds = new Set(sidecar.map(stateDbRowId))
+    const localKeys = new Map<string, number>()
+    for (const m of sidecar) if (stateDbRowId(m) === null) localKeys.set(key(m), (localKeys.get(key(m)) ?? 0) + 1)
     const merged = [...sidecar]
     for (const m of state) {
       const id = stateDbRowId(m)
-      const k = key(m)
-      if (id === null || id <= seenId || seen.has(k)) continue
-      seen.add(k)
+      if (id === null || id <= seenId || localIds.has(id)) continue
+      const left = localKeys.get(key(m)) ?? 0
+      if (left > 0) { localKeys.set(key(m), left - 1); continue }
       merged.push(m)
     }
     return merged
