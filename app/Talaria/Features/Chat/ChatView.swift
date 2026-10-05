@@ -219,6 +219,7 @@ struct ChatView: View {
         return messageComposerInput(prompt: prompt)
             // Replacing the input also cancels dictation and picker presentation.
             .id(prompt?.id ?? "message")
+            .adaptiveReadableContent(maxWidth: AdaptiveReadableContentWidth.chat)
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { composerHeight = $0 }
         .environment(\.layoutDirection, chatLayoutDirection)
         .background(
@@ -1056,6 +1057,7 @@ struct ChatView: View {
                 }
             }
             .padding(.horizontal)
+            .adaptiveReadableContent(maxWidth: AdaptiveReadableContentWidth.chat)
             .padding(.bottom, composerHeight + 8)
             .zIndex(8)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: showsScrollToBottomButton)

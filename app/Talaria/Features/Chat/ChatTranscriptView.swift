@@ -105,6 +105,7 @@ struct ChatTranscriptView: View {
                             .padding(.bottom, transcriptBottomInsetHeight)
                     }
                 }
+                .adaptiveReadableContent(maxWidth: AdaptiveReadableContentWidth.chat)
         } else if let errorMessage, messages.isEmpty, clarificationPrompt == nil {
             ContentUnavailableView {
                 Label("Could Not Load Messages", systemImage: "exclamationmark.triangle")
@@ -335,7 +336,8 @@ struct ChatTranscriptView: View {
         .padding(.top, 16)
         .frame(width: contentWidth, alignment: .leading)
         .padding(.horizontal, transcriptHorizontalPadding)
-        .frame(width: viewportWidth, alignment: .leading)
+        // Centres the readable column; the scroll view stays full width.
+        .frame(width: viewportWidth)
         .clipped()
         .environment(\.chatDisclosureToggled) {
             pinReader(proxy: proxy)
@@ -369,7 +371,8 @@ struct ChatTranscriptView: View {
     }
 
     private func transcriptContentWidth(for viewportWidth: CGFloat) -> CGFloat {
-        max(0, viewportWidth - (transcriptHorizontalPadding * 2))
+        let columnWidth = min(viewportWidth, AdaptiveReadableContentWidth.chat)
+        return max(0, columnWidth - (transcriptHorizontalPadding * 2))
     }
 
     @ViewBuilder
