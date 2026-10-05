@@ -301,14 +301,15 @@ export class CompletionDrain {
 
   /**
    * TAL-532: the deferred process completions the agent already holds from its own turn (wait/log or poll). Checked at
-   * delivery, not drain: the completion is usually drained seconds before the agent's wait returns. Async delegations
-   * are settled by their delivery ledger instead. A failed check delivers everything rather than lose a result.
+   * delivery, not drain: the completion is usually drained seconds before the agent's wait returns. Only completions:
+   * consuming the exit says nothing about a watch match or notice, and async delegations settle in their delivery ledger.
+   * A failed check delivers everything rather than lose a result.
    */
-  private async alreadyConsumed(entries: Deferred[]): Promise<Set<string>> {
-    const ids = entries.filter((e) => e.process_id && e.event?.type !== 'async_delegation').map((e) => e.process_id)
+  private async alreadyConsumed(entries: Deferred[]): Promise<Set<Deferred>> {
+    const completions = entries.filter((e) => e.process_id && str(e.event?.type ?? 'completion') === 'completion')
     const sidecar = this.deps.sidecar()
-    if (!ids.length || !sidecar) return new Set()
-    try { const { consumed } = await sidecar.call('process.consumed', { process_ids: ids }); return new Set(ids.filter((id) => consumed.includes(id))) } catch { return new Set() }
+    if (!completions.length || !sidecar) return new Set()
+    try { const { consumed } = await sidecar.call('process.consumed', { process_ids: completions.map((e) => e.process_id) }); return new Set(completions.filter((e) => consumed.includes(e.process_id))) } catch { return new Set() }
   }
 
   /** Python `drain_deferred_wakeups_for_session`: turn-teardown idle hook; only the last active stream's teardown fires. */
@@ -321,10 +322,11 @@ export class CompletionDrain {
     const prompted = entries.filter((e) => e.wakeup_prompt.trim())
     const held = await this.alreadyConsumed(prompted)
     if (held.size) {
-      await this.markConsumed([...held])
-      this.deps.log(`[webui] dropped ${String(held.size)} deferred wakeup(s) already consumed by the agent's own turn for session ${sid}: ${[...held].join(', ')}`)
+      const ids = [...held].map((e) => e.process_id)
+      await this.markConsumed(ids)
+      this.deps.log(`[webui] dropped ${String(held.size)} deferred wakeup(s) already consumed by the agent's own turn for session ${sid}: ${ids.join(', ')}`)
     }
-    const pending = prompted.filter((e) => !held.has(e.process_id))
+    const pending = prompted.filter((e) => !held.has(e))
     if (!pending.length) { this.retryAttempts.delete(sid); return 0 }
     const batch: Deferred[] = []
     let total = 0

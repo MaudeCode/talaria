@@ -304,6 +304,13 @@ describe('async delegation delivery claims (TAL-459)', () => {
       expect(await drain.drainDeferred(sid)).toBe(0)
       expect(attempts).toHaveLength(1)
       expect(drain.deferredCount(sid)).toBe(0)
+      // Waiting on a process consumes its exit, not a watch match it raised: that notice still wakes.
+      holdTurn(registry, sid)
+      expect(await drain.processOne({ process_id: 'proc_watched', session_id: 'proc_watched', type: 'watch_match', pattern: 'ERR', command: 'tail log', output: 'ERR boom', origin_ui_session_id: sid, consumed: false })).toBe(true)
+      awaited.add('proc_watched')
+      registry.activeRuns.delete('held')
+      expect(await drain.drainDeferred(sid)).toBe(1)
+      expect(attempts[1]).toContain('Background process proc_watched matched watch pattern "ERR"')
     } finally {
       drain.stop()
     }
