@@ -13,7 +13,15 @@ export interface StreamSubscriber {
   queue: StreamItem[]
   wake: (() => void) | null
   closed: boolean
+  /**
+   * Frames the queue dropped since the writer last caught up: the first journaled id lost, whether a run frame without one
+   * was lost, how many, and the newest copy of each dropped refetch signal (resent once the gap is recovered).
+   */
+  gap: { firstEventId: string | null; unjournaled: boolean; dropped: number; signals: Map<string, unknown> } | null
 }
+
+/** Unjournaled notifications that only ask the client to refetch a server record; the newest copy supersedes the rest. */
+const REFETCH_SIGNALS = new Set(['bg_task_complete', 'process_complete'])
 
 export interface SubscribeSnapshot {
   offline_buffered_events: number
@@ -32,7 +40,7 @@ export class StreamChannel {
   lastEventId: string | null = null
 
   subscribeWithSnapshot(): [StreamSubscriber, SubscribeSnapshot] {
-    const sub: StreamSubscriber = { queue: [...this.offline], wake: null, closed: false }
+    const sub: StreamSubscriber = { queue: [...this.offline], wake: null, closed: false, gap: null }
     const first = this.offline[0]
     const snapshot: SubscribeSnapshot = { offline_buffered_events: this.offline.length, offline_dropped_events: this.offlineDropped, offline_first_event_id: first?.[2] ?? null, last_event_id: this.lastEventId }
     this.subscribers.add(sub)
@@ -61,7 +69,15 @@ export class StreamChannel {
     this.offline.length = 0
     this.offlineDropped = 0
     for (const sub of this.subscribers) {
-      if (sub.queue.length >= SUBSCRIBER_QUEUE_MAXSIZE) { sub.queue.shift(); this.subscriberDropped += 1 }
+      if (sub.queue.length >= SUBSCRIBER_QUEUE_MAXSIZE) {
+        const lost = sub.queue.shift()!
+        sub.gap ??= { firstEventId: null, unjournaled: false, dropped: 0, signals: new Map() }
+        sub.gap.dropped += 1
+        if (lost[2]) sub.gap.firstEventId ??= lost[2]
+        else if (REFETCH_SIGNALS.has(lost[0])) sub.gap.signals.set(lost[0], lost[1])
+        else sub.gap.unjournaled = true
+        this.subscriberDropped += 1
+      }
       sub.queue.push(item)
       sub.wake?.()
     }
@@ -220,7 +236,8 @@ export class SessionChannels {
     if (!set) return 0
     let delivered = 0
     for (const sub of set) {
-      if (sub.queue.length >= 64) continue
+      // These are refetch signals for server records: a stalled subscriber keeps the newest 64, never refusing the latest.
+      if (sub.queue.length >= 64) sub.queue.shift()
       sub.queue.push([event, data])
       sub.wake?.()
       delivered += 1

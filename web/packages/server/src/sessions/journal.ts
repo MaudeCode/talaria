@@ -9,6 +9,7 @@ import { open, readdir, readFile, stat, unlink } from 'node:fs/promises'
 import { setImmediate as nextTurn } from 'node:timers/promises'
 import { atomicWriteTextAsync, writeFully } from '../fs/atomic.js'
 import { join } from 'node:path'
+import { StringDecoder } from 'node:string_decoder'
 import { str } from '../util.js'
 
 export const RUN_JOURNAL_DIR_NAME = '_run_journal'
@@ -21,6 +22,7 @@ const LIVE_SNAPSHOT_MAX_BYTES = 1024 * 1024
 const LIVE_SNAPSHOT_MAX_ROWS = 512
 const RUN_SUMMARY_MAX_BYTES = 4 * 1024 * 1024
 const RUN_SUMMARY_MAX_ROWS = 512
+const RUN_EVENTS_PAGE_BYTES = 64 * 1024
 const PRUNED_SUMMARY_SUFFIX = '.summary.json'
 
 export interface JournalEvent {
@@ -148,16 +150,38 @@ export class RunJournal {
   }
 
   readRunEvents(sessionId: string, runId: string, opts: { afterSeq?: number | null; maxSeq?: number | null } = {}): JournalEvent[] {
-    let text: string
+    return [...this.iterRunEvents(sessionId, runId, opts)]
+  }
+
+  /**
+   * `readRunEvents` one page at a time, so a replay that waits on a slow reader holds one page of the journal rather
+   * than all of it (run-state contract: recovery never parses an unbounded journal in one request).
+   */
+  *iterRunEvents(sessionId: string, runId: string, opts: { afterSeq?: number | null; maxSeq?: number | null } = {}): Generator<JournalEvent> {
+    let fd: number
+    try { fd = openSync(this.pathFor(sessionId, runId), fsConstants.O_RDONLY) } catch { return }
     try {
-      text = readFileSync(this.pathFor(sessionId, runId), 'utf8')
-    } catch {
-      return []
+      const page = Buffer.alloc(RUN_EVENTS_PAGE_BYTES)
+      const decoder = new StringDecoder('utf8')
+      let position = 0
+      let rest = ''
+      for (;;) {
+        let n = 0
+        try { n = readSyncAt(fd, page, 0, position) } catch { n = 0 }
+        position += n
+        const lines = (rest + (n > 0 ? decoder.write(page.subarray(0, n)) : decoder.end())).split('\n')
+        rest = n > 0 ? lines.pop() ?? '' : ''
+        for (const event of RunJournal.parseLines(lines.join('\n')).events) {
+          const seq = event.seq || 0
+          if (opts.afterSeq !== null && opts.afterSeq !== undefined && seq <= opts.afterSeq) continue
+          if (opts.maxSeq !== null && opts.maxSeq !== undefined && seq > opts.maxSeq) continue
+          yield event
+        }
+        if (n <= 0) return
+      }
+    } finally {
+      closeSync(fd)
     }
-    let { events } = RunJournal.parseLines(text)
-    if (opts.afterSeq !== null && opts.afterSeq !== undefined) events = events.filter((e) => (e.seq || 0) > (opts.afterSeq!))
-    if (opts.maxSeq !== null && opts.maxSeq !== undefined) events = events.filter((e) => (e.seq || 0) <= (opts.maxSeq!))
-    return events
   }
 
   readRunEventTail(sessionId: string, runId: string, maxBytes = LIVE_SNAPSHOT_MAX_BYTES, maxRows = LIVE_SNAPSHOT_MAX_ROWS): { events: JournalEvent[]; truncated: boolean } {

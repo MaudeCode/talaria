@@ -6,7 +6,7 @@
  * `_handle_session_events_stream`, `_handle_session_run_journal_stream_for_session`).
  */
 import type { RequestContext } from '../http/context.js'
-import { parseRunJournalEventId, SSE_RELAY_CLOSE_EVENTS, type JournalEvent } from '../sessions/journal.js'
+import { parseRunJournalEventId, SSE_RELAY_CLOSE_EVENTS, type JournalEvent, type RunJournal } from '../sessions/journal.js'
 import { nextItem, nextSessionItem, type StreamSubscriber } from '../sessions/streams.js'
 import { nextPendingItem } from '../sessions/pending.js'
 import type { Session } from '../sessions/session.js'
@@ -50,9 +50,10 @@ export function clientStreamKey(ctx: RequestContext): string {
   return `address:${ctx.peer || 'unknown'}`
 }
 
-/** Python served SSE on blocking sockets, so a slow reader stalled its own producer; Node buffers instead, and this bounds that buffer. */
-export const SSE_MAX_BUFFERED_BYTES = 4 * 1024 * 1024
-
+/**
+ * Python served SSE on blocking sockets, so a slow reader stalled its own producer. Writes here are buffered by Node, and
+ * every streaming loop awaits `ready()` before pulling its next frame, which restores that stall instead of disconnecting.
+ */
 export class SseWriter {
   private open = false
   private closed = false
@@ -83,17 +84,27 @@ export class SseWriter {
     this.write(`: ${text}\n\n`)
   }
 
-  /** Slow consumers are bounded: past `SSE_MAX_BUFFERED_BYTES` of unsent data the connection is closed instead of growing the response buffer. */
   private write(chunk: string): void {
     if (this.isClosed) return
-    if (this.ctx.res.writableLength > SSE_MAX_BUFFERED_BYTES) {
-      this.ctx.deps.log(`[webui] WARNING: closing slow event-stream client (${String(this.ctx.res.writableLength)} bytes unsent)`)
-      this.ctx.res.destroy()
-      this.closed = true
-      this.release()
-      return
-    }
     this.ctx.res.write(chunk)
+  }
+
+  /**
+   * Resolves once the socket has taken what was written, or the client left: true while it is still connected.
+   * Replays await it per frame and page the journal (`iterRunEvents`), so a slow reader holds one page plus data near
+   * the socket's high-water mark; frames the subscriber's bounded queue drops while this waits are backfilled from the
+   * journal (`recoverDropped`).
+   */
+  async ready(): Promise<boolean> {
+    const { res } = this.ctx
+    if (!this.isClosed && res.writableNeedDrain) {
+      await new Promise<void>((resolve) => {
+        const done = (): void => { res.off('drain', done); res.off('close', done); resolve() }
+        res.on('drain', done)
+        res.on('close', done)
+      })
+    }
+    return !this.isClosed
   }
 
   end(): void {
@@ -147,26 +158,42 @@ function publicFramePayload(ctx: RequestContext, event: string, payload: unknown
   return tool ? publicToolFrame(payload as Record<string, unknown>, ctx.deps.sessions.deps.redactEnabled()) : payload
 }
 
-/** Journal rows written before the public tool `id`, keyed by run: each row's id, paired the way the live server pairs them. */
-type LegacyToolIds = Map<string, Map<number, string>>
+/**
+ * Public tool ids for journal rows written before frames carried one, paired the way the live server pairs them. Each
+ * run's journal is walked alongside the replay (its rows arrive in seq order), holding only the calls still open.
+ */
+class LegacyToolIds {
+  private readonly runs = new Map<string, { rows: Generator<JournalEvent>; open: { name: unknown; tid: string; id: string }[]; seq: number; id: string | null }>()
 
-function legacyToolIds(ctx: RequestContext, entry: JournalEvent, cache: LegacyToolIds): Map<number, string> {
-  let ids = cache.get(entry.run_id)
-  if (ids) return ids
-  ids = new Map()
-  cache.set(entry.run_id, ids)
-  const calls: { name: unknown; tid: string; id: string; done: boolean }[] = []
-  for (const row of ctx.deps.journal.readRunEvents(entry.session_id, entry.run_id)) {
-    if ((row.event !== 'tool' && row.event !== 'tool_complete') || !row.payload || typeof row.payload !== 'object') continue
-    const data = row.payload as Record<string, unknown>
-    const tid = str(data.tid)
-    const call = row.event === 'tool' ? undefined : calls[completedToolIndex(calls, tid, data.name)]
-    if (call) call.done = true
-    const id = call?.id ?? (tid || `tool-${row.event_id}`)
-    if (row.event === 'tool') calls.push({ name: data.name, tid, id, done: false })
-    ids.set(row.seq, id)
+  constructor(private readonly journal: RunJournal) {}
+
+  idFor(entry: JournalEvent): string | null {
+    let run = this.runs.get(entry.run_id)
+    if (!run) {
+      run = { rows: this.journal.iterRunEvents(entry.session_id, entry.run_id), open: [], seq: 0, id: null }
+      this.runs.set(entry.run_id, run)
+    }
+    while (run.seq < entry.seq) {
+      const next = run.rows.next()
+      if (next.done) return null
+      run.seq = next.value.seq
+      run.id = pairLegacyTool(run.open, next.value)
+    }
+    return run.seq === entry.seq ? run.id : null
   }
-  return ids
+
+  close(): void { for (const run of this.runs.values()) run.rows.return(undefined) }
+}
+
+/** One row's tool id; a `tool` opens a call, a `tool_complete` closes the call it completes (done calls never match again). */
+function pairLegacyTool(open: { name: unknown; tid: string; id: string }[], row: JournalEvent): string | null {
+  if ((row.event !== 'tool' && row.event !== 'tool_complete') || !row.payload || typeof row.payload !== 'object') return null
+  const data = row.payload as Record<string, unknown>
+  const tid = str(data.tid)
+  const own = tid || `tool-${row.event_id}`
+  if (row.event === 'tool') { open.push({ name: data.name, tid, id: own }); return own }
+  const index = completedToolIndex(open, tid, data.name)
+  return index < 0 ? own : open.splice(index, 1)[0]!.id
 }
 
 function publicJournalPayload(ctx: RequestContext, entry: JournalEvent, legacy: LegacyToolIds): unknown {
@@ -174,19 +201,23 @@ function publicJournalPayload(ctx: RequestContext, entry: JournalEvent, legacy: 
   if ((entry.event !== 'tool' && entry.event !== 'tool_complete') || !payload || typeof payload !== 'object' || Array.isArray(payload) || 'id' in payload) return publicFramePayload(ctx, entry.event, payload, entry.redacted)
   // A journal written before the public `id` carries the Agent's call id as `tid`, or nothing when the Agent sent none; the id
   // joins the frame before the redaction pass, like a live frame's.
-  const id = legacyToolIds(ctx, entry, legacy).get(entry.seq) ?? `tool-${entry.event_id}`
+  const id = legacy.idFor(entry) ?? `tool-${entry.event_id}`
   return publicFramePayload(ctx, entry.event, withToolId(payload as Record<string, unknown>, id), entry.redacted)
 }
 
-function replayRunJournal(ctx: RequestContext, sse: SseWriter, streamId: string, afterSeq: number | null, opts: { maxSeq?: number | null; includeStale?: boolean } = {}): { found: boolean; terminal: boolean } {
+async function replayRunJournal(ctx: RequestContext, sse: SseWriter, streamId: string, afterSeq: number | null, opts: { maxSeq?: number | null; includeStale?: boolean } = {}): Promise<{ found: boolean; terminal: boolean }> {
   const summary = ctx.deps.journal.findRunSummary(streamId)
   if (!summary) return { found: false, terminal: false }
   let terminal = false
-  const events = ctx.deps.journal.readRunEvents(summary.session_id, streamId, { afterSeq, maxSeq: opts.maxSeq ?? null })
-  const legacy: LegacyToolIds = new Map()
-  for (const entry of events) {
-    sse.event(entry.event || 'message', publicJournalPayload(ctx, entry, legacy), entry.event_id)
-    if (SSE_RELAY_CLOSE_EVENTS.has(entry.event)) terminal = true
+  const legacy = new LegacyToolIds(ctx.deps.journal)
+  try {
+    for (const entry of ctx.deps.journal.iterRunEvents(summary.session_id, streamId, { afterSeq, maxSeq: opts.maxSeq ?? null })) {
+      if (!(await sse.ready())) return { found: true, terminal }
+      sse.event(entry.event || 'message', publicJournalPayload(ctx, entry, legacy), entry.event_id)
+      if (SSE_RELAY_CLOSE_EVENTS.has(entry.event)) terminal = true
+    }
+  } finally {
+    legacy.close()
   }
   if ((opts.includeStale ?? true) && !summary.terminal) {
     const stale = ctx.deps.journal.staleInterruptedEvent(summary.session_id, streamId, afterSeq, ctx.deps.auth.now())
@@ -202,18 +233,50 @@ function journalCoversGap(ctx: RequestContext, streamId: string, afterSeq: numbe
   const summary = ctx.deps.journal.findRunSummary(streamId)
   if (!summary) return false
   const seqs = new Set<number>()
-  for (const e of ctx.deps.journal.readRunEvents(summary.session_id, streamId, { afterSeq: floor, maxSeq: cutoff })) if (e.seq > floor && e.seq <= cutoff) seqs.add(e.seq)
+  for (const e of ctx.deps.journal.iterRunEvents(summary.session_id, streamId, { afterSeq: floor, maxSeq: cutoff })) if (e.seq > floor && e.seq <= cutoff) seqs.add(e.seq)
   return seqs.size === cutoff - floor
 }
 
-async function drainStream(ctx: RequestContext, sse: SseWriter, sub: StreamSubscriber, streamId: string, replayCutoffSeq: number | null): Promise<void> {
+/** The recovery frame for live frames that are gone: the client restores the last saved transcript. */
+function interruptedFrame(sessionId: string, streamId: string, dropped: number, message: string): Record<string, unknown> {
+  return { type: 'interrupted', terminal_state: 'interrupted', recovery_control: true, message, hint: 'The transcript was restored to the last saved state.', session_id: sessionId, stream_id: streamId, offline_dropped_events: dropped }
+}
+
+/**
+ * Before sending the live frame `seq`, send what `sub`'s bounded queue dropped while its writer waited for a slow reader:
+ * `backfill` gets the journal range (rows at or below `floor` were already sent), then the newest copy of each dropped
+ * refetch signal follows. When the journal cannot cover the run frames, the interrupted recovery frame is sent instead and
+ * this returns false, ending the stream.
+ */
+async function recoverDropped(ctx: RequestContext, sse: SseWriter, sub: StreamSubscriber, streamId: string, sessionId: string, seq: number | null, floor: number | null, backfill: (range: { afterSeq: number; maxSeq: number }) => Promise<void>): Promise<boolean> {
+  const gap = sub.gap
+  if (!gap) return true
+  const journaled = gap.firstEventId !== null
+  const from = sameRunSeq(gap.firstEventId, streamId)
+  // Journaled drops are bounded by the next journaled frame after them; a frame dequeued before the drops leaves them open.
+  if (!gap.unjournaled && journaled && (seq === null || (from !== null && seq < from))) return true
+  sub.gap = null
+  if (journaled || gap.unjournaled) {
+    const afterSeq = Math.max((from ?? 1) - 1, floor ?? 0)
+    if (gap.unjournaled || from === null || seq === null || !journalCoversGap(ctx, streamId, afterSeq, seq - 1)) {
+      sse.event('apperror', interruptedFrame(sessionId, streamId, gap.dropped, 'The live stream fell behind a slow connection and the run journal cannot backfill the dropped frames.'))
+      return false
+    }
+    await backfill({ afterSeq, maxSeq: seq - 1 })
+  }
+  for (const [event, data] of gap.signals) sse.event(event, data)
+  return true
+}
+
+async function drainStream(ctx: RequestContext, sse: SseWriter, sub: StreamSubscriber, streamId: string, replayCutoffSeq: number | null, sessionId: string): Promise<void> {
   for (;;) {
-    if (sse.isClosed) return
+    if (!(await sse.ready())) return
     const item = await nextItem(sub, SSE_HEARTBEAT_INTERVAL_MS)
     if (sse.isClosed) return
     if (!item) { sse.comment('heartbeat'); continue }
     const [event, data, eventId, redacted] = item
     const seq = sameRunSeq(eventId, streamId)
+    if (!(await recoverDropped(ctx, sse, sub, streamId, sessionId, seq, replayCutoffSeq, async (gap) => { await replayRunJournal(ctx, sse, streamId, gap.afterSeq, { maxSeq: gap.maxSeq, includeStale: false }) }))) return
     if (replayCutoffSeq !== null && seq !== null && seq <= replayCutoffSeq) {
       if (SSE_RELAY_CLOSE_EVENTS.has(event)) return
       continue
@@ -237,7 +300,7 @@ export async function handleChatStream(ctx: RequestContext): Promise<void> {
     const sse = claimOrReject(ctx, true)
     if (!sse) return
     sse.start()
-    try { replayRunJournal(ctx, sse, streamId, afterSeq) } finally { sse.end() }
+    try { await replayRunJournal(ctx, sse, streamId, afterSeq) } finally { sse.end() }
     return
   }
   const [sub, snapshot] = channel.subscribeWithSnapshot()
@@ -261,19 +324,19 @@ export async function handleChatStream(ctx: RequestContext): Promise<void> {
       let replayed = false
       let terminalReplayed = false
       if (covered) {
-        const result = replayRunJournal(ctx, sse, streamId, afterSeq, { maxSeq: replayMaxSeq, includeStale: false })
+        const result = await replayRunJournal(ctx, sse, streamId, afterSeq, { maxSeq: replayMaxSeq, includeStale: false })
         replayed = result.found
         terminalReplayed = result.terminal
         if (replayed) replayCutoffSeq = replayMaxSeq
       }
       if (gapRequired && (!covered || !replayed)) {
-        sse.event('apperror', { type: 'interrupted', terminal_state: 'interrupted', recovery_control: true, message: "The live stream's replay buffer overflowed while no tab was attached and the run journal cannot backfill the dropped frames.", hint: 'The transcript was restored to the last saved state.', session_id: owner ?? '', stream_id: streamId, offline_dropped_events: snapshot.offline_dropped_events || Math.max(0, (replayMaxSeq ?? 0) - afterSeq) })
+        sse.event('apperror', interruptedFrame(owner ?? '', streamId, snapshot.offline_dropped_events || Math.max(0, (replayMaxSeq ?? 0) - afterSeq), "The live stream's replay buffer overflowed while no tab was attached and the run journal cannot backfill the dropped frames."))
         return
       }
       if (terminalReplayed) return
       if (afterSeq > 0 && (snapshotCutoff === null || afterSeq <= snapshotCutoff)) replayCutoffSeq = replayCutoffSeq === null ? afterSeq : Math.max(replayCutoffSeq, afterSeq)
     }
-    await drainStream(ctx, sse, sub, streamId, replayCutoffSeq)
+    await drainStream(ctx, sse, sub, streamId, replayCutoffSeq, owner ?? '')
   } finally {
     channel.unsubscribe(sub)
     sse.end()
@@ -307,7 +370,7 @@ export async function handleSessionStream(ctx: RequestContext): Promise<void> {
       if (persisted !== null && persisted > knownCount) sse.event('session-updated', { session_id: sid, message_count: persisted, known_count: knownCount, source: 'subscribe_recovery' })
     }
     for (;;) {
-      if (sse.isClosed) return
+      if (!(await sse.ready())) return
       const item = await nextSessionItem(sub, SSE_HEARTBEAT_INTERVAL_MS)
       if (sse.isClosed) return
       if (!item) { sse.comment('keepalive'); continue }
@@ -371,7 +434,7 @@ export async function handleSessionEvents(ctx: RequestContext): Promise<void> {
     if (gatewaySub) sse.event('sessions_changed', { type: 'sessions_changed', sessions: initialGatewaySessions(ctx), stream: 'gateway' })
     let lastWrite = Date.now()
     for (;;) {
-      if (sse.isClosed) return
+      if (!(await sse.ready())) return
       // ponytail: 250 ms alternating drain instead of a fan-in; the watcher polls on a multi-second cadence.
       if (gatewaySub) {
         for (;;) {
@@ -416,14 +479,19 @@ export async function handleSessionJournalStream(ctx: RequestContext, sessionId:
   const sent = new Set<string>()
   const sentOrder: string[] = []
   const note = (id: string): void => { sent.add(id); sentOrder.push(id); while (sentOrder.length > SESSION_SSE_SENT_EVENT_ID_LIMIT) sent.delete(sentOrder.shift()!) }
-  const emitReplay = (events: JournalEvent[], streamId: string | null, cutoff: number | null): void => {
-    const legacy: LegacyToolIds = new Map()
-    for (const entry of events) {
-      const seq = streamId ? sameRunSeq(entry.event_id, streamId) : null
-      if (cutoff !== null && seq !== null && seq > cutoff) continue
-      if (entry.event_id && sent.has(entry.event_id)) continue
-      sse.event(entry.event || 'message', publicJournalPayload(ctx, entry, legacy), entry.event_id)
-      if (entry.event_id) note(entry.event_id)
+  const emitReplay = async (events: Iterable<JournalEvent>, streamId: string | null, cutoff: number | null): Promise<void> => {
+    const legacy = new LegacyToolIds(ctx.deps.journal)
+    try {
+      for (const entry of events) {
+        if (!(await sse.ready())) return
+        const seq = streamId ? sameRunSeq(entry.event_id, streamId) : null
+        if (cutoff !== null && seq !== null && seq > cutoff) continue
+        if (entry.event_id && sent.has(entry.event_id)) continue
+        sse.event(entry.event || 'message', publicJournalPayload(ctx, entry, legacy), entry.event_id)
+        if (entry.event_id) note(entry.event_id)
+      }
+    } finally {
+      legacy.close()
     }
   }
   const snapshot = (activeStreamId: string | null): void => {
@@ -448,9 +516,9 @@ export async function handleSessionJournalStream(ctx: RequestContext, sessionId:
       else { replayOk = true; replayEvents = replay.events }
     }
     if (!attached.sub) {
-      if (replayOk) emitReplay(replayEvents, attached.streamId, null)
+      if (replayOk) await emitReplay(replayEvents, attached.streamId, null)
       for (;;) {
-        if (sse.isClosed) return
+        if (!(await sse.ready())) return
         attached = attach()
         if (attached.sub) break
         const fp = ctx.deps.journal.sessionJournalFingerprint(sessionId)
@@ -465,16 +533,17 @@ export async function handleSessionJournalStream(ctx: RequestContext, sessionId:
     if (replayOk) {
       cutoff = sameRunSeq(attached.snapshot.last_event_id, streamId)
       const reconciled = ctx.deps.journal.readSessionRunEvents(sessionId, resumeEventId)
-      if (reconciled.status === 'ok') emitReplay(reconciled.events, streamId, cutoff)
+      if (reconciled.status === 'ok') await emitReplay(reconciled.events, streamId, cutoff)
       else snapshot(streamId)
     }
     for (;;) {
-      if (sse.isClosed) return
+      if (!(await sse.ready())) return
       const item = await nextItem(sub, SSE_HEARTBEAT_INTERVAL_MS)
       if (sse.isClosed) return
       if (!item) { sse.comment('keepalive'); continue }
       const [event, data, eventId, redacted] = item
       const seq = sameRunSeq(eventId, streamId)
+      if (!(await recoverDropped(ctx, sse, sub, streamId, sessionId, seq, cutoff, (gap) => emitReplay(ctx.deps.journal.iterRunEvents(sessionId, streamId, gap), streamId, null)))) return
       const terminal = SSE_RELAY_CLOSE_EVENTS.has(event)
       const alreadySent = (cutoff !== null && seq !== null && seq <= cutoff) || (eventId !== null && sent.has(eventId))
       if (alreadySent) { if (terminal) return; continue }
@@ -499,7 +568,7 @@ async function promptStream(ctx: RequestContext, kind: 'approval' | 'clarify'): 
     sse.start()
     sse.event('initial', initial)
     for (;;) {
-      if (sse.isClosed) return
+      if (!(await sse.ready())) return
       const item = await nextPendingItem(sub, SSE_HEARTBEAT_INTERVAL_MS)
       if (sse.isClosed) return
       if (!item) { sse.comment('keepalive'); continue }

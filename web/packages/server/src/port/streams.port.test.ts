@@ -57,6 +57,20 @@ describe('run journal deletion', () => {
     expect(s.deps.journal.deleteSession('')).toBe(false)
   })
 
+  it('paged reads match whole-file reads across page boundaries, multibyte text, and seq bounds', () => {
+    const w = s.deps.journal.writer('sess-pages', 'run-pages')
+    // Rows of mixed widths so lines and multibyte characters straddle the 64 KiB page edges.
+    for (let i = 1; i <= 400; i += 1) w.appendSseEvent('token', { text: `${'é🙂'.repeat(i * 7)}${String(i)}` })
+    w.close()
+    const seqs = (rows: { seq: number }[]): number[] => rows.map((r) => r.seq)
+    const paged = [...s.deps.journal.iterRunEvents('sess-pages', 'run-pages')]
+    expect(seqs(paged)).toEqual(Array.from({ length: 400 }, (_, i) => i + 1))
+    expect(paged.map((r) => (r.payload as { text: string }).text)).toEqual(Array.from({ length: 400 }, (_, i) => `${'é🙂'.repeat((i + 1) * 7)}${String(i + 1)}`))
+    expect(seqs([...s.deps.journal.iterRunEvents('sess-pages', 'run-pages', { afterSeq: 120, maxSeq: 333 })])).toEqual(Array.from({ length: 213 }, (_, i) => i + 121))
+    expect(seqs(s.deps.journal.readRunEvents('sess-pages', 'run-pages', { afterSeq: 120, maxSeq: 333 }))).toEqual(Array.from({ length: 213 }, (_, i) => i + 121))
+    expect([...s.deps.journal.iterRunEvents('sess-pages', 'never-written')]).toEqual([])
+  })
+
   it('dot ids are refused and legitimate journals survive', () => {
     expect(s.deps.journal.deleteSession('.')).toBe(false)
     expect(s.deps.journal.deleteSession('..')).toBe(false)
