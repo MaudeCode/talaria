@@ -12,7 +12,7 @@ import { buildActiveTurnToken, copyJson, redactSessionData, redactValue, stripPu
 import type { DraftStore } from './drafts.js'
 import { DraftVersionConflict, normalizeDraftVersion } from './drafts.js'
 import type { SessionEventBus } from './events.js'
-import { allSessions, buildSessionListPayload, CLI_IDENTITY_FIELDS, isClaimableCliSource, isMessagingSessionRecord, withOwnerLocks, withSessionWireFlags, lineageRootId, mergeCliSidebarMetadata, sessionListResponse, sessionSearchMessageText, sessionSearchPreview, type ListParams, type ListResponse, type Row, type RuntimeOverlay } from './list.js'
+import { allSessions, buildSessionListPayload, CLI_IDENTITY_FIELDS, isClaimableCliSource, isMessagingSessionRecord, withOwnerLocks, withSessionWireFlags, lineageRootId, mergeCliSidebarMetadata, sessionListResponse, sessionSearchMatches, sessionSearchMessageText, sessionSearchPreview, sessionSearchTerms, type ListParams, type ListResponse, type Row, type RuntimeOverlay } from './list.js'
 import { anchorSceneIntOrNull, fullToolResult, hydrateAnchorActivityScenes, normalizeAnchorSceneMessageRef, readAnchorSceneRows, storeAnchorScene, withTurnIds } from './anchor.js'
 import { isSafeSessionId, lastMessageTimestamp, Session, stripAttachedFilesMarker, titleFrom, type Message } from './session.js'
 import { SessionBusy, SessionNotFound, statSignature, type SessionStore } from './store.js'
@@ -637,11 +637,12 @@ export class SessionService {
     }
     const query = q.toLowerCase().trim()
     if (!query) return { sessions: sessions.map((s) => redactRow({ ...s })), all_profiles: opts.allProfiles, active_profile: activeProfile }
+    const terms = sessionSearchTerms(query)
     const results: Row[] = []
     for (const s of sessions) {
-      if (str(s.title).toLowerCase().includes(query)) { results.push(redactRow({ ...s, match_type: 'title' })); continue }
+      if (sessionSearchMatches(str(s.title), terms)) { results.push(redactRow({ ...s, match_type: 'title' })); continue }
       if (!opts.content) continue
-      const hit = this.contentMatch(str(s.session_id), query, opts.depth)
+      const hit = this.contentMatch(str(s.session_id), terms, opts.depth)
       if (hit) results.push(redactRow({ ...s, ...hit }))
     }
     return { sessions: results, query, count: results.length, all_profiles: opts.allProfiles, active_profile: activeProfile }
@@ -659,27 +660,28 @@ export class SessionService {
     const query = q.toLowerCase().trim()
     const base = { all_profiles: params.allProfiles, active_profile: this.deps.activeProfile(), include_archived: params.includeArchived, sidebar_filtered: true }
     if (!query) return { ...base, sessions: rows }
+    const terms = sessionSearchTerms(query)
     const results: Row[] = []
     for (const row of rows) {
-      if (str(row.title).toLowerCase().includes(query)) results.push({ ...row, match_type: 'title' })
-      else if (['workspace', 'workspace_name', 'model', 'model_provider', 'profile', 'source_label'].some((k) => str(row[k]).toLowerCase().includes(query))) results.push({ ...row, match_type: 'metadata' })
+      if (sessionSearchMatches(str(row.title), terms)) results.push({ ...row, match_type: 'title' })
+      else if (['workspace', 'workspace_name', 'model', 'model_provider', 'profile', 'source_label'].some((k) => sessionSearchMatches(str(row[k]), terms))) results.push({ ...row, match_type: 'metadata' })
       else if (opts.content) {
-        const hit = this.contentMatch(str(row.session_id), query, opts.depth)
+        const hit = this.contentMatch(str(row.session_id), terms, opts.depth)
         if (hit) results.push({ ...row, ...hit })
       }
     }
     return { ...base, sessions: results, query, count: results.length }
   }
 
-  /** The first of a stored session's first `depth` messages (0: all) containing `query`, with its redacted excerpt. */
-  private contentMatch(sid: string, query: string, depth: number): Row | null {
+  /** The first of a stored session's first `depth` messages (0: all) containing every term, with its redacted excerpt. */
+  private contentMatch(sid: string, terms: readonly string[], depth: number): Row | null {
     let sess: Session
     try { sess = this.store.get(sid, { promote: false, cacheOnMiss: false }) } catch { return null }
     for (const m of depth ? sess.messages.slice(0, depth) : sess.messages) {
       const c = sessionSearchMessageText(m)
-      if (!c.toLowerCase().includes(query)) continue
+      if (!sessionSearchMatches(c, terms)) continue
       const item: Row = { match_type: 'content' }
-      const preview = sessionSearchPreview(c, query)
+      const preview = sessionSearchPreview(c, terms)
       if (preview) item.match_preview = redactText(preview, this.deps.redactEnabled())
       return item
     }

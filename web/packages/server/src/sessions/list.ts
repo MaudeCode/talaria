@@ -912,11 +912,27 @@ export function sessionSearchMessageText(message: unknown): string {
   return str(content)
 }
 
-export function sessionSearchPreview(text: string, query: string, maxLen = 124): string {
+/** TAL-453: a query's distinct whitespace-separated terms, lowercased; a row matches when one field holds them all. */
+export function sessionSearchTerms(query: string): string[] {
+  return [...new Set(query.toLowerCase().split(/\s+/).filter(Boolean))]
+}
+
+export function sessionSearchMatches(text: string, terms: readonly string[]): boolean {
+  const lower = text.toLowerCase()
+  return terms.length > 0 && terms.every((term) => lower.includes(term))
+}
+
+/** An excerpt of `text` centred on the earliest occurrence of any of `terms`. */
+export function sessionSearchPreview(text: string, terms: readonly string[], maxLen = 124): string {
   const normalized = text.replace(/\s+/g, ' ').trim()
-  const q = query.replace(/\s+/g, ' ').trim()
-  if (!normalized || !q) return ''
-  const idx = normalized.toLowerCase().indexOf(q.toLowerCase())
+  if (!normalized) return ''
+  const lower = normalized.toLowerCase()
+  let idx = -1
+  let q = ''
+  for (const term of terms) {
+    const at = lower.indexOf(term)
+    if (at >= 0 && (idx < 0 || at < idx)) { idx = at; q = term }
+  }
   if (idx < 0) return ''
   const limit = Math.max(32, maxLen)
   if (normalized.length <= limit) return normalized

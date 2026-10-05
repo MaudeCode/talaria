@@ -63,6 +63,38 @@ extension SessionListMutationTests {
     }
 
     @MainActor
+    func testRemoteSessionSearchShowsAServerMatchForWordsInAnotherOrder() async throws {
+        let viewModel = try makeViewModel { request in
+            switch request.url?.path {
+            case "/api/sessions":
+                return apiTestJSONResponse("""
+                {"sessions": [{"session_id": "relay", "title": "Relay deploy checklist", "last_message_at": 30, "archived": false}]}
+                """, for: request)
+            case "/api/sessions/search":
+                return apiTestJSONResponse("""
+                {
+                  "sessions": [{"session_id": "relay", "title": "Relay deploy checklist", "match_type": "title"}],
+                  "query": "deploy relay",
+                  "count": 1,
+                  "sidebar_filtered": true
+                }
+                """, for: request)
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        await viewModel.load()
+        await viewModel.searchSessions(query: "deploy relay", debounceNanoseconds: 0)
+
+        XCTAssertEqual(
+            viewModel.visibleSessions(searchText: "deploy relay", selectedProjectID: nil).compactMap(\.sessionId),
+            ["relay"]
+        )
+    }
+
+    @MainActor
     func testRemoteSessionSearchSendsTheSelectedProjectAndVisibility() async throws {
         let viewModel = try makeViewModel { request in
             switch request.url?.path {
