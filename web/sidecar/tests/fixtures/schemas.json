@@ -3906,6 +3906,35 @@
           "additionalProperties": {}
         }
       },
+      "context_messages": {
+        "anyOf": [
+          {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            }
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "post_compression_context_tokens_estimate": {
+        "anyOf": [
+          {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
       "final_response": {
         "type": "string"
       },

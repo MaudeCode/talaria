@@ -619,8 +619,10 @@ export class TurnRunner {
       s = current
       // Python `_maybe_inject_max_iteration_summary_fallback`: an exhausted tool budget leaves the closing
       // explanation in `final_response` only, so it becomes the turn's assistant answer before anything else reads it.
-      const agentRows = result.tool_limit_reached ? injectMaxIterationSummaryFallback(result.messages, result.final_response) : (result.messages as Message[])
-      const resultMessages = result.tool_limit_reached ? withoutMaxIterationSummaryRequest(agentRows, result.max_iterations_summary_request, msgText) : agentRows
+      const withFallback = (rows: Message[]): Message[] => (result.tool_limit_reached ? injectMaxIterationSummaryFallback(rows, result.final_response) : rows)
+      const withoutRequest = (rows: Message[]): Message[] => (result.tool_limit_reached ? withoutMaxIterationSummaryRequest(rows, result.max_iterations_summary_request, msgText) : rows)
+      const agentRows = withFallback(result.messages)
+      const resultMessages = withoutRequest(agentRows)
       // Python `_assistant_reply_added_after_current_turn`: replayed history never counts as this turn's answer (the
       // sidecar reports `completed` whenever a failed run still carries messages).
       // Python's second chance: a turn that emitted no new row still counts when the merged transcript it produced
@@ -666,12 +668,24 @@ export class TurnRunner {
         return
       }
       // ── settle the transcript ──
+      // TAL-539: after a mid-turn compression the model context is the sidecar's pruned copy, settled like the transcript.
+      const pruned = result.compressed ? result.context_messages ?? null : null
+      const context = pruned ? withoutRequest(withFallback(pruned)) : resultMessages
+      let estimate = result.compressed ? result.post_compression_context_tokens_estimate ?? null : null
+      // The sidecar estimated its own rows; a tool-limit settlement that changed them moves the estimate by the difference.
+      if (pruned && estimate !== null && context !== pruned) {
+        try {
+          const [before, after] = await Promise.all([pruned, context].map((messages) => sidecar.call('models.estimate_tokens', { messages })))
+          estimate = Math.max(1, estimate + after!.tokens - before!.tokens)
+        } catch { estimate = null }
+      }
       // The Agent's last pending-steer text settles the remaining steers before the turn is written back.
       await this.steerRewrites.get(streamId)
       const { events: steerEvents, leftovers } = this.finalizeSteers(streamId, result.pending_steer, 'followup')
       s.messages = mergeDisplayMessagesAfterAgentResult(previousMessages, previousContext, resultMessages, msgText, { source: opts.source ?? 'webui', activeTurnToken, now: deps.now(), turnId: streamId, attachments: opts.attachments ?? [] })
-      s.context_messages = dedupeContext(resultMessages)
+      s.context_messages = dedupeContext(context)
       if (result.compressed) {
+        s.post_compression_context_tokens_estimate = estimate
         s.compression_anchor_visible_idx = Math.max(0, previousMessages.length - 1)
         put('compressed', { session_id: sessionId, old_session_id: sessionId, new_session_id: sessionId, continuation_session_id: sessionId, message: 'Compression finished' })
       }

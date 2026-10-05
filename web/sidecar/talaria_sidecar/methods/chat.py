@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import contextlib
 import contextvars
+import copy
 import hashlib
 import inspect
 import json
@@ -253,6 +254,98 @@ def _context_length(agent: Any) -> dict:
         if isinstance(value, (int, float)):
             out[key] = int(value)
     return out
+
+
+# TAL-539: the hard cap on raw tool output kept in a compressed context (predecessor ``_hard_prune_post_compression_*``).
+_TAIL_TOOL_BUDGET_TOKENS = 4096
+_TAIL_TOOL_MIN_SNIPPET_TOKENS = 256
+_ROUGH_TOKEN_CHARS = 4
+
+
+def _content_text(content: Any) -> str:
+    if isinstance(content, list):
+        return " ".join(str(p.get("text") or "") for p in content if isinstance(p, dict))
+    return str(content or "")
+
+
+def _rough_tokens(text: str) -> int:
+    """The Agent's estimate, which counts CJK and other non-ASCII text as denser; ceil(chars / 4) without it."""
+    try:
+        from agent.model_metadata import estimate_tokens_rough
+
+        return int(estimate_tokens_rough(text))
+    except Exception:  # noqa: BLE001
+        return -(-len(text) // _ROUGH_TOKEN_CHARS)
+
+
+def _capped_tool_result(text: str, tokens: int, keep_tokens: int) -> str:
+    """The kept head of an over-budget tool result plus a note on what the model no longer sees."""
+    prefix = "[Talaria context budget: omitted "
+    suffix = f" (~{tokens} rough tokens) from this tool result; the full output remains in the visible transcript.]"
+    if keep_tokens < _TAIL_TOOL_MIN_SNIPPET_TOKENS:
+        return f"{prefix}{len(text)} chars{suffix}"
+    room = keep_tokens - _rough_tokens(f"{prefix}{len(text)} of {len(text)} chars{suffix}") - 1
+    snippet = text[: len(text) * room // tokens]
+    # Density varies along the text: shrink until the kept head fits the remaining tokens.
+    while snippet and _rough_tokens(snippet) > room:
+        snippet = snippet[: len(snippet) * 3 // 4]
+    snippet = snippet.rstrip()
+    if not snippet:
+        return f"{prefix}{len(text)} chars{suffix}"
+    return f"{snippet}\n\n{prefix}{len(text) - len(snippet)} of {len(text)} chars{suffix}"
+
+
+def _cap_tool_results(messages: list, compressor: Any) -> list:
+    """Newest tool results spend one shared budget; the first one over it is cut to the remainder, older ones to a note."""
+    budget = getattr(compressor, "tail_token_budget", None)
+    budget = budget if isinstance(budget, int) and budget > 0 else _TAIL_TOOL_BUDGET_TOKENS
+    threshold = getattr(compressor, "threshold_tokens", None)
+    if isinstance(threshold, int) and threshold > 0:
+        budget = min(budget, max(512, threshold // 2))
+    budget = max(512, budget)
+    spent = 0
+    out = list(messages)
+    for i in range(len(out) - 1, -1, -1):
+        msg = out[i]
+        if msg.get("role") != "tool":
+            continue
+        text = _content_text(msg.get("content"))
+        if not text.strip():
+            continue
+        tokens = _rough_tokens(text)
+        if tokens <= budget - spent:
+            spent += tokens
+            continue
+        out[i] = {**msg, "content": _capped_tool_result(text, tokens, budget - spent)}
+        spent = budget
+    return out
+
+
+def _post_compression_context(agent: Any, messages: list, system_message: Any) -> tuple[list, int | None]:
+    """TAL-539: tool output produced after a mid-turn compression never went through the compressor's pruning. Run that
+    pruning plus a hard cap on the model context, and estimate the next request from it (predecessor
+    ``_prune_context_tool_results_after_compression`` / ``_estimate_post_compression_context_tokens``)."""
+    compressor = getattr(agent, "context_compressor", None)
+    context = messages
+    prune = getattr(compressor, "_prune_old_tool_results", None)
+    if callable(prune):
+        try:
+            pruned, count = prune(copy.deepcopy(messages), protect_tail_count=getattr(compressor, "protect_last_n", 20), protect_tail_tokens=getattr(compressor, "tail_token_budget", None))
+            if count and isinstance(pruned, list) and len(pruned) == len(messages):
+                context = pruned
+        except Exception:  # noqa: BLE001 - the hard cap below still bounds the context
+            log.debug("post-compression tool-result pruning failed", exc_info=True)
+    context = _cap_tool_results(context, compressor)
+    estimate = None
+    try:
+        from agent.model_metadata import estimate_request_tokens_rough
+
+        # The request carries the ephemeral prompt (surface, personality, delivery) after the system message.
+        prompts = [p for p in (system_message, getattr(agent, "ephemeral_system_prompt", None)) if isinstance(p, str) and p.strip()]
+        estimate = estimate_request_tokens_rough(context, system_prompt="\n\n".join(prompts), tools=getattr(agent, "tools", None) or None)
+    except Exception:  # noqa: BLE001 - display-only figure
+        log.debug("post-compression context estimate failed", exc_info=True)
+    return context, estimate if isinstance(estimate, int) and estimate > 0 else None
 
 
 def _clarify_timeout(params: dict) -> int:
@@ -1055,9 +1148,14 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             error = str(result["final_response"])
         status = "cancelled" if cancelled else ("error" if failed or (error and not result.get("messages")) else "completed")
         pending_steer = str(result.get("pending_steer") or "") if isinstance(result, dict) else ""
+        messages = [m for m in (result.get("messages") or []) if isinstance(m, dict)]
+        compressed = compressions_after > compressions_before
+        context_messages, context_estimate = _post_compression_context(agent, messages, system_message) if compressed and messages and status == "completed" else (None, None)
         return {
             "status": status,
-            "messages": [m for m in (result.get("messages") or []) if isinstance(m, dict)],
+            "messages": messages,
+            "context_messages": context_messages,
+            "post_compression_context_tokens_estimate": context_estimate,
             "final_response": str(result.get("final_response") or ""),
             "error": error,
             "failed": failed,
@@ -1070,7 +1168,7 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             "context": _context_length(agent),
             "model": str(getattr(agent, "model", None) or resolved_model),
             "provider": str(resolved_provider or ""),
-            "compressed": compressions_after > compressions_before,
+            "compressed": compressed,
             "agent_session_id": str(getattr(agent, "session_id", None) or session_id),
             "token_sent": token_sent[0],
             "pending_steer": pending_steer,

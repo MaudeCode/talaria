@@ -2189,6 +2189,40 @@ describe('chat turns through the sidecar', () => {
     }
   })
 
+  it('stores the pruned context and its estimate after a mid-turn auto-compression (TAL-539)', async () => {
+    const sid = await newSession(s)
+    const raw = 'line of tool output\n'.repeat(20000)
+    const pruned = '[read_file] 20000 lines (pruned)'
+    const request = 'You have reached the maximum number of tool-calling iterations allowed.'
+    sidecar.respond('chat.start', (params) => {
+      const rows = (content: string): Json[] => [
+        { role: 'user', content: '[CONTEXT COMPACTION] earlier work' },
+        { role: 'user', content: str(params.user_message) },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{}' } }] },
+        { role: 'tool', tool_call_id: 'c1', content },
+        { role: 'user', content: request },
+      ]
+      return completed(rows(raw), { compressed: true, context_messages: rows(pruned), post_compression_context_tokens_estimate: 1234, context: { context_length: 200000, last_prompt_tokens: 150000 }, tool_limit_reached: true, final_response: 'Read it.', max_iterations_summary_request: request })
+    })
+    sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Read"', usage: null }))
+    // A stand-in estimator: one token per content character.
+    sidecar.respond('models.estimate_tokens', (params) => ({ tokens: (params.messages as Json[]).reduce((n, m) => n + str(m.content).length, 0) }))
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'read the log' }))
+    const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    expect(eventNames(frames)).toContain('compressed')
+    const stored = s.deps.sessionStore.get(sid)
+    // The model context holds the pruned tool output, with the same tool-limit settlement as the transcript.
+    expect(stored.context_messages.find((m) => m.role === 'tool')?.content).toBe(pruned)
+    expect(stored.context_messages.map((m) => m.content)).not.toContain(request)
+    expect(stored.context_messages.at(-1)).toMatchObject({ role: 'assistant', content: 'Read it.' })
+    expect(stored.messages.find((m) => m.role === 'tool')?.content).toBe(raw)
+    // The sidecar estimated its rows; the settlement dropped the summary request and added the closing answer.
+    const settled = 1234 - request.length + 'Read it.'.length
+    expect(stored.post_compression_context_tokens_estimate).toBe(settled)
+    const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
+    expect(detail.context_used_tokens).toBe(settled)
+  })
+
   it('reports no_cached_agent for a steer against an unknown session', async () => {
     expect(await json(await post(s, '/api/chat/steer', { session_id: 'deadbeef0000', text: 'focus' }))).toEqual({ accepted: false, fallback: 'no_cached_agent', stream_id: null })
   })
