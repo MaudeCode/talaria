@@ -155,4 +155,17 @@ describe('stale-stream cleanup with a run journal', () => {
     expect(messages.map((m) => m.content)).toEqual(['summarize the repo', 'Checking the tree.', '', MARKER])
     expect(messages[2]).toMatchObject({ reasoning: 'That should do.', _partial: true })
   })
+
+  it('a first turn with no model context yet gets one with the recovered output', async () => {
+    const sid = await deadRun('deadrun536first', [...work, ['token', { text: 'It is a mono' }]])
+    expect(said(recovered(sid).context_messages)).toEqual([['user', 'summarize the repo'], ['assistant', 'Checking the tree.\n\nIt is a mono']])
+  })
+
+  it('a done frame answer in structured content is the answer', async () => {
+    const streamId = 'deadrun536blocks'
+    const summary = { role: 'assistant', content: [{ type: 'thinking', thinking: 'Wrap up.' }, { type: 'text', text: 'The tree has a README.' }], _turn_id: streamId }
+    const sid = await deadRun(streamId, [...work, ['done', { terminal_state: 'tool_limit_reached', session: { messages: [summary] } }]])
+    expect(recovered(sid).messages.map((m) => m.content)).toEqual(['summarize the repo', 'Checking the tree.', 'The tree has a README.'])
+  })
 })
+

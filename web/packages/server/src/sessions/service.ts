@@ -124,6 +124,9 @@ export interface SessionServiceDeps {
   media?: { access: MediaAccessDeps; localIo: (profile: string | null) => boolean }
 }
 
+/** TAL-536: the most of a dead run's journal stale-stream cleanup reads (Python's recovery window). */
+const RECOVERY_JOURNAL_MAX_BYTES = 8 * 1024 * 1024
+const RECOVERY_JOURNAL_MAX_ROWS = 65536
 const isDict = (v: unknown): v is Record<string, unknown> => Boolean(v) && typeof v === 'object' && !Array.isArray(v)
 
 export class SessionService {
@@ -654,7 +657,8 @@ export class SessionService {
     // flight becomes a durable user turn, the output its journal holds follows it, and an interruption marker closes a
     // run that never finished with an answer, so a dead stream never silently drops what the user sent or what streamed.
     const turnId = str(target.active_stream_id)
-    const events = this.deps.journal?.readRunEvents(target.session_id, turnId) ?? []
+    // ponytail: one bounded tail read (Python's recovery window); a journal past it recovers its latest output only.
+    const events = this.deps.journal?.readRunEventTail(target.session_id, turnId, RECOVERY_JOURNAL_MAX_BYTES, RECOVERY_JOURNAL_MAX_ROWS).events ?? []
     const { rows: output, answered } = journalOutputRows(events, turnId)
     const pendingText = str(target.pending_user_message)
     const attachments = [...target.pending_attachments]
@@ -664,18 +668,17 @@ export class SessionService {
     const runStart = target.pending_started_at || events[0]?.created_at || this.deps.now()
     const before = read.rows.filter((m) => Number(m.timestamp) < runStart)
     const ownRows = target.hasPendingPrompt ? runStateDbRows(read.rows.filter((m) => Number(m.timestamp) >= runStart), pendingText) : null
-    const previousContext = this.modelContext(target, before)
+    // Without this turn's rows: an eager save already put its prompt in the transcript a fresh context falls back to.
+    const previousContext = this.modelContext(target, before).filter((m) => m._turn_id !== turnId)
     if (target.hasPendingPrompt) {
       const startedAt = typeof target.pending_started_at === 'number' && target.pending_started_at > 0 ? target.pending_started_at : this.deps.now()
       // An eager save already checkpointed this prompt as the turn's user row.
       if (!target.messages.some((m) => m.role === 'user' && !m._steer && m._turn_id === turnId)) target.messages.push({ role: 'user', content: pendingText, timestamp: Math.trunc(startedAt), ...(attachments.length ? { attachments } : {}), _recovered: true, _source: target.pending_user_source ?? 'webui', _turn_id: turnId })
       // The model context settles as a Stop's does: the Agent's own rows when it committed the prompt, else the prompt it
       // was sent; then the prose that streamed past them.
-      if (target.context_messages.length) {
-        const prompt = attachedFilesPrompt((str(target.workspace) ? workspaceContextPrefix(str(target.workspace)) : '') + pendingText, attachments)
-        const streamed = output.map((m) => str(m.content)).filter(Boolean).join('\n\n')
-        target.context_messages = dedupeContext(stoppedTurnContext(previousContext, ownRows ? [...previousContext, ...ownRows] : null, prompt, pendingText, streamed, previousContext.length) ?? [...structuredClone(previousContext), { role: 'user', content: prompt }])
-      }
+      const prompt = attachedFilesPrompt((str(target.workspace) ? workspaceContextPrefix(str(target.workspace)) : '') + pendingText, attachments)
+      const streamed = output.map((m) => str(m.content)).filter(Boolean).join('\n\n')
+      target.context_messages = dedupeContext(stoppedTurnContext(previousContext, ownRows ? [...previousContext, ...ownRows] : null, prompt, pendingText, streamed, previousContext.length) ?? [...structuredClone(previousContext), { role: 'user', content: prompt }])
     }
     if (target.hasPendingPrompt || output.length) {
       target.messages.push(...output)

@@ -714,7 +714,8 @@ export function journalOutputRows(events: JournalEvent[], turnId: string): { row
   }
   const settled = isDict(done.payload) && isDict(done.payload.session) && Array.isArray(done.payload.session.messages) ? done.payload.session.messages : []
   const answer = settled.findLast((m): m is Message => isDict(m) && m.role === 'assistant' && m._turn_id === turnId)
-  const content = answer && !answer._error && !(Array.isArray(answer.tool_calls) && answer.tool_calls.length) && typeof answer.content === 'string' ? answer.content.trim() : ''
+  // Its visible prose, from string or structured content, as the scene's final answer reads it.
+  const content = answer && !answer._error && !(Array.isArray(answer.tool_calls) && answer.tool_calls.length) ? splitDisplayText(messageText(answer.content))[0] : ''
   if (!content) return { rows, answered: false }
   rows.push({ role: 'assistant', content, timestamp: Math.trunc(done.created_at), _turn_id: turnId })
   return { rows, answered: true }
