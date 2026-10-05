@@ -115,7 +115,9 @@ Experimental artifact type, one npm tarball layer, and revision and version
 annotations. It downloads the layer only through GHCR's redirect to
 `pkg-containers.githubusercontent.com` without the token, and requires the bytes to
 match the layer digest. The installation is behind when its release `sourceRevision`
-differs from the annotated revision. The tarball installs into the same staged
+differs from the annotated revision. The reported count is the number of retained
+`sha-<commit>` build tags on the annotated revision's GitHub history back to the
+installed revision, at least 1. The tarball installs into the same staged
 prefix, and its baked `_release.json` must match the annotations before the rename.
 
 Changing the channel switches an npm installation on its next update, in either

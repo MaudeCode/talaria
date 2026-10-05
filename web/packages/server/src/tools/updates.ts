@@ -282,6 +282,8 @@ export interface ExperimentalRegistry {
   release: () => Promise<ExperimentalRelease>
   /** The layer bytes, verified against the release digest and size. */
   download: (release: ExperimentalRelease) => Promise<Buffer>
+  /** Source revisions with a published build: every retained `sha-<commit>` tag. */
+  builds: () => Promise<Set<string>>
 }
 
 /** Anonymous GHCR client with `githubJson`'s timeouts, caps, and transient classification. */
@@ -319,6 +321,11 @@ export function ghcrExperimental(fetchImpl: typeof fetch): ExperimentalRegistry 
         throw new ReleaseUnavailable('The Experimental artifact has malformed provenance')
       }
       return { tag: `web-exp-v${version}`, version, sourceRevision, digest: layer.digest, size }
+    },
+    builds: async () => {
+      const body = await json(await send(`${GHCR}/v2/${EXPERIMENTAL_REPOSITORY}/tags/list?n=1000`, { headers: { Authorization: `Bearer ${await token()}` }, signal: AbortSignal.timeout(5000) }), 'tag list')
+      const tags = Array.isArray(body.tags) ? body.tags : []
+      return new Set(tags.flatMap((tag) => (typeof tag === 'string' && /^sha-[a-f0-9]{40}$/.test(tag) ? [tag.slice(4)] : [])))
     },
     download: async (release) => {
       let res = await send(`${GHCR}/v2/${EXPERIMENTAL_REPOSITORY}/blobs/${release.digest}`, { headers: { Authorization: `Bearer ${await token()}` }, signal: AbortSignal.timeout(120_000) })
@@ -393,8 +400,32 @@ function npmInstallChannel(installed: NpmInstallInfo, id: ReleaseIdentity): Chan
   return str(diskRelease(installed.packageRoot)?.tag ?? id.release().tag).startsWith('web-exp-v') ? 'experimental' : 'stable'
 }
 
-/** An npm install on Experimental: behind when its source differs from the `experimental` tag, or when switching channels. */
-async function checkNpmExperimental(result: Dict, installed: NpmInstallInfo, id: ReleaseIdentity, registry: ExperimentalRegistry): Promise<Dict> {
+/**
+ * Published Experimental builds after `installed` up to `latest` (TAL-626): commits on `latest`'s history back to `installed`
+ * that carry a `sha-` build tag. Never below 1; 1 when the history or tag list cannot be read.
+ */
+async function experimentalBuildsBehind(installed: string | null, latest: string, registry: ExperimentalRegistry, getJson: GetJson): Promise<number> {
+  if (!installed) return 1
+  let count = 0
+  try {
+    const builds = await registry.builds()
+    for (let page = 1; page <= 5; page += 1) {
+      const commits = await getJson(`/commits?sha=${latest}&per_page=100&page=${String(page)}`, { asset: false })
+      if (!Array.isArray(commits)) break
+      for (const commit of commits) {
+        const sha = dict(commit).sha
+        if (sha === installed) return Math.max(1, count)
+        if (typeof sha === 'string' && builds.has(sha)) count += 1
+      }
+      if (commits.length < 100) break
+    }
+  } catch { /* count what was read */ }
+  // ponytail: 500 commits back; an older install reports the builds within that window.
+  return Math.max(1, count)
+}
+
+/** An npm install on Experimental: behind by its missed builds when its source differs from the `experimental` tag, or when switching channels. */
+async function checkNpmExperimental(result: Dict, installed: NpmInstallInfo, id: ReleaseIdentity, registry: ExperimentalRegistry, getJson: GetJson): Promise<Dict> {
   let release: ExperimentalRelease
   try {
     release = await registry.release()
@@ -405,8 +436,8 @@ async function checkNpmExperimental(result: Dict, installed: NpmInstallInfo, id:
   Object.assign(result, { latest_version: release.tag, latest_sha: release.sourceRevision, branch: 'experimental', release_based: true, no_git: true, install_kind: 'npm', manual_update: false })
   const disk = diskRelease(installed.packageRoot)
   const current = str(disk?.sourceRevision ?? id.release().sourceRevision) || null
-  if (npmInstallChannel(installed, id) !== 'experimental') return { ...result, current_sha: current, behind: 1, channel_switch: true, message: `Switching to Experimental installs ${release.version}.` }
-  if (disk?.sourceRevision !== release.sourceRevision) return { ...result, current_sha: current, behind: 1, message: `Experimental update ${release.version} is available.` }
+  if (npmInstallChannel(installed, id) !== 'experimental') return { ...result, current_sha: current, behind: await experimentalBuildsBehind(current, release.sourceRevision, registry, getJson), channel_switch: true, message: `Switching to Experimental installs ${release.version}.` }
+  if (disk?.sourceRevision !== release.sourceRevision) return { ...result, current_sha: current, behind: await experimentalBuildsBehind(current, release.sourceRevision, registry, getJson), message: `Experimental update ${release.version} is available.` }
   const metadataRepair = !same(id.release(), disk)
   return { ...result, current_sha: release.sourceRevision, behind: 0, metadata_repair: metadataRepair, ...(metadataRepair ? { message: 'The npm package is current; finish the update to restart with that version.' } : {}) }
 }
@@ -426,7 +457,7 @@ export async function checkWebUpdate(webRoot: string | null, currentVersion: str
   const npmInstall = root === null ? await npmInstallInfo(webRoot, npmRun) : null
   const result: Dict = { name: 'webui', channel, repo_url: REPOSITORY_URL, current_version: currentVersion, behind: null, no_git: root === null }
   if (root !== null) return { ...result, manual_update: true, message: CONTRIBUTOR_CHECKOUT_MESSAGE }
-  if (channel === 'experimental' && npmInstall && registry) return checkNpmExperimental(result, npmInstall, id, registry)
+  if (channel === 'experimental' && npmInstall && registry) return checkNpmExperimental(result, npmInstall, id, registry, getJson)
   const packaged = new RegExp(`^${channel === 'experimental' ? 'web-exp-v' : 'web-v'}${VERSION}$`).exec(currentVersion)?.slice(1, 4).join('.')
   const installed = npmInstall?.version ?? packaged
   let release: PublishedRelease
