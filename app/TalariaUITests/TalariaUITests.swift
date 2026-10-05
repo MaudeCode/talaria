@@ -1402,9 +1402,8 @@ class AdaptiveLayoutUITestCase: TalariaUITestCase {
     /// One launch per variant; each launch walks every representative screen. Settings
     /// are bundled so the matrix stays at two launches instead of screens × settings.
     /// Every variant pins its text size so a reused simulator cannot leak one in. Landscape
-    /// is audited by rotating the default-size variant rather than in a launch of its own; the
-    /// accessibility-size variant carries Reduce Motion (TAL-402). Landscape at accessibility
-    /// sizes is not audited: its composer covers the chat's navigation bar.
+    /// is audited by rotating each variant rather than in a launch of its own; the
+    /// accessibility-size variant carries Reduce Motion (TAL-402, TAL-416).
     static let variants = [
         Variant(
             name: "light",
@@ -1413,14 +1412,14 @@ class AdaptiveLayoutUITestCase: TalariaUITestCase {
             auditTypes: [.dynamicType, .hitRegion, .sufficientElementDescription, .trait]
         ),
         Variant(
-            name: "portrait dark RTL AXXXL reduce-motion",
+            name: "dark RTL AXXXL reduce-motion",
             arguments: [
                 "-appTheme", "dark",
                 "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL",
                 "-AppleTextDirection", "YES",
                 "-NSForceRightToLeftWritingDirection", "YES",
             ],
-            orientations: [.portrait],
+            orientations: [.portrait, .landscapeLeft],
             reduceMotion: true
         ),
     ]
@@ -1473,8 +1472,8 @@ final class AdaptiveLayoutLightUITests: AdaptiveLayoutAppUITestCase {
     }
 }
 
-final class AdaptiveLayoutPortraitDarkRTLUITests: AdaptiveLayoutAppUITestCase {
-    func testCoreScreensPassAccessibilityAuditsInPortraitDarkRTLAccessibilityXXXLReduceMotion() throws {
+final class AdaptiveLayoutDarkRTLUITests: AdaptiveLayoutAppUITestCase {
+    func testCoreScreensPassAccessibilityAuditsInDarkRTLAccessibilityXXXLReduceMotionPortraitAndLandscape() throws {
         try auditCoreScreens(Self.variants[1])
     }
 }
@@ -1520,7 +1519,12 @@ class AdaptiveLayoutAppUITestCase: AdaptiveLayoutUITestCase {
             tapFixtureSession(fixtureSessionButton)
             XCTAssertNotNil(waitForComposer(timeout: 15), "Composer missing [\(variant.name)]")
             try audit("Chat transcript and composer", variant: variant)
+            // The composer must leave the navigation bar's Back button tappable (TAL-416).
             app.buttons["BackButton"].tap()
+            XCTAssertTrue(
+                app.navigationBars["Chats"].awaitExistence(timeout: Self.navigationTimeout),
+                "Back did not return to Chats [\(variant.name)]"
+            )
 
             openSettings()
             // The account rows above the category directory (User Profile,
@@ -1565,8 +1569,12 @@ class AdaptiveLayoutAppUITestCase: AdaptiveLayoutUITestCase {
 
             app.navigationBars["Servers"].buttons["Settings"].tap()
             XCTAssertTrue(app.navigationBars["Settings"].awaitExistence(timeout: 3))
+            // In landscape at accessibility sizes Kanban is reached by scrolling the sidebar (TAL-416).
             openSidebarDestination("Kanban")
-            XCTAssertTrue(app.navigationBars["Kanban"].awaitExistence(timeout: 5))
+            XCTAssertTrue(
+                app.navigationBars["Kanban"].awaitExistence(timeout: 5),
+                "The sidebar did not open Kanban [\(variant.name)]"
+            )
             XCTAssertTrue(app.staticTexts["Loading Kanban"].awaitNonExistence(timeout: 15))
             XCTAssertTrue(
                 app.descendants(matching: .any)["KanbanStatusSelector"].awaitExistence(timeout: 5),
@@ -2173,7 +2181,13 @@ extension TalariaUITestCase {
         // The Back tap that returned here already waited for the pop to finish, so one read gives
         // the resting frame; only a scroll below leaves the list gliding.
         var frame = category.firstMatch.frame
-        repeatStep(10, until: { frame.minY >= viewportTop && frame.maxY <= viewportBottom }) {
+        // A row partly under the bar is still tappable. In landscape at accessibility sizes one
+        // drag moves a screen's worth of rows, so scrolling back for the last few points pushed
+        // the row out of the list (TAL-416).
+        func visibleHeight(_ row: CGRect) -> CGFloat {
+            min(row.maxY, viewportBottom) - max(row.minY, viewportTop)
+        }
+        repeatStep(10, until: { visibleHeight(frame) >= min(44, frame.height) }) {
             scrollSettingsRoot(up: frame.maxY > viewportBottom)
             frame = category.settledFrame
         }

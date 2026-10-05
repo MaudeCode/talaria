@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "In landscape with the largest text sizes, the navigation sidebar scrolls so Chats, Kanban, and every other destination stay reachable.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}
