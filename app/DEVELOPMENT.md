@@ -103,7 +103,7 @@ Agent/MCP flow:
   XCTest within one worktree; worktrees run concurrently, each on its own lease
   from the cross-project pool, which erases each device on release. If the test host never connects ("The test
   runner hung before establishing connection") and no test case failed, the
-  runner re-leases a device and retries exactly once; real failures never retry.
+  runner re-leases a device and retries that pass exactly once; real failures never retry.
   XCUI launches a DEBUG-only local fixture under the isolated `.xctest` app and app-group identity,
   with in-memory authentication, draft, and cache state. It does not read simulator
   login state or contact an external server. A skipped functional `TalariaUITests`
@@ -160,7 +160,7 @@ Recognized variables:
 
 - `IOS_SIMULATOR_POOL_SIZE` — simulator count for `scripts/setup-ios-test-pool`.
 - `IOS_SIMULATOR_ID` — shared simulator selection, with `TALARIA_SIMULATOR_ID` as an alias for `scripts/test-ios`.
-- `TALARIA_TEST_WORKER_COUNT` — parallel test workers for `scripts/test-ios` (default `4`; CI instead splits the suite across simulators with `ci/test_shards.py`, one worker each). Xcode clones the leased simulator per worker. Unfiltered runs also skip the measurement-only performance UI classes, as CI does; name a class to run it.
+- `TALARIA_TEST_WORKER_COUNT` — parallel UI test workers for `scripts/test-ios` (default `4`; CI instead splits the suite across simulators with `ci/test_shards.py`, one worker each). Xcode clones the leased simulator per worker. `TalariaTests` runs first in its own pass on the leased device without clones: a clone that launches the unit-test host while Xcode installs the UI runner there loses the runner. Unfiltered runs also skip the measurement-only performance UI classes, as CI does; name a class to run it.
 - `TALARIA_LIVE_CONTRACT_RESPONSES` — path to a live-response manifest for the TalariaKit live decoding test, supplied by `scripts/validate-upstream-contract` and CI, not a persistent local setting.
 - `TALARIA_DEVICE_ID` — physical iPhone selection for `scripts/run-ios-device`,
   as either the hardware UDID or the CoreDevice identifier from

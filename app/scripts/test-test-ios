@@ -69,6 +69,7 @@ set -euo pipefail
 state=${TALARIA_TEST_STATE:?}
 destination=""
 result_bundle=""
+parallel=""
 exit_status=0
 typeset -a selectors=()
 typeset -a args=("$@")
@@ -81,6 +82,10 @@ for (( index = 1; index <= ${#args}; index++ )); do
         -resultBundlePath)
             (( index++ ))
             result_bundle="${args[index]}"
+            ;;
+        -parallel-testing-enabled)
+            (( index++ ))
+            parallel="${args[index]}"
             ;;
         -only-testing:*)
             selectors+=("${args[index]}")
@@ -98,7 +103,7 @@ active=$(( active + 1 ))
 (( active > maximum )) && maximum=$active
 print -r -- "$active" > "$state/active"
 print -r -- "$maximum" > "$state/maximum"
-print -r -- "$destination|$result_bundle|${(j: :)selectors}" >> "$state/runs"
+print -r -- "$destination|$result_bundle|${(j: :)selectors}|$parallel" >> "$state/runs"
 rmdir "$lock"
 
 sleep "${TALARIA_FAKE_XCODEBUILD_SECONDS:-0.08}"
@@ -272,5 +277,26 @@ read -r active < "$state/active"
 grep -Fqx -- '-skip-testing:TalariaUITests/SidebarPerformanceUITests' "$state/last-args"
 "$repo/scripts/test-ios" TalariaUITests/SidebarPerformanceUITests > "$state/explicit-performance.log" 2>&1
 ! grep -Fqx -- '-skip-testing:TalariaUITests/SidebarPerformanceUITests' "$state/last-args"
+
+# A clone that installs and launches the unit-test host while Xcode installs the UI
+# runner there loses the runner (TAL-487), so the targets run in separate phases:
+# unit tests on the leased device, then UI tests on its clones.
+phases_for() {
+    local before
+    before=$(wc -l < "$state/runs")
+    "$repo/scripts/test-ios" "$@" > "$state/phases.log" 2>&1
+    tail -n "+$(( before + 1 ))" "$state/runs" | cut -d'|' -f3-
+}
+expected=$'-only-testing:TalariaTests|NO\n-only-testing:TalariaUITests|YES'
+[[ "$(phases_for)" == "$expected" ]] || {
+    print -u2 "Expected a full run to test TalariaTests without clones, then TalariaUITests on clones:"
+    phases_for >&2
+    exit 1
+}
+expected=$'-only-testing:TalariaTests/Unit|NO\n-only-testing:TalariaUITests/First -only-testing:TalariaUITests/Second|YES'
+[[ "$(phases_for TalariaUITests/First TalariaTests/Unit TalariaUITests/Second)" == "$expected" ]] || {
+    print -u2 "Expected mixed selectors to split into a unit phase, then a UI phase."
+    exit 1
+}
 
 print "test-ios worktree admission, selection and runner-hang retry checks passed ($rounds concurrent rounds)."
