@@ -2512,6 +2512,19 @@ describe('stale cross-provider session models at chat start (TAL-542)', () => {
     }
   })
 
+  it('starts a background-process wakeup on the repaired pair from the cached catalog', async () => {
+    useConfig('openai-codex', 'gpt-5.5')
+    await s.deps.catalog.warmSessionModelRepair(s.state)
+    sidecar.respond('process.mark_consumed', () => ({ ok: true }))
+    const sid = await sessionWith('gemini-3.1-pro-preview', null)
+    seen = {}
+    expect(await s.deps.completions.processOne({ process_id: 'proc_542', session_id: 'proc_542', type: 'completion', command: 'make', exit_code: 0, output: 'ok', origin_ui_session_id: sid, consumed: false })).toBe(true)
+    await vi.waitFor(() => { expect(seen.session_id).toBe(sid) })
+    expect(seen).toMatchObject({ model: 'gpt-5.5', model_provider: 'openai-codex' })
+    await vi.waitFor(() => { expect(s.deps.registry.activeRunStreamForSession(sid)).toBeFalsy() })
+    expect(s.deps.sessionStore.get(sid)).toMatchObject({ model: 'gpt-5.5', model_provider: 'openai-codex' })
+  })
+
   it('keeps a pair the catalog lists, an unknown vendor, and a `@provider:` pick', async () => {
     useConfig('openai-codex', 'gpt-5.5', { ollama: ['llama3.2'] })
     for (const [model, provider] of [['llama3.2', 'ollama'], ['lmstudio-community/Qwen2.5-Coder-7B-Instruct-GGUF', null], ['custom/my-local-llm', null]] as const) {

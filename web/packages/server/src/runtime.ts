@@ -512,7 +512,11 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
       },
     }
   }
-  completions = new CompletionDrain({ sidecar: () => sidecar, baseHome, profileHome: (p) => profileHome(p ?? activeProfile()), activeProfile, store, channels, registry, startTurn: (session, prompt) => turns.start(session, { msg: prompt, attachments: [], workspace: session.workspace, model: session.model, modelProvider: session.model_provider, source: 'process_wakeup' }), background, now, log, ...(opts.completionPollMs !== undefined ? { pollMs: opts.completionPollMs } : {}) })
+  completions = new CompletionDrain({ sidecar: () => sidecar, baseHome, profileHome: (p) => profileHome(p ?? activeProfile()), activeProfile, store, channels, registry, startTurn: (session, prompt) => {
+    // TAL-542: a wakeup repairs a stale pair from the cached catalog only (Python `prefer_cached_catalog`), never waiting on a build.
+    const [model, modelProvider] = (session.model ? catalog.sessionModelRepair(profileHome(session.profile ?? activeProfile()), session.model, session.model_provider) : null) ?? [session.model, session.model_provider]
+    return turns.start(session, { msg: prompt, attachments: [], workspace: session.workspace, model, modelProvider, source: 'process_wakeup' })
+  }, background, now, log, ...(opts.completionPollMs !== undefined ? { pollMs: opts.completionPollMs } : {}) })
   const mcpHealth = new McpHealthProber({ fetch: () => lazyFetch, now, log })
   // Dashboard reachability is probed in the background (Python `dashboard_probe.get_dashboard_status`), never per request.
   let dashboardRunning = false

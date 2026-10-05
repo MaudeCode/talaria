@@ -141,6 +141,13 @@ describe('live model ids after an Agent account switch (TAL-542)', () => {
       await catalog.warmSessionModelRepair(home)
       expect(catalog.sessionModelRepair(home, 'cp-a', 'ollama')).toBeNull()
       expect(catalog.sessionModelRepair(home, 'cp-b', 'ollama')).toEqual(['cp-b', 'copilot'])
+      // A sign-in change while the catalog is being built makes that build stale; the warm-up rebuilds it.
+      let edits = 0
+      sidecar.respond('plugins.providers', () => { if (edits++ === 0) { ids = ['cp-c']; writeFileSync(join(home, 'auth.json'), '{"account":"ccc"}\n') } return { providers: [] } })
+      clock += 1
+      writeFileSync(join(home, '.env'), 'TRIGGER_REBUILD=1\n')
+      await catalog.warmSessionModelRepair(home)
+      expect(catalog.sessionModelRepair(home, 'cp-c', 'ollama')).toEqual(['cp-c', 'copilot'])
     } finally {
       rmSync(home, { recursive: true, force: true })
     }

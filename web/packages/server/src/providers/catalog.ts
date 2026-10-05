@@ -522,10 +522,14 @@ export class ProviderCatalog {
     return repairSessionModel(catalog, model, provider, this.lastModelsMeta.get(profileHome)?.unconfirmed)
   }
 
-  /** Builds the catalog `sessionModelRepair` reads unless a fresh enough one exists; call it after the request's last await. */
+  /**
+   * Builds the catalog `sessionModelRepair` reads unless a fresh enough one exists; call it after the request's last
+   * await. A source that changed while the build awaited makes that build stale, so it is rebuilt once.
+   */
   async warmSessionModelRepair(profileHome: string): Promise<void> {
-    if (this.currentModels(profileHome, PROVIDERS_TTL_S)) return
-    try { await this.models(profileHome) } catch { /* fail closed: the pair is kept */ }
+    for (let attempt = 0; attempt < 2 && !this.currentModels(profileHome, PROVIDERS_TTL_S); attempt += 1) {
+      try { await this.models(profileHome) } catch { return /* fail closed: the pair is kept */ }
+    }
   }
 
   /** Builds the catalog `modelOptionFor` reads once per home, again after config.yaml or `.env` changes; an unavailable catalog leaves every option id null. */
