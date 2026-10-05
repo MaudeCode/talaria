@@ -29,7 +29,7 @@ import { withSessionWireFlags } from './list.js'
 import { hydrateAnchorActivityScenes, turnTerminalState, withTurnIds } from './anchor.js'
 import { persistentStateChanges, persistentStateSnapshot } from './state-saved.js'
 import { maxIterationsFromConfig, maxTokensFromConfig, processWakeupMaxIterations, reasoningConfigFromConfig, webuiEphemeralSystemPrompt, workspaceSystemMessage } from './turn-context.js'
-import { agentSteerText, assistantReplyAddedAfterCurrentTurn, buildPartialMessage, escapeWorkspacePrefixPath, checkpointTurnStart, extractToolCallsFromMessages, injectMaxIterationSummaryFallback, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitDisplayText, joinReasoning, reasoningFieldsText, stoppedTurnContext, toolOutcome, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withToolCallOutcomes, workspaceContextPrefix } from './merge.js'
+import { agentSteerText, assistantReplyAddedAfterCurrentTurn, buildPartialMessage, escapeWorkspacePrefixPath, checkpointTurnStart, extractToolCallsFromMessages, injectMaxIterationSummaryFallback, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitDisplayText, stateDbSeenId, joinReasoning, reasoningFieldsText, stoppedTurnContext, toolOutcome, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withToolCallOutcomes, workspaceContextPrefix } from './merge.js'
 import { mayBecomeSilentReply, turnOrigin, withBackgroundUpdates } from './background-updates.js'
 import { fallbackTitleFromExchange, firstExchangeSnippets, isGenericFallbackTitle, latestExchangeSnippets, looksInvalidGeneratedTitle, looksLikeDefaultCliTitle, sanitizeGeneratedTitle, titleLanguageMismatch, titlePrompts } from './titles.js'
 import { WORKSPACE_BUSY_MESSAGE } from '../workspace/git.js'
@@ -284,7 +284,7 @@ export class TurnRunner {
    */
   /** TAL-364: a Stop's in-flight `chat.interrupt` reply (null when it failed), so a worker that settles first can use its checkpoint. */
   private readonly interrupts = new Map<string, Promise<{ pending_steer?: string | undefined; checkpoint?: Record<string, unknown>[] | undefined } | null>>()
-  private readonly stopContexts = new Map<string, { previousContext: Message[]; historyLength: number; prompt: string | Record<string, unknown>[]; msgText: string; checkpointed: boolean }>()
+  private readonly stopContexts = new Map<string, { previousContext: Message[]; historyLength: number; prompt: string | Record<string, unknown>[]; msgText: string; checkpointed: boolean; stateDbStartId: number | null }>()
   /** Each turn's worker, so a stopped background turn can be awaited before the user's turn takes the session. */
   private readonly workers = new Map<string, Promise<void>>()
 
@@ -401,13 +401,15 @@ export class TurnRunner {
     }
     const msgText = opts.msg
     const previousMessages = structuredClone(s.messages)
-    const previousContext = structuredClone(deps.service().modelContext(s))
+    // TAL-493: one state.db read builds the history and marks where this turn's own rows begin.
+    const startRead = deps.service().stateDbRead(s)
+    const previousContext = structuredClone(deps.service().modelContext(s, startRead.rows))
     // Python `_sanitize_messages_for_api`: the model never sees display-only rows or a replayed cancelled prompt.
     const apiHistory = sanitizeMessagesForApi(previousContext)
     const workspaceCtx = workspaceContextPrefix(opts.workspace)
     // Before the first await: a Stop can land at any point after admission.
     // An eager save already put this turn's prompt in the transcript; the Stop fallback appends it once itself.
-    this.stopContexts.set(streamId, { previousContext: previousContext.filter((m) => m._turn_id !== streamId), historyLength: apiHistory.length, prompt: workspaceCtx + msgText, msgText, checkpointed: false })
+    this.stopContexts.set(streamId, { previousContext: previousContext.filter((m) => m._turn_id !== streamId), historyLength: apiHistory.length, prompt: workspaceCtx + msgText, msgText, checkpointed: false, stateDbStartId: startRead.ok ? stateDbSeenId(startRead.rows) ?? 0 : null })
     const activeTurnToken = buildActiveTurnToken(streamId, s.pending_started_at)
     const sidecar = deps.sidecar()
     const partialText = this.registry.partialText.get(streamId) ?? []
@@ -638,7 +640,7 @@ export class TurnRunner {
         await this.steerRewrites.get(streamId)
         const { events: steerEvents, leftovers } = this.finalizeSteers(streamId, str(result.pending_steer), 'followup')
         followUp = leftovers
-        this.persistError(s, streamId, classification.label, payload, activeTurnToken)
+        this.persistError(s, streamId, classification.label, payload, activeTurnToken, resultMessages)
         // TAL-512: a btw error carries no session: its journaled frame must not keep a copy of the parent conversation.
         if (!opts.ephemeral) payload.session = redactSessionData(this.terminalSessionPayload(s), deps.redactEnabled())
         payload.session_id = s.session_id
@@ -730,6 +732,8 @@ export class TurnRunner {
         }
       }
       this.persistConsumedSteers(s, streamId, previousStartedAt(s, activeRun), now)
+      // TAL-493: the rows this turn's Agent wrote to state.db are now in the transcript, so the merge must not replay them.
+      deps.service().settleStateDb(s, { turnId: streamId, previousContext: this.stopContexts.get(streamId)?.previousContext ?? previousContext, agentRows: resultMessages, startId: this.stopContexts.get(streamId)?.stateDbStartId ?? null })
       deps.store.save(s)
       deps.pending.clearApprovals(sessionId)
       deps.pending.clearClarifies(sessionId)
@@ -901,7 +905,7 @@ export class TurnRunner {
   }
 
   /** Python `_materialize_pending_user_turn_before_error` + error message append + save. */
-  private persistError(s: Session, streamId: string, label: string, payload: Record<string, unknown>, activeTurnToken: string | null): void {
+  private persistError(s: Session, streamId: string, label: string, payload: Record<string, unknown>, activeTurnToken: string | null, agentRows: Message[] = []): void {
     const startedAt = s.pending_started_at
     this.materializePendingUserTurn(s, activeTurnToken, streamId)
     const duration = typeof startedAt === 'number' && startedAt > 0 ? Math.max(0, this.deps.now() - startedAt) : null
@@ -929,6 +933,8 @@ export class TurnRunner {
     s.messages.push(errorMessage)
     this.keepLiveState(s, streamId)
     this.persistConsumedSteers(s, streamId, startedAt, this.deps.now())
+    const stop = this.stopContexts.get(streamId)
+    this.deps.service().settleStateDb(s, { turnId: streamId, previousContext: stop?.previousContext ?? [], agentRows, startId: stop?.stateDbStartId ?? null })
     try { this.deps.store.save(s) } catch (error) { this.deps.log(`[webui] WARNING: failed to save error turn for ${s.session_id}: ${(error as Error).message}`) }
     // The kept live counters are the session's usage now, so the insights row follows them (the runtime logs failures).
     void this.deps.syncUsage?.(s, str(s.model) || null)
@@ -1000,7 +1006,14 @@ export class TurnRunner {
     // TAL-460: a background turn stops quietly: its prompt and model context are kept, but no partial and no Stop row,
     // and its first settlement is final.
     const quiet = this.registry.activeRuns.get(streamId)?.origin === 'background'
-    if (quiet && current.active_stream_id === null) return true
+    if (quiet && current.active_stream_id === null) {
+      // TAL-493: rows its worker committed while unwinding are covered by what it reports; others are kept.
+      if (checkpoint) {
+        this.deps.service().settleStateDb(current, { turnId: streamId, previousContext: this.stopContexts.get(streamId)?.previousContext ?? [], agentRows: checkpoint as Message[], startId: this.stopContexts.get(streamId)?.stateDbStartId ?? null })
+        try { this.deps.store.save(current) } catch { return false }
+      }
+      return true
+    }
     const stop = this.stopContexts.get(streamId)
     const canonical = stop !== undefined && checkpoint !== null && checkpointTurnStart(checkpoint, stop.msgText, stop.historyLength) !== null
     const settle = (): Message[] | null => {
@@ -1012,9 +1025,12 @@ export class TurnRunner {
       // The worker's canonical result can arrive after cancel() settled without a checkpoint (the interrupt reply failed
       // or timed out): it replaces this stream's context and never adds a second Stop row. A settlement that already had
       // one keeps it, so work the Agent finished after the Stop stays out.
-      const late = canonical && !stop.checkpointed && current.messages.some((m) => isCancelMarker(m) && m._turn_id === streamId) ? settle() : null
-      if (late) {
-        current.context_messages = dedupeContext(late)
+      const ownStop = current.messages.some((m) => isCancelMarker(m) && m._turn_id === streamId)
+      const late = canonical && !stop.checkpointed && ownStop ? settle() : null
+      if (late) current.context_messages = dedupeContext(late)
+      // TAL-493: the worker's rows committed after the first settlement are covered by what it reports; others are kept.
+      if (late || (ownStop && checkpoint)) {
+        this.deps.service().settleStateDb(current, { turnId: streamId, previousContext: stop?.previousContext ?? [], agentRows: checkpoint as Message[], startId: stop?.stateDbStartId ?? null })
         try { this.deps.store.save(current) } catch { return false }
       }
       return true
@@ -1034,6 +1050,7 @@ export class TurnRunner {
     }
     this.keepLiveState(current, streamId)
     this.persistConsumedSteers(current, streamId, startedAt, this.deps.now())
+    this.deps.service().settleStateDb(current, { turnId: streamId, previousContext: stop?.previousContext ?? [], agentRows: checkpoint as Message[] | null, startId: stop?.stateDbStartId ?? null })
     try { this.deps.store.save(current) } catch { return false }
     void this.deps.syncUsage?.(current, str(current.model) || null)
     this.deps.pending.clearApprovals(current.session_id)

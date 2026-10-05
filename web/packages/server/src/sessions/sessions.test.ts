@@ -919,6 +919,428 @@ describe('truncation keeps deleted state.db turns deleted (TAL-504)', () => {
   })
 })
 
+describe('state.db rows past the last read merge by row id (TAL-493)', () => {
+  let s: TestServer
+  let sidecar: FakeSidecar
+  beforeAll(async () => {
+    sidecar = new FakeSidecar()
+    s = await bootTestServer({ sidecar })
+  })
+  afterAll(() => s.close())
+
+  type Row = [string, string, number, string?]
+  const rows = (list: Row[]): Json[] => list.map(([role, content, timestamp]) => ({ role, content, timestamp }))
+  /** Commits rows to the Agent's state.db for `sid`, as a CLI or gateway writer would. */
+  function commit(sid: string, list: Row[]): void {
+    const db = new DatabaseSync(join(s.state, 'state.db'))
+    db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL, reasoning TEXT)')
+    db.prepare('INSERT OR IGNORE INTO sessions (id, source, started_at) VALUES (?, ?, ?)').run(sid, 'cli', 100)
+    for (const [role, content, ts, reasoning] of list) db.prepare('INSERT INTO messages (session_id, role, content, timestamp, reasoning) VALUES (?, ?, ?, ?, ?)').run(sid, role, content, ts, reasoning ?? null)
+    db.close()
+  }
+  function maxId(sid: string): number {
+    const db = new DatabaseSync(join(s.state, 'state.db'))
+    try { return (db.prepare('SELECT MAX(id) AS id FROM messages WHERE session_id = ?').get(sid) as { id: number }).id } finally { db.close() }
+  }
+  async function served(sid: string): Promise<unknown[]> {
+    return (((await json(await s.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).messages as Json[]).map((m) => m.content)
+  }
+  const sent = (sid: string): unknown[] => s.deps.sessions.modelContext(s.deps.sessionStore.get(sid)).map((m) => m.content)
+  async function seeded(list: Row[]): Promise<string> {
+    const sid = String((await newSession(s)).session_id)
+    writeMessages(s, sid, rows(list))
+    commit(sid, list)
+    return sid
+  }
+  const FOUR: Row[] = [['user', 'u1', 100], ['assistant', 'a1', 101], ['user', 'u2', 102], ['assistant', 'a2', 103]]
+
+  it('a truncate covers the rows it read; a later row stamped before the cut still appears', async () => {
+    const sid = await seeded(FOUR)
+    expect((await post(s, '/api/session/truncate', { session_id: sid, keep_count: 2 })).status).toBe(200)
+    const covered = maxId(sid)
+    commit(sid, [['user', 'late CLI', 100.5], ['assistant', 'late reply', 100.6]])
+    expect(await served(sid)).toEqual(['u1', 'a1', 'late CLI', 'late reply'])
+    expect(sent(sid)).toEqual(['u1', 'a1', 'late CLI', 'late reply'])
+    expect(s.deps.sessionStore.get(sid).state_db_seen_id).toBe(covered)
+  })
+
+  it('a truncate before the session has any state.db row still lets its first late row through', async () => {
+    const sid = String((await newSession(s)).session_id)
+    writeMessages(s, sid, rows(FOUR))
+    commit(sid, [])
+    expect((await post(s, '/api/session/truncate', { session_id: sid, keep_count: 2 })).status).toBe(200)
+    commit(sid, [['user', 'first CLI row', 100.5]])
+    expect(await served(sid)).toEqual(['u1', 'a1', 'first CLI row'])
+    expect(sent(sid)).toEqual(['u1', 'a1', 'first CLI row'])
+    expect(s.deps.sessionStore.get(sid).state_db_seen_id).toBe(0)
+  })
+
+  it('undo and retry cover the rows they read; a later row stamped before the cut still appears', async () => {
+    for (const path of ['/api/session/undo', '/api/session/retry']) {
+      const sid = await seeded(FOUR)
+      expect((await post(s, path, { session_id: sid })).status, path).toBe(200)
+      const covered = maxId(sid)
+      expect(await served(sid), path).toEqual(['u1', 'a1'])
+      commit(sid, [['user', 'late CLI', 101.5]])
+      expect(await served(sid), path).toEqual(['u1', 'a1', 'late CLI'])
+      expect(sent(sid), path).toEqual(['u1', 'a1', 'late CLI'])
+      expect(s.deps.sessionStore.get(sid).state_db_seen_id, path).toBe(covered)
+    }
+  })
+
+  it('a clear covers every row it read; a row committed after it appears', async () => {
+    const sid = await seeded(FOUR)
+    expect((await post(s, '/api/session/clear', { session_id: sid })).status).toBe(200)
+    const covered = maxId(sid)
+    expect(await served(sid)).toEqual([])
+    commit(sid, [['user', 'after clear', 50]])
+    expect(await served(sid)).toEqual(['after clear'])
+    expect(sent(sid)).toEqual(['after clear'])
+    expect(s.deps.sessionStore.get(sid).state_db_seen_id).toBe(covered)
+  })
+
+  it('manual compression covers the rows it read; a later row stamped before the boundary still appears', async () => {
+    sidecar.respond('runtime.ensure_current', () => ({ current: true as const, agent_revision: null }))
+    sidecar.respond('chat.compress', (params) => {
+      const history = params.conversation_history
+      return { status: 'compressed', messages: [history[0]!, history.at(-1)!], before_tokens: 400, after_tokens: 120, message: null, agent_session_id: params.session_id, commit_token: null, summary: { noop: false, headline: 'Compressed', token_line: '', note: null } }
+    })
+    const sid = await seeded(FOUR)
+    expect((await post(s, '/api/session/compress', { session_id: sid })).status).toBe(200)
+    const covered = maxId(sid)
+    expect(await served(sid)).toEqual(['u1', 'a1', 'u2', 'a2'])
+    commit(sid, [['user', 'late CLI', 102.5]])
+    expect(await served(sid)).toEqual(['u1', 'a1', 'u2', 'a2', 'late CLI'])
+    expect(sent(sid)).toEqual(['u1', 'a2', 'late CLI'])
+    expect(s.deps.sessionStore.get(sid).state_db_seen_id).toBe(covered)
+  })
+
+  /** A Web turn whose Agent writes its own rows to state.db, stamped by the Agent rather than the server. */
+  async function turn(sid: string, message: string, result: 'completed' | 'failed' = 'completed', concurrent: Row[] = []): Promise<unknown[]> {
+    let history: Json[] = []
+    sidecar.respond('chat.start', (params) => {
+      history = params.conversation_history
+      commit(sid, [['user', message, 200], ...concurrent, ['assistant', `${message} answered`, 201]])
+      const done = completedTurn([...history, { role: 'user', content: str(params.user_message) }, { role: 'assistant', content: `${message} answered` }])
+      return result === 'completed' ? done : { ...done, failed: true, error: 'provider down' }
+    })
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message }))
+    await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    return history.map((m) => m.content)
+  }
+
+  it('a settled turn covers the rows it read; a later row stamped before the newest Web row reaches the transcript and the next turn', async () => {
+    const sid = await seeded([['user', 'u1', 100], ['assistant', 'a1', 101]])
+    await turn(sid, 'next')
+    const settled = await served(sid)
+    expect(settled.at(-1)).toBe('next answered')
+    commit(sid, [['user', 'late CLI', 150], ['assistant', 'late reply', 151]])
+    expect(await served(sid)).toEqual([...settled, 'late CLI', 'late reply'])
+    expect((await turn(sid, 'again')).slice(-2)).toEqual(['late CLI', 'late reply'])
+    expect(s.deps.sessionStore.get(sid).state_db_seen_id).toBe(maxId(sid))
+  })
+
+  it('a CLI row committed while a Web turn runs stays in the transcript and reaches the next turn', async () => {
+    const sid = await seeded([['user', 'u1', 100], ['assistant', 'a1', 101]])
+    await turn(sid, 'first')
+    // One row stamped before the settled Web rows, one after them; both commit before the settlement reads state.db.
+    await turn(sid, 'second', 'completed', [['user', 'CLI meanwhile', 150], ['assistant', 'CLI later', 4e9]])
+    const settled = await served(sid)
+    expect(settled.filter((c) => typeof c === 'string' && /^(CLI meanwhile|CLI later|second answered)$/.test(c)).sort()).toEqual(['CLI later', 'CLI meanwhile', 'second answered'])
+    expect((await turn(sid, 'third')).filter((c) => c === 'CLI meanwhile' || c === 'CLI later').sort()).toEqual(['CLI later', 'CLI meanwhile'])
+  })
+
+  it('a stopped background turn covers the rows its worker commits while unwinding', async () => {
+    const sid = await seeded([['user', 'u1', 100], ['assistant', 'a1', 101]])
+    await turn(sid, 'first')
+    sidecar.respond('process.mark_consumed', () => ({ ok: true }))
+    sidecar.respond('chat.interrupt', () => ({ ok: true }))
+    sidecar.respond('chat.start', (params, emit, opts) => new Promise((resolve) => {
+      emit({ event: 'token', data: { text: 'Looking at the backup' } })
+      opts.signal?.addEventListener('abort', () => {
+        commit(sid, [['assistant', 'background work after stop', 300]])
+        resolve({ ...completedTurn([...params.conversation_history, { role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'background work after stop' }]), status: 'cancelled' })
+      })
+    }))
+    await s.deps.completions.processOne({ process_id: 'proc_bg493', session_id: 'proc_bg493', type: 'completion', command: 'backup', exit_code: 0, output: 'ok', origin_ui_session_id: sid, consumed: false })
+    const streamId = str(s.deps.sessionStore.get(sid).active_stream_id)
+    await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'token')
+    await s.get(`/api/chat/cancel?stream_id=${streamId}`)
+    // The worker unwinds after the quiet Stop settled; its settlement is the one under test.
+    const deadline = Date.now() + 3000
+    while (s.deps.sessionStore.get(sid).state_db_seen_id !== maxId(sid) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 20))
+    expect((await served(sid)).filter((c) => c === 'background work after stop')).toEqual([])
+    expect(sent(sid).filter((c) => c === 'background work after stop')).toEqual([])
+  })
+
+  it('falls back to the timestamp rules after an older release saves the session without moving a boundary', async () => {
+    const sid = await seeded(FOUR)
+    expect((await post(s, '/api/session/truncate', { session_id: sid, keep_count: 4 })).status).toBe(200)
+    commit(sid, [['user', 'u3', 104], ['assistant', 'a3', 105]])
+    expect(await served(sid)).toEqual(['u1', 'a1', 'u2', 'a2', 'u3', 'a3'])
+    // A Stable truncate at the same keep_count changes no boundary field; it only saves, keeping the unknown marker.
+    const path = join(s.state, 'sessions', `${sid}.json`)
+    const doc = JSON.parse(readFileSync(path, 'utf8')) as Json
+    doc.updated_at = Number(doc.updated_at) + 60
+    writeFileSync(path, JSON.stringify(doc))
+    s.deps.sessionStore.sessions.delete(sid)
+    expect(await served(sid)).toEqual(['u1', 'a1', 'u2', 'a2'])
+    expect(sent(sid)).toEqual(['u1', 'a1', 'u2', 'a2'])
+    // A later save by this version that reads no state.db (a rename) does not make the stale marker valid again.
+    expect((await post(s, '/api/session/rename', { session_id: sid, title: 'renamed' })).status).toBe(200)
+    expect(await served(sid)).toEqual(['u1', 'a1', 'u2', 'a2'])
+    expect(sent(sid)).toEqual(['u1', 'a1', 'u2', 'a2'])
+  })
+
+  it('a truncate that changes nothing locally while state.db is unavailable still hides the suffix it cut', async () => {
+    const sid = await seeded(FOUR)
+    expect((await post(s, '/api/session/truncate', { session_id: sid, keep_count: 4 })).status).toBe(200)
+    commit(sid, [['user', 'u3', 104], ['assistant', 'a3', 105]])
+    expect(await served(sid)).toEqual(['u1', 'a1', 'u2', 'a2', 'u3', 'a3'])
+    const path = join(s.state, 'state.db')
+    renameSync(path, `${path}.away`)
+    try {
+      expect((await post(s, '/api/session/truncate', { session_id: sid, keep_count: 4 })).status).toBe(200)
+    } finally { renameSync(`${path}.away`, path) }
+    expect(await served(sid)).toEqual(['u1', 'a1', 'u2', 'a2'])
+    expect(sent(sid)).toEqual(['u1', 'a1', 'u2', 'a2'])
+  })
+
+  it('a settlement whose state.db read fails keeps the marker', async () => {
+    const sid = await seeded(FOUR)
+    expect((await post(s, '/api/session/truncate', { session_id: sid, keep_count: 2 })).status).toBe(200)
+    const path = join(s.state, 'state.db')
+    // state.db is unavailable while the turn settles, then comes back.
+    sidecar.respond('chat.start', (params) => { renameSync(path, `${path}.away`); return completedTurn([...params.conversation_history, { role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'offline answer' }]) })
+    try {
+      const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'offline' }))
+      await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    } finally { if (existsSync(`${path}.away`)) renameSync(`${path}.away`, path) }
+    commit(sid, [['user', 'late CLI', 101.5]])
+    expect((await served(sid)).at(-1)).toBe('late CLI')
+    expect(sent(sid).at(-1)).toBe('late CLI')
+  })
+
+  it('a turn that fails without a result covers the rows its Agent wrote instead of showing them', async () => {
+    const sid = await seeded([['user', 'u1', 100], ['assistant', 'a1', 101]])
+    await turn(sid, 'first')
+    sidecar.respond('chat.start', () => { commit(sid, [['user', 'crashing', 200], ['assistant', 'crashed work', 201]]); throw new Error('worker crashed') })
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'crashing' }))
+    await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    expect((await served(sid)).filter((c) => c === 'crashed work')).toEqual([])
+    expect(sent(sid).filter((c) => c === 'crashed work')).toEqual([])
+  })
+
+  it('the first settlement of a session without a marker keeps a CLI row committed during the turn', async () => {
+    const sid = await seeded([['user', 'u1', 100], ['assistant', 'a1', 101]])
+    expect(s.deps.sessionStore.get(sid).state_db_seen_id).toBeNull()
+    await turn(sid, 'first', 'completed', [['user', 'CLI during first turn', 150]])
+    expect((await served(sid)).filter((c) => c === 'CLI during first turn')).toHaveLength(1)
+    expect(sent(sid).filter((c) => c === 'CLI during first turn')).toHaveLength(1)
+  })
+
+  it('CLI rows that arrived before a Web turn stay in the transcript, in order, after it settles', async () => {
+    const sid = await seeded([['user', 'u1', 100], ['assistant', 'a1', 101]])
+    await turn(sid, 'first')
+    commit(sid, [['user', 'CLI ask', 300], ['assistant', 'CLI reply', 301]])
+    await turn(sid, 'second')
+    const shown = await served(sid)
+    expect(shown.filter((c) => c === 'CLI ask' || c === 'CLI reply')).toEqual(['CLI ask', 'CLI reply'])
+    expect(shown.indexOf('CLI reply')).toBeLessThan(shown.indexOf('second'))
+    await turn(sid, 'failing', 'failed')
+    expect((await served(sid)).filter((c) => c === 'CLI ask' || c === 'CLI reply')).toEqual(['CLI ask', 'CLI reply'])
+  })
+
+  it('a concurrent row that repeats a row of the current turn stays when the turn\'s own row is already local', async () => {
+    const sid = await seeded([['user', 'u1', 100], ['assistant', 'a1', 101]])
+    await turn(sid, 'first')
+    // The Agent's result keeps its rows' timestamps, so its own state.db row matches the settled local row exactly.
+    sidecar.respond('chat.start', (params) => {
+      commit(sid, [['user', 'same', 200], ['assistant', 'done', 201], ['assistant', 'done', 150]])
+      return completedTurn([...params.conversation_history, { role: 'user', content: str(params.user_message), timestamp: 200 }, { role: 'assistant', content: 'done', timestamp: 201 }])
+    })
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'same' }))
+    await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    expect((await served(sid)).filter((c) => c === 'done')).toHaveLength(2)
+    expect(sent(sid).filter((c) => c === 'done')).toHaveLength(2)
+  })
+
+  it('a concurrent row that repeats an earlier message exactly stays in the transcript', async () => {
+    const sid = await seeded([['user', 'continue', 100], ['assistant', 'a1', 101]])
+    await turn(sid, 'first')
+    await turn(sid, 'second', 'completed', [['user', 'continue', 150]])
+    expect((await served(sid)).filter((c) => c === 'continue')).toHaveLength(2)
+    expect(sent(sid).filter((c) => c === 'continue')).toHaveLength(2)
+  })
+
+  it('a turn whose starting state.db read failed does not cover earlier CLI rows when it fails without a result', async () => {
+    const sid = await seeded([['user', 'u1', 100], ['assistant', 'a1', 101]])
+    await turn(sid, 'first')
+    commit(sid, [['user', 'CLI before', 150]])
+    expect((await served(sid)).at(-1)).toBe('CLI before')
+    const path = join(s.state, 'state.db')
+    renameSync(path, `${path}.away`)
+    sidecar.respond('chat.start', () => { renameSync(`${path}.away`, path); throw new Error('worker crashed') })
+    try {
+      const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'crashing' }))
+      await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    } finally { if (existsSync(`${path}.away`)) renameSync(`${path}.away`, path) }
+    expect((await served(sid)).filter((c) => c === 'CLI before')).toEqual(['CLI before'])
+    expect(sent(sid).filter((c) => c === 'CLI before')).toEqual(['CLI before'])
+  })
+
+  it('a row with no text identity committed while a Web turn runs stays in the transcript', async () => {
+    const sid = await seeded([['user', 'u1', 100], ['assistant', 'a1', 101]])
+    await turn(sid, 'first')
+    // A reasoning-only row has no text for `messageIdentity`.
+    await turn(sid, 'second', 'completed', [['assistant', '', 150, 'CLI plan only']])
+    const shown = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).messages as Json[]
+    expect(shown.filter((m) => m.reasoning === 'CLI plan only')).toHaveLength(1)
+  })
+
+  it('a Stop whose canonical checkpoint lands after the cancel covers the work it carries and keeps a concurrent CLI row', async () => {
+    const sid = await seeded([['user', 'u1', 100], ['assistant', 'a1', 101]])
+    await turn(sid, 'first')
+    sidecar.respond('chat.interrupt', () => ({ ok: true }))
+    sidecar.respond('chat.start', (params, emit, opts) => new Promise((resolve) => {
+      emit({ event: 'token', data: { text: 'partial' } })
+      opts.signal?.addEventListener('abort', () => {
+        commit(sid, [['assistant', 'after stop', 300], ['user', 'CLI during stop', 301]])
+        resolve({ ...completedTurn([...params.conversation_history, { role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'after stop' }]), status: 'cancelled' })
+      })
+    }))
+    const streamId = String((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'halt' }))).stream_id)
+    await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'token')
+    await s.get(`/api/chat/cancel?stream_id=${streamId}`)
+    // The worker's late settlement installs the checkpoint as the model context.
+    const deadline = Date.now() + 5000
+    while (!s.deps.sessionStore.get(sid).context_messages.some((m) => m.content === 'after stop') && Date.now() < deadline) await new Promise((r) => setTimeout(r, 20))
+    expect(s.deps.sessionStore.get(sid).context_messages.some((m) => m.content === 'after stop')).toBe(true)
+    const shown = await served(sid)
+    expect(shown.filter((c) => c === 'after stop' || c === 'CLI during stop')).toEqual(['CLI during stop'])
+  })
+
+  it('falls back to the timestamp rules after an older release moves the boundary', async () => {
+    const sid = await seeded(FOUR)
+    expect((await post(s, '/api/session/truncate', { session_id: sid, keep_count: 4 })).status).toBe(200)
+    commit(sid, [['user', 'u3', 104], ['assistant', 'a3', 105]])
+    expect(await served(sid)).toEqual(['u1', 'a1', 'u2', 'a2', 'u3', 'a3'])
+    // A Stable truncate keeps the unknown marker but moves the watermark and the shrink generation.
+    const stable = s.deps.sessionStore.get(sid)
+    stable.messages = stable.messages.slice(0, 2)
+    stable.truncation_watermark = 101
+    stable.truncation_boundary = 101
+    stable.intentional_shrink_generation = 'stable-truncate'
+    s.deps.sessionStore.save(stable)
+    expect(await served(sid)).toEqual(['u1', 'a1'])
+    expect(sent(sid)).toEqual(['u1', 'a1'])
+  })
+
+  it('a failed turn covers the rows its Agent wrote, so they do not replay', async () => {
+    const sid = await seeded([['user', 'u1', 100], ['assistant', 'a1', 101]])
+    await turn(sid, 'first')
+    await turn(sid, 'doomed', 'failed')
+    expect((await served(sid)).filter((c) => c === 'doomed answered')).toEqual([])
+    expect(s.deps.sessionStore.get(sid).state_db_seen_id).toBe(maxId(sid))
+  })
+
+  it('a stopped turn covers the rows its Agent wrote, so they do not replay', async () => {
+    const sid = await seeded([['user', 'u1', 100], ['assistant', 'a1', 101]])
+    await turn(sid, 'first')
+    sidecar.respond('chat.interrupt', () => ({ ok: true }))
+    sidecar.respond('chat.start', (params, emit, opts) => new Promise((resolve) => {
+      commit(sid, [['user', 'stopped', 200], ['assistant', 'partial', 201]])
+      emit({ event: 'token', data: { text: 'partial' } })
+      opts.signal?.addEventListener('abort', () => { resolve({ ...completedTurn([{ role: 'user', content: str(params.user_message) }]), status: 'cancelled' }) })
+    }))
+    const streamId = String((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'stopped' }))).stream_id)
+    await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'token')
+    await s.get(`/api/chat/cancel?stream_id=${streamId}`)
+    await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'cancel')
+    expect((await served(sid)).filter((c) => c === 'stopped' || c === 'partial')).toEqual(['stopped', 'partial'])
+    expect(s.deps.sessionStore.get(sid).state_db_seen_id).toBe(maxId(sid))
+  })
+
+  it('a concurrent row that shares only its first 500 characters with a held message stays in the transcript', async () => {
+    const long = 'x'.repeat(600)
+    const sid = await seeded([['user', 'u1', 100], ['assistant', `${long} held`, 101]])
+    await turn(sid, 'first')
+    await turn(sid, 'second', 'completed', [['assistant', `${long} new tail`, 150]])
+    expect((await served(sid)).filter((c) => c === `${long} new tail`)).toHaveLength(1)
+  })
+
+  it('falls back to the timestamp rules when state.db is recreated and its ids start over', async () => {
+    const fresh = await bootTestServer()
+    try {
+      const sid = String(((await json(await post(fresh, '/api/session/new', {}))).session as Json).session_id)
+      writeMessages(fresh, sid, rows(FOUR))
+      const path = join(fresh.state, 'state.db')
+      const insert = (session: string, list: Row[]): void => {
+        const db = new DatabaseSync(path)
+        db.exec('CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
+        for (const [role, content, ts] of list) db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(session, role, content, ts)
+        db.close()
+      }
+      // Other sessions' rows push this session's ids well above what a new database reaches.
+      insert('other', Array.from({ length: 10 }, (_, i): Row => ['user', `other ${String(i)}`, i]))
+      insert(sid, FOUR)
+      const session = fresh.deps.sessionStore.get(sid)
+      fresh.deps.sessions.markStateDbSeen(session)
+      fresh.deps.sessionStore.save(session)
+      expect(session.state_db_seen_id).toBe(14)
+      // The profile is deleted and recreated: a new state.db, ids from 1, and the CLI continues the chat.
+      rmSync(path)
+      insert(sid, [['user', 'u3', 104], ['assistant', 'a3', 105]])
+      const shown = (((await json(await fresh.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).messages as Json[]).map((m) => m.content)
+      expect(shown).toEqual(['u1', 'a1', 'u2', 'a2', 'u3', 'a3'])
+    } finally { fresh.close() }
+  })
+
+  it('falls back to the timestamp rules when a recreated state.db reuses the marker row\'s role and timestamp', async () => {
+    const fresh = await bootTestServer()
+    try {
+      const sid = String(((await json(await post(fresh, '/api/session/new', {}))).session as Json).session_id)
+      writeMessages(fresh, sid, rows(FOUR))
+      const path = join(fresh.state, 'state.db')
+      const build = (target: string, list: Row[]): void => {
+        const db = new DatabaseSync(target)
+        db.exec('CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
+        for (const [role, content, ts] of list) db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, role, content, ts)
+        db.close()
+      }
+      build(path, FOUR)
+      const session = fresh.deps.sessionStore.get(sid)
+      fresh.deps.sessions.markStateDbSeen(session)
+      fresh.deps.sessionStore.save(session)
+      expect(session.state_db_seen_id).toBe(4)
+      // A rebuilt database whose id 4 is again an assistant row at 103, after three new CLI rows.
+      build(`${path}.new`, [['user', 'r1', 110], ['user', 'r2', 111], ['user', 'r3', 112], ['assistant', 'a2', 103]])
+      renameSync(`${path}.new`, path)
+      const shown = (((await json(await fresh.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).messages as Json[]).map((m) => m.content)
+      expect(shown).toEqual(['u1', 'a1', 'u2', 'a2', 'r1', 'r2', 'r3'])
+    } finally { fresh.close() }
+  })
+
+  it('keeps the timestamp rules for a state.db without message ids', async () => {
+    const legacy = await bootTestServer()
+    try {
+      const sid = String(((await json(await post(legacy, '/api/session/new', {}))).session as Json).session_id)
+      writeMessages(legacy, sid, rows(FOUR))
+      const insert = (list: Row[]): void => {
+        const db = new DatabaseSync(join(legacy.state, 'state.db'))
+        db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
+        for (const [role, content, ts] of list) db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, role, content, ts)
+        db.close()
+      }
+      insert(FOUR)
+      expect((await post(legacy, '/api/session/truncate', { session_id: sid, keep_count: 2 })).status).toBe(200)
+      insert([['user', 'late CLI', 100.5]])
+      expect((((await json(await legacy.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).messages as Json[]).map((m) => m.content)).toEqual(['u1', 'a1'])
+      expect(legacy.deps.sessionStore.get(sid).state_db_seen_id).toBeNull()
+    } finally { legacy.close() }
+  })
+})
+
 describe('session detail marks background wakeups as updates (TAL-371)', () => {
   let s: TestServer
   beforeAll(async () => { s = await bootTestServer() })

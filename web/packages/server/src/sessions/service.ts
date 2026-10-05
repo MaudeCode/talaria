@@ -17,10 +17,10 @@ import { anchorSceneIntOrNull, fullToolResult, hydrateAnchorActivityScenes, norm
 import { isSafeSessionId, lastMessageTimestamp, Session, stripAttachedFilesMarker, titleFrom, type Message } from './session.js'
 import { SessionBusy, SessionNotFound, statSignature, type SessionStore } from './store.js'
 import { UNSETTLED_TODO_KEY, attachTodoState } from './todo.js'
-import { stateDbSessionMessages, stateDbSessionRow, stateDbSessionSources } from './state-db.js'
+import { stateDbSessionMessages, stateDbSessionRead, stateDbSessionRow, stateDbSessionSources, type StateDbRead } from './state-db.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { SidecarError, type SidecarLike } from '../sidecar/client.js'
-import { attachmentObjects, isContextCompressionMarker, mergeSessionMessagesAppendOnly, pendingUserRow, sanitizeMessagesForApi, stripWorkspacePrefix, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, type ToolResultView } from './merge.js'
+import { attachmentObjects, isContextCompressionMarker, mergeSessionMessagesAppendOnly, messageIdentity, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, type ToolResultView } from './merge.js'
 import { withBackgroundUpdates } from './background-updates.js'
 import { withBackgroundLinks, type Receipt } from './background-tasks.js'
 import { messagesForLimitedPayload, messageWindowForDisplay, MAX_MSG_LIMIT, parseMsgLimit, toolCallsForMessageWindow } from './window.js'
@@ -250,8 +250,13 @@ export class SessionService {
 
   /** The Agent's state.db rows for this session (empty for subagent views, which never merge). */
   stateDbRows(s: Session): Message[] {
-    if (str(s.source_tag || s.raw_source || s.session_source).trim().toLowerCase() === 'subagent') return []
-    return stateDbSessionMessages(join(this.deps.profileHome(s.profile ?? this.deps.activeProfile()), 'state.db'), s.session_id, { stitch: false })
+    return this.stateDbRead(s).rows
+  }
+
+  /** `stateDbRows` and whether the read succeeded on a state.db whose messages carry ids (TAL-493). */
+  stateDbRead(s: Session): StateDbRead {
+    if (str(s.source_tag || s.raw_source || s.session_source).trim().toLowerCase() === 'subagent') return { rows: [], idCapable: false, ok: false }
+    return stateDbSessionRead(join(this.deps.profileHome(s.profile ?? this.deps.activeProfile()), 'state.db'), s.session_id, { stitch: false })
   }
 
   /**
@@ -261,7 +266,72 @@ export class SessionService {
    */
   mergedTranscript(s: Session, local: Message[] = s.messages, stateRows: Message[] = this.stateDbRows(s)): Message[] {
     if (!stateRows.length) return local
-    return mergeSessionMessagesAppendOnly(local, stateRows, { truncationWatermark: s.truncation_watermark, compressedWatermark: s.truncation_watermark_compressed })
+    return mergeSessionMessagesAppendOnly(local, stateRows, { truncationWatermark: s.truncation_watermark, compressedWatermark: s.truncation_watermark_compressed, stateDbSeenId: currentStateDbSeenId(s, stateRows) })
+  }
+
+  /**
+   * TAL-493: record the highest state.db id this boundary or settled turn read, under the session lock in the same save,
+   * so the merge never replays a covered row and appends every row committed after the read. Call it after the boundary
+   * fields are set: the marker holds only while they and the row it names stay as recorded.
+   */
+  markStateDbSeen(s: Session, read: StateDbRead = this.stateDbRead(s), opts: { boundary?: boolean } = {}): void {
+    // A failed read says nothing. A settlement keeps the marker; a boundary drops it (fail closed): it may cut rows the
+    // marker still admits without moving a field, and the timestamp rules honour its watermark.
+    if (!read.ok) {
+      if (opts.boundary) { s.state_db_seen_id = null; s.state_db_seen_boundary = null; s.state_db_seen_stamp = null }
+      return
+    }
+    // A successful read with no rows yet is a baseline: every row the session gets later is new.
+    s.state_db_seen_id = stateDbSeenId(read.rows) ?? (read.idCapable ? 0 : null)
+    s.state_db_seen_boundary = stateDbMarkKey(s, read.rows, s.state_db_seen_id)
+    s.state_db_seen_stamp = s.updated_at
+  }
+
+  /**
+   * TAL-493: a turn's settlement. Each state.db row the merge shows now is matched to what the turn holds: a row already
+   * in the context it started from (by id), or one row the Agent added this turn (`agentRows` past that context, matched
+   * one to one by full text). An unmatched row is a CLI or gateway row committed while the turn ran: it joins the
+   * transcript and the model context before the marker passes it. Without the Agent's rows (`agentRows` empty), rows past
+   * `startId` (the highest id the turn read when it started) are its own unreported work: covered, never shown. Rows the
+   * turn started from but the transcript lacks (a CLI continuation read into its context) are kept before the turn.
+   */
+  settleStateDb(s: Session, turn: { turnId: string; previousContext: Message[]; agentRows?: Message[] | null; startId?: number | null }): void {
+    const read = this.stateDbRead(s)
+    const startedWith = new Set(turn.previousContext.flatMap((m) => (typeof m._state_db_row_id === 'number' ? [m._state_db_row_id] : [])))
+    const earlier = mergeSessionMessagesAppendOnly(s.messages, read.rows.filter((m) => typeof m._state_db_row_id === 'number' && startedWith.has(m._state_db_row_id)), { stateDbSeenId: -1 }).slice(s.messages.length)
+    const added = new Map<string, number>()
+    for (const m of withoutRows(turn.agentRows ?? [], turn.previousContext)) added.set(settledIdentity(m), (added.get(settledIdentity(m)) ?? 0) + 1)
+    const ownWorkAfter = turn.agentRows?.length ? null : turn.startId ?? null
+    // Without a current marker, the turn's own starting read is the baseline: rows committed after it are judged here.
+    const seenId = currentStateDbSeenId(s, read.rows) ?? turn.startId ?? null
+    const shown = read.rows.length ? mergeSessionMessagesAppendOnly(s.messages, read.rows, { truncationWatermark: s.truncation_watermark, compressedWatermark: s.truncation_watermark_compressed, stateDbSeenId: seenId }) : s.messages
+    const fresh = new Set(shown.slice(s.messages.length))
+    // The turn's own rows the merge already matched to their local copies use up their share before any shown row can.
+    if (seenId !== null) {
+      for (const m of read.rows) {
+        const id = m._state_db_row_id
+        if (typeof id !== 'number' || id <= seenId || startedWith.has(id) || fresh.has(m)) continue
+        const left = added.get(settledIdentity(m)) ?? 0
+        if (left > 0) added.set(settledIdentity(m), left - 1)
+      }
+    }
+    const missed = [...fresh].filter((m) => {
+      const id = m._state_db_row_id
+      if (typeof id === 'number' && startedWith.has(id)) return false
+      const key = settledIdentity(m)
+      const left = added.get(key) ?? 0
+      if (left > 0) { added.set(key, left - 1); return false }
+      return !(ownWorkAfter !== null && typeof id === 'number' && id > ownWorkAfter)
+    })
+    if (earlier.length) {
+      const at = s.messages.findIndex((m) => m._turn_id === turn.turnId)
+      s.messages.splice(at < 0 ? s.messages.length : at, 0, ...copyJson(earlier))
+    }
+    if (missed.length) {
+      s.messages.push(...copyJson(missed))
+      if (s.context_messages.length) s.context_messages.push(...copyJson(missed))
+    }
+    this.markStateDbSeen(s, read)
   }
 
   /**
@@ -917,6 +987,7 @@ export class SessionService {
     if (keep < 0) throw new HttpFailure(400, 'keep_count must be non-negative')
     await this.store.withLock(sid, () => {
       truncateSessionAtKeep(s, keep)
+      this.markStateDbSeen(s, undefined, { boundary: true })
       this.store.save(s)
     })
     this.deps.runtime.evictAgent(sid)
@@ -1013,7 +1084,8 @@ export class SessionService {
         try { live = this.store.get(sid) } catch { throw new HttpFailure(404, 'Session not found') }
         if (streamState(live) !== streamBefore) throw new HttpFailure(409, 'Session stream state changed during compression; please retry.')
         // One state.db read serves the check, the kept display rows, and the boundary.
-        const stateRows = this.stateDbRows(live)
+        const read = this.stateDbRead(live)
+        const stateRows = read.rows
         if (transcriptKey(live, sanitizeMessagesForApi(this.modelContext(live, stateRows))) !== historyKey) throw new HttpFailure(409, 'Session was modified during compression; please retry.')
         // Rows the sidecar returns without a timestamp take the newest one this compression saw, never the clock: the
         // boundary then hides no state.db row the append-only merge would still show (it already drops rows at or
@@ -1041,6 +1113,7 @@ export class SessionService {
         live.truncation_watermark = truncationWatermarkFor(compressed)
         live.truncation_boundary = live.truncation_watermark
         live.truncation_watermark_compressed = true
+        this.markStateDbSeen(live, read, { boundary: true })
         live.last_prompt_tokens = result.after_tokens
         live.post_compression_context_tokens_estimate = result.after_tokens
         this.store.save(live)
@@ -1084,6 +1157,7 @@ export class SessionService {
       s.pending_user_source = null
       s.clear_generation = hadMessages ? randomUUID().replace(/-/g, '') : null
       applySessionTitleRename(s, 'Untitled')
+      this.markStateDbSeen(s, undefined, { boundary: true })
       this.store.save(s)
       if (hadMessages) { try { rmSync(`${this.store.pathFor(sid)}.bak`, { force: true }) } catch { /* ignore */ } }
     })
@@ -1108,6 +1182,7 @@ export class SessionService {
       if (!lastUserPrompt && !lastUserAttachments.length) return { error: 'The last message has nothing to resend.' }
       const removed = history.length - lastUser
       shrinkTo(s, lastUser)
+      this.markStateDbSeen(s, undefined, { boundary: true })
       this.store.save(s)
       return { ok: true, last_user_text: lastUserText, last_user_prompt: lastUserPrompt, last_user_attachments: lastUserAttachments, removed_count: removed }
     })
@@ -1123,6 +1198,7 @@ export class SessionService {
       const removedText = extractText(history[lastUser]?.content)
       const removed = history.length - lastUser
       shrinkTo(s, lastUser)
+      this.markStateDbSeen(s, undefined, { boundary: true })
       this.store.save(s)
       const preview = removedText.length > 40 ? `${removedText.slice(0, 40)}...` : removedText
       return { ok: true, removed_count: removed, removed_preview: preview }
@@ -1546,6 +1622,37 @@ function findLastUserIndex(history: unknown[]): number | null {
 /** Python `_sanitize_error`: absolute paths in an error message never reach the client. */
 export function sanitizePaths(error: unknown): string {
   return str((error as Error)?.message ?? error).replace(/(?:(?:\/[a-zA-Z0-9_.-]+)+|(?:[A-Z]:\\[^\s]+))/g, '<path>')
+}
+
+/** TAL-493: a row's full-text identity; one with no text (reasoning or media only) by its raw role, content, and reasoning. */
+function settledIdentity(m: Message): string {
+  return messageIdentity(m, Infinity) ?? JSON.stringify([m.role ?? null, m.content ?? null, reasoningFieldsText(m)])
+}
+
+/** `rows` minus one occurrence of each row of `base`, by `settledIdentity`. */
+function withoutRows(rows: Message[], base: Message[]): Message[] {
+  const left = new Map<string, number>()
+  for (const m of base) left.set(settledIdentity(m), (left.get(settledIdentity(m)) ?? 0) + 1)
+  return rows.filter((m) => { const key = settledIdentity(m); const n = left.get(key) ?? 0; if (n > 0) left.set(key, n - 1); return n === 0 })
+}
+
+/**
+ * TAL-493: what the state.db marker was recorded under: the boundary fields every boundary writer sets (an older release
+ * moves them without the marker) and the role, timestamp, and database file identity of the row the marker names (a
+ * recreated state.db, whose ids start over, has no such row).
+ */
+function stateDbMarkKey(s: Session, stateRows: Message[], seenId: number | null): string {
+  const anchor = seenId === null ? undefined : stateRows.find((m) => m._state_db_row_id === seenId)
+  return JSON.stringify([s.truncation_watermark ?? null, s.truncation_boundary ?? null, s.intentional_shrink_generation ?? null, s.clear_generation ?? null, anchor ? [anchor.role ?? null, anchor.timestamp ?? null, anchor._state_db_generation ?? null] : null])
+}
+
+/**
+ * The recorded state.db marker while what it was recorded under still holds and this version wrote the session last (an
+ * older release can apply a boundary that changes no field), else null (the timestamp rules apply).
+ */
+function currentStateDbSeenId(s: Session, stateRows: Message[]): number | null {
+  const seenId = s.state_db_seen_id
+  return seenId !== null && s.state_db_seen_stamp === s.updated_at && s.state_db_seen_boundary === stateDbMarkKey(s, stateRows, seenId) ? seenId : null
 }
 
 function truncationWatermarkFor(messages: unknown[]): number {

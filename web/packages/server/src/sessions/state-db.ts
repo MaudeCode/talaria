@@ -507,7 +507,8 @@ function projectStateDbMessage(row: Dict, hasId: boolean): Dict {
     if (value === null || value === undefined || value === '') continue
     msg[col] = JSON_MESSAGE_COLUMNS.has(col) ? jsonLoadsIfString(value) : value
   }
-  if (hasId && row.id !== null && row.id !== undefined && typeof msg.api_content === 'string' && msg.api_content) msg._state_db_row_id = row.id
+  // TAL-493: the merge tells rows committed after the session's last read by this id.
+  if (hasId && row.id !== null && row.id !== undefined) msg._state_db_row_id = row.id
   if (msg.role === 'tool' && msg.tool_name && !msg.name) msg.name = msg.tool_name
   return msg
 }
@@ -516,14 +517,30 @@ function projectStateDbMessage(row: Dict, hasId: boolean): Dict {
  * Python `get_state_db_session_messages(sid, stitch_continuations=True)`: the session's active rows in durable order,
  * walking compatible compression/close parents so a continued CLI conversation reads as one transcript.
  */
+/** The state.db file's identity (inode and creation time); a recreated or replaced database gets a new one. */
+function stateDbGeneration(dbPath: string): string | null {
+  try { const st = statSync(dbPath); return `${String(st.ino)}:${String(st.birthtimeMs)}` } catch { return null }
+}
+
+export interface StateDbRead { rows: Dict[]; idCapable: boolean; ok: boolean }
+
 export function stateDbSessionMessages(dbPath: string, sid: string, opts: { stitch?: boolean } = {}): Dict[] {
+  return stateDbSessionRead(dbPath, sid, opts).rows
+}
+
+/**
+ * `stateDbSessionMessages`, whether the read succeeded (`ok`), and whether its `messages` table has an `id` column
+ * (TAL-493: an empty id-capable read is a baseline of 0; a missing database or a failed read says nothing).
+ */
+export function stateDbSessionRead(dbPath: string, sid: string, opts: { stitch?: boolean } = {}): StateDbRead {
+  const none = { rows: [], idCapable: false, ok: false }
   const id = sid.trim()
-  if (!id || !existsSync(dbPath)) return []
+  if (!id || !existsSync(dbPath)) return none
   let db: DatabaseSync
-  try { db = openStateDbReadonly(dbPath) } catch { return [] }
+  try { db = openStateDbReadonly(dbPath) } catch { return none }
   try {
     const available = tableColumns(db, 'messages')
-    if (!['role', 'content', 'timestamp'].every((c) => available.has(c))) return []
+    if (!['role', 'content', 'timestamp'].every((c) => available.has(c))) return { ...none, ok: available.size > 0 }
     const hasId = available.has('id')
     const selected = [...(hasId ? ['id'] : []), 'role', 'content', 'timestamp', ...OPTIONAL_MESSAGE_COLUMNS.filter((c) => available.has(c))]
     const chain = [id]
@@ -547,9 +564,15 @@ export function stateDbSessionMessages(dbPath: string, sid: string, opts: { stit
     const activeClause = available.has('active') ? ' AND (active IS NULL OR active != 0)' : ''
     const order = hasId ? 'id' : 'timestamp'
     const rows = db.prepare(`SELECT ${selected.join(', ')}, session_id FROM messages WHERE session_id IN (${chain.map(() => '?').join(', ')})${activeClause} ORDER BY ${order} ASC`).all(...chain) as Dict[]
-    return rows.map((row) => projectStateDbMessage(row, hasId))
+    const projected = rows.map((row) => projectStateDbMessage(row, hasId))
+    // TAL-493: the database file's identity, so a marker taken in a replaced state.db is never applied to its successor.
+    if (hasId) {
+      const generation = stateDbGeneration(dbPath)
+      for (const m of projected) m._state_db_generation = generation
+    }
+    return { rows: projected, idCapable: hasId, ok: true }
   } catch {
-    return []
+    return none
   } finally {
     db.close()
   }

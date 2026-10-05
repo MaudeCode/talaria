@@ -30,6 +30,9 @@ export const METADATA_FIELDS = [
   'truncation_watermark',
   'truncation_boundary',
   'truncation_watermark_compressed',
+  'state_db_seen_id',
+  'state_db_seen_boundary',
+  'state_db_seen_stamp',
   'clear_generation',
   'intentional_shrink_generation',
   'gateway_routing', 'gateway_routing_history', 'llm_title_generated', 'manual_title',
@@ -225,6 +228,12 @@ export class Session {
   truncation_boundary: unknown
   /** TAL-504: the watermark marks compressed rows (newer state.db rows are new), not a cut suffix. */
   truncation_watermark_compressed: boolean
+  /** TAL-493: the highest Agent state.db message id a boundary or settled turn read; newer rows are continuations. */
+  state_db_seen_id: number | null
+  /** TAL-493: what `state_db_seen_id` was recorded under (boundary fields, its row); a change makes the marker stale. */
+  state_db_seen_boundary: string | null
+  /** TAL-493: `updated_at` while the marker is current; this version's saves carry it forward, an older release's do not. */
+  state_db_seen_stamp: number | null
   clear_generation: unknown
   intentional_shrink_generation: unknown
   gateway_routing: Record<string, unknown> | null
@@ -336,6 +345,12 @@ export class Session {
     this.truncation_watermark = take('truncation_watermark', null)
     this.truncation_boundary = take('truncation_boundary', null)
     this.truncation_watermark_compressed = take('truncation_watermark_compressed', false) === true
+    const seenId = take('state_db_seen_id', null)
+    this.state_db_seen_id = typeof seenId === 'number' && Number.isFinite(seenId) ? seenId : null
+    const seenBoundary = take('state_db_seen_boundary', null)
+    this.state_db_seen_boundary = typeof seenBoundary === 'string' ? seenBoundary : null
+    const seenStamp = take('state_db_seen_stamp', null)
+    this.state_db_seen_stamp = typeof seenStamp === 'number' && Number.isFinite(seenStamp) ? seenStamp : null
     this.clear_generation = take('clear_generation', null)
     this.intentional_shrink_generation = take('intentional_shrink_generation', null)
     const routing = take('gateway_routing', null)

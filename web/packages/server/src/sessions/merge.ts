@@ -61,7 +61,7 @@ export function messageText(content: unknown): string {
   return str(content)
 }
 
-export function messageIdentity(msg: unknown): string | null {
+export function messageIdentity(msg: unknown, textLimit = 500): string | null {
   if (!isDict(msg)) return null
   const role = str(msg.role)
   let text = messageText(msg.content)
@@ -78,7 +78,7 @@ export function messageIdentity(msg: unknown): string | null {
     return null
   }
   const toolCalls = Array.isArray(msg.tool_calls) ? msg.tool_calls : []
-  return JSON.stringify([role, text.split(/\s+/).join(' ').trim().slice(0, 500), str(msg.tool_call_id), JSON.stringify(sortKeysDeep(toolCalls))])
+  return JSON.stringify([role, text.split(/\s+/).join(' ').trim().slice(0, textLimit), str(msg.tool_call_id), JSON.stringify(sortKeysDeep(toolCalls))])
 }
 
 function sortKeysDeep(value: unknown): unknown {
@@ -755,15 +755,36 @@ export function normalizeAssistantDisplay<T>(message: T): T {
  * replay): rows at or before it, and, for a truncation cut, rows after it until the sidecar advances past it (TAL-504).
  * A compression watermark only covers the compressed rows. Rows past the sidecar tail (a conversation continued from the
  * CLI) are appended in state.db order.
+ * TAL-493: once a boundary or settled turn recorded the highest state.db id it read (`stateDbSeenId`) and the rows carry
+ * ids, identity replaces the timestamp rules: rows up to that id are covered, and every newer row not already in the
+ * sidecar is appended, even one a writer stamped before the newest local row or the watermark but committed later.
  * ponytail: the Python identity memo (api_content sidecars, message ids, workspace-prefix normalisation) is not ported;
  * add it if a mixed WebUI/CLI transcript shows duplicated turns.
  */
-export function mergeSessionMessagesAppendOnly(sidecar: Message[], state: Message[], opts: { truncationWatermark?: unknown; compressedWatermark?: boolean } = {}): Message[] {
+export function mergeSessionMessagesAppendOnly(sidecar: Message[], state: Message[], opts: { truncationWatermark?: unknown; compressedWatermark?: boolean; stateDbSeenId?: number | null } = {}): Message[] {
   const watermark = Number(opts.truncationWatermark)
   const hasWatermark = opts.truncationWatermark !== null && opts.truncationWatermark !== undefined && Number.isFinite(watermark)
   if (!state.length) return sidecar
   const ts = (m: Message): number | null => { const n = Number(m.timestamp); return Number.isFinite(n) ? n : null }
   const key = (m: Message): string => `${String(m.role)}\0${String(ts(m) ?? '')}\0${typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? null)}`
+  const seenId = opts.stateDbSeenId
+  if (typeof seenId === 'number' && Number.isFinite(seenId) && state.some((m) => stateDbRowId(m) !== null)) {
+    // Each local row stands for at most one new state.db row: a persisted copy by its id, any other by its key.
+    const localIds = new Set(sidecar.map(stateDbRowId))
+    const localKeys = new Map<string, number>()
+    for (const m of sidecar) if (stateDbRowId(m) === null) localKeys.set(key(m), (localKeys.get(key(m)) ?? 0) + 1)
+    const merged = [...sidecar]
+    for (const m of state) {
+      const id = stateDbRowId(m)
+      if (id !== null && localIds.has(id)) continue
+      // In state.db order, so a covered row matches its own local copy before a newer duplicate can.
+      const left = localKeys.get(key(m)) ?? 0
+      if (left > 0) { localKeys.set(key(m), left - 1); continue }
+      if (id === null || id <= seenId) continue
+      merged.push(m)
+    }
+    return merged
+  }
   if (!sidecar.length) {
     if (!hasWatermark) { const seen = new Set<string>(); return state.filter((m) => { const k = key(m); if (seen.has(k)) return false; seen.add(k); return true }) }
     if (watermark === 0) return []
@@ -785,6 +806,19 @@ export function mergeSessionMessagesAppendOnly(sidecar: Message[], state: Messag
     merged.push(m)
   }
   return merged
+}
+
+/** The Agent's `messages.id` a state.db row was read with, or null for a database without the column. */
+function stateDbRowId(m: Message): number | null {
+  const id = m._state_db_row_id
+  return typeof id === 'number' && Number.isFinite(id) ? id : null
+}
+
+/** TAL-493: the `state_db_seen_id` after reading `rows`: their highest id, or null when they carry none. */
+export function stateDbSeenId(rows: Message[]): number | null {
+  let max: number | null = null
+  for (const m of rows) { const id = stateDbRowId(m); if (id !== null && (max === null || id > max)) max = id }
+  return max
 }
 
 /**
