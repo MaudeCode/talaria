@@ -631,6 +631,25 @@ export function withToolCallOutcomes<T>(messages: T[], sessionToolCalls: unknown
   })
 }
 
+/** The prompt text naming every attached file by path after it (TAL-276), so an attachment-only turn still asks something. */
+export function attachedFilesPrompt(text: string, attachments: readonly unknown[]): string {
+  const named = attachments.map((att) => (isDict(att) ? str(att.path).trim() : '')).filter(Boolean).map(escapeWorkspacePrefixPath)
+  return named.length ? `${text}\n\n[Attached files: ${named.join(', ')}]` : text
+}
+
+/** A model context without an assistant row repeated back to back. */
+export function dedupeContext(messages: Message[]): Message[] {
+  const out: Message[] = []
+  let lastKey: string | null = null
+  for (const m of messages) {
+    const key = messageIdentity(m)
+    if (key !== null && key === lastKey && m.role === 'assistant') continue
+    out.push(m)
+    lastKey = key
+  }
+  return out
+}
+
 /** Python `_build_partial_message`. */
 export function buildPartialMessage(contentText: string, reasoningText: string, toolCalls: unknown[], now = Date.now() / 1000): Message | null {
   let stripped = ''
@@ -687,8 +706,9 @@ export function journalOutputRows(events: JournalEvent[], turnId: string): { row
   flush()
   const done = RunJournal.selectAuthoritativeTerminalEvent(events)
   if (done?.event !== 'done') return { rows, answered: false }
+  // The last row answers only with visible prose and no calls after it (a reasoning-only segment is no answer).
   const last = rows[rows.length - 1]
-  if (last && !last._partial_tool_calls) {
+  if (last && !last._partial_tool_calls && str(last.content)) {
     delete last._partial
     return { rows, answered: true }
   }

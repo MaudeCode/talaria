@@ -20,7 +20,7 @@ import { UNSETTLED_TODO_KEY, attachTodoState } from './todo.js'
 import { stateDbSessionMessages, stateDbSessionRead, stateDbSessionRow, stateDbSessionSources, type StateDbRead } from './state-db.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { SidecarError, type SidecarLike } from '../sidecar/client.js'
-import { attachmentObjects, isContextCompressionMarker, journalOutputRows, mergeSessionMessagesAppendOnly, messageIdentity, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, type ToolResultView } from './merge.js'
+import { agentSteerText, attachedFilesPrompt, attachmentObjects, dedupeContext, isContextCompressionMarker, journalOutputRows, looksLikeCurrentUserTurn, stoppedTurnContext, workspaceContextPrefix, mergeSessionMessagesAppendOnly, messageIdentity, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, type ToolResultView } from './merge.js'
 import { withBackgroundUpdates } from './background-updates.js'
 import { withBackgroundLinks, type Receipt } from './background-tasks.js'
 import { messagesForLimitedPayload, messageWindowForDisplay, MAX_MSG_LIMIT, parseMsgLimit, toolCallsForMessageWindow } from './window.js'
@@ -652,34 +652,37 @@ export class SessionService {
     }
     // Python `_materialize_pending_user_turn_before_error` (#1361) and `_recover_dead_run_journal`: the prompt that was in
     // flight becomes a durable user turn, the output its journal holds follows it, and an interruption marker closes a
-    // run that never reached `done`, so a dead stream never silently drops what the user sent or what streamed.
+    // run that never finished with an answer, so a dead stream never silently drops what the user sent or what streamed.
     const turnId = str(target.active_stream_id)
     const events = this.deps.journal?.readRunEvents(target.session_id, turnId) ?? []
     const { rows: output, answered } = journalOutputRows(events, turnId)
-    // The Agent's state.db rows from before the run started: the turn's own starting read, which died with its worker.
+    const pendingText = str(target.pending_user_message)
+    const attachments = [...target.pending_attachments]
+    // The run's starting read died with its worker: the state.db rows from before it started stand in for it. Its own
+    // rows open with its prompt and run to the next prompt; anything else another client wrote meanwhile stays.
     const read = this.stateDbRead(target)
     const runStart = target.pending_started_at || events[0]?.created_at || this.deps.now()
     const before = read.rows.filter((m) => Number(m.timestamp) < runStart)
+    const ownRows = target.hasPendingPrompt ? runStateDbRows(read.rows.filter((m) => Number(m.timestamp) >= runStart), pendingText) : null
     const previousContext = this.modelContext(target, before)
-    const recovered: Message[] = []
     if (target.hasPendingPrompt) {
       const startedAt = typeof target.pending_started_at === 'number' && target.pending_started_at > 0 ? target.pending_started_at : this.deps.now()
-      const attachments = [...target.pending_attachments]
-      const user: Message = { role: 'user', content: str(target.pending_user_message), timestamp: Math.trunc(startedAt), ...(attachments.length ? { attachments } : {}), _recovered: true, _source: target.pending_user_source ?? 'webui', _turn_id: turnId }
       // An eager save already checkpointed this prompt as the turn's user row.
-      if (!target.messages.some((m) => m.role === 'user' && !m._steer && m._turn_id === turnId)) target.messages.push(user)
-      recovered.push(user)
+      if (!target.messages.some((m) => m.role === 'user' && !m._steer && m._turn_id === turnId)) target.messages.push({ role: 'user', content: pendingText, timestamp: Math.trunc(startedAt), ...(attachments.length ? { attachments } : {}), _recovered: true, _source: target.pending_user_source ?? 'webui', _turn_id: turnId })
+      // The model context settles as a Stop's does: the Agent's own rows when it committed the prompt, else the prompt it
+      // was sent; then the prose that streamed past them.
+      if (target.context_messages.length) {
+        const prompt = attachedFilesPrompt((str(target.workspace) ? workspaceContextPrefix(str(target.workspace)) : '') + pendingText, attachments)
+        const streamed = output.map((m) => str(m.content)).filter(Boolean).join('\n\n')
+        target.context_messages = dedupeContext(stoppedTurnContext(previousContext, ownRows ? [...previousContext, ...ownRows] : null, prompt, pendingText, streamed, previousContext.length) ?? [...structuredClone(previousContext), { role: 'user', content: prompt }])
+      }
     }
-    if (recovered.length || output.length) {
+    if (target.hasPendingPrompt || output.length) {
       target.messages.push(...output)
-      recovered.push(...output)
       if (!answered) target.messages.push({ role: 'assistant', content: '**Interrupted:** The reply was interrupted before it could be saved.', timestamp: Math.trunc(this.deps.now()), _error: true, _turn_id: turnId })
+      // Settled like a turn: the Agent's own rows are covered by the recovered turn; without them, every row past the run's start is.
+      this.settleStateDb(target, { turnId, previousContext, agentRows: ownRows, startId: stateDbSeenId(before) ?? (read.idCapable ? 0 : null) })
     }
-    // The model context is the one the run started from plus what its fallback (`messages` without errors and partials)
-    // would show of the recovered turn, as a Stop settles it.
-    if (target.context_messages.length) target.context_messages = copyJson([...previousContext, ...recovered.filter((m) => !m._error && !m._partial)])
-    // Settled like a turn without the Agent's report: the run's own state.db rows are covered by what was recovered.
-    if (recovered.length) this.settleStateDb(target, { turnId, previousContext, agentRows: null, startId: stateDbSeenId(before) ?? (read.idCapable ? 0 : null) })
     target.active_stream_id = null
     target.pending_user_message = null
     target.pending_attachments = []
@@ -1642,6 +1645,15 @@ function findLastUserIndex(history: unknown[]): number | null {
 /** Python `_sanitize_error`: absolute paths in an error message never reach the client. */
 export function sanitizePaths(error: unknown): string {
   return str((error as Error)?.message ?? error).replace(/(?:(?:\/[a-zA-Z0-9_.-]+)+|(?:[A-Z]:\\[^\s]+))/g, '<path>')
+}
+
+/** TAL-536: a dead run's own state.db rows: from its prompt to the next prompt (tool results and applied steers stay in it). */
+function runStateDbRows(rows: Message[], prompt: string): Message[] | null {
+  const at = rows.findIndex((m) => looksLikeCurrentUserTurn(m, prompt))
+  if (at < 0) return null
+  const toolResult = (m: Message): boolean => Array.isArray(m.content) && m.content.some((part) => isDict(part) && part.type === 'tool_result')
+  const end = rows.findIndex((m, i) => i > at && m.role === 'user' && !toolResult(m) && agentSteerText(m) === null)
+  return rows.slice(at, end < 0 ? undefined : end)
 }
 
 /** TAL-493: a row's full-text identity; one with no text (reasoning or media only) by its raw role, content, and reasoning. */

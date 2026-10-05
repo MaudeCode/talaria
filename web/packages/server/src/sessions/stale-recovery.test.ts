@@ -4,10 +4,13 @@ import { DatabaseSync } from 'node:sqlite'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
-import { pendingUserRow } from './merge.js'
+import { messageText, pendingUserRow, stripWorkspacePrefix } from './merge.js'
+import type { Message } from './session.js'
 
 type Json = Record<string, unknown>
 const MARKER = '**Interrupted:** The reply was interrupted before it could be saved.'
+/** A model context as role and text, without the workspace prefix the prompt the Agent got carries. */
+const said = (rows: Message[]) => rows.map((m) => [m.role, stripWorkspacePrefix(messageText(m.content))])
 
 describe('stale-stream cleanup with a run journal', () => {
   let s: TestServer
@@ -71,7 +74,8 @@ describe('stale-stream cleanup with a run journal', () => {
     const after = recovered(sid)
     expect(after.messages.filter((m) => m.role === 'user' && m.content === 'summarize the repo')).toHaveLength(1)
     expect(after.messages.map((m) => m.content)).toEqual(['hi', 'hello', 'summarize the repo', 'Part', MARKER])
-    expect(after.context_messages.map((m) => [m.role, m.content])).toEqual([['user', 'hi'], ['assistant', 'hello'], ['user', 'summarize the repo']])
+    // As a Stop settles it: the prompt the Agent was sent, then the prose that streamed.
+    expect(said(after.context_messages)).toEqual([['user', 'hi'], ['assistant', 'hello'], ['user', 'summarize the repo'], ['assistant', 'Part']])
   })
 
   it('a done frame supplies an answer that never streamed, like the tool-limit summary', async () => {
@@ -107,6 +111,48 @@ describe('stale-stream cleanup with a run journal', () => {
     const detail = (await (await s.get(`/api/session?session_id=${sid}`)).json()) as { session: { messages: Json[] } }
     const turn = ['summarize the repo', 'Checking the tree.', 'It is a mono', MARKER]
     expect(detail.session.messages.map((m) => m.content)).toEqual(['hi', 'hello', 'from the CLI', 'CLI answer', ...turn])
-    expect(s.deps.sessions.modelContext(s.deps.sessionStore.get(sid)).map((m) => m.content)).toEqual(['hi', 'hello', 'from the CLI', 'CLI answer', 'summarize the repo'])
+    // The Agent's own rows, then the prose that streamed past them.
+    expect(said(s.deps.sessions.modelContext(s.deps.sessionStore.get(sid)))).toEqual([['user', 'hi'], ['assistant', 'hello'], ['user', 'from the CLI'], ['assistant', 'CLI answer'], ['user', 'summarize the repo'], ['assistant', 'Checking the tree.'], ['tool', 'README.md'], ['assistant', 'It is a mono']])
+  })
+
+  /** A state.db holding `rows` for `sid`, as the Agent and other clients committed them. */
+  const stateDb = (sid: string, rows: [string, string, number][]): void => {
+    const db = new DatabaseSync(join(s.state, 'state.db'))
+    db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
+    db.prepare('INSERT INTO sessions (id, source, started_at) VALUES (?, ?, ?)').run(sid, 'webui', 1)
+    for (const [role, content, ts] of rows) db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, role, content, ts)
+    db.close()
+  }
+
+  it('rows another client committed while the run was going stay in the transcript and the model context', async () => {
+    const history = [{ role: 'user', content: 'hi', timestamp: 1 }, { role: 'assistant', content: 'hello', timestamp: 2 }]
+    let startedAt = 0
+    const sid = await deadRun('deadrun536concurrent', [...work, ['token', { text: 'It is a mono' }]], (session) => {
+      startedAt = Number(session.pending_started_at)
+      session.messages = [...history]
+      session.context_messages = [...history]
+    })
+    stateDb(sid, [['user', 'hi', 1], ['assistant', 'hello', 2], ['user', 'summarize the repo', startedAt + 1], ['assistant', 'Checking the tree.', startedAt + 2], ['user', 'asked in the CLI meanwhile', startedAt + 5], ['assistant', 'CLI answer', startedAt + 6]])
+    recovered(sid)
+    const detail = (await (await s.get(`/api/session?session_id=${sid}`)).json()) as { session: { messages: Json[] } }
+    expect(detail.session.messages.map((m) => m.content)).toEqual(['hi', 'hello', 'summarize the repo', 'Checking the tree.', 'It is a mono', MARKER, 'asked in the CLI meanwhile', 'CLI answer'])
+    expect(said(s.deps.sessions.modelContext(s.deps.sessionStore.get(sid))).slice(-2)).toEqual([['user', 'asked in the CLI meanwhile'], ['assistant', 'CLI answer']])
+  })
+
+  it('an attachment-only prompt the Agent never committed keeps its files in the model context', async () => {
+    const history = [{ role: 'user', content: 'hi', timestamp: 1 }, { role: 'assistant', content: 'hello', timestamp: 2 }]
+    const doc = { path: '/tmp/report.pdf', mime: 'application/pdf', name: 'report.pdf' }
+    const sid = await deadRun('deadrun536files', [['token', { text: 'Reading it' }]], (session) => {
+      Object.assign(session, { pending_user_message: '', pending_attachments: [doc], messages: [...history], context_messages: [...history] })
+    })
+    const after = recovered(sid)
+    expect(said(after.context_messages)).toEqual([['user', 'hi'], ['assistant', 'hello'], ['user', '[Attached files: /tmp/report.pdf]'], ['assistant', 'Reading it']])
+  })
+
+  it('a done run whose last segment is reasoning only is no answer', async () => {
+    const sid = await deadRun('deadrun536thinking', [...work, ['reasoning', { text: 'That should do.' }], ['done', { terminal_state: 'completed', session: { messages: [] } }]])
+    const { messages } = recovered(sid)
+    expect(messages.map((m) => m.content)).toEqual(['summarize the repo', 'Checking the tree.', '', MARKER])
+    expect(messages[2]).toMatchObject({ reasoning: 'That should do.', _partial: true })
   })
 })
