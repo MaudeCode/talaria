@@ -493,11 +493,16 @@ export class ProviderCatalog {
     return catalogOptionId(catalog, model, provider)
   }
 
-  /** TAL-542: the identity of the files a catalog and its live ids derive from (config.yaml, `.env`), so an edit outside Web makes both stale. */
+  /**
+   * TAL-542: the identity of the files a catalog and its live ids derive from: config.yaml, `.env`, the Agent's sign-in
+   * store (`auth.json`, rewritten by an account switch), and the installed plugins directory, so a change outside Web
+   * makes both stale.
+   */
   private sourceFingerprint(profileHome: string): string {
-    let env = 'missing'
-    try { const st = statSync(join(profileHome, '.env'), { bigint: true }); env = `${String(st.mtimeNs)}:${String(st.size)}:${String(st.ino)}` } catch { /* missing or unreadable: never matches a readable one */ }
-    return `${this.deps.config.fingerprint(profileHome)}|${env}`
+    const stamp = (name: string): string => {
+      try { const st = statSync(join(profileHome, name), { bigint: true }); return `${String(st.mtimeNs)}:${String(st.size)}:${String(st.ino)}` } catch { return 'missing' }
+    }
+    return [this.deps.config.fingerprint(profileHome), ...['.env', 'auth.json', 'plugins'].map(stamp)].join('|')
   }
 
   /** The last catalog built for this home, younger than `maxAgeS`, while its source files are unchanged since (TAL-542). */

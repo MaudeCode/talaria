@@ -117,6 +117,36 @@ describe('live model ids without a sidecar (TAL-542)', () => {
   })
 })
 
+describe('live model ids after an Agent account switch (TAL-542)', () => {
+  it('re-reads live ids when the Agent\'s sign-in store changes', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'talaria-catalog-'))
+    try {
+      let clock = 1_800_000_000
+      let ids = ['cp-a']
+      const sidecar = new FakeSidecar()
+      const config = { model: { provider: 'anthropic', default: 'claude-sonnet-4' }, providers: { ollama: { base_url: 'http://ollama.test/v1', models: ['llama3.2'] } } }
+      sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config }))
+      sidecar.respond('providers.auth_status', (p) => ({ status: { logged_in: p.provider === 'copilot', provider: p.provider ?? '' } }))
+      sidecar.respond('plugins.providers', () => ({ providers: [] }))
+      sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: p.provider === 'copilot' ? ids : [] }))
+      writeFileSync(join(home, 'config.yaml'), '# cfg\n')
+      writeFileSync(join(home, 'auth.json'), '{"account":"a"}\n')
+      const catalog = new ProviderCatalog({ sidecar: () => sidecar, config: new AgentConfig({ sidecar: () => sidecar, env: {} }), env: {}, now: () => clock, log: () => undefined, costBudget: () => null, isRootProfileHome: () => true })
+      await catalog.warmSessionModelRepair(home)
+      expect(catalog.sessionModelRepair(home, 'cp-a', 'ollama')).toEqual(['cp-a', 'copilot'])
+      // `hermes` switches the Copilot account: only auth.json changes, and the new account lists other models.
+      ids = ['cp-b']
+      writeFileSync(join(home, 'auth.json'), '{"account":"bb"}\n')
+      clock += 1
+      await catalog.warmSessionModelRepair(home)
+      expect(catalog.sessionModelRepair(home, 'cp-a', 'ollama')).toBeNull()
+      expect(catalog.sessionModelRepair(home, 'cp-b', 'ollama')).toEqual(['cp-b', 'copilot'])
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+})
+
 describe('the picker overflow split', () => {
   it('keeps a colon-bearing selected model visible', () => {
     const models = Array.from({ length: 30 }, (_, i) => ({ id: `m${String(i)}`, label: `M${String(i)}` }))
