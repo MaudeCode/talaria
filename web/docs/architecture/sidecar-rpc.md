@@ -180,6 +180,21 @@ home. A flow belongs to the home that started it. After a cancel or an expiry,
 nothing is saved, and a new start for the same home and provider supersedes the
 pending one. Flows live only in the sidecar process.
 
+Background processes survive a sidecar restart through the Agent's
+`processes.json` checkpoint (TAL-533). The Agent owns the process registry and
+each home's checkpoint. It is process-global, and a spawn rewrites the active
+home's checkpoint from the registry. So the first call that enters a profile
+home (`scoped_home`) runs `process_registry.recover_from_checkpoint()` there
+once, before any call in that home can spawn. The server's completion drain
+enters the active profile at startup; other profiles recover on their first
+call. Recovery adopts only a live PID whose recorded start time still matches,
+and it restores the `session_key` (the WebUI session id) that the server routes
+completions and Background rows by, so no server index is rebuilt. An adopted
+process has no reader thread: `process.drain` probes it on every pass, and its
+exit queues an ordinary completion with an unknown exit code and no output
+history. A failed recovery is logged and not retried until the sidecar
+restarts.
+
 ## Versioning
 
 `rpc_version` is an integer in the contracts package
