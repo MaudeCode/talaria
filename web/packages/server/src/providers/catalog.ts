@@ -59,6 +59,45 @@ export function catalogOptionId(catalog: ModelsCatalog, model: string | null, pr
   return null
 }
 
+/** TAL-542: the vendor a first-party provider serves, or a model id names by prefix; '' when neither says. */
+const PROVIDER_VENDOR: Record<string, string> = { openai: 'openai', 'openai-api': 'openai', 'openai-codex': 'openai', anthropic: 'anthropic', gemini: 'google', google: 'google' }
+function modelVendor(model: string): string {
+  const m = model.trim().toLowerCase()
+  if (m.includes('/')) return ({ openai: 'openai', anthropic: 'anthropic', google: 'google', gemini: 'google' } as Record<string, string>)[m.slice(0, m.indexOf('/'))] ?? ''
+  return m.startsWith('gpt') ? 'openai' : m.startsWith('claude') ? 'anthropic' : m.startsWith('gemini') ? 'google' : ''
+}
+
+/**
+ * TAL-542 (Python `_resolve_compatible_session_model_state` + `_repair_foreign_session_model_provider`): the pair a
+ * session's stale model starts on. A model its provider's catalog group does not list moves to the one other provider
+ * that lists it; else, when the model names another vendor than a first-party provider, to the profile default. No
+ * evidence (no group for the provider, a failed live lookup in `unlisted`) keeps the pair, and so does a stored
+ * provider that is the profile's own unless the model names another vendor. `null` keeps the pair.
+ */
+export function repairSessionModel(catalog: ModelsCatalog, model: string, provider: string | null, unlisted: ReadonlySet<string> = new Set()): [string, string] | null {
+  const active = canonicaliseProviderId(catalog.active_provider)
+  const pid = canonicaliseProviderId(provider) || active
+  if (!model.trim() || !pid || unlisted.has(pid) || !catalog.groups.some((g) => canonicaliseProviderId(g.provider_id) === pid)) return null
+  const loose = (id: string): string => id.trim().toLowerCase().replaceAll('-', '.')
+  const want = loose(model)
+  const entries = catalog.groups.flatMap((g) => [...g.models, ...(g.extra_models ?? [])])
+  // Python `_catalog_model_id_matches`: the provider keeps a model it lists in another spelling or under a vendor prefix.
+  const listed = (bare: string): boolean => loose(bare) === want || loose(bare.slice(bare.indexOf('/') + 1)) === want
+  if (entries.some((e) => canonicaliseProviderId(e.provider_id) === pid && listed(str(e.bare_id)))) return null
+  if (!provider || pid !== active) {
+    const owners = new Map(entries.filter((e) => loose(str(e.bare_id)) === want).map((e) => [canonicaliseProviderId(e.provider_id), str(e.bare_id)] as const))
+    const [only] = owners.size === 1 ? [...owners] : []
+    if (only) return [only[1], only[0]]
+  }
+  const vendor = PROVIDER_VENDOR[pid] ?? ''
+  const named = modelVendor(model)
+  // Python: Codex takes bare ids, so an `openai/` id on it is stale too.
+  if (!vendor || !named || (named === vendor && !(pid === 'openai-codex' && model.includes('/')))) return null
+  const defaultModel = str(catalog.default_bare_id).trim()
+  const defaultProvider = canonicaliseProviderId(catalog.default_provider_id) || active
+  return defaultModel && defaultProvider && (defaultModel !== model || defaultProvider !== pid) ? [defaultModel, defaultProvider] : null
+}
+
 /** Python `_split_picker_overflow_models`: past 25 rows the picker shows 15, keeping the selected model visible. */
 export function splitPickerOverflow(models: ModelEntry[], selected: string, providerId: string): [ModelEntry[], ModelEntry[]] {
   if (models.length <= MODEL_PICKER_OVERFLOW_THRESHOLD) return [models, []]
@@ -441,6 +480,15 @@ export class ProviderCatalog {
     const catalog = this.lastModels.get(profileHome)
     if (!catalog) { void this.warmModelOptions(profileHome); return null }
     return catalogOptionId(catalog, model, provider)
+  }
+
+  /** TAL-542: `repairSessionModel` against the last catalog built for this home; a cold home keeps the pair and starts building one. */
+  sessionModelRepair(profileHome: string, model: string, provider: string | null): [string, string] | null {
+    const catalog = this.lastModels.get(profileHome)
+    if (!catalog) { void this.warmModelOptions(profileHome); return null }
+    const prefix = `${profileHome}\0`
+    const failed = new Set([...this.liveFailed].filter((k) => k.startsWith(prefix)).map((k) => k.slice(prefix.length)))
+    return repairSessionModel(catalog, model, provider, failed)
   }
 
   /** Builds the catalog `modelOptionFor` reads once per home; an unavailable catalog leaves every option id null. */

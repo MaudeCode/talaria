@@ -101,11 +101,14 @@ function resolveWorkspace(ctx: RequestContext, s: Session, requested: unknown): 
   }
 }
 
+/** A `@provider:` id is split; any other model an explicit pick did not just choose is checked against the catalog (TAL-542). */
 function modelState(ctx: RequestContext, s: Session, body: Record<string, unknown>): [string | null, string | null, boolean] {
   const requestedModel = str(body.model) || s.model
   const requestedProvider = 'model_provider' in body ? (body.model_provider as string | null) : s.model_provider
   const [model, provider] = ctx.deps.sessions.deps.modelStateFromRequest(requestedModel, requestedProvider, s.model_provider)
-  return [model, provider, model !== requestedModel]
+  if (model !== requestedModel || !model || body.explicit_model_pick === true) return [model, provider, model !== requestedModel]
+  const repaired = ctx.deps.sessions.deps.repairSessionModel?.(s.profile ?? null, model, provider)
+  return repaired ? [repaired[0], repaired[1], true] : [model, provider, false]
 }
 
 /** `chat.start`; a `chat.steer` sent while a background turn runs starts the user's turn through it too (TAL-460). */
@@ -117,6 +120,8 @@ async function startChat(ctx: RequestContext, body: Record<string, unknown>): Pr
   // Python `_agent_runtime_barrier_response`: a stale local Agent checkout is refused with a typed 409 before any
   // session state is materialised, claimed, or mutated.
   await ensureAgentRuntimeCurrent(ctx.deps.sidecar())
+  // TAL-542: the stale-model check reads this catalog; it is built before the session is read so no await follows that read.
+  await ctx.deps.sessions.deps.warmModelOptions?.()
   let s: Session
   try {
     s = ctx.deps.sessionStore.get(sid)

@@ -2286,6 +2286,88 @@ describe('chat turns through the sidecar', () => {
   })
 })
 
+describe('stale cross-provider session models at chat start (TAL-542)', () => {
+  let s: TestServer
+  let sidecar: FakeSidecar
+  let seen: Json
+  beforeAll(async () => {
+    sidecar = new FakeSidecar()
+    s = await bootTestServer({ sidecar })
+    sidecar.respond('chat.start', (params, emit) => { seen = params; emit({ event: 'token', data: { text: 'ok' } }); return completed([{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'ok' }]) })
+    sidecar.respond('providers.auth_status', (p) => ({ status: { logged_in: false, provider: p.provider ?? '' } }))
+    sidecar.respond('plugins.providers', () => ({ providers: [] }))
+    sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: [] }))
+    writeFileSync(join(s.state, 'config.yaml'), '# seed\n')
+  })
+  afterAll(() => s.close())
+
+  /** The profile's config.yaml: its provider and default model, and each configured provider's model list. */
+  const useConfig = (provider: string, defaultModel: string, providers: Record<string, string[]> = {}): void => {
+    const config = { model: { provider, default: defaultModel }, providers: Object.fromEntries(Object.entries(providers).map(([pid, models]) => [pid, { base_url: `http://${pid}.test/v1`, models }])) }
+    sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config }))
+    s.deps.agentConfig.invalidate()
+    s.deps.catalog.invalidate()
+  }
+  const sessionWith = async (model: string, provider: string | null): Promise<string> => {
+    const sid = await newSession(s)
+    const session = s.deps.sessionStore.get(sid)
+    session.model = model
+    session.model_provider = provider
+    s.deps.sessionStore.save(session)
+    return sid
+  }
+  const start = async (body: Json): Promise<Json> => {
+    const res = await post(s, '/api/chat/start', { message: 'continue', ...body })
+    expect(res.status).toBe(200)
+    const started = await json(res)
+    await s.sse(`/api/chat/stream?stream_id=${String(started.stream_id)}&replay=1`, (f) => f.event === 'done' || f.event === 'apperror')
+    return started
+  }
+
+  it('moves a poisoned pair to the one provider whose catalog lists the model, and persists it (#5731)', async () => {
+    useConfig('kilocode', 'kilo/auto', { ollama: ['llama3.2'], kilocode: ['kilo/auto', 'kilo/minimax/minimax-m3'] })
+    const sid = await sessionWith('kilo/minimax/minimax-m3', 'ollama')
+    const started = await start({ session_id: sid })
+    expect(started).toMatchObject({ effective_model: 'kilo/minimax/minimax-m3', effective_model_provider: 'kilocode' })
+    expect(seen).toMatchObject({ model: 'kilo/minimax/minimax-m3', model_provider: 'kilocode' })
+    expect(s.deps.sessionStore.get(sid)).toMatchObject({ model: 'kilo/minimax/minimax-m3', model_provider: 'kilocode' })
+  })
+
+  it('switches a providerless model from another vendor to the profile default, and persists it (#1734)', async () => {
+    useConfig('openai-codex', 'gpt-5.5')
+    for (const stale of ['gemini-3.1-pro-preview', 'google/gemini-3.1-pro-preview', 'openai/gpt-5.4-mini']) {
+      const sid = await sessionWith(stale, null)
+      const started = await start({ session_id: sid })
+      expect(started).toMatchObject({ effective_model: 'gpt-5.5', effective_model_provider: 'openai-codex' })
+      expect(seen).toMatchObject({ model: 'gpt-5.5', model_provider: 'openai-codex' })
+      expect(s.deps.sessionStore.get(sid)).toMatchObject({ model: 'gpt-5.5', model_provider: 'openai-codex' })
+    }
+  })
+
+  it('keeps an explicit cross-vendor pick and normalizes the same model on a plain send (#5924)', async () => {
+    useConfig('anthropic', 'claude-sonnet-4')
+    let sid = await sessionWith('claude-sonnet-4', 'anthropic')
+    let started = await start({ session_id: sid, model: 'gpt-5.4-mini', model_provider: null, explicit_model_pick: true })
+    expect(started.effective_model).toBeUndefined()
+    expect(seen.model).toBe('gpt-5.4-mini')
+    sid = await sessionWith('gpt-5.4-mini', null)
+    started = await start({ session_id: sid })
+    expect(started).toMatchObject({ effective_model: 'claude-sonnet-4', effective_model_provider: 'anthropic' })
+    expect(seen).toMatchObject({ model: 'claude-sonnet-4', model_provider: 'anthropic' })
+  })
+
+  it('keeps a pair the catalog lists, an unknown vendor, and a `@provider:` pick', async () => {
+    useConfig('openai-codex', 'gpt-5.5', { ollama: ['llama3.2'] })
+    for (const [model, provider] of [['llama3.2', 'ollama'], ['lmstudio-community/Qwen2.5-Coder-7B-Instruct-GGUF', null], ['custom/my-local-llm', null]] as const) {
+      const started = await start({ session_id: await sessionWith(model, provider) })
+      expect(started.effective_model).toBeUndefined()
+      expect(seen.model).toBe(model)
+    }
+    const started = await start({ session_id: await sessionWith('gpt-5.5', 'openai-codex'), model: '@gemini:gemini-3.1-pro-preview' })
+    expect(started).toMatchObject({ effective_model: 'gemini-3.1-pro-preview', effective_model_provider: 'gemini' })
+  })
+})
+
 describe('chat without a sidecar', () => {
   it('fails closed with a sidecar_unavailable apperror and 503 goal controls', async () => {
     const s = await bootTestServer()

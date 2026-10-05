@@ -360,6 +360,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
       if (requestedProvider === undefined && !provider) provider = currentProvider
       return [raw, provider]
     },
+    repairSessionModel: (profile, model, provider) => catalog.sessionModelRepair(profileHome(profile ?? activeProfile()), model, provider),
     yolo: { isEnabled: (sid) => yoloSessions.has(sid), set: (sid, enabled) => { if (enabled) yoloSessions.add(sid); else yoloSessions.delete(sid) } },
   })
   // A working-tree mutation refuses while a run is active anywhere it would change files.

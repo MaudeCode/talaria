@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { parseProviderQualifiedModel } from '../config/agent-config.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
-import { splitPickerOverflow } from './catalog.js'
+import { repairSessionModel, splitPickerOverflow, type ModelEntry, type ModelsCatalog } from './catalog.js'
 import { writeEnvFile } from './env-file.js'
 
 type Json = Record<string, unknown>
@@ -26,6 +26,49 @@ describe('parseProviderQualifiedModel, the one `@provider:model` splitter', () =
     expect(parseProviderQualifiedModel('@fake-sub:claude:latest')).toEqual(['claude:latest', 'fake-sub'])
     expect(parseProviderQualifiedModel('llama3:8b')).toBeNull()
     expect(parseProviderQualifiedModel('@cf/meta/llama-3')).toBeNull()
+  })
+})
+
+describe('stale session model repair (TAL-542)', () => {
+  const catalog = (active: string, defaultModel: string, groups: Record<string, string[]>, extra: Record<string, string[]> = {}): ModelsCatalog => {
+    const entries = (pid: string, ids: string[]): ModelEntry[] => ids.map((id) => { const [bare, provider] = parseProviderQualifiedModel(id) ?? [id, pid]; return { id, label: id, bare_id: bare, provider_id: provider } })
+    return {
+      active_provider: active, default_model: defaultModel, default_provider_id: active, default_bare_id: defaultModel, aliases: {}, configured_model_badges: {},
+      groups: Object.entries(groups).map(([pid, ids]) => ({ provider: pid, provider_id: pid, models: entries(pid, ids), ...(extra[pid] ? { extra_models: entries(pid, extra[pid]) } : {}) })),
+    }
+  }
+  const kilo = 'kilo/minimax/minimax-m3'
+
+  it('moves a pair to the only other provider listing the model, matching its spelling (#5731)', () => {
+    expect(repairSessionModel(catalog('kilocode', 'kilo/auto', { ollama: ['llama3.2'], kilocode: [`@kilocode:${kilo}`] }), kilo, 'ollama')).toEqual([kilo, 'kilocode'])
+    expect(repairSessionModel(catalog('kilocode', 'kilo/auto', { ollama: ['llama3.2'], kilocode: ['GPT.4O.MINI'] }), 'gpt-4o-mini', 'ollama')).toEqual(['GPT.4O.MINI', 'kilocode'])
+  })
+
+  it('keeps the pair without one clear owner or when its provider lists it, in models or extra_models', () => {
+    expect(repairSessionModel(catalog('kilocode', 'kilo/auto', { ollama: ['llama3.2'], kilocode: [kilo], other: [kilo] }), kilo, 'ollama')).toBeNull()
+    expect(repairSessionModel(catalog('kilocode', 'kilo/auto', { ollama: ['llama3.2'] }), kilo, 'ollama')).toBeNull()
+    expect(repairSessionModel(catalog('kilocode', 'kilo/auto', { kilocode: [kilo] }), kilo, 'ollama')).toBeNull()
+    expect(repairSessionModel(catalog('kilocode', 'kilo/auto', { ollama: [kilo], kilocode: [kilo] }), kilo, 'ollama')).toBeNull()
+    expect(repairSessionModel(catalog('kilocode', 'kilo/auto', { ollama: ['llama3.2'], kilocode: [kilo] }, { ollama: [kilo] }), kilo, 'ollama')).toBeNull()
+  })
+
+  it('keeps the pair when its provider\'s live lookup failed or it is the profile\'s own provider', () => {
+    const c = catalog('kilocode', 'kilo/auto', { ollama: ['llama3.2'], kilocode: [kilo] })
+    expect(repairSessionModel(c, kilo, 'ollama', new Set(['ollama']))).toBeNull()
+    expect(repairSessionModel(catalog('ollama', 'llama3.2', { ollama: ['llama3.2'], kilocode: [kilo] }), kilo, 'ollama')).toBeNull()
+  })
+
+  it('switches a model naming another vendor to the profile default, and keeps unknown vendors (#1734, #751)', () => {
+    const codex = catalog('openai-codex', 'gpt-5.5', { 'openai-codex': ['gpt-5.5'] })
+    for (const stale of ['gemini-3.1-pro-preview', 'google/gemini-3.1-pro-preview', 'openai/gpt-5.4-mini', 'claude-sonnet-4']) expect(repairSessionModel(codex, stale, null)).toEqual(['gpt-5.5', 'openai-codex'])
+    for (const kept of ['gpt-5.4-mini', 'custom-provider/test-model-999', 'lmstudio-community/Qwen2.5-Coder-7B-Instruct-GGUF', 'custom/my-local-llm']) expect(repairSessionModel(codex, kept, null)).toBeNull()
+    expect(repairSessionModel(catalog('openrouter', 'openai/gpt-5.4-mini', { openrouter: ['anthropic/claude-sonnet-4'] }), 'google/gemini-3.1-pro-preview', null)).toBeNull()
+    expect(repairSessionModel(catalog('anthropic', 'claude-sonnet-4', { anthropic: ['claude-sonnet-4'] }), 'gpt-5.4-mini', 'anthropic')).toEqual(['claude-sonnet-4', 'anthropic'])
+    expect(repairSessionModel(catalog('anthropic', '', { anthropic: ['claude-sonnet-4'] }), 'gpt-5.4-mini', null)).toBeNull()
+  })
+
+  it('prefers a provider that lists a providerless model over the default', () => {
+    expect(repairSessionModel(catalog('openai-codex', 'gpt-5.5', { 'openai-codex': ['gpt-5.5'], gemini: ['gemini-3.1-pro-preview'] }), 'gemini-3.1-pro-preview', null)).toEqual(['gemini-3.1-pro-preview', 'gemini'])
   })
 })
 
