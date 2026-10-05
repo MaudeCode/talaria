@@ -54,8 +54,16 @@ print -r -- $$ > "$owner_file"
 
 ios_pool_acquire
 destination="platform=iOS Simulator,id=$simulator_id"
-# UI tests pick from Photos; give them a photo they own (TAL-633).
-scripts/seed-simulator-photo "$simulator_id"
+
+# UI tests pick from Photos; give them a photo they own (TAL-633). Only a disposable pool
+# device is seeded: it is erased on release, while a personal simulator would keep every photo.
+seed_ui_photo() {
+    if [[ "$simulator_disposable" == true ]]; then
+        scripts/seed-simulator-photo "$simulator_id"
+    else
+        print -u2 "Not seeding a test photo into personal simulator $simulator_id; Photos picker tests use its library."
+    fi
+}
 
 # True when the bundle's only failures are the pre-test runner hang (the test
 # host never connected to testmanagerd), so no test case failed and one clean
@@ -157,7 +165,7 @@ run_tests() {
             ios_pool_release
             ios_pool_acquire || exit "$xcodebuild_status"
             destination="platform=iOS Simulator,id=$simulator_id"
-            scripts/seed-simulator-photo "$simulator_id"
+            [[ "$phase" != ui ]] || seed_ui_photo
             attempt=2
             continue
         fi
@@ -167,6 +175,7 @@ run_tests() {
 
 (( ${#unit_filters} == 0 )) || run_tests unit NO "${unit_filters[@]}"
 if (( ${#ui_filters} )); then
+    seed_ui_photo
     run_tests ui "$parallel_testing" "${ui_filters[@]}" "${extended_skips[@]}"
     scripts/assert-no-skipped-ui-tests "$result_bundle"
 fi
