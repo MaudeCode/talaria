@@ -723,7 +723,22 @@ final class PendingSteerUITests: ChatUITestCase {
         }
         XCTAssertTrue(app.keyboards.firstMatch.awaitExistence(timeout: 5), "The composer has no keyboard to type the draft")
         input.typeText("Draft")
-        tapCenter(of: app.buttons.matching(identifier: "Edit steering message").firstMatch)
+        // With the keyboard up the composer's control strip stays (TAL-629), so the first steer's
+        // actions can sit under the navigation bar; scroll them back into view before tapping Edit.
+        let edit = app.buttons.matching(identifier: "Edit steering message").firstMatch
+        let navigationBarBottom = app.navigationBars.firstMatch.frame.maxY
+        if edit.frame.minY < navigationBarBottom + 8 {
+            let origin = app.coordinate(withNormalizedOffset: .zero)
+            let start = origin.withOffset(CGVector(dx: app.frame.midX, dy: navigationBarBottom + 120))
+            start.press(
+                forDuration: 0.05,
+                thenDragTo: start.withOffset(CGVector(dx: 0, dy: navigationBarBottom + 60 - edit.frame.minY)),
+                withVelocity: .slow,
+                thenHoldForDuration: 0.2
+            )
+        }
+        XCTAssertGreaterThan(edit.frame.minY, navigationBarBottom, "The steer's Edit action stayed under the navigation bar")
+        tapCenter(of: edit)
         XCTAssertTrue(app.staticTexts["Check the backup logs too"].awaitNonExistence(timeout: 10), "The edited steer is still pending")
         XCTAssertEqual(input.value as? String, "Draft\n\nCheck the backup logs too")
     }
