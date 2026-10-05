@@ -280,6 +280,7 @@ export class SessionService {
     // A successful read with no rows yet is a baseline: every row the session gets later is new.
     s.state_db_seen_id = stateDbSeenId(read.rows) ?? (read.idCapable ? 0 : null)
     s.state_db_seen_boundary = stateDbMarkKey(s, read.rows, s.state_db_seen_id)
+    s.state_db_seen_stamp = s.updated_at
   }
 
   /**

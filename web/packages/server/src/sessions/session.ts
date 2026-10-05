@@ -232,7 +232,7 @@ export class Session {
   state_db_seen_id: number | null
   /** TAL-493: what `state_db_seen_id` was recorded under (boundary fields, its row); a change makes the marker stale. */
   state_db_seen_boundary: string | null
-  /** TAL-493: `updated_at` as of this version's last save; an older release's save moves one and not the other. */
+  /** TAL-493: `updated_at` while the marker is current; this version's saves carry it forward, an older release's do not. */
   state_db_seen_stamp: number | null
   clear_generation: unknown
   intentional_shrink_generation: unknown

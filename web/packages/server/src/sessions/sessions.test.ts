@@ -1073,6 +1073,10 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     s.deps.sessionStore.sessions.delete(sid)
     expect(await served(sid)).toEqual(['u1', 'a1', 'u2', 'a2'])
     expect(sent(sid)).toEqual(['u1', 'a1', 'u2', 'a2'])
+    // A later save by this version that reads no state.db (a rename) does not make the stale marker valid again.
+    expect((await post(s, '/api/session/rename', { session_id: sid, title: 'renamed' })).status).toBe(200)
+    expect(await served(sid)).toEqual(['u1', 'a1', 'u2', 'a2'])
+    expect(sent(sid)).toEqual(['u1', 'a1', 'u2', 'a2'])
   })
 
   it('a settlement whose state.db read fails keeps the marker', async () => {
