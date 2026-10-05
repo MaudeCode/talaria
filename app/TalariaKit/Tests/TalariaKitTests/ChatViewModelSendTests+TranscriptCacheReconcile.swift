@@ -853,7 +853,7 @@ extension ChatViewModelSendTests {
 
     @MainActor
     func testNewestReloadWinsWhenTwoLoadsWaitForTheSameChatStart() async throws {
-        let (viewModel, requests, sendTask) = try await startTwoReloadsAndPendingSend(host: "tal116-newest-load.test")
+        let (viewModel, requests, sendTask, _) = try await startTwoReloadsAndPendingSend(host: "tal116-newest-load.test")
 
         requests.request(at: 0).complete(withJSON: Self.olderReloadJSON)
         try await waitUntil { viewModel.messageSendWaiterCount == 1 }
@@ -866,7 +866,7 @@ extension ChatViewModelSendTests {
 
     @MainActor
     func testNewestReloadWinsWhenItsResponseArrivesFirst() async throws {
-        let (viewModel, requests, sendTask) = try await startTwoReloadsAndPendingSend(host: "tal400-newest-first.test")
+        let (viewModel, requests, sendTask, _) = try await startTwoReloadsAndPendingSend(host: "tal400-newest-first.test")
 
         requests.request(at: 1).complete(withJSON: Self.newestReloadJSON)
         try await waitUntil { viewModel.messageSendWaiterCount == 1 }
@@ -881,7 +881,9 @@ extension ChatViewModelSendTests {
     /// The older reload parked on the send must not apply its staler transcript afterwards.
     @MainActor
     func testOlderReloadDoesNotApplyAfterNewestReloadIsSupersededByTheStartedRun() async throws {
-        let (viewModel, requests, sendTask) = try await startTwoReloadsAndPendingSend(host: "tal400-newest-late.test")
+        let (viewModel, requests, sendTask, streamClient) = try await startTwoReloadsAndPendingSend(
+            host: "tal400-newest-late.test"
+        )
 
         requests.request(at: 0).complete(withJSON: Self.olderReloadJSON)
         try await waitUntil { viewModel.messageSendWaiterCount == 1 }
@@ -893,6 +895,19 @@ extension ChatViewModelSendTests {
 
         XCTAssertEqual(viewModel.messages.compactMap(\.content), ["Pending question"])
         XCTAssertEqual(viewModel.activeStreamID, "stream-123")
+
+        // The superseded load still answered the cold open, so its run-state check must not outlive the run.
+        streamClient.emit(.done(DoneStreamEvent(session: try makeSessionDetail("""
+        {
+          "session_id": "session-abc",
+          "messages": [
+            {"role": "user", "content": "Pending question", "message_id": "u-1"},
+            {"role": "assistant", "content": "Pending answer", "message_id": "a-1"}
+          ]
+        }
+        """))))
+        XCTAssertNil(viewModel.activeStreamID)
+        XCTAssertFalse(viewModel.showsRunStateCheck)
     }
 
     private static let olderReloadJSON = """
@@ -926,11 +941,11 @@ extension ChatViewModelSendTests {
     }
     """
 
-    /// Starts two reloads, then a send, and returns once all three requests are in flight:
+    /// Cold-opens the chat, starts two reloads, then a send, and returns once all three requests are in flight:
     /// request 0 is the older `/api/session`, request 1 the newer one, request 2 `/api/chat/start`.
     private func startTwoReloadsAndPendingSend(
         host: String
-    ) async throws -> (ChatViewModel, DeferredRequests, Task<Bool, Never>) {
+    ) async throws -> (ChatViewModel, DeferredRequests, Task<Bool, Never>, SpySSEStreamingClient) {
         let requests = DeferredRequests()
         let firstSessionRequestStarted = expectation(description: "first session request started")
         let secondSessionRequestStarted = expectation(description: "second session request started")
@@ -948,13 +963,16 @@ extension ChatViewModelSendTests {
         }, forHost: host)
         addTeardownBlock { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
 
+        let streamClient = SpySSEStreamingClient()
         let viewModel = try makeViewModel(
+            streamClient: streamClient,
             server: URL(string: "https://\(host)")!,
             protocolClasses: [DeferredMockURLProtocol.self]
         ) { request in
             XCTFail("Synchronous handler should not receive \(request.url?.path ?? "nil")")
             throw URLError(.badURL)
         }
+        viewModel.prepareInitialMessageLoad(modelContext: try makeContext())
         Task { @MainActor in
             await viewModel.loadMessages()
         }
@@ -967,7 +985,7 @@ extension ChatViewModelSendTests {
             await viewModel.sendMessage("Pending question")
         }
         await fulfillment(of: [chatStartRequestStarted], timeout: 10)
-        return (viewModel, requests, sendTask)
+        return (viewModel, requests, sendTask, streamClient)
     }
 
     @MainActor

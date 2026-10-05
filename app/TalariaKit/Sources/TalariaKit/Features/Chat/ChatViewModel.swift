@@ -1449,7 +1449,9 @@ public final class ChatViewModel {
             guard streamCoordinator.canApplySessionLoad(streamLoadPreparation) else {
                 // The run moved past this response, and every older response is staler still:
                 // settle it so an older load parked on the send cannot apply afterwards.
+                // It still answered, so it ends the first load's run-state check.
                 latestSettledSessionLoadRequestGeneration = loadRequestGeneration
+                isConfirmingRunState = false
                 return
             }
             // After load arbitration only: a superseded response must not leave its
