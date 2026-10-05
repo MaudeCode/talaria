@@ -39,7 +39,13 @@ def main() -> int:
         # any same-named module in the checkout (api/config.py has the history).
         sys.path.append(str(runtime.agent_dir))
     server = RpcServer(build_methods(runtime), stdout=rpc_out, max_calls=int(os.environ.get("TALARIA_SIDECAR_MAX_CALLS") or DEFAULT_MAX_CALLS))
-    return server.serve_forever()
+    try:
+        return server.serve_forever()
+    finally:
+        # The server closes stdin to stop the sidecar: end every cached agent's memory session on the way out.
+        from .methods.chat import drain_agents
+
+        drain_agents()
 
 
 if __name__ == "__main__":

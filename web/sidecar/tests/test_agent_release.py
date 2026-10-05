@@ -1,0 +1,314 @@
+"""TAL-527: every way a cached agent leaves the cache ends its memory session with the transcript and releases its
+LLM clients, under the owning profile's home; shutdown drains the cache. A turn still holding its agent defers the
+release until the turn ends."""
+
+from __future__ import annotations
+
+import contextlib
+import threading
+import time
+import types
+
+import pytest
+
+from talaria_sidecar.errors import RpcError
+from talaria_sidecar.methods import Registry, chat, profiles
+from talaria_sidecar.methods import runtime as runtime_methods
+from test_chat_turn import Ctx, FakeAgent, _params, _patch
+
+EVENTS: list[tuple] = []
+_HOME = threading.local()
+
+
+class MemoryAgent(FakeAgent):
+    """The Agent's session-end surface: a turn republishes ``_session_messages``, ``shutdown_memory_provider(messages)``
+    hands them to the memory provider's ``on_session_end``, and ``release_clients`` closes the LLM clients."""
+
+    def run_conversation(self, **kwargs):
+        result = super().run_conversation(**kwargs)
+        self._session_messages = [{"role": "user", "content": kwargs["user_message"]}, *result["messages"]]
+        return result
+
+    def shutdown_memory_provider(self, messages=None):
+        EVENTS.append(("on_session_end", self.kwargs["session_id"], messages, getattr(_HOME, "home", None)))
+
+    def release_clients(self):
+        EVENTS.append(("release_clients", self.kwargs["session_id"]))
+
+
+TRANSCRIPT = [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "ok"}]
+
+
+def _setup(monkeypatch):
+    _patch(monkeypatch)
+    EVENTS.clear()
+    # Shutdown closes admission for the rest of the process; each test gets a fresh gate.
+    monkeypatch.setattr(chat, "_DRAINING", threading.Event(), raising=False)
+    monkeypatch.setattr(chat, "_agent_class", lambda: MemoryAgent)
+
+    @contextlib.contextmanager
+    def scoped(home):
+        _HOME.home = str(home)
+        try:
+            yield home
+        finally:
+            _HOME.home = None
+
+    monkeypatch.setattr(chat, "scoped_home", scoped)
+
+
+def _ended(session_id: str, timeout: float = 2.0) -> list[tuple]:
+    """The session's release events once both arrive (releases run on daemon threads)."""
+    deadline = time.monotonic() + timeout
+    while True:
+        events = [e for e in EVENTS if e[1] == session_id]
+        if len(events) >= 2 or time.monotonic() > deadline:
+            return events
+        time.sleep(0.01)
+
+
+def _released(session_id: str) -> list[tuple]:
+    return [("on_session_end", session_id, TRANSCRIPT, "/tmp/unused"), ("release_clients", session_id)]
+
+
+def test_lru_eviction_ends_the_memory_session_and_releases_clients(monkeypatch) -> None:
+    _setup(monkeypatch)
+    monkeypatch.setattr(chat, "_AGENT_CACHE_MAX", 2)
+    for sid in ("lru-1", "lru-2", "lru-3"):
+        assert chat.start(Ctx(), _params(f"st-{sid}", sid))["status"] == "completed"
+    assert _ended("lru-1") == _released("lru-1")
+    assert [e for e in EVENTS if e[1] != "lru-1"] == []
+
+
+def test_a_model_switch_releases_the_replaced_agent(monkeypatch) -> None:
+    _setup(monkeypatch)
+    assert chat.start(Ctx(), _params("st-a", "switch"))["status"] == "completed"
+    assert chat.start(Ctx(), {**_params("st-b", "switch"), "model": "other"})["status"] == "completed"
+    assert len(MemoryAgent.instances) == 2
+    assert _ended("switch") == _released("switch")
+
+
+def test_evict_agent_and_runtime_env_release_their_agents(monkeypatch) -> None:
+    _setup(monkeypatch)
+    registry = Registry(runtime=None)  # type: ignore[arg-type]
+    chat.register(registry)
+    assert chat.start(Ctx(), _params("st-e", "evicted"))["status"] == "completed"
+    assert registry.methods["chat.evict_agent"](Ctx(), {"session_id": "evicted"}) == {"evicted": True}
+    assert _ended("evicted") == _released("evicted")
+    assert chat.start(Ctx(), _params("st-env", "env"))["status"] == "completed"
+    assert chat.evict_all_agents() == 1
+    assert _ended("env") == _released("env")
+
+
+def test_an_agent_dropped_during_its_turn_is_released_when_the_turn_ends(monkeypatch) -> None:
+    _setup(monkeypatch)
+    gate = threading.Event()
+    started = threading.Event()
+
+    class BlockingAgent(MemoryAgent):
+        def run_conversation(self, **kwargs):
+            started.set()
+            gate.wait(5)
+            return super().run_conversation(**kwargs)
+
+    monkeypatch.setattr(chat, "_agent_class", lambda: BlockingAgent)
+    worker = threading.Thread(target=chat.start, args=(Ctx(), _params("st-live", "live")))
+    worker.start()
+    assert started.wait(5)
+    assert chat.evict_all_agents() == 1
+    time.sleep(0.2)
+    assert EVENTS == []  # the running turn still owns its memory provider and clients
+    gate.set()
+    worker.join(5)
+    assert _ended("live") == _released("live")
+
+
+class _Server:
+    exit_code = None
+
+    def request_shutdown(self, exit_code=0):
+        self.exit_code = exit_code
+
+
+def test_runtime_shutdown_releases_every_cached_agent_before_exiting(monkeypatch) -> None:
+    _setup(monkeypatch)
+    for sid in ("down-1", "down-2"):
+        assert chat.start(Ctx(), _params(f"st-{sid}", sid))["status"] == "completed"
+    registry = Registry(runtime=None)  # type: ignore[arg-type]
+    runtime_methods.register(registry)
+    ctx = Ctx()
+    ctx.server = _Server()
+    assert registry.methods["runtime.shutdown"](ctx, {}) == {"ok": True}
+    # The drain waited for the releases: they are complete by the time the shutdown reply goes out.
+    assert sorted(EVENTS, key=lambda e: (e[1], e[0])) == [*_released("down-1"), *_released("down-2")]
+    assert ctx.server.exit_code == 0
+    assert chat._AGENT_CACHE == {}
+
+
+def test_shutdown_stops_a_running_turn_and_waits_for_its_release(monkeypatch) -> None:
+    _setup(monkeypatch)
+    started = threading.Event()
+
+    class RunningAgent(MemoryAgent):
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            self.block = threading.Event()  # released only by ``interrupt``
+
+        def run_conversation(self, **kwargs):
+            started.set()
+            return super().run_conversation(**kwargs)
+
+    monkeypatch.setattr(chat, "_agent_class", lambda: RunningAgent)
+    result: dict = {}
+    worker = threading.Thread(target=lambda: result.update(chat.start(Ctx(), _params("st-run", "running"))))
+    worker.start()
+    assert started.wait(5)
+    registry = Registry(runtime=None)  # type: ignore[arg-type]
+    runtime_methods.register(registry)
+    ctx = Ctx()
+    ctx.server = _Server()
+    assert registry.methods["runtime.shutdown"](ctx, {}) == {"ok": True}
+    # The drain stopped the turn and waited for the turn's own release before the process may exit.
+    assert EVENTS == _released("running")
+    worker.join(5)
+    assert result["status"] == "cancelled"
+
+
+def test_no_turn_is_admitted_once_shutdown_has_drained(monkeypatch) -> None:
+    _setup(monkeypatch)
+    registry = Registry(runtime=None)  # type: ignore[arg-type]
+    runtime_methods.register(registry)
+    ctx = Ctx()
+    ctx.server = _Server()
+    assert registry.methods["runtime.shutdown"](ctx, {}) == {"ok": True}
+    # A call dispatched before stdin closed, or one admitted during the drain, reaches ``start`` after the snapshot.
+    with pytest.raises(RpcError) as refused:
+        chat.start(Ctx(), _params("st-late", "late"))
+    assert refused.value.data.get("condition") == "sidecar_unavailable"
+    assert MemoryAgent.instances == [] and chat._AGENT_CACHE == {}
+
+
+def test_profile_deletion_releases_that_profiles_agents_before_removing_its_home(monkeypatch, tmp_path) -> None:
+    _setup(monkeypatch)
+    alpha, beta = tmp_path / "profiles" / "alpha", tmp_path / "profiles" / "beta"
+    for sid, home in (("alpha-chat", alpha), ("beta-chat", beta)):
+        assert chat.start(Ctx(), {**_params(f"st-{sid}", sid), "profile_home": str(home)})["status"] == "completed"
+    seen: dict = {}
+    monkeypatch.setattr(profiles, "delete_profile", lambda base_home, name: seen.update(name=name, events=list(EVENTS)))
+    registry = Registry(runtime=types.SimpleNamespace(load=lambda: None, ensure_current=lambda: None))  # type: ignore[arg-type]
+    profiles.register(registry)
+    assert registry.methods["profiles.delete"](Ctx(), {"base_home": str(tmp_path), "name": "alpha"}) == {"ok": True}
+    # The release finished, under the profile's own home, before the home was removed; other profiles keep theirs.
+    assert seen == {"name": "alpha", "events": [("on_session_end", "alpha-chat", TRANSCRIPT, str(alpha)), ("release_clients", "alpha-chat")]}
+    assert list(chat._AGENT_CACHE) == ["beta-chat"]
+
+
+def test_shutdown_releases_an_agent_a_running_turn_caches_after_the_first_eviction(monkeypatch) -> None:
+    _setup(monkeypatch)
+    resolving = threading.Event()
+    gate = threading.Event()
+
+    def resolve(provider, model):
+        resolving.set()
+        gate.wait(5)
+        return {"model": "m", "provider": "p"}
+
+    monkeypatch.setattr(chat, "_resolve_runtime", resolve)
+    worker = threading.Thread(target=chat.start, args=(Ctx(), _params("st-late-cache", "late-cache")))
+    worker.start()
+    assert resolving.wait(5)  # the run is registered; its agent is not built or cached yet
+    registry = Registry(runtime=None)  # type: ignore[arg-type]
+    runtime_methods.register(registry)
+    ctx = Ctx()
+    ctx.server = _Server()
+    shutdown = threading.Thread(target=registry.methods["runtime.shutdown"], args=(ctx, {}))
+    shutdown.start()
+    deadline = time.monotonic() + 5
+    while not chat._RUNS["st-late-cache"].cancel.is_set():  # the drain already evicted and is waiting on the turn
+        assert time.monotonic() < deadline
+        time.sleep(0.01)
+    gate.set()
+    shutdown.join(5)
+    worker.join(5)
+    assert EVENTS == _released("late-cache")
+    assert chat._AGENT_CACHE == {}
+
+
+def test_profile_deletion_is_refused_while_a_release_is_still_running(monkeypatch, tmp_path) -> None:
+    _setup(monkeypatch)
+    monkeypatch.setattr(chat, "_PROFILE_RELEASE_TIMEOUT", 0.2, raising=False)
+    flushing = threading.Event()
+
+    class SlowAgent(MemoryAgent):
+        def shutdown_memory_provider(self, messages=None):
+            flushing.wait(5)
+            super().shutdown_memory_provider(messages)
+
+    monkeypatch.setattr(chat, "_agent_class", lambda: SlowAgent)
+    alpha = tmp_path / "profiles" / "alpha"
+    assert chat.start(Ctx(), {**_params("st-slow", "slow"), "profile_home": str(alpha)})["status"] == "completed"
+    deleted: list = []
+    monkeypatch.setattr(profiles, "delete_profile", lambda base_home, name: deleted.append(name))
+    registry = Registry(runtime=types.SimpleNamespace(load=lambda: None, ensure_current=lambda: None))  # type: ignore[arg-type]
+    profiles.register(registry)
+    with pytest.raises(RpcError):
+        registry.methods["profiles.delete"](Ctx(), {"base_home": str(tmp_path), "name": "alpha"})
+    assert deleted == []  # the home stays while the memory flush still runs under it
+    flushing.set()
+    assert registry.methods["profiles.delete"](Ctx(), {"base_home": str(tmp_path), "name": "alpha"}) == {"ok": True}
+    assert deleted == ["alpha"] and EVENTS == [("on_session_end", "slow", TRANSCRIPT, str(alpha)), ("release_clients", "slow")]
+
+
+def test_an_agent_evicted_during_a_memory_commit_is_released_after_the_commit(monkeypatch) -> None:
+    _setup(monkeypatch)
+    committing = threading.Event()
+    gate = threading.Event()
+
+    class CommittingAgent(MemoryAgent):
+        def commit_memory_session(self, messages=None):
+            committing.set()
+            gate.wait(5)
+            EVENTS.append(("commit", self.kwargs["session_id"]))
+
+    monkeypatch.setattr(chat, "_agent_class", lambda: CommittingAgent)
+    assert chat.start(Ctx(), _params("st-commit", "commit"))["status"] == "completed"
+    registry = Registry(runtime=None)  # type: ignore[arg-type]
+    chat.register(registry)
+    reply: dict = {}
+    worker = threading.Thread(target=lambda: reply.update(registry.methods["chat.commit_memory"](Ctx(), {"session_id": "commit", "profile_home": "/tmp/unused"})))
+    worker.start()
+    assert committing.wait(5)
+    assert chat.evict_all_agents() == 1
+    time.sleep(0.2)
+    assert EVENTS == []  # the provider is not ended or shut down under the running commit
+    gate.set()
+    worker.join(5)
+    assert reply == {"committed": True}
+    deadline = time.monotonic() + 2
+    while len(EVENTS) < 3 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert EVENTS == [("commit", "commit"), *_released("commit")]
+
+
+def test_a_release_whose_profile_scope_fails_still_closes_clients_and_blocks_the_delete(monkeypatch, tmp_path) -> None:
+    _setup(monkeypatch)
+    alpha = tmp_path / "profiles" / "alpha"
+    assert chat.start(Ctx(), {**_params("st-unscoped", "unscoped"), "profile_home": str(alpha)})["status"] == "completed"
+
+    @contextlib.contextmanager
+    def unreadable(home):
+        raise RpcError("terminal policy unreadable")
+        yield home  # pragma: no cover
+
+    monkeypatch.setattr(chat, "scoped_home", unreadable)
+    deleted: list = []
+    monkeypatch.setattr(profiles, "delete_profile", lambda base_home, name: deleted.append(name))
+    registry = Registry(runtime=types.SimpleNamespace(load=lambda: None, ensure_current=lambda: None))  # type: ignore[arg-type]
+    profiles.register(registry)
+    with pytest.raises(RpcError):
+        registry.methods["profiles.delete"](Ctx(), {"base_home": str(tmp_path), "name": "alpha"})
+    # The memory flush could not run under the profile, so its home stays; the LLM clients are closed regardless.
+    assert deleted == [] and EVENTS == [("release_clients", "unscoped")]
+    # The failed flush is reported once: the agent is gone, so a retry deletes the profile.
+    assert registry.methods["profiles.delete"](Ctx(), {"base_home": str(tmp_path), "name": "alpha"}) == {"ok": True}
+    assert deleted == ["alpha"]

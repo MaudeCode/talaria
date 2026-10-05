@@ -16,6 +16,7 @@ import hashlib
 import inspect
 import json
 import logging
+import os
 import threading
 import time
 import uuid
@@ -29,6 +30,10 @@ from ..rpc import CallContext
 log = logging.getLogger("talaria_sidecar.chat")
 
 _AGENT_CACHE_MAX = 32
+# Shutdown waits this long for evicted agents' memory providers; the server kills the sidecar 5 s after closing stdin.
+_AGENT_RELEASE_TIMEOUT = 4.0
+# Profile deletion waits this long for the profile's memory flushes, under the server's 120 s call timeout.
+_PROFILE_RELEASE_TIMEOUT = 60.0
 _TOOL_RESULT_SNIPPET_MAX = 4000
 # Predecessor ``_TOOL_ARG_CONTENT_KEYS`` (#4928): card content / diff-reconstruction inputs keep the long cap.
 _TOOL_ARG_CONTENT_KEYS = frozenset({"command", "cmd", "script", "code", "patch", "diff", "old_string", "new_string", "content", "path", "file_path"})
@@ -65,8 +70,16 @@ _RUNS_BY_SESSION: dict[str, str] = {}
 _APPROVAL_CB_OWNER: dict[str, str] = {}
 _APPROVAL_CB_LOCK = threading.Lock()
 _RUNS_LOCK = threading.Lock()
-_AGENT_CACHE: "OrderedDict[str, tuple[Any, str]]" = OrderedDict()
+# session id -> (agent, signature, profile home).
+_AGENT_CACHE: "OrderedDict[str, tuple[Any, str, Any]]" = OrderedDict()
 _AGENT_CACHE_LOCK = threading.Lock()
+# Running release thread -> the profile home it runs under.
+_RELEASES: dict[threading.Thread, Any] = {}
+_RELEASES_LOCK = threading.Lock()
+# Agents inside ``chat.commit_memory`` (guarded by ``_AGENT_CACHE_LOCK``): like a turn, a commit defers their release.
+_COMMITTING: list = []
+# Set (under ``_RUNS_LOCK``) when shutdown drains: no turn is admitted after the drain's snapshot of ``_RUNS``.
+_DRAINING = threading.Event()
 
 
 def _snippet(raw: Any, limit: int = _TOOL_RESULT_SNIPPET_MAX) -> str:
@@ -514,19 +527,122 @@ def _evict_idle_agents_locked() -> None:
         return
     with _RUNS_LOCK:
         live = {sid for sid, sid_stream in _RUNS_BY_SESSION.items() if (r := _RUNS.get(sid_stream)) is not None and not r.finished.is_set()}
+    dropped = []
     for sid in list(_AGENT_CACHE):
         if len(_AGENT_CACHE) <= _AGENT_CACHE_MAX:
             break
         if sid not in live:
-            _AGENT_CACHE.pop(sid, None)
+            dropped.append(_AGENT_CACHE.pop(sid))
+    _release_agents_locked(dropped)
+
+
+def _release_agent(agent, home) -> threading.Thread:
+    """The gateway's soft eviction on a daemon thread under the owning profile: end the memory session with the
+    transcript (``on_session_end``, then provider shutdown), then release the LLM clients (the Codex app-server child,
+    httpx pools) while session tool state stays for a resumed session."""
+
+    def call(name: str, *args) -> bool:
+        method = getattr(agent, name, None)
+        if not callable(method):
+            return True
+        try:
+            method(*args)
+        except Exception:  # noqa: BLE001 - one failed phase never skips the next
+            log.warning("evicted agent %s() failed", name, exc_info=True)
+            return False
+        return True
+
+    def release() -> None:
+        released = False
+        try:
+            with scoped_home(home):
+                messages = getattr(agent, "_session_messages", None)
+                flushed = call("shutdown_memory_provider", messages if isinstance(messages, list) else None)
+                released = True
+                thread.failed = not (call("release_clients") and flushed)
+        except Exception:  # noqa: BLE001 - the profile scope could not be entered
+            log.warning("releasing an evicted agent under its profile failed", exc_info=True)
+            thread.failed = True
+        finally:
+            if not released:
+                # The memory flush needs the profile; the LLM clients and the Codex child close regardless.
+                call("release_clients")
+            with _RELEASES_LOCK:
+                _RELEASES.pop(thread, None)
+
+    thread = threading.Thread(target=release, daemon=True, name="chat-agent-release")
+    thread.failed = False  # type: ignore[attr-defined] - read by profile deletion
+    with _RELEASES_LOCK:
+        _RELEASES[thread] = home
+    thread.start()
+    return thread
+
+
+def _release_agents_locked(entries) -> list[threading.Thread]:
+    """Release cache entries that just left the cache (caller holds ``_AGENT_CACHE_LOCK``). An agent a turn still holds
+    keeps its memory provider and clients; that turn releases it when it ends."""
+    with _RUNS_LOCK:
+        held = [run.agent for run in _RUNS.values()] + _COMMITTING
+    return [_release_agent(agent, home) for agent, _signature, home in entries if not any(agent is other for other in held)]
+
+
+def _release_if_dropped_locked(agent, home) -> None:
+    """A holder (turn or commit) is done with ``agent``: release it if it left the cache meanwhile and nothing else holds
+    it (caller holds ``_AGENT_CACHE_LOCK``)."""
+    if agent is not None and not any(entry[0] is agent for entry in _AGENT_CACHE.values()):
+        _release_agents_locked([(agent, None, home)])
+
+
+def _join(threads, deadline: float) -> None:
+    for thread in threads:
+        thread.join(max(0.0, deadline - time.monotonic()))
 
 
 def evict_all_agents() -> int:
     """Drop every cached agent (credentials or environment changed underneath them)."""
     with _AGENT_CACHE_LOCK:
-        count = len(_AGENT_CACHE)
+        entries = list(_AGENT_CACHE.values())
         _AGENT_CACHE.clear()
-    return count
+        _release_agents_locked(entries)
+    return len(entries)
+
+
+def drain_agents(timeout: float = _AGENT_RELEASE_TIMEOUT) -> None:
+    """Shutdown: release every cached agent, stop running turns (like a Stop) so each releases the agent it holds, and
+    wait, bounded, for those turns and every release still running."""
+    deadline = time.monotonic() + timeout
+    evict_all_agents()
+    with _RUNS_LOCK:
+        _DRAINING.set()
+        runs = list(_RUNS.values())
+    for run in runs:
+        run.cancel.set()
+    while time.monotonic() < deadline:
+        with _AGENT_CACHE_LOCK, _RUNS_LOCK:
+            if not _COMMITTING and not any(_RUNS.get(run.stream_id) is run for run in runs):
+                break
+        time.sleep(0.05)
+    # A turn may have cached its agent after the first eviction.
+    evict_all_agents()
+    with _RELEASES_LOCK:
+        threads = list(_RELEASES)
+    _join(threads, deadline)
+
+
+def release_profile_agents(home) -> None:
+    """Profile deletion: release the profile's cached agents and wait for every release running under its home. Fails
+    rather than let the home go while a memory flush still runs under it."""
+    target = os.path.realpath(home)
+    with _AGENT_CACHE_LOCK:
+        entries = [_AGENT_CACHE.pop(sid) for sid, entry in list(_AGENT_CACHE.items()) if os.path.realpath(entry[2]) == target]
+        _release_agents_locked(entries)
+    with _RELEASES_LOCK:
+        threads = [thread for thread, owner in _RELEASES.items() if os.path.realpath(owner) == target]
+    _join(threads, time.monotonic() + _PROFILE_RELEASE_TIMEOUT)
+    if any(thread.is_alive() for thread in threads):
+        raise RpcError("The profile is still saving memory from its chats. Retry in a moment.")
+    if any(thread.failed for thread in threads):
+        raise RpcError("Memory from the profile's chats could not be saved; see the sidecar log. Retry to delete the profile anyway.")
 
 
 def _agent_class():
@@ -591,8 +707,11 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
         raise InvalidParams("conversation_history must be a list")
     toolsets = _turn_toolsets(params.get("enabled_toolsets"))
     system_message = params.get("system_message")
+    home = profile_home_param(params)
     run = _Run(stream_id, session_id, ctx)
     with _RUNS_LOCK:
+        if _DRAINING.is_set():
+            raise RpcError("The sidecar is shutting down.", condition="sidecar_unavailable")
         prior = _RUNS.get(_RUNS_BY_SESSION.get(session_id) or "")
         # A previous turn for this session that never returned (a tool ignoring its interrupt) still owns the cached
         # agent; this turn must not share, rebind, or un-interrupt that live instance.
@@ -784,12 +903,19 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             kwargs["fallback_model"] = fallback_chain
         signature = _agent_signature(resolved_model, resolved_provider, runtime, toolsets, str(params.get("profile_home")), kwargs)
         agent = None
+
+        def bind(bound) -> None:
+            """Claim the agent for this run under ``_AGENT_CACHE_LOCK``, so an eviction never releases it mid-turn."""
+            run.prior_messages = getattr(bound, "_session_messages", None)
+            run.agent = bound
+
         if not session_busy:
             with _AGENT_CACHE_LOCK:
                 cached = _AGENT_CACHE.get(session_id)
                 if cached and cached[1] == signature:
                     agent = cached[0]
                     _AGENT_CACHE.move_to_end(session_id)
+                    bind(agent)
         if agent is not None:
             for name in ("stream_delta_callback", "reasoning_callback", "tool_progress_callback", "clarify_callback", "interim_assistant_callback", "tool_start_callback", "tool_complete_callback", "status_callback"):
                 if name in kwargs and hasattr(agent, name):
@@ -797,8 +923,10 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
         else:
             agent = AIAgent(**kwargs)
             with _AGENT_CACHE_LOCK:
-                _AGENT_CACHE[session_id] = (agent, signature)
-                _AGENT_CACHE.move_to_end(session_id)
+                bind(agent)
+                replaced = _AGENT_CACHE.pop(session_id, None)
+                _AGENT_CACHE[session_id] = (agent, signature, home)
+                _release_agents_locked([replaced] if replaced else [])
                 _evict_idle_agents_locked()
         # Predecessor ``agent.ephemeral_system_prompt``: personality, surface context, progress guidance, and delivery
         # hints travel as runtime instructions that are never persisted to history.
@@ -812,9 +940,7 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             with _APPROVAL_CB_LOCK:
                 register_gateway_notify(session_id, approval_cb)
                 _APPROVAL_CB_OWNER[session_id] = stream_id
-        run.prior_messages = getattr(agent, "_session_messages", None)
         usage_state["last"] = _usage(agent)
-        run.agent = agent
         compressions_before = int(getattr(getattr(agent, "context_compressor", None), "compression_count", 0) or 0)
 
         # A cached agent may still carry the interrupt a previous cancel left behind; the Agent keeps a pending
@@ -912,10 +1038,13 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             "live_tool_calls": live_tool_calls,
         }
     finally:
-        with _RUNS_LOCK:
-            _RUNS.pop(stream_id, None)
-            if _RUNS_BY_SESSION.get(session_id) == stream_id:
-                _RUNS_BY_SESSION.pop(session_id, None)
+        with _AGENT_CACHE_LOCK:
+            with _RUNS_LOCK:
+                _RUNS.pop(stream_id, None)
+                if _RUNS_BY_SESSION.get(session_id) == stream_id:
+                    _RUNS_BY_SESSION.pop(session_id, None)
+            # An agent evicted or replaced while this turn held it is released now that the turn is over.
+            _release_if_dropped_locked(run.agent, home)
 
 
 def _checkpoint_required() -> bool:
@@ -1146,14 +1275,15 @@ def register(registry) -> None:
                 run = _RUNS.get(_RUNS_BY_SESSION.get(session_id) or "")
             if not end_session and run is not None and not run.finished.is_set():
                 return {"evicted": False}
-            evicted = _AGENT_CACHE.pop(session_id, None) is not None
+            entry = _AGENT_CACHE.pop(session_id, None)
+            _release_agents_locked([entry] if entry else [])
         if end_session:
             try:
                 from tools.approval import clear_session
                 clear_session(session_id)
             except Exception:  # noqa: BLE001
                 pass
-        return {"evicted": evicted}
+        return {"evicted": entry is not None}
 
     @registry.method("chat.commit_memory", requires_agent=False)
     def commit_memory_(ctx: CallContext, params: dict) -> dict:
@@ -1163,18 +1293,23 @@ def register(registry) -> None:
         home = profile_home_param(params)
         with _AGENT_CACHE_LOCK:
             cached = _AGENT_CACHE.get(session_id)
-        with _RUNS_LOCK:
-            busy = (_RUNS_BY_SESSION.get(session_id) or "") in _RUNS
-        agent = cached[0] if cached else None
-        commit = getattr(agent, "commit_memory_session", None) if agent is not None else None
-        if commit is None or busy:
-            return {"committed": False}
+            with _RUNS_LOCK:
+                busy = _DRAINING.is_set() or (_RUNS_BY_SESSION.get(session_id) or "") in _RUNS
+            agent = cached[0] if cached else None
+            commit = getattr(agent, "commit_memory_session", None) if agent is not None else None
+            if commit is None or busy:
+                return {"committed": False}
+            _COMMITTING.append(agent)
         try:
             with scoped_home(home):
                 commit(list(getattr(agent, "_session_messages", None) or []))
         except Exception as exc:  # noqa: BLE001
             log.warning("commit_memory_session() failed for session %s: %s", session_id, exc)
             return {"committed": False}
+        finally:
+            with _AGENT_CACHE_LOCK:
+                _COMMITTING.remove(agent)
+                _release_if_dropped_locked(agent, cached[2])
         return {"committed": True}
 
     @registry.method("approval.respond", requires_agent=True)
