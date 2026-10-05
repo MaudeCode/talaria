@@ -393,6 +393,20 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     updateInProgress: () => deps.updates.blocksNewWork(),
     workspaceBusy: (workspace) => deps.git.workspaceBusy(workspace),
     syncTitle: (session) => sessions.deps.syncTitle(session),
+    // Python `sync_session_usage` after a settled turn: with `sync_to_insights` on, the state.db row carries the usage.
+    syncUsage: async (session, model) => {
+      if (!sidecar || !pyBool(settings.load().sync_to_insights)) return
+      try {
+        await sidecar.call('state_db.sync_usage', {
+          profile_home: profileHome(session.profile ?? activeProfile()), session_id: session.session_id,
+          input_tokens: session.input_tokens || 0, output_tokens: session.output_tokens || 0, estimated_cost: typeof session.estimated_cost === 'number' ? session.estimated_cost : null,
+          cache_read_tokens: session.cache_read_tokens || 0, cache_write_tokens: session.cache_write_tokens || 0,
+          model, title: session.title, message_count: session.messages.length,
+        })
+      } catch (error) {
+        log(`[webui] state.db usage sync failed for ${session.session_id}: ${(error as Error).message}`)
+      }
+    },
     profileConfig: async (profile) => { try { return await agentConfig.read(profileHome(profile ?? activeProfile())) } catch { return null } },
     env,
     hermesHome: config.hermesHome,

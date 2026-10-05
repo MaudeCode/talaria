@@ -69,6 +69,8 @@ export interface TurnRunnerDeps {
   onTerminal?: (streamId: string, phase: string) => void
   /** Insights title sync (Python `sync_session_title`), gated on `sync_to_insights` by the runtime. */
   syncTitle?: (session: Session) => Promise<void>
+  /** Insights usage sync (Python `sync_session_usage`) after a settled turn, gated on `sync_to_insights` by the runtime. */
+  syncUsage?: (session: Session, model: string | null) => Promise<void>
   /** Whether the profile's deletion RPC is in flight (its home must not be entered by a new turn). */
   profileDeleting?: (profile: string | null) => boolean
   updateInProgress?: () => boolean
@@ -760,6 +762,8 @@ export class TurnRunner {
       this.registry.activeRuns.delete(streamId)
       this.settledStreams.add(streamId)
       this.startSteerFollowUp(sessionId, leftovers)
+      // Before the title work, so a generated title's own state.db sync lands after this one's provisional title.
+      await deps.syncUsage?.(s, usedModel || null)
       // Title work and the goal judge run side by side; `stream_end` follows both, so their frames reach the stream.
       const work = await Promise.allSettled([this.backgroundTitle(s, put), this.continueGoal(s, streamId, put)])
       put('stream_end', { session_id: sessionId })
@@ -912,6 +916,8 @@ export class TurnRunner {
     this.keepLiveState(s, streamId)
     this.persistConsumedSteers(s, streamId, startedAt, this.deps.now())
     try { this.deps.store.save(s) } catch (error) { this.deps.log(`[webui] WARNING: failed to save error turn for ${s.session_id}: ${(error as Error).message}`) }
+    // The kept live counters are the session's usage now, so the insights row follows them (the runtime logs failures).
+    void this.deps.syncUsage?.(s, str(s.model) || null)
     this.deps.pending.clearApprovals(s.session_id)
     this.deps.pending.clearClarifies(s.session_id)
     this.deps.events.publish('session_error', { profile: s.profile, sessionId: s.session_id })
@@ -1015,6 +1021,7 @@ export class TurnRunner {
     this.keepLiveState(current, streamId)
     this.persistConsumedSteers(current, streamId, startedAt, this.deps.now())
     try { this.deps.store.save(current) } catch { return false }
+    void this.deps.syncUsage?.(current, str(current.model) || null)
     this.deps.pending.clearApprovals(current.session_id)
     this.deps.pending.clearClarifies(current.session_id)
     this.deps.events.publish('session_cancel', { profile: current.profile, sessionId: current.session_id })
