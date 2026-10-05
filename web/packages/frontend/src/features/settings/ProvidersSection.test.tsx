@@ -25,7 +25,7 @@ const renderSection = () => {
 }
 
 describe('ProvidersSection', () => {
-  afterEach(() => { quotaResponse.current = null })
+  afterEach(() => { quotaResponse.current = null; vi.useRealTimers() })
 
   it("renders the server-selected pace window's remaining, reset, pace, burn, budget and forecast (TAL-410)", async () => {
     quotaResponse.current = quotas
@@ -49,6 +49,19 @@ describe('ProvidersSection', () => {
     expect(within(pace).getByText('Forecast unavailable')).toBeInTheDocument()
     expect(pace).not.toHaveTextContent(/over pace|under pace|On pace|Burn|budget|early|Lasts/)
     expect(pace).not.toHaveTextContent(/1\.12|13\.6|3\.4/)
+  })
+
+  it('refetches quotas while open so a reset replaces the expired pace with the server answer (TAL-410)', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    quotaResponse.current = quotas
+    renderSection()
+    const pace = await screen.findByTestId('provider-quota-pace', {}, { timeout: 2000 })
+    expect(within(pace).getByText('3.4% over pace')).toBeInTheDocument()
+    // The window resets while the page stays open; the server's next answer has no pace for it.
+    quotaResponse.current = noPace
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(await within(pace).findByText('Pace unavailable', {}, { timeout: 2000 })).toBeInTheDocument()
+    expect(pace).not.toHaveTextContent('3.4% over pace')
   })
 
   it('shows the OpenRouter spend chart, pace, and budget standing inside the keyed OpenRouter row only (TAL-412)', async () => {
