@@ -3,6 +3,7 @@ import TalariaKit
 
 struct AppSidebarDrawer: View {
     @AccessibilityFocusState private var closeNavigationIsFocused: Bool
+    @State private var viewportHeight: CGFloat = 0
     @AppStorage(
         ProviderQuotaDisplaySettings.aliasesKey,
         store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults
@@ -25,6 +26,44 @@ struct AppSidebarDrawer: View {
     let close: () -> Void
 
     var body: some View {
+        // Everything above Settings scrolls: at accessibility sizes in landscape the header and
+        // New Chat alone fill the screen, and a scroll view for the rows only was left with no
+        // height (TAL-416). The minimum height keeps the quota rows down by Settings when
+        // everything fits.
+        VStack(spacing: 0) {
+            ScrollView {
+                drawerContent
+                    .frame(minHeight: viewportHeight, alignment: .top)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                geometry.containerSize.height - geometry.contentInsets.top - geometry.contentInsets.bottom
+            } action: { _, height in
+                viewportHeight = height
+            }
+
+            Divider().padding(.horizontal, 12)
+            row("Settings", icon: .system("gearshape"), destination: .settings)
+                .padding(12)
+        }
+        .safeAreaPadding(.top, 12)
+        .safeAreaPadding(.bottom, 8)
+        .frame(maxHeight: .infinity)
+        .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(isPresented ? .isModal : [])
+        .accessibilityIdentifier("app-sidebar")
+        .onChange(of: isPresented) { _, isPresented in
+            guard isPresented else { return }
+            Task { @MainActor in
+                await Task.yield()
+                guard self.isPresented else { return }
+                closeNavigationIsFocused = true
+            }
+        }
+        .accessibilityHidden(!isPresented)
+    }
+
+    private var drawerContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -74,35 +113,34 @@ struct AppSidebarDrawer: View {
             .padding(.horizontal, 12)
             .padding(.bottom, 14)
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 2) {
-                    sectionHeader("Work")
-                    row("Chats", icon: .system("bubble.left.and.bubble.right"), destination: .chats)
-                    if sectionVisibility.tasks {
-                        row("Tasks", icon: .asset("LucideCalendarClock"), destination: .tasks)
-                    }
-                    if sectionVisibility.kanban {
-                        row("Kanban", icon: .asset("LucideColumns3"), destination: .kanban)
-                    }
-
-                    if showsAgentSection {
-                        sectionHeader("Agent")
-                            .padding(.top, 10)
-                    }
-
-                    if sectionVisibility.skills {
-                        row("Skills", icon: .asset("LucideHammer"), destination: .skills)
-                    }
-                    if sectionVisibility.memory {
-                        row("Memory", icon: .asset("LucideBrain"), destination: .memory)
-                    }
-                    if sectionVisibility.insights {
-                        row("Insights", icon: .asset("LucideChartColumnIncreasing"), destination: .insights)
-                    }
+            VStack(alignment: .leading, spacing: 2) {
+                sectionHeader("Work")
+                row("Chats", icon: .system("bubble.left.and.bubble.right"), destination: .chats)
+                if sectionVisibility.tasks {
+                    row("Tasks", icon: .asset("LucideCalendarClock"), destination: .tasks)
                 }
-                .padding(.horizontal, 12)
+                if sectionVisibility.kanban {
+                    row("Kanban", icon: .asset("LucideColumns3"), destination: .kanban)
+                }
+
+                if showsAgentSection {
+                    sectionHeader("Agent")
+                        .padding(.top, 10)
+                }
+
+                if sectionVisibility.skills {
+                    row("Skills", icon: .asset("LucideHammer"), destination: .skills)
+                }
+                if sectionVisibility.memory {
+                    row("Memory", icon: .asset("LucideBrain"), destination: .memory)
+                }
+                if sectionVisibility.insights {
+                    row("Insights", icon: .asset("LucideChartColumnIncreasing"), destination: .insights)
+                }
             }
-            .scrollBounceBehavior(.basedOnSize)
+            .padding(.horizontal, 12)
+
+            Spacer(minLength: 0)
 
             if !quotaSources.isEmpty {
                 Divider().padding(.horizontal, 12)
@@ -114,26 +152,7 @@ struct AppSidebarDrawer: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
             }
-
-            Divider().padding(.horizontal, 12)
-            row("Settings", icon: .system("gearshape"), destination: .settings)
-                .padding(12)
         }
-        .safeAreaPadding(.top, 12)
-        .safeAreaPadding(.bottom, 8)
-        .frame(maxHeight: .infinity)
-        .accessibilityElement(children: .contain)
-        .accessibilityAddTraits(isPresented ? .isModal : [])
-        .accessibilityIdentifier("app-sidebar")
-        .onChange(of: isPresented) { _, isPresented in
-            guard isPresented else { return }
-            Task { @MainActor in
-                await Task.yield()
-                guard self.isPresented else { return }
-                closeNavigationIsFocused = true
-            }
-        }
-        .accessibilityHidden(!isPresented)
     }
 
     private enum Icon {
