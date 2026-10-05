@@ -25,6 +25,8 @@ public final class ChatViewModel {
     public private(set) var displayedTranscriptMessages: [TranscriptMessage] = []
 #if DEBUG
     @ObservationIgnored private(set) var displayedTranscriptRecomputeCount = 0
+    /// Loads parked until the pending send finishes; tests wait on it instead of draining the main actor.
+    var messageSendWaiterCount: Int { messageSendWaiters.count }
 #endif
     public private(set) var isLoading = false
     public private(set) var isLoadingOlderMessages = false
@@ -32,7 +34,7 @@ public final class ChatViewModel {
     @ObservationIgnored private var isStartingMessageSend = false
     @ObservationIgnored private var messageSendWaiters: [CheckedContinuation<Void, Never>] = []
     @ObservationIgnored private var sessionLoadRequestGeneration = 0
-    @ObservationIgnored private var latestAppliedSessionLoadRequestGeneration = 0
+    @ObservationIgnored private var latestSettledSessionLoadRequestGeneration = 0
     @ObservationIgnored private var latestHandledSessionLoadFailureGeneration = 0
     @ObservationIgnored private var activeSessionLoadRequestGenerations: Set<Int> = []
     @ObservationIgnored private var sessionLoadWaiters: [SessionLoadWaiter] = []
@@ -1404,7 +1406,7 @@ public final class ChatViewModel {
                 await waitForMessageSendToFinish()
             }
             await waitForNewerSessionLoadRequests(after: loadRequestGeneration)
-            guard loadRequestGeneration > latestAppliedSessionLoadRequestGeneration else { return }
+            guard loadRequestGeneration > latestSettledSessionLoadRequestGeneration else { return }
             if canMergePendingMessageSend,
                !streamCoordinator.canApplySessionLoad(streamLoadPreparation) {
                 guard let currentActiveStreamID = activeStreamID else { return }
@@ -1440,11 +1442,18 @@ public final class ChatViewModel {
                 if renderedCacheFirst {
                     cacheFirstReconcileScrollToken += 1
                 }
-                latestAppliedSessionLoadRequestGeneration = loadRequestGeneration
+                latestSettledSessionLoadRequestGeneration = loadRequestGeneration
                 isConfirmingRunState = false
                 return
             }
-            guard streamCoordinator.canApplySessionLoad(streamLoadPreparation) else { return }
+            guard streamCoordinator.canApplySessionLoad(streamLoadPreparation) else {
+                // The run moved past this response, and every older response is staler still:
+                // settle it so an older load parked on the send cannot apply afterwards.
+                // It still answered, so it ends the first load's run-state check.
+                latestSettledSessionLoadRequestGeneration = loadRequestGeneration
+                isConfirmingRunState = false
+                return
+            }
             // After load arbitration only: a superseded response must not leave its
             // read-only flag behind once its transcript has been rejected.
             applyReadOnlyState(from: session)
@@ -1500,14 +1509,14 @@ public final class ChatViewModel {
                 statesTranscriptSeq: session?.statesTranscriptSeq ?? true
             )
             applyServerPendingSteers(session?.pendingSteers, changedAfter: steerChangesAtFetch, newerRows: newerSteerRows)
-            latestAppliedSessionLoadRequestGeneration = loadRequestGeneration
+            latestSettledSessionLoadRequestGeneration = loadRequestGeneration
             isConfirmingRunState = false
         } catch {
             if waitsForPendingMessageSend {
                 await waitForMessageSendToFinish()
             }
             await waitForNewerSessionLoadRequests(after: loadRequestGeneration)
-            guard loadRequestGeneration > latestAppliedSessionLoadRequestGeneration else { return }
+            guard loadRequestGeneration > latestSettledSessionLoadRequestGeneration else { return }
             guard loadRequestGeneration > latestHandledSessionLoadFailureGeneration else { return }
             guard streamCoordinator.canApplySessionLoad(streamLoadPreparation) else { return }
             lastError = error
