@@ -1,7 +1,7 @@
 import { appendFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { SIDECAR_RPC_VERSION, type RuntimeDescribe, type SidecarResult } from '@maudecode/talaria-web-contracts'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
@@ -148,6 +148,21 @@ describe('async delegation delivery claims (TAL-459)', () => {
     expect(fresh.calls.map((c) => c.method)).toEqual(['process.recover', 'process.drain', 'process.recover', 'process.drain', 'process.recover', 'process.drain', 'process.recover', 'process.drain'])
     expect(fresh.calls.filter((c) => c.method === 'process.recover').map((c) => c.params)).toEqual(Array(4).fill({ base_home: '/base' }))
     expect(logged.filter((l) => l.includes('recovery failed'))).toHaveLength(1)
+  })
+
+  it('logs a lasting drain failure once rather than on every poll (TAL-533)', async () => {
+    const fresh = new FakeSidecar()
+    let drains = 0
+    fresh.respond('process.drain', () => { drains += 1; throw new Error('background process recovery failed for /base') })
+    const logged: string[] = []
+    const drain = new CompletionDrain({
+      sidecar: () => fresh, baseHome: '/base', profileHome: () => '/base', activeProfile: () => 'default', store: s.deps.sessionStore, channels: s.deps.channels,
+      registry: s.deps.registry, startTurn: () => ({}), now: () => 0, log: (line) => { logged.push(line) }, pollMs: 5,
+    })
+    drain.start()
+    await vi.waitFor(() => { expect(drains).toBeGreaterThanOrEqual(4) })
+    drain.stop()
+    expect(logged.filter((l) => l.includes('drain failed'))).toHaveLength(1)
   })
 
   it('a restarted server does not deliver a delegation the previous one already delivered', async () => {

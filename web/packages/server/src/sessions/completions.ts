@@ -76,6 +76,7 @@ export class CompletionDrain {
   /** The handshake of the sidecar whose process registry already recovered every profile's checkpoint. */
   private recoveredFor: unknown = null
   private recoveryWarnedFor: unknown = null
+  private lastDrainError: string | null = null
 
   constructor(private readonly deps: CompletionDrainDeps) {}
 
@@ -83,7 +84,12 @@ export class CompletionDrain {
     if (this.timer || this.stopped) return
     const tick = (): void => {
       if (this.stopped) return
-      void this.drainOnce().catch((error: unknown) => { this.deps.log(`[webui] WARNING: bg_task_complete drain failed: ${(error as Error).message}`) }).finally(() => {
+      // A lasting failure (an unrecoverable checkpoint fails every call in its home, TAL-533) is logged once, not every poll.
+      void this.drainOnce().then(() => { this.lastDrainError = null }, (error: unknown) => {
+        const message = (error as Error).message
+        if (message !== this.lastDrainError) this.deps.log(`[webui] WARNING: bg_task_complete drain failed: ${message}`)
+        this.lastDrainError = message
+      }).finally(() => {
         if (this.stopped) return
         this.timer = setTimeout(tick, this.deps.pollMs ?? COMPLETION_POLL_MS)
         this.timer.unref()

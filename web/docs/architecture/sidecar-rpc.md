@@ -190,16 +190,18 @@ the failure once per sidecar. The sidecar enters the base home and every
 `profiles/*` home under it, and entering a home's scope (`scoped_home`) runs
 `process_registry.recover_from_checkpoint()` there until it succeeds once per
 sidecar process, so a home first used later is still recovered before any call
-in it can spawn. Recovery fails closed: when it raises, the call that entered
-the home fails, and so does every later call in that home until a retry
-succeeds. No call can spawn and overwrite a checkpoint the Agent could not re-
-adopt. `process.recover` still tries every home and then reports the failures.
-Recovery adopts only a live PID whose recorded start time still matches, and it
-restores the `session_key` (the WebUI session id) that the server routes
-completions and Background rows by, so no server index is rebuilt. An adopted
-process has no reader thread: `process.drain` probes it on every pass, so a
-process in a profile nobody has used since the restart still reports its exit.
-That completion has an unknown exit code and no output history. A process that
+in it can spawn. Recovery fails closed: when it raises, or the checkpoint is
+unreadable or not a JSON list (which the Agent would read as empty), the call
+that entered the home fails, and so does every later call in that home until a
+retry succeeds. No call can spawn and overwrite a checkpoint the Agent could
+not re- adopt. `process.recover` still tries every home and then reports the
+failures. The sidecar and the server each log a lasting failure once. Recovery
+adopts only a live PID whose recorded start time still matches, and it restores
+the `session_key` (the WebUI session id) that the server routes completions and
+Background rows by, so no server index is rebuilt. An adopted process has no
+reader thread: `process.drain` probes it on every pass, so a process in a
+profile nobody has used since the restart still reports its exit. That
+completion has an unknown exit code and no output history. A process that
 exited while no sidecar was running is not adopted and reports nothing.
 
 ## Versioning

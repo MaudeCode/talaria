@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import contextlib
 import importlib
+import json
 import logging
 import os
 import sys
@@ -38,6 +39,7 @@ log = logging.getLogger("talaria_sidecar.home")
 _ENV_LOCK = threading.RLock()
 _RECOVERY_LOCK = threading.Lock()
 _RECOVERED_HOMES: set[str] = set()
+_RECOVERY_WARNED: set[str] = set()
 _LAUNCH_ENV_LOCK = threading.Lock()
 _LAUNCH_ENV: dict[str, str] | None = None
 _PROCESS_HOME = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes").expanduser()
@@ -178,14 +180,20 @@ def _recover_processes(home: Path) -> None:
         if key in _RECOVERED_HOMES:
             return
         try:
-            from tools.process_registry import process_registry
+            from tools import process_registry as registry_module
         except ImportError:  # an Agent without the registry has nothing to recover
             _RECOVERED_HOMES.add(key)
             return
         try:
-            recovered = process_registry.recover_from_checkpoint()
+            # The Agent reads an unreadable or malformed checkpoint as "nothing to recover"; that must not count as recovered.
+            checkpoint = registry_module._checkpoint_path()
+            if checkpoint.exists() and not isinstance(json.loads(checkpoint.read_text(encoding="utf-8")), list):
+                raise ValueError(f"{checkpoint} is not a list")
+            recovered = registry_module.process_registry.recover_from_checkpoint()
         except Exception as exc:  # noqa: BLE001
-            log.warning("Background process recovery failed for %s", home, exc_info=True)
+            # Retried on every call in the home; reported once per home so a lasting failure does not flood the log.
+            log.log(logging.DEBUG if key in _RECOVERY_WARNED else logging.WARNING, "Background process recovery failed for %s", home, exc_info=True)
+            _RECOVERY_WARNED.add(key)
             raise RpcError(f"background process recovery failed for {home}; its processes.json could not be re-adopted: {exc}") from exc
         _RECOVERED_HOMES.add(key)
     if recovered:

@@ -7,6 +7,7 @@ import pathlib
 import subprocess
 import time
 
+import pytest
 from conftest import SidecarProcess, requires_agent
 from talaria_sidecar import SIDECAR_RPC_VERSION
 from test_process_delivery import _agent
@@ -88,19 +89,24 @@ def test_startup_recovery_reports_an_inactive_profiles_exit_before_that_profile_
 
 
 @requires_agent
-def test_a_failed_recovery_blocks_the_home_until_a_retry_succeeds(hermes_home: pathlib.Path) -> None:
+@pytest.mark.parametrize("bad", ["entry", "json"])
+def test_a_failed_recovery_blocks_the_home_until_a_retry_succeeds(hermes_home: pathlib.Path, bad: str) -> None:
     sleeper = subprocess.Popen(["sleep", "300"])
-    # An entry the Agent cannot adopt makes its recovery raise; the home must not count as recovered.
-    (hermes_home / "processes.json").write_text(json.dumps([{"pid": sleeper.pid, "command": "sleep 300"}]))
+    # An entry the Agent cannot adopt raises in its recovery; a malformed file is swallowed by it as "nothing to recover".
+    broken = json.dumps([{"pid": sleeper.pid, "command": "sleep 300"}]) if bad == "entry" else '[{"pid": %d, ' % sleeper.pid
+    (hermes_home / "processes.json").write_text(broken)
     sidecar = SidecarProcess(hermes_home)
     try:
         assert sidecar.result("runtime.handshake", {"rpc_version": SIDECAR_RPC_VERSION})["compatible"]
-        failed, _ = sidecar.call("process.recover", {"base_home": str(hermes_home)})
-        assert "error" in failed, failed
+        for _ in range(3):
+            failed, _ = sidecar.call("process.recover", {"base_home": str(hermes_home)})
+            assert "error" in failed, failed
         # Fail closed: no call may run in the home (and maybe spawn, rewriting the checkpoint) until recovery succeeds.
         blocked, _ = sidecar.call("process.background_list", {"profile_home": str(hermes_home), "session_ids": ["web-a"]})
         assert "error" in blocked, blocked
-        assert json.loads((hermes_home / "processes.json").read_text()) == [{"pid": sleeper.pid, "command": "sleep 300"}]
+        assert (hermes_home / "processes.json").read_text() == broken
+        # A lasting failure is reported once, not on every retry.
+        assert len([line for line in sidecar.stderr_lines if "WARNING" in line and "recovery failed" in line]) == 1, sidecar.stderr_lines
         _checkpoint(hermes_home, "proc_retry", sleeper.pid, "web-a")
         assert sidecar.result("process.recover", {"base_home": str(hermes_home)}) == {"homes": 1}
         listed = sidecar.result("process.background_list", {"profile_home": str(hermes_home), "session_ids": ["web-a"]})["processes"]
