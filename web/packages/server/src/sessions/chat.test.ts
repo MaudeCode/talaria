@@ -8,6 +8,7 @@ import { bootTestServer, type SseFrame, type TestServer } from '../test/harness.
 import type { SidecarResult } from '@maudecode/talaria-web-contracts'
 import { str } from '../util.js'
 import { sanitizeMessagesForApi } from './merge.js'
+import { attachTodoState } from './todo.js'
 
 type ChatResult = SidecarResult<'chat.start'>
 
@@ -2330,6 +2331,42 @@ describe('live metering and todo_state (TAL-397)', () => {
     expect(last.tps).toBe((done.usage as Json).tps)
     // The todo tool's full result is server-only, like `raw_result`.
     expect(JSON.stringify(frames)).not.toContain('todo_result')
+  })
+
+  // Codex review on #329: a turn that errors or is cancelled after the Agent spent tokens and wrote todos must not roll back.
+  const spent = { prompt_tokens: 300, completion_tokens: 40, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: 0.02 }
+  it.each([
+    ['an error', 'apperror', (): ChatResult => { throw new SidecarError('provider exploded', { condition: 'sidecar_error' }) }],
+    ['a cancel', 'cancel', (): ChatResult => completed([], { status: 'cancelled', final_response: '', usage: spent })],
+  ] as const)('keeps the live counters and todo list when the turn ends in %s', async (_label, terminal, end) => {
+    const sid = await newSession(s)
+    const todos = [{ id: '1', content: 'Survive the exit', status: 'in_progress' }]
+    const todoResult = JSON.stringify({ todos, summary: { total: 1, in_progress: 1 } })
+    sidecar.respond('chat.start', (_params, emit) => {
+      emit({ event: 'usage', data: spent })
+      emit({ event: 'tool', data: { event_type: 'tool.started', name: 'todo', args: {}, tid: 'call_todo' } })
+      emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'todo', preview: 'x', args: {}, tid: 'call_todo', raw_result: {}, todo_result: todoResult } })
+      clock += 1
+      return end()
+    })
+    const frames = await turn(sid, 'then fail')
+    const last = meterings(frames.concat({ event: 'done', data: {}, id: null, raw: '' })).at(-1)!
+    expect(last.usage).toMatchObject({ input_tokens: 300, output_tokens: 40, estimated_cost: 0.02 })
+    const terminalSession = (frames.find((f) => f.event === terminal)?.data as Json).session as Json
+    const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
+    for (const session of [terminalSession, detail]) {
+      expect(session).toMatchObject({ input_tokens: 300, output_tokens: 40, estimated_cost: 0.02 })
+      expect(session.todo_state).toMatchObject({ todos })
+    }
+  })
+
+  it('keeps an unsettled todo list only until the transcript holds a newer todo write', () => {
+    const row = (content: string, timestamp: number): Json => ({ role: 'tool', content: JSON.stringify({ todos: [{ id: '1', content, status: 'pending' }] }), timestamp })
+    const unsettled = { todos: [{ id: '1', content: 'kept', status: 'in_progress' }], summary: {}, version: 1, ts: 200 }
+    const pick = (messages: Json[]): unknown => { const payload: Json = {}; attachTodoState(payload, messages, unsettled); return ((payload.todo_state as Json).todos as Json[])[0]?.content }
+    expect(pick([row('older', 100)])).toBe('kept')
+    expect(pick([])).toBe('kept')
+    expect(pick([row('older', 100), row('newer', 300)])).toBe('newer')
   })
 
   it('throttles delta metering to once a second and reports the delta rate', async () => {

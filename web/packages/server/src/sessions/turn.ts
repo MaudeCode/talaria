@@ -24,7 +24,7 @@ import { buildActiveTurnToken, completedToolIndex, publicToolFrame, redactNested
 import { dict, type Config } from '../config/agent-config.js'
 import { ReasoningTitleTracker, reasoningEventPayload } from './reasoning-titles.js'
 import { messageWindowForDisplay, messagesForLimitedPayload, toolCallsForMessageWindow } from './window.js'
-import { attachTodoState, parseTodoToolResult } from './todo.js'
+import { UNSETTLED_TODO_KEY, attachTodoState, parseTodoToolResult } from './todo.js'
 import { withSessionWireFlags } from './list.js'
 import { hydrateAnchorActivityScenes, turnTerminalState, withTurnIds } from './anchor.js'
 import { persistentStateChanges, persistentStateSnapshot } from './state-saved.js'
@@ -255,6 +255,10 @@ export class TurnRunner {
   private readonly steerRewrites = new Map<string, Promise<unknown>>()
   private readonly deferredPendingSteer = new Map<string, string>()
   private readonly lastCompletedTool = new Map<string, string>()
+  /** TAL-397: each running turn's live counters, once the Agent reported any; an error or cancel persists them too. */
+  private readonly liveUsage = new Map<string, UsageCounters>()
+  /** TAL-397: each running turn's latest todo list, which an error or cancel keeps on the session. */
+  private readonly liveTodos = new Map<string, Record<string, unknown>>()
   /** Streams whose run completed (`done` emitted) and only await title work; a late cancel is a no-op for these. */
   private readonly settledStreams = new Set<string>()
   /**
@@ -494,7 +498,7 @@ export class TurnRunner {
             }
             case 'usage': {
               const usage = ChatUsageSchema.safeParse(data)
-              if (usage.success) applyAgentUsage(liveUsage, usage.data)
+              if (usage.success) { applyAgentUsage(liveUsage, usage.data); this.liveUsage.set(streamId, liveUsage) }
               putMetering(true)
               return
             }
@@ -532,7 +536,11 @@ export class TurnRunner {
               put('tool_complete', publicToolFrame(withToolId(complete, id), redacted), { redacted })
               // TAL-397: the todo tool's result is the session's new list; the settled session derives the same one.
               const todos = data.name === 'todo' ? parseTodoToolResult(todoResult) : null
-              if (todos) put('todo_state', redactNestedMessageContainers({ ...todos, session_id: sessionId, stream_id: streamId, source: 'live', ts: deps.now() }, redacted) as Record<string, unknown>)
+              if (todos) {
+                todos.ts = deps.now()
+                this.liveTodos.set(streamId, todos)
+                put('todo_state', redactNestedMessageContainers({ ...todos, session_id: sessionId, stream_id: streamId, source: 'live' }, redacted) as Record<string, unknown>)
+              }
               return
             }
             // Python: the live chat frame carries the queue head plus depth, not the entry that just arrived.
@@ -573,6 +581,8 @@ export class TurnRunner {
         // The Stop's pre-interrupt snapshot is the boundary, even when its reply lands after this result (the sidecar
         // answers each request on its own thread); without one, the Agent's interrupted result is its canonical transcript.
         const interrupted = await this.interrupts.get(streamId)
+        applyAgentUsage(liveUsage, result.usage)
+        this.liveUsage.set(streamId, liveUsage)
         this.finalizeCancelled(s, streamId, opts.ephemeral, interrupted?.checkpoint ?? result.messages)
         put('cancel', this.cancelFrame(sessionId))
         return
@@ -863,7 +873,7 @@ export class TurnRunner {
     payload.message_count = s.messages.length
     payload._messages_offset = offset
     payload._messages_truncated = offset > 0
-    attachTodoState(payload, s.messages)
+    attachTodoState(payload, s.messages, s.extra[UNSETTLED_TODO_KEY])
     payload.tool_calls = toolCallsForMessageWindow(s.tool_calls, offset, limited.length)
     return payload
   }
@@ -895,6 +905,7 @@ export class TurnRunner {
     if (payload.type === 'cancelled') errorMessage.provider_details_label = 'Cancellation details'
     else if (payload.type === 'interrupted') errorMessage.provider_details_label = 'Interruption details'
     s.messages.push(errorMessage)
+    this.keepLiveState(s, streamId)
     this.persistConsumedSteers(s, streamId, startedAt, this.deps.now())
     try { this.deps.store.save(s) } catch (error) { this.deps.log(`[webui] WARNING: failed to save error turn for ${s.session_id}: ${(error as Error).message}`) }
     this.deps.pending.clearApprovals(s.session_id)
@@ -997,6 +1008,7 @@ export class TurnRunner {
       this.appendPartialSnapshot(current, streamId)
       current.messages.push({ role: 'assistant', content: '', _error: true, _terminal_state: 'cancelled', timestamp: Math.trunc(this.deps.now()), _turn_id: streamId })
     }
+    this.keepLiveState(current, streamId)
     this.persistConsumedSteers(current, streamId, startedAt, this.deps.now())
     try { this.deps.store.save(current) } catch { return false }
     this.deps.pending.clearApprovals(current.session_id)
@@ -1010,7 +1022,17 @@ export class TurnRunner {
     this.sessionPuts.get(sessionId)?.(event, data)
   }
 
+  /** TAL-397: a turn that ends without its result keeps what the live stream already showed: counters and todo list. */
+  private keepLiveState(s: Session, streamId: string): void {
+    const usage = this.liveUsage.get(streamId)
+    if (usage) Object.assign(s, usage)
+    const todos = this.liveTodos.get(streamId)
+    if (todos) s.extra[UNSETTLED_TODO_KEY] = todos
+  }
+
   private teardown(sessionId: string, streamId: string): void {
+    this.liveUsage.delete(streamId)
+    this.liveTodos.delete(streamId)
     const writer = this.writers.get(streamId)
     if (writer) { try { writer.close() } catch { /* ignore */ } this.writers.delete(streamId) }
     this.abortControllers.delete(streamId)

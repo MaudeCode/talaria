@@ -16,7 +16,7 @@ import { allSessions, buildSessionListPayload, CLI_IDENTITY_FIELDS, isClaimableC
 import { anchorSceneIntOrNull, fullToolResult, hydrateAnchorActivityScenes, normalizeAnchorSceneMessageRef, readAnchorSceneRows, storeAnchorScene, withTurnIds } from './anchor.js'
 import { isSafeSessionId, lastMessageTimestamp, Session, stripAttachedFilesMarker, titleFrom, type Message } from './session.js'
 import { SessionBusy, SessionNotFound, statSignature, type SessionStore } from './store.js'
-import { attachTodoState } from './todo.js'
+import { UNSETTLED_TODO_KEY, attachTodoState } from './todo.js'
 import { stateDbSessionMessages, stateDbSessionRow, stateDbSessionSources } from './state-db.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { SidecarError, type SidecarLike } from '../sidecar/client.js'
@@ -483,7 +483,7 @@ export class SessionService {
       last_prompt_tokens: Number(s.last_prompt_tokens ?? 0) || 0,
     }
     if (loadMessages) raw.transcript_seq = journaled ? { stream_id: journaled.turnId, seq: 0 } : null
-    if (loadMessages && all.length) attachTodoState(raw, all)
+    if (loadMessages) attachTodoState(raw, all, s.extra[UNSETTLED_TODO_KEY])
     if (mergedLast) {
       raw.last_message_at = Math.max(Number(raw.last_message_at ?? 0) || 0, mergedLast)
       raw.updated_at = Math.max(Number(raw.updated_at ?? 0) || 0, mergedLast)
