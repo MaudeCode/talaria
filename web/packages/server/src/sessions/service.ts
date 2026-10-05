@@ -283,20 +283,26 @@ export class SessionService {
   }
 
   /**
-   * TAL-493: a turn's settlement. Rows the merge shows now that nothing the turn holds represents (a CLI or gateway row
-   * committed while it ran) join the transcript and the model context before the marker passes them; `known` adds the
-   * Agent's result rows the session does not keep. Without them (`known` empty), rows past `turnStartId` (the highest id
-   * the turn read when it started) are its own unreported work: covered, never shown.
+   * TAL-493: a turn's settlement. Each state.db row the merge shows now is matched to what the turn holds: a row already
+   * in the context it started from (by id), or one row the Agent added this turn (`agentRows` past that context, matched
+   * one to one by full text). An unmatched row is a CLI or gateway row committed while the turn ran: it joins the
+   * transcript and the model context before the marker passes it. Without the Agent's rows (`agentRows` empty), rows past
+   * `startId` (the highest id the turn read when it started) are its own unreported work: covered, never shown.
    */
-  settleStateDb(s: Session, known: Message[] = [], turnStartId: number | null = null): void {
+  settleStateDb(s: Session, turn: { previousContext: Message[]; agentRows?: Message[] | null; startId?: number | null }): void {
     const read = this.stateDbRead(s)
-    const stateRows = read.rows
-    // A row with no text (an image or reasoning only) is told apart by its raw role, content, and reasoning.
-    // The full text: a row that only starts like a held one is new.
-    const identity = (m: Message): string => messageIdentity(m, Infinity) ?? JSON.stringify([m.role ?? null, m.content ?? null, reasoningFieldsText(m)])
-    const held = new Set([...s.messages, ...s.context_messages, ...known].map(identity))
-    const ownWork = (m: Message): boolean => !known.length && turnStartId !== null && typeof m._state_db_row_id === 'number' && m._state_db_row_id > turnStartId
-    const missed = this.mergedTranscript(s, s.messages, stateRows).slice(s.messages.length).filter((m) => !ownWork(m) && !held.has(identity(m)))
+    const startedWith = new Set(turn.previousContext.map((m) => m._state_db_row_id).filter((id) => typeof id === 'number'))
+    const added = new Map<string, number>()
+    for (const m of withoutRows(turn.agentRows ?? [], turn.previousContext)) added.set(settledIdentity(m), (added.get(settledIdentity(m)) ?? 0) + 1)
+    const ownWorkAfter = turn.agentRows?.length ? null : turn.startId ?? null
+    const missed = this.mergedTranscript(s, s.messages, read.rows).slice(s.messages.length).filter((m) => {
+      const id = m._state_db_row_id
+      if (typeof id === 'number' && startedWith.has(id)) return false
+      const key = settledIdentity(m)
+      const left = added.get(key) ?? 0
+      if (left > 0) { added.set(key, left - 1); return false }
+      return !(ownWorkAfter !== null && typeof id === 'number' && id > ownWorkAfter)
+    })
     if (missed.length) {
       s.messages.push(...copyJson(missed))
       if (s.context_messages.length) s.context_messages.push(...copyJson(missed))
@@ -1592,6 +1598,18 @@ function findLastUserIndex(history: unknown[]): number | null {
 /** Python `_sanitize_error`: absolute paths in an error message never reach the client. */
 export function sanitizePaths(error: unknown): string {
   return str((error as Error)?.message ?? error).replace(/(?:(?:\/[a-zA-Z0-9_.-]+)+|(?:[A-Z]:\\[^\s]+))/g, '<path>')
+}
+
+/** TAL-493: a row's full-text identity; one with no text (reasoning or media only) by its raw role, content, and reasoning. */
+function settledIdentity(m: Message): string {
+  return messageIdentity(m, Infinity) ?? JSON.stringify([m.role ?? null, m.content ?? null, reasoningFieldsText(m)])
+}
+
+/** `rows` minus one occurrence of each row of `base`, by `settledIdentity`. */
+function withoutRows(rows: Message[], base: Message[]): Message[] {
+  const left = new Map<string, number>()
+  for (const m of base) left.set(settledIdentity(m), (left.get(settledIdentity(m)) ?? 0) + 1)
+  return rows.filter((m) => { const key = settledIdentity(m); const n = left.get(key) ?? 0; if (n > 0) left.set(key, n - 1); return n === 0 })
 }
 
 /**

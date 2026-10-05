@@ -1085,6 +1085,30 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     expect(sent(sid).filter((c) => c === 'crashed work')).toEqual([])
   })
 
+  it('a concurrent row that repeats an earlier message exactly stays in the transcript', async () => {
+    const sid = await seeded([['user', 'continue', 100], ['assistant', 'a1', 101]])
+    await turn(sid, 'first')
+    await turn(sid, 'second', 'completed', [['user', 'continue', 150]])
+    expect((await served(sid)).filter((c) => c === 'continue')).toHaveLength(2)
+    expect(sent(sid).filter((c) => c === 'continue')).toHaveLength(2)
+  })
+
+  it('a turn whose starting state.db read failed does not cover earlier CLI rows when it fails without a result', async () => {
+    const sid = await seeded([['user', 'u1', 100], ['assistant', 'a1', 101]])
+    await turn(sid, 'first')
+    commit(sid, [['user', 'CLI before', 150]])
+    expect((await served(sid)).at(-1)).toBe('CLI before')
+    const path = join(s.state, 'state.db')
+    renameSync(path, `${path}.away`)
+    sidecar.respond('chat.start', () => { renameSync(`${path}.away`, path); throw new Error('worker crashed') })
+    try {
+      const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'crashing' }))
+      await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    } finally { if (existsSync(`${path}.away`)) renameSync(`${path}.away`, path) }
+    expect((await served(sid)).filter((c) => c === 'CLI before')).toEqual(['CLI before'])
+    expect(sent(sid).filter((c) => c === 'CLI before')).toEqual(['CLI before'])
+  })
+
   it('a row with no text identity committed while a Web turn runs stays in the transcript', async () => {
     const sid = await seeded([['user', 'u1', 100], ['assistant', 'a1', 101]])
     await turn(sid, 'first')

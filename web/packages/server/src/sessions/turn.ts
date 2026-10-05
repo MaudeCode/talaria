@@ -268,7 +268,7 @@ export class TurnRunner {
    */
   /** TAL-364: a Stop's in-flight `chat.interrupt` reply (null when it failed), so a worker that settles first can use its checkpoint. */
   private readonly interrupts = new Map<string, Promise<{ pending_steer?: string | undefined; checkpoint?: Record<string, unknown>[] | undefined } | null>>()
-  private readonly stopContexts = new Map<string, { previousContext: Message[]; historyLength: number; prompt: string | Record<string, unknown>[]; msgText: string; checkpointed: boolean; stateDbStartId: number }>()
+  private readonly stopContexts = new Map<string, { previousContext: Message[]; historyLength: number; prompt: string | Record<string, unknown>[]; msgText: string; checkpointed: boolean; stateDbStartId: number | null }>()
   /** Each turn's worker, so a stopped background turn can be awaited before the user's turn takes the session. */
   private readonly workers = new Map<string, Promise<void>>()
 
@@ -393,7 +393,7 @@ export class TurnRunner {
     const workspaceCtx = workspaceContextPrefix(opts.workspace)
     // Before the first await: a Stop can land at any point after admission.
     // An eager save already put this turn's prompt in the transcript; the Stop fallback appends it once itself.
-    this.stopContexts.set(streamId, { previousContext: previousContext.filter((m) => m._turn_id !== streamId), historyLength: apiHistory.length, prompt: workspaceCtx + msgText, msgText, checkpointed: false, stateDbStartId: stateDbSeenId(startRead.rows) ?? 0 })
+    this.stopContexts.set(streamId, { previousContext: previousContext.filter((m) => m._turn_id !== streamId), historyLength: apiHistory.length, prompt: workspaceCtx + msgText, msgText, checkpointed: false, stateDbStartId: startRead.ok ? stateDbSeenId(startRead.rows) ?? 0 : null })
     const activeTurnToken = buildActiveTurnToken(streamId, s.pending_started_at)
     const sidecar = deps.sidecar()
     const partialText = this.registry.partialText.get(streamId) ?? []
@@ -717,7 +717,7 @@ export class TurnRunner {
       }
       this.persistConsumedSteers(s, streamId, previousStartedAt(s, activeRun), now)
       // TAL-493: the rows this turn's Agent wrote to state.db are now in the transcript, so the merge must not replay them.
-      deps.service().settleStateDb(s, resultMessages)
+      deps.service().settleStateDb(s, { previousContext: this.stopContexts.get(streamId)?.previousContext ?? previousContext, agentRows: resultMessages })
       deps.store.save(s)
       deps.pending.clearApprovals(sessionId)
       deps.pending.clearClarifies(sessionId)
@@ -915,7 +915,8 @@ export class TurnRunner {
     s.messages.push(errorMessage)
     this.keepLiveState(s, streamId)
     this.persistConsumedSteers(s, streamId, startedAt, this.deps.now())
-    this.deps.service().settleStateDb(s, agentRows, this.stopContexts.get(streamId)?.stateDbStartId ?? null)
+    const stop = this.stopContexts.get(streamId)
+    this.deps.service().settleStateDb(s, { previousContext: stop?.previousContext ?? [], agentRows, startId: stop?.stateDbStartId ?? null })
     try { this.deps.store.save(s) } catch (error) { this.deps.log(`[webui] WARNING: failed to save error turn for ${s.session_id}: ${(error as Error).message}`) }
     this.deps.pending.clearApprovals(s.session_id)
     this.deps.pending.clearClarifies(s.session_id)
@@ -988,7 +989,7 @@ export class TurnRunner {
     if (quiet && current.active_stream_id === null) {
       // TAL-493: rows its worker committed while unwinding are covered by what it reports; others are kept.
       if (checkpoint) {
-        this.deps.service().settleStateDb(current, checkpoint as Message[])
+        this.deps.service().settleStateDb(current, { previousContext: this.stopContexts.get(streamId)?.previousContext ?? [], agentRows: checkpoint as Message[] })
         try { this.deps.store.save(current) } catch { return false }
       }
       return true
@@ -1009,7 +1010,7 @@ export class TurnRunner {
       if (late) current.context_messages = dedupeContext(late)
       // TAL-493: the worker's rows committed after the first settlement are covered by what it reports; others are kept.
       if (late || (ownStop && checkpoint)) {
-        this.deps.service().settleStateDb(current, checkpoint as Message[])
+        this.deps.service().settleStateDb(current, { previousContext: stop?.previousContext ?? [], agentRows: checkpoint as Message[] })
         try { this.deps.store.save(current) } catch { return false }
       }
       return true
@@ -1029,7 +1030,7 @@ export class TurnRunner {
     }
     this.keepLiveState(current, streamId)
     this.persistConsumedSteers(current, streamId, startedAt, this.deps.now())
-    this.deps.service().settleStateDb(current, (checkpoint ?? []) as Message[], stop?.stateDbStartId ?? null)
+    this.deps.service().settleStateDb(current, { previousContext: stop?.previousContext ?? [], agentRows: checkpoint as Message[] | null, startId: stop?.stateDbStartId ?? null })
     try { this.deps.store.save(current) } catch { return false }
     this.deps.pending.clearApprovals(current.session_id)
     this.deps.pending.clearClarifies(current.session_id)
