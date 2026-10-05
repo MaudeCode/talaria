@@ -68626,108 +68626,108 @@
         }
       }
     },
-    "Opens in the external browser" : {
+    "Opens the page in Talaria" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "يفتح في المتصفح الخارجي"
+            "value" : "يفتح الصفحة في Talaria"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Öffnet im externen Browser"
+            "value" : "Öffnet die Seite in Talaria"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Se abre en el navegador externo"
+            "value" : "Abre la página en Talaria"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "S'ouvre dans le navigateur externe"
+            "value" : "Ouvre la page dans Talaria"
           }
         },
         "he" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "נפתח בדפדפן החיצוני"
+            "value" : "פותח את הדף ב-Talaria"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Si apre nel browser esterno"
+            "value" : "Apre la pagina in Talaria"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "外部ブラウザで開きます"
+            "value" : "Talaria でページを開きます"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "외부 브라우저에서 열려요"
+            "value" : "Talaria에서 페이지를 엽니다"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Opent in de externe browser"
+            "value" : "Opent de pagina in Talaria"
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Otwiera w zewnętrznej przeglądarce"
+            "value" : "Otwiera stronę w Talaria"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Abre no navegador externo"
+            "value" : "Abre a página no Talaria"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Открывается во внешнем браузере"
+            "value" : "Открывает страницу в Talaria"
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Harici tarayıcıda açılır"
+            "value" : "Sayfayı Talaria'da açar"
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "بیرونی براؤزر میں کھلتا ہے"
+            "value" : "صفحہ Talaria میں کھولتا ہے"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "在外部浏览器中打开"
+            "value" : "在 Talaria 中打开页面"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "在外部瀏覽器中開啟"
+            "value" : "在 Talaria 中打開頁面"
           }
         },
         "zh-HK" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "在外部瀏覽器中開啟"
+            "value" : "在 Talaria 中打開頁面"
           }
         }
       }

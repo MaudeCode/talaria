@@ -128,6 +128,7 @@ struct ChatView: View {
     @State private var transcriptMediaPreviewItem: TranscriptMediaPreviewItem?
     /// A workspace file a chat link named; shown in the source viewer at its line.
     @State private var openedFileLink: WorkspaceFileLink?
+    @State private var openedWebPage: InAppSafariPage?
     @State private var pendingProfileSelection: ProfileSummary?
     @State private var showProfileNewSessionConfirmation = false
     @State private var goalDraft = ""
@@ -642,6 +643,9 @@ struct ChatView: View {
             }
             .sheet(item: $transcriptMediaPreviewItem, content: transcriptMediaPreviewView)
             .sheet(item: $openedFileLink, content: fileLinkSheet)
+            .sheet(item: $openedWebPage) { page in
+                InAppSafariView(url: page.url).ignoresSafeArea()
+            }
             .sheet(item: $activeGitSheet, content: gitSheet)
             .sheet(item: $turnDiffPresentation, content: turnDiffSheet)
             .alert(item: $gitAlert, content: gitAlertPresentation)
@@ -1253,15 +1257,20 @@ struct ChatView: View {
         }
     }
 
-    /// A link that names a workspace file opens the source viewer at its line;
-    /// every other link keeps the system behaviour. The viewer's own error
-    /// state covers a file the server refuses or no longer has.
+    /// A link that names a workspace file opens the source viewer at its line,
+    /// a web page opens in the in-app Safari sheet, and every other link keeps
+    /// the system behaviour. The viewer's own error state covers a file the
+    /// server refuses or no longer has.
     private func handleTranscriptLink(_ url: URL) -> OpenURLAction.Result {
         // The live workspace: `/workspace` and the composer can change it after the session loads.
-        guard let link = WorkspaceFileLink.parse(url, workspaceRoot: viewModel.selectedWorkspacePath) else {
+        switch TranscriptLinkRoute.route(url, workspaceRoot: viewModel.selectedWorkspacePath) {
+        case .workspaceFile(let link):
+            openedFileLink = link
+        case .inAppBrowser(let url):
+            openedWebPage = InAppSafariPage(url: url)
+        case .system:
             return .systemAction
         }
-        openedFileLink = link
         return .handled
     }
 

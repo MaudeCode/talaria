@@ -708,6 +708,43 @@ final class ChatReadableWidthUITests: ChatUITestCase {
     }
 }
 
+/// A web link in a reply opens the in-app Safari sheet over the chat; its dismiss button returns to
+/// the same transcript position with the composer draft intact (TAL-442).
+final class TranscriptWebLinkUITests: ChatUITestCase {
+    func testWebLinkOpensInAppSafariAndCloseKeepsTheChat() throws {
+        launchFixture()
+        _ = try openFixtureSession()
+
+        let input = app.textViews.firstMatch
+        if !input.awaitExistence(timeout: 2) {
+            app.buttons["Message"].tap()
+        }
+        XCTAssertTrue(input.awaitExistence(timeout: 10), "The composer did not expand")
+        input.typeText("Fixture draft")
+        // With the keyboard up, a transcript tap only dismisses it.
+        let keyboard = app.keyboards.firstMatch
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25)).tap()
+        XCTAssertTrue(keyboard.awaitNonExistence(timeout: 5), "The keyboard did not close")
+
+        let link = app.links["FixtureLinkTarget"]
+        XCTAssertTrue(link.awaitExistence(timeout: 15), "Missing the fixture's web link")
+        let linkFrame = settledFrame(of: link)
+        tapCenter(of: link)
+
+        // Safari's own browser view and its dismiss button, which reads Close on iOS 26.
+        let browser = app.otherElements.matching(NSPredicate(format: "identifier BEGINSWITH 'BrowserView'")).firstMatch
+        XCTAssertTrue(browser.awaitExistence(timeout: 15), "The web link did not open the in-app Safari sheet")
+        XCTAssertEqual(app.state, .runningForeground, "The web link left Talaria")
+        let close = app.buttons["Close"]
+        XCTAssertTrue(close.awaitExistence(timeout: 5), "The Safari sheet has no dismiss button")
+        close.tap()
+
+        XCTAssertTrue(browser.awaitNonExistence(timeout: 10), "Close did not dismiss the Safari sheet")
+        XCTAssertEqual(settledFrame(of: link), linkFrame, "Dismissing Safari moved the transcript")
+        XCTAssertEqual(app.textViews.firstMatch.value as? String, "Fixture draft", "Dismissing Safari lost the draft")
+    }
+}
+
 class SettingsUITestCase: TalariaUITestCase {}
 
 /// The category root, where moved controls live, every category's route, and the server-backed

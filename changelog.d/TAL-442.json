@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Web links in a chat open in a Safari sheet inside Talaria, so closing it returns you to the same spot with your draft intact.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}
