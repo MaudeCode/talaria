@@ -487,7 +487,7 @@ export class TurnRunner {
       put('context_status', { session_id: sessionId, prefill: { status: 'not_configured', source: 'none', label: '', message_count: 0 } })
       const result = await sidecar.call('chat.start', {
         profile_home: deps.profileHome(s.profile), session_id: sessionId, stream_id: streamId, workspace: opts.workspace, model: opts.model ?? '', model_provider: opts.modelProvider,
-        user_message: userMessage, ...turnContext, conversation_history: apiHistory, enabled_toolsets: deps.toolsetsFor(s),
+        user_message: userMessage, ...turnContext, conversation_history: apiHistory, enabled_toolsets: deps.toolsetsFor(s), ...(msgText ? { persist_user_message: msgText } : {}), ...(opts.ephemeral ? { ephemeral: true } : {}),
       }, {
         signal: controller.signal,
         timeoutMs: 0,

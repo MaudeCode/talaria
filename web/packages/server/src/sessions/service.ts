@@ -17,7 +17,7 @@ import { anchorSceneIntOrNull, fullToolResult, hydrateAnchorActivityScenes, norm
 import { isSafeSessionId, lastMessageTimestamp, Session, stripAttachedFilesMarker, titleFrom, type Message } from './session.js'
 import { SessionBusy, SessionNotFound, statSignature, type SessionStore } from './store.js'
 import { UNSETTLED_TODO_KEY, attachTodoState } from './todo.js'
-import { stateDbSessionMessages, stateDbSessionRead, stateDbSessionRow, stateDbSessionSources, type StateDbRead } from './state-db.js'
+import { stateDbCompressionLineage, stateDbSessionMessages, stateDbSessionRead, stateDbSessionRow, stateDbSessionSources, type StateDbRead } from './state-db.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { SidecarError, type SidecarLike } from '../sidecar/client.js'
 import { agentSteerText, attachedFilesPrompt, attachmentObjects, dedupeContext, isContextCompressionMarker, journalOutputRows, looksLikeCurrentUserTurn, stoppedTurnContext, workspaceContextPrefix, mergeSessionMessagesAppendOnly, messageIdentity, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, type ToolResultView } from './merge.js'
@@ -259,7 +259,13 @@ export class SessionService {
   /** `stateDbRows` and whether the read succeeded on a state.db whose messages carry ids (TAL-493). */
   stateDbRead(s: Session): StateDbRead {
     if (str(s.source_tag || s.raw_source || s.session_source).trim().toLowerCase() === 'subagent') return { rows: [], idCapable: false, ok: false }
-    return stateDbSessionRead(join(this.deps.profileHome(s.profile ?? this.deps.activeProfile()), 'state.db'), s.session_id, { stitch: false })
+    // TAL-529: after a compression rotation the Agent writes to the continuation, so the read follows the recorded lineage.
+    const lineage = s.state_db_lineage?.[0] === s.session_id ? s.state_db_lineage : null
+    return stateDbSessionRead(this.stateDbPath(s.profile), s.session_id, { stitch: false, lineage })
+  }
+
+  private stateDbPath(profile: string | null | undefined): string {
+    return join(this.deps.profileHome(profile ?? this.deps.activeProfile()), 'state.db')
   }
 
   /**
@@ -335,6 +341,15 @@ export class SessionService {
       if (s.context_messages.length) s.context_messages.push(...copyJson(missed))
     }
     this.markStateDbSeen(s, read)
+    // TAL-529: a compression rotation moved the Agent to a continuation, whose first rows restate the compressed context.
+    // The read follows the new lineage from here, and everything it holds now is covered.
+    // ponytail: a CLI row committed to the continuation before this settlement is covered with them; telling them apart
+    // needs the Agent to mark the rows it writes at rotation.
+    const lineage = stateDbCompressionLineage(this.stateDbPath(s.profile), s.session_id)
+    if (JSON.stringify(lineage) !== JSON.stringify(s.state_db_lineage ?? [s.session_id])) {
+      s.state_db_lineage = lineage.length > 1 ? lineage : null
+      this.markStateDbSeen(s)
+    }
   }
 
   /**
@@ -1343,7 +1358,10 @@ export class SessionService {
     // messaging channel's memory is never erased from the WebUI; the actual outcome is reported.
     let stateDbCleanupFailed = false
     if (!isMessaging) {
-      try { stateDbCleanupFailed = !(await this.deps.runtime.deleteCliSession(eventProfile, sid)) } catch { stateDbCleanupFailed = true }
+      // TAL-529: the compression continuations go too, tip first; the Agent's delete keeps and detaches them otherwise.
+      for (const id of stateDbCompressionLineage(this.stateDbPath(eventProfile), sid).reverse()) {
+        try { if (!(await this.deps.runtime.deleteCliSession(eventProfile, id))) stateDbCleanupFailed = true } catch { stateDbCleanupFailed = true }
+      }
     }
     this.publish('session_delete', eventProfile)
     // Only a sidecar session is ever published to the relay.

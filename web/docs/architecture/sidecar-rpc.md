@@ -162,6 +162,18 @@ close) ends its memory session with its transcript and releases its LLM clients
 under its profile, once no turn still holds it. Shutdown stops running turns
 and waits up to 4 s for those releases.
 
+Each turn agent holds a reference to its profile's `state.db` from the Agent's
+shared-handle registry (released with the agent), keyed by the Web session id,
+so the Agent writes each turn's rows there like any other surface. A new agent
+for a session the Agent already rotated by compression starts on the live
+compression tip with the server's history. The server records the session's
+compression lineage (`state_db_lineage`) when a turn settles. It reads
+state.db rows across that lineage and covers the rows the continuation
+restated at rotation. Deleting the session deletes the whole lineage, tip
+first. A `/btw` side question
+(`ephemeral: true`) gets no handle, so its throwaway session never reaches
+`state.db`.
+
 Manual `/compress` is `chat.compress`: a throwaway `AIAgent` runs the Agent's
 shared `compress_now` core over the history the server sends and returns the
 compressed messages and summary without persisting anything. The server

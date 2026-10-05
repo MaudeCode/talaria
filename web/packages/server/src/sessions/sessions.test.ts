@@ -1356,6 +1356,71 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
   })
 })
 
+describe('a compressed Web session follows its state.db lineage (TAL-529)', () => {
+  let s: TestServer
+  let sidecar: FakeSidecar
+  beforeAll(async () => {
+    sidecar = new FakeSidecar()
+    s = await bootTestServer({ sidecar })
+  })
+  afterAll(() => s.close())
+
+  /** Runs SQL against the profile's state.db with the Agent's lineage columns. */
+  function db<T>(fn: (conn: DatabaseSync) => T): T {
+    const conn = new DatabaseSync(join(s.state, 'state.db'))
+    try {
+      conn.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL, parent_session_id TEXT, ended_at REAL, end_reason TEXT); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
+      return fn(conn)
+    } finally { conn.close() }
+  }
+  const insert = (conn: DatabaseSync, sid: string, list: [string, string, number][]): void => {
+    for (const [role, content, ts] of list) conn.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, role, content, ts)
+  }
+  async function served(sid: string): Promise<unknown[]> {
+    return (((await json(await s.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).messages as Json[]).map((m) => m.content)
+  }
+
+  /** A Web session whose next turn the Agent compresses: it ends the Web id and continues on `<sid>-tip`. */
+  async function compressedSession(): Promise<string> {
+    const sid = String((await newSession(s)).session_id)
+    writeMessages(s, sid, [{ role: 'user', content: 'u1', timestamp: 100 }, { role: 'assistant', content: 'a1', timestamp: 101 }])
+    db((conn) => {
+      conn.prepare('INSERT INTO sessions (id, source, started_at) VALUES (?, ?, ?)').run(sid, 'webui', 100)
+      insert(conn, sid, [['user', 'u1', 100], ['assistant', 'a1', 101]])
+    })
+    sidecar.respond('chat.start', (params) => {
+      const context = [{ role: 'user', content: '[summary] u1/a1' }, { role: 'assistant', content: 'a1' }]
+      db((conn) => {
+        conn.prepare("UPDATE sessions SET ended_at = 200, end_reason = 'compression' WHERE id = ?").run(sid)
+        conn.prepare('INSERT INTO sessions (id, source, started_at, parent_session_id) VALUES (?, ?, ?, ?)').run(`${sid}-tip`, 'webui', 200, sid)
+        // The continuation restates the compressed context, then takes the turn's own rows.
+        insert(conn, `${sid}-tip`, [['user', '[summary] u1/a1', 200], ['assistant', 'a1', 200], ['user', str(params.user_message), 201], ['assistant', 'next answered', 202]])
+      })
+      return { ...completedTurn([...context, { role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'next answered' }]), compressed: true, agent_session_id: `${sid}-tip` }
+    })
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'next' }))
+    await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    return sid
+  }
+
+  it('shows a CLI turn on the compression tip without replaying the compressed context', async () => {
+    const sid = await compressedSession()
+    const settled = await served(sid)
+    expect(settled.slice(-2)).toEqual(['next', 'next answered'])
+    expect(settled).not.toContain('[summary] u1/a1')
+    db((conn) => { insert(conn, `${sid}-tip`, [['user', 'CLI on tip', 300], ['assistant', 'CLI reply', 301]]) })
+    expect(await served(sid)).toEqual([...settled, 'CLI on tip', 'CLI reply'])
+  })
+
+  it('deleting the session removes its compression continuation too, tip first', async () => {
+    const sid = await compressedSession()
+    const deleted: string[] = []
+    sidecar.respond('state_db.delete_cli_session', (params) => { deleted.push(str(params.session_id)); return { ok: true } })
+    expect(await json(await post(s, '/api/session/delete', { session_id: sid }))).toEqual({ ok: true, state_db_cleanup_failed: false })
+    expect(deleted).toEqual([`${sid}-tip`, sid])
+  })
+})
+
 describe('session detail marks background wakeups as updates (TAL-371)', () => {
   let s: TestServer
   beforeAll(async () => { s = await bootTestServer() })
