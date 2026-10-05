@@ -2302,3 +2302,21 @@ describe('session detail ships each file edit\'s diff (TAL-448)', () => {
     }
   })
 })
+
+describe('session toolsets (TAL-631)', () => {
+  it('normalizes the saved names on the server: trimmed, blanks dropped, nothing left means the profile defaults', async () => {
+    const s = await bootTestServer()
+    try {
+      const sid = str((await newSession(s)).session_id)
+      const save = async (toolsets: unknown): Promise<Response> => post(s, '/api/session/toolsets', { session_id: sid, toolsets })
+
+      expect(await json(await save([' web ', '', 'terminal  ', ' ']))).toEqual({ ok: true, enabled_toolsets: ['web', 'terminal'] })
+      expect(await json(await save(['  ', '']))).toEqual({ ok: true, enabled_toolsets: null })
+      expect(await json(await save([]))).toEqual({ ok: true, enabled_toolsets: null })
+      expect(await json(await save(null))).toEqual({ ok: true, enabled_toolsets: null })
+      expect((await save([7])).status).toBe(400)
+    } finally {
+      await s.close()
+    }
+  })
+})

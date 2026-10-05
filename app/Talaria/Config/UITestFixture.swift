@@ -806,7 +806,11 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             recoveryState.withLock { urgentNotificationAcknowledged = true; readUpdateNotificationIDs.insert("ui-update-urgent") }
             return json(updateNotificationRecord(id: "ui-update-urgent"))
         case "/api/session/toolsets":
-            let saved = requestJSON(request)["toolsets"] as? [String]
+            // Like the server: trimmed, blanks dropped, nothing left is the profile's defaults.
+            let names = (requestJSON(request)["toolsets"] as? [String] ?? [])
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+            let saved = names.isEmpty ? nil : names
             sessionToolsets.withLock { $0 = saved }
             return json(["ok": true, "enabled_toolsets": saved.map { $0 as Any } ?? NSNull()])
         case "/api/session/yolo":

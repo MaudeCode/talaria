@@ -4710,17 +4710,21 @@ public final class ChatViewModel {
     }
 
     /// Sets the session's toolsets, nil for the profile's defaults; the control then shows what the
-    /// server saved. A failure keeps the old value and reports in the composer (TAL-631).
+    /// server saved. The strip's controls stay disabled until it answers, so saves never overlap. A
+    /// failure keeps the old value and reports in the composer (TAL-631).
     @discardableResult
     public func saveSessionToolsets(_ names: [String]?) async -> Bool {
-        guard let sessionID else { return false }
+        guard let sessionID, !isUpdatingComposerConfiguration else { return false }
+        isUpdatingComposerConfiguration = true
+        composerConfigurationErrorMessage = nil
+        defer { isUpdatingComposerConfiguration = false }
         do {
             let response = try await client.setSessionToolsets(sessionID: sessionID, toolsets: names)
             sessionToolsets = SessionToolsets(names: response.enabledToolsets)
             return true
         } catch {
             lastError = error
-            sendErrorMessage = error.localizedDescription
+            composerConfigurationErrorMessage = error.localizedDescription
             return false
         }
     }

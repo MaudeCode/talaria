@@ -807,12 +807,10 @@ public struct SessionToolsets: Equatable, Sendable {
         return names.joined(separator: ", ")
     }
 
-    /// Splits the sheet's comma-separated input; nothing left means the profile's defaults.
-    public static func names(fromInput input: String) -> [String]? {
-        let names = input.split(separator: ",")
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-        return names.isEmpty ? nil : names
+    /// The sheet's comma-separated input, split as typed; the server trims the names, drops blanks
+    /// and treats an empty list as the profile's defaults.
+    public static func names(fromInput input: String) -> [String] {
+        input.split(separator: ",", omittingEmptySubsequences: false).map(String.init)
     }
 }
 
