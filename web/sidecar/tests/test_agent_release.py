@@ -288,3 +288,27 @@ def test_an_agent_evicted_during_a_memory_commit_is_released_after_the_commit(mo
     while len(EVENTS) < 3 and time.monotonic() < deadline:
         time.sleep(0.01)
     assert EVENTS == [("commit", "commit"), *_released("commit")]
+
+
+def test_a_release_whose_profile_scope_fails_still_closes_clients_and_blocks_the_delete(monkeypatch, tmp_path) -> None:
+    _setup(monkeypatch)
+    alpha = tmp_path / "profiles" / "alpha"
+    assert chat.start(Ctx(), {**_params("st-unscoped", "unscoped"), "profile_home": str(alpha)})["status"] == "completed"
+
+    @contextlib.contextmanager
+    def unreadable(home):
+        raise RpcError("terminal policy unreadable")
+        yield home  # pragma: no cover
+
+    monkeypatch.setattr(chat, "scoped_home", unreadable)
+    deleted: list = []
+    monkeypatch.setattr(profiles, "delete_profile", lambda base_home, name: deleted.append(name))
+    registry = Registry(runtime=types.SimpleNamespace(load=lambda: None, ensure_current=lambda: None))  # type: ignore[arg-type]
+    profiles.register(registry)
+    with pytest.raises(RpcError):
+        registry.methods["profiles.delete"](Ctx(), {"base_home": str(tmp_path), "name": "alpha"})
+    # The memory flush could not run under the profile, so its home stays; the LLM clients are closed regardless.
+    assert deleted == [] and EVENTS == [("release_clients", "unscoped")]
+    # The failed flush is reported once: the agent is gone, so a retry deletes the profile.
+    assert registry.methods["profiles.delete"](Ctx(), {"base_home": str(tmp_path), "name": "alpha"}) == {"ok": True}
+    assert deleted == ["alpha"]

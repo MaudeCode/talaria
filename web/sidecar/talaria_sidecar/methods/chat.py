@@ -541,24 +541,37 @@ def _release_agent(agent, home) -> threading.Thread:
     transcript (``on_session_end``, then provider shutdown), then release the LLM clients (the Codex app-server child,
     httpx pools) while session tool state stays for a resumed session."""
 
+    def call(name: str, *args) -> bool:
+        method = getattr(agent, name, None)
+        if not callable(method):
+            return True
+        try:
+            method(*args)
+        except Exception:  # noqa: BLE001 - one failed phase never skips the next
+            log.warning("evicted agent %s() failed", name, exc_info=True)
+            return False
+        return True
+
     def release() -> None:
+        released = False
         try:
             with scoped_home(home):
                 messages = getattr(agent, "_session_messages", None)
-                for name, args in (("shutdown_memory_provider", (messages if isinstance(messages, list) else None,)), ("release_clients", ())):
-                    method = getattr(agent, name, None)
-                    if callable(method):
-                        try:
-                            method(*args)
-                        except Exception:  # noqa: BLE001 - one failed phase never skips the next
-                            log.warning("evicted agent %s() failed", name, exc_info=True)
-        except Exception:  # noqa: BLE001
-            log.warning("releasing an evicted agent failed", exc_info=True)
+                flushed = call("shutdown_memory_provider", messages if isinstance(messages, list) else None)
+                released = True
+                thread.failed = not (call("release_clients") and flushed)
+        except Exception:  # noqa: BLE001 - the profile scope could not be entered
+            log.warning("releasing an evicted agent under its profile failed", exc_info=True)
+            thread.failed = True
         finally:
+            if not released:
+                # The memory flush needs the profile; the LLM clients and the Codex child close regardless.
+                call("release_clients")
             with _RELEASES_LOCK:
                 _RELEASES.pop(thread, None)
 
     thread = threading.Thread(target=release, daemon=True, name="chat-agent-release")
+    thread.failed = False  # type: ignore[attr-defined] - read by profile deletion
     with _RELEASES_LOCK:
         _RELEASES[thread] = home
     thread.start()
@@ -628,6 +641,8 @@ def release_profile_agents(home) -> None:
     _join(threads, time.monotonic() + _PROFILE_RELEASE_TIMEOUT)
     if any(thread.is_alive() for thread in threads):
         raise RpcError("The profile is still saving memory from its chats. Retry in a moment.")
+    if any(thread.failed for thread in threads):
+        raise RpcError("Memory from the profile's chats could not be saved; see the sidecar log. Retry to delete the profile anyway.")
 
 
 def _agent_class():
