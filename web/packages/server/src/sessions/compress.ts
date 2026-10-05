@@ -36,6 +36,12 @@ export function anchorSummary(summary: Record<string, unknown> | null, compresse
   return raw.split(/\s+/).join(' ').trim() || null
 }
 
+/** TAL-540, Python `_compression_summary_from_messages`: an auto-compression's anchor summary is its newest marker's text. */
+export function markerSummary(messages: Message[]): string | null {
+  const text = [...messages].reverse().filter(isContextCompressionMarker).map((m) => messageText(m.content)).find((t) => t.trim()) ?? ''
+  return text.split(/\s+/).join(' ').trim() || null
+}
+
 /** Old `_MANUAL_COMPRESSION_JOB_TTL_SECONDS`: a finished job stays readable so every open tab sees one result. */
 export const COMPRESSION_JOB_TTL_SECONDS = 10 * 60
 
