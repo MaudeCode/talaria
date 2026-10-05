@@ -1,6 +1,6 @@
 import Foundation
 
-/// Where a tapped transcript link opens.
+/// Where a tapped transcript link opens (TAL-442).
 public enum TranscriptLinkRoute: Equatable {
     /// A workspace file: the source viewer at its line.
     case workspaceFile(WorkspaceFileLink)
@@ -13,8 +13,9 @@ public enum TranscriptLinkRoute: Equatable {
         if let link = WorkspaceFileLink.parse(url, workspaceRoot: workspaceRoot) {
             return .workspaceFile(link)
         }
-        // Safari's view accepts only web pages; mail, phone and app links go to the system.
-        if let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" {
+        // Safari's view accepts only web pages with a host; mail, phone and app links go to the system.
+        if let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
+           url.host()?.isEmpty == false {
             return .inAppBrowser(url)
         }
         return .system

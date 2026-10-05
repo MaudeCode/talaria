@@ -18,7 +18,7 @@ final class TranscriptLinkRouteTests: XCTestCase {
     }
 
     func testOtherSchemesKeepTheSystemBehaviour() throws {
-        for destination in ["mailto:fixture@example.invalid", "tel:+15550100", "talaria://session/fixture", "ftp://example.invalid/file", "docs/readme"] {
+        for destination in ["mailto:fixture@example.invalid", "tel:+15550100", "talaria://session/fixture", "ftp://example.invalid/file", "docs/readme", "https:///no-host"] {
             XCTAssertEqual(try route(destination), .system, destination)
         }
     }
