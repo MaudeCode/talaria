@@ -995,9 +995,12 @@ export class TurnRunner {
       // The worker's canonical result can arrive after cancel() settled without a checkpoint (the interrupt reply failed
       // or timed out): it replaces this stream's context and never adds a second Stop row. A settlement that already had
       // one keeps it, so work the Agent finished after the Stop stays out.
-      const late = canonical && !stop.checkpointed && current.messages.some((m) => isCancelMarker(m) && m._turn_id === streamId) ? settle() : null
-      if (late) {
-        current.context_messages = dedupeContext(late)
+      const ownStop = current.messages.some((m) => isCancelMarker(m) && m._turn_id === streamId)
+      const late = canonical && !stop.checkpointed && ownStop ? settle() : null
+      if (late) current.context_messages = dedupeContext(late)
+      // TAL-493: the worker's rows committed after the first settlement are covered by what it reports; others are kept.
+      if (late || (ownStop && checkpoint)) {
+        this.deps.service().settleStateDb(current, checkpoint as Message[])
         try { this.deps.store.save(current) } catch { return false }
       }
       return true

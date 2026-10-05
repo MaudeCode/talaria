@@ -20,7 +20,7 @@ import { UNSETTLED_TODO_KEY, attachTodoState } from './todo.js'
 import { stateDbSessionMessages, stateDbSessionRow, stateDbSessionSources } from './state-db.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { SidecarError, type SidecarLike } from '../sidecar/client.js'
-import { attachmentObjects, isContextCompressionMarker, mergeSessionMessagesAppendOnly, messageIdentity, pendingUserRow, sanitizeMessagesForApi, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, type ToolResultView } from './merge.js'
+import { attachmentObjects, isContextCompressionMarker, mergeSessionMessagesAppendOnly, messageIdentity, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, type ToolResultView } from './merge.js'
 import { withBackgroundUpdates } from './background-updates.js'
 import { withBackgroundLinks, type Receipt } from './background-tasks.js'
 import { messagesForLimitedPayload, messageWindowForDisplay, MAX_MSG_LIMIT, parseMsgLimit, toolCallsForMessageWindow } from './window.js'
@@ -281,8 +281,10 @@ export class SessionService {
    */
   settleStateDb(s: Session, known: Message[] = []): void {
     const stateRows = this.stateDbRows(s)
-    const held = new Set([...s.messages, ...s.context_messages, ...known].map(messageIdentity))
-    const missed = this.mergedTranscript(s, s.messages, stateRows).slice(s.messages.length).filter((m) => { const key = messageIdentity(m); return key !== null && !held.has(key) })
+    // A row with no text (an image or reasoning only) is told apart by its raw role, content, and reasoning.
+    const identity = (m: Message): string => messageIdentity(m) ?? JSON.stringify([m.role ?? null, m.content ?? null, reasoningFieldsText(m)])
+    const held = new Set([...s.messages, ...s.context_messages, ...known].map(identity))
+    const missed = this.mergedTranscript(s, s.messages, stateRows).slice(s.messages.length).filter((m) => !held.has(identity(m)))
     if (missed.length) {
       s.messages.push(...copyJson(missed))
       if (s.context_messages.length) s.context_messages.push(...copyJson(missed))

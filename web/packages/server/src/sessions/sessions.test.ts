@@ -915,14 +915,14 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
   })
   afterAll(() => s.close())
 
-  type Row = [string, string, number]
+  type Row = [string, string, number, string?]
   const rows = (list: Row[]): Json[] => list.map(([role, content, timestamp]) => ({ role, content, timestamp }))
   /** Commits rows to the Agent's state.db for `sid`, as a CLI or gateway writer would. */
   function commit(sid: string, list: Row[]): void {
     const db = new DatabaseSync(join(s.state, 'state.db'))
-    db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
+    db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL, reasoning TEXT)')
     db.prepare('INSERT OR IGNORE INTO sessions (id, source, started_at) VALUES (?, ?, ?)').run(sid, 'cli', 100)
-    for (const [role, content, ts] of list) db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, role, content, ts)
+    for (const [role, content, ts, reasoning] of list) db.prepare('INSERT INTO messages (session_id, role, content, timestamp, reasoning) VALUES (?, ?, ?, ?, ?)').run(sid, role, content, ts, reasoning ?? null)
     db.close()
   }
   function maxId(sid: string): number {
@@ -1024,6 +1024,37 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     const settled = await served(sid)
     expect(settled.filter((c) => typeof c === 'string' && /^(CLI meanwhile|CLI later|second answered)$/.test(c)).sort()).toEqual(['CLI later', 'CLI meanwhile', 'second answered'])
     expect((await turn(sid, 'third')).filter((c) => c === 'CLI meanwhile' || c === 'CLI later').sort()).toEqual(['CLI later', 'CLI meanwhile'])
+  })
+
+  it('a row with no text identity committed while a Web turn runs stays in the transcript', async () => {
+    const sid = await seeded([['user', 'u1', 100], ['assistant', 'a1', 101]])
+    await turn(sid, 'first')
+    // A reasoning-only row has no text for `messageIdentity`.
+    await turn(sid, 'second', 'completed', [['assistant', '', 150, 'CLI plan only']])
+    const shown = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).messages as Json[]
+    expect(shown.filter((m) => m.reasoning === 'CLI plan only')).toHaveLength(1)
+  })
+
+  it('a Stop whose canonical checkpoint lands after the cancel covers the work it carries and keeps a concurrent CLI row', async () => {
+    const sid = await seeded([['user', 'u1', 100], ['assistant', 'a1', 101]])
+    await turn(sid, 'first')
+    sidecar.respond('chat.interrupt', () => ({ ok: true }))
+    sidecar.respond('chat.start', (params, emit, opts) => new Promise((resolve) => {
+      emit({ event: 'token', data: { text: 'partial' } })
+      opts.signal?.addEventListener('abort', () => {
+        commit(sid, [['assistant', 'after stop', 300], ['user', 'CLI during stop', 301]])
+        resolve({ ...completedTurn([...params.conversation_history, { role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'after stop' }]), status: 'cancelled' })
+      })
+    }))
+    const streamId = String((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'halt' }))).stream_id)
+    await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'token')
+    await s.get(`/api/chat/cancel?stream_id=${streamId}`)
+    // The worker's late settlement installs the checkpoint as the model context.
+    const deadline = Date.now() + 5000
+    while (!s.deps.sessionStore.get(sid).context_messages.some((m) => m.content === 'after stop') && Date.now() < deadline) await new Promise((r) => setTimeout(r, 20))
+    expect(s.deps.sessionStore.get(sid).context_messages.some((m) => m.content === 'after stop')).toBe(true)
+    const shown = await served(sid)
+    expect(shown.filter((c) => c === 'after stop' || c === 'CLI during stop')).toEqual(['CLI during stop'])
   })
 
   it('falls back to the timestamp rules after an older release moves the boundary', async () => {
