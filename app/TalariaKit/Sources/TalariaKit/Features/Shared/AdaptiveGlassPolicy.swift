@@ -4,6 +4,8 @@ import SwiftUI
 public enum AdaptiveReadableContentWidth {
     public static let secondaryDestination: CGFloat = 800
     public static let workspace: CGFloat = 1_000
+    /// The chat transcript column and composer, gutters included (TAL-444).
+    public static let chat: CGFloat = 800
 }
 
 public enum AdaptiveGlassStyle: Equatable {

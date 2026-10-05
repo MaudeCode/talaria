@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "On iPad and other wide windows, chats and the message box stay in a centred column at a comfortable reading width instead of stretching edge to edge.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

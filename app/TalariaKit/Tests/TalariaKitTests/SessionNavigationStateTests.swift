@@ -385,6 +385,7 @@ final class SessionNavigationStateTests: XCTestCase {
     func testReadableContentWidthsKeepSecondaryAndWorkspaceSurfacesDistinct() {
         XCTAssertEqual(AdaptiveReadableContentWidth.secondaryDestination, 800)
         XCTAssertEqual(AdaptiveReadableContentWidth.workspace, 1_000)
+        XCTAssertEqual(AdaptiveReadableContentWidth.chat, 800)
         XCTAssertLessThan(
             AdaptiveReadableContentWidth.secondaryDestination,
             AdaptiveReadableContentWidth.workspace

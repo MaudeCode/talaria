@@ -627,6 +627,74 @@ final class ChatComposerUITests: ChatUITestCase {
     }
 }
 
+/// TAL-444: a wide window keeps the transcript and the composer in one centred reading column of
+/// at most 800 pt, while the transcript itself still scrolls edge to edge. On an iPad in landscape
+/// the cap engages; a window already narrower than the column passes the same bounds untouched.
+final class ChatReadableWidthUITests: ChatUITestCase {
+    override func tearDownWithError() throws {
+        XCUIDevice.shared.orientation = .portrait
+        try super.tearDownWithError()
+    }
+
+    func testTranscriptAndComposerShareACentredReadableColumnInLandscape() throws {
+        XCUIDevice.shared.orientation = .landscapeLeft
+        launchFixture()
+        // The row leads the list, in the iPad sidebar too, where `tapFixtureSession`'s
+        // phone-list viewport does not apply.
+        let session = fixtureSessionButton
+        XCTAssertTrue(session.awaitExistence(timeout: 15), "Missing deterministic session fixture")
+        session.tap()
+        XCTAssertNotNil(waitForComposer(timeout: 15), "The fixture session did not open")
+
+        let transcript = app.scrollViews["chat-detail:\(fixtureSessionTitle)"]
+        XCTAssertTrue(transcript.awaitExistence(timeout: 3))
+        let reply = element(labelContaining: "FixturePlainLead")
+        let request = element(labelContaining: "Fixture link request")
+        XCTAssertTrue(reply.awaitExistence(timeout: 15), "Missing the fixture's long assistant reply")
+        XCTAssertTrue(request.awaitExistence(timeout: 5), "Missing the fixture's user message")
+
+        // The chat's own pane: the whole window on iPhone, the area beside the sidebar on iPad.
+        let pane = settledFrame(of: app.otherElements["chat-detail:\(fixtureSessionTitle)"].firstMatch)
+        let scrollFrame = settledFrame(of: transcript)
+        let replyFrame = settledFrame(of: reply)
+        let requestFrame = settledFrame(of: request)
+        // The composer card's leading and trailing controls bound it.
+        let composerFrame = settledFrame(of: app.buttons["Composer options"])
+            .union(settledFrame(of: app.buttons["Send"]))
+
+        // The scroll view, and with it the scroll indicator, still reaches the window edge.
+        XCTAssertEqual(scrollFrame.maxX, app.windows.firstMatch.frame.maxX, accuracy: 1)
+        // The assistant reply starts the column and the user message ends it.
+        let column = CGRect(x: replyFrame.minX, y: 0, width: requestFrame.maxX - replyFrame.minX, height: 1)
+        for (name, frame) in [("Transcript column", column), ("Composer", composerFrame)] {
+            XCTAssertLessThanOrEqual(frame.width, AdaptiveReadableWidth.chat, "\(name) \(frame) in \(pane)")
+            XCTAssertEqual(frame.midX, pane.midX, accuracy: 4, "\(name) \(frame) is not centred in \(pane)")
+        }
+
+        // The jump to the latest message still returns to the end of the transcript.
+        transcript.swipeDown(velocity: .fast)
+        transcript.swipeDown(velocity: .fast)
+        let jump = app.buttons["Scroll to latest message"]
+        XCTAssertTrue(jump.awaitExistence(timeout: 5), "Scrolling up did not offer the jump to the latest message")
+        tapCenter(of: jump)
+        XCTAssertTrue(jump.awaitNonExistence(timeout: 5), "The jump did not return to the latest message")
+
+        // The expanded composer stays above the keyboard.
+        app.buttons["Message"].tap()
+        let textView = app.textViews.firstMatch
+        XCTAssertTrue(textView.awaitExistence(timeout: 10))
+        let keyboard = app.keyboards.firstMatch
+        if keyboard.awaitExistence(timeout: 5) {
+            XCTAssertLessThanOrEqual(settledFrame(of: textView).maxY, settledFrame(of: keyboard).minY)
+        }
+    }
+
+    /// Mirrors `AdaptiveReadableContentWidth.chat`; the UI test bundle does not link TalariaKit.
+    private enum AdaptiveReadableWidth {
+        static let chat: CGFloat = 800
+    }
+}
+
 class SettingsUITestCase: TalariaUITestCase {}
 
 /// The category root, where moved controls live, every category's route, and the server-backed
