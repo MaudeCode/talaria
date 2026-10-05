@@ -178,7 +178,8 @@ describe('event streams deliver past the old 4 MiB cut-off', () => {
       parse.mockRestore()
       event.mockRestore()
     }
-  })
+  // Redacting 12 MB of tool frames takes a few seconds here and several times that on a CI runner.
+  }, 60_000)
 
   it('a pre-id tool journal replays each completion with its call\'s id', async () => {
     legacyRun('run-legacy-ids', 40)
