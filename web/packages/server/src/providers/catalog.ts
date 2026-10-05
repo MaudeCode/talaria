@@ -82,12 +82,17 @@ export function repairSessionModel(catalog: ModelsCatalog, model: string, provid
   const want = loose(model)
   const entries = catalog.groups.flatMap((g) => [...g.models, ...(g.extra_models ?? [])])
   const tail = (id: string): string => loose(id.slice(id.indexOf('/') + 1))
-  // Python `_catalog_model_id_matches`: the provider keeps a model it lists in another spelling or under a vendor prefix.
-  const listed = (bare: string): boolean => loose(bare) === want || tail(bare) === want
-  if (entries.some((e) => canonicaliseProviderId(e.provider_id) === pid && listed(str(e.bare_id)))) return null
+  const own = entries.filter((e) => canonicaliseProviderId(e.provider_id) === pid).map((e) => str(e.bare_id))
+  // Python `_catalog_model_id_matches`: the provider keeps a model it lists in another spelling or under a namespace.
+  if (own.some((bare) => loose(bare) === want || tail(bare) === want)) return null
+  // Equivalence across ids only drops a recognised vendor prefix; another namespace is no evidence. A match starts on the
+  // matching entry's own id, so the turn runs on an id that provider routes.
+  const vendorless = (id: string): string => loose(id.replace(/^(openai|anthropic|google|gemini)\//i, ''))
+  const same = (bare: string): boolean => vendorless(bare) === vendorless(model)
+  const here = own.find(same)
+  if (here) return [here, pid]
   if (!provider || pid !== active) {
-    // An owner matches with a vendor prefix on either side; its own id is the one returned, so the turn starts on an id it routes.
-    const owners = new Map(entries.filter((e) => (listed(str(e.bare_id)) || loose(str(e.bare_id)) === tail(model)) && !unlisted.has(canonicaliseProviderId(e.provider_id))).map((e) => [canonicaliseProviderId(e.provider_id), str(e.bare_id)] as const))
+    const owners = new Map(entries.filter((e) => same(str(e.bare_id)) && !unlisted.has(canonicaliseProviderId(e.provider_id))).map((e) => [canonicaliseProviderId(e.provider_id), str(e.bare_id)] as const))
     const [only] = owners.size === 1 ? [...owners] : []
     if (only) return [only[1], only[0]]
   }

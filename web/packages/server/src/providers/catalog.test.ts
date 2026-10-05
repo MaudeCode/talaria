@@ -47,6 +47,13 @@ describe('stale session model repair (TAL-542)', () => {
   it('finds the owner with a vendor prefix on either side and starts on the owner\'s own id', () => {
     expect(repairSessionModel(catalog('kilocode', 'kilo/auto', { ollama: ['llama3.2'], kilocode: ['openai/gpt-5.4'] }), 'gpt-5.4', 'ollama')).toEqual(['openai/gpt-5.4', 'kilocode'])
     expect(repairSessionModel(catalog('kilocode', 'kilo/auto', { ollama: ['llama3.2'], kilocode: ['gpt-5.4'] }), 'openai/gpt-5.4', 'ollama')).toEqual(['gpt-5.4', 'kilocode'])
+    // The profile's own provider listing the vendorless id: the session starts on that id rather than the default.
+    expect(repairSessionModel(catalog('openai-codex', 'gpt-5.5', { 'openai-codex': ['gpt-5.5', 'gpt-5.4-mini'] }), 'openai/gpt-5.4-mini', 'openai-codex')).toEqual(['gpt-5.4-mini', 'openai-codex'])
+  })
+
+  it('never treats a namespace other than a vendor prefix as the same model', () => {
+    expect(repairSessionModel(catalog('kilocode', 'kilo/auto', { ollama: ['llama3.2'], kilocode: ['Qwen2.5-Coder'] }), 'lmstudio-community/Qwen2.5-Coder', 'ollama')).toBeNull()
+    expect(repairSessionModel(catalog('kilocode', 'kilo/auto', { ollama: ['llama3.2'], kilocode: ['lmstudio-community/Qwen2.5-Coder'] }), 'Qwen2.5-Coder', 'ollama')).toBeNull()
   })
 
   it('keeps the pair without one clear owner or when its provider lists it, in models or extra_models', () => {
