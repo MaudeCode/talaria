@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Experimental update checks now report how many Experimental builds a Talaria Web server is behind instead of always saying 1.",
+      "highlight": false,
+      "components": ["app", "web"]
+    }
+  ]
+}

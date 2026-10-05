@@ -72,7 +72,7 @@ const stableGetJson: GetJson = (_path, { asset }) => Promise.resolve(asset ? {
   contracts: { appWeb: { web: [1] }, webRelay: { web: [2] } }, agent: COMPAT.compatibleAgent,
 } : [{ tag_name: `release-set-${STABLE_SOURCE}`, published_at: '2026-01-01', assets: [{ name: 'release-set.json', id: 1 }] }])
 
-interface Ghcr { artifactType?: string; redirect?: string; served?: Buffer; version?: string; source?: string }
+interface Ghcr { artifactType?: string; redirect?: string; served?: Buffer; version?: string; source?: string; tags?: string[] }
 /** A fake GHCR speaking the token, manifest, and redirected-blob protocol for one `experimental` artifact. */
 function fakeGhcr(tarball: Buffer, opts: Ghcr = {}) {
   const digest = `sha256:${createHash('sha256').update(tarball).digest('hex')}`
@@ -90,6 +90,7 @@ function fakeGhcr(tarball: Buffer, opts: Ghcr = {}) {
         annotations: { 'org.opencontainers.image.revision': opts.source ?? NEW_EXP, 'org.opencontainers.image.version': opts.version ?? EXPERIMENTAL.version },
       }))
     }
+    if (url === 'https://ghcr.io/v2/maudecode/talaria-web-experimental/tags/list?n=1000') return Promise.resolve(Response.json({ name: 'maudecode/talaria-web-experimental', tags: opts.tags ?? ['experimental', `sha-${NEW_EXP}`] }))
     if (url === `https://ghcr.io/v2/maudecode/talaria-web-experimental/blobs/${digest}`) return Promise.resolve(new Response(null, { status: 307, headers: { location: opts.redirect ?? `https://pkg-containers.githubusercontent.com/ghcr1/blobs/${digest}?sig=x` } }))
     if (url.startsWith('https://pkg-containers.githubusercontent.com/') || (opts.redirect && url.startsWith(opts.redirect))) return Promise.resolve(new Response(new Uint8Array(opts.served ?? tarball)))
     return Promise.resolve(new Response('not found', { status: 404 }))
@@ -99,9 +100,23 @@ function fakeGhcr(tarball: Buffer, opts: Ghcr = {}) {
 
 const TARBALL = Buffer.from('synthetic experimental tarball')
 const tgzKey = `tgz:${createHash('sha256').update(TARBALL).digest('hex')}`
-const unusedRegistry: ExperimentalRegistry = { release: () => { throw new Error('Stable must not query GHCR') }, download: () => { throw new Error('Stable must not download from GHCR') } }
+const unusedRegistry: ExperimentalRegistry = { release: () => { throw new Error('Stable must not query GHCR') }, download: () => { throw new Error('Stable must not download from GHCR') }, builds: () => { throw new Error('Stable must not query GHCR') } }
 
 describe('Experimental npm updates (TAL-378)', () => {
+  it('counts the published Experimental builds an install is behind (TAL-626)', async () => {
+    const [mid, early, untagged] = ['d', 'e', 'f'].map((c) => c.repeat(40))
+    // main from the newest build back: two more builds and a commit that published no build sit between OLD_EXP and NEW_EXP.
+    const history = [NEW_EXP, untagged, mid, early, OLD_EXP, 'c'.repeat(40)]
+    const g = fakeGhcr(TARBALL, { tags: ['experimental', ...[NEW_EXP, mid, early, OLD_EXP].map((sha) => `sha-${sha}`)] })
+    const getJson: GetJson = (path, opts) => path === `/commits?sha=${NEW_EXP}&per_page=100&page=1` ? Promise.resolve(history.map((sha) => ({ sha }))) : stableGetJson(path, opts)
+    const running = release(`web-exp-v${expVersion('2.0.0', OLD_EXP)}`, expVersion('2.0.0', OLD_EXP), OLD_EXP)
+    const behind = npmInstall(running, {})
+    expect(await checkWebUpdate(behind.packageRoot, 'web-exp', 'experimental', runGit, getJson, identity(running), behind.npm, g.registry)).toMatchObject({ behind: 3, install_kind: 'npm' })
+    const stable = release('web-v2.0.0', '2.0.0', 'c'.repeat(40))
+    const switching = npmInstall(stable, {})
+    expect(await checkWebUpdate(switching.packageRoot, 'web-v2.0.0', 'experimental', runGit, getJson, identity(stable), switching.npm, g.registry)).toMatchObject({ behind: 4, channel_switch: true })
+  })
+
   it('reports an Experimental npm install current at the tag revision and behind otherwise', async () => {
     const running = release(`web-exp-v${expVersion('2.0.0', OLD_EXP)}`, expVersion('2.0.0', OLD_EXP), OLD_EXP)
     const behind = npmInstall(running, {})
