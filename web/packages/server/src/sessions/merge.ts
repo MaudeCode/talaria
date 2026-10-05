@@ -3,7 +3,8 @@
  * `_merge_display_messages_after_agent_result`, `_message_identity`,
  * `_extract_tool_calls_from_messages`, `_build_partial_message`).
  */
-import { buildActiveTurnToken } from '../redact.js'
+import { buildActiveTurnToken, completedToolIndex } from '../redact.js'
+import { RunJournal, type JournalEvent } from './journal.js'
 import { str } from '../util.js'
 import { stripAttachedFilesMarker, type Message } from './session.js'
 import type { MediaProjection } from '../workspace/media-refs.js'
@@ -630,6 +631,25 @@ export function withToolCallOutcomes<T>(messages: T[], sessionToolCalls: unknown
   })
 }
 
+/** The prompt text naming every attached file by path after it (TAL-276), so an attachment-only turn still asks something. */
+export function attachedFilesPrompt(text: string, attachments: readonly unknown[]): string {
+  const named = attachments.map((att) => (isDict(att) ? str(att.path).trim() : '')).filter(Boolean).map(escapeWorkspacePrefixPath)
+  return named.length ? `${text}\n\n[Attached files: ${named.join(', ')}]` : text
+}
+
+/** A model context without an assistant row repeated back to back. */
+export function dedupeContext(messages: Message[]): Message[] {
+  const out: Message[] = []
+  let lastKey: string | null = null
+  for (const m of messages) {
+    const key = messageIdentity(m)
+    if (key !== null && key === lastKey && m.role === 'assistant') continue
+    out.push(m)
+    lastKey = key
+  }
+  return out
+}
+
 /** Python `_build_partial_message`. */
 export function buildPartialMessage(contentText: string, reasoningText: string, toolCalls: unknown[], now = Date.now() / 1000): Message | null {
   let stripped = ''
@@ -645,6 +665,60 @@ export function buildPartialMessage(contentText: string, reasoningText: string, 
   if (hasReasoning) msg.reasoning = reasoningText.trim()
   if (hasTools) msg._partial_tool_calls = [...toolCalls]
   return msg
+}
+
+/**
+ * TAL-536: a dead run's journaled output as partial rows, in order: each row is a stretch of reasoning and prose with the
+ * tool calls that followed it, the shape a Stop's snapshot keeps. A run that ended in `done` gets its answer as a settled
+ * row: its last prose row, else the one the `done` frame's session carries (an answer that never streamed, like the
+ * tool-limit summary). `answered` says the run finished with one.
+ */
+export function journalOutputRows(events: JournalEvent[], turnId: string): { rows: Message[]; answered: boolean } {
+  const rows: Message[] = []
+  const calls: Record<string, unknown>[] = []
+  let text = ''
+  let reasoning = ''
+  let tools: Record<string, unknown>[] = []
+  let at = 0
+  const flush = (): void => {
+    const row = buildPartialMessage(text, reasoning, tools, at)
+    if (row) rows.push({ ...row, _turn_id: turnId })
+    text = ''
+    reasoning = ''
+    tools = []
+  }
+  for (const e of events) {
+    const p = isDict(e.payload) ? e.payload : {}
+    if ((e.event === 'token' || e.event === 'reasoning') && tools.length) flush()
+    if (e.event === 'token') text += str(p.text)
+    else if (e.event === 'reasoning') reasoning += str(p.text)
+    else if (e.event === 'tool') {
+      const call = { name: p.name, args: p.args ?? {}, tid: str(p.id), done: false }
+      calls.push(call)
+      tools.push(call)
+    } else if (e.event === 'tool_complete') {
+      // The record is shared with the row that holds it, so a completion after its row closed still lands.
+      const call = calls[completedToolIndex(calls, str(p.id), p.name)]
+      if (call) Object.assign(call, { done: true, snippet: p.preview, is_error: p.is_error === true, duration: p.duration ?? null, ...(isDict(p.result_view) ? { result_view: p.result_view } : {}), ...(isDict(p.edit_diff) ? { edit_diff: p.edit_diff } : {}) })
+    } else continue
+    at = e.created_at || at
+  }
+  flush()
+  const done = RunJournal.selectAuthoritativeTerminalEvent(events)
+  if (done?.event !== 'done') return { rows, answered: false }
+  // The last row answers only with visible prose and no calls after it (a reasoning-only segment is no answer).
+  const last = rows[rows.length - 1]
+  if (last && !last._partial_tool_calls && str(last.content)) {
+    delete last._partial
+    return { rows, answered: true }
+  }
+  const settled = isDict(done.payload) && isDict(done.payload.session) && Array.isArray(done.payload.session.messages) ? done.payload.session.messages : []
+  const answer = settled.findLast((m): m is Message => isDict(m) && m.role === 'assistant' && m._turn_id === turnId)
+  // Its visible prose, from string or structured content, as the scene's final answer reads it.
+  const content = answer && !answer._error && !(Array.isArray(answer.tool_calls) && answer.tool_calls.length) ? splitDisplayText(messageText(answer.content))[0] : ''
+  if (!content) return { rows, answered: false }
+  rows.push({ role: 'assistant', content, timestamp: Math.trunc(done.created_at), _turn_id: turnId })
+  return { rows, answered: true }
 }
 
 const DSML = '(?:\\s*｜\\s*DSML\\s*[｜|]\\s*)?'

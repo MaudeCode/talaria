@@ -29,7 +29,7 @@ import { withSessionWireFlags } from './list.js'
 import { hydrateAnchorActivityScenes, turnTerminalState, withTurnIds } from './anchor.js'
 import { persistentStateChanges, persistentStateSnapshot } from './state-saved.js'
 import { maxIterationsFromConfig, maxTokensFromConfig, processWakeupMaxIterations, reasoningConfigFromConfig, webuiEphemeralSystemPrompt, workspaceSystemMessage } from './turn-context.js'
-import { agentSteerText, assistantReplyAddedAfterCurrentTurn, buildPartialMessage, escapeWorkspacePrefixPath, checkpointTurnStart, extractToolCallsFromMessages, injectMaxIterationSummaryFallback, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitDisplayText, stateDbSeenId, joinReasoning, reasoningFieldsText, stoppedTurnContext, toolOutcome, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withToolCallOutcomes, withoutMaxIterationSummaryRequest, workspaceContextPrefix } from './merge.js'
+import { agentSteerText, assistantReplyAddedAfterCurrentTurn, attachedFilesPrompt, buildPartialMessage, dedupeContext, checkpointTurnStart, extractToolCallsFromMessages, injectMaxIterationSummaryFallback, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitDisplayText, stateDbSeenId, joinReasoning, reasoningFieldsText, stoppedTurnContext, toolOutcome, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withToolCallOutcomes, workspaceContextPrefix, withoutMaxIterationSummaryRequest } from './merge.js'
 import { mayBecomeSilentReply, turnOrigin, withBackgroundUpdates } from './background-updates.js'
 import { fallbackTitleFromExchange, firstExchangeSnippets, isGenericFallbackTitle, latestExchangeSnippets, looksInvalidGeneratedTitle, looksLikeDefaultCliTitle, sanitizeGeneratedTitle, titleLanguageMismatch, titlePrompts } from './titles.js'
 import { WORKSPACE_BUSY_MESSAGE } from '../workspace/git.js'
@@ -840,8 +840,7 @@ export class TurnRunner {
    */
   private async buildUserMessage(workspaceCtx: string, msgText: string, attachments: Record<string, unknown>[], workspace: string, sessionId: string, s: Session, opts: StartTurnOptions, signal: AbortSignal): Promise<string | Record<string, unknown>[]> {
     const text = workspaceCtx + msgText
-    const named = attachments.map((att) => str(att.path).trim()).filter(Boolean).map(escapeWorkspacePrefixPath)
-    const withFiles = (): string => (named.length ? `${text}\n\n[Attached files: ${named.join(', ')}]` : text)
+    const withFiles = (): string => attachedFilesPrompt(text, attachments)
     const candidates = attachments.filter((att) => str(att.path).trim() && str(att.mime).trim().startsWith('image/'))
     if (!candidates.length) return withFiles()
     const sidecar = this.deps.sidecar()
@@ -1742,18 +1741,6 @@ function previousStartedAt(s: Session, run: { started_at: number } | undefined):
 /** A persisted Stop row: TAL-364 marks its outcome; older rows carry only their English copy. */
 function isCancelMarker(m: Message): boolean {
   return m._error === true && (m._terminal_state === 'cancelled' || str(m.content).startsWith('**Task cancelled:**'))
-}
-
-function dedupeContext(messages: Message[]): Message[] {
-  const out: Message[] = []
-  let lastKey: string | null = null
-  for (const m of messages) {
-    const key = messageIdentity(m)
-    if (key !== null && key === lastKey && m.role === 'assistant') continue
-    out.push(m)
-    lastKey = key
-  }
-  return out
 }
 
 
