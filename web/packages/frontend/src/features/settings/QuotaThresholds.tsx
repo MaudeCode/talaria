@@ -52,7 +52,7 @@ export function QuotaThresholdsForm() {
   )
 }
 
-const LEVEL_TEXT: Record<QuotaLevel, string> = { healthy: 'text-accent-text', warning: 'text-warning', critical: 'text-error', stale: 'text-warning', unavailable: 'text-muted' }
+const LEVEL_TEXT: Record<QuotaLevel, string> = { healthy: 'text-success', warning: 'text-warning', critical: 'text-error', stale: 'text-warning', unavailable: 'text-muted' }
 const LEVEL_LABEL: Record<QuotaLevel, () => string> = { healthy: m.quota_level_healthy, warning: m.quota_level_warning, critical: m.quota_level_critical, stale: m.quota_level_stale, unavailable: m.quota_level_unavailable }
 
 /** A quota source's server `urgency` for both colour bases; nothing for an older server without it. */
