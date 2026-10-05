@@ -671,6 +671,13 @@ describe('redactSessionData', () => {
     // Rows the Agent wrote in the user role are not prompts: background wakeups and compaction markers render their own way.
     expect(collapsible({ role: 'user', content: lines(40), _background_update: { kind: 'process' } })).toBeUndefined()
     expect(collapsible({ role: 'user', content: lines(40), _marker_kind: 'context_compaction' })).toBeUndefined()
+    // Measured without the `[Attached files: ...]` line clients hide: a short prompt with many long paths stays whole.
+    const attached = `\n\n[Attached files: ${Array.from({ length: 40 }, (_, i) => `/workspace/uploads/${'deep/'.repeat(10)}file-${i}.png`).join(', ')}]`
+    expect(collapsible({ role: 'user', content: `Look at these${attached}` })).toBeUndefined()
+    expect(collapsible({ role: 'user', content: `${lines(21)}${attached}` })).toBe(true)
+    // The server's decision replaces any `_collapsible` a stored or imported row carries.
+    expect(collapsible({ role: 'user', content: 'short', _collapsible: true })).toBeUndefined()
+    expect(collapsible({ role: 'user', content: lines(40), _steer: { steer_id: 's2' }, _collapsible: true })).toBeUndefined()
   })
 })
 

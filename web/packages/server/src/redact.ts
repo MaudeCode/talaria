@@ -1,6 +1,7 @@
 import { str } from './util.js'
 import { snapshotArgs, toolArgs, toolDisplay, toolName } from './sessions/tool-display.js'
 import { messageText } from './sessions/merge.js'
+import { stripAttachedFilesMarker } from './sessions/session.js'
 /**
  * Credential redaction and the public session projection (Python
  * `api/helpers.py`). API responses are a hard boundary: transcript-bearing
@@ -1762,10 +1763,13 @@ export function buildActiveTurnToken(streamId: unknown, pendingStartedAt: unknow
 const COLLAPSIBLE_USER_MESSAGE_LINES = 20
 const COLLAPSIBLE_USER_MESSAGE_CHARS = 2000
 
-/** Whether a public (redacted) row is a typed user message (no steer, wakeup or marker) longer than either limit. */
+/**
+ * Whether a public (redacted) row is a typed user message (no steer, wakeup or marker) longer than either limit, measured
+ * without the `[Attached files: ...]` line clients hide.
+ */
 function isCollapsibleUserMessage(item: Record<string, unknown>): boolean {
   if (item.role !== 'user' || item._steer !== undefined || item._background_update !== undefined || item._marker_kind !== undefined) return false
-  const text = messageText(item.content)
+  const text = stripAttachedFilesMarker(messageText(item.content))
   return text.length > COLLAPSIBLE_USER_MESSAGE_CHARS || text.split('\n').length > COLLAPSIBLE_USER_MESSAGE_LINES
 }
 
@@ -1779,7 +1783,9 @@ function publicMessageProjection(message: unknown, enabled: boolean, activeTurnT
     item[key] = redactValue(value, enabled)
   }
   if (isActive) item._active_turn_user = true
+  // Server-owned: a `_collapsible` the stored row carries never survives the projection's own decision.
   if (isCollapsibleUserMessage(item)) item._collapsible = true
+  else delete item._collapsible
   return withMessageToolDisplay(scrubbed as Record<string, unknown>, item, enabled)
 }
 
