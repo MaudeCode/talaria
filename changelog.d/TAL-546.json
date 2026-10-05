@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A finished session no longer sends its completion notification twice when another session's Live Activity update is briefly delayed.",
+      "highlight": false,
+      "components": ["relay"]
+    }
+  ]
+}

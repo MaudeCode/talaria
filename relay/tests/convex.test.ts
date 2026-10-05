@@ -2491,6 +2491,88 @@ describe("Convex relay state", () => {
     });
   });
 
+  it("does not re-alert a transition when a throttled activity recompute reruns", async () => {
+    const backend = testBackend();
+    const now = Date.now();
+    const sessionState = (sessionId: string, eventId: string, title: string, phase: "running" | "completed") => ({
+      version: 2 as const,
+      userId: "user-1",
+      profileId: "profile-1",
+      deleted: false,
+      publisherId: "https://hermes.example",
+      publisherLabel: "Home",
+      sessionId,
+      eventId,
+      revision: 2,
+      title,
+      phase,
+      updatedAt: now,
+      deepLink: `/sessions/${sessionId}`,
+      expiresAt: now + 15 * 60_000,
+      terminalExpiresAt: phase === "completed" ? now + 15 * 60_000 : undefined,
+      receivedAt: now,
+    });
+    await backend.run(async (ctx) => {
+      await ctx.db.insert("devices", {
+        userId: "user-1",
+        deviceId: "device-1",
+        label: "iPhone",
+        bundleId: "dev.kil.talaria",
+        apsEnvironment: "sandbox",
+        pushToken: "push-token",
+        preferences: { ...defaultNotificationPreferences, notificationsEnabled: true },
+        createdAt: now,
+        updatedAt: now,
+      });
+      await ctx.db.insert("sessionStates", sessionState("session-x", "event-x-2", "Heartbeat title", "running"));
+      await ctx.db.insert("sessionStates", sessionState("session-y", "event-y-2", "Finished", "completed"));
+      // Session X's activity was delivered 5 s ago, so X's heartbeat is throttled and reschedules a recompute.
+      await ctx.db.insert("liveActivities", {
+        userId: "user-1",
+        deviceId: "device-1",
+        activityId: "activity-x",
+        mode: "per_session",
+        publisherId: "https://hermes.example",
+        sessionId: "session-x",
+        attributesType: "TalariaAggregateActivityAttributes",
+        schemaVersion: 1,
+        activityPushToken: "activity-token",
+        lastAggregate: {
+          schemaVersion: 1,
+          activeCount: 1,
+          title: "Talaria",
+          subtitle: "Earlier title",
+          updatedAt: now - 5_000,
+          rows: [],
+        },
+        lastDeliveryAt: now - 5_000,
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+
+    await backend.mutation(internal.delivery.recompute, {
+      userId: "user-1",
+      transitions: [{ publisherId: "https://hermes.example", sessionId: "session-y", previousPhase: "running" }],
+    });
+    const notifications = async () => backend.run(async (ctx) =>
+      (await ctx.db.query("deliveryJobs").collect()).filter((job) => job.kind === "notification"),
+    );
+    const first = await notifications();
+    expect(first).toHaveLength(1);
+    expect(first[0]?.stateFingerprint).toBe("notification:event-y-2:device-1");
+    await backend.run(async (ctx) => ctx.db.patch(first[0]!._id, { status: "done", updatedAt: now }));
+
+    const rerun = await backend.run(async (ctx) =>
+      (await ctx.db.system.query("_scheduled_functions").collect())
+        .filter((job) => job.name === "delivery:recompute" && job.state.kind === "pending"),
+    );
+    expect(rerun).toHaveLength(1);
+    await backend.mutation(internal.delivery.recompute, rerun[0]!.args[0]);
+
+    expect(await notifications()).toHaveLength(1);
+  });
+
   it("leases a locally seeded activity for publisher reconciliation", async () => {
     const backend = testBackend();
     const now = Date.now();
