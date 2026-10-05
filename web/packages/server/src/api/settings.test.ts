@@ -433,6 +433,50 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     }
   })
 
+  it('a pooled provider lists one source per account; DeepSeek and OpenCode Go balances load (TAL-548)', async () => {
+    const envFile = join(s.state, '.env')
+    writeEnvFile(envFile, { DEEPSEEK_API_KEY: 'sk-synthetic-deepseek', OPENCODE_GO_API_KEY: 'sk-synthetic-opencode', GLM_API_KEY: 'sk-synthetic-zai' })
+    s.deps.catalog.invalidate()
+    const resetAt = (hours: number): string => new Date(Date.now() + hours * 3_600_000).toISOString().replace(/\.\d{3}Z$/, 'Z')
+    const pools: Record<string, SidecarResult<'usage.pool'>['entries']> = {
+      zai: [
+        { credential_id: 'zai-work', label: 'Work', status: 'available', unavailable_reason: null, retry_after: null },
+        { credential_id: 'zai-home', label: 'Home', status: 'exhausted', unavailable_reason: 'Credential pool marked this credential exhausted after provider status 429.', retry_after: resetAt(1) },
+      ],
+      'opencode-go': [{ credential_id: 'oc-1', label: 'OPENCODE_GO_API_KEY', status: 'available', unavailable_reason: null, retry_after: null }],
+    }
+    const empty = { status: 'ok' as const, http_status: null, quota: null, label: null, is_available: null, balances: [], windows: [], matches_api_key: false }
+    sidecar.respond('usage.pool', (params) => ({ entries: pools[params.provider] ?? [] }))
+    sidecar.respond('usage.balance', (params) => params.provider === 'deepseek'
+      ? { ...empty, is_available: true, balances: [{ currency: 'USD' as const, total: 12.5, granted: 2.5, topped_up: 10 }] }
+      : { ...empty, windows: [{ key: 'rolling' as const, used_percent: 40, reset_at: resetAt(2), rate_limited: false }, { key: 'weekly' as const, used_percent: 10, reset_at: resetAt(100), rate_limited: false }, { key: 'monthly' as const, used_percent: 5, reset_at: resetAt(400), rate_limited: true }] })
+    try {
+      const body = await json(await s.get('/api/provider/quotas'))
+      const sources = body.sources as { source_id: string; provider_id: string; account_label: string; status: string; retry_after: unknown; windows: { label: string; used_percent: number; window_seconds: number | null; detail: string | null }[] }[]
+      const sourceId = (pid: string, credential: string): string => `qsrc_${createHash('sha256').update(`${String(body.scope_id)}\0${pid}\0${credential}`).digest('hex').slice(0, 32)}`
+      // One source per pool account, each with its own stable id, label, and local pool state.
+      const zai = sources.filter((q) => q.provider_id === 'zai')
+      expect(zai.map((q) => [q.source_id, q.account_label, q.status])).toEqual([[sourceId('zai', 'zai-home'), 'Home', 'exhausted'], [sourceId('zai', 'zai-work'), 'Work', 'available']])
+      expect(zai[0]?.retry_after).toBe(pools.zai?.[1]?.retry_after)
+      // DeepSeek has no pool, so its single source reads the configured key's balance.
+      expect(sources.find((q) => q.provider_id === 'deepseek')).toMatchObject({ source_id: sourceId('deepseek', 'provider'), status: 'available', message: 'DeepSeek balance loaded.', balances: [{ currency: 'USD', total: 12.5, granted: 2.5, topped_up: 10 }] })
+      // OpenCode Go's pool account reads its own usage windows.
+      const opencode = sources.find((q) => q.provider_id === 'opencode-go')
+      expect(opencode).toMatchObject({ source_id: sourceId('opencode-go', 'oc-1'), account_label: 'OPENCODE_GO_API_KEY', status: 'available' })
+      expect(opencode?.windows.map((w) => [w.label, w.used_percent, w.window_seconds, w.detail])).toEqual([['5-hour', 40, 18_000, null], ['Weekly', 10, 604_800, null], ['Monthly', 5, null, 'Rate limited']])
+      const balanceCalls = sidecar.calls.filter((c) => c.method === 'usage.balance').map((c) => c.params as Json)
+      expect(balanceCalls).toEqual(expect.arrayContaining([expect.objectContaining({ provider: 'deepseek', api_key: 'sk-synthetic-deepseek' }), expect.objectContaining({ provider: 'opencode-go', credential_id: 'oc-1' })]))
+      expect(balanceCalls.find((c) => c.provider === 'opencode-go')).not.toHaveProperty('api_key')
+      // A widget's persisted pool-account id resolves to that one account.
+      const one = await json(await s.get(`/api/provider/quotas?source=${sourceId('zai', 'zai-work')}`))
+      expect(one).toMatchObject({ missing_source: false, sources: [{ account_label: 'Work', status: 'available' }] })
+    } finally {
+      sidecar.respond('usage.pool', () => ({ entries: [] }))
+      writeEnvFile(envFile, { DEEPSEEK_API_KEY: null, OPENCODE_GO_API_KEY: null, GLM_API_KEY: null })
+      s.deps.catalog.invalidate()
+    }
+  })
+
   it('uniqueQuotaSources keeps the first row per source id and distinct ids of one provider (TAL-272)', () => {
     const row = (source_id: string, provider_id: string, account_label: string, n = 0) => ({ source_id, provider_id, account_label, n })
     expect(uniqueQuotaSources([row('qsrc_c', 'openai-codex', 'Work'), row('qsrc_z', 'anthropic', 'Claude'), row('qsrc_c', 'openai-codex', 'Work', 1), row('qsrc_b', 'openai-codex', 'Personal'), row('qsrc_a', 'openai-codex', 'Work')]))
@@ -990,12 +1034,14 @@ describe('OpenRouter cost history accrues on quota reads and ships server-comput
     writeEnvFile(join(s.state, '.env'), { OPENROUTER_API_KEY: 'sk-or-synthetic-cost-history-1234' })
     sidecar.respond('providers.model_ids', (params) => ({ provider: params.provider, model_ids: [] }))
     sidecar.respond('providers.auth_status', (params) => ({ status: { logged_in: false, provider: params.provider ?? '', error: 'not logged in' } }))
-    const real = s.deps.fetch
-    s.deps.fetch = (input, init) => {
-      if (String(input instanceof Request ? input.url : input) !== 'https://openrouter.ai/api/v1/key') return real(input, init)
-      return Promise.resolve(keyAvailable ? Response.json({ data: { usage, limit: 100, limit_remaining: 50, label: 'synthetic' } }) : new Response('down', { status: 503 }))
-    }
+    // The sidecar reads OpenRouter's key endpoint (TAL-548); a pool account's key matches the configured one when `matches`.
+    sidecar.respond('usage.balance', (params) => ({
+      status: keyAvailable ? 'ok' : 'http_error', http_status: keyAvailable ? null : 503, quota: keyAvailable ? { usage, limit: 100, limit_remaining: 50 } : null, label: keyAvailable ? 'synthetic' : null,
+      is_available: null, balances: [], windows: [], matches_api_key: Boolean(params.credential_id && params.api_key && pool[0]?.matches),
+    }))
+    sidecar.respond('usage.pool', (params) => ({ entries: params.provider === 'openrouter' ? pool.map((e) => ({ ...e, matches: undefined })) : [] }))
   })
+  let pool: (SidecarResult<'usage.pool'>['entries'][number] & { matches: boolean })[] = []
   afterAll(() => s.close())
 
   it('a quota read records today\'s snapshot, so cost history shows it without being called first', async () => {
@@ -1014,6 +1060,23 @@ describe('OpenRouter cost history accrues on quota reads and ships server-comput
       expect(await history()).toMatchObject({ status: 'unavailable', snapshots: [{ date: '2026-09-27', used: 1.5, delta: null, bar_percent: 0 }, { date: '2026-09-28', used: 3, delta: 1.5, bar_percent: 100 }], monthly_pace: 45, has_enough_data: true })
     } finally {
       keyAvailable = true
+    }
+  })
+
+  it('a pooled OpenRouter account records the cost snapshot only when it is the configured key (TAL-548)', async () => {
+    const account = { credential_id: 'or-1', label: 'OPENROUTER_API_KEY', status: 'available' as const, unavailable_reason: null, retry_after: null }
+    try {
+      for (const matches of [false, true]) {
+        rmSync(snapshotFile, { force: true })
+        pool = [{ ...account, matches }]
+        usage = 4
+        const sources = (await json(await s.get('/api/provider/quotas'))).sources as Json[]
+        expect(sources.filter((q) => q.provider_id === 'openrouter')).toEqual([expect.objectContaining({ account_label: 'OPENROUTER_API_KEY', status: 'available', quota: { usage: 4, limit: 100, limit_remaining: 50 } })])
+        expect(existsSync(snapshotFile)).toBe(matches)
+      }
+    } finally {
+      pool = []
+      usage = 2.52
     }
   })
 

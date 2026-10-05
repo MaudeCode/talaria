@@ -3760,6 +3760,216 @@
     ],
     "additionalProperties": false
   },
+  "usage.pool": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "entries": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "credential_id": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "available",
+                "exhausted",
+                "dead"
+              ]
+            },
+            "unavailable_reason": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "retry_after": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "credential_id",
+            "label",
+            "status",
+            "unavailable_reason",
+            "retry_after"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": [
+      "entries"
+    ],
+    "additionalProperties": false
+  },
+  "usage.balance": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "status": {
+        "type": "string",
+        "enum": [
+          "ok",
+          "no_key",
+          "http_error",
+          "unavailable"
+        ]
+      },
+      "http_status": {
+        "anyOf": [
+          {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "quota": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "limit_remaining": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "usage": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "limit": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "limit_remaining",
+              "usage",
+              "limit"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "label": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "is_available": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "balances": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "currency": {
+              "type": "string",
+              "enum": [
+                "CNY",
+                "USD"
+              ]
+            },
+            "total": {
+              "type": "number"
+            },
+            "granted": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "topped_up": {
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "currency",
+            "total",
+            "granted",
+            "topped_up"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "windows": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "key": {
+              "type": "string",
+              "enum": [
+                "rolling",
+                "weekly",
+                "monthly"
+              ]
+            },
+            "used_percent": {
+              "type": "number"
+            },
+            "reset_at": {
+              "type": "string"
+            },
+            "rate_limited": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "key",
+            "used_percent",
+            "reset_at",
+            "rate_limited"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "matches_api_key": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "status",
+      "http_status",
+      "quota",
+      "label",
+      "is_available",
+      "balances",
+      "windows",
+      "matches_api_key"
+    ],
+    "additionalProperties": false
+  },
   "gateway.restart": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
