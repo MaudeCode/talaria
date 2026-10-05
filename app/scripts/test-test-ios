@@ -39,6 +39,10 @@ cat > "$repo/scripts/assert-no-skipped-ui-tests" <<'EOF'
 #!/bin/zsh
 exit 0
 EOF
+cat > "$repo/scripts/seed-simulator-photo" <<'EOF'
+#!/bin/zsh
+exit 0
+EOF
 cat > "$repo/.xcodebuildmcp/config.yaml" <<'EOF'
 defaults:
   simulatorName: "iPhone 17"
@@ -123,7 +127,7 @@ print -r -- "$(( active - 1 ))" > "$state/active"
 rmdir "$lock"
 exit "$exit_status"
 EOF
-chmod +x "$repo/scripts/assert-no-skipped-ui-tests" "$fake_bin/xcrun" "$fake_bin/xcodebuild"
+chmod +x "$repo/scripts/assert-no-skipped-ui-tests" "$repo/scripts/seed-simulator-photo" "$fake_bin/xcrun" "$fake_bin/xcodebuild"
 
 cat > "$state/pool-devices" <<'EOF'
 {"devices":{"com.apple.CoreSimulator.SimRuntime.iOS-27-0":[{"name":"iOS Test 1","udid":"AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA","state":"Shutdown"},{"name":"iOS Test 2","udid":"BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB","state":"Shutdown"}]}}

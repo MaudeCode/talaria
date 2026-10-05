@@ -806,6 +806,34 @@ final class ChatComposerUITests: ChatUITestCase {
     }
 }
 
+/// TAL-633: a photo picked from the composer's Photos menu attaches. The picker used to hang off the
+/// `+` button, which the composer replaces when the picker expands it, so the pick was lost.
+/// `scripts/seed-simulator-photo` puts a photo in the library before the run.
+final class ComposerPhotoPickerUITests: ChatUITestCase {
+    func testPhotoPickedFromPhotosAttachesToTheComposer() throws {
+        launchFixture()
+        _ = try openFixtureSession()
+
+        let options = app.buttons["Composer options"]
+        XCTAssertTrue(options.awaitExistence(timeout: 5))
+        options.tap()
+        let photos = app.buttons["Photos"]
+        XCTAssertTrue(photos.awaitExistence(timeout: 5))
+        photos.tap()
+
+        // The picker loads out of process; its cells are labelled "Photo, <date>".
+        let photo = app.images.matching(NSPredicate(format: "label BEGINSWITH[c] %@", "Photo")).firstMatch
+        XCTAssertTrue(photo.awaitExistence(timeout: 20), "The Photos picker showed no photo")
+        photo.tap()
+        let done = app.buttons["Done"]
+        XCTAssertTrue(done.awaitExistence(timeout: 5), "The Photos picker offered no Done")
+        done.tap()
+
+        let remove = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Remove attachment")).firstMatch
+        XCTAssertTrue(remove.awaitExistence(timeout: 15), "The picked photo never attached to the composer")
+    }
+}
+
 /// TAL-444: a wide window keeps the transcript and the composer in one centred reading column of
 /// at most 800 pt, while the transcript itself still scrolls edge to edge. On an iPad in landscape
 /// the cap engages; a window already narrower than the column passes the same bounds untouched.

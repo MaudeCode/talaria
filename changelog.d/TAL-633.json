@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Photos chosen from the composer's Photos menu now attach to your message instead of disappearing.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}
