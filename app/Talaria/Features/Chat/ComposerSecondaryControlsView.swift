@@ -5,6 +5,9 @@ import TalariaKit
 /// Web's `.composer-strip` measurements (TAL-629).
 enum ComposerControlStrip {
     static let cornerRadius: CGFloat = 12
+    /// Tall enough that each control's 44 pt hit area sits wholly inside the strip and below it,
+    /// clear of the card above, which would otherwise take taps on its top edge.
+    static let verticalPadding: CGFloat = 10
     /// Width cap for every control but the model; wider controls scroll.
     static let titleMaxWidth: CGFloat = 180
 
@@ -43,7 +46,7 @@ struct ComposerSecondaryControlsView<Leading: View>: View {
                     HStack(spacing: 12) { selectorRow }
                 }
                 .padding(.horizontal, 10)
-                .padding(.vertical, 7)
+                .padding(.vertical, ComposerControlStrip.verticalPadding)
                 .frame(maxWidth: .infinity, alignment: .leading)
             } else {
                 ComposerStripScrollRow(accessibilityIdentifier: "composer-control-strip") {
@@ -55,7 +58,7 @@ struct ComposerSecondaryControlsView<Leading: View>: View {
                         selectorRow
                     }
                     .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
+                    .padding(.vertical, ComposerControlStrip.verticalPadding)
                 }
             }
         }
