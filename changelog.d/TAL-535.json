@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A manual cron run whose process crashes now fails right away instead of showing as running for hours and blocking Run now.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

@@ -252,13 +252,17 @@ def _run_in_child(job, execution_home, ctx: CallContext):
                     process.join(timeout=5)
                     status, payload = "cancelled", ["cancelled", ""]
                     break
-                if time.monotonic() >= deadline:
-                    if process.is_alive():
-                        process.terminate()
-                        process.join(timeout=5)
-                        payload = [f"cron run subprocess produced no result within {_result_timeout(job):g}s and was terminated", ""]
-                    else:
+                if not process.is_alive():
+                    # The child may have put its result just before exiting; otherwise it died (OOM, signal) without one.
+                    try:
+                        status, *payload = result_queue.get_nowait()
+                    except queue.Empty:
                         payload = [f"cron run subprocess exited with code {process.exitcode} without producing a result", ""]
+                    break
+                if time.monotonic() >= deadline:
+                    process.terminate()
+                    process.join(timeout=5)
+                    payload = [f"cron run subprocess produced no result within {_result_timeout(job):g}s and was terminated", ""]
                     break
         process.join(timeout=5)
         if process.is_alive():
