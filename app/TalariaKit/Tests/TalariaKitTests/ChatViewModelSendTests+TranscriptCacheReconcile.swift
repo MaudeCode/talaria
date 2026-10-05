@@ -835,7 +835,7 @@ extension ChatViewModelSendTests {
           }
         }
         """)
-        await drainMainActor()
+        try await waitUntil { viewModel.messageSendWaiterCount == 1 }
         XCTAssertEqual(viewModel.messages.compactMap(\.content), ["Pending question"])
 
         requests.request(at: 1).complete(withJSON: """
@@ -853,8 +853,85 @@ extension ChatViewModelSendTests {
 
     @MainActor
     func testNewestReloadWinsWhenTwoLoadsWaitForTheSameChatStart() async throws {
+        let (viewModel, requests, sendTask) = try await startTwoReloadsAndPendingSend(host: "tal116-newest-load.test")
+
+        requests.request(at: 0).complete(withJSON: Self.olderReloadJSON)
+        try await waitUntil { viewModel.messageSendWaiterCount == 1 }
+        requests.request(at: 1).complete(withJSON: Self.newestReloadJSON)
+        try await waitUntil { viewModel.messageSendWaiterCount == 2 }
+        requests.request(at: 2).complete(withJSON: Self.pendingChatStartJSON)
+
+        try await assertNewestReloadWon(viewModel, sendTask: sendTask)
+    }
+
+    @MainActor
+    func testNewestReloadWinsWhenItsResponseArrivesFirst() async throws {
+        let (viewModel, requests, sendTask) = try await startTwoReloadsAndPendingSend(host: "tal400-newest-first.test")
+
+        requests.request(at: 1).complete(withJSON: Self.newestReloadJSON)
+        try await waitUntil { viewModel.messageSendWaiterCount == 1 }
+        requests.request(at: 0).complete(withJSON: Self.olderReloadJSON)
+        try await waitUntil { viewModel.messageSendWaiterCount == 2 }
+        requests.request(at: 2).complete(withJSON: Self.pendingChatStartJSON)
+
+        try await assertNewestReloadWon(viewModel, sendTask: sendTask)
+    }
+
+    /// TAL-400: the newest reload's response lands after the chat start, so the run supersedes it.
+    /// The older reload parked on the send must not apply its staler transcript afterwards.
+    @MainActor
+    func testOlderReloadDoesNotApplyAfterNewestReloadIsSupersededByTheStartedRun() async throws {
+        let (viewModel, requests, sendTask) = try await startTwoReloadsAndPendingSend(host: "tal400-newest-late.test")
+
+        requests.request(at: 0).complete(withJSON: Self.olderReloadJSON)
+        try await waitUntil { viewModel.messageSendWaiterCount == 1 }
+        requests.request(at: 2).complete(withJSON: Self.pendingChatStartJSON)
+        let didStart = await sendTask.value
+        XCTAssertTrue(didStart)
+        requests.request(at: 1).complete(withJSON: Self.newestReloadJSON)
+        try await waitUntil { !viewModel.isLoading }
+
+        XCTAssertEqual(viewModel.messages.compactMap(\.content), ["Pending question"])
+        XCTAssertEqual(viewModel.activeStreamID, "stream-123")
+    }
+
+    private static let olderReloadJSON = """
+    {
+      "session": {
+        "session_id": "session-abc",
+        "messages": [
+          {"role": "user", "content": "Older question", "timestamp": 1, "message_id": "old-user"},
+          {"role": "assistant", "content": "Older response", "timestamp": 2, "message_id": "old-assistant"}
+        ]
+      }
+    }
+    """
+
+    private static let newestReloadJSON = """
+    {
+      "session": {
+        "session_id": "session-abc",
+        "messages": [
+          {"role": "user", "content": "Newest question", "timestamp": 3, "message_id": "new-user"},
+          {"role": "assistant", "content": "Newest response", "timestamp": 4, "message_id": "new-assistant"}
+        ]
+      }
+    }
+    """
+
+    private static let pendingChatStartJSON = """
+    {
+      "session_id": "session-abc",
+      "stream_id": "stream-123"
+    }
+    """
+
+    /// Starts two reloads, then a send, and returns once all three requests are in flight:
+    /// request 0 is the older `/api/session`, request 1 the newer one, request 2 `/api/chat/start`.
+    private func startTwoReloadsAndPendingSend(
+        host: String
+    ) async throws -> (ChatViewModel, DeferredRequests, Task<Bool, Never>) {
         let requests = DeferredRequests()
-        let host = "tal116-newest-load.test"
         let firstSessionRequestStarted = expectation(description: "first session request started")
         let secondSessionRequestStarted = expectation(description: "second session request started")
         let chatStartRequestStarted = expectation(description: "chat start request started")
@@ -869,7 +946,7 @@ extension ChatViewModelSendTests {
                 XCTFail("Unexpected request path: \(request.request.url?.path ?? "nil")")
             }
         }, forHost: host)
-        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+        addTeardownBlock { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
 
         let viewModel = try makeViewModel(
             server: URL(string: "https://\(host)")!,
@@ -878,11 +955,11 @@ extension ChatViewModelSendTests {
             XCTFail("Synchronous handler should not receive \(request.url?.path ?? "nil")")
             throw URLError(.badURL)
         }
-        let firstLoadTask = Task { @MainActor in
+        Task { @MainActor in
             await viewModel.loadMessages()
         }
         await fulfillment(of: [firstSessionRequestStarted], timeout: 10)
-        let secondLoadTask = Task { @MainActor in
+        Task { @MainActor in
             await viewModel.loadMessages()
         }
         await fulfillment(of: [secondSessionRequestStarted], timeout: 10)
@@ -890,42 +967,14 @@ extension ChatViewModelSendTests {
             await viewModel.sendMessage("Pending question")
         }
         await fulfillment(of: [chatStartRequestStarted], timeout: 10)
+        return (viewModel, requests, sendTask)
+    }
 
-        requests.request(at: 0).complete(withJSON: """
-        {
-          "session": {
-            "session_id": "session-abc",
-            "messages": [
-              {"role": "user", "content": "Older question", "timestamp": 1, "message_id": "old-user"},
-              {"role": "assistant", "content": "Older response", "timestamp": 2, "message_id": "old-assistant"}
-            ]
-          }
-        }
-        """)
-        await drainMainActor()
-        requests.request(at: 1).complete(withJSON: """
-        {
-          "session": {
-            "session_id": "session-abc",
-            "messages": [
-              {"role": "user", "content": "Newest question", "timestamp": 3, "message_id": "new-user"},
-              {"role": "assistant", "content": "Newest response", "timestamp": 4, "message_id": "new-assistant"}
-            ]
-          }
-        }
-        """)
-        await drainMainActor()
-        requests.request(at: 2).complete(withJSON: """
-        {
-          "session_id": "session-abc",
-          "stream_id": "stream-123"
-        }
-        """)
-
+    @MainActor
+    private func assertNewestReloadWon(_ viewModel: ChatViewModel, sendTask: Task<Bool, Never>) async throws {
         let didStart = await sendTask.value
         XCTAssertTrue(didStart)
-        await firstLoadTask.value
-        await secondLoadTask.value
+        try await waitUntil { !viewModel.isLoading }
 
         XCTAssertEqual(
             viewModel.messages.compactMap(\.content),

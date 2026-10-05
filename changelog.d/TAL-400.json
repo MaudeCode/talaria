@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Reloading a chat twice while sending a message no longer brings back an older version of the transcript.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}
