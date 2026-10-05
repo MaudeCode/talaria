@@ -4,7 +4,6 @@ import UIKit
 struct ComposerWorkspaceSelectorButton: View {
     let title: String
     let isDisabled: Bool
-    let lineLimit: Int
     let verticalPadding: CGFloat
     let horizontalPadding: CGFloat
     let color: Color
@@ -17,7 +16,6 @@ struct ComposerWorkspaceSelectorButton: View {
             ComposerSecondaryBarLabel(
                 title: title,
                 systemImage: "folder",
-                lineLimit: lineLimit,
                 verticalPadding: verticalPadding,
                 horizontalPadding: horizontalPadding,
                 color: color,
@@ -28,5 +26,6 @@ struct ComposerWorkspaceSelectorButton: View {
         .buttonStyle(.chatTactile(.capsule))
         .disabled(isDisabled)
         .accessibilityLabel("Choose workspace path")
+        .accessibilityValue(title)
     }
 }

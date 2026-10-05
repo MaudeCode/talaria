@@ -35,6 +35,7 @@ struct ComposerModelMenu: View {
         .tint(color)
         .disabled(isDisabled)
         .accessibilityLabel("Select model")
+        .accessibilityValue(selectedModelTitle)
     }
 
     private func makeModelMenu() -> UIMenu {

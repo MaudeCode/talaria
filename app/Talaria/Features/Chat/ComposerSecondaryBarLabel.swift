@@ -4,7 +4,6 @@ import UIKit
 struct ComposerSecondaryBarLabel: View {
     let title: String
     let systemImage: String
-    let lineLimit: Int
     let verticalPadding: CGFloat
     let horizontalPadding: CGFloat
     let color: Color
@@ -12,15 +11,14 @@ struct ComposerSecondaryBarLabel: View {
     let chevronFont: Font
 
     var body: some View {
-        HStack(spacing: 6) {
+        ComposerChipContent(
+            title: title,
+            spacing: 6,
+            font: controlFont
+        ) {
             Image(systemName: systemImage)
                 .font(controlFont)
-
-            Text(title)
-                .lineLimit(lineLimit)
-                .truncationMode(.middle)
-                .font(controlFont)
-
+        } trailing: {
             Image(systemName: "chevron.down")
                 .font(chevronFont)
         }

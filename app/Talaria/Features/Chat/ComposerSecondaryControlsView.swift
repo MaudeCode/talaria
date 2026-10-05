@@ -26,7 +26,12 @@ struct ComposerSecondaryControlsView: View {
                 }
             } else {
                 HStack(spacing: 8) {
-                    selectorRow
+                    // The chips share the row ahead of the spacer, so width a collapsed chip
+                    // leaves (TAL-484) goes to the next chip's title.
+                    HStack(spacing: 8) {
+                        selectorRow
+                    }
+                    .layoutPriority(1)
                     Spacer(minLength: 0)
 
                     if state.showsContextUsage {
@@ -44,7 +49,6 @@ struct ComposerSecondaryControlsView: View {
             ComposerWorkspaceSelectorButton(
                 title: workspaceTitle,
                 isDisabled: state.isDisabled,
-                lineLimit: lineLimit,
                 verticalPadding: verticalPadding,
                 horizontalPadding: horizontalPadding,
                 color: .secondary,
@@ -60,7 +64,6 @@ struct ComposerSecondaryControlsView: View {
                 selectedProfileName: state.selectedProfileName,
                 selectedProfileTitle: selectedProfileTitle,
                 isDisabled: state.isDisabled,
-                lineLimit: lineLimit,
                 verticalPadding: verticalPadding,
                 horizontalPadding: horizontalPadding,
                 color: .secondary,
@@ -84,7 +87,6 @@ struct ComposerSecondaryControlsView: View {
         }
     }
 
-    private var lineLimit: Int { dynamicTypeSize.isAccessibilitySize ? 2 : 1 }
     private var verticalPadding: CGFloat { dynamicTypeSize.isAccessibilitySize ? 10 : 8 }
     private var horizontalPadding: CGFloat { dynamicTypeSize.isAccessibilitySize ? 16 : 14 }
 }

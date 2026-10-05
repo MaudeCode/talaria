@@ -7,7 +7,6 @@ struct ComposerProfileSelectorMenu: View {
     let selectedProfileName: String?
     let selectedProfileTitle: String
     let isDisabled: Bool
-    let lineLimit: Int
     let verticalPadding: CGFloat
     let horizontalPadding: CGFloat
     let color: Color
@@ -38,7 +37,6 @@ struct ComposerProfileSelectorMenu: View {
             ComposerSecondaryBarLabel(
                 title: selectedProfileTitle,
                 systemImage: "person.crop.circle",
-                lineLimit: lineLimit,
                 verticalPadding: verticalPadding,
                 horizontalPadding: horizontalPadding,
                 color: color,
@@ -50,5 +48,6 @@ struct ComposerProfileSelectorMenu: View {
         .tint(color)
         .disabled(isDisabled)
         .accessibilityLabel("Choose profile")
+        .accessibilityValue(selectedProfileTitle)
     }
 }
