@@ -8,6 +8,7 @@ export const keys = {
   models: ['models'] as const,
   providers: ['providers'] as const,
   providerQuotas: ['providers', 'quotas'] as const,
+  providerCostHistory: ['providers', 'cost-history', 'openrouter'] as const,
   personalities: ['personalities'] as const,
   auxiliaryModels: ['models', 'auxiliary'] as const,
   sessions: {

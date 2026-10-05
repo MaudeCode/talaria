@@ -138,6 +138,36 @@ const PLUGIN_SETUP_ERRORS: Record<Exclude<PluginProvider['setup'], 'ready'>, str
 const PLUGIN_NO_MODELS = 'This provider listed no models.'
 const COST_SNAPSHOT_MAX_DAYS = 365
 
+interface CostSnapshot { date: string; used: number | null; limit: number | null }
+
+/**
+ * The last `days` daily snapshots with their spend deltas, bar heights, monthly pace, and budget standing (the legacy
+ * Web chart's formulas). A drop in `used` is a credit reset, so that day's delta is its `used`.
+ */
+function costHistoryView(rows: CostSnapshot[], days: number, budget: number | null): Dict {
+  const window = rows.slice(-days)
+  const deltas = window.map((e, i) => {
+    const prev = window[i - 1]
+    if (i === 0 || e.used === null || prev?.used === null || prev?.used === undefined) return null
+    const delta = e.used - prev.used < 0 ? e.used : e.used - prev.used
+    return Math.abs(delta) < 1e-9 ? 0 : Math.round(delta * 1e6) / 1e6
+  })
+  const known = deltas.filter((d): d is number => d !== null)
+  const maxDelta = Math.max(...deltas.map((d) => d ?? 0), 1e-9)
+  const pace = known.length ? (known.reduce((a, b) => a + b, 0) / known.length) * 30 : null
+  const budgetPercent = pace !== null && pace > 0 && budget !== null && budget > 0 ? Math.round((pace / budget) * 100) : null
+  return {
+    snapshots: window.map((e, i) => {
+      const delta = deltas[i] ?? null
+      return { date: e.date, used: e.used, delta, bar_percent: delta === null ? 0 : Number(Math.max((delta / maxDelta) * 100, delta > 0 ? 2 : 0).toFixed(1)) }
+    }),
+    monthly_pace: pace === null ? null : Math.round(pace * 100) / 100,
+    has_enough_data: known.length > 0,
+    budget_percent: budgetPercent,
+    budget_level: budgetPercent === null ? null : budgetPercent >= 100 ? 'over' : budgetPercent >= 80 ? 'warn' : 'ok',
+  }
+}
+
 const FIVE_HOUR_WINDOW_S = 18_000
 const WEEK_WINDOW_S = 604_800
 
@@ -860,7 +890,10 @@ export class ProviderCatalog {
       const apiKey = this.apiKeyFor('openrouter', profileHome, config)
       if (!apiKey) return { computed_at, ok: false, provider, display_name: name, supported: true, status: 'no_key', quota: null, message: 'OpenRouter quota status needs an OPENROUTER_API_KEY configured on the server.' }
       const info = await this.fetchOpenRouterKey(apiKey)
-      if (info.kind === 'ok') return { computed_at, ok: true, provider, display_name: name, supported: true, status: 'available', label: 'OpenRouter credits', quota: info.quota, message: 'OpenRouter quota status loaded.' }
+      if (info.kind === 'ok') {
+        this.recordCostSnapshot(profileHome, info.quota, at)
+        return { computed_at, ok: true, provider, display_name: name, supported: true, status: 'available', label: 'OpenRouter credits', quota: info.quota, message: 'OpenRouter quota status loaded.' }
+      }
       const status = info.kind === 'invalid_key' ? 'invalid_key' : 'unavailable'
       return { computed_at, ok: false, provider, display_name: name, supported: true, status, quota: null, message: status === 'invalid_key' ? 'OpenRouter rejected the configured API key.' : 'OpenRouter quota status is temporarily unavailable.' }
     }
@@ -947,47 +980,40 @@ export class ProviderCatalog {
     const config = await this.deps.config.read(profileHome)
     const apiKey = this.apiKeyFor('openrouter', profileHome, config)
     if (!apiKey) return { ok: false, provider, display_name: name, supported: true, status: 'no_key', monthly_budget: budget, message: 'OpenRouter cost history needs an OPENROUTER_API_KEY configured on the server.' }
-    const file = join(profileHome, 'cost-snapshots', 'openrouter.json')
-    const read = (): { date: string; used: number | null; limit: number | null }[] => {
-      try {
-        const data = JSON.parse(readFileSync(file, 'utf8')) as { snapshots?: unknown }
-        return (Array.isArray(data.snapshots) ? data.snapshots : []).filter(isDict).map((e) => ({ date: str(e.date).trim(), used: typeof e.used === 'number' ? e.used : null, limit: typeof e.limit === 'number' ? e.limit : null })).filter((e) => e.date).sort((a, b) => (a.date < b.date ? -1 : 1))
-      } catch {
-        return []
-      }
-    }
-    const deltas = (rows: ReturnType<typeof read>): Dict[] => {
-      const window = rows.slice(-days)
-      return window.map((e, i) => {
-        let delta: number | null = null
-        const prev = window[i - 1]
-        if (i > 0 && e.used !== null && prev?.used !== null && prev?.used !== undefined) {
-          delta = e.used - prev.used
-          if (delta < 0) delta = e.used
-          delta = Math.abs(delta) < 1e-9 ? 0 : Math.round(delta * 1e6) / 1e6
-        }
-        return { date: e.date, used: e.used, delta }
-      })
-    }
     const info = await this.fetchOpenRouterKey(apiKey)
     if (info.kind !== 'ok') {
-      return { ok: false, provider, display_name: name, supported: true, status: 'unavailable', window_days: days, snapshots: deltas(read()), limit: null, label: null, monthly_budget: budget, message: 'OpenRouter cost history is temporarily unavailable. Showing last known data.' }
+      return { ok: false, provider, display_name: name, supported: true, status: 'unavailable', window_days: days, ...costHistoryView(this.readCostSnapshots(profileHome), days, budget), limit: null, label: null, monthly_budget: budget, message: 'OpenRouter cost history is temporarily unavailable. Showing last known data.' }
     }
-    let snapshots = read()
+    const snapshots = this.recordCostSnapshot(profileHome, info.quota, this.deps.now())
+    return { ok: true, provider, display_name: name, supported: true, status: 'available', window_days: days, ...costHistoryView(snapshots, days, budget), limit: info.quota.limit, label: info.label ?? 'OpenRouter credits', monthly_budget: budget, message: 'OpenRouter cost history loaded.' }
+  }
+
+  private readCostSnapshots(profileHome: string): CostSnapshot[] {
     try {
-      const today = new Date().toISOString().slice(0, 10)
-      const usage = info.quota.usage as number | null
-      const limit = info.quota.limit as number | null
+      const data = JSON.parse(readFileSync(join(profileHome, 'cost-snapshots', 'openrouter.json'), 'utf8')) as { snapshots?: unknown }
+      return (Array.isArray(data.snapshots) ? data.snapshots : []).filter(isDict).map((e) => ({ date: str(e.date).trim(), used: typeof e.used === 'number' ? e.used : null, limit: typeof e.limit === 'number' ? e.limit : null })).filter((e) => e.date).sort((a, b) => (a.date < b.date ? -1 : 1))
+    } catch {
+      return []
+    }
+  }
+
+  /** Writes or updates the UTC day's OpenRouter usage snapshot; every successful key read (quota or cost history) records one. */
+  private recordCostSnapshot(profileHome: string, quota: Dict, at: number): CostSnapshot[] {
+    let snapshots = this.readCostSnapshots(profileHome)
+    try {
+      const today = isoAt(at).slice(0, 10)
+      const used = finite(quota.usage)
+      const limit = finite(quota.limit)
       const existing = snapshots.find((e) => e.date === today)
-      if (existing) { existing.used = usage; existing.limit = limit } else snapshots.push({ date: today, used: usage, limit })
+      if (existing) { existing.used = used; existing.limit = limit } else snapshots.push({ date: today, used, limit })
       snapshots.sort((a, b) => (a.date < b.date ? -1 : 1))
       if (snapshots.length > COST_SNAPSHOT_MAX_DAYS) snapshots = snapshots.slice(-COST_SNAPSHOT_MAX_DAYS)
       mkdirSync(join(profileHome, 'cost-snapshots'), { recursive: true })
-      atomicWriteText(file, JSON.stringify({ provider, snapshots }, null, 2))
+      atomicWriteText(join(profileHome, 'cost-snapshots', 'openrouter.json'), JSON.stringify({ provider: 'openrouter', snapshots }, null, 2))
+      return snapshots
     } catch {
-      snapshots = read()
+      return this.readCostSnapshots(profileHome)
     }
-    return { ok: true, provider, display_name: name, supported: true, status: 'available', window_days: days, snapshots: deltas(snapshots), limit: info.quota.limit, label: info.label ?? 'OpenRouter credits', monthly_budget: budget, message: 'OpenRouter cost history loaded.' }
   }
 }
 

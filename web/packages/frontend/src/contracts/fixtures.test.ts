@@ -51,6 +51,7 @@ const SCHEMAS: Record<string, ZodType> = {
   notes_sources: C.NotesSourcesSchema,
   model_auxiliary: C.AuxiliaryModelsSchema,
   provider_quotas: C.ProviderQuotasSchema,
+  provider_cost_history: C.ProviderCostHistorySchema,
   draft_set: C.DraftResponseSchema,
   goal_status: C.GoalResponseSchema,
   background_status: C.BackgroundStatusSchema,

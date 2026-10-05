@@ -12,6 +12,7 @@ import { ErrorState, LoadingState } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { cn } from '../../ui/cn'
 import { useSettingField } from './useSettingField'
+import { OpenRouterCost } from './OpenRouterCost'
 
 const setProviderKey = (provider: string, api_key: string | null) => post('api/providers', { provider, api_key }, OkSchema, { retries: 0 })
 
@@ -33,7 +34,7 @@ export function ProvidersSection() {
     <div className="flex flex-col gap-3" data-section="providers">
       <div className="flex items-center justify-between text-xs text-muted">
         <span>{m.providers_active()}: <strong className="text-text">{active ?? '—'}</strong></span>
-        <Button onClick={() => { void api.fetchProviderQuotas(true).then((d) => qc.setQueryData(keys.providerQuotas, d)).catch(() => undefined) }}>{m.providers_quota_refresh()}</Button>
+        <Button onClick={() => { void api.fetchProviderQuotas(true).then((d) => { qc.setQueryData(keys.providerQuotas, d); void qc.invalidateQueries({ queryKey: keys.providerCostHistory }) }).catch(() => undefined) }}>{m.providers_quota_refresh()}</Button>
       </div>
       <ul className="flex flex-col gap-2">
         {providers.data.providers.map((p) => {
@@ -63,6 +64,7 @@ export function ProvidersSection() {
                   <Button type="submit" variant="primary" disabled={saveKey.isPending}>{m.save()}</Button>
                 </form>
               )}
+              {p.id === 'openrouter' && p.has_key && <OpenRouterCost />}
               {p.models && p.models.length > 0 && (
                 <details className="mt-2">
                   <summary className="cursor-pointer text-xs text-muted">{m.providers_models_count({ n: p.models.length })}</summary>

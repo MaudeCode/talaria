@@ -49,6 +49,7 @@ export const fetchAuxiliaryModels = () => orpc().models.auxiliary()
 export const setAuxiliaryModel = (task: string, model: string, provider?: string | null) => orpc().models.set({ scope: 'auxiliary', task, model, ...(provider ? { provider } : {}) })
 export const fetchProviders = () => orpc().providers.list()
 export const fetchProviderQuotas = (refresh = false) => orpc().providers.quotas(refresh ? { refresh: '1' } : {}, { signal: timeout(45_000) })
+export const fetchOpenRouterCostHistory = () => orpc().providers.costHistory({ provider: 'openrouter' }, { signal: timeout(45_000) })
 export const setPersonality = (session_id: SessionId, personality: string | null) => orpc().personalities.set({ session_id, name: personality ?? '' })
 /** Reasoning config shared with the CLI (config.yaml agent.reasoning_effort / display.show_reasoning). */
 export const fetchReasoning = (model?: string | null, provider?: string | null) => orpc().reasoning.get({ ...(model ? { model } : {}), ...(provider ? { provider } : {}) })

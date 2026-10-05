@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Provider settings show OpenRouter's daily spend, monthly pace, and a monthly budget you can set or clear, with a warning as the pace nears the budget.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
