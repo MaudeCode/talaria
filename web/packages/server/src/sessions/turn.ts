@@ -30,7 +30,7 @@ import { withSessionWireFlags } from './list.js'
 import { hydrateAnchorActivityScenes, turnTerminalState, withTurnIds } from './anchor.js'
 import { persistentStateChanges, persistentStateSnapshot } from './state-saved.js'
 import { maxIterationsFromConfig, maxTokensFromConfig, processWakeupMaxIterations, reasoningConfigFromConfig, webuiEphemeralSystemPrompt, workspaceSystemMessage } from './turn-context.js'
-import { agentSteerText, assistantReplyAddedAfterCurrentTurn, attachedFilesPrompt, buildPartialMessage, dedupeContext, checkpointTurnStart, extractToolCallsFromMessages, injectMaxIterationSummaryFallback, isContextCompressionMarker, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitDisplayText, stateDbSeenId, joinReasoning, reasoningFieldsText, stoppedTurnContext, toolOutcome, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withToolCallOutcomes, workspaceContextPrefix, withoutMaxIterationSummaryRequest } from './merge.js'
+import { agentSteerText, assistantReplyAddedAfterCurrentTurn, attachedFilesPrompt, buildPartialMessage, dedupeContext, checkpointTurnStart, extractToolCallsFromMessages, injectMaxIterationSummaryFallback, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitDisplayText, stateDbSeenId, joinReasoning, reasoningFieldsText, stoppedTurnContext, toolOutcome, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withToolCallOutcomes, workspaceContextPrefix, withoutMaxIterationSummaryRequest } from './merge.js'
 import { mayBecomeSilentReply, turnOrigin, withBackgroundUpdates } from './background-updates.js'
 import { fallbackTitleFromExchange, firstExchangeSnippets, isGenericFallbackTitle, latestExchangeSnippets, looksInvalidGeneratedTitle, looksLikeDefaultCliTitle, sanitizeGeneratedTitle, titleLanguageMismatch, titlePrompts } from './titles.js'
 import { WORKSPACE_BUSY_MESSAGE } from '../workspace/git.js'
@@ -687,14 +687,14 @@ export class TurnRunner {
       s.context_messages = dedupeContext(context)
       if (result.compressed) {
         s.post_compression_context_tokens_estimate = estimate
-        // TAL-540, Python parity: the anchor is the last visible row before the newest compaction marker, else before this turn.
-        const markerIdx = s.messages.findLastIndex(isContextCompressionMarker)
-        const before = visibleMessagesForAnchor(markerIdx >= 0 ? s.messages.slice(0, markerIdx) : previousMessages)
+        // TAL-540: the anchor is the last visible row before this turn (never its eager checkpoint); the merged transcript
+        // holds no compaction marker, so the summary is the model context's newest one.
+        const before = visibleMessagesForAnchor(previousMessages.filter((m) => m._turn_id !== streamId))
         const after = visibleMessagesForAnchor(s.messages)
         const anchorIdx = before.length ? before.length - 1 : after.length ? 0 : null
         s.compression_anchor_visible_idx = anchorIdx
         s.compression_anchor_message_key = anchorMessageKey(anchorIdx !== null && anchorIdx < after.length ? after[anchorIdx] : after.at(-1))
-        s.compression_anchor_summary = markerSummary(s.messages) ?? markerSummary(s.context_messages)
+        s.compression_anchor_summary = markerSummary(s.context_messages)
       }
       const now = deps.now()
       for (const m of s.messages) m.timestamp ??= now
