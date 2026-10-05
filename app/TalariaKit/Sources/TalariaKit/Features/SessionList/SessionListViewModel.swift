@@ -503,6 +503,9 @@ public final class SessionListViewModel {
                 fallbackProfile: profile,
                 fallbackDefaultModel: response.defaultModel
             )
+            // Selected chats belong to the old profile; the server would refuse them now.
+            isSelectingSessions = false
+            selectedSessionsByID = [:]
             return true
         } catch {
             guard !APIError.isCancellation(error) else { return false }
@@ -867,6 +870,8 @@ public final class SessionListViewModel {
         }
     }
 
+    static let bulkActionLimit = 200
+
     public var selectedSessionCount: Int { selectedSessionsByID.count }
 
     /// ponytail: old-server fallback (TAL-627). A server that ships `can_delete` also serves
@@ -948,15 +953,20 @@ public final class SessionListViewModel {
         actionErrorMessage = nil
         lastError = nil
 
-        let results: [SessionBulkResult]
+        // The route takes at most `bulkActionLimit` IDs a call (the contract's cap).
+        var results: [SessionBulkResult] = []
         do {
-            results = try await sessionMutator.bulk(action, sessionIDs: sessionIDs).results ?? []
+            for start in stride(from: 0, to: sessionIDs.count, by: Self.bulkActionLimit) {
+                let chunk = Array(sessionIDs[start..<min(start + Self.bulkActionLimit, sessionIDs.count)])
+                results += try await sessionMutator.bulk(action, sessionIDs: chunk).results ?? []
+            }
         } catch {
             if !APIError.isCancellation(error) {
                 lastError = error
                 actionErrorMessage = error.localizedDescription
             }
-            return []
+            // Chunks the server already answered still count.
+            if results.isEmpty { return [] }
         }
 
         var changed: [SessionSummary] = []
@@ -967,15 +977,22 @@ public final class SessionListViewModel {
             claimedRows.removeValue(forKey: sessionId)
             changed.append(session)
         }
+        var messages: [String] = []
         if !selectedSessionsByID.isEmpty {
             let failure = results.first { $0.ok != true }?.error
+                ?? actionErrorMessage
                 ?? String(localized: "The server did not report a result.")
-            actionErrorMessage = String(
+            messages.append(String(
                 localized: "Failed for \(selectedSessionsByID.count) of \(sessionIDs.count) chats: \(failure)"
-            )
+            ))
         } else {
             isSelectingSessions = false
         }
+        let keptByAgent = results.filter { $0.ok == true && $0.stateDbCleanupFailed == true }.count
+        if keptByAgent > 0 {
+            messages.append(String(localized: "The Agent kept its copy of \(keptByAgent) deleted chats, so they may reappear."))
+        }
+        actionErrorMessage = messages.isEmpty ? nil : messages.joined(separator: "\n\n")
 
         _ = await load(modelContext: modelContext, animation: animation)
         return changed

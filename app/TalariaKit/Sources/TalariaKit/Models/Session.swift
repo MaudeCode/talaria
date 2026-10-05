@@ -121,14 +121,17 @@ public struct SessionBulkResult: Decodable, Equatable {
     public let sessionId: String?
     public let ok: Bool?
     public let error: String?
+    /// A delete that removed the chat here but not the Agent's own record.
+    public let stateDbCleanupFailed: Bool?
 
-    enum CodingKeys: String, CodingKey { case sessionId, ok, error }
+    enum CodingKeys: String, CodingKey { case sessionId, ok, error, stateDbCleanupFailed }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         sessionId = container.decodeLossyStringIfPresent(forKey: .sessionId)
         ok = container.decodeLossyBoolIfPresent(forKey: .ok)
         error = container.decodeLossyStringIfPresent(forKey: .error)
+        stateDbCleanupFailed = container.decodeLossyBoolIfPresent(forKey: .stateDbCleanupFailed)
     }
 }
 

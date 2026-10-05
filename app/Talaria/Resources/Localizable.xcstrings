@@ -2002,6 +2002,328 @@
     "Signed Out" : {
 
     },
+    "The Agent kept its copy of %lld deleted chats, so they may reappear." : {
+      "localizations" : {
+        "ar" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "احتفظ الوكيل بنسخته من %lld محادثة محذوفة، لذا قد تظهر مجددًا."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "احتفظ الوكيل بنسخته من %lld محادثات محذوفة، لذا قد تظهر مجددًا."
+                }
+              }
+            }
+          }
+        },
+        "de" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Der Agent hat seine Kopie von %lld gelöschten Chat behalten; er kann wieder erscheinen."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Der Agent hat seine Kopie von %lld gelöschten Chats behalten; sie können wieder erscheinen."
+                }
+              }
+            }
+          }
+        },
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "The Agent kept its copy of %lld deleted chat, so it may reappear."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "The Agent kept its copy of %lld deleted chats, so they may reappear."
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "El Agente conservó su copia de %lld chat eliminado, así que puede volver a aparecer."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "El Agente conservó su copia de %lld chats eliminados, así que pueden volver a aparecer."
+                }
+              }
+            }
+          }
+        },
+        "fr" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "L’Agent a conservé sa copie de %lld chat supprimé ; il peut réapparaître."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "L’Agent a conservé sa copie de %lld chats supprimés ; ils peuvent réapparaître."
+                }
+              }
+            }
+          }
+        },
+        "he" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "הסוכן שמר את העותק שלו של %lld צ׳אט שנמחק, ולכן הוא עשוי להופיע שוב."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "הסוכן שמר את העותק שלו של %lld צ׳אטים שנמחקו, ולכן הם עשויים להופיע שוב."
+                }
+              }
+            }
+          }
+        },
+        "it" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "L’Agente ha mantenuto la sua copia di %lld chat eliminata, quindi potrebbe ricomparire."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "L’Agente ha mantenuto la sua copia di %lld chat eliminate, quindi potrebbero ricomparire."
+                }
+              }
+            }
+          }
+        },
+        "ja" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "エージェントが削除済みチャット%lld件のコピーを保持しているため、再表示される場合があります。"
+                }
+              }
+            }
+          }
+        },
+        "ko" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "에이전트가 삭제된 채팅 %lld개의 사본을 보관하고 있어 다시 나타날 수 있습니다."
+                }
+              }
+            }
+          }
+        },
+        "nl" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "De Agent heeft zijn kopie van %lld verwijderde chat behouden, dus die kan terugkomen."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "De Agent heeft zijn kopie van %lld verwijderde chats behouden, dus die kunnen terugkomen."
+                }
+              }
+            }
+          }
+        },
+        "pl" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Agent zachował kopię %lld usuniętego czatu, więc może się on pojawić ponownie."
+                }
+              },
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Agent zachował kopię %lld usuniętych czatów, więc mogą się pojawić ponownie."
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Agent zachował kopię %lld usuniętych czatów, więc mogą się pojawić ponownie."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Agent zachował kopię %lld usuniętych czatów, więc mogą się pojawić ponownie."
+                }
+              }
+            }
+          }
+        },
+        "pt-BR" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "O Agente manteve a cópia de %lld chat excluído, então ele pode reaparecer."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "O Agente manteve a cópia de %lld chats excluídos, então eles podem reaparecer."
+                }
+              }
+            }
+          }
+        },
+        "ru" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Агент сохранил свою копию %lld удалённого чата, поэтому он может появиться снова."
+                }
+              },
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Агент сохранил свои копии %lld удалённых чатов, поэтому они могут появиться снова."
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Агент сохранил свои копии %lld удалённых чатов, поэтому они могут появиться снова."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Агент сохранил свои копии %lld удалённого чата, поэтому они могут появиться снова."
+                }
+              }
+            }
+          }
+        },
+        "tr" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Ajan silinen %lld sohbetin kopyasını tuttu, bu yüzden yeniden görünebilir."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Ajan silinen %lld sohbetin kopyasını tuttu, bu yüzden yeniden görünebilirler."
+                }
+              }
+            }
+          }
+        },
+        "ur" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "ایجنٹ نے %lld حذف شدہ چیٹ کی اپنی کاپی رکھی ہے، اس لیے یہ دوبارہ ظاہر ہو سکتی ہے۔"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "ایجنٹ نے %lld حذف شدہ چیٹس کی اپنی کاپی رکھی ہے، اس لیے یہ دوبارہ ظاہر ہو سکتی ہیں۔"
+                }
+              }
+            }
+          }
+        },
+        "zh-HK" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Agent 保留了 %lld 個已刪除聊天的副本，因此它們可能會再次出現。"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Agent 保留了 %lld 个已删除聊天的副本，因此它们可能会再次出现。"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hant" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Agent 保留了 %lld 個已刪除聊天的副本，因此它們可能會再次出現。"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "The server did not confirm that approval bypass is off." : {
       "extractionState" : "manual",
       "localizations" : {

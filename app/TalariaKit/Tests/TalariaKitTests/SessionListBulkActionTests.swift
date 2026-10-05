@@ -129,6 +129,54 @@ final class SessionListBulkActionTests: XCTestCase {
         XCTAssertTrue(viewModel.supportsBulkActions)
     }
 
+    func testSelectionsOverTheRouteLimitGoOutInChunksTheServerAccepts() async throws {
+        var chunkSizes: [Int] = []
+        let viewModel = try makeViewModel { request in
+            guard request.url?.path == "/api/sessions/bulk" else { return apiTestJSONResponse(#"{"sessions": []}"#, for: request) }
+            let ids = try XCTUnwrap(apiTestJSONBody(from: request)["session_ids"] as? [String])
+            chunkSizes.append(ids.count)
+            let results = ids.map { #"{"session_id": "\#($0)", "ok": true}"# }.joined(separator: ",")
+            return apiTestJSONResponse(#"{"results": [\#(results)]}"#, for: request)
+        }
+        viewModel.beginSelectingSessions()
+        viewModel.toggleSelectAll((0..<201).map { SessionSummary(sessionId: "chat-\($0)", canArchive: true, canDelete: true) })
+
+        let changed = await viewModel.performBulkAction(.archive)
+
+        XCTAssertEqual(chunkSizes, [200, 1])
+        XCTAssertEqual(changed.count, 201)
+        XCTAssertFalse(viewModel.isSelectingSessions)
+    }
+
+    func testADeleteTheAgentKeptIsReportedEvenThoughTheChatLeavesTheList() async throws {
+        let viewModel = try makeViewModel { request in
+            guard request.url?.path == "/api/sessions/bulk" else { return apiTestJSONResponse(#"{"sessions": []}"#, for: request) }
+            return apiTestJSONResponse(#"{"results": [{"session_id": "chat-a", "ok": true, "state_db_cleanup_failed": true}]}"#, for: request)
+        }
+        viewModel.beginSelectingSessions()
+        viewModel.toggleSelection(writable)
+
+        let changed = await viewModel.performBulkAction(.delete)
+
+        XCTAssertEqual(changed.compactMap(\.sessionId), ["chat-a"])
+        let message = try XCTUnwrap(viewModel.actionErrorMessage)
+        XCTAssertTrue(message.contains("may reappear"), message)
+    }
+
+    func testSwitchingProfilesClearsTheSelection() async throws {
+        let viewModel = try makeViewModel { request in
+            apiTestJSONResponse(#"{"active": "work", "profiles": [{"name": "work", "is_active": true}]}"#, for: request)
+        }
+        viewModel.beginSelectingSessions()
+        viewModel.toggleSelection(writable)
+
+        let switched = await viewModel.switchActiveProfile(try JSONDecoder().decode(ProfileSummary.self, from: Data(#"{"name": "work"}"#.utf8)))
+
+        XCTAssertTrue(switched)
+        XCTAssertFalse(viewModel.isSelectingSessions)
+        XCTAssertEqual(viewModel.selectedSessionCount, 0)
+    }
+
     func testBulkRequestFailureKeepsTheWholeSelection() async throws {
         let viewModel = try makeViewModel { request in
             apiTestJSONResponse(#"{"error": "Server unavailable"}"#, statusCode: 500, for: request)
