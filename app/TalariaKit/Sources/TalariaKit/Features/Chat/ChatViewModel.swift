@@ -205,6 +205,7 @@ public final class ChatViewModel {
         if let readOnly = session?.readOnly { isSessionReadOnly = readOnly }
         if let canBranch = session?.canBranch { self.canBranch = canBranch }
         if let assistantName = session?.assistantName { self.assistantName = assistantName }
+        if let session, session.statesEnabledToolsets { sessionToolsets = SessionToolsets(names: session.enabledToolsets) }
         // A detail relabels the workspace it reports, so a registry rename shows on the next load (TAL-303).
         if let workspace = session?.workspace, workspace == serverWorkspacePath {
             serverWorkspaceName = session?.workspaceName
@@ -418,6 +419,12 @@ public final class ChatViewModel {
     @ObservationIgnored private var personalitySuggestionsLoad: Task<Void, Error>?
     @ObservationIgnored private var skillSlashSuggestionsLoad: Task<Void, Error>?
     private var queuedSlashMessages: [QueuedSlashMessage] = []
+    /// What waits to send after the running response, in send order (TAL-630).
+    public var queuedMessagePreviews: [QueuedMessagePreview] {
+        queuedSlashMessages.map { QueuedMessagePreview(text: $0.text, attachmentCount: $0.attachments.count) }
+    }
+    /// The session's toolset override (TAL-631); nil until a session detail reports it.
+    public private(set) var sessionToolsets: SessionToolsets?
     private var isDrainingQueuedSlashMessage = false
     private var activeBtwStreamID: String?
     private var activeBtwMessageID: String?
@@ -4700,6 +4707,22 @@ public final class ChatViewModel {
     @discardableResult
     public func disableApprovalBypassForCurrentSession() async -> Bool {
         await pendingActionCoordinator.disableApprovalBypassForCurrentSession()
+    }
+
+    /// Sets the session's toolsets, nil for the profile's defaults; the control then shows what the
+    /// server saved. A failure keeps the old value and reports in the composer (TAL-631).
+    @discardableResult
+    public func saveSessionToolsets(_ names: [String]?) async -> Bool {
+        guard let sessionID else { return false }
+        do {
+            let response = try await client.setSessionToolsets(sessionID: sessionID, toolsets: names)
+            sessionToolsets = SessionToolsets(names: response.enabledToolsets)
+            return true
+        } catch {
+            lastError = error
+            sendErrorMessage = error.localizedDescription
+            return false
+        }
     }
 
     func applyApprovalUpdate(_ update: ApprovalPendingResponse, sessionID: String) {

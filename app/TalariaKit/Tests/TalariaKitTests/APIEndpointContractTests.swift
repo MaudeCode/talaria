@@ -88,6 +88,7 @@ final class ContractReadinessTests: APIClientTestCase {
                 path: "/api/session/yolo",
                 query: ["session_id": "session-123"]
             ),
+            .init(name: "session toolsets", endpoint: .sessionToolsets, path: "/api/session/toolsets"),
             .init(name: "projects", endpoint: .projects, path: "/api/projects"),
             .init(name: "create project", endpoint: .createProject, path: "/api/projects/create"),
             .init(name: "rename project", endpoint: .renameProject, path: "/api/projects/rename"),

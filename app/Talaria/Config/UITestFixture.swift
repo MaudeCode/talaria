@@ -446,6 +446,8 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     static let sessionTitle = "UI Fixture Session"
     private static let recoveryState = NSLock()
     nonisolated(unsafe) private static var approvalBypassOverride: Bool?
+    /// The session's toolsets as the fixture saved them (TAL-631); nil is the profile's defaults.
+    private static let sessionToolsets = OSAllocatedUnfairLock<[String]?>(initialState: nil)
     nonisolated(unsafe) private static var sessionReads = 0
     nonisolated(unsafe) private static var transcriptReads = 0
     nonisolated(unsafe) private static var hasChangedWhileBackgrounded = false
@@ -803,6 +805,10 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         case let path where path.hasPrefix("/api/update-notifications/") && path.contains("/actions/"):
             recoveryState.withLock { urgentNotificationAcknowledged = true; readUpdateNotificationIDs.insert("ui-update-urgent") }
             return json(updateNotificationRecord(id: "ui-update-urgent"))
+        case "/api/session/toolsets":
+            let saved = requestJSON(request)["toolsets"] as? [String]
+            sessionToolsets.withLock { $0 = saved }
+            return json(["ok": true, "enabled_toolsets": saved.map { $0 as Any } ?? NSNull()])
         case "/api/session/yolo":
             let requested = request.httpMethod == "POST" ? requestJSON(request)["enabled"] as? Bool : nil
             let enabled = recoveryState.withLock {
@@ -1225,7 +1231,8 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             "profile": "fixture-profile",
             "archived": false,
             "can_archive": true,
-            "can_delete": true
+            "can_delete": true,
+            "enabled_toolsets": sessionToolsets.withLock { $0 }.map { $0 as Any } ?? NSNull()
         ]
     }
 

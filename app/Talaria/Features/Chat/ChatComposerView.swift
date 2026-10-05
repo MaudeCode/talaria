@@ -111,6 +111,9 @@ struct MessageComposerView: View {
     /// it in place of the controls, and nothing that needs the session can be used yet.
     var sessionStart: ComposerSessionStart? = nil
     var onRetrySessionStart: () -> Void = {}
+    /// The session's toolset override (TAL-631); nil, before a session reports it, hides the control.
+    var sessionToolsets: SessionToolsets? = nil
+    var onSaveToolsets: ([String]?) async -> Void = { _ in }
 
     private var isAnsweringClarification: Bool { clarificationPrompt != nil }
 
@@ -121,6 +124,7 @@ struct MessageComposerView: View {
     @State private var noticeMessage: String?
     @State private var showsAllModelsSheet = false
     @State private var showsWorkspaceSheet = false
+    @State private var showsToolsetsSheet = false
     @State private var optimisticWorkspacePath: String?
     @State private var favoriteModelKeys = ModelFavoritesStore.shared.favoriteKeys
     @State private var recentModelKeys = ModelRecentsStore.shared.recentKeys
@@ -416,6 +420,14 @@ struct MessageComposerView: View {
                 onRegistryChanged: onWorkspaceRegistryChanged
             )
             .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showsToolsetsSheet, onDismiss: restoreFocusAfterPresentationIfNeeded) {
+            ComposerToolsetsSheet(toolsets: sessionToolsets ?? SessionToolsets(names: nil)) { names in
+                showsToolsetsSheet = false
+                await onSaveToolsets(names)
+            }
+            .presentationDetents([.medium])
             .presentationDragIndicator(.visible)
         }
         // The pickers hang off the composer root, not the `+` button: opening one expands the
@@ -833,6 +845,10 @@ struct MessageComposerView: View {
                     prepareForComposerPresentation()
                     showsWorkspaceSheet = true
                 },
+                onChooseToolsets: {
+                    prepareForComposerPresentation()
+                    showsToolsetsSheet = true
+                },
                 onSelectProfile: onSelectProfile,
                 onSelectGitBranch: onSelectGitBranch,
                 onCreateGitBranch: onCreateGitBranch,
@@ -902,6 +918,7 @@ struct MessageComposerView: View {
                     isSwitching: gitViewModel.isSwitchingBranch
                 )
                 : nil,
+            toolsetsTitle: sessionToolsets?.title,
             isDisabled: isConfigurationControlDisabled
         )
     }

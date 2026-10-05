@@ -3,8 +3,9 @@ import SwiftUI
 /// The selectors in the composer's control strip, after model and reasoning (TAL-629).
 public struct ComposerSecondaryControlsState: Equatable {
 
-    public init(workspaceTitle: String?, profileOptions: [ProfileSummary], selectedProfileName: String?, selectedProfileTitle: String?, gitBranch: ComposerSecondaryControlsState.GitBranch?, isDisabled: Bool) {
+    public init(workspaceTitle: String?, profileOptions: [ProfileSummary], selectedProfileName: String?, selectedProfileTitle: String?, gitBranch: ComposerSecondaryControlsState.GitBranch?, toolsetsTitle: String? = nil, isDisabled: Bool) {
         self.workspaceTitle = workspaceTitle
+        self.toolsetsTitle = toolsetsTitle
         self.profileOptions = profileOptions
         self.selectedProfileName = selectedProfileName
         self.selectedProfileTitle = selectedProfileTitle
@@ -29,6 +30,7 @@ public struct ComposerSecondaryControlsState: Equatable {
     public enum Selector: Hashable {
         case workspace
         case gitBranch
+        case toolsets
         case profile
     }
 
@@ -37,13 +39,16 @@ public struct ComposerSecondaryControlsState: Equatable {
     public let selectedProfileName: String?
     public let selectedProfileTitle: String?
     public let gitBranch: GitBranch?
+    /// The session's toolsets (TAL-631); nil hides the control.
+    public let toolsetsTitle: String?
     public let isDisabled: Bool
 
-    /// The selectors the strip shows, by how often each changes: workspace, then git branch, then profile.
+    /// The selectors the strip shows, by how often each changes: workspace, git branch, toolsets, then profile.
     public var selectors: [Selector] {
         [
             workspaceTitle == nil ? nil : .workspace,
             gitBranch == nil ? nil : .gitBranch,
+            toolsetsTitle == nil ? nil : .toolsets,
             selectedProfileTitle == nil ? nil : .profile,
         ].compactMap { $0 }
     }

@@ -2462,6 +2462,11 @@ extension XCUIElement {
         poll(timeout: timeout) { !exists }
     }
 
+    /// Waits until the element reads `value` for VoiceOver.
+    func awaitValue(_ value: String, timeout: TimeInterval) -> Bool {
+        poll(timeout: timeout) { exists && self.value as? String == value }
+    }
+
     /// Where the element comes to rest (`awaitStable`): a coordinate taken while a sheet, menu or
     /// sidebar is still sliding in lands on the wrong spot. The last frame read if it never settles.
     var settledFrame: CGRect {
@@ -3157,5 +3162,99 @@ final class KanbanCardActionsUITests: TalariaUITestCase {
         // Close the menu by tapping clear of it.
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap()
         XCTAssertTrue(app.buttons[offers.last ?? "Archive"].awaitNonExistence(timeout: 3), "Card menu did not close [\(screenshot)]")
+    }
+}
+
+/// Messages queued during a run show as a floating chip above the composer that lists them (TAL-630).
+final class QueuedMessagesChipUITests: ChatUITestCase {
+    func testQueuedMessagesShowAsAChipThatListsThemUntilTheyDrain() throws {
+        launchChatFixture(argument: "--ui-test-chat-controls", trace: "start -> token -> queue x2 -> cancel -> drain")
+        try sendFixtureMessage("Run the deterministic fixture")
+        XCTAssertTrue(app.staticTexts["Waiting for control input."].awaitExistence(timeout: 5))
+
+        let input = app.textViews.firstMatch
+        for message in ["First queued message", "Second queued message"] {
+            input.typeText("/queue \(message)")
+            tapCenter(of: app.buttons["Send"])
+            XCTAssertTrue(element(labelContaining: "Queued for next turn").awaitExistence(timeout: 5))
+        }
+
+        let chip = app.buttons["2 queued"]
+        XCTAssertTrue(chip.awaitExistence(timeout: 5), "The queue chip is missing")
+        XCTAssertGreaterThanOrEqual(chip.frame.height, 43, "The queue chip's hit area is under 44 pt")
+        attachScreenshot(named: "queued-chip")
+        tapCenter(of: chip)
+        XCTAssertTrue(app.buttons["First queued message"].awaitExistence(timeout: 5), "The menu does not list the first message")
+        XCTAssertTrue(app.buttons["Second queued message"].exists, "The menu does not list the second message")
+        attachScreenshot(named: "queued-menu")
+        app.buttons["First queued message"].tap()
+
+        // Stopping the run drains the queue; the chip leaves with the last message.
+        let stop = app.buttons["Stop response"]
+        XCTAssertTrue(stop.awaitExistence(timeout: 5))
+        stop.tap()
+        XCTAssertTrue(chip.awaitNonExistence(timeout: 10), "The queue chip stayed after the queue drained")
+        XCTAssertFalse(app.buttons["1 queued"].exists)
+    }
+
+    private func attachScreenshot(named name: String) {
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = name
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+    }
+}
+
+/// The strip's toolsets control shows the session's toolsets and sets them in a sheet (TAL-631).
+final class ComposerToolsetsUITests: WorkspaceUITestCase {
+    func testToolsetsControlSavesAListAndRestoresProfileDefaults() throws {
+        launchFixture()
+        openFixtureSessionChat()
+
+        let control = app.buttons["Session toolsets"]
+        XCTAssertTrue(control.awaitExistence(timeout: 15), "Missing the toolsets control")
+        XCTAssertEqual(control.value as? String, "Profile defaults")
+        scrollStripControlIntoView(control)
+        tapCenter(of: control)
+
+        let field = app.textFields["Session toolsets"]
+        XCTAssertTrue(field.awaitExistence(timeout: 5), "The toolsets sheet did not open")
+        field.tap()
+        field.typeText("web, terminal")
+        attachScreenshot(named: "toolsets-sheet")
+        app.buttons["Save"].tap()
+        XCTAssertTrue(field.awaitNonExistence(timeout: 5))
+        XCTAssertTrue(control.awaitValue("web, terminal", timeout: 5), "The control does not show the saved toolsets")
+        attachScreenshot(named: "toolsets-saved")
+
+        scrollStripControlIntoView(control)
+        tapCenter(of: control)
+        XCTAssertTrue(field.awaitExistence(timeout: 5), "The toolsets sheet did not reopen")
+        XCTAssertEqual(field.value as? String, "web, terminal")
+        app.buttons["Use profile defaults"].tap()
+        XCTAssertTrue(control.awaitValue("Profile defaults", timeout: 5), "Profile defaults did not restore")
+    }
+
+    private func scrollStripControlIntoView(_ control: XCUIElement) {
+        var drags = 0
+        while !app.frame.contains(control.frame), drags < 4 {
+            let origin = app.coordinate(withNormalizedOffset: .zero)
+            let travel: CGFloat = control.frame.minX < app.frame.minX ? 100 : -100
+            origin.withOffset(CGVector(dx: app.frame.midX - travel / 2, dy: control.frame.midY))
+                .press(
+                    forDuration: 0.05,
+                    thenDragTo: origin.withOffset(CGVector(dx: app.frame.midX + travel / 2, dy: control.frame.midY)),
+                    withVelocity: .slow,
+                    thenHoldForDuration: 0.2
+                )
+            drags += 1
+        }
+    }
+
+    private func attachScreenshot(named name: String) {
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = name
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
     }
 }

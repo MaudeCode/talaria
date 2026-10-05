@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Messages you queue while a response runs show as a chip above the composer; tap it to see what will send next.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

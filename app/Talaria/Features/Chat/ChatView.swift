@@ -421,7 +421,11 @@ struct ChatView: View {
                 Task { await submitClarification(response, promptID: prompt.id) }
             },
             sessionStart: sessionStart,
-            onRetrySessionStart: retrySessionStart
+            onRetrySessionStart: retrySessionStart,
+            sessionToolsets: viewModel.sessionToolsets,
+            onSaveToolsets: { names in
+                await viewModel.saveSessionToolsets(names)
+            }
         )
     }
 
@@ -1086,6 +1090,11 @@ struct ChatView: View {
                     .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
                 }
 
+                if !viewModel.queuedMessagePreviews.isEmpty {
+                    queuedMessagesChip(viewModel.queuedMessagePreviews)
+                        .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
+                }
+
                 if let activeRunStatusPresentation, activeRunStatusPresentation.reservesTranscriptSpace {
                     runStatusRow(activeRunStatusPresentation)
                         .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
@@ -1125,7 +1134,44 @@ struct ChatView: View {
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: viewModel.pinnedLocalNotices)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: showsApprovalBypassStatus)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: viewModel.pinnedBackgroundTasks)
+            .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: viewModel.queuedMessagePreviews)
         }
+    }
+
+    /// What waits to send after this response (TAL-630); tapping lists it, read-only like Web's.
+    private func queuedMessagesChip(_ previews: [QueuedMessagePreview]) -> some View {
+        StatusChip(label: String(localized: "\(previews.count) queued"), icon: .symbol("text.badge.plus"))
+            .accessibilityHidden(true)
+            .overlay { queuedMessagesMenu(previews) }
+    }
+
+    private func queuedMessagesMenu(_ previews: [QueuedMessagePreview]) -> some View {
+        Menu {
+            ForEach(Array(previews.enumerated()), id: \.offset) { _, preview in
+                Button {} label: {
+                    let text = preview.text.isEmpty ? String(localized: "Attachments only") : preview.text
+                    if preview.attachmentCount > 0 {
+                        Label {
+                            Text(text)
+                            Text("\(preview.attachmentCount) attached")
+                        } icon: {
+                            Image(systemName: "paperclip")
+                        }
+                    } else {
+                        Text(text)
+                    }
+                }
+            }
+        } label: {
+            // A clear 44 pt target over the chip: a label with the chip's glass in it would spread
+            // that glass over the whole target.
+            Color.clear
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(.rect)
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .accessibilityLabel(String(localized: "\(previews.count) queued"))
     }
 
     /// The run status chip, joined by the scroll chip on the chosen side while it shows. A
@@ -1466,6 +1512,9 @@ struct ChatView: View {
             count += 1
         }
         if showsApprovalBypassStatus {
+            count += 1
+        }
+        if !viewModel.queuedMessagePreviews.isEmpty {
             count += 1
         }
         return count
