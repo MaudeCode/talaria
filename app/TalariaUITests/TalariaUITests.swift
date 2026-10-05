@@ -1378,6 +1378,71 @@ final class WorkspaceFilePreviewUITests: WorkspaceUITestCase {
     }
 }
 
+/// In a wide chat Files toggles the browser in an inspector beside it (TAL-479): the transcript and
+/// composer stay on screen and usable, and folders and files open inside it. At compact width
+/// Files still pushes the browser in place of the chat.
+final class FilesInspectorUITests: WorkspaceUITestCase {
+    override func tearDownWithError() throws {
+        XCUIDevice.shared.orientation = .portrait
+        try super.tearDownWithError()
+    }
+
+    func testFilesOpensBesideTheChatAtRegularWidthAndPushesAtCompactWidth() throws {
+        guard UIDevice.current.userInterfaceIdiom == .pad else {
+            launchFixture()
+            openFixtureSessionChat()
+            openFiles()
+            XCTAssertTrue(
+                app.buttons["Message"].awaitNonExistence(timeout: 10),
+                "At compact width the file browser replaces the chat"
+            )
+            return
+        }
+        // In landscape the iPad detail column is wide enough to show the inspector beside the chat.
+        XCUIDevice.shared.orientation = .landscapeLeft
+        launchFixture()
+        // The row leads the iPad sidebar, where `tapFixtureSession`'s phone-list viewport does not apply.
+        let session = fixtureSessionButton
+        XCTAssertTrue(session.awaitExistence(timeout: 15), "Missing deterministic session fixture")
+        session.tap()
+        XCTAssertNotNil(waitForComposer(timeout: 15), "The fixture session did not open")
+
+        openFiles()
+        let folder = fileRow(folder: "fixture-dir")
+        XCTAssertTrue(folder.awaitExistence(timeout: 20), "The root listing never loaded")
+        let inspectorMinX = settledFrame(of: folder).minX
+        let request = element(labelContaining: "Fixture link request")
+        XCTAssertTrue(request.awaitExistence(timeout: 5), "Missing the fixture's user message")
+        let composer = app.buttons["Message"]
+        XCTAssertTrue(composer.exists, "The composer must stay beside the files")
+        for (name, frame) in [("Transcript", settledFrame(of: request)), ("Composer", settledFrame(of: composer))] {
+            XCTAssertGreaterThan(frame.width, 0, "\(name) left the screen")
+            XCTAssertLessThanOrEqual(frame.maxX, inspectorMinX, "\(name) \(frame) is not beside the files")
+        }
+        tapCenter(of: composer)
+        let input = app.textViews.firstMatch
+        XCTAssertTrue(input.awaitExistence(timeout: 10), "The composer did not expand beside the files")
+        input.typeText("Inspector draft")
+        XCTAssertTrue(poll(timeout: 5) { input.value as? String == "Inspector draft" }, "The composer did not take the typed draft")
+        XCTAssertTrue(app.navigationBars["Files"].exists, "Typing in the composer closed the files")
+
+        openDirectory("fixture-dir")
+        XCTAssertTrue(fileRow(file: "nested-note.txt").awaitExistence(timeout: 20), "The folder did not open in place")
+        openPreview(file: "nested-note.txt")
+        XCTAssertGreaterThanOrEqual(
+            settledFrame(of: app.navigationBars["nested-note.txt"]).minX, inspectorMinX - 1,
+            "Opening a file must stay inside the inspector"
+        )
+        XCTAssertLessThanOrEqual(settledFrame(of: input).maxX, inspectorMinX, "Opening a file must keep the chat beside it")
+        app.buttons["BackButton"].tap()
+        XCTAssertTrue(app.navigationBars["Files"].awaitExistence(timeout: 10), "Back did not return to the files")
+
+        app.buttons["Files"].tap()
+        XCTAssertTrue(app.navigationBars["Files"].awaitNonExistence(timeout: 10), "Files did not close the inspector")
+        XCTAssertTrue(input.exists, "Closing the files must keep the chat")
+    }
+}
+
 class QuotaWidgetUITestCase: TalariaUITestCase {}
 
 final class QuotaInsightsUITests: QuotaWidgetUITestCase {

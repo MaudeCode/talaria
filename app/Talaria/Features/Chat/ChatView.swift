@@ -56,6 +56,10 @@ struct ChatView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
+    /// Device-local, per window: whether a wide chat shows Files beside it (TAL-479).
+    @SceneStorage("chat.filesInspectorPresented") private var isFilesInspectorPresented = false
+    /// The chat's width including any Files inspector; nil until measured.
+    @State private var chatAreaWidth: CGFloat?
     @AppStorage(AppHaptics.isEnabledKey) private var isHapticsEnabled = true
     @AppStorage(StreamingSendBehavior.storageKey) private var streamingSendBehaviorRawValue = StreamingSendBehavior.steer.rawValue
     @AppStorage(ResponseCompletionNotifications.isEnabledKey) private var isResponseCompletionNotificationsEnabled = false
@@ -485,8 +489,6 @@ struct ChatView: View {
         .overlay(alignment: .top) {
             GitActionToastOverlay(state: gitToastState)
         }
-        .navigationTitle(displayTitle)
-        .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("chat-detail:\(viewModel.displayTitle)")
     }
 
@@ -582,6 +584,18 @@ struct ChatView: View {
 
     private var chatWithToolbar: some View {
         chatWithLifecycle
+            // Before `.toolbar`: applied after it, the inspector hides the chat's navigation bar.
+            .inspector(isPresented: filesInspectorIsPresented) {
+                // Built only while shown: a hidden browser's "Files" title replaces the chat's.
+                if filesInspectorIsPresented.wrappedValue {
+                    FilesInspectorContent(session: session, server: server, onAPIError: onAPIError)
+                        .inspectorColumnWidth(min: 280, ideal: 340, max: 520)
+                }
+            }
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { chatAreaWidth = $0 }
+            // Outside the inspector, which otherwise keeps the title from the navigation bar.
+            .navigationTitle(displayTitle)
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     ChatToolbarTitleLabel(
@@ -601,13 +615,9 @@ struct ChatView: View {
 
                 if showsFilesButton {
                     ToolbarItem(placement: .topBarTrailing) {
-                        NavigationLink {
-                            FileBrowserView(session: session, server: server, onAPIError: onAPIError)
-                        } label: {
-                            Label("Files", systemImage: "folder")
-                        }
-                        .disabled(viewModel.isViewingCachedData)
-                        .accessibilityLabel("Files")
+                        filesButton
+                            .disabled(viewModel.isViewingCachedData)
+                            .accessibilityLabel("Files")
                     }
                 }
 
@@ -617,6 +627,40 @@ struct ChatView: View {
                     }
                 }
             }
+    }
+
+    /// A wide chat toggles the Files inspector beside it; a narrower one pushes the browser.
+    @ViewBuilder
+    private var filesButton: some View {
+        if fitsFilesInspector {
+            Button {
+                isFilesInspectorPresented.toggle()
+            } label: {
+                Label("Files", systemImage: "folder")
+            }
+        } else {
+            NavigationLink {
+                FileBrowserView(session: session, server: server, onAPIError: onAPIError)
+            } label: {
+                Label("Files", systemImage: "folder")
+            }
+        }
+    }
+
+    /// Whether the inspector sits beside the chat. Narrower, SwiftUI lays it over the chat, and one
+    /// still over it when the window turns compact stays behind as an empty sheet, so a narrow chat
+    /// hides the inspector and Files pushes instead. The narrowest measured side-by-side chat was
+    /// 753 pt (iPad mini, landscape); the widest overlaid, 652 pt (13-inch iPad, portrait).
+    // ponytail: measured threshold, not SwiftUI's rule; revisit if SwiftUI exposes the placement.
+    private var fitsFilesInspector: Bool {
+        (chatAreaWidth ?? 0) >= 740
+    }
+
+    private var filesInspectorIsPresented: Binding<Bool> {
+        Binding(
+            get: { isFilesInspectorPresented && showsFilesButton && fitsFilesInspector },
+            set: { isFilesInspectorPresented = $0 }
+        )
     }
 
     var body: some View {
