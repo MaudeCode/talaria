@@ -151,6 +151,26 @@ describe('async delegation delivery claims (TAL-459)', () => {
     expect(state.calls).toEqual(['claim deleg_order', 'start deleg_order', 'complete deleg_order'])
   })
 
+  it("claims and acknowledges in the session's own profile ledger, not the active profile's (TAL-534)", async () => {
+    const sid = await newSid()
+    const session = s.deps.sessionStore.get(sid)
+    session.profile = 'b'
+    s.deps.sessionStore.save(session)
+    ledger()
+    // Each profile has its own state.db ledger; only B's holds this delegation's pending row.
+    const homes: string[] = []
+    const delivered = new Set<string>()
+    sidecar.respond('process.claim_delivery', (params) => { homes.push(`claim ${str(params.profile_home)}`); return { claim_id: params.profile_home === '/homes/b' ? 'claim-b' : '' } })
+    sidecar.respond('process.complete_delivery', (params) => { homes.push(`complete ${str(params.profile_home)}`); if (params.profile_home === '/homes/b') delivered.add(str((params.event as Json).delegation_id)); return { ok: true } })
+    const drain = new CompletionDrain({
+      sidecar: () => sidecar, profileHome: (profile) => `/homes/${profile ?? 'default'}`, activeProfile: () => 'a', store: s.deps.sessionStore, channels: s.deps.channels, registry: s.deps.registry,
+      startTurn: () => ({ stream_id: 'run' }), now: () => Date.now() / 1000, log: () => undefined,
+    })
+    expect(await drain.processOne(delegation(sid, 'deleg_profile_b'))).toBe(true)
+    expect(homes).toEqual(['claim /homes/b', 'complete /homes/b'])
+    expect(delivered.has('deleg_profile_b')).toBe(true)
+  })
+
   it('hands the claim back when the wakeup turn cannot start, so the row stays pending', async () => {
     const sid = await newSid()
     const state = ledger()

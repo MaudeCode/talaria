@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A finished background delegation started in another profile's chat no longer wakes that chat a second time after a restart or profile switch.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

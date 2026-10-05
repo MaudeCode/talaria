@@ -224,7 +224,7 @@ export class CompletionDrain {
    * another consumer delivered (or holds) it, so it leaves the batch; a sidecar failure returns null so the caller keeps
    * every entry pending. Claims are taken at delivery, never while deferred, so a long turn cannot outlive the lease.
    */
-  private async claimBatch(batched: Deferred[]): Promise<{ deliver: Deferred[]; held: HeldClaim[] } | null> {
+  private async claimBatch(home: string, batched: Deferred[]): Promise<{ deliver: Deferred[]; held: HeldClaim[] } | null> {
     const deliver: Deferred[] = []
     const held: HeldClaim[] = []
     for (const entry of batched) {
@@ -233,9 +233,9 @@ export class CompletionDrain {
       let claimId: string | null
       try {
         if (!sidecar) throw new Error('sidecar unavailable')
-        claimId = (await sidecar.call('process.claim_delivery', { profile_home: this.profileHome(), event: entry.event, consumer: DELIVERY_CONSUMER })).claim_id
+        claimId = (await sidecar.call('process.claim_delivery', { profile_home: home, event: entry.event, consumer: DELIVERY_CONSUMER })).claim_id
       } catch (error) {
-        await this.settleClaims('process.release_delivery', held)
+        await this.settleClaims(home, 'process.release_delivery', held)
         this.deps.log(`[webui] WARNING: async delegation delivery claim failed for ${entry.process_id}: ${(error as Error).message}; kept pending`)
         return null
       }
@@ -251,15 +251,13 @@ export class CompletionDrain {
    * attempt spent), `release` when it failed (spends one; the Agent drops a row past its budget). Best effort: the Agent's
    * lease bounds a lost hand-back.
    */
-  private async settleClaims(method: 'process.complete_delivery' | 'process.release_delivery' | 'process.defer_delivery', held: HeldClaim[]): Promise<void> {
+  private async settleClaims(home: string, method: 'process.complete_delivery' | 'process.release_delivery' | 'process.defer_delivery', held: HeldClaim[]): Promise<void> {
     const sidecar = this.deps.sidecar()
     if (!sidecar) return
     for (const claim of held) {
-      try { await sidecar.call(method, { profile_home: this.profileHome(), event: claim.event, claim_id: claim.claim_id }) } catch (error) { this.deps.log(`[webui] WARNING: ${method} failed for ${str(claim.event.delegation_id)}: ${(error as Error).message}`) }
+      try { await sidecar.call(method, { profile_home: home, event: claim.event, claim_id: claim.claim_id }) } catch (error) { this.deps.log(`[webui] WARNING: ${method} failed for ${str(claim.event.delegation_id)}: ${(error as Error).message}`) }
     }
   }
-
-  private profileHome(): string { return this.deps.profileHome(this.deps.activeProfile()) }
 
   private scheduleRetry(sid: string): void {
     const attempts = (this.retryAttempts.get(sid) ?? 0) + 1
@@ -278,13 +276,15 @@ export class CompletionDrain {
     let session: Session
     try { session = this.deps.store.get(sid) } catch { redefer(batched); this.deps.log(`[webui] WARNING: server-side wakeup retained for session ${sid}: session unavailable`); return false }
     if (session.pre_compression_snapshot) { redefer(batched); this.deps.log(`[webui] WARNING: automatic wakeup retained: sealed snapshot ${sid} cannot own a turn`); return false }
-    const claimed = await this.claimBatch(batched)
+    // TAL-534: the delegation's ledger row lives in the session's own profile, whichever profile is active now.
+    const home = this.deps.profileHome(session.profile ?? this.deps.activeProfile())
+    const claimed = await this.claimBatch(home, batched)
     if (!claimed) { redefer(batched); this.scheduleRetry(sid); return false }
     const { deliver, held } = claimed
     // Entries another consumer already delivered are done here too.
     if (!deliver.length) { await this.markConsumed(batched.map((e) => e.process_id)); return true }
     // A wakeup that does not start hands its claims back, so those rows stay pending for the retry or the next restart.
-    const giveBack = async (method: 'process.release_delivery' | 'process.defer_delivery' = 'process.release_delivery'): Promise<void> => { await this.settleClaims(method, held); redefer(deliver) }
+    const giveBack = async (method: 'process.release_delivery' | 'process.defer_delivery' = 'process.release_delivery'): Promise<void> => { await this.settleClaims(home, method, held); redefer(deliver) }
     const prompt = deliver.length === 1 ? deliver[0]!.wakeup_prompt : deliver.map((e) => e.wakeup_prompt).join('\n\n')
     let resp: { _status?: number; error?: string; stream_id?: string }
     try { resp = this.deps.startTurn(session, prompt) } catch (error) { await giveBack(); this.scheduleRetry(sid); this.deps.log(`[webui] WARNING: server-side wakeup turn raised for session ${sid}: ${(error as Error).message}`); return false }
@@ -293,7 +293,7 @@ export class CompletionDrain {
     if (status >= 400) { await giveBack(); this.scheduleRetry(sid); this.deps.log(`[webui] WARNING: server-side wakeup failed for session ${sid}: status=${String(status)} err=${str(resp.error)}; re-deferred for redelivery`); return false }
     this.retryAttempts.delete(sid)
     recordBackgroundUpdate(session, str(resp.stream_id), batchUpdate(deliver.map((e) => ({ event: e.event ?? {}, prompt: e.wakeup_prompt }))))
-    await this.settleClaims('process.complete_delivery', held)
+    await this.settleClaims(home, 'process.complete_delivery', held)
     await this.markConsumed(batched.map((e) => e.process_id))
     this.deps.log(`[webui] server-side wakeup turn started for session ${sid} (stream_id=${str(resp.stream_id)})`)
     return true
