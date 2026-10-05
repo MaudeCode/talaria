@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A reply cut off by a server restart keeps the text, reasoning, and tool activity it had already streamed, and a reply that had finished no longer shows as interrupted.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

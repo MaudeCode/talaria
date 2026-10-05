@@ -4,7 +4,7 @@
  * Runtime concerns owned by other domains arrive through `SessionServiceDeps`.
  */
 import type { PendingSteer } from '@maudecode/talaria-web-contracts'
-import type { RunJournal } from './journal.js'
+import { RunJournal } from './journal.js'
 import { str } from '../util.js'
 import { randomUUID } from 'node:crypto'
 import { rmSync } from 'node:fs'
@@ -20,7 +20,7 @@ import { UNSETTLED_TODO_KEY, attachTodoState } from './todo.js'
 import { stateDbSessionMessages, stateDbSessionRead, stateDbSessionRow, stateDbSessionSources, type StateDbRead } from './state-db.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { SidecarError, type SidecarLike } from '../sidecar/client.js'
-import { attachmentObjects, isContextCompressionMarker, mergeSessionMessagesAppendOnly, messageIdentity, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, type ToolResultView } from './merge.js'
+import { attachmentObjects, isContextCompressionMarker, journalOutputRows, mergeSessionMessagesAppendOnly, messageIdentity, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, type ToolResultView } from './merge.js'
 import { withBackgroundUpdates } from './background-updates.js'
 import { withBackgroundLinks, type Receipt } from './background-tasks.js'
 import { messagesForLimitedPayload, messageWindowForDisplay, MAX_MSG_LIMIT, parseMsgLimit, toolCallsForMessageWindow } from './window.js'
@@ -628,7 +628,7 @@ export class SessionService {
     return redactSessionData(merged, this.deps.redactEnabled())
   }
 
-  /** Clear persisted streaming flags when no live stream backs them (Python `_clear_stale_stream_state`, no journal recovery). */
+  /** Clear persisted streaming flags when no live stream backs them (Python `_clear_stale_stream_state`). */
   clearStaleStreamState(session: Session): boolean {
     const streamId = session.active_stream_id
     if (!streamId) return false
@@ -650,16 +650,28 @@ export class SessionService {
         return false
       }
     }
-    // Python `_materialize_pending_user_turn_before_error` (#1361): the prompt that was in flight becomes a durable user
-    // turn and an interruption marker follows it, so a dead stream never silently drops what the user sent.
-    const pendingText = str(target.pending_user_message)
+    // Python `_materialize_pending_user_turn_before_error` (#1361) and `_recover_dead_run_journal`: the prompt that was in
+    // flight becomes a durable user turn, the output its journal holds follows it, and an interruption marker closes a
+    // run that never reached `done`, so a dead stream never silently drops what the user sent or what streamed.
+    const turnId = str(target.active_stream_id)
+    const events = this.deps.journal?.readRunEvents(target.session_id, turnId) ?? []
+    const output = journalOutputRows(events, turnId)
+    const recovered: Message[] = []
     if (target.hasPendingPrompt) {
-      const turnId = str(target.active_stream_id)
       const startedAt = typeof target.pending_started_at === 'number' && target.pending_started_at > 0 ? target.pending_started_at : this.deps.now()
       const attachments = [...target.pending_attachments]
-      target.messages.push({ role: 'user', content: pendingText, timestamp: Math.trunc(startedAt), ...(attachments.length ? { attachments } : {}), _recovered: true, _source: target.pending_user_source ?? 'webui', ...(turnId ? { _turn_id: turnId } : {}) })
-      target.messages.push({ role: 'assistant', content: '**Interrupted:** The reply was interrupted before it could be saved.', timestamp: Math.trunc(this.deps.now()), _error: true, ...(turnId ? { _turn_id: turnId } : {}) })
+      const user: Message = { role: 'user', content: str(target.pending_user_message), timestamp: Math.trunc(startedAt), ...(attachments.length ? { attachments } : {}), _recovered: true, _source: target.pending_user_source ?? 'webui', _turn_id: turnId }
+      // An eager save already checkpointed this prompt as the turn's user row.
+      if (!target.messages.some((m) => m.role === 'user' && !m._steer && m._turn_id === turnId)) target.messages.push(user)
+      recovered.push(user)
     }
+    if (recovered.length || output.length) {
+      target.messages.push(...output)
+      recovered.push(...output)
+      if (RunJournal.selectAuthoritativeTerminalEvent(events)?.event !== 'done') target.messages.push({ role: 'assistant', content: '**Interrupted:** The reply was interrupted before it could be saved.', timestamp: Math.trunc(this.deps.now()), _error: true, _turn_id: turnId })
+    }
+    // The model context gains what its fallback (`messages` without errors and partials) would show.
+    if (target.context_messages.length) target.context_messages.push(...copyJson(recovered.filter((m) => !m._error && !m._partial)))
     target.active_stream_id = null
     target.pending_user_message = null
     target.pending_attachments = []

@@ -3,7 +3,8 @@
  * `_merge_display_messages_after_agent_result`, `_message_identity`,
  * `_extract_tool_calls_from_messages`, `_build_partial_message`).
  */
-import { buildActiveTurnToken } from '../redact.js'
+import { buildActiveTurnToken, completedToolIndex } from '../redact.js'
+import { RunJournal, type JournalEvent } from './journal.js'
 import { str } from '../util.js'
 import { stripAttachedFilesMarker, type Message } from './session.js'
 import type { MediaProjection } from '../workspace/media-refs.js'
@@ -645,6 +646,47 @@ export function buildPartialMessage(contentText: string, reasoningText: string, 
   if (hasReasoning) msg.reasoning = reasoningText.trim()
   if (hasTools) msg._partial_tool_calls = [...toolCalls]
   return msg
+}
+
+/**
+ * TAL-536: a dead run's journaled output as partial rows, in order: each row is a stretch of reasoning and prose with the
+ * tool calls that followed it, the shape a Stop's snapshot keeps. A run that ended in `done` keeps its last prose row as
+ * the answer, not a partial.
+ */
+export function journalOutputRows(events: JournalEvent[], turnId: string): Message[] {
+  const rows: Message[] = []
+  const calls: Record<string, unknown>[] = []
+  let text = ''
+  let reasoning = ''
+  let tools: Record<string, unknown>[] = []
+  let at = 0
+  const flush = (): void => {
+    const row = buildPartialMessage(text, reasoning, tools, at)
+    if (row) rows.push({ ...row, _turn_id: turnId })
+    text = ''
+    reasoning = ''
+    tools = []
+  }
+  for (const e of events) {
+    const p = isDict(e.payload) ? e.payload : {}
+    if ((e.event === 'token' || e.event === 'reasoning') && tools.length) flush()
+    if (e.event === 'token') text += str(p.text)
+    else if (e.event === 'reasoning') reasoning += str(p.text)
+    else if (e.event === 'tool') {
+      const call = { name: p.name, args: p.args ?? {}, tid: str(p.id), done: false }
+      calls.push(call)
+      tools.push(call)
+    } else if (e.event === 'tool_complete') {
+      // The record is shared with the row that holds it, so a completion after its row closed still lands.
+      const call = calls[completedToolIndex(calls, str(p.id), p.name)]
+      if (call) Object.assign(call, { done: true, snippet: p.preview, is_error: p.is_error === true, duration: p.duration ?? null, ...(isDict(p.result_view) ? { result_view: p.result_view } : {}), ...(isDict(p.edit_diff) ? { edit_diff: p.edit_diff } : {}) })
+    } else continue
+    at = e.created_at || at
+  }
+  flush()
+  const last = rows[rows.length - 1]
+  if (last && !last._partial_tool_calls && RunJournal.selectAuthoritativeTerminalEvent(events)?.event === 'done') delete last._partial
+  return rows
 }
 
 const DSML = '(?:\\s*｜\\s*DSML\\s*[｜|]\\s*)?'
