@@ -37,6 +37,10 @@ public struct SessionMutator {
         _ = try await client.deleteSession(id: sessionID)
     }
 
+    func bulk(_ action: SessionBulkAction, sessionIDs: [String]) async throws -> SessionBulkResponse {
+        try await client.bulkSessions(action: action, ids: sessionIDs)
+    }
+
     public func rename(sessionID: String, title: String) async throws -> SessionMutationResponse {
         try await client.renameSession(id: sessionID, title: title)
     }

@@ -101,6 +101,37 @@ public struct SessionMutationResponse: Decodable {
     public let error: String?
 }
 
+public enum SessionBulkAction: String, Encodable, Sendable {
+    case archive, unarchive, delete
+}
+
+/// `POST /api/sessions/bulk` (TAL-627): one result per requested id, in request order.
+public struct SessionBulkResponse: Decodable, Equatable {
+    public let results: [SessionBulkResult]?
+
+    enum CodingKeys: String, CodingKey { case results }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        results = try? container.decodeIfPresent([SessionBulkResult].self, forKey: .results)
+    }
+}
+
+public struct SessionBulkResult: Decodable, Equatable {
+    public let sessionId: String?
+    public let ok: Bool?
+    public let error: String?
+
+    enum CodingKeys: String, CodingKey { case sessionId, ok, error }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        sessionId = container.decodeLossyStringIfPresent(forKey: .sessionId)
+        ok = container.decodeLossyBoolIfPresent(forKey: .ok)
+        error = container.decodeLossyStringIfPresent(forKey: .error)
+    }
+}
+
 public struct ProjectsResponse: Decodable, Equatable {
     public let projects: [ProjectSummary]?
 
@@ -286,6 +317,8 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
     /// The server's pin, archive and duplicate gates (TAL-312); absent on older servers.
     public let canPin: Bool?
     public let canArchive: Bool?
+    /// The server's delete gate (TAL-627); absent on older servers, which follow `readOnly`.
+    public let canDelete: Bool?
     public let canDuplicate: Bool?
     public let matchType: String?
     /// Server-redacted excerpt around the content hit; only `/api/sessions/search`
@@ -330,6 +363,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         canBranch: Bool? = nil,
         canPin: Bool? = nil,
         canArchive: Bool? = nil,
+        canDelete: Bool? = nil,
         canDuplicate: Bool? = nil,
         matchType: String? = nil,
         matchPreview: String? = nil
@@ -371,6 +405,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         self.canBranch = canBranch
         self.canPin = canPin
         self.canArchive = canArchive
+        self.canDelete = canDelete
         self.canDuplicate = canDuplicate
         self.matchType = matchType
         self.matchPreview = matchPreview
@@ -385,7 +420,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         case activeStreamId, isStreaming, isCliSession
         case userMessageCount, hasPendingUserMessage, pendingStartedAt, worktreePath
         case sourceTag, rawSource, sessionSource, sourceLabel, sourceKind
-        case parentSessionId, relationshipType, readOnly, canBranch, canPin, canArchive, canDuplicate, matchType, matchPreview
+        case parentSessionId, relationshipType, readOnly, canBranch, canPin, canArchive, canDelete, canDuplicate, matchType, matchPreview
     }
 
     /// Lossy field by field, like `SessionDetail` and `ProjectSummary` already
@@ -437,6 +472,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         canBranch = container.decodeLossyBoolIfPresent(forKey: .canBranch)
         canPin = container.decodeLossyBoolIfPresent(forKey: .canPin)
         canArchive = container.decodeLossyBoolIfPresent(forKey: .canArchive)
+        canDelete = container.decodeLossyBoolIfPresent(forKey: .canDelete)
         canDuplicate = container.decodeLossyBoolIfPresent(forKey: .canDuplicate)
         matchType = container.decodeLossyStringIfPresent(forKey: .matchType)
         matchPreview = container.decodeLossyStringIfPresent(forKey: .matchPreview)
@@ -507,6 +543,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         canBranch = detail.canBranch
         canPin = detail.canPin
         canArchive = detail.canArchive
+        canDelete = detail.canDelete
         canDuplicate = detail.canDuplicate
         matchType = nil
         matchPreview = nil
@@ -553,6 +590,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
             canBranch: canBranch,
             canPin: canPin,
             canArchive: canArchive,
+            canDelete: canDelete,
             canDuplicate: canDuplicate,
             matchType: matchType,
             matchPreview: matchPreview
@@ -622,6 +660,7 @@ extension SessionSummary {
             canBranch: canBranch ?? row.canBranch,
             canPin: canPin ?? row.canPin,
             canArchive: canArchive ?? row.canArchive,
+            canDelete: canDelete ?? row.canDelete,
             canDuplicate: canDuplicate ?? row.canDuplicate,
             matchType: matchType ?? row.matchType,
             matchPreview: matchPreview ?? row.matchPreview
@@ -810,6 +849,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
     public let canBranch: Bool?
     public let canPin: Bool?
     public let canArchive: Bool?
+    public let canDelete: Bool?
     public let canDuplicate: Bool?
     /// The agent's display name (TAL-458); nil from a server that predates it.
     public let assistantName: String?
@@ -870,6 +910,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
         case canBranch
         case canPin
         case canArchive
+        case canDelete
         case canDuplicate
         case assistantName
         case messages
@@ -936,6 +977,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
         canBranch = container.decodeLossyBoolIfPresent(forKey: .canBranch)
         canPin = container.decodeLossyBoolIfPresent(forKey: .canPin)
         canArchive = container.decodeLossyBoolIfPresent(forKey: .canArchive)
+        canDelete = container.decodeLossyBoolIfPresent(forKey: .canDelete)
         canDuplicate = container.decodeLossyBoolIfPresent(forKey: .canDuplicate)
         assistantName = container.decodeLossyStringIfPresent(forKey: .assistantName)
         messages = Self.decodeMessagesTolerantly(from: container)

@@ -25,7 +25,6 @@ final class LocalizationCatalogTests: XCTestCase {
         "%@",
         "%lld active sessions",
         "%lld changes",
-        "%lld selected",
         "+%lld",
         ", ",
         "/",

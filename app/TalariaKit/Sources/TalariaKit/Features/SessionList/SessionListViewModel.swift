@@ -76,6 +76,11 @@ public final class SessionListViewModel {
     private(set) var switchingActiveProfileName: String?
     private(set) var activeProfileErrorMessage: String?
     private(set) var mutatingSessionIDs: Set<String> = []
+    /// Select Chats (TAL-627): the picked rows, kept by ID so a list reload or a search
+    /// change does not drop a selection the user can no longer see.
+    public private(set) var isSelectingSessions = false
+    public private(set) var selectedSessionsByID: [String: SessionSummary] = [:]
+    public private(set) var isPerformingBulkAction = false
     /// Total archived sessions reported by the last successful list load
     /// (`archived_count`, issue #17). nil until a load succeeds or when an older
     /// server omits the field — the Archived entry stays hidden then.
@@ -860,6 +865,120 @@ public final class SessionListViewModel {
             // A list response requested before the delete must not restore the row.
             claimedRows.removeValue(forKey: sessionId)
         }
+    }
+
+    public var selectedSessionCount: Int { selectedSessionsByID.count }
+
+    /// ponytail: old-server fallback (TAL-627). A server that ships `can_delete` also serves
+    /// `/api/sessions/bulk`; delete this check once every supported server does.
+    public var supportsBulkActions: Bool {
+        sessions.contains { $0.canDelete != nil }
+    }
+
+    public func isSelected(_ session: SessionSummary) -> Bool {
+        guard let sessionId = Self.nonEmpty(session.sessionId) else { return false }
+        return selectedSessionsByID[sessionId] != nil
+    }
+
+    /// Whether any selected row allows the action. The server still answers for each ID.
+    public func canPerformBulkAction(_ action: SessionBulkAction) -> Bool {
+        guard !isPerformingBulkAction, !isViewingCachedData else { return false }
+        return selectedSessionsByID.values.contains {
+            action == .delete ? SessionRowActionPolicy.canDelete($0) : SessionRowActionPolicy.canArchive($0)
+        }
+    }
+
+    public func beginSelectingSessions() {
+        guard !isPerformingBulkAction else { return }
+        isSelectingSessions = true
+    }
+
+    public func endSelectingSessions() {
+        guard !isPerformingBulkAction else { return }
+        isSelectingSessions = false
+        selectedSessionsByID = [:]
+    }
+
+    public func toggleSelection(_ session: SessionSummary) {
+        guard isSelectingSessions,
+              !isPerformingBulkAction,
+              SessionRowActionPolicy.isBulkSelectable(session),
+              let sessionId = Self.nonEmpty(session.sessionId)
+        else { return }
+        if selectedSessionsByID.removeValue(forKey: sessionId) == nil {
+            selectedSessionsByID[sessionId] = session
+        }
+    }
+
+    public func allSelected(_ sessions: [SessionSummary]) -> Bool {
+        let selectable = sessions.filter(SessionRowActionPolicy.isBulkSelectable)
+        return !selectable.isEmpty && selectable.allSatisfy(isSelected)
+    }
+
+    /// Selects every selectable row in `sessions`, or clears the selection when they are all selected.
+    public func toggleSelectAll(_ sessions: [SessionSummary]) {
+        guard isSelectingSessions, !isPerformingBulkAction else { return }
+        let selectable = sessions.filter(SessionRowActionPolicy.isBulkSelectable)
+        if allSelected(selectable) {
+            selectedSessionsByID = [:]
+        } else {
+            for session in selectable {
+                if let sessionId = Self.nonEmpty(session.sessionId) { selectedSessionsByID[sessionId] = session }
+            }
+        }
+    }
+
+    /// Runs one bulk call for every selected ID and returns the sessions the server
+    /// changed. Failed IDs stay selected and the alert names how many failed and why;
+    /// the mode ends once nothing is left selected.
+    public func performBulkAction(
+        _ action: SessionBulkAction,
+        modelContext: ModelContext? = nil,
+        animation: Animation? = nil
+    ) async -> [SessionSummary] {
+        let sessionIDs = selectedSessionsByID.keys.sorted()
+        guard !sessionIDs.isEmpty, !isPerformingBulkAction else { return [] }
+
+        isPerformingBulkAction = true
+        mutatingSessionIDs.formUnion(sessionIDs)
+        defer {
+            isPerformingBulkAction = false
+            mutatingSessionIDs.subtract(sessionIDs)
+        }
+        actionErrorMessage = nil
+        lastError = nil
+
+        let results: [SessionBulkResult]
+        do {
+            results = try await sessionMutator.bulk(action, sessionIDs: sessionIDs).results ?? []
+        } catch {
+            if !APIError.isCancellation(error) {
+                lastError = error
+                actionErrorMessage = error.localizedDescription
+            }
+            return []
+        }
+
+        var changed: [SessionSummary] = []
+        for result in results where result.ok == true {
+            guard let sessionId = result.sessionId,
+                  let session = selectedSessionsByID.removeValue(forKey: sessionId) else { continue }
+            // A list response requested before the change must not restore the row.
+            claimedRows.removeValue(forKey: sessionId)
+            changed.append(session)
+        }
+        if !selectedSessionsByID.isEmpty {
+            let failure = results.first { $0.ok != true }?.error
+                ?? String(localized: "The server did not report a result.")
+            actionErrorMessage = String(
+                localized: "Failed for \(selectedSessionsByID.count) of \(sessionIDs.count) chats: \(failure)"
+            )
+        } else {
+            isSelectingSessions = false
+        }
+
+        _ = await load(modelContext: modelContext, animation: animation)
+        return changed
     }
 
     public func isMutating(_ session: SessionSummary) -> Bool {

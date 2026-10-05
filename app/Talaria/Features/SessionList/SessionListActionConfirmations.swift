@@ -4,9 +4,11 @@ import TalariaKit
 struct SessionActionConfirmations: ViewModifier {
     @Bindable var viewModel: SessionListViewModel
     @Binding var sessionPendingDeletion: SessionSummary?
+    @Binding var isConfirmingBulkDelete: Bool
     @Binding var projectPendingDeletion: ProjectSummary?
 
     let deleteSession: (SessionSummary) -> Void
+    let deleteSelectedSessions: () -> Void
     let deleteProject: (ProjectSummary) -> Void
 
     func body(content: Content) -> some View {
@@ -53,6 +55,18 @@ struct SessionActionConfirmations: ViewModifier {
                 }
             } message: {
                 Text("This removes the session from the Hermes server. Use this only on a session you no longer need.")
+            }
+            .alert(
+                "Delete \(viewModel.selectedSessionCount) Chats?",
+                isPresented: $isConfirmingBulkDelete
+            ) {
+                Button("Cancel", role: .cancel) {}
+
+                Button("Delete", role: .destructive) {
+                    deleteSelectedSessions()
+                }
+            } message: {
+                Text("This removes the selected chats from the Hermes server.")
             }
             .alert(
                 "Delete Project?",

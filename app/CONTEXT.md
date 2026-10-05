@@ -87,12 +87,16 @@ The action that removes a non-default Board from active use. Talaria cannot rest
 _Avoid_: Delete Board, remove Board
 
 **Bulk Action**:
-A named operation applied to multiple selected Cards.
+A named operation applied to multiple selected Cards or Chats. The server applies it to each item and reports each outcome.
 _Avoid_: Bulk update, batch operation
 
 **Select Cards**:
 The mode for choosing Cards before applying a Bulk Action.
 _Avoid_: Multi-select, bulk mode
+
+**Select Chats**:
+The chat-list mode for choosing Chats before archiving or deleting them in one Bulk Action.
+_Avoid_: Multi-select, edit mode
 
 ## Settings
 

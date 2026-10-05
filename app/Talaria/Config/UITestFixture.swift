@@ -583,6 +583,9 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             return json(["ok": true])
         case "/api/sessions/search":
             return json(["sessions": [], "query": "", "count": 0])
+        case "/api/sessions/bulk":
+            let ids = requestJSON(request)["session_ids"] as? [String] ?? []
+            return json(["results": ids.map { ["session_id": $0, "ok": true] }])
         case "/api/session":
             return UITestChatScenario.current == nil ? sessionResponse() : chatSessionResponse()
         case "/api/media" where UITestFixtureEnvironment.hasTranscriptMedia:
@@ -1108,7 +1111,9 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             "model": "fixture-model",
             "model_provider": "fixture-provider",
             "profile": "fixture-profile",
-            "archived": false
+            "archived": false,
+            "can_archive": true,
+            "can_delete": true
         ]
     }
 
