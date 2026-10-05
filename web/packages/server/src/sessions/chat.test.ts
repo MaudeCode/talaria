@@ -147,6 +147,9 @@ describe('chat turns through the sidecar', () => {
       { role: 'user', content: [{ type: 'text', text: str(params.user_message) }, { type: 'image_url', image_url: { url: attached } }] },
       { role: 'assistant', content: '', tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'browser_vision', arguments: '{}' } }] },
       { role: 'tool', tool_call_id: 'call_1', content: [{ type: 'text', text: 'Image loaded.' }, { type: 'image_url', image_url: { url: screenshot } }, { type: 'input_image', image_url: { url: screenshot } }] },
+      { role: 'assistant', content: '', tool_calls: [{ id: 'call_2', type: 'function', function: { name: 'browser_vision', arguments: '{}' } }] },
+      // An Anthropic-style result: a user row of `tool_result` blocks.
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'call_2', content: [{ type: 'text', text: 'Again.' }, { type: 'image', source: { type: 'base64', media_type: 'image/png', data: screenshot } }] }] },
       { role: 'assistant', content: 'Looks fine.' },
     ]))
     sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Shot"', usage: null }))
@@ -156,6 +159,8 @@ describe('chat turns through the sidecar', () => {
     for (const rows of [saved.messages, saved.context_messages] as Json[][]) {
       const tool = rows.find((m) => m.role === 'tool')!
       expect(tool.content).toEqual([{ type: 'text', text: 'Image loaded.' }, { type: 'text', text: '[screenshot]' }, { type: 'text', text: '[screenshot]' }])
+      const result = rows.find((m) => Array.isArray(m.content) && (m.content as Json[])[0]?.type === 'tool_result')!
+      expect(result.content).toEqual([{ type: 'tool_result', tool_use_id: 'call_2', content: [{ type: 'text', text: 'Again.' }, { type: 'text', text: '[screenshot]' }] }])
     }
     expect(JSON.stringify(saved)).not.toContain(screenshot)
     const user = (saved.context_messages as Json[]).find((m) => m.role === 'user')!
