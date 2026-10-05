@@ -39,8 +39,9 @@ struct ComposerSecondaryControlsView<Leading: View>: View {
     var body: some View {
         Group {
             if dynamicTypeSize.isAccessibilitySize {
-                // Large text wraps the two groups onto their own lines instead of scrolling.
-                VStack(alignment: .leading, spacing: 0) {
+                // Large text wraps the two groups onto their own lines instead of scrolling, spaced so
+                // each row's hit shapes, which reach past its labels, never overlap the other row's.
+                VStack(alignment: .leading, spacing: ComposerMetaControlLabel.hitPadding * 2) {
                     HStack(spacing: 12) { leading }
                     HStack(spacing: 12) { selectorRow }
                 }

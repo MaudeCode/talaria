@@ -37,8 +37,11 @@ struct ComposerMetaControlLabel: View {
         .transaction { transaction in
             transaction.animation = nil
         }
-        .chatMinimumHitTarget(horizontalPadding: 0, verticalPadding: 14, in: Rectangle())
+        .chatMinimumHitTarget(horizontalPadding: 0, verticalPadding: Self.hitPadding, in: Rectangle())
     }
+
+    /// How far the hit shape reaches above and below the label without taking layout space.
+    static let hitPadding: CGFloat = 14
 }
 
 /// A composer chip's icon, title and trailing accessory. A title that does not fit on one line
