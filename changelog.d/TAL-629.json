@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "The chat composer's model, reasoning, workspace, branch and profile controls now sit in one strip under the message box and stay there while you type.",
+      "highlight": true,
+      "components": ["app"]
+    }
+  ]
+}
