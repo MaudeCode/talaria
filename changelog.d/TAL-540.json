@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "After a conversation compresses itself automatically, the compression card shows its summary at the right place in the chat and the context ring updates right away.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

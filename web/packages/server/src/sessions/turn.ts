@@ -19,7 +19,8 @@ import { StreamRegistry, SessionChannels, type StreamChannel } from './streams.j
 import { ChatUsageSchema, type ClarifyAnswers, type PendingSteer, type SidecarResult, type SteerWithdrawn, type SteerWithdrawRequest } from '@maudecode/talaria-web-contracts'
 import { PendingPrompts, clarifyReply } from './pending.js'
 import { RunJournal, type RunJournalWriter } from './journal.js'
-import { CONTEXT_USAGE_FIELDS, Session, titleFrom, type Message } from './session.js'
+import { CONTEXT_USAGE_FIELDS, Session, contextUsage, titleFrom, type Message } from './session.js'
+import { anchorMessageKey, markerSummary, visibleMessagesForAnchor } from './compress.js'
 import { buildActiveTurnToken, completedToolIndex, publicToolFrame, redactNestedMessageContainers, redactSessionData, redactString, withToolId } from '../redact.js'
 import { dict, type Config } from '../config/agent-config.js'
 import { ReasoningTitleTracker, reasoningEventPayload } from './reasoning-titles.js'
@@ -687,8 +688,14 @@ export class TurnRunner {
       s.context_messages = dedupeContext(context)
       if (result.compressed) {
         s.post_compression_context_tokens_estimate = estimate
-        s.compression_anchor_visible_idx = Math.max(0, previousMessages.length - 1)
-        put('compressed', { session_id: sessionId, old_session_id: sessionId, new_session_id: sessionId, continuation_session_id: sessionId, message: 'Compression finished' })
+        // TAL-540: the anchor is the last visible row before this turn (never its eager checkpoint); the merged transcript
+        // holds no compaction marker, so the summary is the model context's newest one.
+        const before = visibleMessagesForAnchor(previousMessages.filter((m) => m._turn_id !== streamId))
+        const after = visibleMessagesForAnchor(s.messages)
+        const anchorIdx = before.length ? before.length - 1 : after.length ? 0 : null
+        s.compression_anchor_visible_idx = anchorIdx
+        s.compression_anchor_message_key = anchorMessageKey(anchorIdx !== null && anchorIdx < after.length ? after[anchorIdx] : after.at(-1))
+        s.compression_anchor_summary = markerSummary(s.context_messages)
       }
       const now = deps.now()
       for (const m of s.messages) m.timestamp ??= now
@@ -700,6 +707,14 @@ export class TurnRunner {
       if (typeof result.context.context_length === 'number') s.context_length = result.context.context_length
       if (typeof result.context.threshold_tokens === 'number') s.threshold_tokens = result.context.threshold_tokens
       if (typeof result.context.last_prompt_tokens === 'number') s.last_prompt_tokens = result.context.last_prompt_tokens
+      if (result.compressed) {
+        // TAL-540, Python `_live_usage_snapshot`: the counters and the ring's post-compression figures, so clients update before `done`.
+        const usage = {
+          ...meteringUsage(s), context_length: s.context_length ?? 0, threshold_tokens: s.threshold_tokens ?? 0, last_prompt_tokens: s.last_prompt_tokens ?? 0,
+          post_compression_context_tokens_estimate: s.post_compression_context_tokens_estimate, ...contextUsage(s, () => deps.service().deps.contextLengthFor(s.model, s.model_provider)),
+        }
+        put('compressed', { session_id: sessionId, old_session_id: sessionId, new_session_id: sessionId, continuation_session_id: sessionId, message: 'Compression finished', usage })
+      }
       s.tool_calls = extractToolCallsFromMessages(s.messages, liveToolCalls, s.tool_calls)
       s.active_stream_id = null
       s.pending_user_message = null

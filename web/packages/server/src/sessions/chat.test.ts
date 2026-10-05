@@ -2248,6 +2248,39 @@ describe('chat turns through the sidecar', () => {
     expect(detail.context_used_tokens).toBe(settled)
   })
 
+  it.each(['deferred', 'eager'] as const)('stores the anchor key and summary and sends live usage after an auto-compression (TAL-540, %s save)', async (mode) => {
+    const turns = s.deps.turns as unknown as { deps: { saveMode: () => 'deferred' | 'eager' } }
+    const original = turns.deps.saveMode
+    turns.deps.saveMode = () => mode
+    try {
+      const sid = await newSession(s)
+      sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Plan"', usage: null }))
+      sidecar.respond('chat.start', (params) => completed([...params.conversation_history, { role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Here is the plan.' }]))
+      const first = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'make a plan' }))
+      await s.sse(`/api/chat/stream?stream_id=${String(first.stream_id)}`, (f) => f.event === 'stream_end')
+      // The next turn compresses the earlier exchange into the Agent's summary marker.
+      sidecar.respond('chat.start', (params) => {
+        const rows: Json[] = [
+          { role: 'user', content: '[CONTEXT COMPACTION]   Earlier we\n made a plan.' },
+          { role: 'user', content: str(params.user_message) },
+          { role: 'assistant', content: 'Continuing.' },
+        ]
+        return completed(rows, { compressed: true, context_messages: rows, post_compression_context_tokens_estimate: 1234, context: { context_length: 200000, threshold_tokens: 100000, last_prompt_tokens: 150000 } })
+      })
+      const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'continue' }))
+      const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+      const stored = s.deps.sessionStore.get(sid)
+      // The anchor is the last visible row before this turn: the earlier answer.
+      expect(stored.compression_anchor_visible_idx).toBe(1)
+      expect(stored.compression_anchor_message_key).toMatchObject({ role: 'assistant', text: 'Here is the plan.' })
+      expect(stored.compression_anchor_summary).toBe('[CONTEXT COMPACTION] Earlier we made a plan.')
+      // The frame carries the ring's post-compression figures, so the client updates it before `done`.
+      expect(frames.find((f) => f.event === 'compressed')?.data).toMatchObject({ usage: { context_used_tokens: 1234, context_window_tokens: 200000, context_usage_percent: 1, context_threshold_percent: 50 } })
+    } finally {
+      turns.deps.saveMode = original
+    }
+  })
+
   it('reports no_cached_agent for a steer against an unknown session', async () => {
     expect(await json(await post(s, '/api/chat/steer', { session_id: 'deadbeef0000', text: 'focus' }))).toEqual({ accepted: false, fallback: 'no_cached_agent', stream_id: null })
   })
