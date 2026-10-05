@@ -309,7 +309,7 @@ jobs:
     outputs:
       artifacts: ${{ steps.store.outputs.artifacts }}
   component-contracts:
-    # The Web contracts package suite and Relay publisher fixtures at their selected refs.
+    # The Web contracts suite, the Web publisher body pin, and Relay publisher fixtures at their selected refs.
     needs: prepare
     runs-on: ubuntu-latest
     timeout-minutes: 60

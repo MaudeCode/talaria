@@ -60,10 +60,15 @@ def main():
             try:
                 with log_path.open("w") as log:
                     if name == "web":
-                        # The contracts package owns the monorepo fixture tests (publisher snapshot, activity scenes).
+                        # The contracts package owns the shared fixture and versions-schema tests; the server
+                        # pins the real publisher body to the publisher-snapshot fixture the Relay gate accepts.
                         subprocess.run(["npm", "ci", "--no-audit", "--no-fund"], cwd=checkout / "web", env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
                         subprocess.run(["npm", "run", "build", "-w", "packages/contracts"], cwd=checkout / "web", env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
                         subprocess.run(["npm", "test", "-w", "packages/contracts"], cwd=checkout / "web", env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
+                        publisher_test = "src/sessions/relay.contract.test.ts"
+                        # A Web ref released before TAL-547 has no publisher test to run.
+                        if (checkout / "web/packages/server" / publisher_test).exists():
+                            subprocess.run(["npm", "test", "-w", "packages/server", "--", publisher_test], cwd=checkout / "web", env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
                     else:
                         # Producer and consumer fixtures come from their actual refs,
                         # not whichever unreleased code happens to be on main.

@@ -65,7 +65,9 @@ contract scripts themselves. In `ci.yml`:
 
 Releases repeat the gate in `release-set.yml`: `scripts/check-release-contracts.py`
 checks the selected App against the selected and still-supported Web sources and
-runs the Web and Relay shared-fixture suites at their selected refs, and
+runs the Web and Relay shared-fixture suites at their selected refs (the Web
+suite validates `contracts/versions.json` against its schema and pins the real
+relay publisher body to `contracts/fixtures/publisher-snapshot.json`), and
 `scripts/check-previous-app.py` checks the previously released App against the
 selected Web.
 
