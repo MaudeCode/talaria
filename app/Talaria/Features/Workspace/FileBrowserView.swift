@@ -1,18 +1,49 @@
 import SwiftUI
 import TalariaKit
 
+/// Files in the inspector beside a wide chat (TAL-479). The inspector sits inside the chat's
+/// navigation stack, and SwiftUI links inside it, even in a nested `NavigationStack` or hosting
+/// controller, push onto that stack and replace the chat. A navigation controller of its own
+/// pushes each opened file inside the inspector instead.
+struct FilesInspectorContent: UIViewControllerRepresentable {
+    let session: SessionSummary
+    let server: URL
+    let onAPIError: (Error) -> Void
+
+    func makeUIViewController(context: Context) -> UINavigationController {
+        let navigation = UINavigationController()
+        let browser = FileBrowserView(session: session, server: server, onAPIError: onAPIError) { [weak navigation] entry in
+            let preview = FilePreviewView(session: session, server: server, entry: entry, onAPIError: onAPIError)
+            navigation?.pushViewController(UIHostingController(rootView: preview), animated: true)
+        }
+        navigation.viewControllers = [UIHostingController(rootView: browser)]
+        return navigation
+    }
+
+    // The chat recreates its inspector for another session, so nothing here changes in place.
+    func updateUIViewController(_ controller: UINavigationController, context: Context) {}
+}
+
 struct FileBrowserView: View {
     let onAPIError: (Error) -> Void
+    /// Opens a file in place of a navigation link, for a host that pushes it itself.
+    private let onOpenFile: ((WorkspaceEntry) -> Void)?
 
     private let session: SessionSummary
     private let server: URL
     @State private var viewModel: FileBrowserViewModel
     @State private var searchText = ""
 
-    init(session: SessionSummary, server: URL, onAPIError: @escaping (Error) -> Void) {
+    init(
+        session: SessionSummary,
+        server: URL,
+        onAPIError: @escaping (Error) -> Void,
+        onOpenFile: ((WorkspaceEntry) -> Void)? = nil
+    ) {
         self.session = session
         self.server = server
         self.onAPIError = onAPIError
+        self.onOpenFile = onOpenFile
         _viewModel = State(initialValue: FileBrowserViewModel(session: session, server: server))
     }
 
@@ -65,6 +96,13 @@ struct FileBrowserView: View {
                 if entry.isBrowsableDirectory {
                     Button {
                         Task { await load(path: entry.path ?? ".") }
+                    } label: {
+                        FileBrowserRow(entry: entry, showsDisclosure: true)
+                    }
+                    .buttonStyle(.plain)
+                } else if entry.path != nil, let onOpenFile {
+                    Button {
+                        onOpenFile(entry)
                     } label: {
                         FileBrowserRow(entry: entry, showsDisclosure: true)
                     }
