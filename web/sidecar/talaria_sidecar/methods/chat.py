@@ -21,6 +21,7 @@ import threading
 import time
 import uuid
 from collections import OrderedDict
+from pathlib import Path
 from typing import Any
 
 from ..errors import InvalidParams, RpcError
@@ -567,6 +568,7 @@ def _release_agent(agent, home) -> threading.Thread:
             if not released:
                 # The memory flush needs the profile; the LLM clients and the Codex child close regardless.
                 call("release_clients")
+            _release_session_db(getattr(agent, "_talaria_session_db", None))
             with _RELEASES_LOCK:
                 _RELEASES.pop(thread, None)
 
@@ -643,6 +645,47 @@ def release_profile_agents(home) -> None:
         raise RpcError("The profile is still saving memory from its chats. Retry in a moment.")
     if any(thread.failed for thread in threads):
         raise RpcError("Memory from the profile's chats could not be saved; see the sidecar log. Retry to delete the profile anyway.")
+
+
+def _acquire_session_db(home):
+    """TAL-529: the profile's ``state.db`` from the Agent's shared-handle registry, one reference per agent (released with
+    it), so the turn's conversation reaches ``hermes sessions``, CLI resume, and ``session_search``. None when it cannot
+    open: the turn runs without it, like the predecessor's ``_build_session_db_for_stream``."""
+    try:
+        from hermes_state_registry import acquire
+
+        return acquire(Path(home) / "state.db")
+    except Exception:  # noqa: BLE001
+        log.warning("state.db unavailable under %s; this agent's turns will not reach it", home, exc_info=True)
+        return None
+
+
+def _release_session_db(db) -> None:
+    if db is None:
+        return
+    try:
+        from hermes_state_registry import release_or_close
+
+        release_or_close(db)
+    except Exception:  # noqa: BLE001
+        log.warning("releasing an agent's state.db handle failed", exc_info=True)
+
+
+def _execution_session_id(db, session_id: str) -> str:
+    """Predecessor ``_resolve_agent_execution_session_id``: a new agent for a session the Agent rotated by compression
+    (the old agent went with a sidecar restart or a runtime change) runs on the live tip, with the server's history,
+    rather than the closed Web id. The tip qualifies as in the Agent's own adoption: a different, still-open row. Any
+    doubt keeps the Web id."""
+    try:
+        tip = db.get_compression_tip(session_id)
+        if tip and tip != session_id:
+            row = db.get_session(tip)
+            if row and row.get("ended_at") is None:
+                log.info("agent for %s runs on its live compression tip %s", session_id, tip)
+                return str(tip)
+    except Exception:  # noqa: BLE001
+        log.warning("compression tip lookup failed for %s", session_id, exc_info=True)
+    return session_id
 
 
 def _agent_class():
@@ -921,7 +964,17 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
                 if name in kwargs and hasattr(agent, name):
                     setattr(agent, name, kwargs[name])
         else:
-            agent = AIAgent(**kwargs)
+            # A ``/btw`` side question's throwaway session stays out of state.db.
+            session_db = _acquire_session_db(home) if not params.get("ephemeral") and _supported(AIAgent, "session_db") else None
+            if session_db is not None:
+                kwargs["session_db"] = session_db
+                kwargs["session_id"] = _execution_session_id(session_db, session_id)
+            try:
+                agent = AIAgent(**kwargs)
+            except BaseException:
+                _release_session_db(session_db)
+                raise
+            agent._talaria_session_db = session_db  # released with the agent (``_release_agent``)
             with _AGENT_CACHE_LOCK:
                 bind(agent)
                 replaced = _AGENT_CACHE.pop(session_id, None)
@@ -980,8 +1033,12 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             run_params = set()
         if system_message and ("system_message" in run_params or not run_params):
             run_kwargs["system_message"] = system_message
-        if "persist_user_message" in run_params and isinstance(user_message, str):
-            run_kwargs["persist_user_message"] = user_message
+        # The server's clean user text (no workspace prefix) is what state.db stores; the Agent keeps the sent bytes beside it.
+        persist = params.get("persist_user_message")
+        if not (isinstance(persist, str) and persist.strip()):
+            persist = user_message if isinstance(user_message, str) else None
+        if "persist_user_message" in run_params and persist is not None:
+            run_kwargs["persist_user_message"] = persist
         error: str | None = None
         result: dict = {}
         try:

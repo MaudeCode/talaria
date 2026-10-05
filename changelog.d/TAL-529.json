@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Talaria Web chats now appear in your Hermes session history, CLI resume, and session search, and a compressed chat continues where it left off after a restart.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

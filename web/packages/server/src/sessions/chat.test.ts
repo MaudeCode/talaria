@@ -57,6 +57,8 @@ describe('chat turns through the sidecar', () => {
     sidecar.respond('chat.start', (params, emit) => {
       expect(params.session_id).toBe(sid)
       expect(str(params.user_message)).toMatch(/^\[Workspace::v1: .*\]\nhello there$/)
+      // TAL-529: state.db stores the user's own text; the prompt with its workspace prefix is what the model gets.
+      expect(params.persist_user_message).toBe('hello there')
       expect(params.conversation_history).toEqual([])
       emit({ event: 'reasoning', data: { text: 'thinking' } })
       emit({ event: 'tool', data: { event_type: 'tool.started', name: 'read_file', preview: null, args: { path: 'a' }, tid: 'call_1' } })
@@ -2059,6 +2061,9 @@ describe('chat turns through the sidecar', () => {
     // The side question sees the running turn's prompt, which deferred save keeps out of the stored history until settlement.
     const asked = sidecar.calls.find((c) => c.method === 'chat.start' && str((c.params as Json).user_message).endsWith('side question'))
     expect(((asked?.params as Json).conversation_history as Json[]).map((m) => [m.role, m.content])).toEqual([['user', 'long task']])
+    // TAL-529: the side question's throwaway session stays out of state.db; the chat's own turn does not.
+    expect((asked?.params as Json).ephemeral).toBe(true)
+    expect(sidecar.calls.find((c) => c.method === 'chat.start' && str((c.params as Json).user_message).endsWith('long task'))?.params).not.toHaveProperty('ephemeral')
     release()
     await s.sse(`/api/chat/stream?stream_id=${run}&replay=1`, (f) => f.event === 'done')
     await new Promise((r) => setTimeout(r, 50))

@@ -291,6 +291,10 @@ export const CHAT_METHODS = {
       clarify_timeout_seconds: z.number().nullable().optional(),
       /** Python `parse_reasoning_effort` output (`{enabled, effort}`) and the WebUI-only runtime instructions. */
       reasoning_config: z.object({ enabled: z.boolean(), effort: z.string().optional() }).nullable().optional(), ephemeral_system_prompt: z.string().nullable().optional(),
+      /** TAL-529: the user's own text, which state.db stores in place of `user_message` (workspace prefix, attachment parts). */
+      persist_user_message: z.string().optional(),
+      /** TAL-529: a `/btw` side question, whose throwaway session the Agent keeps out of the profile's state.db. */
+      ephemeral: z.boolean().optional(),
     }),
     result: ChatStartResultSchema,
     stream: ChatStreamSchema,
