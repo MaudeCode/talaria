@@ -6,6 +6,7 @@ import { randomBytes } from 'node:crypto'
 import { isWithin, resolvePathLikePython } from './paths.js'
 import { openAnchoredCreateFd, rmtreeAnchored, unlinkAnchored, FileExistsError } from './fs.js'
 import { mimeFor } from './media.js'
+import { MAX_CHAT_ATTACHMENTS } from '@maudecode/talaria-web-contracts'
 
 export interface MultipartResult { fields: Record<string, string>; files: Record<string, { filename: string; body: Buffer }> }
 
@@ -125,7 +126,7 @@ export class UploadInbox {
   }
 
   /** Write one upload into the session inbox with an O_EXCL anchored create. */
-  store(sessionId: string, filename: string, bytes: Buffer): { filename: string; path: string; size: number; mime: string; is_image: boolean; rollback_token: string } {
+  store(sessionId: string, filename: string, bytes: Buffer): { filename: string; path: string; size: number; mime: string; is_image: boolean; rollback_token: string; named_in_prompt: true; max_attachments_per_message: number } {
     const safeName = sanitizeUploadName(filename)
     const destDir = this.sessionDir(sessionId)
     mkdirSync(destDir, { recursive: true })
@@ -154,7 +155,9 @@ export class UploadInbox {
     // The response reports the name actually stored (Python `test_duplicate_upload_response_reports_actual_stored_filename`).
     const stored = basename(dest)
     const mime = guessMime(stored)
-    return { filename: stored, path: dest, size: bytes.length, mime, is_image: mime.startsWith('image/'), rollback_token: token }
+    // The server names every attached file in the turn's prompt (TAL-276) and keeps at most
+    // MAX_CHAT_ATTACHMENTS per message, so clients send the bare draft and stage no more (TAL-635).
+    return { filename: stored, path: dest, size: bytes.length, mime, is_image: mime.startsWith('image/'), rollback_token: token, named_in_prompt: true, max_attachments_per_message: MAX_CHAT_ATTACHMENTS }
   }
 }
 

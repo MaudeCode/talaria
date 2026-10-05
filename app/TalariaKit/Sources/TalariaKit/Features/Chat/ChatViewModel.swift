@@ -2385,11 +2385,14 @@ public final class ChatViewModel {
             return false
         }
 
-        // The bare draft, as Web sends it: the server names every attached file in the prompt
-        // (TAL-276), so adding an `[Attached files: …]` line here sent it to the agent twice
-        // (TAL-635). A textless send is valid when it carries staged files with a path.
-        let message = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        let hasSendableAttachments = attachmentCoordinator.pendingAttachments.contains {
+        // A server that names attached files in the prompt (TAL-276) gets the bare draft, as Web
+        // sends it; adding an `[Attached files: …]` line there sent it to the agent twice
+        // (TAL-635). An older server still gets the files named in the text. A textless send is
+        // valid when it carries staged files: compose before `prepareForSend` consumes them.
+        let draftText = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let attachmentsToSend = attachmentCoordinator.pendingAttachments
+        let message = PendingAttachment.chatMessageText(draft: draftText, attachments: attachmentsToSend)
+        let hasSendableAttachments = attachmentsToSend.contains {
             !$0.path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
         guard !message.isEmpty || hasSendableAttachments else { return false }

@@ -33330,6 +33330,25 @@
       "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "無法將附件儲存到此裝置。" } },
       "zh-HK" : { "stringUnit" : { "state" : "translated", "value" : "無法將附件儲存到此裝置。" } }
     } },
+    "A message can carry up to %lld attachments." : { "localizations" : {
+      "de" : { "stringUnit" : { "state" : "translated", "value" : "Eine Nachricht kann bis zu %lld Anhänge enthalten." } },
+      "es" : { "stringUnit" : { "state" : "translated", "value" : "Un mensaje puede llevar hasta %lld archivos adjuntos." } },
+      "fr" : { "stringUnit" : { "state" : "translated", "value" : "Un message peut contenir jusqu’à %lld pièces jointes." } },
+      "it" : { "stringUnit" : { "state" : "translated", "value" : "Un messaggio può contenere fino a %lld allegati." } },
+      "pl" : { "stringUnit" : { "state" : "translated", "value" : "Wiadomość może zawierać maksymalnie %lld załączników." } },
+      "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Uma mensagem pode ter até %lld anexos." } },
+      "nl" : { "stringUnit" : { "state" : "translated", "value" : "Een bericht kan maximaal %lld bijlagen bevatten." } },
+      "tr" : { "stringUnit" : { "state" : "translated", "value" : "Bir mesaj en fazla %lld ek içerebilir." } },
+      "ru" : { "stringUnit" : { "state" : "translated", "value" : "Сообщение может содержать не более %lld вложений." } },
+      "ja" : { "stringUnit" : { "state" : "translated", "value" : "1件のメッセージに添付できるのは%lld件までです。" } },
+      "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "每条消息最多可附带 %lld 个附件。" } },
+      "ko" : { "stringUnit" : { "state" : "translated", "value" : "메시지 하나에 최대 %lld개의 첨부 파일을 넣을 수 있습니다." } },
+      "ar" : { "stringUnit" : { "state" : "translated", "value" : "يمكن أن تحمل الرسالة حتى %lld مرفقًا." } },
+      "he" : { "stringUnit" : { "state" : "translated", "value" : "הודעה יכולה לכלול עד %lld קבצים מצורפים." } },
+      "ur" : { "stringUnit" : { "state" : "translated", "value" : "ایک پیغام میں زیادہ سے زیادہ %lld منسلکات ہو سکتے ہیں۔" } },
+      "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "每則訊息最多可附加 %lld 個附件。" } },
+      "zh-HK" : { "stringUnit" : { "state" : "translated", "value" : "每則訊息最多可附加 %lld 個附件。" } }
+    } },
     "Could not save memory." : {
       "localizations" : {
         "ar" : {

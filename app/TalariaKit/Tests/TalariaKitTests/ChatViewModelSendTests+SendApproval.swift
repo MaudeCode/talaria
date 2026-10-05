@@ -130,7 +130,8 @@ extension ChatViewModelSendTests {
                   "path": "/tmp/workspace/photo.png",
                   "size": 4,
                   "mime": "image/png",
-                  "is_image": true
+                  "is_image": true,
+                  "named_in_prompt": true
                 }
                 """, for: request)
             case "/api/chat/start":

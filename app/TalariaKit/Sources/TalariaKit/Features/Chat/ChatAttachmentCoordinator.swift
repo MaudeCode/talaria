@@ -27,6 +27,8 @@ final class ChatAttachmentCoordinator {
     private(set) var localAttachmentPreviews: [String: [String: Data]] = [:]
     private var activeUploadCount = 0
     private(set) var uploadStartGeneration = 0
+    /// The server's per-message attachment cap, learned from its upload responses (TAL-635).
+    private(set) var maxAttachmentsPerMessage: Int?
 
     var isUploadingAttachment: Bool {
         activeUploadCount > 0
@@ -57,6 +59,12 @@ final class ChatAttachmentCoordinator {
     func uploadAttachment(data: Data, filename: String, previewData: Data? = nil) async -> PendingAttachment? {
         guard data.count <= PendingAttachment.maximumUploadBytes else {
             uploadAttachmentErrorMessage = PendingAttachment.uploadTooLargeMessage(filename: filename)
+            return nil
+        }
+        // The server keeps only this many attachments on a message; one more would be dropped
+        // silently, so refuse it here instead (TAL-635).
+        if let maxAttachmentsPerMessage, pendingAttachments.count + activeUploadCount >= maxAttachmentsPerMessage {
+            uploadAttachmentErrorMessage = String(localized: "A message can carry up to \(maxAttachmentsPerMessage) attachments.")
             return nil
         }
 
@@ -184,6 +192,9 @@ final class ChatAttachmentCoordinator {
                 return nil
             }
 
+            if let cap = response.maxAttachmentsPerMessage, cap > 0 {
+                maxAttachmentsPerMessage = cap
+            }
             return PendingAttachment(
                 id: draftAttachmentID ?? UUID(),
                 name: displayFilename,
@@ -192,7 +203,8 @@ final class ChatAttachmentCoordinator {
                 size: response.size,
                 isImage: response.isImage ?? false,
                 thumbnailData: await Self.thumbnailData(for: response, originalData: data, previewData: previewData),
-                draftFileName: draftFileName
+                draftFileName: draftFileName,
+                isNamedInPromptByServer: response.namedInPrompt == true
             )
         } catch {
             if reportsErrors {
