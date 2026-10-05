@@ -245,6 +245,7 @@ public final class ChatViewModel {
     public private(set) var contextWindowSnapshot: ContextWindowSnapshot?
     public private(set) var responseCompletionHapticTrigger = 0
     public private(set) var responseCompletionNeedsTranscriptRefresh = false
+    public private(set) var responseCompletionOutcome: ResponseCompletionOutcome = .completed
     public private(set) var modelCatalogGroups: [ModelCatalogGroup] = []
     public private(set) var agentCommands: [AgentCommand] = []
     public private(set) var workspaceRoots: [WorkspaceRoot] = []
@@ -5785,8 +5786,9 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
         refreshCompletedResponseTitleIfNeeded()
     }
 
-    public func streamCoordinatorDidCompleteCurrentResponse(needsTranscriptRefresh: Bool) {
+    public func streamCoordinatorDidCompleteCurrentResponse(needsTranscriptRefresh: Bool, outcome: ResponseCompletionOutcome) {
         responseCompletionNeedsTranscriptRefresh = needsTranscriptRefresh
+        responseCompletionOutcome = outcome
         responseCompletionHapticTrigger += 1
     }
 

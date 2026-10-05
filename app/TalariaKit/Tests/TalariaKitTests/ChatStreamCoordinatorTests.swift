@@ -1022,8 +1022,8 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
         }
         // A cancelled run is not an error: it shows no failure message.
         XCTAssertEqual(delegate.errorMessages, ["Lost", "Full"])
-        // Only the two turns the server reports complete get the completion haptic and notification.
-        XCTAssertEqual(delegate.completedNeedsTranscriptRefreshValues.count, 2)
+        // Every turn the server reports complete or failed gets its reply notification; the cancelled one does not.
+        XCTAssertEqual(delegate.completedOutcomes, [.failed, .failed, .failed, .completed, .completed])
     }
 
     @MainActor
@@ -1767,6 +1767,7 @@ private final class CoordinatorDelegateSpy: ChatStreamCoordinatorDelegate {
     private(set) var drainQueueCount = 0
     private(set) var refreshTitleCount = 0
     private(set) var completedNeedsTranscriptRefreshValues: [Bool] = []
+    private(set) var completedOutcomes: [ResponseCompletionOutcome] = []
     private(set) var finishCount = 0
     private(set) var errorMessages: [String] = []
     private(set) var recoveryErrors: [String] = []
@@ -1840,8 +1841,9 @@ private final class CoordinatorDelegateSpy: ChatStreamCoordinatorDelegate {
         refreshTitleCount += 1
     }
 
-    func streamCoordinatorDidCompleteCurrentResponse(needsTranscriptRefresh: Bool) {
+    func streamCoordinatorDidCompleteCurrentResponse(needsTranscriptRefresh: Bool, outcome: ResponseCompletionOutcome) {
         completedNeedsTranscriptRefreshValues.append(needsTranscriptRefresh)
+        completedOutcomes.append(outcome)
     }
 
     func streamCoordinatorDidFinishStream() {

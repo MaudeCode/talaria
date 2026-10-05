@@ -56,7 +56,7 @@ public protocol ChatStreamCoordinatorDelegate: AnyObject {
     func streamCoordinatorFlushPinnedLocalNoticesToTranscript()
     func streamCoordinatorDrainQueuedSlashMessageIfIdle()
     func streamCoordinatorRefreshCompletedResponseTitleIfNeeded()
-    func streamCoordinatorDidCompleteCurrentResponse(needsTranscriptRefresh: Bool)
+    func streamCoordinatorDidCompleteCurrentResponse(needsTranscriptRefresh: Bool, outcome: ResponseCompletionOutcome)
     func streamCoordinatorDidFinishStream()
     func streamCoordinatorDidReceiveErrorMessage(_ message: String)
     func streamCoordinatorDidReceiveRecoveryError(_ error: Error)
@@ -805,6 +805,9 @@ public final class ChatStreamCoordinator {
                     delegate?.streamCoordinatorDidReceiveErrorMessage(message)
                 }
                 liveActivityManager?.end(status: outcome.status, activity: outcome.activity, errorSummary: nil)
+                if let notifiedOutcome = ResponseCompletionOutcome(status: outcome.status) {
+                    delegate?.streamCoordinatorDidCompleteCurrentResponse(needsTranscriptRefresh: false, outcome: notifiedOutcome)
+                }
             }
             finishStream()
         case .transportError(let message):
@@ -947,9 +950,12 @@ public final class ChatStreamCoordinator {
         liveTokensPerSecond = nil
         delegate?.streamCoordinatorStreamingAssistantMessageID = nil
         hasCompletedCurrentResponse = true
-        // Completion feedback (haptic, "response complete" notification) only for a turn the server reports complete.
-        if outcome.status == .complete {
-            delegate?.streamCoordinatorDidCompleteCurrentResponse(needsTranscriptRefresh: needsTranscriptRefresh)
+        // Reply feedback for a turn the server reports complete or failed; a cancelled turn (user Stop) stays silent.
+        if let notifiedOutcome = ResponseCompletionOutcome(status: outcome.status) {
+            delegate?.streamCoordinatorDidCompleteCurrentResponse(
+                needsTranscriptRefresh: needsTranscriptRefresh,
+                outcome: notifiedOutcome
+            )
         }
         resetRecoveryState()
     }

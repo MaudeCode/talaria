@@ -274,7 +274,8 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
             return OrphanedLiveActivity(
                 streamID: streamID,
                 sessionID: state.sessionID,
-                updatedAt: state.updatedAt
+                updatedAt: state.updatedAt,
+                sessionTitle: state.sessionTitle
             )
         }
         return result

@@ -218,35 +218,22 @@ final class CodeBlockWrappingSettingsTests: XCTestCase {
 }
 
 final class ResponseCompletionNotificationPolicyTests: XCTestCase {
-    func testAllowsEnabledAuthorizedNormalCompletionWhileSceneInactive() {
+    func testAllowsEnabledAuthorizedRunEndWhileSceneInactive() {
         XCTAssertTrue(
             ResponseCompletionNotificationPolicy.shouldSchedule(
                 preferenceEnabled: true,
                 authorizationStatus: .authorized,
-                completedNormally: true,
                 sceneIsActive: false
             )
         )
     }
 
-    func testBlocksForegroundCompletion() {
+    func testBlocksForegroundRunEnd() {
         XCTAssertFalse(
             ResponseCompletionNotificationPolicy.shouldSchedule(
                 preferenceEnabled: true,
                 authorizationStatus: .authorized,
-                completedNormally: true,
                 sceneIsActive: true
-            )
-        )
-    }
-
-    func testBlocksCancelledOrFailedCompletion() {
-        XCTAssertFalse(
-            ResponseCompletionNotificationPolicy.shouldSchedule(
-                preferenceEnabled: true,
-                authorizationStatus: .authorized,
-                completedNormally: false,
-                sceneIsActive: false
             )
         )
     }
@@ -256,7 +243,6 @@ final class ResponseCompletionNotificationPolicyTests: XCTestCase {
             ResponseCompletionNotificationPolicy.shouldSchedule(
                 preferenceEnabled: false,
                 authorizationStatus: .authorized,
-                completedNormally: true,
                 sceneIsActive: false
             )
         )
@@ -265,53 +251,93 @@ final class ResponseCompletionNotificationPolicyTests: XCTestCase {
             ResponseCompletionNotificationPolicy.shouldSchedule(
                 preferenceEnabled: true,
                 authorizationStatus: .denied,
-                completedNormally: true,
                 sceneIsActive: false
             )
         )
+    }
+
+    func testOnlyCompletedAndFailedRunsHaveANotificationOutcome() {
+        XCTAssertEqual(ResponseCompletionOutcome(status: .complete), .completed)
+        XCTAssertEqual(ResponseCompletionOutcome(status: .failed), .failed)
+        // A user Stop never notifies.
+        XCTAssertNil(ResponseCompletionOutcome(status: .cancelled))
+        XCTAssertNil(ResponseCompletionOutcome(status: .responding))
     }
 }
 
 final class ResponseCompletionNotificationServiceTests: XCTestCase {
     func testRequestCarriesOnlySessionIDPayload() {
-        XCTAssertEqual(
-            ResponseCompletionNotificationRequest(sessionID: "session-abc").userInfo,
-            ["sessionId": "session-abc"]
-        )
-        XCTAssertEqual(ResponseCompletionNotificationRequest(sessionID: "").userInfo, [:])
-        XCTAssertEqual(ResponseCompletionNotificationRequest(sessionID: nil).userInfo, [:])
+        func request(_ sessionID: String?) -> ResponseCompletionNotificationRequest {
+            ResponseCompletionNotificationRequest(sessionID: sessionID, chatTitle: "Chat", outcome: .completed)
+        }
+        XCTAssertEqual(request("session-abc").userInfo, ["sessionId": "session-abc"])
+        XCTAssertEqual(request("").userInfo, [:])
+        XCTAssertEqual(request(nil).userInfo, [:])
     }
 
-    func testSchedulesAllowedResponseCompletionWithSessionID() async {
-        let scheduler = SpyResponseCompletionNotificationScheduler(status: .authorized)
+    func testRequestNamesTheChatAndTheOutcome() {
+        let completed = ResponseCompletionNotificationRequest(sessionID: "s", chatTitle: "Deploy plan", outcome: .completed)
+        XCTAssertEqual(completed.title, "Deploy plan")
+        XCTAssertEqual(completed.body, "Response complete")
 
-        let didSchedule = await ResponseCompletionNotificationService.scheduleResponseCompletedIfAllowed(
-            sessionID: "session-abc",
-            preferenceEnabled: true,
-            completedNormally: true,
-            sceneIsActive: false,
-            scheduler: scheduler
-        )
-
-        XCTAssertTrue(didSchedule)
-        XCTAssertEqual(scheduler.authorizationStatusCallCount, 1)
-        XCTAssertEqual(scheduler.scheduledRequests, [ResponseCompletionNotificationRequest(sessionID: "session-abc")])
+        let failed = ResponseCompletionNotificationRequest(sessionID: "s", chatTitle: "Deploy plan", outcome: .failed)
+        XCTAssertEqual(failed.title, "Deploy plan")
+        XCTAssertEqual(failed.body, "Response failed")
     }
 
-    func testDoesNotScheduleBlockedResponseCompletion() async {
-        let scheduler = SpyResponseCompletionNotificationScheduler(status: .authorized)
+    func testRequestFallsBackToHermesForAnEmptyChatTitle() {
+        for chatTitle in [nil, "", "  \n"] {
+            let request = ResponseCompletionNotificationRequest(sessionID: "s", chatTitle: chatTitle, outcome: .failed)
+            XCTAssertEqual(request.title, "Hermes")
+        }
+    }
 
-        let didSchedule = await ResponseCompletionNotificationService.scheduleResponseCompletedIfAllowed(
-            sessionID: "session-abc",
-            preferenceEnabled: true,
-            completedNormally: true,
-            sceneIsActive: true,
-            scheduler: scheduler
-        )
+    func testSchedulesEachAllowedOutcomeWithItsChat() async {
+        for outcome in [ResponseCompletionOutcome.completed, .failed] {
+            let scheduler = SpyResponseCompletionNotificationScheduler(status: .authorized)
 
-        XCTAssertFalse(didSchedule)
-        XCTAssertEqual(scheduler.authorizationStatusCallCount, 1)
-        XCTAssertTrue(scheduler.scheduledRequests.isEmpty)
+            let didSchedule = await ResponseCompletionNotificationService.scheduleResponseCompletedIfAllowed(
+                sessionID: "session-abc",
+                chatTitle: "Deploy plan",
+                outcome: outcome,
+                preferenceEnabled: true,
+                sceneIsActive: false,
+                scheduler: scheduler
+            )
+
+            XCTAssertTrue(didSchedule)
+            XCTAssertEqual(scheduler.authorizationStatusCallCount, 1)
+            XCTAssertEqual(scheduler.scheduledRequests, [
+                ResponseCompletionNotificationRequest(sessionID: "session-abc", chatTitle: "Deploy plan", outcome: outcome)
+            ])
+        }
+    }
+
+    func testDoesNotScheduleEitherOutcomeWhenAGateBlocks() async {
+        // (preference — false when the relay owns completion alerts, authorization, scene active)
+        let blockedGates: [(Bool, UNAuthorizationStatus, Bool)] = [
+            (false, .authorized, false),
+            (true, .denied, false),
+            (true, .notDetermined, false),
+            (true, .authorized, true),
+        ]
+        for outcome in [ResponseCompletionOutcome.completed, .failed] {
+            for (preferenceEnabled, status, sceneIsActive) in blockedGates {
+                let scheduler = SpyResponseCompletionNotificationScheduler(status: status)
+
+                let didSchedule = await ResponseCompletionNotificationService.scheduleResponseCompletedIfAllowed(
+                    sessionID: "session-abc",
+                    chatTitle: "Deploy plan",
+                    outcome: outcome,
+                    preferenceEnabled: preferenceEnabled,
+                    sceneIsActive: sceneIsActive,
+                    scheduler: scheduler
+                )
+
+                XCTAssertFalse(didSchedule)
+                XCTAssertTrue(scheduler.scheduledRequests.isEmpty)
+            }
+        }
     }
 
     func testRequestAuthorizationUsesInjectedScheduler() async {
@@ -354,7 +380,7 @@ final class ResponseCompletionNotificationTrackerTests: XCTestCase {
     }
 }
 
-private final class SpyResponseCompletionNotificationScheduler: ResponseCompletionNotificationScheduling {
+final class SpyResponseCompletionNotificationScheduler: ResponseCompletionNotificationScheduling {
     private let status: UNAuthorizationStatus
     private let requestAuthorizationResult: Bool
     private(set) var authorizationStatusCallCount = 0

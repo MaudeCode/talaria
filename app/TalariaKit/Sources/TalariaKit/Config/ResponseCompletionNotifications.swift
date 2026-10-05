@@ -1,10 +1,26 @@
 import Foundation
 import UserNotifications
 
+/// How a run ended, for the local reply notification. Only the server's outcome
+/// reaches here (a terminal stream event or the run journal's `terminal_state`);
+/// a user Stop (cancelled) has no case, so it never notifies.
+public enum ResponseCompletionOutcome: Equatable {
+    case completed
+    case failed
+
+    public init?(status: AgentRunActivityStatus) {
+        switch status {
+        case .complete: self = .completed
+        case .failed: self = .failed
+        default: return nil
+        }
+    }
+}
+
 enum ResponseCompletionNotificationPolicy {
-    /// Fire a "response complete" notification when the user almost certainly isn't
-    /// watching: notifications are enabled + permitted, the run finished normally,
-    /// and the scene is not active at completion time. Deliberately does NOT depend
+    /// Fire a reply notification when the user almost certainly isn't watching:
+    /// notifications are enabled + permitted and the scene is not active when the
+    /// run ends. Deliberately does NOT depend
     /// on any "was streaming" / "was backgrounded during the stream" memory — those
     /// in-memory flags were wiped on suspend→cold-relaunch, which is exactly when the
     /// stuck-mid-response reports happened (#248). Every in-session completion path
@@ -12,25 +28,31 @@ enum ResponseCompletionNotificationPolicy {
     static func shouldSchedule(
         preferenceEnabled: Bool,
         authorizationStatus: UNAuthorizationStatus,
-        completedNormally: Bool,
         sceneIsActive: Bool
     ) -> Bool {
-        guard preferenceEnabled,
-              authorizationStatus.allowsResponseCompletionNotifications,
-              completedNormally,
-              !sceneIsActive else {
-            return false
-        }
-
-        return true
+        preferenceEnabled
+            && authorizationStatus.allowsResponseCompletionNotifications
+            && !sceneIsActive
     }
 }
 
 public struct ResponseCompletionNotificationRequest: Equatable {
-    static let title = String(localized: "Hermes response complete")
-    static let body = String(localized: "The assistant finished responding.")
-
     let sessionID: String?
+    /// The chat's display title, as the Chats list shows it.
+    let chatTitle: String?
+    let outcome: ResponseCompletionOutcome
+
+    var title: String {
+        let chatTitle = chatTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return chatTitle.isEmpty ? String(localized: "Hermes") : chatTitle
+    }
+
+    var body: String {
+        switch outcome {
+        case .completed: String(localized: "Response complete")
+        case .failed: String(localized: "Response failed")
+        }
+    }
 
     var userInfo: [String: String] {
         guard let sessionID, !sessionID.isEmpty else { return [:] }
@@ -96,8 +118,8 @@ public struct UserNotificationResponseCompletionScheduler: ResponseCompletionNot
 
     public func schedule(_ request: ResponseCompletionNotificationRequest) async {
         let content = UNMutableNotificationContent()
-        content.title = ResponseCompletionNotificationRequest.title
-        content.body = ResponseCompletionNotificationRequest.body
+        content.title = request.title
+        content.body = request.body
         content.sound = .default
         content.userInfo = request.userInfo
 
@@ -137,8 +159,9 @@ public enum ResponseCompletionNotificationService {
     @discardableResult
     public static func scheduleResponseCompletedIfAllowed(
         sessionID: String?,
+        chatTitle: String?,
+        outcome: ResponseCompletionOutcome,
         preferenceEnabled: Bool,
-        completedNormally: Bool,
         sceneIsActive: Bool,
         scheduler: any ResponseCompletionNotificationScheduling = UserNotificationResponseCompletionScheduler()
     ) async -> Bool {
@@ -146,13 +169,16 @@ public enum ResponseCompletionNotificationService {
         guard ResponseCompletionNotificationPolicy.shouldSchedule(
             preferenceEnabled: preferenceEnabled,
             authorizationStatus: status,
-            completedNormally: completedNormally,
             sceneIsActive: sceneIsActive
         ) else {
             return false
         }
 
-        await scheduler.schedule(ResponseCompletionNotificationRequest(sessionID: sessionID))
+        await scheduler.schedule(ResponseCompletionNotificationRequest(
+            sessionID: sessionID,
+            chatTitle: chatTitle,
+            outcome: outcome
+        ))
         return true
     }
 }

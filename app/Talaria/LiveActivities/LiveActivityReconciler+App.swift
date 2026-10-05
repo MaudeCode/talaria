@@ -13,7 +13,7 @@ extension LiveActivityReconciler {
     ///
     /// `notifiesOnCompletion` is true only for the cold-launch pass: a relaunched
     /// process means every orphan's run finished while the app was *not* active, so
-    /// a recent one is worth a "response complete" notification (#248). The
+    /// a recent one is worth a reply notification (#248). The
     /// foreground pass passes false — the in-session completion paths own
     /// notifications while the app is alive, so reconciling there must stay silent.
     static func reconcileOrphanedActivities(
@@ -48,18 +48,18 @@ extension LiveActivityReconciler {
                     activity: outcome.activity
                 )
             },
-            notify: { orphan in
-                liveActivityReconcilerLogger.notice("Notifying response complete for reconciled Live Activity \(orphan.streamID, privacy: .public)")
-                // The run completed while the app was *not* active (it was
+            notify: { orphan, outcome in
+                liveActivityReconcilerLogger.notice("Notifying reply outcome for reconciled Live Activity \(orphan.streamID, privacy: .public)")
+                // The run ended while the app was *not* active (it was
                 // terminated); the recency check in the core stands in for "you
                 // weren't watching", so this path always passes sceneIsActive: false.
-                // #267: the core only calls `notify` for an orphan that mapped to
-                // `.complete`, so this is always a genuine completion — a silently
-                // failed run is finalized silently and no longer mis-notifies.
+                // The core calls `notify` only for an orphan the server journal maps
+                // to completed or failed; a user Stop is finalized silently.
                 await ResponseCompletionNotificationService.scheduleResponseCompletedIfAllowed(
                     sessionID: orphan.sessionID.isEmpty ? nil : orphan.sessionID,
+                    chatTitle: orphan.sessionTitle,
+                    outcome: outcome,
                     preferenceEnabled: preferenceEnabled,
-                    completedNormally: true,
                     sceneIsActive: false
                 )
             }

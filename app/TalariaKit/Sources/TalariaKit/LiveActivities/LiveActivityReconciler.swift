@@ -66,9 +66,9 @@ public enum LiveActivityReconciler {
     /// status check (`nil` response) or a still-active stream is left alone, so a
     /// transient error or a live run can never cut an activity short.
     ///
-    /// A "response complete" notification fires only when (a) this is the notifying
-    /// (cold-launch) pass, (b) the orphan mapped to `.complete` — a failed or
-    /// cancelled run is finalized silently (#267), (c) `endOrphan` reports it
+    /// A reply notification fires only when (a) this is the notifying
+    /// (cold-launch) pass, (b) the orphan mapped to `.complete` or `.failed` — a
+    /// cancelled run (user Stop) is finalized silently, (c) `endOrphan` reports it
     /// actually ended a still-running activity — so a completion another path
     /// already finalized can't double-fire (#248) — and (d) the run finished within
     /// `recencyWindow`.
@@ -79,7 +79,7 @@ public enum LiveActivityReconciler {
         recencyWindow: TimeInterval = recentCompletionWindow,
         streamStatus: (String) async -> ChatStreamStatusResponse?,
         endOrphan: (OrphanedLiveActivity, ReconciledOutcome) async -> Bool,
-        notify: (OrphanedLiveActivity) async -> Void
+        notify: (OrphanedLiveActivity, ResponseCompletionOutcome) async -> Void
     ) async {
         for orphan in orphans {
             // `active == false` is the only signal that ends the orphan: a `nil`
@@ -88,10 +88,11 @@ public enum LiveActivityReconciler {
             guard let status = await streamStatus(orphan.streamID), status.active == false else { continue }
             let outcome = reconciledOutcome(forTerminalState: status.journal?.terminalState)
             let didEnd = await endOrphan(orphan, outcome)
-            guard notifiesOnCompletion, didEnd, outcome.status == .complete else { continue }
+            guard notifiesOnCompletion, didEnd,
+                  let notifiedOutcome = ResponseCompletionOutcome(status: outcome.status) else { continue }
             let age = now.timeIntervalSince(orphan.updatedAt)
             guard age >= 0, age <= recencyWindow else { continue }
-            await notify(orphan)
+            await notify(orphan, notifiedOutcome)
         }
     }
 }
