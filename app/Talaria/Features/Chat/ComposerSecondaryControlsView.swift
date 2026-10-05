@@ -113,6 +113,56 @@ struct ComposerSecondaryControlsView<Leading: View>: View {
     }
 }
 
+/// A new chat's session as the composer shows it while the server creates it (TAL-636).
+enum ComposerSessionStart: Equatable {
+    case starting
+    case failed(String)
+}
+
+/// The control strip while a new chat's session is starting: a spinner, or the error with Retry,
+/// in place of the controls, which need the session.
+struct ComposerSessionStartStrip: View {
+    let state: ComposerSessionStart
+    let onRetry: () -> Void
+
+    var body: some View {
+        // One footnote line, padded like the controls row, so the strip keeps its height when the
+        // controls replace it; Retry's 44 pt target reaches past the line without taking space.
+        HStack(spacing: 8) {
+            switch state {
+            case .starting:
+                ProgressView()
+                    .controlSize(.mini)
+                Text("Starting chat…")
+                    .font(AppFont.footnote())
+                    .foregroundStyle(.secondary)
+            case .failed(let message):
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(AppFont.footnote())
+                    .foregroundStyle(.orange)
+                Text(message)
+                    .font(AppFont.footnote())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                Button(action: onRetry) {
+                    Text("Retry")
+                        .font(AppFont.footnote().weight(.semibold))
+                        .chatMinimumHitTarget(horizontalPadding: 12, verticalPadding: ComposerMetaControlLabel.hitPadding, in: Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.tint)
+            }
+        }
+        .lineLimit(1)
+        .padding(.horizontal, 12)
+        .padding(.vertical, ComposerControlStrip.verticalPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .contain)
+        .composerStripChrome(hangingFrom: .bottom)
+    }
+}
+
 /// Which edge of the composer card a strip hangs from: the controls hang below it, the pending
 /// attachments above it (TAL-629, TAL-634).
 enum ComposerStripEdge {

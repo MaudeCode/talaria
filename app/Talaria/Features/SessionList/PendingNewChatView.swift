@@ -20,11 +20,10 @@ struct PendingNewChatView: View {
 
     @State private var createdSession: SessionSummary?
     @State private var draftMessage = ""
-    @State private var didStartCreation = false
     @State private var didStartConversation = false
-    @State private var didRequestComposerFocus = false
-    @State private var creationErrorMessage: String?
-    @FocusState private var composerIsFocused: Bool
+    /// The chat's screen exists before its session (TAL-636): it starts from this placeholder and
+    /// takes on the session the server creates, so the composer never changes.
+    @State private var provisionalSession = SessionSummary(title: String(localized: "New Chat"))
 
     init(
         initialDraft: String = "",
@@ -53,32 +52,19 @@ struct PendingNewChatView: View {
     }
 
     var body: some View {
-        Group {
-            if let createdSession {
-                ChatView(
-                    session: createdSession,
-                    server: server,
-                    onAPIError: onAPIError,
-                    initialDraft: draftMessage,
-                    initialAttachments: initialAttachments,
-                    loadsInitialMessages: false,
-                    autoStartsVoiceInput: autoStartsVoiceInput,
-                    draftStore: draftStore,
-                    restoresDraftSettings: true,
-                    onConversationStarted: markConversationStarted
-                )
-            } else {
-                pendingContent
-            }
-        }
-        .background(
-            NavigationAppearanceCompletionObserver(action: requestPendingComposerFocus)
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
+        ChatView(
+            session: provisionalSession,
+            server: server,
+            onAPIError: onAPIError,
+            initialDraft: draftMessage,
+            initialAttachments: initialAttachments,
+            loadsInitialMessages: false,
+            autoStartsVoiceInput: autoStartsVoiceInput,
+            draftStore: draftStore,
+            restoresDraftSettings: true,
+            startSession: createSession,
+            onConversationStarted: markConversationStarted
         )
-        .task {
-            await prepareNewChat()
-        }
         .onChange(of: scenePhase) {
             if scenePhase != .active {
                 flushDraftsBestEffort()
@@ -90,123 +76,33 @@ struct PendingNewChatView: View {
         }
     }
 
-    private var pendingContent: some View {
-        ZStack(alignment: .bottom) {
-            Color(.systemBackground)
-                .ignoresSafeArea()
-
-            ContentUnavailableView {
-                Image(systemName: "bubble.left.and.bubble.right")
-            } description: {
-                Text("Send a message to start the conversation.")
-            }
-            .contentShape(Rectangle())
-            .onTapGesture {
-                composerIsFocused = false
-            }
-
-            VStack(spacing: 10) {
-                if let creationErrorMessage {
-                    pendingErrorBanner(creationErrorMessage)
-                }
-
-                pendingComposer
-            }
-            .padding(.horizontal)
-            .padding(.bottom, 12)
+    /// Creates the chat's session for `ChatView`, which takes it on in place and moves the draft
+    /// to it. A failure comes back as the message the composer's strip shows with Retry.
+    private func createSession() async -> ChatSessionStartResult {
+        if let createdSession {
+            return .started(createdSession)
         }
-        .navigationTitle("New Chat")
-        .navigationBarTitleDisplayMode(.inline)
-    }
-
-    private var pendingComposer: some View {
-        HStack(alignment: .bottom, spacing: 10) {
-            TextField("Message Talaria", text: persistedDraftBinding, axis: .vertical)
-                .textFieldStyle(.plain)
-                .lineLimit(1...5)
-                .focused($composerIsFocused)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 13)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .strokeBorder(Color(.separator).opacity(0.18), lineWidth: 0.5)
-                }
-                .submitLabel(.send)
-
-            Button {} label: {
-                Image(systemName: "arrow.up")
-                    .font(.headline.weight(.bold))
-                    .foregroundStyle(Color(.secondaryLabel))
-                    .frame(width: 44, height: 44)
-                    .background(Color(.tertiarySystemFill), in: Circle())
-            }
-            .buttonStyle(.plain)
-            .disabled(true)
-            .accessibilityLabel("Send")
-        }
-    }
-
-    private func pendingErrorBanner(_ message: String) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: "exclamationmark.triangle")
-                .foregroundStyle(.orange)
-
-            Text(message)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-
-            Spacer(minLength: 0)
-
-            Button("Retry") {
-                Task { await retryCreateSession() }
-            }
-            .font(.footnote.weight(.semibold))
-            .disabled(viewModel.isCreatingSession)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-    }
-
-    private func createSessionIfNeeded() async {
-        guard !didStartCreation, createdSession == nil else { return }
-
-        didStartCreation = true
-        creationErrorMessage = nil
+        viewModel.clearActionError()
         let session = await viewModel.createSession(
             modelContext: modelContext,
             profile: profileName,
             provider: providerID,
             projectID: projectID
         )
-        guard !Task.isCancelled else { return }
         if let lastError = viewModel.lastError {
             onAPIError(lastError)
         }
-
-        if let session {
-            let sessionKey = draftKey(for: session)
-            draftStore.setDraft(draftMessage, for: draftKey)
-            draftMessage = draftStore.moveDraft(from: draftKey, to: sessionKey).text
-            SessionHaptics.sessionCreated(isEnabled: isHapticsEnabled)
-            onSessionCreated(session)
-            createdSession = session
-        } else {
-            creationErrorMessage = viewModel.actionErrorMessage
+        guard let session else {
+            let message = viewModel.actionErrorMessage
                 ?? viewModel.lastError?.localizedDescription
                 ?? String(localized: "Could not start a new chat.")
             viewModel.clearActionError()
-            didStartCreation = false
+            return .failed(message)
         }
-    }
-
-    private func retryCreateSession() async {
-        didStartCreation = false
-        creationErrorMessage = nil
-        viewModel.clearActionError()
-        await createSessionIfNeeded()
+        SessionHaptics.sessionCreated(isEnabled: isHapticsEnabled)
+        onSessionCreated(session)
+        createdSession = session
+        return .started(session)
     }
 
     private var draftKey: ChatDraftKey {
@@ -215,36 +111,6 @@ struct PendingNewChatView: View {
 
     private func draftKey(for session: SessionSummary) -> ChatDraftKey {
         .session(server: server, session: session)
-    }
-
-    private var persistedDraftBinding: Binding<String> {
-        Binding(
-            get: { draftMessage },
-            set: { newValue in
-                draftMessage = newValue
-                draftStore.setDraft(newValue, for: draftKey)
-            }
-        )
-    }
-
-    private func prepareNewChat() async {
-        await hydrateDraft()
-        guard !Task.isCancelled else { return }
-        await createSessionIfNeeded()
-    }
-
-    private func hydrateDraft() async {
-        let textBeforeHydration = draftMessage
-        let persistedDraft = await draftStore.draft(for: draftKey)
-        guard !Task.isCancelled, draftMessage == textBeforeHydration else { return }
-
-        if textBeforeHydration.isEmpty {
-            if let persistedDraft, !persistedDraft.text.isEmpty {
-                draftMessage = persistedDraft.text
-            }
-        } else {
-            draftStore.setDraft(textBeforeHydration, for: draftKey)
-        }
     }
 
     private func flushDraftsBestEffort() {
@@ -264,16 +130,5 @@ struct PendingNewChatView: View {
             to: draftKey,
             didStartConversation: didStartConversation
         )?.text ?? draftMessage
-    }
-
-    private func requestPendingComposerFocus() {
-        guard !didRequestComposerFocus else { return }
-        didRequestComposerFocus = true
-
-        Task { @MainActor in
-            await Task.yield()
-            guard createdSession == nil else { return }
-            composerIsFocused = true
-        }
     }
 }

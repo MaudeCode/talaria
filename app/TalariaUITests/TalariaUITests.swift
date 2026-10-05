@@ -880,6 +880,54 @@ final class ComposerAttachmentStripUITests: ChatUITestCase {
     }
 }
 
+/// TAL-636: a new chat opens on the real composer while its session is starting; the controls
+/// join it once the server answers, and the composer (with what was typed) never changes.
+final class NewChatComposerUITests: ChatUITestCase {
+    func testNewChatTypesIntoTheRealComposerWhileItsSessionStarts() throws {
+        launchFixture(additionalArguments: ["--ui-test-hold-session-creation"])
+        let newChat = app.buttons["New Chat"].firstMatch
+        XCTAssertTrue(newChat.awaitExistence(timeout: 15))
+        newChat.tap()
+
+        // The chat screen's identifier reaches the strip, so it is found by its words.
+        let starting = app.staticTexts["Starting chat…"]
+        XCTAssertTrue(starting.awaitExistence(timeout: 10), "The strip does not show the session starting")
+        let composer = try XCTUnwrap(waitForComposer(timeout: 5), "The new chat has no real composer")
+        composer.tap()
+        let input = app.textViews.firstMatch
+        XCTAssertTrue(input.awaitExistence(timeout: 5))
+        XCTAssertTrue(app.keyboards.firstMatch.awaitExistence(timeout: 5))
+        Thread.sleep(forTimeInterval: 1)
+        input.typeText("Typed before the session")
+        XCTAssertFalse(app.buttons["Send"].isEnabled, "Send must wait for the session")
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "New chat starting"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+
+        XCTAssertTrue(releaseHeldLoads { app.buttons["Select model"].exists }, "The controls never joined the strip")
+        XCTAssertTrue(starting.awaitNonExistence(timeout: 5))
+        XCTAssertEqual(input.value as? String, "Typed before the session", "The draft did not survive the session starting")
+        // Focus itself, not the keyboard: a fresh simulator's swipe-typing tip can cover the keyboard.
+        XCTAssertEqual(input.value(forKey: "hasKeyboardFocus") as? Bool, true, "The composer lost focus when the session started")
+        XCTAssertTrue(app.buttons["Send"].isEnabled)
+    }
+
+    func testNewChatReportsAFailedStartInItsComposerAndRetries() throws {
+        launchFixture(additionalArguments: ["--ui-test-fail-first-session-creation"])
+        let newChat = app.buttons["New Chat"].firstMatch
+        XCTAssertTrue(newChat.awaitExistence(timeout: 15))
+        newChat.tap()
+
+        let retry = app.buttons["Retry"]
+        XCTAssertTrue(retry.awaitExistence(timeout: 10), "The composer does not offer Retry after a failed start")
+        XCTAssertFalse(app.buttons["Send"].isEnabled)
+        tapCenter(of: retry)
+        XCTAssertTrue(app.buttons["Select model"].awaitExistence(timeout: 10), "Retry did not start the chat")
+        XCTAssertFalse(retry.exists)
+    }
+}
+
 /// TAL-444: a wide window keeps the transcript and the composer in one centred reading column of
 /// at most 800 pt, while the transcript itself still scrolls edge to edge. On an iPad in landscape
 /// the cap engages; a window already narrower than the column passes the same bounds untouched.

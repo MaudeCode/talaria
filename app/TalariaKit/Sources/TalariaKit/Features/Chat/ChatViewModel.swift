@@ -304,6 +304,28 @@ public final class ChatViewModel {
         await pendingActionCoordinator.submitClarificationDraft(promptID: promptID)
     }
 
+    /// True once the chat has a server session to load from and send to.
+    public var hasSession: Bool { sessionID != nil }
+
+    /// A new chat starts with no session so its screen, and the composer the user is already typing
+    /// in, can appear before the server answers; this takes on the session the server created, in
+    /// place, so nothing is rebuilt (TAL-636). Only the first adoption counts.
+    public func adoptCreatedSession(_ session: SessionSummary) {
+        guard sessionID == nil, let id = Self.nonEmpty(session.sessionId) else { return }
+        sessionID = id
+        currentWorkspace = session.workspace
+        serverWorkspacePath = session.workspace
+        serverWorkspaceName = session.workspaceName
+        currentModel = session.model
+        currentModelProvider = session.modelProvider
+        currentModelOptionID = session.modelOptionID
+        currentProfile = session.profile
+        isCLISession = session.isCliSession == true
+        isSessionReadOnly = session.isSessionReadOnly
+        canBranch = session.canBranch != false
+        displayTitle = Self.displayTitle(from: session.title)
+    }
+
     public var isRespondingToClarification: Bool { pendingActionCoordinator.isRespondingToClarification }
     public var clarificationErrorMessage: String? { pendingActionCoordinator.clarificationErrorMessage }
     public private(set) var currentGoal: SubmittedGoal?
@@ -311,7 +333,8 @@ public final class ChatViewModel {
     private(set) var goalErrorMessage: String?
     public private(set) var hasActivatedGoalCommand = false
 
-    private let sessionID: String?
+    /// Nil for a new chat until the server creates it; `adoptCreatedSession` sets it once (TAL-636).
+    private var sessionID: String?
     private var currentWorkspace: String?
     /// The workspace the server last reported for this session, with its label (TAL-303).
     private var serverWorkspacePath: String?
@@ -321,7 +344,7 @@ public final class ChatViewModel {
     /// TAL-301: the catalog entry the server says `currentModel` selects.
     private var currentModelOptionID: String?
     private var currentProfile: String?
-    private let isCLISession: Bool
+    private var isCLISession: Bool
     /// Server-owned view-only state (TAL-152). Seeded from the list row and
     /// refreshed from every applied `SessionDetail`, which is authoritative.
     public private(set) var isSessionReadOnly: Bool

@@ -57,6 +57,12 @@ struct UITestFixtureEnvironment {
     /// Holds every `/api/sessions` read until the test releases it, so a relaunch shows what it
     /// painted from cache (TAL-437).
     nonisolated static let holdSessionListArgument = "--ui-test-hold-session-list"
+    /// Holds `/api/session/new` until the test releases it, so a new chat's composer can be seen
+    /// and typed in while its session is still starting (TAL-636).
+    nonisolated static let holdSessionCreationArgument = "--ui-test-hold-session-creation"
+    /// Fails the first `/api/session/new` with a server error, so a UI test can see a new chat's
+    /// composer report it and retry (TAL-636).
+    nonisolated static let failFirstSessionCreationArgument = "--ui-test-fail-first-session-creation"
 
     private nonisolated static var keepsCachesAcrossLaunches: Bool {
         let arguments = ProcessInfo.processInfo.arguments
@@ -473,8 +479,10 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
 
         let holdsSessionList = url.path == "/api/sessions"
             && ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.holdSessionListArgument)
+        let holdsSessionCreation = url.path == "/api/session/new"
+            && ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.holdSessionCreationArgument)
         if Self.holdsPanelLoad(for: url) || Self.holdsWorkspaceRead(for: url) || Self.holdsTranscriptReload(for: url)
-            || holdsSessionList {
+            || holdsSessionList || holdsSessionCreation {
             UITestFixtureHold.shared.hold { [weak self] in
                 guard let self, !self.isStopped else { return }
                 self.sendResponse(for: url)
@@ -532,7 +540,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         }
         let response = HTTPURLResponse(
             url: url,
-            statusCode: requiresSignIn ? 401 : Self.workspaceStatusCode(for: request),
+            statusCode: requiresSignIn ? 401 : (Self.failsSessionCreation(url) ? 500 : Self.workspaceStatusCode(for: request)),
             httpVersion: "HTTP/1.1",
             headerFields: headers
         )!
@@ -549,6 +557,20 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     override func stopLoading() {
         lifecycleLock.withLock { stopped = true }
         Self.chatState.wakeWaiters()
+    }
+
+    private static let sessionCreationFailureLock = NSLock()
+    nonisolated(unsafe) private static var didFailSessionCreation = false
+
+    /// True once, for the first new-chat request, under `--ui-test-fail-first-session-creation`.
+    private static func failsSessionCreation(_ url: URL) -> Bool {
+        guard url.path == "/api/session/new",
+              ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.failFirstSessionCreationArgument)
+        else { return false }
+        return sessionCreationFailureLock.withLock {
+            defer { didFailSessionCreation = true }
+            return !didFailSessionCreation
+        }
     }
 
     private static func responseData(for request: URLRequest) -> Data {
