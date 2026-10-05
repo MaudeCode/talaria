@@ -130,13 +130,14 @@ extension ChatViewModelSendTests {
                   "path": "/tmp/workspace/photo.png",
                   "size": 4,
                   "mime": "image/png",
-                  "is_image": true
+                  "is_image": true,
+                  "named_in_prompt": true
                 }
                 """, for: request)
             case "/api/chat/start":
                 let data = try XCTUnwrap(apiTestBodyData(from: request))
                 let body = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
-                XCTAssertEqual(body["message"] as? String, "Summarize it\n\n[Attached files: /tmp/workspace/photo.png]")
+                XCTAssertEqual(body["message"] as? String, "Summarize it")
                 XCTAssertNotNil(body["attachments"])
 
                 return apiTestJSONResponse("""
@@ -272,24 +273,6 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(optimistic.attachments?.count, 1)
         XCTAssertEqual(optimistic.attachments?.first?.mime, "audio/m4a")
         XCTAssertEqual(viewModel.activeStreamID, "stream-123")
-    }
-
-    func testChatMessageTextStillAppendsAttachedFilesSuffixForFileUploads() {
-        // Guard: the voice-note path deliberately bypasses chatMessageText to send
-        // the bare transcript (#330), but real file uploads from the text composer
-        // MUST keep the "[Attached files: …]" suffix so the agent can inspect them.
-        let file = PendingAttachment(
-            name: "report.pdf",
-            path: "/tmp/workspace/report.pdf",
-            mime: "application/pdf",
-            size: 1234,
-            isImage: false,
-            thumbnailData: nil
-        )
-
-        let text = PendingAttachment.chatMessageText(draft: "Summarize this", attachments: [file])
-
-        XCTAssertEqual(text, "Summarize this\n\n[Attached files: /tmp/workspace/report.pdf]")
     }
 
     @MainActor

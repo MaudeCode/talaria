@@ -191,6 +191,10 @@ describe('raw byte routes', () => {
     expect(upload.filename).toBe('evil_name.txt')
     expect(upload.mime).toBe('text/plain')
     expect(upload.is_image).toBe(false)
+    // The server names every attached file in the prompt and keeps at most 20 per message, so clients send
+    // the bare draft and stage no more (TAL-635).
+    expect(upload.named_in_prompt).toBe(true)
+    expect(upload.max_attachments_per_message).toBe(20)
     expect(String(upload.path)).toBe(join(realpathSync(s.state), 'attachments', sid, 'evil_name.txt'))
     expect(readFileSync(String(upload.path), 'utf8')).toBe('payload')
     // A second upload with the same name is stored as `name-1.ext` and the response reports the stored name.

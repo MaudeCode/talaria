@@ -373,7 +373,9 @@ export const ClarifyRespondResponseSchema = z.looseObject({ ok: z.boolean(), res
 
 export const DraftSchema = z.looseObject({ text: z.string(), files: z.array(Json) })
 export const DraftResponseSchema = z.looseObject({ ok: z.literal(true), draft: DraftSchema, draft_version: z.string().nullable(), unchanged: z.boolean().optional() })
-export const UploadResponseSchema = z.looseObject({ filename: z.string(), path: z.string(), size: z.number(), mime: z.string(), is_image: z.boolean().optional(), rollback_token: z.string().optional() })
+/** At most this many attachments ride one chat message; the server names each in the prompt (TAL-276, TAL-635). */
+export const MAX_CHAT_ATTACHMENTS = 20
+export const UploadResponseSchema = z.looseObject({ filename: z.string(), path: z.string(), size: z.number(), mime: z.string(), is_image: z.boolean().optional(), rollback_token: z.string().optional(), named_in_prompt: z.boolean().optional(), max_attachments_per_message: z.number().int().positive().optional() })
 export type UploadResponse = z.infer<typeof UploadResponseSchema>
 export const GoalViewSchema = z.looseObject({ text: z.string().optional(), state: z.string().optional(), status: z.string().optional(), turns: z.number().optional(), max_turns: z.number().optional(), reason: z.string().optional() })
 export const GoalResponseSchema = z.looseObject({ ok: z.boolean().optional(), action: z.string().optional(), goal: GoalViewSchema.nullable().optional(), message: z.string().optional(), message_key: z.string().optional(), stream_id: z.string().optional(), status: z.string().optional(), reason: z.string().optional() })

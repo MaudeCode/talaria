@@ -1,7 +1,7 @@
 /** Chat turn admission, control, approvals, clarify, goals, background tasks, and side questions. */
 import { GATEWAY_APPROVAL_RELAY_UNAVAILABLE, isGenericContinuationIntent } from '../sessions/turn.js'
 import { implement } from '@orpc/server'
-import { chatContract } from '@maudecode/talaria-web-contracts'
+import { chatContract, MAX_CHAT_ATTACHMENTS } from '@maudecode/talaria-web-contracts'
 import { randomUUID } from 'node:crypto'
 import { HttpError, type ApiContext } from './router.js'
 import { requestSessionIdGuard, streamVisibleToRequest } from './session-visibility.js'
@@ -141,7 +141,7 @@ async function startChat(ctx: RequestContext, body: Record<string, unknown>): Pr
   if (requestedProfile && requestedProfile !== 'default' && !PROFILE_ID_RE.test(requestedProfile)) throw new HttpError(400, 'invalid profile')
   visibleOrRetag(ctx, s, requestedProfile)
   const msg = str(body.message).trim()
-  const attachments = normalizeChatAttachments(body.attachments).slice(0, 20)
+  const attachments = normalizeChatAttachments(body.attachments).slice(0, MAX_CHAT_ATTACHMENTS)
   // TAL-276: an attached file alone makes a turn; one with neither text nor a file path is refused.
   if (!msg && !attachments.some((att) => str(att.path))) throw new HttpError(400, 'message is required')
   // TAL-460: the user's message never joins a background turn; that turn stops quietly and this one takes its place.

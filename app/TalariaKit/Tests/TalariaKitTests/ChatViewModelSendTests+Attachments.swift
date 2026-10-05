@@ -45,7 +45,8 @@ extension ChatViewModelSendTests {
               "path": "/tmp/workspace/large.jpg",
               "size": \(originalData.count),
               "mime": "image/jpeg",
-              "is_image": true
+              "is_image": true,
+              "named_in_prompt": true
             }
             """, for: request)
         }
@@ -97,7 +98,8 @@ extension ChatViewModelSendTests {
                   "path": "/tmp/workspace/notes.txt",
                   "size": 5,
                   "mime": "text/plain",
-                  "is_image": false
+                  "is_image": false,
+                  "named_in_prompt": true
                 }
                 """, for: request)
             }
@@ -139,7 +141,8 @@ extension ChatViewModelSendTests {
                   "path": "/tmp/workspace/\(filename)",
                   "size": 4,
                   "mime": "image/jpeg",
-                  "is_image": true
+                  "is_image": true,
+                  "named_in_prompt": true
                 }
                 """, for: request)
             case "/api/chat/start":
@@ -154,11 +157,9 @@ extension ChatViewModelSendTests {
                 XCTAssertEqual(paths.count, 2)
                 XCTAssertEqual(Set(paths).count, 2)
 
-                let message = try XCTUnwrap(body["message"] as? String)
-                XCTAssertTrue(message.hasPrefix("Compare these\n\n[Attached files: "))
-                for path in paths {
-                    XCTAssertTrue(message.contains(path))
-                }
+                // The bare draft: the server names the attached files in the prompt (TAL-276), so the
+                // App adding its own `[Attached files: …]` line sent it to the agent twice (TAL-635).
+                XCTAssertEqual(body["message"] as? String, "Compare these")
 
                 return apiTestJSONResponse("""
                 {
@@ -214,7 +215,8 @@ extension ChatViewModelSendTests {
                   "path": "/tmp/workspace/notes.txt",
                   "size": 5,
                   "mime": "text/plain",
-                  "is_image": false
+                  "is_image": false,
+                  "named_in_prompt": true
                 }
                 """, for: request)
             case "/api/chat/start":
@@ -238,13 +240,84 @@ extension ChatViewModelSendTests {
         let didStart = await viewModel.sendMessage("   ")
 
         XCTAssertTrue(didStart)
-        XCTAssertEqual(startedMessage, "I've uploaded 1 file(s): /tmp/workspace/notes.txt")
+        // An attachment-only send has no text; the server names the file (TAL-276, TAL-635).
+        XCTAssertEqual(startedMessage, "")
         XCTAssertEqual(startedAttachmentPaths, ["/tmp/workspace/notes.txt"])
         XCTAssertTrue(viewModel.pendingAttachments.isEmpty)
         // The optimistic row carries exactly what the server will store, so the
         // bubble looks the same before and after a reload.
         XCTAssertEqual(viewModel.messages.first?.content, startedMessage)
         XCTAssertEqual(viewModel.messages.first?.attachments?.compactMap(\.path), startedAttachmentPaths)
+    }
+
+    /// TAL-635: a server from before `named_in_prompt` does not name attached files in the prompt,
+    /// so the App still names them in the text for it.
+    func testSendNamesFilesInTheTextForAServerThatDoesNotNameThem() async throws {
+        var startedMessage: String?
+        let viewModel = try makeViewModel { request in
+            switch request.url?.path {
+            case "/api/upload":
+                return apiTestJSONResponse("""
+                {
+                  "filename": "notes.txt",
+                  "path": "/tmp/workspace/notes.txt",
+                  "size": 5,
+                  "mime": "text/plain",
+                  "is_image": false
+                }
+                """, for: request)
+            case "/api/chat/start":
+                startedMessage = try apiTestJSONBody(from: request)["message"] as? String
+                return apiTestJSONResponse(
+                    #"{"session_id":"session-abc","stream_id":"stream-123"}"#,
+                    for: request
+                )
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        await viewModel.uploadAttachment(data: Data("hello".utf8), filename: "notes.txt")
+        let didStart = await viewModel.sendMessage("Summarize this")
+
+        XCTAssertTrue(didStart)
+        XCTAssertEqual(startedMessage, "Summarize this\n\n[Attached files: /tmp/workspace/notes.txt]")
+    }
+
+    /// TAL-635: the server keeps at most `max_attachments_per_message` on a message, so one more
+    /// is refused when it is staged instead of being dropped on send.
+    func testStagingPastTheServerAttachmentCapIsRefused() async throws {
+        var uploads = 0
+        let viewModel = try makeViewModel { request in
+            switch request.url?.path {
+            case "/api/upload":
+                uploads += 1
+                return apiTestJSONResponse("""
+                {
+                  "filename": "notes-\(uploads).txt",
+                  "path": "/tmp/workspace/notes-\(uploads).txt",
+                  "size": 5,
+                  "mime": "text/plain",
+                  "is_image": false,
+                  "named_in_prompt": true,
+                  "max_attachments_per_message": 2
+                }
+                """, for: request)
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        await viewModel.uploadAttachment(data: Data("a".utf8), filename: "notes-a.txt")
+        await viewModel.uploadAttachment(data: Data("b".utf8), filename: "notes-b.txt")
+        let third = await viewModel.uploadAttachment(data: Data("c".utf8), filename: "notes-c.txt")
+
+        XCTAssertNil(third)
+        XCTAssertEqual(uploads, 2, "The third file must not be uploaded")
+        XCTAssertEqual(viewModel.pendingAttachments.count, 2)
+        XCTAssertEqual(viewModel.uploadAttachmentErrorMessage, "A message can carry up to 2 attachments.")
     }
 
     func testTextlessSendWithoutAttachmentsIsRejectedBeforeAnyRequest() async throws {
@@ -269,7 +342,8 @@ extension ChatViewModelSendTests {
                   "path": "/tmp/workspace/notes.txt",
                   "size": 5,
                   "mime": "text/plain",
-                  "is_image": false
+                  "is_image": false,
+                  "named_in_prompt": true
                 }
                 """, for: request)
             case "/api/chat/start":
@@ -306,7 +380,8 @@ extension ChatViewModelSendTests {
                   "path": "/tmp/workspace/notes.txt",
                   "size": 5,
                   "mime": "text/plain",
-                  "is_image": false
+                  "is_image": false,
+                  "named_in_prompt": true
                 }
                 """, for: request)
             case "/api/chat/start":
@@ -337,7 +412,7 @@ extension ChatViewModelSendTests {
         // The drain appends its optimistic row before its start request goes out, so wait for the request itself.
         try await waitUntil { startedMessages.value.count == 2 }
 
-        XCTAssertEqual(startedMessages.value, ["Initial request", "I've uploaded 1 file(s): /tmp/workspace/notes.txt"])
+        XCTAssertEqual(startedMessages.value, ["Initial request", ""])
         XCTAssertTrue(viewModel.messages.contains { $0.attachments?.isEmpty == false })
     }
 }
