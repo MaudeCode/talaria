@@ -1,8 +1,9 @@
 import SwiftUI
 import UIKit
-import UniformTypeIdentifiers
 import TalariaKit
 
+/// A pending photo in the composer's attachment strip (TAL-634): just its thumbnail, which opens the
+/// preview, with a small remove badge on the corner. No name and no background of its own.
 struct ComposerAttachmentThumbnailView: View {
     let attachment: PendingAttachment
     let onRemove: () -> Void
@@ -12,167 +13,95 @@ struct ComposerAttachmentThumbnailView: View {
     @Environment(\.layoutDirection) private var layoutDirection
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
-            Button(action: onOpen) {
-                thumbnailContent
-            }
-            .buttonStyle(.chatTactile(.thumbnail))
-            .accessibilityLabel("Open attachment \(attachment.name)")
-
+        Button(action: onOpen) {
+            thumbnail
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Open attachment \(attachment.name)")
+        .overlay(alignment: .topTrailing) {
             Button(action: onRemove) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 11, weight: .bold))
-                    .frame(width: 24, height: 24)
-                    .background(Circle().fill(Color(.systemBackground)))
+                    .font(.system(size: 8, weight: .bold))
                     .foregroundStyle(Color(.label))
-                    .overlay(Circle().stroke(Color(.separator).opacity(0.35), lineWidth: 0.5))
+                    .frame(width: 16, height: 16)
+                    .background(Circle().fill(Color(.systemBackground)))
+                    .overlay(Circle().stroke(Color(.separator).opacity(0.4), lineWidth: 0.5))
+                    .chatMinimumHitTarget(horizontalPadding: 14, verticalPadding: 14, in: Rectangle())
             }
-            .buttonStyle(.chatTactile(
-                .icon,
-                shadow: ChatTactileButtonStyle.Shadow(
-                    color: .black,
-                    opacity: 0.12,
-                    radius: 3,
-                    y: 1,
-                    pressedOpacity: 0.06,
-                    pressedRadius: 1,
-                    pressedY: 0
-                )
-            ))
-            .offset(x: RTLLayout.horizontalOffset(6, isRightToLeft: layoutDirection == .rightToLeft), y: -6)
+            .buttonStyle(.plain)
+            .offset(x: RTLLayout.horizontalOffset(5, isRightToLeft: layoutDirection == .rightToLeft), y: -5)
             .accessibilityLabel("Remove attachment \(attachment.name)")
         }
+        // The badge pokes past the corner; the padding keeps it inside the strip.
+        .padding(.top, 5)
+        .padding(.trailing, 5)
     }
 
-    @ViewBuilder
-    private var thumbnailContent: some View {
-        if attachment.isImage {
-            imagePreview
-        } else {
-            filePreview
-        }
-    }
-
-    @ViewBuilder
-    private var imagePreview: some View {
+    private var thumbnail: some View {
         Group {
-            if let thumbnailData = attachment.thumbnailData,
-               let uiImage = UIImage(data: thumbnailData) {
+            if let thumbnailData = attachment.thumbnailData, let uiImage = UIImage(data: thumbnailData) {
                 Image(uiImage: uiImage)
                     .resizable()
                     .scaledToFill()
             } else {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color(.systemFill))
+                Color(.systemFill)
                     .overlay(
                         Image(systemName: "photo")
-                            .font(.system(size: 30, weight: .regular))
+                            .font(.system(size: thumbnailSize * 0.38))
                             .foregroundStyle(Color(.tertiaryLabel))
                     )
             }
         }
-        .frame(width: imagePreviewSize, height: imagePreviewSize)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(previewBorder(cornerRadius: 14))
-        .accessibilityLabel("Image attachment \(attachment.name)")
-    }
-
-    private var filePreview: some View {
-        HStack(alignment: .center, spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(fileBadgeColor.opacity(0.15))
-
-                VStack(spacing: 3) {
-                    Image(systemName: fileIconName)
-                        .font(.system(size: 24, weight: .semibold))
-                    Text(fileExtensionLabel)
-                        .font(.system(size: 9, weight: .bold))
-                        .lineLimit(1)
-                }
-                .foregroundStyle(fileBadgeColor)
-            }
-            .frame(width: 58, height: 68)
-
-            VStack(alignment: .leading, spacing: 5) {
-                Text(attachment.name)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(Color(.label))
-                    .lineLimit(2)
-                    .truncationMode(.middle)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                Text(fileDetailText)
-                    .font(.caption)
-                    .foregroundStyle(Color(.secondaryLabel))
-                    .lineLimit(usesAccessibilityLayout ? 2 : 1)
-            }
-            .frame(width: usesAccessibilityLayout ? 160 : 128, alignment: .leading)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, usesAccessibilityLayout ? 10 : 0)
-        .frame(width: usesAccessibilityLayout ? 260 : 222)
-        .frame(minHeight: usesAccessibilityLayout ? 112 : 92)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color(.secondarySystemBackground))
+        .frame(width: thumbnailSize, height: thumbnailSize)
+        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .stroke(Color(.separator).opacity(0.25), lineWidth: 0.5)
         )
-        .overlay(previewBorder(cornerRadius: 14))
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("File attachment \(attachment.name), \(fileDetailText)")
     }
 
-    private func previewBorder(cornerRadius: CGFloat) -> some View {
-        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            .stroke(Color(.separator).opacity(0.25), lineWidth: 0.5)
+    private var thumbnailSize: CGFloat {
+        dynamicTypeSize.isAccessibilitySize ? 56 : 44
     }
+}
 
-    private var fileExtensionLabel: String {
-        let ext = URL(fileURLWithPath: attachment.name).pathExtension.uppercased()
-        return ext.isEmpty ? String(localized: "FILE") : String(ext.prefix(5))
-    }
+/// A pending file inside the composer card, above the text (TAL-634): a link-styled name, like a
+/// T3 Code file link, that opens its preview, and a remove button. It still sends as an attachment.
+struct ComposerFileLinkView: View {
+    let attachment: PendingAttachment
+    let onRemove: () -> Void
+    let onOpen: () -> Void
 
-    private var fileIconName: String {
-        switch URL(fileURLWithPath: attachment.name).pathExtension.lowercased() {
-        case "csv", "tsv", "xls", "xlsx":
-            "tablecells"
-        case "json", "md", "txt", "log", "xml", "yaml", "yml":
-            "doc.text"
-        case "pdf":
-            "doc.richtext"
-        case "zip", "tar", "gz", "tgz":
-            "archivebox"
-        default:
-            "doc"
+    var body: some View {
+        HStack(spacing: 0) {
+            Button(action: onOpen) {
+                Label {
+                    Text(attachment.name)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                } icon: {
+                    Image(systemName: "paperclip")
+                }
+                .font(AppFont.subheadline())
+                .foregroundStyle(.tint)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Open attachment \(attachment.name)")
+
+            // The remove target takes its full 44 pt in layout, so it never overlaps the link's.
+            Button(action: onRemove) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Remove attachment \(attachment.name)")
         }
-    }
-
-    private var fileBadgeColor: Color {
-        switch URL(fileURLWithPath: attachment.name).pathExtension.lowercased() {
-        case "csv", "tsv", "xls", "xlsx":
-            Color.green
-        case "pdf":
-            Color.red
-        case "json", "md", "txt", "log", "xml", "yaml", "yml":
-            Color.blue
-        default:
-            Color.accentColor
-        }
-    }
-
-    private var fileDetailText: String {
-        if let size = attachment.size {
-            ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)
-        } else {
-            fileExtensionLabel
-        }
-    }
-
-    private var usesAccessibilityLayout: Bool {
-        dynamicTypeSize.isAccessibilitySize
-    }
-
-    private var imagePreviewSize: CGFloat {
-        usesAccessibilityLayout ? 108 : 96
+        // A full 44 pt row holds the remove button, so stacked links never share a target.
+        .frame(minHeight: 44)
+        .fixedSize(horizontal: false, vertical: true)
     }
 }

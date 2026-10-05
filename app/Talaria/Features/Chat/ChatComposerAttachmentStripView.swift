@@ -2,34 +2,28 @@ import SwiftUI
 import UIKit
 import TalariaKit
 
+/// Pending photos in a strip hanging from the composer card's top edge, the mirror of the control
+/// strip under it (TAL-634). The strip is the only background; each photo is just its thumbnail.
+/// Files go inside the card as links instead (`ComposerFileLinkView`).
 struct ComposerAttachmentStripView: View {
-    let attachments: [PendingAttachment]
+    let photos: [PendingAttachment]
     let onRemove: (UUID) -> Void
     let onPreview: (PendingAttachment) -> Void
 
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-
     var body: some View {
-        if !attachments.isEmpty {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    ForEach(attachments) { attachment in
-                        ComposerAttachmentThumbnailView(
-                            attachment: attachment,
-                            onRemove: { onRemove(attachment.id) },
-                            onOpen: { onPreview(attachment) }
-                        )
-                    }
+        ComposerStripScrollRow(accessibilityIdentifier: "composer-attachment-strip") {
+            HStack(spacing: 10) {
+                ForEach(photos) { photo in
+                    ComposerAttachmentThumbnailView(
+                        attachment: photo,
+                        onRemove: { onRemove(photo.id) },
+                        onOpen: { onPreview(photo) }
+                    )
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-                .padding(.bottom, 4)
             }
-            .frame(height: stripHeight)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
         }
-    }
-
-    private var stripHeight: CGFloat {
-        dynamicTypeSize.isAccessibilitySize ? 132 : 108
+        .composerStripChrome(hangingFrom: .top)
     }
 }
