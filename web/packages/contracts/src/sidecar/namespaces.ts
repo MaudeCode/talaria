@@ -248,11 +248,15 @@ export const WORKTREE_METHODS = {
 } as const
 // ── chat / approval / clarify ──────────────────────────────────────────
 export const ChatUsageSchema = z.object({ prompt_tokens: z.number().int(), completion_tokens: z.number().int(), cache_read_tokens: z.number().int(), cache_write_tokens: z.number().int(), estimated_cost_usd: z.number().nullable() })
-/** `failed`, `partial`, and `compression_exhausted` are the Agent's own turn-result flags, forwarded as sent; `failed` also sets `status: 'error'`. */
+/**
+ * `failed`, `partial`, and `compression_exhausted` are the Agent's own turn-result flags, forwarded as sent; `failed` also sets `status: 'error'`.
+ * `max_iterations_summary_request` is the Agent's text for the user row it appends to ask for a summary once its tool budget runs out
+ * (`tool_limit_reached`); the server drops rows with that text from the transcript and the model context (TAL-537).
+ */
 export const ChatStartResultSchema = z.object({
   status: z.enum(['completed', 'cancelled', 'error']), messages: z.array(Loose), final_response: z.string(), error: z.string().nullable(),
   failed: z.boolean(), partial: z.boolean(), compression_exhausted: z.boolean(),
-  tool_limit_reached: z.boolean(), usage: ChatUsageSchema, context: Loose, model: z.string(), provider: z.string(), compressed: z.boolean(), agent_session_id: z.string(),
+  tool_limit_reached: z.boolean(), max_iterations_summary_request: z.string(), usage: ChatUsageSchema, context: Loose, model: z.string(), provider: z.string(), compressed: z.boolean(), agent_session_id: z.string(),
   token_sent: z.boolean(), pending_steer: z.string(), live_tool_calls: z.array(Loose),
 })
 const Text = z.object({ text: z.string() }).catchall(Json)

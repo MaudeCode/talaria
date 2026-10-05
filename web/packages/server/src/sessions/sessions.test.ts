@@ -16,7 +16,7 @@ type Json = Record<string, unknown>
 const post = (s: TestServer, path: string, body: unknown): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
 const json = async (res: Response): Promise<Json> => (await res.json()) as Json
 const completedTurn = (messages: Json[]): SidecarResult<'chat.start'> => ({
-  status: 'completed', messages, final_response: str(messages[messages.length - 1]?.content), error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false,
+  status: 'completed', messages, final_response: str(messages[messages.length - 1]?.content), error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, max_iterations_summary_request: '',
   usage: { prompt_tokens: 10, completion_tokens: 5, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: {}, model: 'test-model', provider: 'test', compressed: false,
   agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [],
 })
@@ -1149,6 +1149,21 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     expect(shown.indexOf('CLI reply')).toBeLessThan(shown.indexOf('second'))
     await turn(sid, 'failing', 'failed')
     expect((await served(sid)).filter((c) => c === 'CLI ask' || c === 'CLI reply')).toEqual(['CLI ask', 'CLI reply'])
+  })
+
+  it('the Agent\'s max-iterations summary request in state.db stays out of the transcript and the next turn (TAL-537)', async () => {
+    const sid = await seeded([['user', 'u1', 100], ['assistant', 'a1', 101]])
+    const request = 'Summarize; no more tools.'
+    sidecar.respond('chat.start', (params) => {
+      commit(sid, [['user', 'loop', 200], ['user', request, 201], ['assistant', 'summary', 202]])
+      const done = completedTurn([...params.conversation_history, { role: 'user', content: str(params.user_message) }, { role: 'user', content: request }, { role: 'assistant', content: 'summary' }])
+      return { ...done, tool_limit_reached: true, max_iterations_summary_request: request }
+    })
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'loop' }))
+    await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    expect((await served(sid)).slice(-2)).toEqual([expect.stringContaining('loop'), 'summary'])
+    expect(sent(sid)).not.toContain(request)
+    expect(await turn(sid, 'next')).not.toContain(request)
   })
 
   it('a concurrent row that repeats a row of the current turn stays when the turn\'s own row is already local', async () => {

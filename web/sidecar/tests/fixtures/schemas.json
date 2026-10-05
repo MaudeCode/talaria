@@ -3927,6 +3927,9 @@
       "tool_limit_reached": {
         "type": "boolean"
       },
+      "max_iterations_summary_request": {
+        "type": "string"
+      },
       "usage": {
         "type": "object",
         "properties": {
@@ -4011,6 +4014,7 @@
       "partial",
       "compression_exhausted",
       "tool_limit_reached",
+      "max_iterations_summary_request",
       "usage",
       "context",
       "model",

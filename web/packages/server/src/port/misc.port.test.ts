@@ -100,7 +100,7 @@ describe('import scrubbing and ephemeral projection', () => {
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
     sidecar.respond('chat.start', (params) => ({
       status: 'completed', messages: [{ role: 'user', content: str(params.user_message), api_content: 'secret', _state_db_row_id: 1 }, { role: 'assistant', content: 'because', api_content: 'secret' }], final_response: 'because', error: null, failed: false, partial: false, compression_exhausted: false,
-      tool_limit_reached: false, usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: {}, model: 'm', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [],
+      tool_limit_reached: false, max_iterations_summary_request: '', usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: {}, model: 'm', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [],
     }))
     const started = await json(await post(s, '/api/btw', { session_id: sid, question: 'why?' }))
     const frames = await s.sse(`/api/chat/stream?stream_id=${String(started.stream_id)}&replay=1`, (f) => f.event === 'done')
@@ -144,7 +144,7 @@ describe('runtime seams from review round 10', () => {
     const created = (await json(await post(s, '/api/session/new', { model: '@nous:openai/gpt-5.4-mini' }))).session as Json
     expect(created).toMatchObject({ model: 'openai/gpt-5.4-mini', model_provider: 'nous' })
     let seen: Json | null = null
-    sidecar.respond('chat.start', (params) => { seen = params; return { status: 'completed', messages: [{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'ok' }], final_response: 'ok', error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: {}, model: 'm', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] } })
+    sidecar.respond('chat.start', (params) => { seen = params; return { status: 'completed', messages: [{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'ok' }], final_response: 'ok', error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, max_iterations_summary_request: '', usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: {}, model: 'm', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] } })
     const started = await json(await post(s, '/api/chat/start', { session_id: created.session_id, message: 'hi', model: '@nous:openai/gpt-5.4-mini' }))
     await s.sse(`/api/chat/stream?stream_id=${String(started.stream_id)}&replay=1`, (f) => f.event === 'done')
     expect(seen).toMatchObject({ model: 'openai/gpt-5.4-mini', model_provider: 'nous' })
@@ -189,7 +189,7 @@ describe('runtime seams from review round 10', () => {
   it('a settled turn syncs the session usage to state.db only when sync_to_insights is on', async () => {
     const usageSynced: Json[] = []
     sidecar.respond('state_db.sync_usage', (params) => { usageSynced.push(params); return { ok: true as const } })
-    sidecar.respond('chat.start', (params) => ({ status: 'completed', messages: [...(params.conversation_history as Json[]), { role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'ok' }], final_response: 'ok', error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, usage: { prompt_tokens: 120, completion_tokens: 30, cache_read_tokens: 40, cache_write_tokens: 8, estimated_cost_usd: 0.0125 }, context: {}, model: 'used-model', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] }))
+    sidecar.respond('chat.start', (params) => ({ status: 'completed', messages: [...(params.conversation_history as Json[]), { role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'ok' }], final_response: 'ok', error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, max_iterations_summary_request: '', usage: { prompt_tokens: 120, completion_tokens: 30, cache_read_tokens: 40, cache_write_tokens: 8, estimated_cost_usd: 0.0125 }, context: {}, model: 'used-model', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] }))
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
     const turn = async (message: string): Promise<void> => {
       const started = await json(await post(s, '/api/chat/start', { session_id: sid, message }))
@@ -209,7 +209,7 @@ describe('runtime seams from review round 10', () => {
       expect(session.messages.length).toBeGreaterThan(0)
       // A failed or cancelled turn persists the counters the stream reported, so state.db follows those exits too.
       for (const [status, usage] of [['error', { prompt_tokens: 200, completion_tokens: 50, cache_read_tokens: 60, cache_write_tokens: 9, estimated_cost_usd: 0.02 }], ['cancelled', { prompt_tokens: 260, completion_tokens: 70, cache_read_tokens: 80, cache_write_tokens: 10, estimated_cost_usd: 0.03 }]] as const) {
-        sidecar.respond('chat.start', () => ({ status, messages: [], final_response: '', error: status === 'error' ? 'HTTP 500: upstream failed' : null, failed: status === 'error', partial: false, compression_exhausted: false, tool_limit_reached: false, usage, context: {}, model: 'used-model', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: false, pending_steer: '', live_tool_calls: [] }))
+        sidecar.respond('chat.start', () => ({ status, messages: [], final_response: '', error: status === 'error' ? 'HTTP 500: upstream failed' : null, failed: status === 'error', partial: false, compression_exhausted: false, tool_limit_reached: false, max_iterations_summary_request: '', usage, context: {}, model: 'used-model', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: false, pending_steer: '', live_tool_calls: [] }))
         const before = usageSynced.length
         await turn(`${status} turn`)
         await expect.poll(() => usageSynced.length).toBe(before + 1)
@@ -259,12 +259,12 @@ describe('image attachments in user messages (review round 14)', () => {
   beforeAll(async () => {
     sidecar = new FakeSidecar()
     sidecar.respond('text.image_mode', () => ({ mode, reason: 'test', supports_vision: mode === 'native' }))
-    sidecar.respond('chat.start', (params) => { sent = params.user_message; return { status: 'completed', messages: [{ role: 'user', content: 'x' }, { role: 'assistant', content: 'ok' }], final_response: 'ok', error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: {}, model: 'm', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] } })
+    sidecar.respond('chat.start', (params) => { sent = params.user_message; return { status: 'completed', messages: [{ role: 'user', content: 'x' }, { role: 'assistant', content: 'ok' }], final_response: 'ok', error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, max_iterations_summary_request: '', usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: {}, model: 'm', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] } })
     s = await bootTestServer({ sidecar })
   })
   afterAll(() => s.close())
   // TAL-276 tests swap the Agent's answer; every later test gets the default one back.
-  const agentAnswer = (params: Record<string, unknown>) => { sent = params.user_message; return { status: 'completed' as const, messages: [{ role: 'user', content: 'x' }, { role: 'assistant', content: 'ok' }], final_response: 'ok', error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: {}, model: 'm', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] } }
+  const agentAnswer = (params: Record<string, unknown>) => { sent = params.user_message; return { status: 'completed' as const, messages: [{ role: 'user', content: 'x' }, { role: 'assistant', content: 'ok' }], final_response: 'ok', error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, max_iterations_summary_request: '', usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: {}, model: 'm', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] } }
   afterEach(() => { sidecar.respond('chat.start', agentAnswer) })
   const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(16, 1)])
   const turn = async (attachments: Json[]): Promise<unknown> => {
@@ -288,7 +288,7 @@ describe('image attachments in user messages (review round 14)', () => {
   /** One settled turn whose Agent transcript echoes the prompt it was given, as the real Agent persists it. */
   const echoTurn = async (message: string, attachments: Json[]): Promise<{ sid: string; prompt: unknown; users: Json[] }> => {
     sent = null
-    sidecar.respond('chat.start', (params) => { sent = params.user_message; return { status: 'completed', messages: [{ role: 'user', content: params.user_message }, { role: 'assistant', content: 'ok' }], final_response: 'ok', error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: {}, model: 'm', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] } })
+    sidecar.respond('chat.start', (params) => { sent = params.user_message; return { status: 'completed', messages: [{ role: 'user', content: params.user_message }, { role: 'assistant', content: 'ok' }], final_response: 'ok', error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, max_iterations_summary_request: '', usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: {}, model: 'm', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] } })
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
     const res = await post(s, '/api/chat/start', { session_id: sid, message, attachments })
     expect(res.status).toBe(200)
@@ -338,7 +338,7 @@ describe('image attachments in user messages (review round 14)', () => {
 
   it('keeps two attachment-only turns apart when the Agent answers both the same (TAL-276)', async () => {
     mode = 'native'
-    const reply = (params: Record<string, unknown>) => ({ status: 'completed' as const, messages: [...(params.conversation_history as Json[]), { role: 'user', content: params.user_message }, { role: 'assistant', content: 'ok' }], final_response: 'ok', error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: {}, model: 'm', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] })
+    const reply = (params: Record<string, unknown>) => ({ status: 'completed' as const, messages: [...(params.conversation_history as Json[]), { role: 'user', content: params.user_message }, { role: 'assistant', content: 'ok' }], final_response: 'ok', error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, max_iterations_summary_request: '', usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: {}, model: 'm', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] })
     sidecar.respond('chat.start', reply)
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
     for (const name of ['a.pdf', 'b.pdf']) {
@@ -352,7 +352,7 @@ describe('image attachments in user messages (review round 14)', () => {
 
   it('keeps each attachment-only prompt when the Agent returns only its answer (TAL-276)', async () => {
     mode = 'native'
-    sidecar.respond('chat.start', (params) => ({ status: 'completed' as const, messages: [...(params.conversation_history as Json[]), { role: 'assistant', content: 'ok' }], final_response: 'ok', error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: {}, model: 'm', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] }))
+    sidecar.respond('chat.start', (params) => ({ status: 'completed' as const, messages: [...(params.conversation_history as Json[]), { role: 'assistant', content: 'ok' }], final_response: 'ok', error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, max_iterations_summary_request: '', usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: {}, model: 'm', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] }))
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
     for (const name of ['c.pdf', 'd.pdf']) {
       const res = await post(s, '/api/chat/start', { session_id: sid, message: '', attachments: [{ path: join(ws(), name), mime: 'application/pdf', name }] })
@@ -365,7 +365,7 @@ describe('image attachments in user messages (review round 14)', () => {
 
   it('keeps attachment-only rows exact for bracketed paths and long shared file lists (TAL-276)', async () => {
     mode = 'native'
-    sidecar.respond('chat.start', (params) => ({ status: 'completed' as const, messages: [...(params.conversation_history as Json[]), { role: 'user', content: params.user_message }, { role: 'assistant', content: 'ok' }], final_response: 'ok', error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: {}, model: 'm', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] }))
+    sidecar.respond('chat.start', (params) => ({ status: 'completed' as const, messages: [...(params.conversation_history as Json[]), { role: 'user', content: params.user_message }, { role: 'assistant', content: 'ok' }], final_response: 'ok', error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, max_iterations_summary_request: '', usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: {}, model: 'm', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] }))
     const settle = async (sid: string, attachments: Json[]) => {
       const res = await post(s, '/api/chat/start', { session_id: sid, message: '', attachments })
       await s.sse(`/api/chat/stream?stream_id=${String((await json(res)).stream_id)}&replay=1`, (f) => f.event === 'done' || f.event === 'apperror')
