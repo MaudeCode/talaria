@@ -58,6 +58,6 @@ with scoped_home(ALPHA):  # an earlier named-profile turn leaves the process mul
     pass
 registry = Registry(runtime=types.SimpleNamespace(load=lambda: None, ensure_current=lambda: None))
 chat.register(registry)
-chat._AGENT_CACHE[SID] = (agent, "sig")
+chat._AGENT_CACHE[SID] = (agent, "sig", str(ALPHA))
 result = registry.methods["chat.commit_memory"](None, {"session_id": SID, "profile_home": str(ALPHA)})
 print(json.dumps({"result": result, "seen": seen}))

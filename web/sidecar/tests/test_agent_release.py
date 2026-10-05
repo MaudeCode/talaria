@@ -275,7 +275,7 @@ def test_an_agent_evicted_during_a_memory_commit_is_released_after_the_commit(mo
     registry = Registry(runtime=None)  # type: ignore[arg-type]
     chat.register(registry)
     reply: dict = {}
-    worker = threading.Thread(target=lambda: reply.update(registry.methods["chat.commit_memory"](Ctx(), {"session_id": "commit"})))
+    worker = threading.Thread(target=lambda: reply.update(registry.methods["chat.commit_memory"](Ctx(), {"session_id": "commit", "profile_home": "/tmp/unused"})))
     worker.start()
     assert committing.wait(5)
     assert chat.evict_all_agents() == 1
