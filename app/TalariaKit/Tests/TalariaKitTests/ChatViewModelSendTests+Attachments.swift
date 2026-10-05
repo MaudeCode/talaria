@@ -154,11 +154,9 @@ extension ChatViewModelSendTests {
                 XCTAssertEqual(paths.count, 2)
                 XCTAssertEqual(Set(paths).count, 2)
 
-                let message = try XCTUnwrap(body["message"] as? String)
-                XCTAssertTrue(message.hasPrefix("Compare these\n\n[Attached files: "))
-                for path in paths {
-                    XCTAssertTrue(message.contains(path))
-                }
+                // The bare draft: the server names the attached files in the prompt (TAL-276), so the
+                // App adding its own `[Attached files: …]` line sent it to the agent twice (TAL-635).
+                XCTAssertEqual(body["message"] as? String, "Compare these")
 
                 return apiTestJSONResponse("""
                 {
@@ -238,7 +236,8 @@ extension ChatViewModelSendTests {
         let didStart = await viewModel.sendMessage("   ")
 
         XCTAssertTrue(didStart)
-        XCTAssertEqual(startedMessage, "I've uploaded 1 file(s): /tmp/workspace/notes.txt")
+        // An attachment-only send has no text; the server names the file (TAL-276, TAL-635).
+        XCTAssertEqual(startedMessage, "")
         XCTAssertEqual(startedAttachmentPaths, ["/tmp/workspace/notes.txt"])
         XCTAssertTrue(viewModel.pendingAttachments.isEmpty)
         // The optimistic row carries exactly what the server will store, so the
@@ -337,7 +336,7 @@ extension ChatViewModelSendTests {
         // The drain appends its optimistic row before its start request goes out, so wait for the request itself.
         try await waitUntil { startedMessages.value.count == 2 }
 
-        XCTAssertEqual(startedMessages.value, ["Initial request", "I've uploaded 1 file(s): /tmp/workspace/notes.txt"])
+        XCTAssertEqual(startedMessages.value, ["Initial request", ""])
         XCTAssertTrue(viewModel.messages.contains { $0.attachments?.isEmpty == false })
     }
 }

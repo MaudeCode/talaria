@@ -508,7 +508,7 @@ final class ChatTranscriptDisplaySettingsTests: XCTestCase {
     }
 
     func testContentWithoutAttachedFilesMarkerStripsTrailingMarker() {
-        // Mirrors the exact format PendingAttachment.chatMessageText appends.
+        // The format the App appended before TAL-635; older stored messages still carry it.
         let sent = "Analyze these files\n\n[Attached files: /tmp/workspace/sample.html, /tmp/workspace/image.jpg]"
         XCTAssertEqual(
             MessageAttachment.contentWithoutAttachedFilesMarker(in: sent),
@@ -546,13 +546,12 @@ final class ChatTranscriptDisplaySettingsTests: XCTestCase {
     /// message, so the display transform has to hide it there too — its own
     /// attachments are the evidence that it really is one.
     func testContentWithoutAttachmentReferencesStripsReloadedSynthesizedMessage() {
-        let sent = PendingAttachment.chatMessageText(draft: "", attachments: [
-            PendingAttachment(name: "notes.txt", path: "/tmp/workspace/notes.txt", mime: "text/plain", size: 4, isImage: false)
-        ])
+        // The synthesized text the App sent for a file-only message before TAL-635; older stored
+        // messages still carry it.
+        let sent = "I've uploaded 1 file(s): /tmp/workspace/notes.txt"
         // The server commonly replays a bare filename as the path.
         let reloaded = [MessageAttachment(name: "notes.txt", path: "notes.txt", mime: "text/plain", size: 4, isImage: false)]
 
-        XCTAssertEqual(sent, "I've uploaded 1 file(s): /tmp/workspace/notes.txt")
         XCTAssertEqual(MessageAttachment.contentWithoutAttachmentReferences(in: sent, attachments: reloaded), "")
     }
 
@@ -606,11 +605,9 @@ final class ChatTranscriptDisplaySettingsTests: XCTestCase {
     func testContentWithoutAttachmentReferencesKeepsTypedLookalikeNamingItsAttachment() {
         let typed = "I've uploaded 1 file(s): report.pdf"
         let attachments = [MessageAttachment(name: "report.pdf", path: "/tmp/workspace/report.pdf", mime: "application/pdf", size: 4, isImage: false)]
-        let sent = PendingAttachment.chatMessageText(draft: typed, attachments: [
-            PendingAttachment(name: "report.pdf", path: "/tmp/workspace/report.pdf", mime: "application/pdf", size: 4, isImage: false)
-        ])
+        // An older stored message: the typed text plus the marker the App appended before TAL-635.
+        let sent = "\(typed)\n\n[Attached files: /tmp/workspace/report.pdf]"
 
-        XCTAssertEqual(sent, "\(typed)\n\n[Attached files: /tmp/workspace/report.pdf]")
         XCTAssertEqual(MessageAttachment.contentWithoutAttachmentReferences(in: sent, attachments: attachments), typed)
     }
 

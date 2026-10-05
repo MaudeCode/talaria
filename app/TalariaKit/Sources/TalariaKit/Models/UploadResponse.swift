@@ -139,14 +139,6 @@ extension PendingAttachment {
         "\(filename) is too large. Attachments must be \(maximumUploadSizeDescription) or smaller."
     }
 
-    var chatReference: String {
-        if isImage {
-            return path.isEmpty ? name : path
-        }
-
-        return path.isEmpty ? name : path
-    }
-
     public func toJSONValue() -> JSONValue {
         var object: [String: JSONValue] = [
             "name": .string(name),
@@ -158,32 +150,5 @@ extension PendingAttachment {
         }
         object["is_image"] = .bool(isImage)
         return .object(object)
-    }
-
-    public static func chatMessageText(draft: String, attachments: [PendingAttachment]) -> String {
-        let references = attachments
-            .map(\.chatReference)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-
-        guard !references.isEmpty else {
-            return draft
-        }
-
-        // A textless send has nothing to append the marker to, so the WebUI
-        // synthesizes the whole message instead. Match its wording verbatim:
-        // it is what the agent reads, and it is what the server stores and
-        // replays, so the optimistic bubble has to use the same string to
-        // dedupe against the reloaded copy. `MessageAttachment` parses this
-        // shape back out for display and attachment inference — share its
-        // constants so the two cannot drift.
-        guard !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return MessageAttachment.uploadedFilesPrefix
-                + "\(references.count)"
-                + MessageAttachment.uploadedFilesInfix
-                + references.joined(separator: ", ")
-        }
-
-        return "\(draft)\n\n[Attached files: \(references.joined(separator: ", "))]"
     }
 }

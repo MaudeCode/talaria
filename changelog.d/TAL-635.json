@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Messages with attachments no longer list their attached files twice to your agent.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

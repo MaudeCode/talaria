@@ -172,35 +172,6 @@ final class APIClientChatEndpointTests: APIClientTestCase {
         XCTAssertEqual(requestCount, 2)
     }
 
-    func testPendingAttachmentBuildsBrowserCompatibleChatMessageText() {
-        let html = PendingAttachment(
-            name: "sample.html",
-            path: "/tmp/workspace/sample.html",
-            mime: "text/html",
-            size: 42,
-            isImage: false,
-            thumbnailData: nil
-        )
-        let image = PendingAttachment(
-            name: "image.jpg",
-            path: "/tmp/workspace/image.jpg",
-            mime: "image/jpeg",
-            size: 100,
-            isImage: true,
-            thumbnailData: Data()
-        )
-
-        let message = PendingAttachment.chatMessageText(
-            draft: "Analyze these files",
-            attachments: [html, image]
-        )
-
-        XCTAssertEqual(
-            message,
-            "Analyze these files\n\n[Attached files: /tmp/workspace/sample.html, /tmp/workspace/image.jpg]"
-        )
-    }
-
     func testChatAttachmentPreviewItemInfersImageMessageAttachment() {
         let item = ChatAttachmentPreviewItem(
             message: MessageAttachment(

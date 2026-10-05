@@ -2385,17 +2385,14 @@ public final class ChatViewModel {
             return false
         }
 
+        // The bare draft, as Web sends it: the server names every attached file in the prompt
+        // (TAL-276), so adding an `[Attached files: …]` line here sent it to the agent twice
+        // (TAL-635). A textless send is valid when it carries staged files with a path.
         let message = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        // A textless send is valid when it carries staged files: the composed
-        // text then *is* the synthesized attachment message. Compose it before
-        // `prepareForSend` consumes the attachments, and reject on the composed
-        // result so an empty draft with unusable references still bails without
-        // spending them.
-        let composedMessage = PendingAttachment.chatMessageText(
-            draft: message,
-            attachments: attachmentCoordinator.pendingAttachments
-        )
-        guard !composedMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        let hasSendableAttachments = attachmentCoordinator.pendingAttachments.contains {
+            !$0.path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        guard !message.isEmpty || hasSendableAttachments else { return false }
 
         guard let sessionID else {
             sendErrorMessage = String(localized: "The server did not provide a session ID.")
@@ -2408,12 +2405,10 @@ public final class ChatViewModel {
         let didStart = await performChatSend(
             sessionID: sessionID,
             localMessageID: localMessageID,
-            // The optimistic row carries exactly what the server will store, so
-            // the bubble cannot change appearance across a reload — and so the
-            // display layer sees the trailing marker that tells a typed message
-            // apart from a synthesized attachment-only one.
-            displayContent: composedMessage,
-            messageForAPI: composedMessage,
+            // The optimistic row shows the draft and its attachments, which is what the server
+            // replays once it strips its own marker, so the bubble keeps its look across a reload.
+            displayContent: message,
+            messageForAPI: message,
             messageAttachments: attachmentPreparation.messageAttachments,
             apiPayloads: attachmentPreparation.apiPayloads,
             attachmentsToRestoreOnFailure: attachmentPreparation.attachments,
