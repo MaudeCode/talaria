@@ -234,7 +234,6 @@
 		C107O0000000000000000013 /* ComposerModelMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000113 /* ComposerModelMenu.swift */; };
 		C107O0000000000000000014 /* ComposerReasoningMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000114 /* ComposerReasoningMenu.swift */; };
 		C107O0000000000000000015 /* ComposerMetaControlLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000115 /* ComposerMetaControlLabel.swift */; };
-		C107O0000000000000000016 /* ComposerSecondaryBarLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000116 /* ComposerSecondaryBarLabel.swift */; };
 		C107O0000000000000000017 /* LucideBrainIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000117 /* LucideBrainIcon.swift */; };
 		C107O0000000000000000018 /* KanbanStatusFocusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000118 /* KanbanStatusFocusView.swift */; };
 		C107O0000000000000000019 /* KanbanBoardManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000119 /* KanbanBoardManagementView.swift */; };
@@ -658,7 +657,6 @@
 		C107O0000000000000000113 /* ComposerModelMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerModelMenu.swift; sourceTree = "<group>"; };
 		C107O0000000000000000114 /* ComposerReasoningMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerReasoningMenu.swift; sourceTree = "<group>"; };
 		C107O0000000000000000115 /* ComposerMetaControlLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerMetaControlLabel.swift; sourceTree = "<group>"; };
-		C107O0000000000000000116 /* ComposerSecondaryBarLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerSecondaryBarLabel.swift; sourceTree = "<group>"; };
 		C107O0000000000000000117 /* LucideBrainIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LucideBrainIcon.swift; sourceTree = "<group>"; };
 		C107O0000000000000000118 /* KanbanStatusFocusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanStatusFocusView.swift; sourceTree = "<group>"; };
 		C107O0000000000000000119 /* KanbanBoardManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanBoardManagementView.swift; sourceTree = "<group>"; };
@@ -1161,7 +1159,6 @@
 				C107O0000000000000000113 /* ComposerModelMenu.swift */,
 				C107O0000000000000000114 /* ComposerReasoningMenu.swift */,
 				C107O0000000000000000115 /* ComposerMetaControlLabel.swift */,
-				C107O0000000000000000116 /* ComposerSecondaryBarLabel.swift */,
 				C107O0000000000000000117 /* LucideBrainIcon.swift */,
 				C0CAM000000000000000B002 /* CameraPickerView.swift */,
 				C0DEC0DE0000000000000002 /* ChatComposerView.swift */,
@@ -1782,7 +1779,6 @@
 				C107O0000000000000000013 /* ComposerModelMenu.swift in Sources */,
 				C107O0000000000000000014 /* ComposerReasoningMenu.swift in Sources */,
 				C107O0000000000000000015 /* ComposerMetaControlLabel.swift in Sources */,
-				C107O0000000000000000016 /* ComposerSecondaryBarLabel.swift in Sources */,
 				C107O0000000000000000017 /* LucideBrainIcon.swift in Sources */,
 				C107O0000000000000000018 /* KanbanStatusFocusView.swift in Sources */,
 				C107O0000000000000000019 /* KanbanBoardManagementView.swift in Sources */,

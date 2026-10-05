@@ -69,10 +69,6 @@ struct ChatView: View {
     @AppStorage(ChatScrollToBottomButtonSide.storageKey) private var scrollToBottomButtonSideRawValue = ChatScrollToBottomButtonSide.right.rawValue
     @AppStorage(SectionVisibilitySettings.chatFilesKey) private var showsFilesButton = true
     @AppStorage(SectionVisibilitySettings.chatGitKey) private var showsGitControls = true
-    @AppStorage(ComposerVisibilitySettings.workspaceKey) private var showsWorkspaceControl = true
-    @AppStorage(ComposerVisibilitySettings.profileKey) private var showsProfileControl = true
-    @AppStorage(ComposerVisibilitySettings.gitBranchKey) private var showsGitBranchControl = true
-    @AppStorage(ComposerVisibilitySettings.contextUsageKey) private var showsContextUsageControl = true
 
     let session: SessionSummary
     let server: URL
@@ -248,8 +244,6 @@ struct ChatView: View {
             isOfflineReadOnly: viewModel.isViewingCachedData,
             isSessionReadOnly: viewModel.isSessionReadOnly,
             isChromeCompact: isComposerChromeCompact,
-            hidesSecondaryChrome: false,
-            joinsSecondaryChrome: prompt == nil && !usesCompactComposer && composerSecondaryControlsState.hasControls,
             errorMessage: prompt == nil ? viewModel.sendErrorMessage : nil,
             configurationErrorMessage: prompt == nil ? viewModel.composerConfigurationErrorMessage : nil,
             contextWindowSnapshot: viewModel.contextWindowSnapshot,
@@ -1399,41 +1393,6 @@ struct ChatView: View {
             || viewModel.sendErrorMessage != nil
             || viewModel.composerConfigurationErrorMessage != nil
             || viewModel.uploadAttachmentErrorMessage != nil
-    }
-
-    private var composerSecondaryControlsState: ComposerSecondaryControlsState {
-        ComposerSecondaryControlsState(
-            workspaceTitle: showsWorkspaceControl ? composerWorkspaceTitle : nil,
-            profileOptions: viewModel.profileOptions,
-            selectedProfileName: viewModel.selectedProfileName,
-            selectedProfileTitle: showsProfileControl && !viewModel.isSingleProfileMode
-                ? viewModel.selectedProfileTitle
-                : nil,
-            gitBranch: showsGitBranchControl && showsGitControls && gitAvailabilityViewModel.hasRepository
-                ? ComposerSecondaryControlsState.GitBranch(
-                    currentName: gitAvailabilityViewModel.currentBranchName,
-                    branches: gitAvailabilityViewModel.branches,
-                    isLoading: gitAvailabilityViewModel.isLoadingBranches,
-                    isSwitching: gitAvailabilityViewModel.isSwitchingBranch
-                )
-                : nil,
-            contextWindowSnapshot: viewModel.contextWindowSnapshot,
-            showsContextUsage: showsContextUsageControl,
-            isDisabled: viewModel.isViewingCachedData
-                || viewModel.isStartingChat
-                || viewModel.isSendingVoiceNote
-                || viewModel.isCompressingSession
-                || viewModel.activeStreamID != nil
-                || viewModel.isUpdatingComposerConfiguration
-        )
-    }
-
-    private var composerWorkspaceTitle: String {
-        guard let name = viewModel.selectedWorkspaceName, !name.isEmpty else {
-            return String(localized: "Workspace")
-        }
-
-        return name
     }
 
     private var pinnedNoticeSpacerHeight: CGFloat {

@@ -20,27 +20,14 @@ struct GitBranchPickerButton: View {
             HapticButtonHaptics.tap(isEnabled: isHapticsEnabled)
             showsPicker = true
         } label: {
-            ComposerChipContent(
+            ComposerMetaControlLabel(
                 title: currentBranch,
-                spacing: 6,
-                font: AppFont.subheadline()
-            ) {
-                Image(systemName: "arrow.triangle.branch")
-                    .font(.system(size: 16, weight: .regular))
-            } trailing: {
-                EmptyView()
-            }
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .adaptiveGlass(
-                .regular,
-                isInteractive: true,
-                fallbackMaterial: .ultraThinMaterial,
-                in: Capsule()
+                systemImage: "arrow.triangle.branch",
+                maxWidth: ComposerControlStrip.titleMaxWidth,
+                color: .secondary,
+                controlFont: AppFont.footnote(),
+                chevronFont: AppFont.caption2()
             )
-            .clipShape(Capsule())
-            .chatMinimumHitTarget(in: Capsule())
         }
         .buttonStyle(.plain)
         .disabled(isDisabled || isLoading || isSwitching)

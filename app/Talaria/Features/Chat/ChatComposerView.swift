@@ -31,8 +31,6 @@ struct MessageComposerView: View {
     /// composer stays disabled even while online.
     let isSessionReadOnly: Bool
     let isChromeCompact: Bool
-    let hidesSecondaryChrome: Bool
-    let joinsSecondaryChrome: Bool
     let errorMessage: String?
     let configurationErrorMessage: String?
     let contextWindowSnapshot: ContextWindowSnapshot?
@@ -281,24 +279,34 @@ struct MessageComposerView: View {
                 }
                 .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: showsSlashAutocomplete)
 
-                composerChrome
-                .adaptiveGlass(
-                    .regular,
-                    isInteractive: true,
-                    fallbackMaterial: .ultraThinMaterial,
-                    in: RoundedRectangle(cornerRadius: composerCornerRadius, style: .continuous)
-                )
-                .clipShape(RoundedRectangle(cornerRadius: composerCornerRadius, style: .continuous))
-                .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.28 : 0.12), radius: 14, y: 6)
-                .padding(.horizontal)
-                .animation(ChatMotion.composerChrome(reduceMotion: reduceMotion), value: usesSingleLineShell)
+                // The control strip hangs from the card's bottom edge (Web's `.composer-strip`); the
+                // card's outline runs across its top.
+                VStack(spacing: 0) {
+                    composerChrome
+                    .adaptiveGlass(
+                        .regular,
+                        isInteractive: true,
+                        fallbackMaterial: .ultraThinMaterial,
+                        in: RoundedRectangle(cornerRadius: composerCornerRadius, style: .continuous)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: composerCornerRadius, style: .continuous))
+                    // Web's card: a low-contrast outline all round, a soft shadow in light mode only.
+                    .overlay {
+                        RoundedRectangle(cornerRadius: composerCornerRadius, style: .continuous)
+                            .strokeBorder(ComposerControlStrip.borderColor(for: colorScheme), lineWidth: 1)
+                    }
+                    .shadow(color: Color.black.opacity(colorScheme == .dark ? 0 : 0.14), radius: 12, y: 8)
+                    .zIndex(1)
 
-                if !hidesSecondaryChrome && !joinsSecondaryChrome {
-                    secondaryBar
-                        .padding(.horizontal)
-                        .padding(.bottom, 7)
-                        .animation(ChatMotion.composerChrome(reduceMotion: reduceMotion), value: showsSecondaryChrome)
+                    // Inset by the card's corner radius, so the strip's sides drop straight from where the
+                    // card's rounded corners end instead of meeting them mid-curve.
+                    controlStrip
+                        .padding(.horizontal, composerCornerRadius)
                 }
+                .padding(.horizontal)
+                .padding(.bottom, showsControlStrip ? 4 : 0)
+                .animation(ChatMotion.composerChrome(reduceMotion: reduceMotion), value: usesSingleLineShell)
+                .animation(ChatMotion.composerChrome(reduceMotion: reduceMotion), value: showsControlStrip)
             }
         }
         .background(
@@ -505,13 +513,6 @@ struct MessageComposerView: View {
 
             composerSurface
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { composerSurfaceHeight = $0 }
-
-            if joinsSecondaryChrome {
-                secondaryBar
-                    .padding(.horizontal, 8)
-                    .padding(.top, 2)
-                    .padding(.bottom, 8)
-            }
         }
     }
 
@@ -586,6 +587,7 @@ struct MessageComposerView: View {
                 .accessibilityLabel("Message")
 
                 voiceButton
+                contextIndicator
                 actionButton
             }
             .padding(.horizontal, 10)
@@ -620,15 +622,12 @@ struct MessageComposerView: View {
                 HStack(alignment: .center, spacing: 12) {
                     if !isAnsweringClarification {
                         composerPlusMenu
-                        modelMenu
-                        if showsReasoningControl {
-                            reasoningMenu
-                        }
                     }
 
                     Spacer(minLength: 0)
                     if !isAnsweringClarification {
                         voiceButton
+                        contextIndicator
                     }
                     actionButton
                 }
@@ -787,9 +786,11 @@ struct MessageComposerView: View {
         ])
     }
 
+    /// Every configuration control, one tap away in the strip under the card (TAL-629). It stays up
+    /// with the keyboard and in the one-line shell; only a clarification or a read-only session hides it.
     @ViewBuilder
-    private var secondaryBar: some View {
-        if showsSecondaryChrome {
+    private var controlStrip: some View {
+        if showsControlStrip {
             ComposerSecondaryControlsView(
                 state: secondaryControlsState,
                 onChooseWorkspace: {
@@ -800,17 +801,25 @@ struct MessageComposerView: View {
                 onSelectGitBranch: onSelectGitBranch,
                 onCreateGitBranch: onCreateGitBranch,
                 onRefreshGitBranches: onRefreshGitBranches
-            )
+            ) {
+                modelMenu
+                if showsReasoningControl {
+                    reasoningMenu
+                }
+            }
             .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
         }
     }
 
-    private var showsSecondaryChrome: Bool {
-        !isAnsweringClarification && !keyboardIsVisible && !isChromeCompact && hasSecondaryControls
+    private var showsControlStrip: Bool {
+        !isAnsweringClarification && !isReadOnly
     }
 
-    private var hasSecondaryControls: Bool {
-        secondaryControlsState.hasControls
+    @ViewBuilder
+    private var contextIndicator: some View {
+        if showsContextUsageControl {
+            ContextWindowIndicatorView(snapshot: contextWindowSnapshot)
+        }
     }
 
     private var metaControlFont: Font {
@@ -826,11 +835,7 @@ struct MessageComposerView: View {
     }
 
     private var modelControlMaxWidth: CGFloat {
-        usesAccessibilityLayout ? 156 : 132
-    }
-
-    private var reasoningControlWidth: CGFloat {
-        usesAccessibilityLayout ? 126 : 104
+        usesAccessibilityLayout ? 156 : 120
     }
 
     private var secondaryControlsState: ComposerSecondaryControlsState {
@@ -847,8 +852,6 @@ struct MessageComposerView: View {
                     isSwitching: gitViewModel.isSwitchingBranch
                 )
                 : nil,
-            contextWindowSnapshot: contextWindowSnapshot,
-            showsContextUsage: showsContextUsageControl,
             isDisabled: isConfigurationControlDisabled
         )
     }
@@ -881,7 +884,7 @@ struct MessageComposerView: View {
             supportedEfforts: supportedReasoningEfforts,
             reasoningTitle: reasoningTitle,
             isDisabled: isConfigurationControlDisabled,
-            width: reasoningControlWidth,
+            width: ComposerControlStrip.titleMaxWidth,
             color: metaControlColor,
             controlFont: metaControlFont,
             chevronFont: metaChevronFont,

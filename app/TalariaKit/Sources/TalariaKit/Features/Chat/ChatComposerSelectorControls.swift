@@ -1,15 +1,14 @@
 import SwiftUI
 
+/// The selectors in the composer's control strip, after model and reasoning (TAL-629).
 public struct ComposerSecondaryControlsState: Equatable {
 
-    public init(workspaceTitle: String?, profileOptions: [ProfileSummary], selectedProfileName: String?, selectedProfileTitle: String?, gitBranch: ComposerSecondaryControlsState.GitBranch?, contextWindowSnapshot: ContextWindowSnapshot?, showsContextUsage: Bool, isDisabled: Bool) {
+    public init(workspaceTitle: String?, profileOptions: [ProfileSummary], selectedProfileName: String?, selectedProfileTitle: String?, gitBranch: ComposerSecondaryControlsState.GitBranch?, isDisabled: Bool) {
         self.workspaceTitle = workspaceTitle
         self.profileOptions = profileOptions
         self.selectedProfileName = selectedProfileName
         self.selectedProfileTitle = selectedProfileTitle
         self.gitBranch = gitBranch
-        self.contextWindowSnapshot = contextWindowSnapshot
-        self.showsContextUsage = showsContextUsage
         self.isDisabled = isDisabled
     }
 
@@ -27,20 +26,43 @@ public struct ComposerSecondaryControlsState: Equatable {
         }
     }
 
+    public enum Selector: Hashable {
+        case workspace
+        case gitBranch
+        case profile
+    }
+
     public let workspaceTitle: String?
     public let profileOptions: [ProfileSummary]
     public let selectedProfileName: String?
     public let selectedProfileTitle: String?
     public let gitBranch: GitBranch?
-    public let contextWindowSnapshot: ContextWindowSnapshot?
-    public let showsContextUsage: Bool
     public let isDisabled: Bool
 
-    public var hasControls: Bool {
-        workspaceTitle != nil
-            || selectedProfileTitle != nil
-            || gitBranch != nil
-            || showsContextUsage
+    /// The selectors the strip shows, by how often each changes: workspace, then git branch, then profile.
+    public var selectors: [Selector] {
+        [
+            workspaceTitle == nil ? nil : .workspace,
+            gitBranch == nil ? nil : .gitBranch,
+            selectedProfileTitle == nil ? nil : .profile,
+        ].compactMap { $0 }
+    }
+}
+
+/// Which ends of the control strip fade: only an edge that hides content (TAL-629).
+public struct ComposerStripEdgeFades: Equatable {
+    public let leading: Bool
+    public let trailing: Bool
+
+    public init(leading: Bool, trailing: Bool) {
+        self.leading = leading
+        self.trailing = trailing
+    }
+
+    public init(contentOffset: CGFloat, contentWidth: CGFloat, containerWidth: CGFloat) {
+        // Half a point of slack absorbs rounding at either end.
+        leading = contentOffset > 0.5
+        trailing = contentOffset + containerWidth < contentWidth - 0.5
     }
 }
 

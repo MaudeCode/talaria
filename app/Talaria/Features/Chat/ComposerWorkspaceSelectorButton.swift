@@ -4,8 +4,6 @@ import UIKit
 struct ComposerWorkspaceSelectorButton: View {
     let title: String
     let isDisabled: Bool
-    let verticalPadding: CGFloat
-    let horizontalPadding: CGFloat
     let color: Color
     let controlFont: Font
     let chevronFont: Font
@@ -13,17 +11,16 @@ struct ComposerWorkspaceSelectorButton: View {
 
     var body: some View {
         Button(action: onTap) {
-            ComposerSecondaryBarLabel(
+            ComposerMetaControlLabel(
                 title: title,
                 systemImage: "folder",
-                verticalPadding: verticalPadding,
-                horizontalPadding: horizontalPadding,
+                maxWidth: ComposerControlStrip.titleMaxWidth,
                 color: color,
                 controlFont: controlFont,
                 chevronFont: chevronFont
             )
         }
-        .buttonStyle(.chatTactile(.capsule))
+        .buttonStyle(.plain)
         .disabled(isDisabled)
         .accessibilityLabel("Choose workspace path")
         .accessibilityValue(title)

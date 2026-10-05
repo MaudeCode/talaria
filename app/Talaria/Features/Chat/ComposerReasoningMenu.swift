@@ -20,7 +20,6 @@ struct ComposerReasoningMenu: View {
             ComposerMetaControlLabel(
                 title: reasoningTitle,
                 systemImage: "lucide.brain",
-                minWidth: width,
                 maxWidth: width,
                 color: color,
                 controlFont: controlFont,

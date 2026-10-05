@@ -723,7 +723,22 @@ final class PendingSteerUITests: ChatUITestCase {
         }
         XCTAssertTrue(app.keyboards.firstMatch.awaitExistence(timeout: 5), "The composer has no keyboard to type the draft")
         input.typeText("Draft")
-        tapCenter(of: app.buttons.matching(identifier: "Edit steering message").firstMatch)
+        // With the keyboard up the composer's control strip stays (TAL-629), so the first steer's
+        // actions can sit under the navigation bar; scroll them back into view before tapping Edit.
+        let edit = app.buttons.matching(identifier: "Edit steering message").firstMatch
+        let navigationBarBottom = app.navigationBars.firstMatch.frame.maxY
+        if edit.frame.minY < navigationBarBottom + 8 {
+            let origin = app.coordinate(withNormalizedOffset: .zero)
+            let start = origin.withOffset(CGVector(dx: app.frame.midX, dy: navigationBarBottom + 120))
+            start.press(
+                forDuration: 0.05,
+                thenDragTo: start.withOffset(CGVector(dx: 0, dy: navigationBarBottom + 60 - edit.frame.minY)),
+                withVelocity: .slow,
+                thenHoldForDuration: 0.2
+            )
+        }
+        XCTAssertGreaterThan(edit.frame.minY, navigationBarBottom, "The steer's Edit action stayed under the navigation bar")
+        tapCenter(of: edit)
         XCTAssertTrue(app.staticTexts["Check the backup logs too"].awaitNonExistence(timeout: 10), "The edited steer is still pending")
         XCTAssertEqual(input.value as? String, "Draft\n\nCheck the backup logs too")
     }
@@ -736,14 +751,17 @@ final class ChatComposerUITests: ChatUITestCase {
         launchFixture()
         _ = try openFixtureSession()
 
-        let transcript = app.scrollViews["chat-detail:\(fixtureSessionTitle)"]
+        // The composer's control strip scrolls too and inherits the screen's identifier; the transcript comes first.
+        let transcript = app.scrollViews["chat-detail:\(fixtureSessionTitle)"].firstMatch
         XCTAssertTrue(transcript.awaitExistence(timeout: 3))
         transcript.swipeDown(velocity: .fast)
         transcript.swipeDown(velocity: .fast)
         transcript.swipeUp(velocity: .slow)
 
-        XCTAssertTrue(app.buttons["Choose workspace path"].awaitNonExistence(timeout: 5))
         let collapsedComposer = app.buttons["Message"]
+        XCTAssertTrue(collapsedComposer.awaitExistence(timeout: 5))
+        // The control strip stays under the one-line composer (TAL-629).
+        XCTAssertTrue(app.buttons["Choose workspace path"].exists)
         XCTAssertTrue(collapsedComposer.exists)
 
         let composerOptions = app.buttons["Composer options"]
@@ -764,6 +782,16 @@ final class ChatComposerUITests: ChatUITestCase {
         let reexpandedTextView = app.textViews.firstMatch
         XCTAssertTrue(reexpandedTextView.awaitExistence(timeout: 10))
         reexpandedTextView.typeText("Draft")
+
+        // With the keyboard up the strip's controls stay one tap away (TAL-629).
+        XCTAssertTrue(keyboard.exists)
+        let model = app.buttons["Select model"]
+        XCTAssertTrue(app.buttons["Choose workspace path"].exists)
+        XCTAssertLessThan(model.frame.maxY, keyboard.frame.minY, "The model control is under the keyboard")
+        tapCenter(of: model)
+        XCTAssertTrue(app.buttons["All Models..."].awaitExistence(timeout: 3), "The model menu did not open")
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)).tap()
+        XCTAssertTrue(app.buttons["All Models..."].awaitNonExistence(timeout: 3))
 
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
             .press(
@@ -797,7 +825,8 @@ final class ChatReadableWidthUITests: ChatUITestCase {
         session.tap()
         XCTAssertNotNil(waitForComposer(timeout: 15), "The fixture session did not open")
 
-        let transcript = app.scrollViews["chat-detail:\(fixtureSessionTitle)"]
+        // The composer's control strip scrolls too and inherits the screen's identifier; the transcript comes first.
+        let transcript = app.scrollViews["chat-detail:\(fixtureSessionTitle)"].firstMatch
         XCTAssertTrue(transcript.awaitExistence(timeout: 3))
         let reply = element(labelContaining: "FixturePlainLead")
         let request = element(labelContaining: "Fixture link request")
@@ -1274,8 +1303,26 @@ final class ComposerChipUITests: WorkspaceUITestCase {
             XCTAssertFalse(title.isEmpty, "\(label) gave VoiceOver an empty title")
             XCTAssertFalse(title.contains("…"), "\(label) gave VoiceOver a truncated title")
         }
+        // The strip scrolls when its controls overflow (TAL-629): one scrolled off the end must come into view.
+        let strip = app.otherElements["composer-control-strip"]
         for chip in [branch, app.buttons["Choose workspace path"], app.buttons["Choose profile"]] {
-            XCTAssertTrue(app.frame.contains(chip.frame), "\(chip.label) is clipped by the window")
+            // Slow drags across the strip's visible middle (the scrolled row's own centre can be off
+            // screen) until the control is in view; a fast swipe's momentum overshoots it.
+            var drags = 0
+            while !app.frame.contains(chip.frame), strip.exists, drags < 4 {
+                let origin = app.coordinate(withNormalizedOffset: .zero)
+                let travel: CGFloat = chip.frame.minX < app.frame.minX ? 100 : -100
+                origin.withOffset(CGVector(dx: app.frame.midX - travel / 2, dy: chip.frame.midY))
+                    .press(
+                        forDuration: 0.05,
+                        thenDragTo: origin.withOffset(CGVector(dx: app.frame.midX + travel / 2, dy: chip.frame.midY)),
+                        withVelocity: .slow,
+                        thenHoldForDuration: 0.2
+                    )
+                drags += 1
+            }
+            XCTAssertTrue(app.frame.contains(chip.frame), "\(chip.label) cannot be scrolled into the window")
+            XCTAssertGreaterThanOrEqual(chip.frame.height, 43, "\(chip.label) has a hit area under 44 pt")
         }
 
         let screenshot = XCTAttachment(screenshot: app.screenshot())

@@ -4,41 +4,22 @@ import XCTest
 @testable import Talaria
 @testable import TalariaKit
 
-/// TAL-484: a composer chip shows its full title or only its icon, never a title cut to an
+/// TAL-484: a composer control shows its full title or only its icon, never a title cut to an
 /// ellipsis. A truncated title stretches to whatever width the row offers, while either complete
-/// form keeps its own width, so below the full title the chip's fitted width must not follow the
-/// offer. The model and reasoning chips share `ComposerChipContent` inside a flexible frame that
-/// fills any offer, so their width cannot show the collapse.
+/// form keeps its own width, so below the full title the fitted width must not follow the offer.
+/// Every strip control (TAL-629) wraps `ComposerChipContent` in a flexible frame that fills any
+/// offer, so the collapse is pinned on the shared content itself.
 @MainActor
 final class ComposerChipLayoutTests: XCTestCase {
     private let title = "feature/a-branch-name-too-long-for-a-narrow-composer"
 
-    func testWorkspaceChipShowsItsIconOnlyWhenTheTitleDoesNotFit() {
+    func testControlShowsItsIconOnlyWhenTheTitleDoesNotFit() {
         assertShowsFullTitleOrIconOnly(
-            ComposerSecondaryBarLabel(
-                title: title,
-                systemImage: "folder",
-                verticalPadding: 8,
-                horizontalPadding: 14,
-                color: .secondary,
-                controlFont: AppFont.footnote(),
-                chevronFont: AppFont.caption2()
-            )
-        )
-    }
-
-    func testGitBranchChipShowsItsIconOnlyWhenTheBranchDoesNotFit() {
-        assertShowsFullTitleOrIconOnly(
-            GitBranchPickerButton(
-                currentBranch: title,
-                branches: nil,
-                isLoading: false,
-                isSwitching: false,
-                isDisabled: false,
-                onSelect: { _ in },
-                onCreate: { _ in },
-                onRefresh: {}
-            )
+            ComposerChipContent(title: title, spacing: 5, font: AppFont.footnote()) {
+                Image(systemName: "arrow.triangle.branch")
+            } trailing: {
+                Image(systemName: "chevron.down")
+            }
         )
     }
 
