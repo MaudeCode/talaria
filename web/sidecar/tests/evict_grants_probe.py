@@ -32,7 +32,7 @@ out: dict = {}
 
 # Model switch / truncate on an idle session.
 approval.approve_session(SID, PATTERN)
-chat._AGENT_CACHE[SID] = (object(), "sig")
+chat._AGENT_CACHE[SID] = (object(), "sig", os.environ["HERMES_HOME"])
 out["idle_evicted"] = evict(None, {"session_id": SID})["evicted"]
 out["grant_after_switch"] = approval.is_approved(SID, PATTERN)
 
@@ -45,7 +45,7 @@ def _guard() -> None:
     guard["result"] = approval.check_all_command_guards(COMMAND, "local")
 
 
-chat._AGENT_CACHE[SID] = (object(), "sig")
+chat._AGENT_CACHE[SID] = (object(), "sig", os.environ["HERMES_HOME"])
 run = chat._Run("evict-stream", SID, None)
 chat._RUNS["evict-stream"], chat._RUNS_BY_SESSION[SID] = run, "evict-stream"
 waiter = threading.Thread(target=_guard)

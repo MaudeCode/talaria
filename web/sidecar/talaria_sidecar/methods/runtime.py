@@ -66,5 +66,8 @@ def register(registry) -> None:
         code = params.get("exit_code", 0)
         if not isinstance(code, int):
             raise InvalidParams("exit_code must be an integer")
+        from .chat import drain_agents
+
+        drain_agents()
         ctx.server.request_shutdown(exit_code=code)
         return {"ok": True}

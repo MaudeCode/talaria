@@ -156,7 +156,10 @@ Chat turns use the Agent's in-process callback model inside the sidecar:
 kwargs, callbacks translate to stream frames, `interrupt()` is `chat.interrupt`,
 approvals and clarify prompts raised by tools block inside the sidecar until
 the server answers with `approval.respond` / `clarify.respond`, and the
-per-session agent cache lives in the sidecar.
+per-session agent cache lives in the sidecar. An agent that leaves the cache
+(LRU trim, a model or credential change, `chat.evict_agent`, shutdown or stdin
+close) ends its memory session with its transcript and releases its LLM clients
+under its profile, once no turn still holds it; shutdown waits up to 4 s.
 
 Manual `/compress` is `chat.compress`: a throwaway `AIAgent` runs the Agent's
 shared `compress_now` core over the history the server sends and returns the

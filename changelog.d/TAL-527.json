@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Memory providers now save what they learned from a chat when Talaria Web unloads it or shuts down, and unloaded chats no longer leave model connections or helper processes running.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
