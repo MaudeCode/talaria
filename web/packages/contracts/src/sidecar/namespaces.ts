@@ -332,7 +332,7 @@ export const CHAT_METHODS = {
   /** TAL-255: second phase of `chat.compress`; `finalized: false` when the token is unknown or already expired. */
   'chat.compress_finalize': { params: z.object({ commit_token: z.string().min(1), committed: z.boolean() }), result: z.object({ finalized: z.boolean() }) },
   'chat.evict_agent': { params: z.object({ session_id: z.string().min(1), clear_session: z.boolean().optional() }), result: z.object({ evicted: z.boolean() }) },
-  'chat.commit_memory': { params: z.object({ session_id: z.string().min(1) }), result: z.object({ committed: z.boolean() }) },
+  'chat.commit_memory': { params: ProfileHomeParams.extend({ session_id: z.string().min(1) }), result: z.object({ committed: z.boolean() }) },
   'approval.respond': { params: ProfileHomeParams.extend({ session_id: z.string().min(1), choice: z.enum(['once', 'session', 'always', 'deny']), request_id: z.string().nullable().optional() }), result: z.object({ ok: z.boolean(), resolved: z.number().int(), choice: z.string() }) },
   'approval.pending': { params: z.object({ session_id: z.string().min(1) }), result: z.object({ pending: z.array(Loose) }) },
   'approval.set_yolo': { params: z.object({ session_id: z.string().min(1), enabled: z.boolean() }), result: z.object({ yolo_enabled: z.boolean(), released: z.number().int() }) },

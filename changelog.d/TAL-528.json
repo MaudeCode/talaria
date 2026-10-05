@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Leaving a chat now saves what you discussed to memory, using the memory settings and credentials of that chat's profile.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
