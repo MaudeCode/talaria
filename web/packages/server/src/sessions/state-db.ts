@@ -517,23 +517,25 @@ function projectStateDbMessage(row: Dict, hasId: boolean): Dict {
  * Python `get_state_db_session_messages(sid, stitch_continuations=True)`: the session's active rows in durable order,
  * walking compatible compression/close parents so a continued CLI conversation reads as one transcript.
  */
+export interface StateDbRead { rows: Dict[]; idCapable: boolean; ok: boolean }
+
 export function stateDbSessionMessages(dbPath: string, sid: string, opts: { stitch?: boolean } = {}): Dict[] {
   return stateDbSessionRead(dbPath, sid, opts).rows
 }
 
 /**
- * `stateDbSessionMessages` and whether the read succeeded on a `messages` table with an `id` column (TAL-493: an empty
- * such read is a baseline of 0; a missing database or a failed read is not).
+ * `stateDbSessionMessages`, whether the read succeeded (`ok`), and whether its `messages` table has an `id` column
+ * (TAL-493: an empty id-capable read is a baseline of 0; a missing database or a failed read says nothing).
  */
-export function stateDbSessionRead(dbPath: string, sid: string, opts: { stitch?: boolean } = {}): { rows: Dict[]; idCapable: boolean } {
-  const none = { rows: [], idCapable: false }
+export function stateDbSessionRead(dbPath: string, sid: string, opts: { stitch?: boolean } = {}): StateDbRead {
+  const none = { rows: [], idCapable: false, ok: false }
   const id = sid.trim()
   if (!id || !existsSync(dbPath)) return none
   let db: DatabaseSync
   try { db = openStateDbReadonly(dbPath) } catch { return none }
   try {
     const available = tableColumns(db, 'messages')
-    if (!['role', 'content', 'timestamp'].every((c) => available.has(c))) return none
+    if (!['role', 'content', 'timestamp'].every((c) => available.has(c))) return { ...none, ok: available.size > 0 }
     const hasId = available.has('id')
     const selected = [...(hasId ? ['id'] : []), 'role', 'content', 'timestamp', ...OPTIONAL_MESSAGE_COLUMNS.filter((c) => available.has(c))]
     const chain = [id]
@@ -557,7 +559,7 @@ export function stateDbSessionRead(dbPath: string, sid: string, opts: { stitch?:
     const activeClause = available.has('active') ? ' AND (active IS NULL OR active != 0)' : ''
     const order = hasId ? 'id' : 'timestamp'
     const rows = db.prepare(`SELECT ${selected.join(', ')}, session_id FROM messages WHERE session_id IN (${chain.map(() => '?').join(', ')})${activeClause} ORDER BY ${order} ASC`).all(...chain) as Dict[]
-    return { rows: rows.map((row) => projectStateDbMessage(row, hasId)), idCapable: hasId }
+    return { rows: rows.map((row) => projectStateDbMessage(row, hasId)), idCapable: hasId, ok: true }
   } catch {
     return none
   } finally {

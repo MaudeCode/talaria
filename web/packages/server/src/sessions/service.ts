@@ -17,7 +17,7 @@ import { anchorSceneIntOrNull, fullToolResult, hydrateAnchorActivityScenes, norm
 import { isSafeSessionId, lastMessageTimestamp, Session, stripAttachedFilesMarker, titleFrom, type Message } from './session.js'
 import { SessionBusy, SessionNotFound, statSignature, type SessionStore } from './store.js'
 import { UNSETTLED_TODO_KEY, attachTodoState } from './todo.js'
-import { stateDbSessionMessages, stateDbSessionRead, stateDbSessionRow, stateDbSessionSources } from './state-db.js'
+import { stateDbSessionMessages, stateDbSessionRead, stateDbSessionRow, stateDbSessionSources, type StateDbRead } from './state-db.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { SidecarError, type SidecarLike } from '../sidecar/client.js'
 import { attachmentObjects, isContextCompressionMarker, mergeSessionMessagesAppendOnly, messageIdentity, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, type ToolResultView } from './merge.js'
@@ -254,8 +254,8 @@ export class SessionService {
   }
 
   /** `stateDbRows` and whether the read succeeded on a state.db whose messages carry ids (TAL-493). */
-  stateDbRead(s: Session): { rows: Message[]; idCapable: boolean } {
-    if (str(s.source_tag || s.raw_source || s.session_source).trim().toLowerCase() === 'subagent') return { rows: [], idCapable: false }
+  stateDbRead(s: Session): StateDbRead {
+    if (str(s.source_tag || s.raw_source || s.session_source).trim().toLowerCase() === 'subagent') return { rows: [], idCapable: false, ok: false }
     return stateDbSessionRead(join(this.deps.profileHome(s.profile ?? this.deps.activeProfile()), 'state.db'), s.session_id, { stitch: false })
   }
 
@@ -274,7 +274,9 @@ export class SessionService {
    * so the merge never replays a covered row and appends every row committed after the read. Call it after the boundary
    * fields are set: the marker holds only while they and the row it names stay as recorded.
    */
-  markStateDbSeen(s: Session, read: { rows: Message[]; idCapable: boolean } = this.stateDbRead(s)): void {
+  markStateDbSeen(s: Session, read: StateDbRead = this.stateDbRead(s)): void {
+    // A failed read says nothing: the marker stays, and a boundary this write moved already invalidates it.
+    if (!read.ok) return
     // A successful read with no rows yet is a baseline: every row the session gets later is new.
     s.state_db_seen_id = stateDbSeenId(read.rows) ?? (read.idCapable ? 0 : null)
     s.state_db_seen_boundary = stateDbMarkKey(s, read.rows, s.state_db_seen_id)
@@ -283,16 +285,18 @@ export class SessionService {
   /**
    * TAL-493: a turn's settlement. Rows the merge shows now that nothing the turn holds represents (a CLI or gateway row
    * committed while it ran) join the transcript and the model context before the marker passes them; `known` adds the
-   * Agent's result rows the session does not keep.
+   * Agent's result rows the session does not keep. Without them (`known` empty), rows past `turnStartId` (the highest id
+   * the turn read when it started) are its own unreported work: covered, never shown.
    */
-  settleStateDb(s: Session, known: Message[] = []): void {
+  settleStateDb(s: Session, known: Message[] = [], turnStartId: number | null = null): void {
     const read = this.stateDbRead(s)
     const stateRows = read.rows
     // A row with no text (an image or reasoning only) is told apart by its raw role, content, and reasoning.
     // The full text: a row that only starts like a held one is new.
     const identity = (m: Message): string => messageIdentity(m, Infinity) ?? JSON.stringify([m.role ?? null, m.content ?? null, reasoningFieldsText(m)])
     const held = new Set([...s.messages, ...s.context_messages, ...known].map(identity))
-    const missed = this.mergedTranscript(s, s.messages, stateRows).slice(s.messages.length).filter((m) => !held.has(identity(m)))
+    const ownWork = (m: Message): boolean => !known.length && turnStartId !== null && typeof m._state_db_row_id === 'number' && m._state_db_row_id > turnStartId
+    const missed = this.mergedTranscript(s, s.messages, stateRows).slice(s.messages.length).filter((m) => !ownWork(m) && !held.has(identity(m)))
     if (missed.length) {
       s.messages.push(...copyJson(missed))
       if (s.context_messages.length) s.context_messages.push(...copyJson(missed))

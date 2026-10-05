@@ -1060,6 +1060,31 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     expect(sent(sid).filter((c) => c === 'background work after stop')).toEqual([])
   })
 
+  it('a settlement whose state.db read fails keeps the marker', async () => {
+    const sid = await seeded(FOUR)
+    expect((await post(s, '/api/session/truncate', { session_id: sid, keep_count: 2 })).status).toBe(200)
+    const path = join(s.state, 'state.db')
+    // state.db is unavailable while the turn settles, then comes back.
+    sidecar.respond('chat.start', (params) => { renameSync(path, `${path}.away`); return completedTurn([...params.conversation_history, { role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'offline answer' }]) })
+    try {
+      const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'offline' }))
+      await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    } finally { if (existsSync(`${path}.away`)) renameSync(`${path}.away`, path) }
+    commit(sid, [['user', 'late CLI', 101.5]])
+    expect((await served(sid)).at(-1)).toBe('late CLI')
+    expect(sent(sid).at(-1)).toBe('late CLI')
+  })
+
+  it('a turn that fails without a result covers the rows its Agent wrote instead of showing them', async () => {
+    const sid = await seeded([['user', 'u1', 100], ['assistant', 'a1', 101]])
+    await turn(sid, 'first')
+    sidecar.respond('chat.start', () => { commit(sid, [['user', 'crashing', 200], ['assistant', 'crashed work', 201]]); throw new Error('worker crashed') })
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'crashing' }))
+    await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    expect((await served(sid)).filter((c) => c === 'crashed work')).toEqual([])
+    expect(sent(sid).filter((c) => c === 'crashed work')).toEqual([])
+  })
+
   it('a row with no text identity committed while a Web turn runs stays in the transcript', async () => {
     const sid = await seeded([['user', 'u1', 100], ['assistant', 'a1', 101]])
     await turn(sid, 'first')
