@@ -5,31 +5,47 @@ import XCTest
 @MainActor
 final class SessionListArchiveUndoTests: XCTestCase {
     /// A stub server holding two chats; `/api/session/archive` moves one in or out of the archive.
-    private final class StubServer {
-        var archivedIDs: Set<String> = []
-        var archiveBodies: [(id: String, archived: Bool)] = []
-        var loadCount = 0
+    /// Requests arrive on URL-loading threads, so the state sits behind a lock.
+    private final class StubServer: @unchecked Sendable {
+        private let lock = NSLock()
+        private var archivedIDs: Set<String> = []
+        private var bodies: [(id: String, archived: Bool)] = []
+        private var loads = 0
         var failingUnarchives = 0
+        /// The list load with this number waits for `releaseHeldLoad` before answering.
+        var heldLoad: Int?
+        let releaseHeldLoad = DispatchSemaphore(value: 0)
+
+        var archiveBodies: [(id: String, archived: Bool)] { lock.withLock { bodies } }
+        var unarchivedIDs: [String] { archiveBodies.filter { !$0.archived }.map(\.id) }
+        var loadCount: Int { lock.withLock { loads } }
 
         func handle(_ request: URLRequest) throws -> (HTTPURLResponse, Data) {
+            let (response, holds) = try lock.withLock { try respond(to: request) }
+            if holds { releaseHeldLoad.wait() }
+            return response
+        }
+
+        private func respond(to request: URLRequest) throws -> ((HTTPURLResponse, Data), Bool) {
             switch request.url?.path {
             case "/api/sessions":
-                loadCount += 1
+                loads += 1
                 let rows = ["session-abc", "session-def"]
                     .filter { !archivedIDs.contains($0) }
                     .map { #"{"session_id": "\#($0)", "title": "\#($0)", "archived": false}"# }
-                return apiTestJSONResponse(#"{"sessions": [\#(rows.joined(separator: ","))]}"#, for: request)
+                let response = apiTestJSONResponse(#"{"sessions": [\#(rows.joined(separator: ","))]}"#, for: request)
+                return (response, loads == heldLoad)
             case "/api/session/archive":
                 let body = try XCTUnwrap(apiTestJSONBody(from: request))
                 let id = try XCTUnwrap(body["session_id"] as? String)
                 let archived = try XCTUnwrap(body["archived"] as? Bool)
-                archiveBodies.append((id, archived))
+                bodies.append((id, archived))
                 if !archived, failingUnarchives > 0 {
                     failingUnarchives -= 1
-                    return apiTestJSONResponse(#"{"error": "unarchive failed"}"#, statusCode: 500, for: request)
+                    return (apiTestJSONResponse(#"{"error": "unarchive failed"}"#, statusCode: 500, for: request), false)
                 }
                 if archived { archivedIDs.insert(id) } else { archivedIDs.remove(id) }
-                return apiTestJSONResponse(#"{"ok": true}"#, for: request)
+                return (apiTestJSONResponse(#"{"ok": true}"#, for: request), false)
             default:
                 XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
                 throw URLError(.badURL)
@@ -70,7 +86,7 @@ final class SessionListArchiveUndoTests: XCTestCase {
 
         XCTAssertTrue(didUndo)
         XCTAssertNil(viewModel.archiveUndo)
-        XCTAssertEqual(stub.archiveBodies.filter { !$0.archived }.map(\.id), ["session-abc"])
+        XCTAssertEqual(stub.unarchivedIDs, ["session-abc"])
         XCTAssertEqual(stub.loadCount, 3, "Undo reloads the list after the server confirms")
         XCTAssertEqual(viewModel.sessions.compactMap(\.sessionId), ["session-abc", "session-def"])
         XCTAssertNil(viewModel.actionErrorMessage)
@@ -90,7 +106,7 @@ final class SessionListArchiveUndoTests: XCTestCase {
 
         XCTAssertTrue(didUndo)
         XCTAssertFalse(didUndoAgain, "The earlier archive is no longer undoable")
-        XCTAssertEqual(stub.archiveBodies.filter { !$0.archived }.map(\.id), ["session-def"])
+        XCTAssertEqual(stub.unarchivedIDs, ["session-def"])
         XCTAssertEqual(viewModel.sessions.compactMap(\.sessionId), ["session-def"])
     }
 
@@ -133,5 +149,32 @@ final class SessionListArchiveUndoTests: XCTestCase {
         XCTAssertNil(viewModel.archiveUndo, "The undo did not expire")
         XCTAssertFalse(didUndo)
         XCTAssertEqual(stub.archiveBodies.count, 1, "An expired undo sent a request")
+    }
+
+    /// The toast appears before the archive's list reload returns, so Undo must work during it.
+    func testUndoWorksWhileTheArchiveReloadIsStillInFlight() async throws {
+        let stub = StubServer()
+        stub.heldLoad = 2
+        let viewModel = try makeViewModel(stub)
+        await viewModel.load()
+        let archived = try session("session-abc", in: viewModel)
+
+        let archiving = Task { await viewModel.archive(archived) }
+        let offerDeadline = ContinuousClock.now + .seconds(5)
+        while viewModel.archiveUndo == nil, ContinuousClock.now < offerDeadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertNotNil(viewModel.archiveUndo, "Undo was not offered while the reload was in flight")
+        let undoing = Task { await viewModel.undoArchive() }
+        // Lets Undo start while the reload is still held; the mock serves requests one at a
+        // time, so the unarchive itself only goes out once the reload is released.
+        try await Task.sleep(for: .milliseconds(100))
+        stub.releaseHeldLoad.signal()
+        _ = await archiving.value
+        let didUndo = await undoing.value
+
+        XCTAssertTrue(didUndo, "Undo was dropped while the archive reload was in flight")
+        XCTAssertEqual(stub.unarchivedIDs, ["session-abc"])
+        XCTAssertEqual(viewModel.sessions.compactMap(\.sessionId), ["session-abc", "session-def"])
     }
 }

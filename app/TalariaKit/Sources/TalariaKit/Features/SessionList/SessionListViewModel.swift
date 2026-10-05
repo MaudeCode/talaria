@@ -795,12 +795,16 @@ public final class SessionListViewModel {
         }
 
         guard beginSessionMutation(sessionId) else { return false }
-        defer { endSessionMutation(sessionId) }
+        var holdsMutation = true
+        defer { if holdsMutation { endSessionMutation(sessionId) } }
 
         return await mutate(modelContext: modelContext, animation: animation) {
             try await sessionMutator.archive(sessionID: sessionId)
             // A list response requested before the archive must not restore the row.
             claimedRows.removeValue(forKey: sessionId)
+            // Undo is offered now, so the reload below must not hold the session.
+            endSessionMutation(sessionId)
+            holdsMutation = false
             offerArchiveUndo(for: sessionId)
         }
     }
