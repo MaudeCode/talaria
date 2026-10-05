@@ -44,6 +44,11 @@ describe('stale session model repair (TAL-542)', () => {
     expect(repairSessionModel(catalog('kilocode', 'kilo/auto', { ollama: ['llama3.2'], kilocode: ['GPT.4O.MINI'] }), 'gpt-4o-mini', 'ollama')).toEqual(['GPT.4O.MINI', 'kilocode'])
   })
 
+  it('finds the owner with a vendor prefix on either side and starts on the owner\'s own id', () => {
+    expect(repairSessionModel(catalog('kilocode', 'kilo/auto', { ollama: ['llama3.2'], kilocode: ['openai/gpt-5.4'] }), 'gpt-5.4', 'ollama')).toEqual(['openai/gpt-5.4', 'kilocode'])
+    expect(repairSessionModel(catalog('kilocode', 'kilo/auto', { ollama: ['llama3.2'], kilocode: ['gpt-5.4'] }), 'openai/gpt-5.4', 'ollama')).toEqual(['gpt-5.4', 'kilocode'])
+  })
+
   it('keeps the pair without one clear owner or when its provider lists it, in models or extra_models', () => {
     expect(repairSessionModel(catalog('kilocode', 'kilo/auto', { ollama: ['llama3.2'], kilocode: [kilo], other: [kilo] }), kilo, 'ollama')).toBeNull()
     expect(repairSessionModel(catalog('kilocode', 'kilo/auto', { ollama: ['llama3.2'] }), kilo, 'ollama')).toBeNull()

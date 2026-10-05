@@ -348,7 +348,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     },
     resolveContextLength,
     modelOptionFor: (model, provider) => catalog.modelOptionFor(profileHome(activeProfile()), model, provider),
-    warmModelOptions: () => catalog.warmModelOptions(profileHome(activeProfile())),
+    warmModelOptions: (profile) => catalog.warmModelOptions(profileHome(profile ?? activeProfile())),
     // Python `_session_model_state_from_request`: a provider-qualified id (`@nous:openai/gpt-5.4-mini`) is split so the
     // sidecar receives the bare model and the explicit provider wins over the requested one.
     modelStateFromRequest: (model, requestedProvider, currentProvider) => {

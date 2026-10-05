@@ -2335,12 +2335,13 @@ describe('stale cross-provider session models at chat start (TAL-542)', () => {
 
   it('switches a providerless model from another vendor to the profile default, and persists it (#1734)', async () => {
     useConfig('openai-codex', 'gpt-5.5')
-    for (const stale of ['gemini-3.1-pro-preview', 'google/gemini-3.1-pro-preview', 'openai/gpt-5.4-mini']) {
-      const sid = await sessionWith(stale, null)
+    // Codex lists `gpt-5.4-mini` under its own bare id, so the stale `openai/` id starts on that one rather than the default.
+    for (const [stale, effective] of [['gemini-3.1-pro-preview', 'gpt-5.5'], ['google/gemini-3.1-pro-preview', 'gpt-5.5'], ['openai/gpt-5.4-mini', 'gpt-5.4-mini']]) {
+      const sid = await sessionWith(stale!, null)
       const started = await start({ session_id: sid })
-      expect(started).toMatchObject({ effective_model: 'gpt-5.5', effective_model_provider: 'openai-codex' })
-      expect(seen).toMatchObject({ model: 'gpt-5.5', model_provider: 'openai-codex' })
-      expect(s.deps.sessionStore.get(sid)).toMatchObject({ model: 'gpt-5.5', model_provider: 'openai-codex' })
+      expect(started).toMatchObject({ effective_model: effective, effective_model_provider: 'openai-codex' })
+      expect(seen).toMatchObject({ model: effective, model_provider: 'openai-codex' })
+      expect(s.deps.sessionStore.get(sid)).toMatchObject({ model: effective, model_provider: 'openai-codex' })
     }
   })
 
@@ -2400,6 +2401,55 @@ describe('stale cross-provider session models at chat start (TAL-542)', () => {
       ids = ['ds-newer']
       writeFileSync(join(s.state, '.env'), 'TALARIA_TEST_EDIT=1\n')
       expect(await start({ session_id: await sessionWith('ds-newer', 'ollama') })).toMatchObject({ effective_model: 'ds-newer', effective_model_provider: 'deepseek' })
+    } finally {
+      sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: [] }))
+    }
+  })
+
+  it('repairs a goal kickoff against the catalog of the profile the session is retagged to', async () => {
+    useConfig('openai-codex', 'gpt-5.5')
+    mkdirSync(join(s.state, 'profiles', 'other'), { recursive: true })
+    writeFileSync(join(s.state, 'profiles', 'other', 'config.yaml'), '# other\n')
+    sidecar.respond('goals.snapshot', () => ({ goal: null, snapshot: null }))
+    sidecar.respond('goals.command', (params) => ({ ok: true, action: 'set', message: `Goal set: ${params.args}`, goal: null, kickoff_prompt: params.args }))
+    const sid = await sessionWith('gemini-3.1-pro-preview', null)
+    s.deps.catalog.invalidate()
+    await s.deps.catalog.warmModelOptions(s.state)
+    const started = await json(await post(s, '/api/goal', { session_id: sid, args: 'ship it', profile: 'other' }))
+    expect(started).toMatchObject({ effective_model: 'gpt-5.5', effective_model_provider: 'openai-codex' })
+    await vi.waitFor(() => { expect(s.deps.registry.liveIds.has(String(started.stream_id))).toBe(false) })
+  })
+
+  it('trusts a provider again once config.yaml lists its models after a failed live lookup', async () => {
+    sidecar.respond('providers.model_ids', (p) => { if (p.provider === 'deepseek') throw new SidecarError('lookup failed', { condition: 'sidecar_error' }); return { provider: p.provider, model_ids: [] } })
+    const configWith = (deepseek: Json): Json => ({ model: { provider: 'anthropic', default: 'claude-sonnet-4' }, providers: { ollama: { base_url: 'http://ollama.test/v1', models: ['llama3.2'] }, deepseek: { api_key: 'sk-deepseek-12345', ...deepseek } } })
+    let config = configWith({})
+    sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config }))
+    s.deps.agentConfig.invalidate()
+    s.deps.catalog.invalidate()
+    try {
+      await start({ session_id: await sessionWith('claude-sonnet-4', 'anthropic') })
+      config = configWith({ models: ['ds-listed'] })
+      writeFileSync(join(s.state, 'config.yaml'), '# deepseek models listed\n')
+      expect(await start({ session_id: await sessionWith('ds-listed', 'ollama') })).toMatchObject({ effective_model: 'ds-listed', effective_model_provider: 'deepseek' })
+    } finally {
+      sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: [] }))
+    }
+  })
+
+  it('does not join a live lookup started before config.yaml or .env changed', async () => {
+    useConfig('anthropic', 'claude-sonnet-4', {})
+    const pending: ((ids: string[]) => void)[] = []
+    sidecar.respond('providers.model_ids', (p) => new Promise((resolve) => { pending.push((ids) => { resolve({ provider: p.provider, model_ids: ids }) }) }))
+    try {
+      const first = s.deps.catalog.liveModelIds(s.state, 'deepseek')
+      writeFileSync(join(s.state, '.env'), 'TALARIA_TEST_EDIT=2\n')
+      const second = s.deps.catalog.liveModelIds(s.state, 'deepseek')
+      await vi.waitFor(() => { expect(pending).toHaveLength(2) })
+      pending[0]?.(['ds-old'])
+      pending[1]?.(['ds-new'])
+      expect(await first).toEqual(['ds-old'])
+      expect(await second).toEqual(['ds-new'])
     } finally {
       sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: [] }))
     }

@@ -248,13 +248,13 @@ export const chatRouter = os.router({
     const sid = str(body.session_id)
     // Python: a delegated subagent child is view-only; its goal state is never mutated and no turn starts on it.
     if (ctx.deps.sessions.isSubagentViewOnly(sid)) throw new HttpError(400, 'Subagent sessions are view-only and cannot run /goal from WebUI')
-    // TAL-542: a kickoff's stale-model check reads this catalog, as chat start's does.
-    await ctx.deps.sessions.deps.warmModelOptions?.()
     const s = getSession(ctx, sid)
     if (ctx.deps.sessions.isReadOnly(s) || s.branchSourceReadonly) throw new HttpError(403, 'Read-only imported sessions cannot be continued from WebUI')
     const requestedProfile = str(body.profile).trim()
     if (requestedProfile && requestedProfile !== 'default' && !PROFILE_ID_RE.test(requestedProfile)) throw new HttpError(400, 'invalid profile')
     if (requestedProfile && !ctx.deps.profilesMatch(s.profile, requestedProfile) && !s.messages.length && !s.context_messages.length && !s.hasPendingPrompt) s.profile = requestedProfile
+    // TAL-542: a kickoff's stale-model check reads the catalog of the profile the session now runs under.
+    await ctx.deps.sessions.deps.warmModelOptions?.(s.profile)
     let streamRunning = false
     if (s.active_stream_id) {
       streamRunning = ctx.deps.registry.liveIds.has(s.active_stream_id)

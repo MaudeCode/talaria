@@ -108,7 +108,7 @@ export interface SessionServiceDeps {
   /** TAL-301: the catalog entry id a stored `(model, provider)` pair selects (null when none or not yet known). */
   modelOptionFor?: (model: string | null, provider: string | null) => string | null
   /** Builds the catalog `modelOptionFor` reads, so a first detail load already carries `model_option_id`. */
-  warmModelOptions?: () => Promise<void>
+  warmModelOptions?: (profile?: string | null) => Promise<void>
   /** Authoritative lookup through the sidecar (`models.context_length`), cached; used where the caller can await. */
   resolveContextLength?: (model: string | null, provider: string | null, profile: string | null) => Promise<number | null>
   /** `(model, provider)` normalisation from a request (checkpoint 7 wires provider-qualified ids). */
