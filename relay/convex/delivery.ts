@@ -521,7 +521,8 @@ export const recompute = internalMutation({
           await ctx.scheduler.runAfter(
             Math.max(0, activity.lastDeliveryAt + 15_000 - now),
             internal.delivery.recompute,
-            args,
+            // The transition alerts in this run; replaying it would re-send that alert.
+            { userId: args.userId },
           );
         }
         continue;
