@@ -238,6 +238,10 @@ export function titleGenerationEnabled(cfg: Config): boolean {
   const value = dict(dict(cfg.auxiliary).title_generation).enabled
   if (value === undefined || value === null) return true
   if (typeof value === 'string') return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase())
+  // Python `bool()`: empty containers are false; any other number than zero (NaN included) is true.
+  if (Array.isArray(value)) return value.length > 0
+  if (typeof value === 'object') return Object.keys(value).length > 0
+  if (typeof value === 'number') return value !== 0
   return Boolean(value)
 }
 
@@ -1134,7 +1138,10 @@ export class TurnRunner {
     }
     if (!eligible || (s.llm_title_generated && !invalidExisting) || !userText || !assistantText) return
     if (s.manual_title) { status('skipped', 'manual_title', placeholder); return }
-    if (!titleGenerationEnabled((await this.deps.profileConfig?.(s.profile ?? null)) ?? {})) { status('skipped', 'title_generation_disabled', placeholder); return }
+    // A missing config.yaml reads as `{}` (enabled); an unreadable one cannot confirm the user has not opted out.
+    const cfg = await this.deps.profileConfig?.(s.profile ?? null)
+    if (!cfg) { status('skipped', 'config_unavailable', placeholder); return }
+    if (!titleGenerationEnabled(cfg)) { status('skipped', 'title_generation_disabled', placeholder); return }
     const generated = await this.llmTitle(s, userText, assistantText)
     const { status: llmStatus, rawPreview } = generated
     let next = generated.title
