@@ -644,9 +644,11 @@ const TOOL_IMAGE_PART_TYPES = new Set(['image', 'image_url', 'input_image'])
  * screenshots) become `[screenshot]` text, so saves, loads and later turns stop carrying the base64. User attachments stay.
  */
 export function withoutToolImages(messages: Message[]): Message[] {
+  const isImage = (p: unknown): boolean => isDict(p) && TOOL_IMAGE_PART_TYPES.has(p.type as string)
   return messages.map((m) => {
-    if (m.role !== 'tool' || !Array.isArray(m.content) || !m.content.some((p) => isDict(p) && TOOL_IMAGE_PART_TYPES.has(p.type as string))) return m
-    return { ...m, content: m.content.map((p) => (isDict(p) && TOOL_IMAGE_PART_TYPES.has(p.type as string) ? { type: 'text', text: '[screenshot]' } : p)) }
+    const content: unknown = m.content
+    if (m.role !== 'tool' || !Array.isArray(content) || !content.some(isImage)) return m
+    return { ...m, content: (content as unknown[]).map((p) => (isImage(p) ? { type: 'text', text: '[screenshot]' } : p)) }
   })
 }
 
