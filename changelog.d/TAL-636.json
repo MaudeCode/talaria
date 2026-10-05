@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "A new chat opens straight on the full composer: you can type while it starts, and its controls appear as soon as the chat is ready.",
+      "highlight": true,
+      "components": ["app"]
+    }
+  ]
+}

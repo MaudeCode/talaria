@@ -107,6 +107,10 @@ struct MessageComposerView: View {
     var onToggleClarificationChoice: (String) -> Void = { _ in }
     var onSelectClarificationQuestion: (Int) -> Void = { _ in }
     var onSubmitClarification: (String) -> Void = { _ in }
+    /// Set while a new chat's session is being created, or failed to be (TAL-636): the strip shows
+    /// it in place of the controls, and nothing that needs the session can be used yet.
+    var sessionStart: ComposerSessionStart? = nil
+    var onRetrySessionStart: () -> Void = {}
 
     private var isAnsweringClarification: Bool { clarificationPrompt != nil }
 
@@ -819,7 +823,10 @@ struct MessageComposerView: View {
     /// with the keyboard and in the one-line shell; only a clarification or a read-only session hides it.
     @ViewBuilder
     private var controlStrip: some View {
-        if showsControlStrip {
+        if showsControlStrip, let sessionStart {
+            ComposerSessionStartStrip(state: sessionStart, onRetry: onRetrySessionStart)
+                .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
+        } else if showsControlStrip {
             ComposerSecondaryControlsView(
                 state: secondaryControlsState,
                 onChooseWorkspace: {
@@ -1049,6 +1056,7 @@ struct MessageComposerView: View {
 
     private var isConfigurationControlDisabled: Bool {
         isAnsweringClarification || isReadOnly || isSending || isCompressingSession || isWaitingForStream || isUpdatingConfiguration
+            || sessionStart != nil
     }
 
     private var isVoiceInputDisabled: Bool {
@@ -1070,7 +1078,7 @@ struct MessageComposerView: View {
     /// Recording mid-stream is fine (it queues like any send), so unlike dictation
     /// this does not block on `isWaitingForStream`.
     private var isVoiceNoteRecordingDisabled: Bool {
-        isAnsweringClarification || isReadOnly
+        isAnsweringClarification || isReadOnly || sessionStart != nil
             || isSending
             || isSendingVoiceNote
             || isCompressingSession
@@ -1160,7 +1168,8 @@ struct MessageComposerView: View {
     }
 
     private var isActionButtonDisabled: Bool {
-        if isReadOnly {
+        // A new chat cannot send until its session exists (TAL-636); typing still works.
+        if isReadOnly || sessionStart != nil {
             return true
         }
 

@@ -40,6 +40,12 @@ private enum TurnDiffPresentation: Identifiable {
     }
 }
 
+/// How a new chat's session creation ended (TAL-636).
+enum ChatSessionStartResult {
+    case started(SessionSummary)
+    case failed(String)
+}
+
 struct ChatView: View {
     private let bottomAnchorID = "chat-bottom-anchor"
     private let transcriptMessageSpacing: CGFloat = 10
@@ -70,7 +76,11 @@ struct ChatView: View {
     @AppStorage(SectionVisibilitySettings.chatFilesKey) private var showsFilesButton = true
     @AppStorage(SectionVisibilitySettings.chatGitKey) private var showsGitControls = true
 
-    let session: SessionSummary
+    /// The chat's session. A new chat starts with a provisional one, without an ID, and takes on
+    /// the session the server creates in place (TAL-636).
+    @State private var session: SessionSummary
+    /// Creates a new chat's session; nil for a chat that already has one.
+    let startSession: (() async -> ChatSessionStartResult)?
     let server: URL
     let onAPIError: (Error) -> Void
     let loadsInitialMessages: Bool
@@ -170,6 +180,8 @@ struct ChatView: View {
     @State private var activeStreamStatusRefreshTask: Task<Void, Never>?
     @State private var initialAttachments: [SharedAttachmentImport]
     @State private var didUploadInitialAttachments = false
+    /// While a new chat's session is being created, or after creating it failed (TAL-636).
+    @State private var sessionStart: ComposerSessionStart?
 
     init(
         session: SessionSummary,
@@ -182,9 +194,12 @@ struct ChatView: View {
         draftStore: ChatDraftStore? = nil,
         draftAttachmentStore: (any ChatDraftAttachmentStoring)? = nil,
         restoresDraftSettings: Bool = false,
+        startSession: (() async -> ChatSessionStartResult)? = nil,
         onConversationStarted: @escaping () -> Void = {}
     ) {
-        self.session = session
+        _session = State(initialValue: session)
+        self.startSession = startSession
+        _sessionStart = State(initialValue: startSession != nil && session.sessionId == nil ? .starting : nil)
         self.server = server
         self.onAPIError = onAPIError
         self.loadsInitialMessages = loadsInitialMessages
@@ -404,7 +419,9 @@ struct ChatView: View {
             onSubmitClarification: { response in
                 guard let prompt else { return }
                 Task { await submitClarification(response, promptID: prompt.id) }
-            }
+            },
+            sessionStart: sessionStart,
+            onRetrySessionStart: retrySessionStart
         )
     }
 
@@ -607,7 +624,8 @@ struct ChatView: View {
                     }
                 }
 
-                if showsFilesButton {
+                // The workspace browser needs the session; a new chat gains it once created (TAL-636).
+                if showsFilesButton, viewModel.hasSession {
                     ToolbarItem(placement: .topBarTrailing) {
                         filesButton
                             .disabled(viewModel.isViewingCachedData)
@@ -1505,10 +1523,47 @@ struct ChatView: View {
             return
         }
 
+        if sessionStart != nil {
+            guard await startPendingSession() else { return }
+        }
+        await beginSessionWork()
+    }
+
+    private func beginSessionWork() async {
         async let chatStartup: Void = performInitialAsyncWork()
         async let gitAvailability: Void = loadInitialGitAvailability()
         async let draftAttachments: Void = restoreDraftAttachmentsIfNeeded()
         _ = await (chatStartup, gitAvailability, draftAttachments)
+    }
+
+    /// Creates a new chat's session and takes it on in place, so the composer the user is already
+    /// typing in stays put (TAL-636). Returns whether the chat now has its session.
+    private func startPendingSession() async -> Bool {
+        guard let startSession else { return false }
+        sessionStart = .starting
+        switch await startSession() {
+        case .started(let created):
+            let newChatKey = ChatDraftKey.newChat(server: server)
+            draftStore.setDraft(draftMessage, for: newChatKey)
+            let moved = draftStore.moveDraft(from: newChatKey, to: .session(server: server, session: created))
+            if moved.text != draftMessage {
+                draftMessage = moved.text
+            }
+            viewModel.adoptCreatedSession(created)
+            session = created
+            sessionStart = nil
+            return true
+        case .failed(let message):
+            sessionStart = .failed(message)
+            return false
+        }
+    }
+
+    private func retrySessionStart() {
+        Task {
+            guard await startPendingSession() else { return }
+            await beginSessionWork()
+        }
     }
 
     private func performInitialAsyncWork() async {
@@ -1575,6 +1630,8 @@ struct ChatView: View {
         isUserRefresh: Bool = false,
         joinsLoadInFlight: Bool = false
     ) async {
+        // A new chat has nothing to load until its session exists (TAL-636).
+        guard viewModel.hasSession else { return }
         if joinsLoadInFlight {
             await viewModel.refreshSession(modelContext: modelContext, isUserRefresh: isUserRefresh)
         } else {
@@ -1839,7 +1896,8 @@ struct ChatView: View {
     }
 
     private var draftKey: ChatDraftKey {
-        .session(server: server, session: session)
+        // A new chat's draft lives under the new-chat key until its session exists (TAL-636).
+        session.sessionId == nil ? .newChat(server: server) : .session(server: server, session: session)
     }
 
     private var messageActionErrorIsPresented: Binding<Bool> {
