@@ -1283,6 +1283,31 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     } finally { fresh.close() }
   })
 
+  it('falls back to the timestamp rules when a recreated state.db reuses the marker row\'s role and timestamp', async () => {
+    const fresh = await bootTestServer()
+    try {
+      const sid = String(((await json(await post(fresh, '/api/session/new', {}))).session as Json).session_id)
+      writeMessages(fresh, sid, rows(FOUR))
+      const path = join(fresh.state, 'state.db')
+      const build = (target: string, list: Row[]): void => {
+        const db = new DatabaseSync(target)
+        db.exec('CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
+        for (const [role, content, ts] of list) db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, role, content, ts)
+        db.close()
+      }
+      build(path, FOUR)
+      const session = fresh.deps.sessionStore.get(sid)
+      fresh.deps.sessions.markStateDbSeen(session)
+      fresh.deps.sessionStore.save(session)
+      expect(session.state_db_seen_id).toBe(4)
+      // A rebuilt database whose id 4 is again an assistant row at 103, after three new CLI rows.
+      build(`${path}.new`, [['user', 'r1', 110], ['user', 'r2', 111], ['user', 'r3', 112], ['assistant', 'a2', 103]])
+      renameSync(`${path}.new`, path)
+      const shown = (((await json(await fresh.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).messages as Json[]).map((m) => m.content)
+      expect(shown).toEqual(['u1', 'a1', 'u2', 'a2', 'r1', 'r2', 'r3'])
+    } finally { fresh.close() }
+  })
+
   it('keeps the timestamp rules for a state.db without message ids', async () => {
     const legacy = await bootTestServer()
     try {

@@ -1638,12 +1638,12 @@ function withoutRows(rows: Message[], base: Message[]): Message[] {
 
 /**
  * TAL-493: what the state.db marker was recorded under: the boundary fields every boundary writer sets (an older release
- * moves them without the marker) and the role and timestamp of the row the marker names (a recreated state.db, whose
- * ids start over, has no such row).
+ * moves them without the marker) and the role, timestamp, and database file identity of the row the marker names (a
+ * recreated state.db, whose ids start over, has no such row).
  */
 function stateDbMarkKey(s: Session, stateRows: Message[], seenId: number | null): string {
   const anchor = seenId === null ? undefined : stateRows.find((m) => m._state_db_row_id === seenId)
-  return JSON.stringify([s.truncation_watermark ?? null, s.truncation_boundary ?? null, s.intentional_shrink_generation ?? null, s.clear_generation ?? null, anchor ? [anchor.role ?? null, anchor.timestamp ?? null] : null])
+  return JSON.stringify([s.truncation_watermark ?? null, s.truncation_boundary ?? null, s.intentional_shrink_generation ?? null, s.clear_generation ?? null, anchor ? [anchor.role ?? null, anchor.timestamp ?? null, anchor._state_db_generation ?? null] : null])
 }
 
 /**

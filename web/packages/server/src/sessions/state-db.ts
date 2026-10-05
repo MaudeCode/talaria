@@ -517,6 +517,11 @@ function projectStateDbMessage(row: Dict, hasId: boolean): Dict {
  * Python `get_state_db_session_messages(sid, stitch_continuations=True)`: the session's active rows in durable order,
  * walking compatible compression/close parents so a continued CLI conversation reads as one transcript.
  */
+/** The state.db file's identity (inode and creation time); a recreated or replaced database gets a new one. */
+function stateDbGeneration(dbPath: string): string | null {
+  try { const st = statSync(dbPath); return `${String(st.ino)}:${String(st.birthtimeMs)}` } catch { return null }
+}
+
 export interface StateDbRead { rows: Dict[]; idCapable: boolean; ok: boolean }
 
 export function stateDbSessionMessages(dbPath: string, sid: string, opts: { stitch?: boolean } = {}): Dict[] {
@@ -559,7 +564,13 @@ export function stateDbSessionRead(dbPath: string, sid: string, opts: { stitch?:
     const activeClause = available.has('active') ? ' AND (active IS NULL OR active != 0)' : ''
     const order = hasId ? 'id' : 'timestamp'
     const rows = db.prepare(`SELECT ${selected.join(', ')}, session_id FROM messages WHERE session_id IN (${chain.map(() => '?').join(', ')})${activeClause} ORDER BY ${order} ASC`).all(...chain) as Dict[]
-    return { rows: rows.map((row) => projectStateDbMessage(row, hasId)), idCapable: hasId, ok: true }
+    const projected = rows.map((row) => projectStateDbMessage(row, hasId))
+    // TAL-493: the database file's identity, so a marker taken in a replaced state.db is never applied to its successor.
+    if (hasId) {
+      const generation = stateDbGeneration(dbPath)
+      for (const m of projected) m._state_db_generation = generation
+    }
+    return { rows: projected, idCapable: hasId, ok: true }
   } catch {
     return none
   } finally {
