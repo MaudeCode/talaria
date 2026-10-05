@@ -348,7 +348,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     },
     resolveContextLength,
     modelOptionFor: (model, provider) => catalog.modelOptionFor(profileHome(activeProfile()), model, provider),
-    warmModelOptions: (profile) => catalog.warmModelOptions(profileHome(profile ?? activeProfile())),
+    warmModelOptions: () => catalog.warmModelOptions(profileHome(activeProfile())),
     // Python `_session_model_state_from_request`: a provider-qualified id (`@nous:openai/gpt-5.4-mini`) is split so the
     // sidecar receives the bare model and the explicit provider wins over the requested one.
     modelStateFromRequest: (model, requestedProvider, currentProvider) => {
@@ -361,6 +361,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
       return [raw, provider]
     },
     repairSessionModel: (profile, model, provider) => catalog.sessionModelRepair(profileHome(profile ?? activeProfile()), model, provider),
+    warmSessionModelRepair: (profile) => catalog.warmSessionModelRepair(profileHome(profile ?? activeProfile())),
     yolo: { isEnabled: (sid) => yoloSessions.has(sid), set: (sid, enabled) => { if (enabled) yoloSessions.add(sid); else yoloSessions.delete(sid) } },
   })
   // A working-tree mutation refuses while a run is active anywhere it would change files.

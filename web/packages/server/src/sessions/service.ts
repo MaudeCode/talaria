@@ -108,13 +108,15 @@ export interface SessionServiceDeps {
   /** TAL-301: the catalog entry id a stored `(model, provider)` pair selects (null when none or not yet known). */
   modelOptionFor?: (model: string | null, provider: string | null) => string | null
   /** Builds the catalog `modelOptionFor` reads, so a first detail load already carries `model_option_id`. */
-  warmModelOptions?: (profile?: string | null) => Promise<void>
+  warmModelOptions?: () => Promise<void>
   /** Authoritative lookup through the sidecar (`models.context_length`), cached; used where the caller can await. */
   resolveContextLength?: (model: string | null, provider: string | null, profile: string | null) => Promise<number | null>
   /** `(model, provider)` normalisation from a request (checkpoint 7 wires provider-qualified ids). */
   modelStateFromRequest: (model: unknown, requestedProvider: unknown, currentProvider: string | null) => [string | null, string | null]
   /** TAL-542: the pair a stale session model starts on, from the profile's catalog; `null` keeps it. */
   repairSessionModel?: (profile: string | null, model: string, provider: string | null) => [string, string] | null
+  /** TAL-542: builds the catalog `repairSessionModel` reads unless a fresh enough one exists. */
+  warmSessionModelRepair?: (profile?: string | null) => Promise<void>
   yolo: { isEnabled: (sid: string) => boolean; set: (sid: string, enabled: boolean) => void }
   /** state.db sidebar rows for a profile (Python `get_cli_sessions`); null when the projection is unavailable. */
   /** `truncated`: source kinds whose rows stopped at the per-kind window on this read (TAL-482). */

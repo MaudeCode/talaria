@@ -2455,6 +2455,49 @@ describe('stale cross-provider session models at chat start (TAL-542)', () => {
     }
   })
 
+  it('ignores a live-lookup failure from before config.yaml or .env changed', async () => {
+    const config = { model: { provider: 'anthropic', default: 'claude-sonnet-4' }, providers: { ollama: { base_url: 'http://ollama.test/v1', models: ['llama3.2'] }, deepseek: { api_key: 'sk-deepseek-12345' } } }
+    sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config }))
+    s.deps.agentConfig.invalidate()
+    s.deps.catalog.invalidate()
+    const pending: { resolve: (ids: string[]) => void; reject: (error: Error) => void }[] = []
+    sidecar.respond('providers.model_ids', (p) => (p.provider === 'deepseek' ? new Promise((resolve, reject) => { pending.push({ resolve: (ids) => { resolve({ provider: p.provider, model_ids: ids }) }, reject }) }) : { provider: p.provider, model_ids: [] }))
+    try {
+      const old = s.deps.catalog.liveModelIds(s.state, 'deepseek')
+      writeFileSync(join(s.state, '.env'), 'TALARIA_TEST_EDIT=3\n')
+      const current = s.deps.catalog.liveModelIds(s.state, 'deepseek')
+      await vi.waitFor(() => { expect(pending).toHaveLength(2) })
+      pending[1]?.resolve(['ds-ok'])
+      await current
+      // The lookup against the old credential fails after the current one succeeded.
+      pending[0]?.reject(new SidecarError('old credential refused', { condition: 'sidecar_error' }))
+      await old
+      expect(await start({ session_id: await sessionWith('ds-ok', 'ollama') })).toMatchObject({ effective_model: 'ds-ok', effective_model_provider: 'deepseek' })
+    } finally {
+      sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: [] }))
+    }
+  })
+
+  it('repairs a goal kickoff against config.yaml as edited while the goal command ran', async () => {
+    let config: Json = { model: { provider: 'anthropic', default: 'claude-sonnet-4' } }
+    sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config }))
+    s.deps.agentConfig.invalidate()
+    s.deps.catalog.invalidate()
+    await s.deps.catalog.warmSessionModelRepair(s.state)
+    sidecar.respond('goals.snapshot', () => ({ goal: null, snapshot: null }))
+    sidecar.respond('goals.command', async (params) => {
+      config = { model: { provider: 'openai-codex', default: 'gpt-5.5' } }
+      writeFileSync(join(s.state, 'config.yaml'), '# moved to codex during the goal command\n')
+      // Workspace resolution reads the new file too; only the catalog is left behind.
+      await s.deps.agentConfig.read(s.state)
+      return { ok: true, action: 'set', message: `Goal set: ${params.args}`, goal: null, kickoff_prompt: params.args }
+    })
+    const sid = await sessionWith('gemini-3.1-pro-preview', null)
+    const started = await json(await post(s, '/api/goal', { session_id: sid, args: 'ship it' }))
+    expect(started).toMatchObject({ effective_model: 'gpt-5.5', effective_model_provider: 'openai-codex' })
+    await s.sse(`/api/chat/stream?stream_id=${String(started.stream_id)}&replay=1`, (f) => f.event === 'done' || f.event === 'apperror')
+  })
+
   it('keeps a pair the catalog lists, an unknown vendor, and a `@provider:` pick', async () => {
     useConfig('openai-codex', 'gpt-5.5', { ollama: ['llama3.2'] })
     for (const [model, provider] of [['llama3.2', 'ollama'], ['lmstudio-community/Qwen2.5-Coder-7B-Instruct-GGUF', null], ['custom/my-local-llm', null]] as const) {
@@ -2464,6 +2507,41 @@ describe('stale cross-provider session models at chat start (TAL-542)', () => {
     }
     const started = await start({ session_id: await sessionWith('gpt-5.5', 'openai-codex'), model: '@gemini:gemini-3.1-pro-preview' })
     expect(started).toMatchObject({ effective_model: 'gemini-3.1-pro-preview', effective_model_provider: 'gemini' })
+  })
+})
+
+describe('stale session models after an Agent sign-in change (TAL-542)', () => {
+  it('re-reads a catalog older than the providers listing before repairing', async () => {
+    let clock = 1_800_000_000
+    const sidecar = new FakeSidecar()
+    const s = await bootTestServer({ sidecar, now: () => clock })
+    try {
+      let signedIn = false
+      const config = { model: { provider: 'anthropic', default: 'claude-sonnet-4' }, providers: { ollama: { base_url: 'http://ollama.test/v1', models: ['llama3.2'] } } }
+      sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config }))
+      sidecar.respond('providers.auth_status', (p) => ({ status: { logged_in: signedIn && p.provider === 'copilot', provider: p.provider ?? '' } }))
+      sidecar.respond('plugins.providers', () => ({ providers: [] }))
+      sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: p.provider === 'copilot' ? ['cp-model'] : [] }))
+      sidecar.respond('chat.start', (_params, emit) => { emit({ event: 'token', data: { text: 'ok' } }); return completed([{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'ok' }]) })
+      writeFileSync(join(s.state, 'config.yaml'), '# seed\n')
+      const startWith = async (model: string, provider: string | null): Promise<Json> => {
+        const sid = await newSession(s)
+        const session = s.deps.sessionStore.get(sid)
+        session.model = model
+        session.model_provider = provider
+        s.deps.sessionStore.save(session)
+        const started = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'continue' }))
+        await s.sse(`/api/chat/stream?stream_id=${String(started.stream_id)}&replay=1`, (f) => f.event === 'done' || f.event === 'apperror')
+        return started
+      }
+      await startWith('claude-sonnet-4', 'anthropic')
+      // Signed in to Copilot outside Web: no config.yaml or .env change, only the Agent's auth state.
+      signedIn = true
+      clock += 31
+      expect(await startWith('cp-model', 'ollama')).toMatchObject({ effective_model: 'cp-model', effective_model_provider: 'copilot' })
+    } finally {
+      await s.close()
+    }
   })
 })
 

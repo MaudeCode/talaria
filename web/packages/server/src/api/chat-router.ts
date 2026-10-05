@@ -121,7 +121,7 @@ async function startChat(ctx: RequestContext, body: Record<string, unknown>): Pr
   // session state is materialised, claimed, or mutated.
   await ensureAgentRuntimeCurrent(ctx.deps.sidecar())
   // TAL-542: the stale-model check reads this catalog; it is built before the session is read so no await follows that read.
-  await ctx.deps.sessions.deps.warmModelOptions?.()
+  await ctx.deps.sessions.deps.warmSessionModelRepair?.()
   let s: Session
   try {
     s = ctx.deps.sessionStore.get(sid)
@@ -145,7 +145,10 @@ async function startChat(ctx: RequestContext, body: Record<string, unknown>): Pr
   // TAL-276: an attached file alone makes a turn; one with neither text nor a file path is refused.
   if (!msg && !attachments.some((att) => str(att.path))) throw new HttpError(400, 'message is required')
   // TAL-460: the user's message never joins a background turn; that turn stops quietly and this one takes its place.
-  if (await ctx.deps.turns.yieldBackgroundTurn(sid)) s = ctx.deps.sessionStore.get(sid)
+  if (await ctx.deps.turns.yieldBackgroundTurn(sid)) {
+    await ctx.deps.sessions.deps.warmSessionModelRepair?.()
+    s = ctx.deps.sessionStore.get(sid)
+  }
   // Python `compression_recovery_payload_for_session` + `is_generic_continuation_intent`.
   const recovery = s.compression_recovery
   const recoveryLive = recovery.terminal_state === 'compression_exhausted' && str(recovery.recommended_action || s.recommended_recovery_action) === 'start_focused_continuation'
@@ -253,8 +256,6 @@ export const chatRouter = os.router({
     const requestedProfile = str(body.profile).trim()
     if (requestedProfile && requestedProfile !== 'default' && !PROFILE_ID_RE.test(requestedProfile)) throw new HttpError(400, 'invalid profile')
     if (requestedProfile && !ctx.deps.profilesMatch(s.profile, requestedProfile) && !s.messages.length && !s.context_messages.length && !s.hasPendingPrompt) s.profile = requestedProfile
-    // TAL-542: a kickoff's stale-model check reads the catalog of the profile the session now runs under.
-    await ctx.deps.sessions.deps.warmModelOptions?.(s.profile)
     let streamRunning = false
     if (s.active_stream_id) {
       streamRunning = ctx.deps.registry.liveIds.has(s.active_stream_id)
@@ -271,6 +272,8 @@ export const chatRouter = os.router({
     if (payload.ok === false) throw new HttpError(payload.error === 'agent_running' ? 409 : 400, str(payload.message || payload.error || 'goal command failed'), payload)
     const kickoff = str(payload.kickoff_prompt).trim()
     if (kickoff) {
+      // TAL-542: after the goal RPCs, so the stale-model check reads a catalog for the profile the session now runs under.
+      await ctx.deps.sessions.deps.warmSessionModelRepair?.(s.profile)
       const workspace = resolveWorkspace(ctx, s, body.workspace)
       const [model, provider, normalized] = modelState(ctx, s, body)
       const started = ctx.deps.turns.start(s, { msg: kickoff, attachments: [], workspace, model, modelProvider: provider, normalizedModel: normalized, source: 'webui', goalRelated: true })

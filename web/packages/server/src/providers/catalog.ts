@@ -453,6 +453,7 @@ export function uniqueQuotaSources<T extends { source_id: string; provider_id: s
 interface KeyProbe { hasKey: boolean; keySource: string; authError: string | null; isOauth: boolean }
 
 export class ProviderCatalog {
+  /** Failed live lookups by home, provider, and the `sourceFingerprint` they ran under (TAL-542). */
   private readonly liveFailed = new Set<string>()
   /** `source`: the `sourceFingerprint` the ids were fetched under; another one makes them stale (TAL-542). */
   private readonly liveIds = new Map<string, { at: number; ids: string[]; source: string }>()
@@ -460,8 +461,8 @@ export class ProviderCatalog {
   private readonly providersCache = new Map<string, { at: number; key: string; payload: { providers: Dict[]; active_provider: string | null } }>()
   /** TAL-301: the last catalog served per profile home, for the sync session payloads' `model_option_id`. */
   private readonly lastModels = new Map<string, ModelsCatalog>()
-  /** TAL-542: per `lastModels` catalog, the `sourceFingerprint` it was built from and the providers whose group came from a failed live lookup. */
-  private readonly lastModelsMeta = new Map<string, { source: string; unconfirmed: ReadonlySet<string> }>()
+  /** TAL-542: per `lastModels` catalog, the `sourceFingerprint` it was built from, when, and the providers whose group came from a failed live lookup. */
+  private readonly lastModelsMeta = new Map<string, { source: string; unconfirmed: ReadonlySet<string>; at: number }>()
 
   constructor(private readonly deps: CatalogDeps) {}
 
@@ -498,16 +499,27 @@ export class ProviderCatalog {
     return `${this.deps.config.fingerprint(profileHome)}|${env}`
   }
 
-  /** The last catalog built for this home while its source files are unchanged since (TAL-542). */
-  private currentModels(profileHome: string): ModelsCatalog | undefined {
-    return this.lastModelsMeta.get(profileHome)?.source === this.sourceFingerprint(profileHome) ? this.lastModels.get(profileHome) : undefined
+  /** The last catalog built for this home, younger than `maxAgeS`, while its source files are unchanged since (TAL-542). */
+  private currentModels(profileHome: string, maxAgeS = Infinity): ModelsCatalog | undefined {
+    const meta = this.lastModelsMeta.get(profileHome)
+    return meta?.source === this.sourceFingerprint(profileHome) && this.deps.now() - meta.at < maxAgeS ? this.lastModels.get(profileHome) : undefined
   }
 
-  /** TAL-542: `repairSessionModel` against the current catalog for this home; a cold or stale one keeps the pair and starts a rebuild. */
+  /**
+   * TAL-542: `repairSessionModel` against this home's catalog. Agent-owned sign-in and plugin state has no file to
+   * fingerprint, so the repair also needs a catalog no older than the providers listing it read (`PROVIDERS_TTL_S`);
+   * a cold or stale one keeps the pair and starts a rebuild.
+   */
   sessionModelRepair(profileHome: string, model: string, provider: string | null): [string, string] | null {
-    const catalog = this.currentModels(profileHome)
-    if (!catalog) { void this.warmModelOptions(profileHome); return null }
+    const catalog = this.currentModels(profileHome, PROVIDERS_TTL_S)
+    if (!catalog) { void this.warmSessionModelRepair(profileHome); return null }
     return repairSessionModel(catalog, model, provider, this.lastModelsMeta.get(profileHome)?.unconfirmed)
+  }
+
+  /** Builds the catalog `sessionModelRepair` reads unless a fresh enough one exists; call it after the request's last await. */
+  async warmSessionModelRepair(profileHome: string): Promise<void> {
+    if (this.currentModels(profileHome, PROVIDERS_TTL_S)) return
+    try { await this.models(profileHome) } catch { /* fail closed: the pair is kept */ }
   }
 
   /** Builds the catalog `modelOptionFor` reads once per home, again after config.yaml or `.env` changes; an unavailable catalog leaves every option id null. */
@@ -612,8 +624,8 @@ export class ProviderCatalog {
     const sidecar = this.deps.sidecar()
     if (!sidecar) return hit?.ids ?? []
     const run = sidecar.call('providers.model_ids', { profile_home: profileHome, provider: pid, ...(opts.force ? { force_refresh: true } : {}) }, { timeoutMs: 30_000 })
-      .then((r) => { this.liveIds.set(key, { at: this.deps.now(), ids: r.model_ids, source }); this.liveFailed.delete(key); return r.model_ids })
-      .catch((error: unknown) => { this.deps.log(`[catalog] live model ids for ${pid} failed: ${str((error as Error).message)}`); this.liveFailed.add(key); return hit?.ids ?? [] })
+      .then((r) => { this.liveIds.set(key, { at: this.deps.now(), ids: r.model_ids, source }); this.liveFailed.delete(flightKey); return r.model_ids })
+      .catch((error: unknown) => { this.deps.log(`[catalog] live model ids for ${pid} failed: ${str((error as Error).message)}`); this.liveFailed.add(flightKey); return hit?.ids ?? [] })
       .finally(() => { this.liveInflight.delete(flightKey) })
     this.liveInflight.set(flightKey, run)
     return run
@@ -819,10 +831,10 @@ export class ProviderCatalog {
       if (!raw.length && (this.providerHasKey(pid, config, envValues, profileHome) || signedIn.has(pid))) {
         const live = await this.liveModelIds(profileHome, pid)
         // TAL-542: a failed lookup leaves this group's list unconfirmed, so the stale-model repair never trusts it.
-        if (this.liveFailed.has(`${profileHome}\0${pid}`)) unconfirmed.add(pid)
+        if (this.liveFailed.has(`${profileHome}\0${pid}\0${source}`)) unconfirmed.add(pid)
         if (live.length) raw = live.map((id) => ({ id, label: pid === 'nous' ? `${formatOllamaLabel(id.includes('/') ? id.slice(id.indexOf('/') + 1) : id)} (via Nous)` : labelForModel(id, []) }))
         // Python (#1567): an authenticated Nous account with an empty live catalog shows no group; only a failed lookup falls back to the curated list.
-        else if (pid === 'nous' && !this.liveFailed.has(`${profileHome}\0${pid}`)) continue
+        else if (pid === 'nous' && !this.liveFailed.has(`${profileHome}\0${pid}\0${source}`)) continue
       }
       if (!raw.length) raw = pid === 'openrouter' ? FALLBACK_MODELS.map((m) => ({ id: m.id, label: m.label })) : [...(PROVIDER_MODELS[pid] ?? [])]
       for (const id of configuredIds.get(pid) ?? []) if (!raw.some((m) => m.id === id)) raw.push({ id, label: labelForModel(id, groups) })
@@ -871,7 +883,7 @@ export class ProviderCatalog {
   private remember(profileHome: string, meta: { source: string; unconfirmed: ReadonlySet<string> }, catalog: ModelsCatalog): ModelsCatalog {
     catalog.default_option_id = catalogOptionId(catalog, catalog.default_bare_id ?? null, catalog.default_provider_id ?? null)
     this.lastModels.set(profileHome, catalog)
-    this.lastModelsMeta.set(profileHome, meta)
+    this.lastModelsMeta.set(profileHome, { ...meta, at: this.deps.now() })
     return structuredClone(catalog)
   }
 
