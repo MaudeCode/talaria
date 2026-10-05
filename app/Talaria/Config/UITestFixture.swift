@@ -1024,9 +1024,11 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
                                 "result_chars": 26
                             ]
                         ],
+                        // Prose on both sides keeps the edit its own row, not a group with the tool before it.
+                        ["row_id": "prose-3", "order_index": 4, "role": "prose", "text": "Fixture edit."],
                         [
                             "row_id": "tool:ui-fixture-edit",
-                            "order_index": 4,
+                            "order_index": 5,
                             "role": "tool",
                             "tool": [
                                 "id": "ui-fixture-edit",
