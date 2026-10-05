@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Select several chats in the chat list and archive or delete them together.",
+      "highlight": true,
+      "components": ["app"]
+    },
+    {
+      "category": "Added",
+      "summary": "The server can archive, unarchive or delete many chats in one request and reports the outcome for each chat.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

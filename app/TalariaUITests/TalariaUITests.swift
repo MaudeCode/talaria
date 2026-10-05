@@ -303,6 +303,41 @@ final class SessionArchiveUndoUITests: ChatUITestCase {
     }
 }
 
+/// TAL-627: Select Chats picks rows, then one confirmed Bulk Action ends the mode.
+final class SelectChatsUITests: ChatUITestCase {
+    func testSelectingChatsAndDeletingThemEndsSelectChats() throws {
+        launchFixture()
+        XCTAssertTrue(fixtureSessionButton.awaitExistence(timeout: 15), "Missing deterministic session fixture")
+
+        let select = app.buttons["Select Chats"]
+        XCTAssertTrue(select.awaitExistence(timeout: 5))
+        select.tap()
+        for title in ["Fixture Session 01", "Fixture Session 02"] {
+            let row = app.buttons.containing(.staticText, identifier: title).firstMatch
+            XCTAssertTrue(row.awaitExistence(timeout: 5), title)
+            row.tap()
+        }
+        XCTAssertTrue(app.staticTexts["2 selected"].awaitExistence(timeout: 5))
+        attachScreenshot(named: "select-chats")
+
+        app.buttons["Delete"].tap()
+        let confirmation = app.alerts["Delete 2 Chats?"]
+        XCTAssertTrue(confirmation.awaitExistence(timeout: 5))
+        attachScreenshot(named: "select-chats-delete-confirmation")
+        confirmation.buttons["Delete"].tap()
+
+        XCTAssertTrue(app.staticTexts["2 selected"].awaitNonExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["Select Chats"].awaitExistence(timeout: 5), "Select Chats did not end once every chat was deleted")
+    }
+
+    private func attachScreenshot(named name: String) {
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+}
+
 /// TAL-437: a relaunch shows the chats the app saw last time before `/api/sessions` answers.
 final class ColdLaunchCacheUITests: ChatUITestCase {
     func testRelaunchShowsTheLastChatsBeforeTheServerAnswers() throws {

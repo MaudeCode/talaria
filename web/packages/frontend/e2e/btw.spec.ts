@@ -10,7 +10,7 @@ const frame = (id: string, event: string, data: unknown) => `id: ${id}\nevent: $
 async function sideQuestionChat(page: Page, sid: string, running: boolean) {
   const run = `${sid}-run`
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: {
-    session_id: sid, title: 'Back up the cluster', active_stream_id: running ? run : null, is_streaming: running, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_duplicate: true,
+    session_id: sid, title: 'Back up the cluster', active_stream_id: running ? run : null, is_streaming: running, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true,
     transcript_seq: null, messages: [{ role: 'user', id: 1, content: 'Back up the cluster', _turn_id: run }, ...(running ? [] : [{ role: 'assistant', id: 2, content: 'Backed up.', _turn_id: run }])],
   } } }))
   await page.route('**/api/chat/stream/status?**', (route) => route.fulfill({ json: { active: running, stream_id: running ? run : null, replay_available: false } }))

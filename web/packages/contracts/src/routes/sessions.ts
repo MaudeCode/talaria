@@ -34,6 +34,16 @@ export const SessionDetailQuerySchema = z.object({ session_id: z.string(), messa
 
 
 
+/** TAL-627: one bulk action over many sessions; ids are unique and the server answers each in input order. */
+export const SessionsBulkRequestSchema = z.object({
+  action: z.enum(['archive', 'unarchive', 'delete']),
+  session_ids: z.array(SessionIdSchema).min(1).max(200).refine((ids) => new Set(ids).size === ids.length, 'session_ids must be unique'),
+})
+/** Each id's outcome: `status`/`error` are what the single-session route would have answered; one failure never stops the rest. */
+export const SessionsBulkResultSchema = z.object({
+  results: z.array(z.object({ session_id: z.string(), ok: z.boolean(), status: z.number().int().optional(), error: z.string().optional(), state_db_cleanup_failed: z.boolean().optional() })),
+})
+
 const tags = ['sessions']
 /** The Agent's manual-compression feedback (`summarize_manual_compression`) plus the reference line stored as the anchor summary. */
 export const CompressionSummarySchema = z.looseObject({ headline: z.string().optional(), token_line: z.string().optional(), note: z.string().nullable().optional(), reference_message: z.string().nullable().optional() })
@@ -56,6 +66,7 @@ export const sessionsContract = {
   sessions: {
     list: oc.route({ method: 'GET', path: '/api/sessions', tags, summary: 'Sidebar rows for the active profile.' }).input(SessionsListQuerySchema).output(SessionsListSchema),
     search: oc.route({ method: 'GET', path: '/api/sessions/search', tags, summary: 'Title, metadata and content matches; any sidebar filter answers from the /api/sessions rows, in their order.' }).input(SessionsSearchQuerySchema).output(z.looseObject({ sessions: z.array(SessionRowSchema), query: z.string().optional(), count: z.number().int().optional(), all_profiles: z.boolean(), active_profile: z.string(), sidebar_filtered: z.boolean().optional() })),
+    bulk: oc.route({ method: 'POST', path: '/api/sessions/bulk', tags, summary: 'Archive, unarchive or delete up to 200 sessions, one ordered result per id.' }).input(SessionsBulkRequestSchema).output(SessionsBulkResultSchema),
     cleanupZeroMessage: oc.route({ method: 'POST', path: '/api/sessions/cleanup_zero_message', tags }).input(z.object({}).catchall(Json)).output(z.object({ ok: z.literal(true), cleaned: z.number().int() })),
   },
   session: {

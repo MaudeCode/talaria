@@ -124,6 +124,14 @@ extension APIClient {
         )
     }
 
+    func bulkSessions(action: SessionBulkAction, ids: [String]) async throws -> SessionBulkResponse {
+        try await send(
+            endpoint: .bulkSessions,
+            method: "POST",
+            body: BulkSessionsRequest(action: action, sessionIds: ids)
+        )
+    }
+
     public func branchSession(id: String, keepCount: Int? = nil, title: String? = nil) async throws -> SessionBranchResponse {
         try await send(
             endpoint: .branchSession,
@@ -238,6 +246,11 @@ private struct PinSessionRequest: Encodable {
 private struct ArchiveSessionRequest: Encodable {
     let sessionId: String
     let archived: Bool
+}
+
+private struct BulkSessionsRequest: Encodable {
+    let action: SessionBulkAction
+    let sessionIds: [String]
 }
 
 private struct BranchSessionRequest: Encodable {

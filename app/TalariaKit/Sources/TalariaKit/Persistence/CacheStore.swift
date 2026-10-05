@@ -332,6 +332,7 @@ private extension SessionSummary {
         canBranch = nil
         canPin = nil
         canArchive = nil
+        canDelete = nil
         canDuplicate = nil
         matchType = nil
         matchPreview = nil

@@ -7,7 +7,7 @@ test.use({ serviceWorkers: 'block' })
 test('dismissing an approval stops Enter from approving it; the next approval in the turn is visible', async ({ page }) => {
   const sid = 'approval-dismiss'
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: {
-    session_id: sid, title: 'Clean the build', active_stream_id: 'approval-run', is_streaming: true, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_duplicate: true,
+    session_id: sid, title: 'Clean the build', active_stream_id: 'approval-run', is_streaming: true, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true,
     transcript_seq: null, messages: [{ role: 'user', id: 1, content: 'Clean the build', _turn_id: 'approval-run' }],
   } } }))
   await page.route('**/api/chat/stream/status?**', (route) => route.fulfill({ json: { active: true, stream_id: 'approval-run', replay_available: false } }))

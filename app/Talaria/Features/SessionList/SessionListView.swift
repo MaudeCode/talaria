@@ -30,6 +30,7 @@ struct SessionListView: View {
     @State private var navigationState: SessionNavigationState
     @State private var sessionPendingRename: SessionSummary?
     @State private var sessionPendingDeletion: SessionSummary?
+    @State private var isConfirmingBulkDelete = false
     @State private var sessionPendingProjectCreation: SessionSummary?
     @State private var sessionExportShareItem: SessionExportShareItem?
     @State private var isPresentingProjectCreation = false
@@ -395,9 +396,13 @@ struct SessionListView: View {
                 SessionActionConfirmations(
                     viewModel: viewModel,
                     sessionPendingDeletion: $sessionPendingDeletion,
+                    isConfirmingBulkDelete: $isConfirmingBulkDelete,
                     projectPendingDeletion: $projectPendingDeletion,
                     deleteSession: { session in
                         Task { await delete(session) }
+                    },
+                    deleteSelectedSessions: {
+                        Task { await performBulkAction(.delete) }
                     },
                     deleteProject: { project in
                         Task { await delete(project) }
@@ -523,6 +528,12 @@ struct SessionListView: View {
                 }
             }
 
+            if viewModel.supportsBulkActions {
+                ToolbarItem(placement: .topBarTrailing) {
+                    selectChatsButton
+                }
+            }
+
             ToolbarItem(placement: .topBarTrailing) {
                 settingsButton
             }
@@ -564,7 +575,21 @@ struct SessionListView: View {
 
     private var showsFloatingNewChatButton: Bool {
         if #available(iOS 26, *) { return false }
-        return !isSearchingSessions && horizontalSizeClass != .regular
+        return !isSearchingSessions && horizontalSizeClass != .regular && !viewModel.isSelectingSessions
+    }
+
+    private var selectChatsButton: some View {
+        Button {
+            if viewModel.isSelectingSessions {
+                viewModel.endSelectingSessions()
+            } else {
+                viewModel.beginSelectingSessions()
+            }
+        } label: {
+            Image(systemName: viewModel.isSelectingSessions ? "xmark" : "checkmark.circle")
+        }
+        .disabled(viewModel.isViewingCachedData || viewModel.isPerformingBulkAction)
+        .accessibilityLabel(viewModel.isSelectingSessions ? Text("Cancel") : Text("Select Chats"))
     }
 
     @ViewBuilder
@@ -809,6 +834,16 @@ struct SessionListView: View {
         }
         .animation(SessionListMotion.disclosureAnimation(reduceMotion: reduceMotion), value: scheduledSessionsAreExpanded)
         .animation(SessionListMotion.disclosureAnimation(reduceMotion: reduceMotion), value: webhookSessionsAreExpanded)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if viewModel.isSelectingSessions {
+                SessionSelectionBar(
+                    viewModel: viewModel,
+                    sessions: scheduledSessionGroups.ordinary,
+                    archive: { Task { await performBulkAction(.archive) } },
+                    delete: { isConfirmingBulkDelete = true }
+                )
+            }
+        }
     }
 
     private var settingsButton: some View {
@@ -1439,6 +1474,29 @@ struct SessionListView: View {
             await draftStore.discardDraft(for: draftKey(for: session))
             removeSessionFromNavigation(session)
             SessionHaptics.sessionDeleted(isEnabled: isHapticsEnabled)
+        }
+    }
+
+    /// One server call for every selected chat (TAL-627); the chats it changed leave navigation.
+    private func performBulkAction(_ action: SessionBulkAction) async {
+        let changed = await viewModel.performBulkAction(
+            action,
+            modelContext: modelContext,
+            animation: SessionListMotion.sessionMutationAnimation(reduceMotion: reduceMotion)
+        )
+        handleLastError()
+        guard !changed.isEmpty else { return }
+
+        for session in changed {
+            if action == .delete {
+                await draftStore.discardDraft(for: draftKey(for: session))
+            }
+            removeSessionFromNavigation(session)
+        }
+        if action == .delete {
+            SessionHaptics.sessionDeleted(isEnabled: isHapticsEnabled)
+        } else {
+            SessionHaptics.archiveStateChanged(isEnabled: isHapticsEnabled)
         }
     }
 

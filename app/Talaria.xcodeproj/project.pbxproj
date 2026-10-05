@@ -116,6 +116,7 @@
 		C107K0000000000000000003 /* SessionFilterChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000103 /* SessionFilterChip.swift */; };
 		C107K0000000000000000004 /* SessionListRowsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000104 /* SessionListRowsSection.swift */; };
 		C107K0000000000000000005 /* SessionInteractiveRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000105 /* SessionInteractiveRow.swift */; };
+		TAL627000000000000000001 /* SessionSelectionBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = TAL627000000000000000002 /* SessionSelectionBar.swift */; };
 		C107K0000000000000000006 /* GroupedSessionsDisclosure.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000106 /* GroupedSessionsDisclosure.swift */; };
 		C107K0000000000000000007 /* GroupedSessionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000107 /* GroupedSessionsView.swift */; };
 		C107K0000000000000000008 /* SessionRowContextMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000108 /* SessionRowContextMenu.swift */; };
@@ -540,6 +541,7 @@
 		C107K0000000000000000103 /* SessionFilterChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionFilterChip.swift; sourceTree = "<group>"; };
 		C107K0000000000000000104 /* SessionListRowsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListRowsSection.swift; sourceTree = "<group>"; };
 		C107K0000000000000000105 /* SessionInteractiveRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionInteractiveRow.swift; sourceTree = "<group>"; };
+		TAL627000000000000000002 /* SessionSelectionBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionSelectionBar.swift; sourceTree = "<group>"; };
 		C107K0000000000000000106 /* GroupedSessionsDisclosure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupedSessionsDisclosure.swift; sourceTree = "<group>"; };
 		C107K0000000000000000107 /* GroupedSessionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupedSessionsView.swift; sourceTree = "<group>"; };
 		C107K0000000000000000108 /* SessionRowContextMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionRowContextMenu.swift; sourceTree = "<group>"; };
@@ -1086,6 +1088,7 @@
 				C107K0000000000000000103 /* SessionFilterChip.swift */,
 				C107K0000000000000000104 /* SessionListRowsSection.swift */,
 				C107K0000000000000000105 /* SessionInteractiveRow.swift */,
+				TAL627000000000000000002 /* SessionSelectionBar.swift */,
 				C107K0000000000000000106 /* GroupedSessionsDisclosure.swift */,
 				C107K0000000000000000107 /* GroupedSessionsView.swift */,
 				C107K0000000000000000108 /* SessionRowContextMenu.swift */,
@@ -1929,6 +1932,7 @@
 				C107K0000000000000000003 /* SessionFilterChip.swift in Sources */,
 				C107K0000000000000000004 /* SessionListRowsSection.swift in Sources */,
 				C107K0000000000000000005 /* SessionInteractiveRow.swift in Sources */,
+				TAL627000000000000000001 /* SessionSelectionBar.swift in Sources */,
 				C107K0000000000000000006 /* GroupedSessionsDisclosure.swift in Sources */,
 				C107K0000000000000000007 /* GroupedSessionsView.swift in Sources */,
 				C107K0000000000000000008 /* SessionRowContextMenu.swift in Sources */,

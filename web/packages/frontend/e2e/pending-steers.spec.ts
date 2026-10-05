@@ -10,7 +10,7 @@ const steer = (steer_id: string, text: string, actions = open) => ({ steer_id, t
 test('a pending steer shows its actions; Edit returns it to the composer, Cancel drops it, Send now says when it cannot', async ({ page }, testInfo) => {
   const sid = 'pending-steers'
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: {
-    session_id: sid, title: 'Back up the cluster', active_stream_id: 'steer-run', is_streaming: true, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_duplicate: true,
+    session_id: sid, title: 'Back up the cluster', active_stream_id: 'steer-run', is_streaming: true, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true,
     transcript_seq: null, messages: [{ role: 'user', id: 1, content: 'Back up the cluster', _turn_id: 'steer-run' }],
     pending_steers: [steer('s1', 'Check the backup logs too')],
   } } }))

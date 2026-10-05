@@ -13,18 +13,33 @@ struct SessionInteractiveRow: View {
 
     var body: some View {
         Button {
-            actions.open(session)
+            if viewModel.isSelectingSessions {
+                viewModel.toggleSelection(session)
+            } else {
+                actions.open(session)
+            }
         } label: {
-            SessionRowView(
-                session: session,
-                showsMessageCount: showsMessageCount,
-                showsWorkspace: showsWorkspace,
-                isViewingCachedData: viewModel.isViewingCachedData,
-                matchPreview: viewModel.contentMatchPreview(for: session, searchText: searchText),
-                searchText: searchText
-            )
+            HStack(spacing: 12) {
+                if viewModel.isSelectingSessions {
+                    Image(systemName: viewModel.isSelected(session) ? "checkmark.circle.fill" : "circle")
+                        .font(.title3)
+                        .foregroundStyle(isSelectable ? Color.accentColor : Color.secondary)
+                        .accessibilityHidden(true)
+                }
+                SessionRowView(
+                    session: session,
+                    showsMessageCount: showsMessageCount,
+                    showsWorkspace: showsWorkspace,
+                    isViewingCachedData: viewModel.isViewingCachedData,
+                    matchPreview: viewModel.contentMatchPreview(for: session, searchText: searchText),
+                    searchText: searchText
+                )
+            }
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .disabled(viewModel.isSelectingSessions && !isSelectable)
+        .accessibilityAddTraits(viewModel.isSelectingSessions && viewModel.isSelected(session) ? .isSelected : [])
         .id(session.id)
         .background(
             session.sessionId == selectedSessionID
@@ -40,24 +55,30 @@ struct SessionInteractiveRow: View {
             sessionTrailingSwipeActions(for: session)
         }
         .contextMenu {
-            SessionRowContextMenu(
-                session: session,
-                projects: viewModel.projects,
-                isViewingCachedData: viewModel.isViewingCachedData,
-                isRenamingSession: viewModel.isRenamingSession,
-                isCreatingProject: viewModel.isCreatingProject,
-                isMovingSession: viewModel.isMovingSession,
-                isLoadingProjects: viewModel.isLoadingProjects,
-                isMutating: viewModel.isMutating(session),
-                actions: actions
-            )
+            if !viewModel.isSelectingSessions {
+                SessionRowContextMenu(
+                    session: session,
+                    projects: viewModel.projects,
+                    isViewingCachedData: viewModel.isViewingCachedData,
+                    isRenamingSession: viewModel.isRenamingSession,
+                    isCreatingProject: viewModel.isCreatingProject,
+                    isMovingSession: viewModel.isMovingSession,
+                    isLoadingProjects: viewModel.isLoadingProjects,
+                    isMutating: viewModel.isMutating(session),
+                    actions: actions
+                )
+            }
         }
         .sessionsScreenListRow(insets: EdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12))
     }
 
+    private var isSelectable: Bool {
+        !viewModel.isViewingCachedData && SessionRowActionPolicy.isBulkSelectable(session)
+    }
+
     @ViewBuilder
     private func sessionLeadingSwipeActions(for session: SessionSummary) -> some View {
-        if SessionRowActionPolicy.canPin(session), isLiveServerSession(session) {
+        if !viewModel.isSelectingSessions, SessionRowActionPolicy.canPin(session), isLiveServerSession(session) {
             Button {
                 actions.togglePinned(session)
             } label: {
@@ -70,7 +91,7 @@ struct SessionInteractiveRow: View {
 
     @ViewBuilder
     private func sessionTrailingSwipeActions(for session: SessionSummary) -> some View {
-        if SessionRowActionPolicy.canArchive(session), isLiveServerSession(session) {
+        if !viewModel.isSelectingSessions, SessionRowActionPolicy.canArchive(session), isLiveServerSession(session) {
             Button {
                 actions.archive(session)
             } label: {
@@ -80,7 +101,7 @@ struct SessionInteractiveRow: View {
             .tint(.orange)
         }
 
-        if canShowSessionMutationActions(for: session) {
+        if !viewModel.isSelectingSessions, SessionRowActionPolicy.canDelete(session), isLiveServerSession(session) {
             Button {
                 actions.delete(session)
             } label: {
@@ -89,10 +110,6 @@ struct SessionInteractiveRow: View {
             .disabled(viewModel.isMutating(session))
             .tint(.red)
         }
-    }
-
-    private func canShowSessionMutationActions(for session: SessionSummary) -> Bool {
-        SessionRowActionPolicy.offersMutationActions(for: session) && isLiveServerSession(session)
     }
 
     private func isLiveServerSession(_ session: SessionSummary) -> Bool {

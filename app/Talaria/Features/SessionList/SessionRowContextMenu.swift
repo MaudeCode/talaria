@@ -107,18 +107,14 @@ struct SessionRowContextMenu: View {
             .disabled(!isLiveServerSession || isMutating)
         }
 
-        if SessionRowActionPolicy.offersMutationActions(for: session) {
+        if SessionRowActionPolicy.canDelete(session) {
             Button(role: .destructive) {
                 actions.delete(session)
             } label: {
                 Label("Delete", systemImage: "trash")
             }
-            .disabled(!canShowSessionMutationActions || isMutating)
+            .disabled(!isLiveServerSession || isMutating)
         }
-    }
-
-    private var canShowSessionMutationActions: Bool {
-        SessionRowActionPolicy.offersMutationActions(for: session) && isLiveServerSession
     }
 
     private var isLiveServerSession: Bool {

@@ -11,7 +11,7 @@ const agent = (overrides: Record<string, unknown>) => ({
 test('the right panel shows Agents and Files as tabs that keep their state', async ({ page }, testInfo) => {
   const sid = 'panel-pages'
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: {
-    session_id: sid, title: 'Audit the repo', workspace: '/repo', is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_duplicate: true, transcript_seq: null,
+    session_id: sid, title: 'Audit the repo', workspace: '/repo', is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, transcript_seq: null,
     messages: [{ role: 'user', id: 1, content: 'Split the audit' }],
   } } }))
   await page.route('**/api/background/tasks?**', (route) => {

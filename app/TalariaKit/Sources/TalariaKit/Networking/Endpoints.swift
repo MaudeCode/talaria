@@ -23,6 +23,8 @@ public enum Endpoint {
     case deleteSession
     case pinSession
     case archiveSession
+    /// TAL-627: archive, unarchive or delete many sessions, one ordered result per id.
+    case bulkSessions
     case branchSession
     /// A real copy: independent messages, tool calls and usage counters, and no
     /// fork lineage. `branchSession` means "fork a child from here".
@@ -195,6 +197,8 @@ public enum Endpoint {
             return "/api/session/pin"
         case .archiveSession:
             return "/api/session/archive"
+        case .bulkSessions:
+            return "/api/sessions/bulk"
         case .branchSession:
             return "/api/session/branch"
         case .duplicateSession:

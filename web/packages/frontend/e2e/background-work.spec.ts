@@ -12,7 +12,7 @@ test('the background card shows the server\'s records with their result and Dism
   const sid = 'background-work'
   let dismissed = false
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: {
-    session_id: sid, title: 'Audit the repo', is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_duplicate: true, transcript_seq: null,
+    session_id: sid, title: 'Audit the repo', is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, transcript_seq: null,
     messages: [
       { role: 'user', id: 1, content: 'Split the audit', _turn_id: 'split' },
       { role: 'assistant', id: 2, content: 'Started three subagents.', _turn_id: 'split', _anchor_activity_scene: {
