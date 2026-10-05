@@ -117,8 +117,6 @@ export async function handleTts(ctx: RequestContext): Promise<void> {
   const text = str(body.text).trim()
   const rate = prosody(body.rate, '%')
   const pitch = prosody(body.pitch, 'Hz')
-  // Python defaulted the engine to `edge`; that engine is dropped, so a request that names none answers its 503.
-  const engine = (str(body.engine) || 'edge').trim().toLowerCase()
   if (rate === null) { ctx.json({ error: 'invalid rate' }, { status: 400 }); return }
   if (pitch === null) { ctx.json({ error: 'invalid pitch' }, { status: 400 }); return }
   if (!text) { ctx.json({ error: 'text is required' }, { status: 400 }); return }
@@ -138,6 +136,9 @@ export async function handleTts(ctx: RequestContext): Promise<void> {
     ctx.json({ error: 'Agent configuration is unavailable; retry shortly' }, { status: 503 }); return
   }
   const tts = dict(config.tts)
+  // A request that names no engine uses the profile's configured `tts.provider`.
+  const engine = (str(body.engine).trim() || str(tts.provider).trim()).toLowerCase()
+  if (!engine) { ctx.json({ error: 'No text-to-speech engine is configured', code: 'tts_unconfigured' }, { status: 503 }); return }
   const f = ctx.deps.fetch
   if (engine === 'elevenlabs') {
     const apiKey = (env.ELEVENLABS_API_KEY ?? '').trim()

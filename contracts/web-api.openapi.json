@@ -49316,7 +49316,7 @@
             }
           },
           "503": {
-            "description": "Engine not configured.",
+            "description": "Engine not configured; `code: tts_unconfigured` when no engine is named and no `tts.provider` is set.",
             "content": {
               "application/json": {}
             }
@@ -49324,7 +49324,7 @@
         },
         "requestBody": {
           "required": true,
-          "description": "`{text, engine, voice?, rate?, pitch?}`.",
+          "description": "`{text, engine?, voice?, rate?, pitch?}`; `engine` defaults to the profile `tts.provider`.",
           "content": {
             "application/json": {}
           }
