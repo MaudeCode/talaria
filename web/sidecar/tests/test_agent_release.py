@@ -137,3 +137,32 @@ def test_runtime_shutdown_releases_every_cached_agent_before_exiting(monkeypatch
     assert sorted(EVENTS, key=lambda e: (e[1], e[0])) == [*_released("down-1"), *_released("down-2")]
     assert ctx.server.exit_code == 0
     assert chat._AGENT_CACHE == {}
+
+
+def test_shutdown_stops_a_running_turn_and_waits_for_its_release(monkeypatch) -> None:
+    _setup(monkeypatch)
+    started = threading.Event()
+
+    class RunningAgent(MemoryAgent):
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            self.block = threading.Event()  # released only by ``interrupt``
+
+        def run_conversation(self, **kwargs):
+            started.set()
+            return super().run_conversation(**kwargs)
+
+    monkeypatch.setattr(chat, "_agent_class", lambda: RunningAgent)
+    result: dict = {}
+    worker = threading.Thread(target=lambda: result.update(chat.start(Ctx(), _params("st-run", "running"))))
+    worker.start()
+    assert started.wait(5)
+    registry = Registry(runtime=None)  # type: ignore[arg-type]
+    runtime_methods.register(registry)
+    ctx = Ctx()
+    ctx.server = _Server()
+    assert registry.methods["runtime.shutdown"](ctx, {}) == {"ok": True}
+    # The drain stopped the turn and waited for the turn's own release before the process may exit.
+    assert EVENTS == _released("running")
+    worker.join(5)
+    assert result["status"] == "cancelled"

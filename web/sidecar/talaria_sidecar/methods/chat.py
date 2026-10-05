@@ -576,9 +576,19 @@ def evict_all_agents() -> int:
 
 
 def drain_agents(timeout: float = _AGENT_RELEASE_TIMEOUT) -> None:
-    """Shutdown: release every cached agent and wait, bounded, for every release still running."""
-    evict_all_agents()
+    """Shutdown: release every cached agent, stop running turns (like a Stop) so each releases the agent it holds, and
+    wait, bounded, for those turns and every release still running."""
     deadline = time.monotonic() + timeout
+    evict_all_agents()
+    with _RUNS_LOCK:
+        runs = list(_RUNS.values())
+    for run in runs:
+        run.cancel.set()
+    while time.monotonic() < deadline:
+        with _RUNS_LOCK:
+            if not any(_RUNS.get(run.stream_id) is run for run in runs):
+                break
+        time.sleep(0.05)
     with _RELEASES_LOCK:
         threads = list(_RELEASES)
     for thread in threads:
