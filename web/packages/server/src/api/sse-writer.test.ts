@@ -6,6 +6,8 @@ import type { RequestContext } from '../http/context.js'
 import { bootTestServer, parseSseChunk, type SseFrame, type TestServer } from '../test/harness.js'
 
 const FRAME_TEXT = 'x'.repeat(2000)
+/** Tool output as a shell prints it: redaction scans one long identifier run (FRAME_TEXT) several times slower. */
+const TOOL_TEXT = 'tool output line '.repeat(118)
 const frameBytes = (i: number): number => Buffer.byteLength(`id: run:${String(i)}\nevent: token\ndata: ${JSON.stringify({ text: FRAME_TEXT })}\n\n`)
 
 /** A reader on a real local socket; `paused` holds it until `resume()`, so the server's socket buffer fills. */
@@ -150,8 +152,8 @@ describe('event streams deliver past the old 4 MiB cut-off', () => {
     const w = s.deps.journal.writer(sid, runId)
     for (let k = 1; k <= pairs; k += 1) {
       const tid = k % 2 ? `call-${String(k)}` : ''
-      w.appendSseEvent('tool', { tid, name: `tool-${String(k % 5)}`, preview: FRAME_TEXT })
-      w.appendSseEvent('tool_complete', { tid, name: `tool-${String(k % 5)}`, result: FRAME_TEXT })
+      w.appendSseEvent('tool', { tid, name: `tool-${String(k % 5)}`, preview: TOOL_TEXT })
+      w.appendSseEvent('tool_complete', { tid, name: `tool-${String(k % 5)}`, result: TOOL_TEXT })
     }
     w.appendSseEvent('stream_end', {})
     w.close()
@@ -178,7 +180,7 @@ describe('event streams deliver past the old 4 MiB cut-off', () => {
       parse.mockRestore()
       event.mockRestore()
     }
-  // Redacting 12 MB of tool frames takes a few seconds here and several times that on a CI runner.
+  // Redacting 12 MB of tool frames is several times slower on a CI runner than locally.
   }, 60_000)
 
   it('a pre-id tool journal replays each completion with its call\'s id', async () => {
@@ -227,6 +229,21 @@ describe('event streams deliver past the old 4 MiB cut-off', () => {
     s.deps.registry.retire('run-gap')
     expect(channel.subscriberDropped).toBeGreaterThan(0)
     expect(ids(got)).toEqual(expectedIds('run-gap', 12_001))
+  })
+
+  it('a stalled chat subscriber that dropped a refetch signal still gets every run frame, then the newest signal', async () => {
+    const channel = s.deps.registry.create('run-signal', sid)
+    const client = read(`${s.base}/api/chat/stream?stream_id=run-signal`, true)
+    await subscribed(() => channel.subscriberCount)
+    channel.put(['bg_task_complete', { session_id: sid, n: 1 }, null])
+    channel.put(['bg_task_complete', { session_id: sid, n: 2 }, null])
+    run('run-signal', 12_000, { put: (item) => { channel.put(item) } })
+    client.resume()
+    const got = await frames(client)
+    s.deps.registry.retire('run-signal')
+    expect(got.filter((f) => f.event === 'apperror')).toEqual([])
+    expect(ids(got.filter((f) => f.event !== 'bg_task_complete'))).toEqual(expectedIds('run-signal', 12_001))
+    expect(got.filter((f) => f.event === 'bg_task_complete').map((f) => (f.data as { n: number }).n).at(-1)).toBe(2)
   })
 
   it('a stalled chat subscriber whose dropped frames the journal lacks gets the interrupted recovery frame', async () => {

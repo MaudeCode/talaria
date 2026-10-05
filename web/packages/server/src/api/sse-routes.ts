@@ -244,22 +244,28 @@ function interruptedFrame(sessionId: string, streamId: string, dropped: number, 
 
 /**
  * Before sending the live frame `seq`, send what `sub`'s bounded queue dropped while its writer waited for a slow reader:
- * `backfill` gets the journal range (rows at or below `floor` were already sent). When the journal cannot cover it, the
- * interrupted recovery frame is sent instead and this returns false, ending the stream.
+ * `backfill` gets the journal range (rows at or below `floor` were already sent), then the newest copy of each dropped
+ * refetch signal follows. When the journal cannot cover the run frames, the interrupted recovery frame is sent instead and
+ * this returns false, ending the stream.
  */
 async function recoverDropped(ctx: RequestContext, sse: SseWriter, sub: StreamSubscriber, streamId: string, sessionId: string, seq: number | null, floor: number | null, backfill: (range: { afterSeq: number; maxSeq: number }) => Promise<void>): Promise<boolean> {
   const gap = sub.gap
-  const from = sameRunSeq(gap?.firstEventId, streamId)
-  // The gap is bounded by the next journaled frame after it; a frame dequeued before the drops leaves it open.
-  if (!gap || (!gap.unjournaled && (seq === null || (from !== null && seq < from)))) return true
+  if (!gap) return true
+  const journaled = gap.firstEventId !== null
+  const from = sameRunSeq(gap.firstEventId, streamId)
+  // Journaled drops are bounded by the next journaled frame after them; a frame dequeued before the drops leaves them open.
+  if (!gap.unjournaled && journaled && (seq === null || (from !== null && seq < from))) return true
   sub.gap = null
-  const afterSeq = Math.max((from ?? 1) - 1, floor ?? 0)
-  if (!gap.unjournaled && from !== null && seq !== null && journalCoversGap(ctx, streamId, afterSeq, seq - 1)) {
+  if (journaled || gap.unjournaled) {
+    const afterSeq = Math.max((from ?? 1) - 1, floor ?? 0)
+    if (gap.unjournaled || from === null || seq === null || !journalCoversGap(ctx, streamId, afterSeq, seq - 1)) {
+      sse.event('apperror', interruptedFrame(sessionId, streamId, gap.dropped, 'The live stream fell behind a slow connection and the run journal cannot backfill the dropped frames.'))
+      return false
+    }
     await backfill({ afterSeq, maxSeq: seq - 1 })
-    return true
   }
-  sse.event('apperror', interruptedFrame(sessionId, streamId, gap.dropped, 'The live stream fell behind a slow connection and the run journal cannot backfill the dropped frames.'))
-  return false
+  for (const [event, data] of gap.signals) sse.event(event, data)
+  return true
 }
 
 async function drainStream(ctx: RequestContext, sse: SseWriter, sub: StreamSubscriber, streamId: string, replayCutoffSeq: number | null, sessionId: string): Promise<void> {

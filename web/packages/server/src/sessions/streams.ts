@@ -13,9 +13,15 @@ export interface StreamSubscriber {
   queue: StreamItem[]
   wake: (() => void) | null
   closed: boolean
-  /** Frames the queue dropped since the writer last caught up: the first journaled id lost, whether any lost frame had none, and how many. */
-  gap: { firstEventId: string | null; unjournaled: boolean; dropped: number } | null
+  /**
+   * Frames the queue dropped since the writer last caught up: the first journaled id lost, whether a run frame without one
+   * was lost, how many, and the newest copy of each dropped refetch signal (resent once the gap is recovered).
+   */
+  gap: { firstEventId: string | null; unjournaled: boolean; dropped: number; signals: Map<string, unknown> } | null
 }
+
+/** Unjournaled notifications that only ask the client to refetch a server record; the newest copy supersedes the rest. */
+const REFETCH_SIGNALS = new Set(['bg_task_complete', 'process_complete'])
 
 export interface SubscribeSnapshot {
   offline_buffered_events: number
@@ -65,9 +71,10 @@ export class StreamChannel {
     for (const sub of this.subscribers) {
       if (sub.queue.length >= SUBSCRIBER_QUEUE_MAXSIZE) {
         const lost = sub.queue.shift()!
-        sub.gap ??= { firstEventId: null, unjournaled: false, dropped: 0 }
+        sub.gap ??= { firstEventId: null, unjournaled: false, dropped: 0, signals: new Map() }
         sub.gap.dropped += 1
         if (lost[2]) sub.gap.firstEventId ??= lost[2]
+        else if (REFETCH_SIGNALS.has(lost[0])) sub.gap.signals.set(lost[0], lost[1])
         else sub.gap.unjournaled = true
         this.subscriberDropped += 1
       }
