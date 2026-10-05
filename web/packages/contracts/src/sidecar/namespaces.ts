@@ -251,7 +251,7 @@ export const ChatUsageSchema = z.object({ prompt_tokens: z.number().int(), compl
 /**
  * `failed`, `partial`, and `compression_exhausted` are the Agent's own turn-result flags, forwarded as sent; `failed` also sets `status: 'error'`.
  * `max_iterations_summary_request` is the Agent's text for the user row it appends to ask for a summary once its tool budget runs out
- * (`tool_limit_reached`); the server drops rows with that text from the transcript and the model context (TAL-537).
+ * (`tool_limit_reached`); the server drops that trailing row of an exhausted turn from the transcript and the model context (TAL-537).
  */
 export const ChatStartResultSchema = z.object({
   status: z.enum(['completed', 'cancelled', 'error']), messages: z.array(Loose), final_response: z.string(), error: z.string().nullable(),

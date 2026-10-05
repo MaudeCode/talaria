@@ -2169,6 +2169,26 @@ describe('chat turns through the sidecar', () => {
     expect(((btwDone.session as Json).messages as Json[]).map((m) => m.content)).not.toContain(request)
   })
 
+  it('keeps a user row that only repeats the summary-request text (TAL-537)', async () => {
+    const sid = await newSession(s)
+    const request = 'Please summarize what you found.'
+    sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Typed"', usage: null }))
+    const send = async (message: string): Promise<void> => {
+      const start = await json(await post(s, '/api/chat/start', { session_id: sid, message }))
+      await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    }
+    // The user's own row carries exactly the Agent's text (as one from a CLI continuation does, without the workspace prefix).
+    sidecar.respond('chat.start', (params) => completed([...params.conversation_history, { role: 'user', content: request }, { role: 'assistant', content: 'Sure.' }], { max_iterations_summary_request: request }))
+    await send(request)
+    // The next turn runs out its budget: only the Agent's own trailing request row goes.
+    sidecar.respond('chat.start', (params) => completed([...params.conversation_history, { role: 'user', content: str(params.user_message) }, { role: 'user', content: request }, { role: 'assistant', content: 'Summary.' }], { tool_limit_reached: true, max_iterations_summary_request: request }))
+    await send('dig deeper')
+    const stored = s.deps.sessionStore.get(sid)
+    for (const messages of [stored.messages, stored.context_messages]) {
+      expect(messages.filter((m) => m.role === 'user').map((m) => str(m.content).split('\n').pop())).toEqual([request, 'dig deeper'])
+    }
+  })
+
   it('reports no_cached_agent for a steer against an unknown session', async () => {
     expect(await json(await post(s, '/api/chat/steer', { session_id: 'deadbeef0000', text: 'focus' }))).toEqual({ accepted: false, fallback: 'no_cached_agent', stream_id: null })
   })

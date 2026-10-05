@@ -217,6 +217,17 @@ export function injectMaxIterationSummaryFallback(messages: Message[], finalResp
   return [...messages, { role: 'assistant', content: finalResponse, _max_iteration_summary_fallback: true }]
 }
 
+/**
+ * TAL-537: the user row the Agent appends to ask for that summary is its own prompt, neither shown nor sent back. It is
+ * the exhausted turn's last user row; any other row with the same text (one the user typed) stays.
+ */
+export function withoutMaxIterationSummaryRequest(messages: Message[], request: string, msgText: string): Message[] {
+  const at = messages.findLastIndex((m) => m.role === 'user')
+  const row = messages[at]
+  if (!request || row?.content !== request || looksLikeCurrentUserTurn(row, msgText)) return messages
+  return messages.filter((_, i) => i !== at)
+}
+
 export function mergeDisplayMessagesAfterAgentResult(previousDisplay: Message[], previousContext: Message[], resultMessages: Message[], msgText: string, opts: MergeOptions = {}): Message[] {
   const display = previousDisplay.filter((m) => !isContextCompressionMarker(m))
   const seenPartial = new Set<string>()
