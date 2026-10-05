@@ -43,6 +43,7 @@ struct SessionListView: View {
     @State private var isAppSidebarPresented = false
     @State private var isPresentingUpdateNotifications: Bool
     @AccessibilityFocusState private var openNavigationIsFocused: Bool
+    @AccessibilityFocusState private var archiveUndoIsFocused: Bool
     @State private var didCompleteInitialLoad = false
     @State private var immediateRefreshID: UUID?
     @State private var appSidebarQuotaSources: [ProviderQuotaWidgetSource] = []
@@ -483,12 +484,26 @@ struct SessionListView: View {
 
             content
 
-            if showsFloatingNewChatButton {
-                newSessionButton
-                    .padding(.trailing, 24)
-                    .padding(.bottom, 22)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            VStack(alignment: .trailing, spacing: 12) {
+                if let archiveUndo = viewModel.archiveUndo {
+                    SessionArchiveUndoToast(
+                        undo: archiveUndo,
+                        undoArchive: { Task { await undoArchive() } },
+                        dismiss: viewModel.dismissArchiveUndo
+                    )
+                    .accessibilityFocused($archiveUndoIsFocused)
+                    .padding(.horizontal, 16)
+                    .transition(SessionListMotion.toastTransition(reduceMotion: reduceMotion))
+                }
+
+                if showsFloatingNewChatButton {
+                    newSessionButton
+                        .padding(.trailing, 24)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
             }
+            .padding(.bottom, showsFloatingNewChatButton ? 22 : 12)
+            .animation(SessionListMotion.sessionMutationAnimation(reduceMotion: reduceMotion), value: viewModel.archiveUndo)
         }
         .navigationTitle("Chats")
         .searchable(
@@ -1399,6 +1414,17 @@ struct SessionListView: View {
             removeSessionFromNavigation(session)
             SessionHaptics.archiveStateChanged(isEnabled: isHapticsEnabled)
         }
+        if viewModel.archiveUndo != nil {
+            archiveUndoIsFocused = true
+        }
+    }
+
+    private func undoArchive() async {
+        _ = await viewModel.undoArchive(
+            modelContext: modelContext,
+            animation: SessionListMotion.sessionMutationAnimation(reduceMotion: reduceMotion)
+        )
+        handleLastError()
     }
 
     private func delete(_ session: SessionSummary) async {

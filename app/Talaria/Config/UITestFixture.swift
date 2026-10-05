@@ -418,6 +418,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) private static var urgentNotificationAcknowledged = false
     nonisolated(unsafe) private static var readUpdateNotificationIDs: Set<String> = ["ui-update-succeeded"]
     nonisolated(unsafe) private static var dismissedUpdateNotificationIDs: Set<String> = []
+    nonisolated(unsafe) private static var archivedSessionIDs: Set<String> = []
     private static var testsReauthentication: Bool {
         ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.reauthenticationArgument)
     }
@@ -572,6 +573,14 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             return sessionsResponse(firstTitle: testsTrustedReauthentication
                 && request.value(forHTTPHeaderField: "X-Fixture-Authorization") == "fixture-token"
                 ? "Header recovery confirmed" : sessionTitle)
+        case "/api/session/archive":
+            let body = requestJSON(request)
+            if let id = body["session_id"] as? String, let archived = body["archived"] as? Bool {
+                recoveryState.withLock {
+                    if archived { archivedSessionIDs.insert(id) } else { archivedSessionIDs.remove(id) }
+                }
+            }
+            return json(["ok": true])
         case "/api/sessions/search":
             return json(["sessions": [], "query": "", "count": 0])
         case "/api/session":
@@ -731,12 +740,13 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
 
     private static func sessionsResponse(firstTitle: String) -> Data {
         let sessionCount = UITestFixtureEnvironment.isDense ? 300 : 18
+        let archivedIDs = recoveryState.withLock { archivedSessionIDs }
         var sessions: [[String: Any]] = (0..<sessionCount).map { index in
             session(
                 id: index == 0 ? sessionID : "ui-fixture-session-\(index)",
                 title: index == 0 ? firstTitle : String(format: "Fixture Session %02d", index)
             )
-        }
+        }.filter { !archivedIDs.contains($0["session_id"] as? String ?? "") }
         guard UITestFixtureEnvironment.hasSidebarVariety else {
             return json(["sessions": sessions, "archived_count": 0])
         }

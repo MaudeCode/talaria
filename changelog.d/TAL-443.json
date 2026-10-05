@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Archiving a chat from the Chats list now shows an Undo button for a few seconds, so a mis-swipe puts the chat straight back.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

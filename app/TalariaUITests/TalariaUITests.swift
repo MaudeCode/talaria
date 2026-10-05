@@ -278,6 +278,31 @@ final class SessionListBottomBarUITests: ChatUITestCase {
     }
 }
 
+/// TAL-443: archiving a chat offers Undo, which brings the chat back from the server.
+final class SessionArchiveUndoUITests: ChatUITestCase {
+    func testUndoRestoresAnArchivedChat() throws {
+        launchFixture()
+        let row = fixtureSessionButton
+        XCTAssertTrue(row.awaitExistence(timeout: 15), "Missing deterministic session fixture")
+
+        row.swipeLeft()
+        let archive = app.buttons["Archive"]
+        XCTAssertTrue(archive.awaitExistence(timeout: 5), "The swipe did not reveal Archive")
+        archive.tap()
+        let toast = app.staticTexts["Chat archived"]
+        XCTAssertTrue(toast.awaitExistence(timeout: 5), "Archiving did not offer Undo")
+        XCTAssertTrue(row.awaitNonExistence(timeout: 3), "The archived chat stayed in the list")
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "archive-undo-toast"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+
+        app.buttons["Undo"].tap()
+        XCTAssertTrue(row.awaitExistence(timeout: 10), "Undo did not restore the chat")
+        XCTAssertTrue(toast.awaitNonExistence(timeout: 5), "The toast stayed after Undo")
+    }
+}
+
 /// TAL-437: a relaunch shows the chats the app saw last time before `/api/sessions` answers.
 final class ColdLaunchCacheUITests: ChatUITestCase {
     func testRelaunchShowsTheLastChatsBeforeTheServerAnswers() throws {

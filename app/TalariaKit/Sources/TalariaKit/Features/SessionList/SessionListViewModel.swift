@@ -84,6 +84,11 @@ public final class SessionListViewModel {
     /// load (TAL-482). nil until then or from an older server; the groups then count
     /// the loaded rows instead.
     public private(set) var automatedSessionCounts: AutomatedSessionCounts?
+    /// The latest archive the Chats list still offers to undo (TAL-443). A second
+    /// archive replaces it, so only the latest one is undoable.
+    public private(set) var archiveUndo: SessionArchiveUndo?
+    private var archiveUndoTask: Task<Void, Never>?
+    private var archiveUndoOffers = 0
 
     /// The server's complete, ordered result for `activeRemoteSearch` (TAL-308);
     /// nil until it arrives, while the list shows local title matches.
@@ -125,9 +130,16 @@ public final class SessionListViewModel {
     private let server: URL
     private let cacheGeneration: Int
     private let responseCache: ResponseCache?
+    private let archiveUndoLifetime: Duration
 
-    public init(server: URL, client: APIClient? = nil, responseCache: ResponseCache? = nil) {
+    public init(
+        server: URL,
+        client: APIClient? = nil,
+        responseCache: ResponseCache? = nil,
+        archiveUndoLifetime: Duration = .seconds(5)
+    ) {
         self.server = server
+        self.archiveUndoLifetime = archiveUndoLifetime
         cacheGeneration = ServerCacheGeneration.current(for: server)
         self.responseCache = responseCache
         let resolvedClient = client ?? APIClient(baseURL: server)
@@ -789,6 +801,40 @@ public final class SessionListViewModel {
             try await sessionMutator.archive(sessionID: sessionId)
             // A list response requested before the archive must not restore the row.
             claimedRows.removeValue(forKey: sessionId)
+            offerArchiveUndo(for: sessionId)
+        }
+    }
+
+    /// Unarchives the chat behind `archiveUndo`, then reloads the list so the
+    /// server's order and fields win. A failure keeps the undo offered for retry.
+    public func undoArchive(modelContext: ModelContext? = nil, animation: Animation? = nil) async -> Bool {
+        guard let undo = archiveUndo, beginSessionMutation(undo.sessionID) else { return false }
+        defer { endSessionMutation(undo.sessionID) }
+        // An attempt in flight or failed stays offered until it succeeds.
+        archiveUndoTask?.cancel()
+
+        let didUndo = await mutate(modelContext: modelContext, animation: animation) {
+            try await sessionMutator.unarchive(sessionID: undo.sessionID)
+            if archiveUndo?.offer == undo.offer { archiveUndo = nil }
+        }
+        if archiveUndo?.offer == undo.offer { archiveUndo?.undoFailed = true }
+        return didUndo
+    }
+
+    public func dismissArchiveUndo() {
+        archiveUndoTask?.cancel()
+        archiveUndo = nil
+    }
+
+    private func offerArchiveUndo(for sessionID: String) {
+        archiveUndoTask?.cancel()
+        archiveUndoOffers += 1
+        let undo = SessionArchiveUndo(sessionID: sessionID, offer: archiveUndoOffers)
+        archiveUndo = undo
+        archiveUndoTask = Task { [weak self, archiveUndoLifetime] in
+            try? await Task.sleep(for: archiveUndoLifetime)
+            guard !Task.isCancelled, let self, self.archiveUndo == undo else { return }
+            self.archiveUndo = nil
         }
     }
 
@@ -1425,6 +1471,14 @@ public final class SessionListViewModel {
         }
     }
 
+}
+
+/// A just-archived chat the list can restore (TAL-443).
+public struct SessionArchiveUndo: Equatable, Sendable {
+    public let sessionID: String
+    /// The last undo attempt failed; the toast offers Try Again.
+    public internal(set) var undoFailed = false
+    let offer: Int
 }
 
 /// The query and project a remote search answered; its result shows only for the same pair.

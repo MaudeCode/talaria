@@ -29,6 +29,10 @@ public struct SessionMutator {
         _ = try await client.archiveSession(id: sessionID, archived: true)
     }
 
+    public func unarchive(sessionID: String) async throws {
+        _ = try await client.archiveSession(id: sessionID, archived: false)
+    }
+
     public func delete(sessionID: String) async throws {
         _ = try await client.deleteSession(id: sessionID)
     }

@@ -58,6 +58,42 @@ enum SessionListMotion {
     static func disclosureContentTransition(reduceMotion: Bool) -> AnyTransition {
         reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top))
     }
+
+    static func toastTransition(reduceMotion: Bool) -> AnyTransition {
+        reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom))
+    }
+}
+
+/// Offers to undo the latest chat archive (TAL-443), worded like the Kanban
+/// archive-undo banner. A failed undo stays with Try Again until it succeeds or
+/// is dismissed.
+struct SessionArchiveUndoToast: View {
+    let undo: SessionArchiveUndo
+    let undoArchive: () -> Void
+    let dismiss: () -> Void
+
+    var body: some View {
+        let statusText = undo.undoFailed ? String(localized: "Update failed") : String(localized: "Chat archived")
+        HStack(spacing: 12) {
+            Label(statusText, systemImage: undo.undoFailed ? "exclamationmark.circle" : "archivebox")
+                .lineLimit(2)
+            Spacer(minLength: 0)
+            Button(undo.undoFailed ? "Try Again" : "Undo", action: undoArchive)
+                .fontWeight(.semibold)
+            if undo.undoFailed {
+                Button(action: dismiss) {
+                    Image(systemName: "xmark")
+                }
+                .accessibilityLabel("Dismiss")
+            }
+        }
+        .font(.footnote)
+        .padding(.horizontal)
+        .padding(.vertical, 12)
+        .adaptiveGlass(in: .rect(cornerRadius: 16))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(Text(statusText))
+    }
 }
 
 /// Long-press menu on the session-list avatar: switch the active server (the
