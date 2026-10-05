@@ -283,7 +283,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
       let profile: string | null = null
       try { profile = store.get(sid, { metadataOnly: true }).profile ?? null } catch { profile = null }
       const release = profileActivity(profile)
-      void sidecar.call('chat.commit_memory', { session_id: sid })
+      void sidecar.call('chat.commit_memory', { profile_home: profileHome(profile ?? activeProfile()), session_id: sid })
         .catch((error: unknown) => { log(`[webui] memory commit for ${sid} failed: ${(error as Error).message}`) })
         .finally(release)
     },

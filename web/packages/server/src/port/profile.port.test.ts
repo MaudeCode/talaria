@@ -715,6 +715,7 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     let finishCommit: () => void = () => undefined
     sidecar.respond('chat.commit_memory', () => new Promise((resolve) => { finishCommit = () => { resolve({ committed: true }) } }))
     expect((await post(s, '/api/session/new', { profile: 'memo', prev_session_id: first }, { cookie })).status).toBe(200)
+    expect(sidecar.calls.filter((c) => c.method === 'chat.commit_memory').at(-1)?.params).toEqual({ profile_home: join(s.state, 'profiles', 'memo'), session_id: first })
     sidecar.respond('profiles.delete', (params) => { rmSync(join(s.state, 'profiles', params.name), { recursive: true, force: true }); return { ok: true } })
     const refused = await post(s, '/api/profile/delete', { name: 'memo' }, asWork())
     expect(refused.status).toBe(409)
