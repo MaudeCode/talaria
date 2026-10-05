@@ -12,7 +12,7 @@ import time
 from contextlib import closing
 from pathlib import Path
 
-from ..errors import InvalidParams
+from ..errors import InvalidParams, RpcError
 from ..home import profile_home_param, scoped_home
 from ..rpc import CallContext
 
@@ -411,11 +411,31 @@ def delegation_result(home: Path, session_id: str, delegation_id: str) -> str:
     return format_notification(event) if event else ""
 
 
+def recover(base_home: Path) -> int:
+    """TAL-533: re-adopt every profile's checkpointed processes when a sidecar starts, so a process in a profile nobody
+    uses yet is watched (and its exit reported) from the start. Entering a home's scope recovers it once."""
+    from hermes_cli.profiles import _PROFILE_ID_RE
+
+    profiles_root = base_home / "profiles"
+    named = sorted(p for p in profiles_root.iterdir() if p.is_dir() and _PROFILE_ID_RE.match(p.name)) if profiles_root.is_dir() else []
+    for home in [base_home, *named]:
+        try:
+            with scoped_home(home):
+                pass
+        except RpcError:  # an Agent without profile isolation refuses named profiles; their processes stay unadopted
+            log.warning("Background process recovery skipped for %s", home, exc_info=True)
+    return 1 + len(named)
+
+
 def register(registry_) -> None:
     @registry_.method("process.drain")
     def drain_(ctx: CallContext, params: dict) -> dict:
         with scoped_home(profile_home_param(params)):
             return {"events": drain(int(params.get("max_events") or 256))}
+
+    @registry_.method("process.recover")
+    def recover_(ctx: CallContext, params: dict) -> dict:
+        return {"homes": recover(profile_home_param(params, "base_home"))}
 
     @registry_.method("process.requeue")
     def requeue_(ctx: CallContext, params: dict) -> dict:

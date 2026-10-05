@@ -2,7 +2,7 @@ import { appendFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSy
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import type { SidecarResult } from '@maudecode/talaria-web-contracts'
+import { SIDECAR_RPC_VERSION, type RuntimeDescribe, type SidecarResult } from '@maudecode/talaria-web-contracts'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { CompletionDrain, formatWakeupPrompt } from './completions.js'
@@ -125,8 +125,27 @@ describe('async delegation delivery claims (TAL-459)', () => {
     return state
   }
   const drainWith = (startTurn: (prompt: string) => { _status?: number; stream_id?: string }): CompletionDrain => new CompletionDrain({
-    sidecar: () => sidecar, profileHome: () => s.state, activeProfile: () => 'default', store: s.deps.sessionStore, channels: s.deps.channels, registry: s.deps.registry,
+    sidecar: () => sidecar, baseHome: s.state, profileHome: () => s.state, activeProfile: () => 'default', store: s.deps.sessionStore, channels: s.deps.channels, registry: s.deps.registry,
     startTurn: (_session, prompt) => startTurn(prompt), now: () => Date.now() / 1000, log: () => undefined,
+  })
+
+  it('recovers every profile\'s checkpointed processes in each new sidecar before draining it (TAL-533)', async () => {
+    const fresh = new FakeSidecar()
+    const handshake = (): RuntimeDescribe => ({ rpc_version: SIDECAR_RPC_VERSION }) as RuntimeDescribe
+    fresh.describe = handshake()
+    let failures = 1
+    fresh.respond('process.recover', () => { if (failures-- > 0) throw new Error('busy'); return { homes: 2 } })
+    fresh.respond('process.drain', () => ({ events: [] }))
+    const drain = new CompletionDrain({
+      sidecar: () => fresh, baseHome: '/base', profileHome: () => '/base/profiles/work', activeProfile: () => 'work', store: s.deps.sessionStore, channels: s.deps.channels,
+      registry: s.deps.registry, startTurn: () => ({}), now: () => 0, log: () => undefined,
+    })
+    // A failed recovery still drains and is retried on the next pass; a recovered sidecar is not asked again until it restarts.
+    for (let i = 0; i < 3; i += 1) await drain.drainOnce()
+    fresh.describe = handshake()
+    await drain.drainOnce()
+    expect(fresh.calls.map((c) => c.method)).toEqual(['process.recover', 'process.drain', 'process.recover', 'process.drain', 'process.drain', 'process.recover', 'process.drain'])
+    expect(fresh.calls.filter((c) => c.method === 'process.recover').map((c) => c.params)).toEqual(Array(3).fill({ base_home: '/base' }))
   })
 
   it('a restarted server does not deliver a delegation the previous one already delivered', async () => {
@@ -163,7 +182,7 @@ describe('async delegation delivery claims (TAL-459)', () => {
     sidecar.respond('process.claim_delivery', (params) => { homes.push(`claim ${str(params.profile_home)}`); return { claim_id: params.profile_home === '/homes/b' ? 'claim-b' : '' } })
     sidecar.respond('process.complete_delivery', (params) => { homes.push(`complete ${str(params.profile_home)}`); if (params.profile_home === '/homes/b') delivered.add(str((params.event as Json).delegation_id)); return { ok: true } })
     const drain = new CompletionDrain({
-      sidecar: () => sidecar, profileHome: (profile) => `/homes/${profile ?? 'default'}`, activeProfile: () => 'a', store: s.deps.sessionStore, channels: s.deps.channels, registry: s.deps.registry,
+      sidecar: () => sidecar, baseHome: '/homes', profileHome: (profile) => `/homes/${profile ?? 'default'}`, activeProfile: () => 'a', store: s.deps.sessionStore, channels: s.deps.channels, registry: s.deps.registry,
       startTurn: () => ({ stream_id: 'run' }), now: () => Date.now() / 1000, log: () => undefined,
     })
     expect(await drain.processOne(delegation(sid, 'deleg_profile_b'))).toBe(true)
@@ -202,7 +221,7 @@ describe('async delegation delivery claims (TAL-459)', () => {
     // Each emit is past the coalescing window, so every notification surfaces at once and can be counted.
     let clock = 0
     const drain = new CompletionDrain({
-      sidecar: () => sidecar, profileHome: () => s.state, activeProfile: () => 'default', store: s.deps.sessionStore, channels, registry,
+      sidecar: () => sidecar, baseHome: s.state, profileHome: () => s.state, activeProfile: () => 'default', store: s.deps.sessionStore, channels, registry,
       startTurn: (_session, prompt) => startTurn(prompt), now: () => (clock += 5), log: () => undefined,
     })
     return { drain, registry, notified }

@@ -63,3 +63,25 @@ def test_a_checkpointed_process_is_listed_after_restart_and_its_exit_completes_i
         for proc in sleepers:
             proc.kill()
             proc.wait()
+
+
+@requires_agent
+def test_startup_recovery_reports_an_inactive_profiles_exit_before_that_profile_is_used(hermes_home: pathlib.Path) -> None:
+    other = hermes_home / "profiles" / "work"
+    other.mkdir(parents=True)
+    sleeper = subprocess.Popen(["sleep", "300"])
+    _checkpoint(other, "proc_work", sleeper.pid, "web-b")
+    sidecar = SidecarProcess(hermes_home)
+    try:
+        assert sidecar.result("runtime.handshake", {"rpc_version": SIDECAR_RPC_VERSION})["compatible"]
+        recovered, _ = sidecar.call("process.recover", {"base_home": str(hermes_home)})
+        sleeper.kill()
+        sleeper.wait()
+        # The server drains only the active profile; the work profile is never entered after startup.
+        evt = _drain_until(sidecar, hermes_home, "proc_work")
+        assert (evt["type"], evt["session_key"]) == ("completion", "web-b")
+        assert recovered.get("result") == {"homes": 2}, recovered
+    finally:
+        sidecar.close()
+        sleeper.kill()
+        sleeper.wait()

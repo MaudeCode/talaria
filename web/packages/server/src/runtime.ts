@@ -510,7 +510,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
       },
     }
   }
-  completions = new CompletionDrain({ sidecar: () => sidecar, profileHome: (p) => profileHome(p ?? activeProfile()), activeProfile, store, channels, registry, startTurn: (session, prompt) => turns.start(session, { msg: prompt, attachments: [], workspace: session.workspace, model: session.model, modelProvider: session.model_provider, source: 'process_wakeup' }), background, now, log, ...(opts.completionPollMs !== undefined ? { pollMs: opts.completionPollMs } : {}) })
+  completions = new CompletionDrain({ sidecar: () => sidecar, baseHome, profileHome: (p) => profileHome(p ?? activeProfile()), activeProfile, store, channels, registry, startTurn: (session, prompt) => turns.start(session, { msg: prompt, attachments: [], workspace: session.workspace, model: session.model, modelProvider: session.model_provider, source: 'process_wakeup' }), background, now, log, ...(opts.completionPollMs !== undefined ? { pollMs: opts.completionPollMs } : {}) })
   const mcpHealth = new McpHealthProber({ fetch: () => lazyFetch, now, log })
   // Dashboard reachability is probed in the background (Python `dashboard_probe.get_dashboard_status`), never per request.
   let dashboardRunning = false

@@ -24,6 +24,8 @@ const WAKEUP_BATCH_MAX_CHARS = 24_000
 
 export interface CompletionDrainDeps {
   sidecar: () => SidecarLike | null
+  /** The base Hermes home: every profile under it has its background processes recovered in a new sidecar (TAL-533). */
+  baseHome: string
   profileHome: (profile: string | null) => string
   activeProfile: () => string
   store: SessionStore
@@ -71,6 +73,8 @@ export class CompletionDrain {
   private readonly retryTimers = new Map<string, NodeJS.Timeout>()
   private readonly lastEmitAt = new Map<string, number>()
   private readonly pendingEmit = new Map<string, { payload: Dict; timer: NodeJS.Timeout }>()
+  /** The handshake of the sidecar whose process registry already recovered every profile's checkpoint. */
+  private recoveredFor: unknown = null
 
   constructor(private readonly deps: CompletionDrainDeps) {}
 
@@ -98,6 +102,17 @@ export class CompletionDrain {
   async drainOnce(): Promise<number> {
     const sidecar = this.deps.sidecar()
     if (!sidecar) return 0
+    // Each sidecar handshake is a fresh process registry: re-adopt every profile's checkpointed processes before the first
+    // drain, so one that exits in a profile nobody has used since the restart still reports its completion.
+    const describe = sidecar.describe
+    if (describe && describe !== this.recoveredFor) {
+      try {
+        await sidecar.call('process.recover', { base_home: this.deps.baseHome })
+        this.recoveredFor = describe
+      } catch (error) {
+        this.deps.log(`[webui] WARNING: background process recovery failed; retrying: ${(error as Error).message}`)
+      }
+    }
     const { events } = await sidecar.call('process.drain', { profile_home: this.deps.profileHome(this.deps.activeProfile()), max_events: 256 })
     let routed = 0
     const unrouted: Dict[] = []

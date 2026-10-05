@@ -92,6 +92,7 @@ SCENARIOS: list[tuple[str, dict]] = [
     ("process.drain", {"profile_home": "{home}"}),
     ("process.list", {"profile_home": "{home}"}),
     ("process.format_notification", {"event": {"type": "completion", "session_id": "proc_1", "command": "ls", "exit_code": 0, "output": "ok"}}),
+    ("process.recover", {"base_home": "{home}"}),
     ("process.requeue", {"events": []}),
     ("process.mark_consumed", {"process_id": "proc_1"}),
     ("process.consumed", {"process_ids": ["proc_1", "proc_2"]}),

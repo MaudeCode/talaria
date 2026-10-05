@@ -110,7 +110,7 @@ under Hermes Agent's context-local home override (`talaria_sidecar/home.py`).
 | `models` | `context_length`, `estimate_tokens`, `capabilities`, `reasoning_efforts` | |
 | `aux` | `complete`, `resolve` | `complete`: `token` |
 | `text` | `image_mode`, `portal_tags` | |
-| `process` | `drain`, `requeue`, `mark_consumed`, `consumed`, `format_notification`, `list` | |
+| `process` | `drain`, `recover`, `requeue`, `mark_consumed`, `consumed`, `format_notification`, `list` | |
 | `usage` | `account` | |
 | `gateway` | `restart` | `restart`: `progress` |
 | `chat` | `start`, `interrupt`, `steer`, `evict_agent` | `start`: `token`, `reasoning`, `interim_assistant`, `tool`, `tool_complete`, `approval`, `clarify`, `clarify_resolved`, `compressing`, `warning`, `status`, `context_status`; the settled transcript, usage, and terminal status come back as the result |
@@ -182,18 +182,21 @@ pending one. Flows live only in the sidecar process.
 
 Background processes survive a sidecar restart through the Agent's
 `processes.json` checkpoint (TAL-533). The Agent owns the process registry and
-each home's checkpoint. It is process-global, and a spawn rewrites the active
-home's checkpoint from the registry. So the first call that enters a profile
-home (`scoped_home`) runs `process_registry.recover_from_checkpoint()` there
-once, before any call in that home can spawn. The server's completion drain
-enters the active profile at startup; other profiles recover on their first
-call. Recovery adopts only a live PID whose recorded start time still matches,
-and it restores the `session_key` (the WebUI session id) that the server routes
+each home's checkpoint. The registry is process-global, and a spawn rewrites
+the active home's checkpoint from it. So the server's completion drain calls
+`process.recover` with its base home once per sidecar handshake, before its
+first `process.drain`; a failed call is logged and retried on the next pass.
+The sidecar enters the base home and every `profiles/*` home under it, and
+entering a home's scope (`scoped_home`) runs
+`process_registry.recover_from_checkpoint()` there once per sidecar process, so
+a home first used later is still recovered before any call in it can spawn.
+Recovery adopts only a live PID whose recorded start time still matches, and it
+restores the `session_key` (the WebUI session id) that the server routes
 completions and Background rows by, so no server index is rebuilt. An adopted
-process has no reader thread: `process.drain` probes it on every pass, and its
-exit queues an ordinary completion with an unknown exit code and no output
-history. A failed recovery is logged and not retried until the sidecar
-restarts.
+process has no reader thread: `process.drain` probes it on every pass, so a
+process in a profile nobody has used since the restart still reports its exit.
+That completion has an unknown exit code and no output history. A process that
+exited while no sidecar was running is not adopted and reports nothing.
 
 ## Versioning
 
