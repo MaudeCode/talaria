@@ -1079,6 +1079,20 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     expect(sent(sid)).toEqual(['u1', 'a1', 'u2', 'a2'])
   })
 
+  it('a truncate that changes nothing locally while state.db is unavailable still hides the suffix it cut', async () => {
+    const sid = await seeded(FOUR)
+    expect((await post(s, '/api/session/truncate', { session_id: sid, keep_count: 4 })).status).toBe(200)
+    commit(sid, [['user', 'u3', 104], ['assistant', 'a3', 105]])
+    expect(await served(sid)).toEqual(['u1', 'a1', 'u2', 'a2', 'u3', 'a3'])
+    const path = join(s.state, 'state.db')
+    renameSync(path, `${path}.away`)
+    try {
+      expect((await post(s, '/api/session/truncate', { session_id: sid, keep_count: 4 })).status).toBe(200)
+    } finally { renameSync(`${path}.away`, path) }
+    expect(await served(sid)).toEqual(['u1', 'a1', 'u2', 'a2'])
+    expect(sent(sid)).toEqual(['u1', 'a1', 'u2', 'a2'])
+  })
+
   it('a settlement whose state.db read fails keeps the marker', async () => {
     const sid = await seeded(FOUR)
     expect((await post(s, '/api/session/truncate', { session_id: sid, keep_count: 2 })).status).toBe(200)
@@ -1110,6 +1124,18 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     await turn(sid, 'first', 'completed', [['user', 'CLI during first turn', 150]])
     expect((await served(sid)).filter((c) => c === 'CLI during first turn')).toHaveLength(1)
     expect(sent(sid).filter((c) => c === 'CLI during first turn')).toHaveLength(1)
+  })
+
+  it('CLI rows that arrived before a Web turn stay in the transcript, in order, after it settles', async () => {
+    const sid = await seeded([['user', 'u1', 100], ['assistant', 'a1', 101]])
+    await turn(sid, 'first')
+    commit(sid, [['user', 'CLI ask', 300], ['assistant', 'CLI reply', 301]])
+    await turn(sid, 'second')
+    const shown = await served(sid)
+    expect(shown.filter((c) => c === 'CLI ask' || c === 'CLI reply')).toEqual(['CLI ask', 'CLI reply'])
+    expect(shown.indexOf('CLI reply')).toBeLessThan(shown.indexOf('second'))
+    await turn(sid, 'failing', 'failed')
+    expect((await served(sid)).filter((c) => c === 'CLI ask' || c === 'CLI reply')).toEqual(['CLI ask', 'CLI reply'])
   })
 
   it('a concurrent row that repeats an earlier message exactly stays in the transcript', async () => {
