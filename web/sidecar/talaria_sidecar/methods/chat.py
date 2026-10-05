@@ -690,6 +690,36 @@ def _approval_notifier(session_id: str, emit):
     return notify
 
 
+#: The Agent's compression-start lifecycle lines: "Compacting context" (and its heartbeat), pre-API, 413, and too-large
+#: compression. Preflight and idle notices are left out: "Compacting context" follows them once compression proceeds.
+_COMPRESSION_START_MARKERS = ("compacting context", "pre-api compression:", "context too large", "— compressing (", "- compressing (", "compression attempt")
+_COMPRESSION_NOT_STARTED = ("skipping", "defer", "cooldown", "will not start")
+
+
+def _is_compression_start(lower: str) -> bool:
+    """Predecessor ``_is_agent_compression_start_status``: only real start notices, never skips or post-compress chatter."""
+    if any(marker in lower for marker in _COMPRESSION_NOT_STARTED):
+        return False
+    if "compressed" in lower and "compressing" not in lower and "compression attempt" not in lower:
+        return False
+    return any(marker in lower for marker in _COMPRESSION_START_MARKERS)
+
+
+def _status_events(kind, text: str) -> list[str]:
+    """Events for one Agent status line: the compressing card, a fallback warning, and the turn's terminal error."""
+    lower = text.lower()
+    events = ["terminal_error"] if "non-retryable error" in lower else []
+    if str(kind or "").strip().lower() == "lifecycle":
+        if _is_compression_start(lower):
+            return events + ["compressing"]
+        # The Agent's own compression retries ("Compressed N → M messages, retrying...") are not provider fallbacks.
+        if "compress" in lower or "context reduced to" in lower:
+            return events
+    if "fallback" in lower or "rate limit" in lower or ("retry" in lower and "non-retryable" not in lower):
+        events.append("warning")
+    return events
+
+
 def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, one function
     session_id = str(params.get("session_id") or "").strip()
     stream_id = str(params.get("stream_id") or "").strip()
@@ -813,15 +843,13 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
 
         def on_status(kind, message):
             text = str(message or "").strip()
-            if not text:
-                return
-            lower = text.lower()
-            if "compress" in lower and ("start" in lower or "compressing" in lower):
-                emit("compressing", {"session_id": session_id, "message": "Compressing context"})
-            elif "fallback" in lower or "rate limit" in lower or "retry" in lower:
-                emit("warning", {"type": "fallback", "message": text})
-            elif "non-retryable error" in lower:
-                emit("status", {"kind": "terminal_error", "message": text})
+            for event in _status_events(kind, text):
+                if event == "compressing":
+                    emit("compressing", {"session_id": session_id, "message": "Compressing context"})
+                elif event == "warning":
+                    emit("warning", {"type": "fallback", "message": text})
+                else:
+                    emit("status", {"kind": "terminal_error", "message": text})
 
         def clarify_callback(question, choices, multi_select=False, questions=None):
             choices_list = [str(c) for c in (choices or [])]
