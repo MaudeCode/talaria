@@ -201,3 +201,59 @@ def test_profile_deletion_releases_that_profiles_agents_before_removing_its_home
     # The release finished, under the profile's own home, before the home was removed; other profiles keep theirs.
     assert seen == {"name": "alpha", "events": [("on_session_end", "alpha-chat", TRANSCRIPT, str(alpha)), ("release_clients", "alpha-chat")]}
     assert list(chat._AGENT_CACHE) == ["beta-chat"]
+
+
+def test_shutdown_releases_an_agent_a_running_turn_caches_after_the_first_eviction(monkeypatch) -> None:
+    _setup(monkeypatch)
+    resolving = threading.Event()
+    gate = threading.Event()
+
+    def resolve(provider, model):
+        resolving.set()
+        gate.wait(5)
+        return {"model": "m", "provider": "p"}
+
+    monkeypatch.setattr(chat, "_resolve_runtime", resolve)
+    worker = threading.Thread(target=chat.start, args=(Ctx(), _params("st-late-cache", "late-cache")))
+    worker.start()
+    assert resolving.wait(5)  # the run is registered; its agent is not built or cached yet
+    registry = Registry(runtime=None)  # type: ignore[arg-type]
+    runtime_methods.register(registry)
+    ctx = Ctx()
+    ctx.server = _Server()
+    shutdown = threading.Thread(target=registry.methods["runtime.shutdown"], args=(ctx, {}))
+    shutdown.start()
+    deadline = time.monotonic() + 5
+    while not chat._RUNS["st-late-cache"].cancel.is_set():  # the drain already evicted and is waiting on the turn
+        assert time.monotonic() < deadline
+        time.sleep(0.01)
+    gate.set()
+    shutdown.join(5)
+    worker.join(5)
+    assert EVENTS == _released("late-cache")
+    assert chat._AGENT_CACHE == {}
+
+
+def test_profile_deletion_is_refused_while_a_release_is_still_running(monkeypatch, tmp_path) -> None:
+    _setup(monkeypatch)
+    monkeypatch.setattr(chat, "_PROFILE_RELEASE_TIMEOUT", 0.2, raising=False)
+    flushing = threading.Event()
+
+    class SlowAgent(MemoryAgent):
+        def shutdown_memory_provider(self, messages=None):
+            flushing.wait(5)
+            super().shutdown_memory_provider(messages)
+
+    monkeypatch.setattr(chat, "_agent_class", lambda: SlowAgent)
+    alpha = tmp_path / "profiles" / "alpha"
+    assert chat.start(Ctx(), {**_params("st-slow", "slow"), "profile_home": str(alpha)})["status"] == "completed"
+    deleted: list = []
+    monkeypatch.setattr(profiles, "delete_profile", lambda base_home, name: deleted.append(name))
+    registry = Registry(runtime=types.SimpleNamespace(load=lambda: None, ensure_current=lambda: None))  # type: ignore[arg-type]
+    profiles.register(registry)
+    with pytest.raises(RpcError):
+        registry.methods["profiles.delete"](Ctx(), {"base_home": str(tmp_path), "name": "alpha"})
+    assert deleted == []  # the home stays while the memory flush still runs under it
+    flushing.set()
+    assert registry.methods["profiles.delete"](Ctx(), {"base_home": str(tmp_path), "name": "alpha"}) == {"ok": True}
+    assert deleted == ["alpha"] and EVENTS == [("on_session_end", "slow", TRANSCRIPT, str(alpha)), ("release_clients", "slow")]

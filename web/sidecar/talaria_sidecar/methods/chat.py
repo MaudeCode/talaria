@@ -32,6 +32,8 @@ log = logging.getLogger("talaria_sidecar.chat")
 _AGENT_CACHE_MAX = 32
 # Shutdown waits this long for evicted agents' memory providers; the server kills the sidecar 5 s after closing stdin.
 _AGENT_RELEASE_TIMEOUT = 4.0
+# Profile deletion waits this long for the profile's memory flushes, under the server's 120 s call timeout.
+_PROFILE_RELEASE_TIMEOUT = 60.0
 _TOOL_RESULT_SNIPPET_MAX = 4000
 # Predecessor ``_TOOL_ARG_CONTENT_KEYS`` (#4928): card content / diff-reconstruction inputs keep the long cap.
 _TOOL_ARG_CONTENT_KEYS = frozenset({"command", "cmd", "script", "code", "patch", "diff", "old_string", "new_string", "content", "path", "file_path"})
@@ -71,7 +73,8 @@ _RUNS_LOCK = threading.Lock()
 # session id -> (agent, signature, profile home).
 _AGENT_CACHE: "OrderedDict[str, tuple[Any, str, Any]]" = OrderedDict()
 _AGENT_CACHE_LOCK = threading.Lock()
-_RELEASES: set[threading.Thread] = set()
+# Running release thread -> the profile home it runs under.
+_RELEASES: dict[threading.Thread, Any] = {}
 _RELEASES_LOCK = threading.Lock()
 # Set (under ``_RUNS_LOCK``) when shutdown drains: no turn is admitted after the drain's snapshot of ``_RUNS``.
 _DRAINING = threading.Event()
@@ -551,11 +554,11 @@ def _release_agent(agent, home) -> threading.Thread:
             log.warning("releasing an evicted agent failed", exc_info=True)
         finally:
             with _RELEASES_LOCK:
-                _RELEASES.discard(thread)
+                _RELEASES.pop(thread, None)
 
     thread = threading.Thread(target=release, daemon=True, name="chat-agent-release")
     with _RELEASES_LOCK:
-        _RELEASES.add(thread)
+        _RELEASES[thread] = home
     thread.start()
     return thread
 
@@ -597,18 +600,25 @@ def drain_agents(timeout: float = _AGENT_RELEASE_TIMEOUT) -> None:
             if not any(_RUNS.get(run.stream_id) is run for run in runs):
                 break
         time.sleep(0.05)
+    # A turn may have cached its agent after the first eviction.
+    evict_all_agents()
     with _RELEASES_LOCK:
         threads = list(_RELEASES)
     _join(threads, deadline)
 
 
-def release_profile_agents(home, timeout: float = _AGENT_RELEASE_TIMEOUT) -> None:
-    """Profile deletion: release the profile's cached agents and wait, bounded, before its home is removed."""
+def release_profile_agents(home) -> None:
+    """Profile deletion: release the profile's cached agents and wait for every release running under its home. Fails
+    rather than let the home go while a memory flush still runs under it."""
     target = os.path.realpath(home)
     with _AGENT_CACHE_LOCK:
         entries = [_AGENT_CACHE.pop(sid) for sid, entry in list(_AGENT_CACHE.items()) if os.path.realpath(entry[2]) == target]
-        threads = _release_agents_locked(entries)
-    _join(threads, time.monotonic() + timeout)
+        _release_agents_locked(entries)
+    with _RELEASES_LOCK:
+        threads = [thread for thread, owner in _RELEASES.items() if os.path.realpath(owner) == target]
+    _join(threads, time.monotonic() + _PROFILE_RELEASE_TIMEOUT)
+    if any(thread.is_alive() for thread in threads):
+        raise RpcError("The profile is still saving memory from its chats. Retry in a moment.")
 
 
 def _agent_class():
