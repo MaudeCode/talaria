@@ -1085,7 +1085,8 @@ export function stoppedTurnContext(previousContext: Message[], checkpoint: unkno
   // A tool result is a `tool` row or an Anthropic-style user row of `tool_result` blocks. A steer the Agent applied is
   // neither a prompt nor a result: the boundary goes after it, and it never makes the turn look unanswered.
   const toolResult = (m: Message | undefined): boolean => m?.role === 'tool' || (m?.role === 'user' && Array.isArray(m.content) && m.content.some((part) => isDict(part) && part.type === 'tool_result'))
-  const tail = (): Message | undefined => sanitizeMessagesForApi(rows.filter((m) => agentSteerText(m) === null)).at(-1)
+  // The next turn's own history projection, so an answer the Agent replays from `api_content` counts.
+  const tail = (): Message | undefined => sanitizeMessagesForApi(rows.filter((m) => agentSteerText(m) === null), { preserveApiContent: true }).at(-1)
   if (toolResult(tail())) rows.push({ role: 'assistant', content: unsettled || 'Operation interrupted.' })
   else if (unsettled) rows.push({ role: 'assistant', content: unsettled })
   return tail()?.role === 'user' ? null : rows
@@ -1107,6 +1108,11 @@ export function agentSteerText(m: Message): string | null {
   const inner = OOB_DELIVERY_RE.exec(content)?.[1]
   if (inner !== undefined) return inner.trim()
   return m.display_kind === 'steer' ? content.trim() : null
+}
+
+/** The Agent's `api_content` replay sidecar: the exact bytes a user/assistant row was sent as, else undefined. */
+function apiContent(msg: Message): string | undefined {
+  return (msg.role === 'user' || msg.role === 'assistant') && typeof msg.api_content === 'string' && msg.api_content ? msg.api_content : undefined
 }
 
 /** Python `_is_reasoning_only_assistant_message`: a display-only Thinking card with no visible reply. */
@@ -1145,7 +1151,9 @@ export function sanitizeMessagesForApi(messages: Message[], { preserveApiContent
   const clean: Message[] = []
   for (const msg of messages) {
     if (!msg || typeof msg !== 'object') continue
-    if (isReasoningOnlyAssistant(msg)) continue
+    // A reasoning-only clean stop the Agent answered from `api_content` is a reply, not a Thinking card.
+    const replay = preserveApiContent ? apiContent(msg) : undefined
+    if (isReasoningOnlyAssistant(msg) && !replay) continue
     // The Agent already received a steer mid-turn; its persisted row is display-only.
     if (msg._error || isDict(msg._steer)) continue
     if (msg._partial && !messageText(msg.content).trim()) continue
@@ -1153,7 +1161,7 @@ export function sanitizeMessagesForApi(messages: Message[], { preserveApiContent
     if (msg.role === 'tool') { const tid = str(msg.tool_call_id) || str(msg.tool_use_id); if (!tid || !validToolCallIds.has(tid)) continue }
     const sanitized = Object.fromEntries(Object.entries(msg).filter(([k]) => API_SAFE_MSG_KEYS.has(k)))
     if (Array.isArray(sanitized.tool_calls) && !sanitized.tool_calls.length) Reflect.deleteProperty(sanitized, 'tool_calls')
-    if (preserveApiContent && (msg.role === 'user' || msg.role === 'assistant') && typeof msg.api_content === 'string' && msg.api_content) sanitized.api_content = msg.api_content
+    if (replay) sanitized.api_content = replay
     if (recovered) sanitized._recovered = true
     if ('content' in sanitized) sanitized.content = stripOobBlocks(sanitized.content)
     if (sanitized.role) clean.push(sanitized)
@@ -1170,7 +1178,7 @@ export function sanitizeMessagesForApi(messages: Message[], { preserveApiContent
       if (!parts.length) continue
       msg = { ...msg, content: parts }
       // Reasoning left behind by a dropped call is not an answer either.
-      if (isReasoningOnlyAssistant(msg)) continue
+      if (isReasoningOnlyAssistant(msg) && !apiContent(msg)) continue
     }
     if (msg.role === 'assistant' && Array.isArray(msg.tool_calls) && msg.tool_calls.length) {
       const kept = msg.tool_calls.filter((tc) => answered.has(toolCallId(tc)))

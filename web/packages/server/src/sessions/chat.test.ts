@@ -2003,15 +2003,17 @@ describe('chat turns through the sidecar', () => {
     sidecar.respond('chat.start', (params) => {
       history = params.conversation_history
       const user = history.length ? { role: 'user', content: str(params.user_message) } : { role: 'user', content: str(params.user_message), api_content: recall }
-      return completed([...history, user, { role: 'assistant', content: 'ok', api_content: '' }])
+      // A reasoning-only clean stop: the Agent keeps `content` empty and replays the answer from `api_content`.
+      return completed([...history, user, { role: 'assistant', content: 'ok', api_content: '' }, { role: 'user', content: 'and?' }, { role: 'assistant', content: '', reasoning: 'use postgres', api_content: 'use postgres' }])
     })
     for (const message of ['what did we decide?', 'and then?']) {
       const start = await json(await post(s, '/api/chat/start', { session_id: sid, message }))
       await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
     }
-    expect(history.map((m) => m.role)).toEqual(['user', 'assistant'])
+    expect(history.map((m) => m.role)).toEqual(['user', 'assistant', 'user', 'assistant'])
     expect(history[0]?.api_content).toBe(recall)
     expect(history[1]).not.toHaveProperty('api_content')
+    expect(history[3]).toMatchObject({ content: '', api_content: 'use postgres' })
   })
 
   it('a persisted read-only session (an inherited messaging/Claude Code import) is never continued', async () => {
