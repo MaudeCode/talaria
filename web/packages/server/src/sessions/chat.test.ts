@@ -2205,6 +2205,8 @@ describe('chat turns through the sidecar', () => {
       return completed(rows(raw), { compressed: true, context_messages: rows(pruned), post_compression_context_tokens_estimate: 1234, context: { context_length: 200000, last_prompt_tokens: 150000 }, tool_limit_reached: true, final_response: 'Read it.', max_iterations_summary_request: request })
     })
     sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Read"', usage: null }))
+    // A stand-in estimator: one token per content character.
+    sidecar.respond('models.estimate_tokens', (params) => ({ tokens: (params.messages as Json[]).reduce((n, m) => n + str(m.content).length, 0) }))
     const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'read the log' }))
     const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
     expect(eventNames(frames)).toContain('compressed')
@@ -2214,9 +2216,11 @@ describe('chat turns through the sidecar', () => {
     expect(stored.context_messages.map((m) => m.content)).not.toContain(request)
     expect(stored.context_messages.at(-1)).toMatchObject({ role: 'assistant', content: 'Read it.' })
     expect(stored.messages.find((m) => m.role === 'tool')?.content).toBe(raw)
-    expect(stored.post_compression_context_tokens_estimate).toBe(1234)
+    // The sidecar estimated its rows; the settlement dropped the summary request and added the closing answer.
+    const settled = 1234 - request.length + 'Read it.'.length
+    expect(stored.post_compression_context_tokens_estimate).toBe(settled)
     const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
-    expect(detail.context_used_tokens).toBe(1234)
+    expect(detail.context_used_tokens).toBe(settled)
   })
 
   it('reports no_cached_agent for a steer against an unknown session', async () => {

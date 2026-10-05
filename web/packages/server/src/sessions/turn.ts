@@ -668,14 +668,24 @@ export class TurnRunner {
         return
       }
       // ── settle the transcript ──
+      // TAL-539: after a mid-turn compression the model context is the sidecar's pruned copy, settled like the transcript.
+      const pruned = result.compressed ? result.context_messages ?? null : null
+      const context = pruned ? withoutRequest(withFallback(pruned)) : resultMessages
+      let estimate = result.compressed ? result.post_compression_context_tokens_estimate ?? null : null
+      // The sidecar estimated its own rows; a tool-limit settlement that changed them moves the estimate by the difference.
+      if (pruned && estimate !== null && context !== pruned) {
+        try {
+          const [before, after] = await Promise.all([pruned, context].map((messages) => sidecar.call('models.estimate_tokens', { messages })))
+          estimate = Math.max(1, estimate + after!.tokens - before!.tokens)
+        } catch { estimate = null }
+      }
       // The Agent's last pending-steer text settles the remaining steers before the turn is written back.
       await this.steerRewrites.get(streamId)
       const { events: steerEvents, leftovers } = this.finalizeSteers(streamId, result.pending_steer, 'followup')
       s.messages = mergeDisplayMessagesAfterAgentResult(previousMessages, previousContext, resultMessages, msgText, { source: opts.source ?? 'webui', activeTurnToken, now: deps.now(), turnId: streamId, attachments: opts.attachments ?? [] })
-      // TAL-539: after a mid-turn compression the model context is the sidecar's pruned copy, settled like the transcript.
-      s.context_messages = dedupeContext(result.compressed && result.context_messages ? withoutRequest(withFallback(result.context_messages)) : resultMessages)
+      s.context_messages = dedupeContext(context)
       if (result.compressed) {
-        s.post_compression_context_tokens_estimate = result.post_compression_context_tokens_estimate ?? null
+        s.post_compression_context_tokens_estimate = estimate
         s.compression_anchor_visible_idx = Math.max(0, previousMessages.length - 1)
         put('compressed', { session_id: sessionId, old_session_id: sessionId, new_session_id: sessionId, continuation_session_id: sessionId, message: 'Compression finished' })
       }

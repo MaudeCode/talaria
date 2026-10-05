@@ -16,16 +16,18 @@ import json, os, sys
 from pathlib import Path
 sys.path.append(sys.argv[1])
 from agent.context_compressor import ContextCompressor
+from agent.model_metadata import estimate_tokens_rough
 from talaria_sidecar.home import scoped_home
 from talaria_sidecar.methods import chat
 
 RAW = "line of tool output\\n" * 20000
+DENSE = "漢字" * 20000
 
 class NoPrune(ContextCompressor):
     def _prune_old_tool_results(self, messages, protect_tail_count, protect_tail_tokens=None, **kwargs):
         return messages, 0
 
-def agent_class(compressor, compress):
+def agent_class(compressor, compress, raw=RAW):
     class FakeAgent:
         tools = [{"type": "function", "function": {"name": "read_file", "parameters": {}}}]
 
@@ -41,7 +43,7 @@ def agent_class(compressor, compress):
                     {"role": "user", "content": "[CONTEXT COMPACTION] summary"},
                     {"role": "user", "content": "read it"},
                     {"role": "assistant", "content": "", "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "read_file", "arguments": "{}"}}]},
-                    {"role": "tool", "tool_call_id": "c1", "content": RAW},
+                    {"role": "tool", "tool_call_id": "c1", "content": raw},
                     {"role": "assistant", "content": "Done."},
                 ],
             }
@@ -56,14 +58,23 @@ class Ctx:
 chat._resolve_runtime = lambda provider, model: {"model": "m", "provider": "p"}
 home = Path(os.environ["HERMES_HOME"])
 out = {}
-for i, (name, cls, compress) in enumerate([("agent_prune", ContextCompressor, True), ("hard_cap", NoPrune, True), ("uncompressed", ContextCompressor, False)]):
-    chat._agent_class = agent_class(cls("m", config_context_length=100000, quiet_mode=True, provider="p"), compress)
-    params = {"profile_home": str(home), "session_id": f"s{i}", "stream_id": f"st{i}", "user_message": "read it", "model": "m", "model_provider": "p", "enabled_toolsets": ["memory"], "system_message": "You are helpful."}
+cases = [
+    ("agent_prune", ContextCompressor, True, RAW, ""),
+    ("hard_cap", NoPrune, True, RAW, ""),
+    ("dense", NoPrune, True, DENSE, ""),
+    ("ephemeral", ContextCompressor, True, RAW, "Personality. " * 8000),
+    ("uncompressed", ContextCompressor, False, RAW, ""),
+]
+for i, (name, cls, compress, raw, ephemeral) in enumerate(cases):
+    compressor = cls("m", config_context_length=100000, quiet_mode=True, provider="p")
+    chat._agent_class = agent_class(compressor, compress, raw)
+    params = {"profile_home": str(home), "session_id": f"s{i}", "stream_id": f"st{i}", "user_message": "read it", "model": "m", "model_provider": "p", "enabled_toolsets": ["memory"], "system_message": "You are helpful.", "ephemeral_system_prompt": ephemeral}
     with scoped_home(home):
         result = chat.start(Ctx(), params)
     context = result.get("context_messages")
     out[name] = {
-        "display_raw": result["messages"][3]["content"] == RAW,
+        "display_raw": result["messages"][3]["content"] == raw,
+        "within_budget": estimate_tokens_rough(context[3]["content"]) <= compressor.tail_token_budget if context else None,
         "context_len": len(context[3]["content"]) if context else None,
         "context_roles": [m["role"] for m in context] if context else None,
         "estimate": result.get("post_compression_context_tokens_estimate"),
@@ -96,5 +107,10 @@ def test_an_auto_compressed_turn_returns_pruned_context_and_its_estimate(tmp_pat
     assert hard_cap["display_raw"] and hard_cap["context_roles"] == roles and hard_cap["marker"]
     assert hard_cap["context_len"] < raw_len // 4
     assert isinstance(hard_cap["estimate"], int) and hard_cap["estimate"] > 0
+    assert hard_cap["within_budget"]
+    # Token-dense output (CJK) is measured with the Agent's estimator, so the cap holds in tokens, not just characters.
+    assert out["dense"]["marker"] and out["dense"]["within_budget"]
+    # The next request also carries the ephemeral system prompt, so the estimate counts it (~26k rough tokens here).
+    assert out["ephemeral"]["estimate"] > agent_prune["estimate"] + 20000
     # Without a compression the turn reports neither.
-    assert out["uncompressed"] == {"display_raw": True, "context_len": None, "context_roles": None, "estimate": None, "marker": False}
+    assert out["uncompressed"] == {"display_raw": True, "within_budget": None, "context_len": None, "context_roles": None, "estimate": None, "marker": False}

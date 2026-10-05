@@ -269,17 +269,27 @@ def _content_text(content: Any) -> str:
 
 
 def _rough_tokens(text: str) -> int:
-    return -(-len(text) // _ROUGH_TOKEN_CHARS)
+    """The Agent's estimate, which counts CJK and other non-ASCII text as denser; ceil(chars / 4) without it."""
+    try:
+        from agent.model_metadata import estimate_tokens_rough
+
+        return int(estimate_tokens_rough(text))
+    except Exception:  # noqa: BLE001
+        return -(-len(text) // _ROUGH_TOKEN_CHARS)
 
 
 def _capped_tool_result(text: str, tokens: int, keep_tokens: int) -> str:
     """The kept head of an over-budget tool result plus a note on what the model no longer sees."""
     prefix = "[Talaria context budget: omitted "
     suffix = f" (~{tokens} rough tokens) from this tool result; the full output remains in the visible transcript.]"
-    keep_chars = keep_tokens * _ROUGH_TOKEN_CHARS
     if keep_tokens < _TAIL_TOOL_MIN_SNIPPET_TOKENS:
         return f"{prefix}{len(text)} chars{suffix}"
-    snippet = text[: max(0, keep_chars - len(f"{prefix}{len(text)} of {len(text)} chars{suffix}") - 2)].rstrip()
+    room = keep_tokens - _rough_tokens(f"{prefix}{len(text)} of {len(text)} chars{suffix}") - 1
+    snippet = text[: len(text) * room // tokens]
+    # Density varies along the text: shrink until the kept head fits the remaining tokens.
+    while snippet and _rough_tokens(snippet) > room:
+        snippet = snippet[: len(snippet) * 3 // 4]
+    snippet = snippet.rstrip()
     if not snippet:
         return f"{prefix}{len(text)} chars{suffix}"
     return f"{snippet}\n\n{prefix}{len(text) - len(snippet)} of {len(text)} chars{suffix}"
@@ -330,7 +340,9 @@ def _post_compression_context(agent: Any, messages: list, system_message: Any) -
     try:
         from agent.model_metadata import estimate_request_tokens_rough
 
-        estimate = estimate_request_tokens_rough(context, system_prompt=system_message if isinstance(system_message, str) else "", tools=getattr(agent, "tools", None) or None)
+        # The request carries the ephemeral prompt (surface, personality, delivery) after the system message.
+        prompts = [p for p in (system_message, getattr(agent, "ephemeral_system_prompt", None)) if isinstance(p, str) and p.strip()]
+        estimate = estimate_request_tokens_rough(context, system_prompt="\n\n".join(prompts), tools=getattr(agent, "tools", None) or None)
     except Exception:  # noqa: BLE001 - display-only figure
         log.debug("post-compression context estimate failed", exc_info=True)
     return context, estimate if isinstance(estimate, int) and estimate > 0 else None
