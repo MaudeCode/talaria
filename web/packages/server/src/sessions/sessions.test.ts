@@ -1098,6 +1098,41 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     expect(s.deps.sessionStore.get(sid).state_db_seen_id).toBe(maxId(sid))
   })
 
+  it('a concurrent row that shares only its first 500 characters with a held message stays in the transcript', async () => {
+    const long = 'x'.repeat(600)
+    const sid = await seeded([['user', 'u1', 100], ['assistant', `${long} held`, 101]])
+    await turn(sid, 'first')
+    await turn(sid, 'second', 'completed', [['assistant', `${long} new tail`, 150]])
+    expect((await served(sid)).filter((c) => c === `${long} new tail`)).toHaveLength(1)
+  })
+
+  it('falls back to the timestamp rules when state.db is recreated and its ids start over', async () => {
+    const fresh = await bootTestServer()
+    try {
+      const sid = String(((await json(await post(fresh, '/api/session/new', {}))).session as Json).session_id)
+      writeMessages(fresh, sid, rows(FOUR))
+      const path = join(fresh.state, 'state.db')
+      const insert = (session: string, list: Row[]): void => {
+        const db = new DatabaseSync(path)
+        db.exec('CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
+        for (const [role, content, ts] of list) db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(session, role, content, ts)
+        db.close()
+      }
+      // Other sessions' rows push this session's ids well above what a new database reaches.
+      insert('other', Array.from({ length: 10 }, (_, i): Row => ['user', `other ${String(i)}`, i]))
+      insert(sid, FOUR)
+      const session = fresh.deps.sessionStore.get(sid)
+      fresh.deps.sessions.markStateDbSeen(session)
+      fresh.deps.sessionStore.save(session)
+      expect(session.state_db_seen_id).toBe(14)
+      // The profile is deleted and recreated: a new state.db, ids from 1, and the CLI continues the chat.
+      rmSync(path)
+      insert(sid, [['user', 'u3', 104], ['assistant', 'a3', 105]])
+      const shown = (((await json(await fresh.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).messages as Json[]).map((m) => m.content)
+      expect(shown).toEqual(['u1', 'a1', 'u2', 'a2', 'u3', 'a3'])
+    } finally { fresh.close() }
+  })
+
   it('keeps the timestamp rules for a state.db without message ids', async () => {
     const legacy = await bootTestServer()
     try {

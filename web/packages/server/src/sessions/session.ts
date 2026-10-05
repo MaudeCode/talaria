@@ -229,7 +229,7 @@ export class Session {
   truncation_watermark_compressed: boolean
   /** TAL-493: the highest Agent state.db message id a boundary or settled turn read; newer rows are continuations. */
   state_db_seen_id: number | null
-  /** TAL-493: the boundary fields `state_db_seen_id` was recorded under; an older release that moves one makes it stale. */
+  /** TAL-493: what `state_db_seen_id` was recorded under (boundary fields, its row); a change makes the marker stale. */
   state_db_seen_boundary: string | null
   clear_generation: unknown
   intentional_shrink_generation: unknown

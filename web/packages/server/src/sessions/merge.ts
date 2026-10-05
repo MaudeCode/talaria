@@ -61,7 +61,7 @@ export function messageText(content: unknown): string {
   return str(content)
 }
 
-export function messageIdentity(msg: unknown): string | null {
+export function messageIdentity(msg: unknown, textLimit = 500): string | null {
   if (!isDict(msg)) return null
   const role = str(msg.role)
   let text = messageText(msg.content)
@@ -78,7 +78,7 @@ export function messageIdentity(msg: unknown): string | null {
     return null
   }
   const toolCalls = Array.isArray(msg.tool_calls) ? msg.tool_calls : []
-  return JSON.stringify([role, text.split(/\s+/).join(' ').trim().slice(0, 500), str(msg.tool_call_id), JSON.stringify(sortKeysDeep(toolCalls))])
+  return JSON.stringify([role, text.split(/\s+/).join(' ').trim().slice(0, textLimit), str(msg.tool_call_id), JSON.stringify(sortKeysDeep(toolCalls))])
 }
 
 function sortKeysDeep(value: unknown): unknown {
@@ -809,9 +809,9 @@ function stateDbRowId(m: Message): number | null {
   return typeof id === 'number' && Number.isFinite(id) ? id : null
 }
 
-/** TAL-493: the `state_db_seen_id` after reading `rows`: their highest id, never below the one already recorded. */
-export function stateDbSeenId(rows: Message[], previous: number | null): number | null {
-  let max = previous
+/** TAL-493: the `state_db_seen_id` after reading `rows`: their highest id, or null when they carry none. */
+export function stateDbSeenId(rows: Message[]): number | null {
+  let max: number | null = null
   for (const m of rows) { const id = stateDbRowId(m); if (id !== null && (max === null || id > max)) max = id }
   return max
 }

@@ -261,17 +261,17 @@ export class SessionService {
    */
   mergedTranscript(s: Session, local: Message[] = s.messages, stateRows: Message[] = this.stateDbRows(s)): Message[] {
     if (!stateRows.length) return local
-    return mergeSessionMessagesAppendOnly(local, stateRows, { truncationWatermark: s.truncation_watermark, compressedWatermark: s.truncation_watermark_compressed, stateDbSeenId: currentStateDbSeenId(s) })
+    return mergeSessionMessagesAppendOnly(local, stateRows, { truncationWatermark: s.truncation_watermark, compressedWatermark: s.truncation_watermark_compressed, stateDbSeenId: currentStateDbSeenId(s, stateRows) })
   }
 
   /**
    * TAL-493: record the highest state.db id this boundary or settled turn read, under the session lock in the same save,
    * so the merge never replays a covered row and appends every row committed after the read. Call it after the boundary
-   * fields are set: the marker holds only while they stay as recorded.
+   * fields are set: the marker holds only while they and the row it names stay as recorded.
    */
   markStateDbSeen(s: Session, stateRows: Message[] = this.stateDbRows(s)): void {
-    s.state_db_seen_id = stateDbSeenId(stateRows, currentStateDbSeenId(s))
-    s.state_db_seen_boundary = stateDbBoundaryKey(s)
+    s.state_db_seen_id = stateDbSeenId(stateRows)
+    s.state_db_seen_boundary = stateDbMarkKey(s, stateRows, s.state_db_seen_id)
   }
 
   /**
@@ -282,7 +282,8 @@ export class SessionService {
   settleStateDb(s: Session, known: Message[] = []): void {
     const stateRows = this.stateDbRows(s)
     // A row with no text (an image or reasoning only) is told apart by its raw role, content, and reasoning.
-    const identity = (m: Message): string => messageIdentity(m) ?? JSON.stringify([m.role ?? null, m.content ?? null, reasoningFieldsText(m)])
+    // The full text: a row that only starts like a held one is new.
+    const identity = (m: Message): string => messageIdentity(m, Infinity) ?? JSON.stringify([m.role ?? null, m.content ?? null, reasoningFieldsText(m)])
     const held = new Set([...s.messages, ...s.context_messages, ...known].map(identity))
     const missed = this.mergedTranscript(s, s.messages, stateRows).slice(s.messages.length).filter((m) => !held.has(identity(m)))
     if (missed.length) {
@@ -1581,14 +1582,20 @@ export function sanitizePaths(error: unknown): string {
   return str((error as Error)?.message ?? error).replace(/(?:(?:\/[a-zA-Z0-9_.-]+)+|(?:[A-Z]:\\[^\s]+))/g, '<path>')
 }
 
-/** TAL-493: the boundary fields every boundary writer sets; an older release moves them without the state.db marker. */
-function stateDbBoundaryKey(s: Session): string {
-  return JSON.stringify([s.truncation_watermark ?? null, s.truncation_boundary ?? null, s.intentional_shrink_generation ?? null, s.clear_generation ?? null])
+/**
+ * TAL-493: what the state.db marker was recorded under: the boundary fields every boundary writer sets (an older release
+ * moves them without the marker) and the role and timestamp of the row the marker names (a recreated state.db, whose
+ * ids start over, has no such row).
+ */
+function stateDbMarkKey(s: Session, stateRows: Message[], seenId: number | null): string {
+  const anchor = seenId === null ? undefined : stateRows.find((m) => m._state_db_row_id === seenId)
+  return JSON.stringify([s.truncation_watermark ?? null, s.truncation_boundary ?? null, s.intentional_shrink_generation ?? null, s.clear_generation ?? null, anchor ? [anchor.role ?? null, anchor.timestamp ?? null] : null])
 }
 
-/** The recorded state.db marker while its boundary still stands, else null (the timestamp rules apply). */
-function currentStateDbSeenId(s: Session): number | null {
-  return s.state_db_seen_boundary === stateDbBoundaryKey(s) ? s.state_db_seen_id : null
+/** The recorded state.db marker while what it was recorded under still holds, else null (the timestamp rules apply). */
+function currentStateDbSeenId(s: Session, stateRows: Message[]): number | null {
+  const seenId = s.state_db_seen_id
+  return seenId !== null && s.state_db_seen_boundary === stateDbMarkKey(s, stateRows, seenId) ? seenId : null
 }
 
 function truncationWatermarkFor(messages: unknown[]): number {
