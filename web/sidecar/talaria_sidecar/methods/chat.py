@@ -594,6 +594,30 @@ def _profile_fallback_chain() -> list[dict] | None:
     return get_fallback_chain(load_config() or {}) or None
 
 
+def _main_model_request_overrides(model: str, provider) -> dict | None:
+    """Predecessor ``_main_model_request_overrides``: the profile's ``model.service_tier`` and ``model.extra_body``
+    (written by ``/api/model/set``) apply only to turns on that configured main model. Runs under ``scoped_home``."""
+    from hermes_cli.config import load_config
+
+    model_cfg = (load_config() or {}).get("model")
+    if not isinstance(model_cfg, dict):
+        return None
+    main_model = str(model_cfg.get("default") or model_cfg.get("name") or "").strip()
+    main_provider = str(model_cfg.get("provider") or "").strip().lower()
+    if not main_model or main_model != model.strip():
+        return None
+    # An unset or ``auto`` main provider resolves at runtime, so the model id alone identifies the main model.
+    if main_provider not in ("", "auto") and main_provider != str(provider or "").strip().lower():
+        return None
+    overrides: dict = {}
+    if str(model_cfg.get("service_tier") or "").strip().lower() == "priority":
+        overrides["service_tier"] = "priority"
+    extra_body = model_cfg.get("extra_body")
+    if isinstance(extra_body, dict) and extra_body:
+        overrides["extra_body"] = extra_body
+    return overrides or None
+
+
 def _agent_signature(model: str, provider, runtime: dict, toolsets, home: str, kwargs: dict) -> str:
     """Cache identity of an ``AIAgent``: everything its constructor bound from the resolved runtime, so a rotated key,
     a different API mode, ACP command, or credential pool never reuses an agent built for the old bundle. The key
@@ -609,6 +633,7 @@ def _agent_signature(model: str, provider, runtime: dict, toolsets, home: str, k
         "max_iterations": kwargs.get("max_iterations"), "max_tokens": kwargs.get("max_tokens"),
         # Bound at construction too: a reasoning-effort change from the composer must build a fresh agent.
         "reasoning_config": kwargs.get("reasoning_config"),
+        "request_overrides": kwargs.get("request_overrides"),
         # Entries may carry their own ``api_key``.
         "fallback_model": hashlib.sha256(json.dumps(kwargs.get("fallback_model"), sort_keys=True, default=str).encode("utf-8")).hexdigest()[:16],
     }
@@ -1074,6 +1099,9 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
         fallback_chain = _profile_fallback_chain()
         if fallback_chain and _supported(AIAgent, "fallback_model"):
             kwargs["fallback_model"] = fallback_chain
+        request_overrides = _main_model_request_overrides(resolved_model, resolved_provider)
+        if request_overrides and _supported(AIAgent, "request_overrides"):
+            kwargs["request_overrides"] = request_overrides
         signature = _agent_signature(resolved_model, resolved_provider, runtime, toolsets, str(params.get("profile_home")), kwargs)
         agent = None
 
