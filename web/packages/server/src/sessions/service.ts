@@ -296,7 +296,10 @@ export class SessionService {
     const added = new Map<string, number>()
     for (const m of withoutRows(turn.agentRows ?? [], turn.previousContext)) added.set(settledIdentity(m), (added.get(settledIdentity(m)) ?? 0) + 1)
     const ownWorkAfter = turn.agentRows?.length ? null : turn.startId ?? null
-    const missed = this.mergedTranscript(s, s.messages, read.rows).slice(s.messages.length).filter((m) => {
+    // Without a current marker, the turn's own starting read is the baseline: rows committed after it are judged here.
+    const seenId = currentStateDbSeenId(s, read.rows) ?? turn.startId ?? null
+    const shown = read.rows.length ? mergeSessionMessagesAppendOnly(s.messages, read.rows, { truncationWatermark: s.truncation_watermark, compressedWatermark: s.truncation_watermark_compressed, stateDbSeenId: seenId }) : s.messages
+    const missed = shown.slice(s.messages.length).filter((m) => {
       const id = m._state_db_row_id
       if (typeof id === 'number' && startedWith.has(id)) return false
       const key = settledIdentity(m)

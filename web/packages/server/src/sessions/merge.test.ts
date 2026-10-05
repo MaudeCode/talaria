@@ -348,6 +348,11 @@ describe('mergeSessionMessagesAppendOnly by state.db row id (TAL-493)', () => {
     expect(contents(mergeSessionMessagesAppendOnly([...sidecar, row(8, 'user', 'ok', 400)], twins, { stateDbSeenId: 6 }))).toEqual(['u1', 'a1', 'web', 'web reply', 'ok', 'ok'])
   })
 
+  it('lets a covered row match its local copy before a newer duplicate does', () => {
+    const local = [...sidecar, { role: 'user', content: 'ok', timestamp: 400 }]
+    expect(contents(mergeSessionMessagesAppendOnly(local, [row(3, 'user', 'ok', 400), row(7, 'user', 'ok', 400)], { stateDbSeenId: 6 }))).toEqual(['u1', 'a1', 'web', 'web reply', 'ok', 'ok'])
+  })
+
   it('keeps the timestamp rules without a seen id or without row ids', () => {
     const late = [row(1, 'user', 'u1', 100), row(3, 'user', 'late CLI', 200)]
     expect(contents(mergeSessionMessagesAppendOnly(sidecar, late, {}))).toEqual(['u1', 'a1', 'web', 'web reply'])

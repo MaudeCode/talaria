@@ -776,9 +776,11 @@ export function mergeSessionMessagesAppendOnly(sidecar: Message[], state: Messag
     const merged = [...sidecar]
     for (const m of state) {
       const id = stateDbRowId(m)
-      if (id === null || id <= seenId || localIds.has(id)) continue
+      if (id !== null && localIds.has(id)) continue
+      // In state.db order, so a covered row matches its own local copy before a newer duplicate can.
       const left = localKeys.get(key(m)) ?? 0
       if (left > 0) { localKeys.set(key(m), left - 1); continue }
+      if (id === null || id <= seenId) continue
       merged.push(m)
     }
     return merged

@@ -1104,6 +1104,14 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     expect(sent(sid).filter((c) => c === 'crashed work')).toEqual([])
   })
 
+  it('the first settlement of a session without a marker keeps a CLI row committed during the turn', async () => {
+    const sid = await seeded([['user', 'u1', 100], ['assistant', 'a1', 101]])
+    expect(s.deps.sessionStore.get(sid).state_db_seen_id).toBeNull()
+    await turn(sid, 'first', 'completed', [['user', 'CLI during first turn', 150]])
+    expect((await served(sid)).filter((c) => c === 'CLI during first turn')).toHaveLength(1)
+    expect(sent(sid).filter((c) => c === 'CLI during first turn')).toHaveLength(1)
+  })
+
   it('a concurrent row that repeats an earlier message exactly stays in the transcript', async () => {
     const sid = await seeded([['user', 'continue', 100], ['assistant', 'a1', 101]])
     await turn(sid, 'first')
