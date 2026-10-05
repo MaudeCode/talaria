@@ -6,7 +6,7 @@
  * `_handle_session_events_stream`, `_handle_session_run_journal_stream_for_session`).
  */
 import type { RequestContext } from '../http/context.js'
-import { parseRunJournalEventId, SSE_RELAY_CLOSE_EVENTS, type JournalEvent } from '../sessions/journal.js'
+import { parseRunJournalEventId, SSE_RELAY_CLOSE_EVENTS, type JournalEvent, type RunJournal } from '../sessions/journal.js'
 import { nextItem, nextSessionItem, type StreamSubscriber } from '../sessions/streams.js'
 import { nextPendingItem } from '../sessions/pending.js'
 import type { Session } from '../sessions/session.js'
@@ -158,26 +158,42 @@ function publicFramePayload(ctx: RequestContext, event: string, payload: unknown
   return tool ? publicToolFrame(payload as Record<string, unknown>, ctx.deps.sessions.deps.redactEnabled()) : payload
 }
 
-/** Journal rows written before the public tool `id`, keyed by run: each row's id, paired the way the live server pairs them. */
-type LegacyToolIds = Map<string, Map<number, string>>
+/**
+ * Public tool ids for journal rows written before frames carried one, paired the way the live server pairs them. Each
+ * run's journal is walked alongside the replay (its rows arrive in seq order), holding only the calls still open.
+ */
+class LegacyToolIds {
+  private readonly runs = new Map<string, { rows: Generator<JournalEvent>; open: { name: unknown; tid: string; id: string }[]; seq: number; id: string | null }>()
 
-function legacyToolIds(ctx: RequestContext, entry: JournalEvent, cache: LegacyToolIds): Map<number, string> {
-  let ids = cache.get(entry.run_id)
-  if (ids) return ids
-  ids = new Map()
-  cache.set(entry.run_id, ids)
-  const calls: { name: unknown; tid: string; id: string; done: boolean }[] = []
-  for (const row of ctx.deps.journal.readRunEvents(entry.session_id, entry.run_id)) {
-    if ((row.event !== 'tool' && row.event !== 'tool_complete') || !row.payload || typeof row.payload !== 'object') continue
-    const data = row.payload as Record<string, unknown>
-    const tid = str(data.tid)
-    const call = row.event === 'tool' ? undefined : calls[completedToolIndex(calls, tid, data.name)]
-    if (call) call.done = true
-    const id = call?.id ?? (tid || `tool-${row.event_id}`)
-    if (row.event === 'tool') calls.push({ name: data.name, tid, id, done: false })
-    ids.set(row.seq, id)
+  constructor(private readonly journal: RunJournal) {}
+
+  idFor(entry: JournalEvent): string | null {
+    let run = this.runs.get(entry.run_id)
+    if (!run) {
+      run = { rows: this.journal.iterRunEvents(entry.session_id, entry.run_id), open: [], seq: 0, id: null }
+      this.runs.set(entry.run_id, run)
+    }
+    while (run.seq < entry.seq) {
+      const next = run.rows.next()
+      if (next.done) return null
+      run.seq = next.value.seq
+      run.id = pairLegacyTool(run.open, next.value)
+    }
+    return run.seq === entry.seq ? run.id : null
   }
-  return ids
+
+  close(): void { for (const run of this.runs.values()) run.rows.return(undefined) }
+}
+
+/** One row's tool id; a `tool` opens a call, a `tool_complete` closes the call it completes (done calls never match again). */
+function pairLegacyTool(open: { name: unknown; tid: string; id: string }[], row: JournalEvent): string | null {
+  if ((row.event !== 'tool' && row.event !== 'tool_complete') || !row.payload || typeof row.payload !== 'object') return null
+  const data = row.payload as Record<string, unknown>
+  const tid = str(data.tid)
+  const own = tid || `tool-${row.event_id}`
+  if (row.event === 'tool') { open.push({ name: data.name, tid, id: own }); return own }
+  const index = completedToolIndex(open, tid, data.name)
+  return index < 0 ? own : open.splice(index, 1)[0]!.id
 }
 
 function publicJournalPayload(ctx: RequestContext, entry: JournalEvent, legacy: LegacyToolIds): unknown {
@@ -185,7 +201,7 @@ function publicJournalPayload(ctx: RequestContext, entry: JournalEvent, legacy: 
   if ((entry.event !== 'tool' && entry.event !== 'tool_complete') || !payload || typeof payload !== 'object' || Array.isArray(payload) || 'id' in payload) return publicFramePayload(ctx, entry.event, payload, entry.redacted)
   // A journal written before the public `id` carries the Agent's call id as `tid`, or nothing when the Agent sent none; the id
   // joins the frame before the redaction pass, like a live frame's.
-  const id = legacyToolIds(ctx, entry, legacy).get(entry.seq) ?? `tool-${entry.event_id}`
+  const id = legacy.idFor(entry) ?? `tool-${entry.event_id}`
   return publicFramePayload(ctx, entry.event, withToolId(payload as Record<string, unknown>, id), entry.redacted)
 }
 
@@ -193,11 +209,15 @@ async function replayRunJournal(ctx: RequestContext, sse: SseWriter, streamId: s
   const summary = ctx.deps.journal.findRunSummary(streamId)
   if (!summary) return { found: false, terminal: false }
   let terminal = false
-  const legacy: LegacyToolIds = new Map()
-  for (const entry of ctx.deps.journal.iterRunEvents(summary.session_id, streamId, { afterSeq, maxSeq: opts.maxSeq ?? null })) {
-    if (!(await sse.ready())) return { found: true, terminal }
-    sse.event(entry.event || 'message', publicJournalPayload(ctx, entry, legacy), entry.event_id)
-    if (SSE_RELAY_CLOSE_EVENTS.has(entry.event)) terminal = true
+  const legacy = new LegacyToolIds(ctx.deps.journal)
+  try {
+    for (const entry of ctx.deps.journal.iterRunEvents(summary.session_id, streamId, { afterSeq, maxSeq: opts.maxSeq ?? null })) {
+      if (!(await sse.ready())) return { found: true, terminal }
+      sse.event(entry.event || 'message', publicJournalPayload(ctx, entry, legacy), entry.event_id)
+      if (SSE_RELAY_CLOSE_EVENTS.has(entry.event)) terminal = true
+    }
+  } finally {
+    legacy.close()
   }
   if ((opts.includeStale ?? true) && !summary.terminal) {
     const stale = ctx.deps.journal.staleInterruptedEvent(summary.session_id, streamId, afterSeq, ctx.deps.auth.now())
@@ -454,14 +474,18 @@ export async function handleSessionJournalStream(ctx: RequestContext, sessionId:
   const sentOrder: string[] = []
   const note = (id: string): void => { sent.add(id); sentOrder.push(id); while (sentOrder.length > SESSION_SSE_SENT_EVENT_ID_LIMIT) sent.delete(sentOrder.shift()!) }
   const emitReplay = async (events: Iterable<JournalEvent>, streamId: string | null, cutoff: number | null): Promise<void> => {
-    const legacy: LegacyToolIds = new Map()
-    for (const entry of events) {
-      if (!(await sse.ready())) return
-      const seq = streamId ? sameRunSeq(entry.event_id, streamId) : null
-      if (cutoff !== null && seq !== null && seq > cutoff) continue
-      if (entry.event_id && sent.has(entry.event_id)) continue
-      sse.event(entry.event || 'message', publicJournalPayload(ctx, entry, legacy), entry.event_id)
-      if (entry.event_id) note(entry.event_id)
+    const legacy = new LegacyToolIds(ctx.deps.journal)
+    try {
+      for (const entry of events) {
+        if (!(await sse.ready())) return
+        const seq = streamId ? sameRunSeq(entry.event_id, streamId) : null
+        if (cutoff !== null && seq !== null && seq > cutoff) continue
+        if (entry.event_id && sent.has(entry.event_id)) continue
+        sse.event(entry.event || 'message', publicJournalPayload(ctx, entry, legacy), entry.event_id)
+        if (entry.event_id) note(entry.event_id)
+      }
+    } finally {
+      legacy.close()
     }
   }
   const snapshot = (activeStreamId: string | null): void => {

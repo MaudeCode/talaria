@@ -229,7 +229,8 @@ export class SessionChannels {
     if (!set) return 0
     let delivered = 0
     for (const sub of set) {
-      if (sub.queue.length >= 64) continue
+      // These are refetch signals for server records: a stalled subscriber keeps the newest 64, never refusing the latest.
+      if (sub.queue.length >= 64) sub.queue.shift()
       sub.queue.push([event, data])
       sub.wake?.()
       delivered += 1

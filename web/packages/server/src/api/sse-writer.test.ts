@@ -145,23 +145,61 @@ describe('event streams deliver past the old 4 MiB cut-off', () => {
     }
   })
 
-  it('a replay to a paused reader parses the journal a page at a time rather than whole', async () => {
-    run('run-paged', 6000)
+  /** A journal from before tool frames carried a public `id`: `pairs` tool calls, odd ones with the Agent's `tid`, even ones without. */
+  const legacyRun = (runId: string, pairs: number): void => {
+    const w = s.deps.journal.writer(sid, runId)
+    for (let k = 1; k <= pairs; k += 1) {
+      const tid = k % 2 ? `call-${String(k)}` : ''
+      w.appendSseEvent('tool', { tid, name: `tool-${String(k % 5)}`, preview: FRAME_TEXT })
+      w.appendSseEvent('tool_complete', { tid, name: `tool-${String(k % 5)}`, result: FRAME_TEXT })
+    }
+    w.appendSseEvent('stream_end', {})
+    w.close()
+  }
+
+  // Rows parsed beyond what the replay has sent: the run-summary lookups' bounded tails (512 rows each) plus a 64 KiB page
+  // per reader. A legacy replay walks the journal twice (rows and tool pairing), so its sent rows count twice. How many rows
+  // reach the socket before the stall depends on the OS socket buffers, so they are subtracted out.
+  it.each([
+    { kind: 'token', runId: 'run-paged', write: () => { run('run-paged', 6000) }, readsPerRow: 1 },
+    { kind: 'pre-id tool', runId: 'run-legacy', write: () => { legacyRun('run-legacy', 3000) }, readsPerRow: 2 },
+  ])('a $kind replay to a paused reader parses the journal a page at a time rather than whole', async ({ runId, write, readsPerRow }) => {
+    write()
     const parse = vi.spyOn(JSON, 'parse')
     const event = vi.spyOn(SseWriter.prototype, 'event')
     try {
-      const client = read(`${s.base}/api/chat/stream?stream_id=run-paged&replay=1`, true)
+      const client = read(`${s.base}/api/chat/stream?stream_id=${runId}&replay=1`, true)
       await new Promise((r) => setTimeout(r, 300))
-      // Rows parsed beyond those written: the run-summary lookups' bounded tails (512 rows each) plus one 64 KiB page.
-      // How many rows get written before the stall depends on the OS socket buffers, so it is subtracted out.
-      const parsedRows = parse.mock.calls.filter(([text]) => typeof text === 'string' && text.includes('"run_id":"run-paged"')).length
-      expect(parsedRows - event.mock.calls.length).toBeLessThan(2500)
+      const parsedRows = parse.mock.calls.filter(([text]) => typeof text === 'string' && text.includes(`"run_id":"${runId}"`)).length
+      expect(parsedRows - readsPerRow * event.mock.calls.length).toBeLessThan(2500)
       client.resume()
-      expect(ids(await frames(client))).toEqual(expectedIds('run-paged', 6001))
+      expect(ids(await frames(client))).toEqual(expectedIds(runId, 6001))
     } finally {
       parse.mockRestore()
       event.mockRestore()
     }
+  })
+
+  it('a pre-id tool journal replays each completion with its call\'s id', async () => {
+    legacyRun('run-legacy-ids', 40)
+    const got = (await frames(read(`${s.base}/api/chat/stream?stream_id=run-legacy-ids&replay=1`))).filter((f) => f.event !== 'stream_end')
+    const toolIds = got.map((f) => (f.data as { id?: string }).id)
+    for (let k = 1; k <= 40; k += 1) {
+      const [call, done] = [got[2 * k - 2]!, got[2 * k - 1]!]
+      expect([call.event, done.event]).toEqual(['tool', 'tool_complete'])
+      expect(toolIds[2 * k - 1]).toBe(toolIds[2 * k - 2])
+      expect(toolIds[2 * k - 2]).toBe(k % 2 ? `call-${String(k)}` : `tool-${call.id ?? ''}`)
+    }
+  })
+
+  it('a stalled session channel keeps the newest refetch signal instead of refusing it', async () => {
+    const client = read(`${s.base}/api/session/stream?session_id=${sid}`)
+    await subscribed(() => s.deps.channels.subscriberCount(sid))
+    for (let n = 1; n <= 200; n += 1) s.deps.channels.emit(sid, 'bg_task_complete', { session_id: sid, n })
+    await new Promise((r) => setTimeout(r, 300))
+    client.destroy()
+    const got = await frames(client)
+    expect(got.filter((f) => f.event === 'bg_task_complete').at(-1)?.data).toMatchObject({ n: 200 })
   })
 
   it('a live run resumes every journaled frame past 4 MiB', async () => {
