@@ -1,6 +1,6 @@
 import { createServer, get, type IncomingMessage, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { SseWriter, StreamSlots } from './sse-routes.js'
 import type { RequestContext } from '../http/context.js'
 import { bootTestServer, parseSseChunk, type SseFrame, type TestServer } from '../test/harness.js'
@@ -128,6 +128,21 @@ describe('event streams deliver past the old 4 MiB cut-off', () => {
     run('run-finished', 3000)
     const got = await frames(read(`${s.base}/api/chat/stream?stream_id=run-finished&replay=1`))
     expect(ids(got)).toEqual(expectedIds('run-finished', 3001))
+  })
+
+  it('a replay to a paused reader keeps unsent data near the socket high-water mark, then delivers every frame', async () => {
+    run('run-paused', 4000)
+    const spy = vi.spyOn(SseWriter.prototype, 'event')
+    try {
+      const client = read(`${s.base}/api/chat/stream?stream_id=run-paused&replay=1`, true)
+      await new Promise((r) => setTimeout(r, 300))
+      const writer = spy.mock.contexts.at(-1) as { ctx: RequestContext }
+      expect(writer.ctx.res.writableLength).toBeLessThan(1024 * 1024)
+      client.resume()
+      expect(ids(await frames(client))).toEqual(expectedIds('run-paused', 4001))
+    } finally {
+      spy.mockRestore()
+    }
   })
 
   it('a live run resumes every journaled frame past 4 MiB', async () => {

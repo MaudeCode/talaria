@@ -11,7 +11,7 @@ import { checkSameOriginBrowserRequest, csrfRejectionError } from '../http/origi
 import { str } from '../util.js'
 import { readCapped } from '../http/capped.js'
 import { stripPublicInternalFields } from '../redact.js'
-import type { TerminalItem } from '../tools/terminal.js'
+import { BACKLOG_MAX as TERMINAL_BACKLOG_MAX, type TerminalItem } from '../tools/terminal.js'
 
 const KANBAN_POLL_MS = 1_000
 const KANBAN_HEARTBEAT_MS = 15_000
@@ -88,7 +88,8 @@ export async function handleTerminalOutput(ctx: RequestContext): Promise<void> {
   if (!sse) return
   const queue: TerminalItem[] = []
   let wake: (() => void) | null = null
-  const unsubscribe = term.subscribe(afterSeq, (item) => { queue.push(item); wake?.() })
+  // A viewer waiting on a slow socket keeps what a reconnecting one would get: the terminal's own backlog bound.
+  const unsubscribe = term.subscribe(afterSeq, (item) => { if (queue.push(item) > TERMINAL_BACKLOG_MAX) queue.shift(); wake?.() })
   const abort = new AbortController()
   ctx.res.on('close', () => { abort.abort(); wake?.() })
   try {

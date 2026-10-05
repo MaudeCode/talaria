@@ -13,7 +13,7 @@ export interface TerminalItem { seq: number; event: 'output' | 'terminal_closed'
 export interface PtyProcessLike { pid: number; write: (data: string) => void; resize: (cols: number, rows: number) => void; kill: (signal?: string) => void; onData: (cb: (data: string) => void) => void; onExit: (cb: (e: { exitCode: number; signal?: number }) => void) => void; /** node-pty `UnixTerminal.destroy`: closes the pty master. */ destroy?: () => void; /** Signal the shell's whole process group (Python `os.killpg`); absent on test doubles, which get `kill`. */ killGroup?: (signal: NodeJS.Signals) => void }
 export interface PtyModuleLike { spawn: (file: string, args: string[], opts: { name: string; cols: number; rows: number; cwd: string; env: Record<string, string> }) => PtyProcessLike }
 
-const BACKLOG_MAX = 2000
+export const BACKLOG_MAX = 2000
 const MAX_TERMINALS = 32
 const IDLE_GRACE_MS = 900_000
 /** How long an exited terminal stays attachable so a viewer that connects late still replays its output and exit code. */

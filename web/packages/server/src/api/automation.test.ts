@@ -530,6 +530,23 @@ describe('crons, kanban, extensions, terminal', () => {
     }
   })
 
+  it('an output viewer that falls behind holds at most the terminal backlog and receives the newest output in order', async () => {
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    mkdirSync(join(s.state, 'workspace'), { recursive: true })
+    expect((await post(s, '/api/terminal/start', { session_id: sid })).status).toBe(200)
+    const proc = pty.spawned.at(-1)!
+    // 6000 chunks land while the stream waits: its queue keeps the newest, as the 2000-line backlog does for a reconnect.
+    const chunks = 6000
+    setTimeout(() => { for (let i = 1; i <= chunks; i += 1) proc.emit(`${'x'.repeat(4096)}${String(i)}`); proc.exit(0) }, 20)
+    const frames = await s.sse(`/api/terminal/output?session_id=${sid}`, (f: SseFrame) => f.event === 'terminal_closed', { timeoutMs: 20_000 })
+    const outputs = frames.filter((f) => f.event === 'output').map((f) => Number(f.id))
+    expect(frames.at(-1)?.event).toBe('terminal_closed')
+    expect(outputs.length).toBeLessThanOrEqual(2000)
+    expect(outputs.at(-1)).toBe(chunks)
+    expect(outputs).toEqual(Array.from({ length: outputs.length }, (_, i) => chunks - outputs.length + 1 + i))
+    await post(s, '/api/terminal/close', { session_id: sid })
+  })
+
   it('closeAll({ immediate: true }) hangs up and kills every shell synchronously for process exit', async () => {
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
     mkdirSync(join(s.state, 'workspace'), { recursive: true })
