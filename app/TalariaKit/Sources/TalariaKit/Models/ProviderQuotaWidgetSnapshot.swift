@@ -24,6 +24,8 @@ public struct ProviderQuotaWidgetSource: Codable, Equatable, Identifiable, Senda
     public let sessionWindowIndex: Int?
     public let weeklyWindowIndex: Int?
     public let computedAt: String?
+    // Optional so a snapshot written before TAL-411 still decodes; widgets show it while the server is unreachable.
+    public let urgency: ProviderQuotaUrgencyLevels?
 
     public init(
         sourceID: String,
@@ -43,7 +45,8 @@ public struct ProviderQuotaWidgetSource: Codable, Equatable, Identifiable, Senda
         paceWindowIndex: Int? = nil,
         sessionWindowIndex: Int? = nil,
         weeklyWindowIndex: Int? = nil,
-        computedAt: String? = nil
+        computedAt: String? = nil,
+        urgency: ProviderQuotaUrgencyLevels? = nil
     ) {
         self.sourceID = sourceID
         self.scopeID = scopeID
@@ -63,6 +66,7 @@ public struct ProviderQuotaWidgetSource: Codable, Equatable, Identifiable, Senda
         self.sessionWindowIndex = sessionWindowIndex
         self.weeklyWindowIndex = weeklyWindowIndex
         self.computedAt = computedAt
+        self.urgency = urgency
     }
 
     public init(_ source: ProviderQuotaSource, scopeID: String, scopeLabel: String) {
@@ -83,7 +87,8 @@ public struct ProviderQuotaWidgetSource: Codable, Equatable, Identifiable, Senda
             paceWindowIndex: source.paceWindowIndex,
             sessionWindowIndex: source.sessionWindowIndex,
             weeklyWindowIndex: source.weeklyWindowIndex,
-            computedAt: source.computedAt
+            computedAt: source.computedAt,
+            urgency: source.urgency
         )
     }
 
@@ -106,7 +111,8 @@ public struct ProviderQuotaWidgetSource: Codable, Equatable, Identifiable, Senda
             paceWindowIndex: paceWindowIndex,
             sessionWindowIndex: sessionWindowIndex,
             weeklyWindowIndex: weeklyWindowIndex,
-            computedAt: computedAt
+            computedAt: computedAt,
+            urgency: urgency
         )
     }
 }

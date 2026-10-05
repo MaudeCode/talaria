@@ -655,12 +655,12 @@ struct ProviderQuotaWidgetAppearanceView: View {
         case .unavailable: 0
         }
         // Server-shaped sample pace for the weekly window at each preview state.
-        let sample: (paceDelta: Double, burnRate: Double, budget: Double, outcome: ProviderQuotaWindowForecast.Outcome) =
+        let sample: (paceDelta: Double, burnRate: Double, budget: Double, outcome: ProviderQuotaWindowForecast.Outcome, status: String) =
             switch previewState {
-            case .healthy, .stale: (-1.1, 1.09, 14.1, .safe)
-            case .warning: (-28.1, 3.36, 9.7, .warning)
-            case .critical: (-78.1, 7.56, 1.6, .warning)
-            case .unavailable: (11.9, 0, 16.2, .safe)
+            case .healthy, .stale: (-1.1, 1.09, 14.1, .safe, "on")
+            case .warning: (-28.1, 3.36, 9.7, .warning, "over")
+            case .critical: (-78.1, 7.56, 1.6, .warning, "over")
+            case .unavailable: (11.9, 0, 16.2, .safe, "under")
             }
         let now = Date()
         let windows = [
@@ -689,7 +689,8 @@ struct ProviderQuotaWidgetAppearanceView: View {
                     elapsedMinutes: 1_200,
                     validUntil: ISO8601DateFormatter().string(
                         from: now.addingTimeInterval((6 * 24 + 4) * 60 * 60)
-                    )
+                    ),
+                    status: sample.status
                 ),
                 forecast: ProviderQuotaWindowForecast(
                     outcome: sample.outcome,

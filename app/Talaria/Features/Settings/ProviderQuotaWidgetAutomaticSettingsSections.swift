@@ -14,18 +14,11 @@ struct ProviderQuotaWidgetAutomaticSettingsSections: View {
     @Binding var customCriticalColorHex: String
     @Binding var customStaleColorHex: String
     @Binding var customUnavailableColorHex: String
-    @AppStorage(ProviderQuotaWidgetAppearanceSettings.warningRemainingPercentKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
-    private var warningRemainingPercent = ProviderQuotaWidgetAppearanceSettings.defaultWarningRemainingPercent
-    @AppStorage(ProviderQuotaWidgetAppearanceSettings.criticalRemainingPercentKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
-    private var criticalRemainingPercent = ProviderQuotaWidgetAppearanceSettings.defaultCriticalRemainingPercent
-    @AppStorage(ProviderQuotaWidgetAppearanceSettings.paceTolerancePercentKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
-    private var paceTolerancePercent = ProviderQuotaWidgetAppearanceSettings.defaultPaceTolerancePercent
-    @AppStorage(ProviderQuotaWidgetAppearanceSettings.paceWarningBurnRatePercentKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
-    private var paceWarningBurnRatePercent = ProviderQuotaWidgetAppearanceSettings.defaultPaceWarningBurnRatePercent
-    @AppStorage(ProviderQuotaWidgetAppearanceSettings.paceCriticalBurnRatePercentKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
-    private var paceCriticalBurnRatePercent = ProviderQuotaWidgetAppearanceSettings.defaultPaceCriticalBurnRatePercent
-    @AppStorage(ProviderQuotaWidgetAppearanceSettings.paceMinimumElapsedHoursKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
-    private var paceMinimumElapsedHours = ProviderQuotaWidgetAppearanceSettings.defaultPaceMinimumElapsedHours
+    /// The server's thresholds for the active profile (TAL-411), or the last read while offline.
+    @State private var thresholds: ProviderQuotaThresholds?
+    @State private var thresholdsAreCached = false
+    @State private var thresholdsLoaded = false
+    @State private var thresholdSave: Task<Void, Never>?
 
     var body: some View {
         Group {
@@ -37,73 +30,74 @@ struct ProviderQuotaWidgetAutomaticSettingsSections: View {
                 colorPicker("Unavailable", selection: $unavailableColor, customHex: $customUnavailableColorHex)
             }
 
-            if colorBasis == .pace {
-                Section {
-                    Stepper(
-                        "Over pace at \(paceTolerancePercent)%",
-                        value: $paceTolerancePercent,
-                        in: 0...25
-                    )
-                    Stepper(
-                        "Warning burn rate: \(paceWarningBurnRatePercent)%",
-                        value: $paceWarningBurnRatePercent,
-                        in: 100...300,
-                        step: 5
-                    )
-                    Stepper(
-                        "Critical burn rate: \(paceCriticalBurnRatePercent)%",
-                        value: $paceCriticalBurnRatePercent,
-                        in: 100...400,
-                        step: 5
-                    )
-                    Stepper(
-                        "Projection after \(paceMinimumElapsedHours) hr",
-                        value: $paceMinimumElapsedHours,
-                        in: 0...72
-                    )
-                } header: {
-                    Text("Pace Breakpoints")
-                } footer: {
-                    Text("Pace compares quota remaining with the share of the weekly reset window remaining. Burn-rate alerts apply only when current usage projects exhaustion before reset.")
+            if let thresholds {
+                if colorBasis == .pace {
+                    Section {
+                        Stepper(
+                            "Over pace at \(thresholds.paceTolerancePercent)%",
+                            value: threshold(\.paceTolerancePercent),
+                            in: 0...25
+                        )
+                        Stepper(
+                            "Warning burn rate: \(thresholds.paceWarningBurnRatePercent)%",
+                            value: threshold(\.paceWarningBurnRatePercent),
+                            in: 100...300,
+                            step: 5
+                        )
+                        Stepper(
+                            "Critical burn rate: \(thresholds.paceCriticalBurnRatePercent)%",
+                            value: threshold(\.paceCriticalBurnRatePercent),
+                            in: 100...400,
+                            step: 5
+                        )
+                        Stepper(
+                            "Projection after \(thresholds.paceMinimumElapsedHours) hr",
+                            value: threshold(\.paceMinimumElapsedHours),
+                            in: 0...72
+                        )
+                    } header: {
+                        Text("Pace Breakpoints")
+                    } footer: {
+                        thresholdFooter("Pace compares quota remaining with the share of the weekly reset window remaining. Burn-rate alerts apply only when current usage projects exhaustion before reset.")
+                    }
+                    .disabled(thresholdsAreCached)
+                } else {
+                    Section {
+                        Stepper(
+                            "Warning at \(thresholds.warningRemainingPercent)% remaining",
+                            value: threshold(\.warningRemainingPercent),
+                            in: 1...99
+                        )
+                        Stepper(
+                            "Critical at \(thresholds.criticalRemainingPercent)% remaining",
+                            value: threshold(\.criticalRemainingPercent),
+                            in: 0...99
+                        )
+                    } header: {
+                        Text("Overall Breakpoints")
+                    } footer: {
+                        thresholdFooter("Overall Percentage ignores reset time and colors the widget from the quota remaining.")
+                    }
+                    .disabled(thresholdsAreCached)
                 }
-            } else {
+            } else if thresholdsLoaded {
                 Section {
-                    Stepper(
-                        "Warning at \(warningRemainingPercent)% remaining",
-                        value: $warningRemainingPercent,
-                        in: 1...99
-                    )
-                    Stepper(
-                        "Critical at \(criticalRemainingPercent)% remaining",
-                        value: $criticalRemainingPercent,
-                        in: 0...99
-                    )
+                    Text("Connect to a server that provides quota thresholds to change when quotas turn warning or critical.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 } header: {
-                    Text("Overall Breakpoints")
-                } footer: {
-                    Text("Overall Percentage ignores reset time and colors the widget from the quota remaining.")
+                    Text("Breakpoints")
                 }
             }
         }
+        .task { await loadThresholds() }
         .onChange(of: reloadFingerprint) {
-            if criticalRemainingPercent > warningRemainingPercent {
-                criticalRemainingPercent = warningRemainingPercent
-            }
-            if paceCriticalBurnRatePercent < paceWarningBurnRatePercent {
-                paceCriticalBurnRatePercent = paceWarningBurnRatePercent
-            }
             reloadWidgets()
         }
     }
 
     private var reloadFingerprint: String {
         [
-            String(warningRemainingPercent),
-            String(criticalRemainingPercent),
-            String(paceTolerancePercent),
-            String(paceWarningBurnRatePercent),
-            String(paceCriticalBurnRatePercent),
-            String(paceMinimumElapsedHours),
             healthyColor,
             warningColor,
             criticalColor,
@@ -139,5 +133,64 @@ struct ProviderQuotaWidgetAutomaticSettingsSections: View {
 
     private func reloadWidgets() {
         ProviderQuotaWidgetSnapshotStore.reloadTimelines()
+    }
+
+    @ViewBuilder
+    private func thresholdFooter(_ text: LocalizedStringKey) -> some View {
+        if thresholdsAreCached {
+            Text("Offline: showing the breakpoints last read from the server.")
+        } else {
+            Text(text)
+        }
+    }
+
+    private var client: APIClient? {
+        ServerRegistry.shared.activeServer.flatMap { URL(string: $0.urlString) }.map { APIClient(baseURL: $0) }
+    }
+
+    private func loadThresholds() async {
+        let defaults = ProviderQuotaWidgetSnapshotStore.appGroupDefaults
+        do {
+            guard let client else { throw URLError(.notConnectedToInternet) }
+            // nil from a server that predates TAL-411: nothing to edit.
+            let fresh = try await client.settings().providerQuotaThresholds
+            fresh?.cache(defaults: defaults)
+            thresholds = fresh
+            thresholdsAreCached = false
+        } catch {
+            thresholds = ProviderQuotaThresholds.cached(defaults: defaults)
+            thresholdsAreCached = thresholds != nil
+        }
+        thresholdsLoaded = true
+    }
+
+    /// Steps apply at once and save after a short pause; the server's clamped answer replaces them, then quotas refresh.
+    private func threshold(_ keyPath: WritableKeyPath<ProviderQuotaThresholds, Int>) -> Binding<Int> {
+        Binding(
+            get: { thresholds?[keyPath: keyPath] ?? 0 },
+            set: { value in
+                guard var next = thresholds, !thresholdsAreCached else { return }
+                next[keyPath: keyPath] = value
+                thresholds = next
+                thresholdSave?.cancel()
+                thresholdSave = Task { await save(next) }
+            }
+        )
+    }
+
+    private func save(_ next: ProviderQuotaThresholds) async {
+        do {
+            try await Task.sleep(for: .milliseconds(600))
+            guard let client else { return }
+            let saved = try await client.saveProviderQuotaThresholds(next).providerQuotaThresholds ?? next
+            guard !Task.isCancelled else { return }
+            saved.cache(defaults: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)
+            thresholds = saved
+            _ = await ProviderQuotaWidgetRefreshClient.refreshFromSharedCredentials()
+        } catch is CancellationError {
+            // A newer step replaced this save.
+        } catch {
+            await loadThresholds()
+        }
     }
 }

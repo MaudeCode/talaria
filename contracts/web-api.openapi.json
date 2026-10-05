@@ -32056,6 +32056,49 @@
                       "items": {
                         "type": "string"
                       }
+                    },
+                    "provider_quota_thresholds": {
+                      "type": "object",
+                      "properties": {
+                        "warning_remaining_percent": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 99
+                        },
+                        "critical_remaining_percent": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 99
+                        },
+                        "pace_tolerance_percent": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 25
+                        },
+                        "pace_warning_burn_rate_percent": {
+                          "type": "integer",
+                          "minimum": 100,
+                          "maximum": 300
+                        },
+                        "pace_critical_burn_rate_percent": {
+                          "type": "integer",
+                          "minimum": 100,
+                          "maximum": 400
+                        },
+                        "pace_minimum_elapsed_hours": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 72
+                        }
+                      },
+                      "required": [
+                        "warning_remaining_percent",
+                        "critical_remaining_percent",
+                        "pace_tolerance_percent",
+                        "pace_warning_burn_rate_percent",
+                        "pace_critical_burn_rate_percent",
+                        "pace_minimum_elapsed_hours"
+                      ]
                     }
                   },
                   "additionalProperties": {}
@@ -32267,6 +32310,49 @@
                       "items": {
                         "type": "string"
                       }
+                    },
+                    "provider_quota_thresholds": {
+                      "type": "object",
+                      "properties": {
+                        "warning_remaining_percent": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 99
+                        },
+                        "critical_remaining_percent": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 99
+                        },
+                        "pace_tolerance_percent": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 25
+                        },
+                        "pace_warning_burn_rate_percent": {
+                          "type": "integer",
+                          "minimum": 100,
+                          "maximum": 300
+                        },
+                        "pace_critical_burn_rate_percent": {
+                          "type": "integer",
+                          "minimum": 100,
+                          "maximum": 400
+                        },
+                        "pace_minimum_elapsed_hours": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 72
+                        }
+                      },
+                      "required": [
+                        "warning_remaining_percent",
+                        "critical_remaining_percent",
+                        "pace_tolerance_percent",
+                        "pace_warning_burn_rate_percent",
+                        "pace_critical_burn_rate_percent",
+                        "pace_minimum_elapsed_hours"
+                      ]
                     }
                   },
                   "additionalProperties": {}
@@ -34091,6 +34177,15 @@
                                           },
                                           "valid_until": {
                                             "type": "string"
+                                          },
+                                          "status": {
+                                            "enum": [
+                                              "over",
+                                              "on",
+                                              "under"
+                                            ],
+                                            "type": "string",
+                                            "description": "TAL-411, `/api/provider/quotas` only: over when behind pace by at least the tolerance, under when more than 1 point ahead."
                                           }
                                         },
                                         "required": [
@@ -34165,6 +34260,41 @@
                                         "type": "null"
                                       }
                                     ]
+                                  },
+                                  "projection_eligible": {
+                                    "type": "boolean",
+                                    "description": "TAL-411, `/api/provider/quotas` only: the burn-rate breakpoints apply (enough elapsed time and use, and the projection empties the window before reset)."
+                                  },
+                                  "urgency": {
+                                    "type": "object",
+                                    "properties": {
+                                      "remaining": {
+                                        "enum": [
+                                          "healthy",
+                                          "warning",
+                                          "critical",
+                                          "stale",
+                                          "unavailable"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "pace": {
+                                        "enum": [
+                                          "healthy",
+                                          "warning",
+                                          "critical",
+                                          "stale",
+                                          "unavailable"
+                                        ],
+                                        "type": "string",
+                                        "description": "Burn rate and pace tolerance; the remaining classification when the window has no pace."
+                                      }
+                                    },
+                                    "required": [
+                                      "remaining",
+                                      "pace"
+                                    ],
+                                    "additionalProperties": {}
                                   }
                                 },
                                 "required": [
@@ -34459,6 +34589,15 @@
                                         },
                                         "valid_until": {
                                           "type": "string"
+                                        },
+                                        "status": {
+                                          "enum": [
+                                            "over",
+                                            "on",
+                                            "under"
+                                          ],
+                                          "type": "string",
+                                          "description": "TAL-411, `/api/provider/quotas` only: over when behind pace by at least the tolerance, under when more than 1 point ahead."
                                         }
                                       },
                                       "required": [
@@ -34533,6 +34672,41 @@
                                       "type": "null"
                                     }
                                   ]
+                                },
+                                "projection_eligible": {
+                                  "type": "boolean",
+                                  "description": "TAL-411, `/api/provider/quotas` only: the burn-rate breakpoints apply (enough elapsed time and use, and the projection empties the window before reset)."
+                                },
+                                "urgency": {
+                                  "type": "object",
+                                  "properties": {
+                                    "remaining": {
+                                      "enum": [
+                                        "healthy",
+                                        "warning",
+                                        "critical",
+                                        "stale",
+                                        "unavailable"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "pace": {
+                                      "enum": [
+                                        "healthy",
+                                        "warning",
+                                        "critical",
+                                        "stale",
+                                        "unavailable"
+                                      ],
+                                      "type": "string",
+                                      "description": "Burn rate and pace tolerance; the remaining classification when the window has no pace."
+                                    }
+                                  },
+                                  "required": [
+                                    "remaining",
+                                    "pace"
+                                  ],
+                                  "additionalProperties": {}
                                 }
                               },
                               "required": [
@@ -34592,6 +34766,38 @@
                               }
                             ],
                             "description": "The weekly window."
+                          },
+                          "urgency": {
+                            "type": "object",
+                            "properties": {
+                              "remaining": {
+                                "enum": [
+                                  "healthy",
+                                  "warning",
+                                  "critical",
+                                  "stale",
+                                  "unavailable"
+                                ],
+                                "type": "string"
+                              },
+                              "pace": {
+                                "enum": [
+                                  "healthy",
+                                  "warning",
+                                  "critical",
+                                  "stale",
+                                  "unavailable"
+                                ],
+                                "type": "string",
+                                "description": "Burn rate and pace tolerance; the remaining classification when the window has no pace."
+                              }
+                            },
+                            "required": [
+                              "remaining",
+                              "pace"
+                            ],
+                            "additionalProperties": {},
+                            "description": "TAL-411: `remaining` of the first window, `pace` of the pace window; alerts and the source colour follow it."
                           }
                         },
                         "required": [

@@ -1,5 +1,6 @@
 {
   "version": 1,
+  "computed_at": "2026-09-28T08:00:00Z",
   "scope_id": "qscope_7db910e89e3a2372073d47b80ac9f2cc",
   "profile_id": "default",
   "active_provider": "anthropic",
@@ -31,13 +32,19 @@
             "minutes_to_reset": 240,
             "projected_minutes_to_empty": 540,
             "elapsed_minutes": 60,
-            "valid_until": "2026-09-28T12:00:00Z"
+            "valid_until": "2026-09-28T12:00:00Z",
+            "status": "under"
           },
           "forecast": {
             "outcome": "safe",
             "budget_unit": "hour",
             "budget_percent": 22.5,
             "depletion_margin_minutes": 300
+          },
+          "projection_eligible": false,
+          "urgency": {
+            "remaining": "healthy",
+            "pace": "healthy"
           }
         },
         {
@@ -54,13 +61,19 @@
             "minutes_to_reset": 7200,
             "projected_minutes_to_empty": 6120,
             "elapsed_minutes": 2880,
-            "valid_until": "2026-10-03T08:00:00Z"
+            "valid_until": "2026-10-03T08:00:00Z",
+            "status": "over"
           },
           "forecast": {
             "outcome": "warning",
             "budget_unit": "day",
             "budget_percent": 13.6,
             "depletion_margin_minutes": -1080
+          },
+          "projection_eligible": true,
+          "urgency": {
+            "remaining": "healthy",
+            "pace": "warning"
           }
         },
         {
@@ -71,7 +84,12 @@
           "detail": null,
           "window_seconds": null,
           "pace": null,
-          "forecast": null
+          "forecast": null,
+          "projection_eligible": false,
+          "urgency": {
+            "remaining": "healthy",
+            "pace": "healthy"
+          }
         }
       ],
       "balances": [],
@@ -82,8 +100,11 @@
       "fetched_at": "2026-09-28T07:59:30Z",
       "pace_window_index": 1,
       "session_window_index": 0,
-      "weekly_window_index": 1
+      "weekly_window_index": 1,
+      "urgency": {
+        "remaining": "healthy",
+        "pace": "warning"
+      }
     }
-  ],
-  "computed_at": "2026-09-28T08:00:00Z"
+  ]
 }

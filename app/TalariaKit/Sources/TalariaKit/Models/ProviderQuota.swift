@@ -68,6 +68,8 @@ public struct ProviderQuotaSource: Codable, Equatable, Identifiable, Sendable {
     public let weeklyWindowIndex: Int?
     /// The response's `computed_at`, kept per source because targeted refreshes merge sources.
     public internal(set) var computedAt: String?
+    /// Server urgency of the windows a widget shows by default; nil from a server that predates it.
+    public let urgency: ProviderQuotaUrgencyLevels?
 
     enum CodingKeys: String, CodingKey {
         case id = "sourceId"
@@ -89,6 +91,7 @@ public struct ProviderQuotaSource: Codable, Equatable, Identifiable, Sendable {
         case sessionWindowIndex
         case weeklyWindowIndex
         case computedAt
+        case urgency
     }
 
     public init(
@@ -110,7 +113,8 @@ public struct ProviderQuotaSource: Codable, Equatable, Identifiable, Sendable {
         paceWindowIndex: Int? = nil,
         sessionWindowIndex: Int? = nil,
         weeklyWindowIndex: Int? = nil,
-        computedAt: String? = nil
+        computedAt: String? = nil,
+        urgency: ProviderQuotaUrgencyLevels? = nil
     ) {
         self.id = id
         self.providerID = providerID
@@ -131,6 +135,7 @@ public struct ProviderQuotaSource: Codable, Equatable, Identifiable, Sendable {
         self.sessionWindowIndex = sessionWindowIndex
         self.weeklyWindowIndex = weeklyWindowIndex
         self.computedAt = computedAt
+        self.urgency = urgency
     }
 
     public init(from decoder: Decoder) throws {
@@ -154,6 +159,7 @@ public struct ProviderQuotaSource: Codable, Equatable, Identifiable, Sendable {
         sessionWindowIndex = container.decodeQuotaIntIfPresent(forKey: .sessionWindowIndex)
         weeklyWindowIndex = container.decodeQuotaIntIfPresent(forKey: .weeklyWindowIndex)
         computedAt = container.decodeQuotaStringIfPresent(forKey: .computedAt)
+        urgency = try? container.decodeIfPresent(ProviderQuotaUrgencyLevels.self, forKey: .urgency)
     }
 }
 
@@ -166,6 +172,10 @@ public struct ProviderQuotaWindow: Codable, Equatable, Sendable {
     public let detail: String?
     public let pace: ProviderQuotaWindowPace?
     public let forecast: ProviderQuotaWindowForecast?
+    /// Whether the server's burn-rate breakpoints apply to this window.
+    public let projectionEligible: Bool?
+    /// Server urgency of this window per colour basis; nil from a server that predates it.
+    public let urgency: ProviderQuotaUrgencyLevels?
 
     enum CodingKeys: String, CodingKey {
         case label
@@ -176,6 +186,8 @@ public struct ProviderQuotaWindow: Codable, Equatable, Sendable {
         case detail
         case pace
         case forecast
+        case projectionEligible
+        case urgency
     }
 
     public init(
@@ -186,7 +198,9 @@ public struct ProviderQuotaWindow: Codable, Equatable, Sendable {
         resetAt: String? = nil,
         detail: String? = nil,
         pace: ProviderQuotaWindowPace? = nil,
-        forecast: ProviderQuotaWindowForecast? = nil
+        forecast: ProviderQuotaWindowForecast? = nil,
+        projectionEligible: Bool? = nil,
+        urgency: ProviderQuotaUrgencyLevels? = nil
     ) {
         self.label = label
         self.windowSeconds = windowSeconds
@@ -196,6 +210,8 @@ public struct ProviderQuotaWindow: Codable, Equatable, Sendable {
         self.detail = detail
         self.pace = pace
         self.forecast = forecast
+        self.projectionEligible = projectionEligible
+        self.urgency = urgency
     }
 
     public init(from decoder: Decoder) throws {
@@ -208,6 +224,32 @@ public struct ProviderQuotaWindow: Codable, Equatable, Sendable {
         detail = container.decodeQuotaStringIfPresent(forKey: .detail)
         pace = try? container.decodeIfPresent(ProviderQuotaWindowPace.self, forKey: .pace)
         forecast = try? container.decodeIfPresent(ProviderQuotaWindowForecast.self, forKey: .forecast)
+        projectionEligible = container.decodeQuotaBoolIfPresent(forKey: .projectionEligible)
+        urgency = try? container.decodeIfPresent(ProviderQuotaUrgencyLevels.self, forKey: .urgency)
+    }
+}
+
+/// The server's quota classification (TAL-411); clients only render it.
+public enum ProviderQuotaUrgency: String, Codable, Equatable, Sendable {
+    case healthy
+    case warning
+    case critical
+    case stale
+    case unavailable
+}
+
+/// Server urgency per colour basis: quota remaining, or pace and burn rate.
+public struct ProviderQuotaUrgencyLevels: Codable, Equatable, Sendable {
+    public let remaining: ProviderQuotaUrgency
+    public let pace: ProviderQuotaUrgency
+
+    public init(remaining: ProviderQuotaUrgency, pace: ProviderQuotaUrgency) {
+        self.remaining = remaining
+        self.pace = pace
+    }
+
+    public func level(for basis: ProviderQuotaWidgetColorBasis) -> ProviderQuotaUrgency {
+        basis == .pace ? pace : remaining
     }
 }
 
@@ -221,6 +263,8 @@ public struct ProviderQuotaWindowPace: Codable, Equatable, Sendable {
     public let elapsedMinutes: Double
     /// The window's reset; a cached pace past it describes the previous window.
     public let validUntil: String?
+    /// Server comparison with its pace tolerance: `over`, `on`, or `under`; nil from a server that predates it.
+    public let status: String?
 
     public init(
         expectedRemainingPercent: Double,
@@ -229,7 +273,8 @@ public struct ProviderQuotaWindowPace: Codable, Equatable, Sendable {
         minutesToReset: Double,
         projectedMinutesToEmpty: Double? = nil,
         elapsedMinutes: Double,
-        validUntil: String? = nil
+        validUntil: String? = nil,
+        status: String? = nil
     ) {
         self.expectedRemainingPercent = expectedRemainingPercent
         self.paceDeltaPercent = paceDeltaPercent
@@ -238,6 +283,7 @@ public struct ProviderQuotaWindowPace: Codable, Equatable, Sendable {
         self.projectedMinutesToEmpty = projectedMinutesToEmpty
         self.elapsedMinutes = elapsedMinutes
         self.validUntil = validUntil
+        self.status = status
     }
 
     public func isValid(at date: Date) -> Bool {

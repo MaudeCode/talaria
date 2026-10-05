@@ -579,6 +579,62 @@ final class ProvidersViewModelTests: APIClientTestCase {
     }
 
     @MainActor
+    func testQuotaAlertsEvaluateOnlyFreshServerSourcesAndTheCacheKeepsServerUrgency() async throws {
+        let suite = "ProvidersViewModelAlerts.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = ProviderQuotaWidgetSnapshotStore(defaults: defaults)
+        var serverUp = true
+        let client = makeScopedClient { request in
+            guard serverUp else {
+                return (HTTPURLResponse(url: request.url!, statusCode: 503, httpVersion: nil, headerFields: nil)!, Data())
+            }
+            let window = #"{ "label": "Weekly", "used_percent": 80, "urgency": { "remaining": "warning", "pace": "critical" } }"#
+            let source = { (id: String) in
+                #"{ "source_id": "\#(id)", "provider_id": "anthropic", "provider_label": "Claude", "account_label": "\#(id)", "status": "available", "supported": true, "urgency": { "remaining": "warning", "pace": "critical" }, "windows": [\#(window)] }"#
+            }
+            let ids = request.url?.query?.contains("source=qsrc_b") == true ? ["qsrc_b"] : ["qsrc_a", "qsrc_b"]
+            return apiTestJSONResponse(#"{ "version": 1, "scope_id": "qscope_alerts", "profile_id": "default", "sources": [\#(ids.map(source).joined(separator: ","))] }"#, for: request)
+        }
+        var evaluations: [(ids: [String], fresh: Set<String>?)] = []
+        let evaluate: ([ProviderQuotaWidgetSource], Set<String>?) -> Void = { evaluations.append(($0.map(\.sourceID), $1)) }
+        let model = ProvidersViewModel(server: Self.serverURL, client: client, quotaSnapshotStore: store, reloadQuotaWidgets: {}, evaluateQuotaAlerts: evaluate)
+
+        await model.loadQuotas()
+        XCTAssertEqual(evaluations.count, 1)
+        XCTAssertNil(evaluations.last?.fresh, "a full response evaluates every source")
+        await model.refreshQuota(sourceID: "qsrc_b")
+        XCTAssertEqual(evaluations.last?.fresh, ["qsrc_b"], "a targeted refresh evaluates only the refreshed source")
+
+        // The snapshot keeps the server urgency for widgets and an offline relaunch, which never evaluates alerts.
+        let cached = try XCTUnwrap(store.load()?.sources.first)
+        XCTAssertEqual(cached.urgency, ProviderQuotaUrgencyLevels(remaining: .warning, pace: .critical))
+        XCTAssertEqual(cached.windows.first?.urgency, ProviderQuotaUrgencyLevels(remaining: .warning, pace: .critical))
+        serverUp = false
+        let relaunched = ProvidersViewModel(server: Self.serverURL, client: client, quotaSnapshotStore: store, reloadQuotaWidgets: {}, evaluateQuotaAlerts: evaluate)
+        XCTAssertEqual(relaunched.quotaSources.first?.urgency, cached.urgency)
+        await relaunched.loadQuotas(refresh: true)
+        XCTAssertEqual(evaluations.count, 2, "neither the cache nor a failed refresh evaluates alerts")
+    }
+
+    func testQuotaAlertsFireOnEnteringWarningOrCriticalAndOnEscalation() {
+        func run(_ urgency: ProviderQuotaUrgency, after previous: [String: String]) -> (ProviderQuotaAlertService.Level?, [String: String]) {
+            let result = ProviderQuotaAlertService.transitions([("qsrc", urgency)], previous: previous)
+            return (result.alerts["qsrc"], result.states)
+        }
+        XCTAssertEqual(run(.warning, after: [:]).0, .warning)
+        XCTAssertNil(run(.warning, after: ["qsrc": "warning"]).0)
+        XCTAssertEqual(run(.critical, after: ["qsrc": "warning"]).0, .critical)
+        XCTAssertNil(run(.critical, after: ["qsrc": "critical"]).0)
+        XCTAssertEqual(run(.critical, after: [:]).0, .critical)
+        let recovered = run(.healthy, after: ["qsrc": "critical"])
+        XCTAssertNil(recovered.0)
+        XCTAssertEqual(recovered.1, [:], "recovering re-arms the alert")
+        XCTAssertNil(run(.stale, after: [:]).0)
+        XCTAssertNil(run(.unavailable, after: [:]).0)
+    }
+
+    @MainActor
     func testCancelledQuotaLoadCannotRestoreClearedWidgetSnapshot() async throws {
         let requestArrived = expectation(description: "quota request arrived")
         let requests = DeferredRequests()

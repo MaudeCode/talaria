@@ -28,7 +28,7 @@ enum ProviderQuotaPresentation {
         at referenceDate: Date,
         windowOverride: ProviderQuotaWindow? = nil
     ) -> ProviderQuotaPresentationState {
-        let window = windowOverride ?? ProviderQuotaUrgencyCalculator.displayWindow(
+        let window = windowOverride ?? ProviderQuotaDisplayWindow.window(
             for: source,
             basis: settings.colorBasis,
             selection: settings.windowSelection
@@ -47,19 +47,9 @@ enum ProviderQuotaPresentation {
         // A cached pace past its window's reset describes the previous window.
         let pace = window?.pace.flatMap { $0.isValid(at: referenceDate) ? $0 : nil }
         let isStale = referenceDate.timeIntervalSince(source.freshnessDate) > ProviderQuotaWidgetSnapshot.staleAfter
-        let urgency = ProviderQuotaUrgencyCalculator.urgency(
-            window: window,
-            pace: pace,
-            status: source.status,
-            isStale: isStale,
-            basis: settings.colorBasis,
-            warningRemainingPercent: settings.warningRemainingPercent,
-            criticalRemainingPercent: settings.criticalRemainingPercent,
-            paceTolerancePercent: settings.paceTolerancePercent,
-            paceWarningBurnRatePercent: settings.paceWarningBurnRatePercent,
-            paceCriticalBurnRatePercent: settings.paceCriticalBurnRatePercent,
-            paceMinimumElapsedHours: settings.paceMinimumElapsedHours
-        )
+        // The server classifies (TAL-411); an old cache shows stale, and a server without `urgency` stays neutral.
+        let serverUrgency = window == nil ? source.urgency : window?.urgency
+        let urgency: ProviderQuotaUrgency = isStale ? .stale : serverUrgency?.level(for: settings.colorBasis) ?? .healthy
         return ProviderQuotaPresentationState(
             window: window,
             percent: displayedPercent,

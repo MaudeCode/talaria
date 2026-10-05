@@ -26,6 +26,8 @@ final class ProvidersViewModel {
     private let client: APIClient
     private let quotaSnapshotStore: ProviderQuotaWidgetSnapshotStore?
     private let reloadQuotaWidgets: () -> Void
+    /// Runs only after a successful server response, with the ids it refreshed (nil: all); never from the cache.
+    private let evaluateQuotaAlerts: ([ProviderQuotaWidgetSource], Set<String>?) -> Void
     private let quotaServer: URL
     private let quotaServerLabel: String
 
@@ -50,11 +52,15 @@ final class ProvidersViewModel {
         quotaSnapshotStore: ProviderQuotaWidgetSnapshotStore? = nil,
         reloadQuotaWidgets: @escaping () -> Void = {
             ProviderQuotaWidgetSnapshotStore.reloadTimelines()
+        },
+        evaluateQuotaAlerts: @escaping ([ProviderQuotaWidgetSource], Set<String>?) -> Void = { sources, freshIDs in
+            Task { await ProviderQuotaAlertService.evaluate(sources, freshSourceIDs: freshIDs) }
         }
     ) {
         self.client = client ?? APIClient(baseURL: server)
         self.quotaSnapshotStore = quotaSnapshotStore ?? (client == nil ? ProviderQuotaWidgetSnapshotStore() : nil)
         self.reloadQuotaWidgets = reloadQuotaWidgets
+        self.evaluateQuotaAlerts = evaluateQuotaAlerts
         self.quotaServer = server
         let storedLabel = ServerRegistry.shared.servers
             .first(where: { $0.id == server.absoluteString })?
@@ -235,7 +241,7 @@ final class ProvidersViewModel {
               )
         else { return }
         reloadQuotaWidgets()
-        Task { await ProviderQuotaAlertService.evaluate(widgetSources) }
+        evaluateQuotaAlerts(widgetSources, updatedSourceIDs)
     }
 
     private func persistWidgetRefreshCredentials() {
@@ -280,7 +286,8 @@ final class ProvidersViewModel {
             paceWindowIndex: source.paceWindowIndex,
             sessionWindowIndex: source.sessionWindowIndex,
             weeklyWindowIndex: source.weeklyWindowIndex,
-            computedAt: source.computedAt
+            computedAt: source.computedAt,
+            urgency: source.urgency
         )
     }
 
@@ -387,15 +394,40 @@ final class ProvidersViewModel {
     }
 }
 
-private enum ProviderQuotaAlertService {
-    private enum Level: String, Codable {
+enum ProviderQuotaAlertService {
+    enum Level: String, Codable {
         case warning
         case critical
 
         var rank: Int { self == .critical ? 2 : 1 }
     }
 
-    static func evaluate(_ sources: [ProviderQuotaWidgetSource]) async {
+    /// The alerts server urgency raises: entering warning or critical, or escalating from warning to critical.
+    /// `previous` holds each source's last alerted level; a source back below warning clears it.
+    static func transitions(
+        _ urgencies: [(sourceID: String, urgency: ProviderQuotaUrgency)],
+        previous: [String: String]
+    ) -> (alerts: [String: Level], states: [String: String]) {
+        var states = previous
+        var alerts: [String: Level] = [:]
+        for (sourceID, urgency) in urgencies {
+            let level: Level? = switch urgency {
+            case .critical: .critical
+            case .warning: .warning
+            default: nil
+            }
+            let oldLevel = previous[sourceID].flatMap(Level.init(rawValue:))
+            if let level {
+                states[sourceID] = level.rawValue
+                if level.rank > (oldLevel?.rank ?? 0) { alerts[sourceID] = level }
+            } else {
+                states.removeValue(forKey: sourceID)
+            }
+        }
+        return (alerts, states)
+    }
+
+    static func evaluate(_ sources: [ProviderQuotaWidgetSource], freshSourceIDs: Set<String>?) async {
         let defaults = UserDefaults.standard
         guard defaults.bool(forKey: ProviderQuotaAlertSettings.isEnabledKey),
               await notificationsAreAllowed()
@@ -408,25 +440,16 @@ private enum ProviderQuotaAlertService {
         let currentSourceIDs = Set(sources.filter { $0.status != "removed" }.map(\.sourceID))
         previous = previous.filter { currentSourceIDs.contains($0.key) }
 
-        for source in sources where source.status != "removed" {
-            let state = ProviderQuotaPresentation.state(for: source, settings: settings, at: source.freshnessDate)
-            let level: Level? = switch state.urgency {
-            case .critical: .critical
-            case .warning: .warning
-            default: nil
-            }
-            let oldLevel = previous[source.sourceID].flatMap(Level.init(rawValue:))
-            if let level {
-                previous[source.sourceID] = level.rawValue
-                if oldLevel == nil || level.rank > (oldLevel?.rank ?? 0) {
-                    await schedule(level, source: source, aliasesData: aliasesData, remaining: state.remainingPercent)
-                }
-            } else {
-                previous.removeValue(forKey: source.sourceID)
-            }
+        let fresh = sources
+            .filter { $0.status != "removed" && freshSourceIDs?.contains($0.sourceID) ?? true }
+            .map { ($0, ProviderQuotaPresentation.state(for: $0, settings: settings, at: $0.freshnessDate)) }
+        let result = transitions(fresh.map { ($0.0.sourceID, $0.1.urgency) }, previous: previous)
+        for (source, state) in fresh {
+            guard let level = result.alerts[source.sourceID] else { continue }
+            await schedule(level, source: source, aliasesData: aliasesData, remaining: state.remainingPercent)
         }
 
-        defaults.set(try? JSONEncoder().encode(previous), forKey: ProviderQuotaAlertSettings.stateKey)
+        defaults.set(try? JSONEncoder().encode(result.states), forKey: ProviderQuotaAlertSettings.stateKey)
     }
 
     private static func schedule(

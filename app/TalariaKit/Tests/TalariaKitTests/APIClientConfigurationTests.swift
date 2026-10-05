@@ -797,6 +797,44 @@ final class APIClientConfigurationTests: APIClientTestCase {
         XCTAssertFalse(ProfileNameRules.isValid(String(repeating: "a", count: 65)))
     }
 
+    func testQuotaThresholdsLoadSaveAndCacheThroughServerSettings() async throws {
+        let thresholdsJSON = """
+        { "warning_remaining_percent": 30, "critical_remaining_percent": 10, "pace_tolerance_percent": 3,
+          "pace_warning_burn_rate_percent": 125, "pace_critical_burn_rate_percent": 175, "pace_minimum_elapsed_hours": 12 }
+        """
+        let client = makeClient { request in
+            XCTAssertEqual(request.url?.path, "/api/settings")
+            if request.httpMethod == "POST" {
+                let body = try XCTUnwrap(apiTestBodyData(from: request))
+                let sent = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+                XCTAssertEqual(Set(sent.keys), ["provider_quota_thresholds"])
+                let thresholds = try XCTUnwrap(sent["provider_quota_thresholds"] as? [String: Int])
+                XCTAssertEqual(thresholds["warning_remaining_percent"], 30)
+                XCTAssertEqual(thresholds["pace_minimum_elapsed_hours"], 12)
+            }
+            return apiTestJSONResponse(#"{ "bot_name": "Hermes", "provider_quota_thresholds": \#(thresholdsJSON) }"#, for: request)
+        }
+
+        let settings = try await client.settings()
+        let loaded = try XCTUnwrap(settings.providerQuotaThresholds)
+        XCTAssertEqual(loaded.warningRemainingPercent, 30)
+        let saved = try await client.saveProviderQuotaThresholds(loaded).providerQuotaThresholds
+        XCTAssertEqual(saved, loaded)
+
+        // The last read is cached for read-only offline display.
+        let suite = "QuotaThresholdsCache.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        XCTAssertNil(ProviderQuotaThresholds.cached(defaults: defaults))
+        loaded.cache(defaults: defaults)
+        XCTAssertEqual(ProviderQuotaThresholds.cached(defaults: defaults), loaded)
+
+        // A server that predates TAL-411 has no thresholds to edit.
+        let legacy = makeClient { request in apiTestJSONResponse(#"{ "bot_name": "Hermes" }"#, for: request) }
+        let legacyThresholds = try await legacy.settings().providerQuotaThresholds
+        XCTAssertNil(legacyThresholds)
+    }
+
     func testSettingsBuildsExpectedPathAndDecodesServerVersion() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/settings")

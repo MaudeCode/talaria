@@ -2,6 +2,7 @@ import type { z } from 'zod'
 import { m } from '../../paraglide/messages.js'
 import { useLocale } from '../../i18n/useLocale'
 import type { ProviderQuotaSourceSchema } from '../../contracts'
+import { QuotaUrgency } from './QuotaThresholds'
 
 type QuotaSource = z.infer<typeof ProviderQuotaSourceSchema>
 
@@ -15,15 +16,24 @@ function formatMinutes(locale: string, minutes: number): string {
   return hours > 0 ? unit(hours, 'hour') : unit(total, 'minute')
 }
 
-/** The server-selected pace window (`pace_window_index`) of a quota source; every value is a TAL-409 contract field. */
+/** The server-selected pace window (`pace_window_index`) of a quota source and the source's urgency; every value is a TAL-409/TAL-411 contract field. */
 export function ProviderQuotaPace({ source, showAccount }: { source: QuotaSource; showAccount: boolean }) {
   const locale = useLocale()
   const w = source.pace_window_index == null ? undefined : source.windows?.[source.pace_window_index]
-  if (!w) return null
+  if (!w) {
+    if (!source.urgency) return null
+    return (
+      <div className="mt-2 flex flex-col gap-0.5 border-t border-border pt-2 text-[11px] text-muted">
+        {showAccount && source.account_label && <span className="font-medium text-text">{source.account_label}</span>}
+        <QuotaUrgency urgency={source.urgency} />
+      </div>
+    )
+  }
   const { pace, forecast } = w
   const percent = (value: number) => new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 1 }).format(value / 100)
   return (
     <div className="mt-2 flex flex-col gap-0.5 border-t border-border pt-2 text-[11px] text-muted" data-testid="provider-quota-pace">
+      <QuotaUrgency urgency={source.urgency} />
       <div className="flex flex-wrap gap-x-3">
         <span className="font-medium text-text">{showAccount && source.account_label ? `${source.account_label} · ${w.label}` : w.label}</span>
         {w.remaining_percent !== null && <span>{m.provider_quota_remaining({ percent: percent(w.remaining_percent) })}</span>}
@@ -32,7 +42,7 @@ export function ProviderQuotaPace({ source, showAccount }: { source: QuotaSource
       <div className="flex flex-wrap gap-x-3">
         {pace ? (
           <>
-            <span>{pace.pace_delta_percent < 0 ? m.provider_quota_over_pace({ percent: percent(-pace.pace_delta_percent) }) : pace.pace_delta_percent > 0 ? m.provider_quota_under_pace({ percent: percent(pace.pace_delta_percent) }) : m.provider_quota_on_pace()}</span>
+            <span>{pace.status === 'over' ? m.provider_quota_over_pace({ percent: percent(-pace.pace_delta_percent) }) : pace.status === 'under' ? m.provider_quota_under_pace({ percent: percent(pace.pace_delta_percent) }) : m.provider_quota_on_pace()}</span>
             <span>{m.provider_quota_burn({ rate: `${new Intl.NumberFormat(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(pace.burn_rate)}×` })}</span>
           </>
         ) : <span>{m.provider_quota_pace_unavailable()}</span>}

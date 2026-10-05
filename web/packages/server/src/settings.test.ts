@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { open } from 'node:fs/promises'
 import { atomicWriteText, atomicWriteTextAsync, writeFully, writeFullyAsync } from './fs/atomic.js'
-import { normalizeAppearance, SettingsStore } from './settings.js'
+import { normalizeAppearance, QUOTA_THRESHOLD_DEFAULTS, SettingsStore } from './settings.js'
 
 let dir: string
 beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'talaria-settings-')) })
@@ -309,6 +309,30 @@ describe('save', () => {
     env.defaultWorkspace = join(dir, 'env-ws')
     env.applyStartupWorkspace()
     expect(onDisk().default_workspace).toBe(join(dir, 'env-ws'))
+  })
+})
+
+describe('provider quota thresholds (TAL-411)', () => {
+  it('keeps one set per profile, patches field by field, and ignores invalid values', async () => {
+    const s = store()
+    expect(s.quotaThresholds('default')).toEqual(QUOTA_THRESHOLD_DEFAULTS)
+    await s.save({ provider_quota_thresholds: { warning_remaining_percent: 40, pace_minimum_elapsed_hours: 73, pace_tolerance_percent: 2.5, pace_warning_burn_rate_percent: '150' } }, { profile: 'work' })
+    await s.save({ provider_quota_thresholds: { pace_tolerance_percent: 0 } }, { profile: 'work' })
+    expect(s.quotaThresholds('work')).toEqual({ ...QUOTA_THRESHOLD_DEFAULTS, warning_remaining_percent: 40, pace_tolerance_percent: 0 })
+    expect(s.quotaThresholds('default')).toEqual(QUOTA_THRESHOLD_DEFAULTS)
+    expect(onDisk().provider_quota_thresholds).toBeUndefined()
+    // Without a request profile the key is ignored rather than stored loose.
+    await s.save({ provider_quota_thresholds: { warning_remaining_percent: 50 } })
+    expect(s.quotaThresholds('default')).toEqual(QUOTA_THRESHOLD_DEFAULTS)
+  })
+
+  it('clamps critical to at most warning, for remaining percent and burn rate alike', async () => {
+    const s = store()
+    await s.save({ provider_quota_thresholds: { warning_remaining_percent: 20, critical_remaining_percent: 30, pace_warning_burn_rate_percent: 200, pace_critical_burn_rate_percent: 150 } }, { profile: 'default' })
+    expect(s.quotaThresholds('default')).toMatchObject({ warning_remaining_percent: 20, critical_remaining_percent: 20, pace_warning_burn_rate_percent: 200, pace_critical_burn_rate_percent: 200 })
+    // A hand-edited file is read through the same validation.
+    write({ provider_quota_thresholds_by_profile: { default: { warning_remaining_percent: 5, critical_remaining_percent: 9, pace_tolerance_percent: -1 } } })
+    expect(s.quotaThresholds('default')).toEqual({ ...QUOTA_THRESHOLD_DEFAULTS, warning_remaining_percent: 5, critical_remaining_percent: 5 })
   })
 })
 

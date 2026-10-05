@@ -155,6 +155,11 @@ extension APIClient {
         try await send(endpoint: .settings, method: "GET")
     }
 
+    /// Saves the request profile's quota thresholds; the server validates and clamps them and answers the stored set.
+    public func saveProviderQuotaThresholds(_ thresholds: ProviderQuotaThresholds) async throws -> SettingsResponse {
+        try await send(endpoint: .settings, method: "POST", body: ProviderQuotaThresholdsSaveRequest(providerQuotaThresholds: thresholds))
+    }
+
     public func updatesCheck() async throws -> UpdatesCheckResponse {
         try await send(endpoint: .updatesCheck, method: "GET")
     }
@@ -265,4 +270,8 @@ private struct UpdatesApplyRequest: Encodable {
 
 private struct UpdatesCheckForceRequest: Encodable {
     let force: Bool
+}
+
+private struct ProviderQuotaThresholdsSaveRequest: Encodable {
+    let providerQuotaThresholds: ProviderQuotaThresholds
 }
