@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Long pasted prompts fold to their first lines with Show more, so the reply stays in view.",
+      "highlight": false,
+      "components": ["app"]
+    },
+    {
+      "category": "Added",
+      "summary": "The server marks long prompts as foldable so the iPhone app can show them collapsed.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

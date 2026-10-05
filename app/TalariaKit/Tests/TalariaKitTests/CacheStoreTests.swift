@@ -476,7 +476,7 @@ final class CacheStoreTests: XCTestCase {
         let context = try makeContext()
         let serverURL = URL(string: "https://example.test")!
         let cachedAt = Date(timeIntervalSince1970: 1_770_000_000)
-        let message = ChatMessage(role: "user", content: "Long pasted log", timestamp: 1, messageId: "long-1", displayExcerpt: "Long")
+        let message = ChatMessage(role: "user", content: "Long pasted log", timestamp: 1, messageId: "long-1", displayExcerpt: "Long", collapsible: true)
         try CacheStore.cacheMessages([message], serverURL: serverURL, sessionID: "abc123", in: context, cachedAt: cachedAt)
         let restored = try XCTUnwrap(CacheStore.cachedMessages(
             serverURL: serverURL,
@@ -486,6 +486,8 @@ final class CacheStoreTests: XCTestCase {
         ).first)
         // A cache-first open must not lay out the whole body before the server answers (TAL-456).
         XCTAssertEqual(restored.displayExcerpt, "Long")
+        // Offline, a long prompt stays folded as the server last decided (TAL-452).
+        XCTAssertTrue(restored.collapsible)
     }
 
     func testCachedMessagesKeepReasoningTitles() throws {

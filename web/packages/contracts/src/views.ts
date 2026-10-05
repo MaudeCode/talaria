@@ -147,6 +147,11 @@ export const MessageSchema = z.looseObject({
   _display_truncated: z.boolean().optional(),
   _display_excerpt: z.string().optional(),
   /**
+   * TAL-452: a typed user message (never a steer, background update or marker) longer than 20 lines or 2,000
+   * characters. Clients show it folded to a few lines with a local "Show more"; copy and edit use the whole `content`.
+   */
+  _collapsible: z.boolean().optional(),
+  /**
    * TAL-186: an assistant row's text with each media reference the server serves rewritten to standard Markdown: an
    * image to `![alt](url)`, any other file to `[name](url)`. Clients render it in place of `content` as one Markdown
    * document; `content` stays as stored for copy and edit. Absent when the text has no such reference.

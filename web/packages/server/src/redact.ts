@@ -1,5 +1,6 @@
 import { str } from './util.js'
 import { snapshotArgs, toolArgs, toolDisplay, toolName } from './sessions/tool-display.js'
+import { messageText } from './sessions/merge.js'
 /**
  * Credential redaction and the public session projection (Python
  * `api/helpers.py`). API responses are a hard boundary: transcript-bearing
@@ -1757,6 +1758,17 @@ export function buildActiveTurnToken(streamId: unknown, pendingStartedAt: unknow
   return `${str(streamId).trim()}:${formatG17(started)}`
 }
 
+/** TAL-452: a user message longer than either limit ships `_collapsible`, so clients fold it behind "Show more". */
+const COLLAPSIBLE_USER_MESSAGE_LINES = 20
+const COLLAPSIBLE_USER_MESSAGE_CHARS = 2000
+
+/** Whether a public (redacted) row is a typed user message (no steer, wakeup or marker) longer than either limit. */
+function isCollapsibleUserMessage(item: Record<string, unknown>): boolean {
+  if (item.role !== 'user' || item._steer !== undefined || item._background_update !== undefined || item._marker_kind !== undefined) return false
+  const text = messageText(item.content)
+  return text.length > COLLAPSIBLE_USER_MESSAGE_CHARS || text.split('\n').length > COLLAPSIBLE_USER_MESSAGE_LINES
+}
+
 function publicMessageProjection(message: unknown, enabled: boolean, activeTurnToken: string | null): unknown {
   const isActive = Boolean(message && typeof message === 'object' && (message as Record<string, unknown>).role === 'user' && activeTurnToken !== null && (message as Record<string, unknown>)._active_turn_token === activeTurnToken)
   const scrubbed = (scrubInternalReplayFields([message], { messageRecords: true }) as unknown[])[0]
@@ -1767,6 +1779,7 @@ function publicMessageProjection(message: unknown, enabled: boolean, activeTurnT
     item[key] = redactValue(value, enabled)
   }
   if (isActive) item._active_turn_user = true
+  if (isCollapsibleUserMessage(item)) item._collapsible = true
   return withMessageToolDisplay(scrubbed as Record<string, unknown>, item, enabled)
 }
 

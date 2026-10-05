@@ -1357,7 +1357,8 @@
         "timestamp": 1770000100,
         "_turn_id": "legacy:0",
         "_display_excerpt": "Synthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.",
-        "_display_truncated": true
+        "_display_truncated": true,
+        "_collapsible": true
       },
       {
         "role": "assistant",
@@ -1417,6 +1418,69 @@
     "source_kind": "webui",
     "is_messaging_session": false,
     "sort_ts": 0
+  },
+  "collapsible_user_session": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Synthetic stack frame 1 for the collapsible-prompt contract example.\nSynthetic stack frame 2 for the collapsible-prompt contract example.\nSynthetic stack frame 3 for the collapsible-prompt contract example.\nSynthetic stack frame 4 for the collapsible-prompt contract example.\nSynthetic stack frame 5 for the collapsible-prompt contract example.\nSynthetic stack frame 6 for the collapsible-prompt contract example.\nSynthetic stack frame 7 for the collapsible-prompt contract example.\nSynthetic stack frame 8 for the collapsible-prompt contract example.\nSynthetic stack frame 9 for the collapsible-prompt contract example.\nSynthetic stack frame 10 for the collapsible-prompt contract example.\nSynthetic stack frame 11 for the collapsible-prompt contract example.\nSynthetic stack frame 12 for the collapsible-prompt contract example.\nSynthetic stack frame 13 for the collapsible-prompt contract example.\nSynthetic stack frame 14 for the collapsible-prompt contract example.\nSynthetic stack frame 15 for the collapsible-prompt contract example.\nSynthetic stack frame 16 for the collapsible-prompt contract example.\nSynthetic stack frame 17 for the collapsible-prompt contract example.\nSynthetic stack frame 18 for the collapsible-prompt contract example.\nSynthetic stack frame 19 for the collapsible-prompt contract example.\nSynthetic stack frame 20 for the collapsible-prompt contract example.\nSynthetic stack frame 21 for the collapsible-prompt contract example.\nSynthetic stack frame 22 for the collapsible-prompt contract example.\nSynthetic stack frame 23 for the collapsible-prompt contract example.\nSynthetic stack frame 24 for the collapsible-prompt contract example.",
+        "message_id": "collapsible-user",
+        "timestamp": 1770000200,
+        "_turn_id": "legacy:0",
+        "_collapsible": true
+      },
+      {
+        "role": "assistant",
+        "content": "Synthetic reply line 1: assistant rows are never folded.\nSynthetic reply line 2: assistant rows are never folded.\nSynthetic reply line 3: assistant rows are never folded.\nSynthetic reply line 4: assistant rows are never folded.\nSynthetic reply line 5: assistant rows are never folded.\nSynthetic reply line 6: assistant rows are never folded.\nSynthetic reply line 7: assistant rows are never folded.\nSynthetic reply line 8: assistant rows are never folded.\nSynthetic reply line 9: assistant rows are never folded.\nSynthetic reply line 10: assistant rows are never folded.\nSynthetic reply line 11: assistant rows are never folded.\nSynthetic reply line 12: assistant rows are never folded.\nSynthetic reply line 13: assistant rows are never folded.\nSynthetic reply line 14: assistant rows are never folded.\nSynthetic reply line 15: assistant rows are never folded.\nSynthetic reply line 16: assistant rows are never folded.\nSynthetic reply line 17: assistant rows are never folded.\nSynthetic reply line 18: assistant rows are never folded.\nSynthetic reply line 19: assistant rows are never folded.\nSynthetic reply line 20: assistant rows are never folded.\nSynthetic reply line 21: assistant rows are never folded.\nSynthetic reply line 22: assistant rows are never folded.\nSynthetic reply line 23: assistant rows are never folded.\nSynthetic reply line 24: assistant rows are never folded.",
+        "message_id": "collapsible-reply",
+        "timestamp": 1770000201,
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "activity_rows": [],
+          "final_answer": "Synthetic reply line 1: assistant rows are never folded.\nSynthetic reply line 2: assistant rows are never folded.\nSynthetic reply line 3: assistant rows are never folded.\nSynthetic reply line 4: assistant rows are never folded.\nSynthetic reply line 5: assistant rows are never folded.\nSynthetic reply line 6: assistant rows are never folded.\nSynthetic reply line 7: assistant rows are never folded.\nSynthetic reply line 8: assistant rows are never folded.\nSynthetic reply line 9: assistant rows are never folded.\nSynthetic reply line 10: assistant rows are never folded.\nSynthetic reply line 11: assistant rows are never folded.\nSynthetic reply line 12: assistant rows are never folded.\nSynthetic reply line 13: assistant rows are never folded.\nSynthetic reply line 14: assistant rows are never folded.\nSynthetic reply line 15: assistant rows are never folded.\nSynthetic reply line 16: assistant rows are never folded.\nSynthetic reply line 17: assistant rows are never folded.\nSynthetic reply line 18: assistant rows are never folded.\nSynthetic reply line 19: assistant rows are never folded.\nSynthetic reply line 20: assistant rows are never folded.\nSynthetic reply line 21: assistant rows are never folded.\nSynthetic reply line 22: assistant rows are never folded.\nSynthetic reply line 23: assistant rows are never folded.\nSynthetic reply line 24: assistant rows are never folded.",
+          "turn_duration": null,
+          "terminal_state": "completed",
+          "expanded_by_default": false,
+          "has_consumed_steering": false,
+          "file_changes": [],
+          "activity_rows_total": 0,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "cb5db9e31114abaaeb2b0d43da2548aaa8c72c82043dfa48f2f0b6774fa30f3a"
+        },
+        "_turn_id": "legacy:0"
+      },
+      {
+        "role": "user",
+        "content": "A short prompt stays whole.",
+        "message_id": "short-prompt-user",
+        "timestamp": 1770000202,
+        "_turn_id": "legacy:2"
+      },
+      {
+        "role": "assistant",
+        "content": "A short reply.",
+        "message_id": "short-prompt-reply",
+        "timestamp": 1770000203,
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "activity_rows": [],
+          "final_answer": "A short reply.",
+          "turn_duration": null,
+          "terminal_state": "completed",
+          "expanded_by_default": false,
+          "has_consumed_steering": false,
+          "file_changes": [],
+          "activity_rows_total": 0,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "f712ef733cad586909c2a5904f792ac5e855995fd635e4b3b3c5c1e6884d8285"
+        },
+        "_turn_id": "legacy:2"
+      }
+    ]
   },
   "background_update_session": {
     "session_id": "contract-background-update",

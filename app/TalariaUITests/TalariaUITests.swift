@@ -144,6 +144,45 @@ final class LongBodyTranscriptUITests: ChatUITestCase {
     }
 }
 
+/// A long pasted prompt opens folded to its first lines, and Show more / Show less toggle it in place (TAL-452).
+final class LongPromptFoldUITests: ChatUITestCase {
+    func testLongPromptOpensFoldedAndToggles() throws {
+        launchFixture(additionalArguments: ["--ui-test-long-prompt"])
+        let session = fixtureSessionButton
+        XCTAssertTrue(session.awaitExistence(timeout: 15), "Missing deterministic session fixture")
+        tapFixtureSession(session)
+        let composer = try XCTUnwrap(waitForComposer(timeout: 30), "The long-prompt session never opened")
+
+        let prompt = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Fixture prompt line 1\n")).firstMatch
+        XCTAssertTrue(prompt.awaitExistence(timeout: 15), "The long prompt did not render")
+        let showMore = app.buttons["Show more"]
+        XCTAssertTrue(showMore.awaitExistence(timeout: 10), "The long prompt did not open folded")
+        XCTAssertEqual(app.buttons.matching(identifier: "Show more").count, 1, "Only the long prompt folds")
+        let folded = prompt.settledFrame.height
+        let foldedShot = XCTAttachment(screenshot: app.screenshot())
+        foldedShot.name = "long-prompt-folded"
+        foldedShot.lifetime = .keepAlways
+        add(foldedShot)
+
+        // Held past the transcript's long press, as the TAL-456 toggle test does (TAL-485).
+        showMore.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 1)
+        let showLess = app.buttons["Show less"]
+        XCTAssertTrue(showLess.awaitExistence(timeout: 10), "The folded prompt did not expand")
+        // 24 lines against a fold of 8.
+        XCTAssertGreaterThan(prompt.settledFrame.height, folded * 2, "The expanded prompt is not shown whole")
+        let expandedShot = XCTAttachment(screenshot: app.screenshot())
+        expandedShot.name = "long-prompt-expanded"
+        expandedShot.lifetime = .keepAlways
+        add(expandedShot)
+
+        // The whole prompt pushes the toggle under the floating composer; scroll it above.
+        for _ in 0..<10 where showLess.frame.maxY > composer.frame.minY - 24 { app.swipeUp() }
+        showLess.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 1)
+        XCTAssertTrue(showMore.awaitExistence(timeout: 10), "The expanded prompt did not fold again")
+        XCTAssertEqual(prompt.settledFrame.height, folded, accuracy: 2, "The prompt did not return to its fold")
+    }
+}
+
 /// Opening a chat from the list, then what the opened chat offers: its idle composer, which
 /// expands for typing, and long-press isolation between a message's links and its own actions
 /// (TAL-49).

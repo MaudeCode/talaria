@@ -30,6 +30,8 @@ struct UITestFixtureEnvironment {
     /// Serves a transcript of very long bodies in the server's collapsed shape (TAL-456), the
     /// shape that ran the App out of memory before it rendered excerpts.
     nonisolated static let longBodiesArgument = "--ui-test-long-bodies"
+    /// Serves a long pasted prompt the server marked `_collapsible` (TAL-452).
+    nonisolated static let longPromptArgument = "--ui-test-long-prompt"
     /// Serves a reply whose media references the server rewrote for display (TAL-186), and the media bytes.
     nonisolated static let transcriptMediaArgument = "--ui-test-transcript-media"
     /// Serves a transcript with automatic background wakeups in the server's `_background_update` shape (TAL-371).
@@ -84,6 +86,9 @@ struct UITestFixtureEnvironment {
     }
     nonisolated static var hasLongBodies: Bool {
         ProcessInfo.processInfo.arguments.contains(longBodiesArgument)
+    }
+    nonisolated static var hasLongPrompt: Bool {
+        ProcessInfo.processInfo.arguments.contains(longPromptArgument)
     }
     nonisolated static var hasTranscriptMedia: Bool {
         ProcessInfo.processInfo.arguments.contains(transcriptMediaArgument)
@@ -777,6 +782,11 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             detail["messages"] = longBodyMessages
             return json(["session": detail])
         }
+        if UITestFixtureEnvironment.hasLongPrompt {
+            var detail = session(id: sessionID, title: sessionTitle)
+            detail["messages"] = longPromptMessages
+            return json(["session": detail])
+        }
         if UITestFixtureEnvironment.hasTranscriptMedia {
             var detail = session(id: sessionID, title: sessionTitle)
             detail["messages"] = transcriptMediaMessages
@@ -868,6 +878,17 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             "_display_truncated": true, "_display_excerpt": String(content.prefix(2_900))
         ]
     }
+
+    /// A 24-line pasted prompt the server folds (TAL-452), between short replies.
+    private static let longPromptMessages: [[String: Any]] = [
+        ["role": "user", "content": "Short opening question.", "message_id": "long-prompt-opening", "_ts": 2_000_000_000],
+        ["role": "assistant", "content": "Short opening reply.", "message_id": "long-prompt-opening-reply", "_ts": 2_000_000_001],
+        [
+            "role": "user", "content": (1...24).map { "Fixture prompt line \($0)" }.joined(separator: "\n"),
+            "message_id": "long-prompt-user", "_ts": 2_000_000_002, "_collapsible": true
+        ],
+        ["role": "assistant", "content": "Read the whole prompt.", "message_id": "long-prompt-reply", "_ts": 2_000_000_003]
+    ]
 
     /// A link to a workspace file with a line target, which the chat opens in
     /// the source viewer instead of handing to the system (TAL-169). Only the

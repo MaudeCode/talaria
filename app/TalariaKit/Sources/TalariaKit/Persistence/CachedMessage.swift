@@ -25,6 +25,7 @@ public final class CachedMessage {
     var turnId: String?
     var steerData: Data?
     var displayExcerpt: String?
+    var collapsible: Bool?
     var displayBodyData: Data?
     var backgroundUpdateData: Data?
     var backgroundSilent: Bool?
@@ -91,6 +92,7 @@ public final class CachedMessage {
         turnId = message.turnId
         steerData = message.steer.flatMap { try? JSONEncoder().encode($0) }
         displayExcerpt = message.displayExcerpt
+        collapsible = message.collapsible ? true : nil
         displayBodyData = message.displayBody.flatMap { try? JSONEncoder().encode($0) }
         backgroundUpdateData = message.backgroundUpdate.flatMap { try? JSONEncoder().encode($0) }
         backgroundSilent = message.backgroundSilent ? true : nil

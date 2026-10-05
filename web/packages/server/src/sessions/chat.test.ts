@@ -438,6 +438,17 @@ describe('chat turns through the sidecar', () => {
     }
   })
 
+  it('marks a long prompt collapsible on the done frame (TAL-452)', async () => {
+    const sid = await newSession(s)
+    const prompt = Array.from({ length: 21 }, (_, i) => `trace ${i}`).join('\n')
+    sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: prompt }]))
+    sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Trace"', usage: null }))
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: prompt }))
+    const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    const messages = (((frames.find((f) => f.event === 'done')?.data as Json).session as Json).messages as Json[])
+    expect(messages.map((m) => [m.role, m._collapsible ?? null])).toEqual([['user', true], ['assistant', null]])
+  })
+
   it('ships an earlier bare-filename attachment as a filename-only object on the done frame (TAL-277)', async () => {
     const sid = await newSession(s)
     const session = s.deps.sessionStore.get(sid)

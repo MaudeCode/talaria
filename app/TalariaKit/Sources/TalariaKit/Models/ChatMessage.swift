@@ -40,6 +40,8 @@ public struct ChatMessage: Decodable, Equatable, Identifiable {
     public internal(set) var steer: [String: JSONValue]?
     /// The server's collapsed excerpt of a body too long to lay out whole (TAL-456); `content` stays whole for actions.
     public internal(set) var displayExcerpt: String?
+    /// The server folds this long user message behind "Show more" (TAL-452); `content` stays whole for actions.
+    public internal(set) var collapsible: Bool
     /// The server's display text with media references rewritten, and their media (TAL-186); `content` stays for actions.
     public internal(set) var displayBody: TranscriptDisplayBody?
     /// The server marked this row an automatic background wakeup (TAL-371): render its completion lines, not the user's bubble.
@@ -70,6 +72,7 @@ public struct ChatMessage: Decodable, Equatable, Identifiable {
         turnId: String? = nil,
         steer: [String: JSONValue]? = nil,
         displayExcerpt: String? = nil,
+        collapsible: Bool = false,
         displayBody: TranscriptDisplayBody? = nil,
         backgroundUpdate: BackgroundUpdate? = nil,
         backgroundSilent: Bool = false,
@@ -94,6 +97,7 @@ public struct ChatMessage: Decodable, Equatable, Identifiable {
         self.turnId = turnId
         self.steer = steer
         self.displayExcerpt = displayExcerpt
+        self.collapsible = collapsible
         self.displayBody = displayBody
         self.backgroundUpdate = backgroundUpdate
         self.backgroundSilent = backgroundSilent
@@ -121,6 +125,7 @@ public struct ChatMessage: Decodable, Equatable, Identifiable {
         case underscoredTimestamp = "_ts"
         case displayTruncated = "_displayTruncated"
         case displayExcerpt = "_displayExcerpt"
+        case collapsible = "_collapsible"
         case displayContent = "_displayContent"
         case media = "_media"
         case backgroundUpdate = "_backgroundUpdate"
@@ -156,6 +161,7 @@ public struct ChatMessage: Decodable, Equatable, Identifiable {
         displayExcerpt = (try? container.decodeIfPresent(Bool.self, forKey: .displayTruncated)) == true
             ? container.decodeLossyStringIfPresent(forKey: .displayExcerpt)
             : nil
+        collapsible = (try? container.decodeIfPresent(Bool.self, forKey: .collapsible)) == true
         displayBody = TranscriptDisplayBody.decoded(
             text: container.decodeLossyStringIfPresent(forKey: .displayContent),
             media: try? container.decodeIfPresent([JSONValue].self, forKey: .media)
