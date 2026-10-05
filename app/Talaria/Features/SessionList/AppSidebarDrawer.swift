@@ -26,19 +26,25 @@ struct AppSidebarDrawer: View {
     let close: () -> Void
 
     var body: some View {
-        // One scroll view holds the whole drawer: at accessibility sizes in landscape the header,
-        // New Chat and Settings alone fill the screen, and a scroll view for the rows only was
-        // left with no height (TAL-416). The minimum height keeps Settings at the bottom when
+        // Everything above Settings scrolls: at accessibility sizes in landscape the header and
+        // New Chat alone fill the screen, and a scroll view for the rows only was left with no
+        // height (TAL-416). The minimum height keeps the quota rows down by Settings when
         // everything fits.
-        ScrollView {
-            drawerContent
-                .frame(minHeight: viewportHeight, alignment: .top)
-        }
-        .scrollBounceBehavior(.basedOnSize)
-        .onScrollGeometryChange(for: CGFloat.self) { geometry in
-            geometry.containerSize.height - geometry.contentInsets.top - geometry.contentInsets.bottom
-        } action: { _, height in
-            viewportHeight = height
+        VStack(spacing: 0) {
+            ScrollView {
+                drawerContent
+                    .frame(minHeight: viewportHeight, alignment: .top)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                geometry.containerSize.height - geometry.contentInsets.top - geometry.contentInsets.bottom
+            } action: { _, height in
+                viewportHeight = height
+            }
+
+            Divider().padding(.horizontal, 12)
+            row("Settings", icon: .system("gearshape"), destination: .settings)
+                .padding(12)
         }
         .safeAreaPadding(.top, 12)
         .safeAreaPadding(.bottom, 8)
@@ -146,10 +152,6 @@ struct AppSidebarDrawer: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
             }
-
-            Divider().padding(.horizontal, 12)
-            row("Settings", icon: .system("gearshape"), destination: .settings)
-                .padding(12)
         }
     }
 
