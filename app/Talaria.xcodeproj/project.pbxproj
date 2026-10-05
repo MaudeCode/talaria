@@ -166,6 +166,7 @@
 		C107P0000000000000000008 /* TranscriptMediaPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107P0000000000000000108 /* TranscriptMediaPreviewView.swift */; };
 		C107P0000000000000000009 /* TranscriptVideoPreviewPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107P0000000000000000109 /* TranscriptVideoPreviewPlayerView.swift */; };
 		C0DE12000000000000000005 /* TranscriptLinkPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE12000000000000000006 /* TranscriptLinkPreviewView.swift */; };
+		C0DE44200000000000000001 /* InAppSafariView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE44200000000000000002 /* InAppSafariView.swift */; };
 		C0DE20000000000000000001 /* ChatTactileButtonStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE20000000000000000002 /* ChatTactileButtonStyle.swift */; };
 		C09300000000000000000001 /* HapticButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = C09300000000000000000002 /* HapticButton.swift */; };
 		C43600000000000000000001 /* StatusChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43600000000000000000002 /* StatusChip.swift */; };
@@ -589,6 +590,7 @@
 		C107P0000000000000000108 /* TranscriptMediaPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptMediaPreviewView.swift; sourceTree = "<group>"; };
 		C107P0000000000000000109 /* TranscriptVideoPreviewPlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptVideoPreviewPlayerView.swift; sourceTree = "<group>"; };
 		C0DE12000000000000000006 /* TranscriptLinkPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptLinkPreviewView.swift; sourceTree = "<group>"; };
+		C0DE44200000000000000002 /* InAppSafariView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InAppSafariView.swift; sourceTree = "<group>"; };
 		C0DE20000000000000000002 /* ChatTactileButtonStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTactileButtonStyle.swift; sourceTree = "<group>"; };
 		C09300000000000000000002 /* HapticButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HapticButton.swift; sourceTree = "<group>"; };
 		C43600000000000000000002 /* StatusChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusChip.swift; sourceTree = "<group>"; };
@@ -1200,6 +1202,7 @@
 				C107P0000000000000000108 /* TranscriptMediaPreviewView.swift */,
 				C107P0000000000000000109 /* TranscriptVideoPreviewPlayerView.swift */,
 				C0DE12000000000000000006 /* TranscriptLinkPreviewView.swift */,
+				C0DE44200000000000000002 /* InAppSafariView.swift */,
 				03103103103103103103100A /* DisplayMathView.swift */,
 				1A2B3C4D5E6F70000000121 /* ContextWindowIndicatorView.swift */,
 				FC2A37872AC842629FBDDFA4 /* SlashCommandAutocompleteView.swift */,
@@ -1916,6 +1919,7 @@
 				C107P0000000000000000008 /* TranscriptMediaPreviewView.swift in Sources */,
 				C107P0000000000000000009 /* TranscriptVideoPreviewPlayerView.swift in Sources */,
 				C0DE12000000000000000005 /* TranscriptLinkPreviewView.swift in Sources */,
+				C0DE44200000000000000001 /* InAppSafariView.swift in Sources */,
 				C0DE20000000000000000001 /* ChatTactileButtonStyle.swift in Sources */,
 				031031031031031031031009 /* DisplayMathView.swift in Sources */,
 				1A2B3C4D5E6F7000000000D0 /* SessionRowView.swift in Sources */,
