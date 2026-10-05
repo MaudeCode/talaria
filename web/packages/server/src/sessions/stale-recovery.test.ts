@@ -1,4 +1,6 @@
 /** TAL-536: stale-stream cleanup recovers a dead run's journaled output instead of dropping it. */
+import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
@@ -70,5 +72,41 @@ describe('stale-stream cleanup with a run journal', () => {
     expect(after.messages.filter((m) => m.role === 'user' && m.content === 'summarize the repo')).toHaveLength(1)
     expect(after.messages.map((m) => m.content)).toEqual(['hi', 'hello', 'summarize the repo', 'Part', MARKER])
     expect(after.context_messages.map((m) => [m.role, m.content])).toEqual([['user', 'hi'], ['assistant', 'hello'], ['user', 'summarize the repo']])
+  })
+
+  it('a done frame supplies an answer that never streamed, like the tool-limit summary', async () => {
+    const streamId = 'deadrun536limit'
+    const summary = { role: 'assistant', content: 'I ran out of tool calls; the tree has a README.', _turn_id: streamId }
+    const sid = await deadRun(streamId, [...work, ['done', { terminal_state: 'tool_limit_reached', session: { messages: [summary] } }]])
+    const { messages } = recovered(sid)
+    expect(messages.map((m) => m.content)).toEqual(['summarize the repo', 'Checking the tree.', summary.content])
+    expect(messages[2]).not.toHaveProperty('_partial')
+  })
+
+  it('a done frame without a final answer still gets the marker', async () => {
+    const sid = await deadRun('deadrun536noanswer', [...work, ['done', { terminal_state: 'completed', session: { messages: [] } }]])
+    expect(recovered(sid).messages.map((m) => m.content)).toEqual(['summarize the repo', 'Checking the tree.', MARKER])
+  })
+
+  it('the run\'s own state.db rows are covered by the recovered turn, and earlier CLI rows stay', async () => {
+    const streamId = 'deadrun536statedb'
+    const history = [{ role: 'user', content: 'hi', timestamp: 1 }, { role: 'assistant', content: 'hello', timestamp: 2 }]
+    let startedAt = 0
+    const sid = await deadRun(streamId, [...work, ['token', { text: 'It is a mono' }]], (session) => {
+      startedAt = Number(session.pending_started_at)
+      session.messages = [...history]
+      session.context_messages = [...history]
+    })
+    const db = new DatabaseSync(join(s.state, 'state.db'))
+    db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
+    db.prepare('INSERT INTO sessions (id, source, started_at) VALUES (?, ?, ?)').run(sid, 'webui', 1)
+    const rows: [string, string, number][] = [['user', 'hi', 1], ['assistant', 'hello', 2], ['user', 'from the CLI', startedAt - 60], ['assistant', 'CLI answer', startedAt - 59], ['user', 'summarize the repo', startedAt + 1], ['assistant', 'Checking the tree.', startedAt + 2], ['tool', 'README.md', startedAt + 3]]
+    for (const [role, content, ts] of rows) db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, role, content, ts)
+    db.close()
+    recovered(sid)
+    const detail = (await (await s.get(`/api/session?session_id=${sid}`)).json()) as { session: { messages: Json[] } }
+    const turn = ['summarize the repo', 'Checking the tree.', 'It is a mono', MARKER]
+    expect(detail.session.messages.map((m) => m.content)).toEqual(['hi', 'hello', 'from the CLI', 'CLI answer', ...turn])
+    expect(s.deps.sessions.modelContext(s.deps.sessionStore.get(sid)).map((m) => m.content)).toEqual(['hi', 'hello', 'from the CLI', 'CLI answer', 'summarize the repo'])
   })
 })

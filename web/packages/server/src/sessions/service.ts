@@ -4,7 +4,7 @@
  * Runtime concerns owned by other domains arrive through `SessionServiceDeps`.
  */
 import type { PendingSteer } from '@maudecode/talaria-web-contracts'
-import { RunJournal } from './journal.js'
+import type { RunJournal } from './journal.js'
 import { str } from '../util.js'
 import { randomUUID } from 'node:crypto'
 import { rmSync } from 'node:fs'
@@ -655,7 +655,12 @@ export class SessionService {
     // run that never reached `done`, so a dead stream never silently drops what the user sent or what streamed.
     const turnId = str(target.active_stream_id)
     const events = this.deps.journal?.readRunEvents(target.session_id, turnId) ?? []
-    const output = journalOutputRows(events, turnId)
+    const { rows: output, answered } = journalOutputRows(events, turnId)
+    // The Agent's state.db rows from before the run started: the turn's own starting read, which died with its worker.
+    const read = this.stateDbRead(target)
+    const runStart = target.pending_started_at || events[0]?.created_at || this.deps.now()
+    const before = read.rows.filter((m) => Number(m.timestamp) < runStart)
+    const previousContext = this.modelContext(target, before)
     const recovered: Message[] = []
     if (target.hasPendingPrompt) {
       const startedAt = typeof target.pending_started_at === 'number' && target.pending_started_at > 0 ? target.pending_started_at : this.deps.now()
@@ -668,10 +673,13 @@ export class SessionService {
     if (recovered.length || output.length) {
       target.messages.push(...output)
       recovered.push(...output)
-      if (RunJournal.selectAuthoritativeTerminalEvent(events)?.event !== 'done') target.messages.push({ role: 'assistant', content: '**Interrupted:** The reply was interrupted before it could be saved.', timestamp: Math.trunc(this.deps.now()), _error: true, _turn_id: turnId })
+      if (!answered) target.messages.push({ role: 'assistant', content: '**Interrupted:** The reply was interrupted before it could be saved.', timestamp: Math.trunc(this.deps.now()), _error: true, _turn_id: turnId })
     }
-    // The model context gains what its fallback (`messages` without errors and partials) would show.
-    if (target.context_messages.length) target.context_messages.push(...copyJson(recovered.filter((m) => !m._error && !m._partial)))
+    // The model context is the one the run started from plus what its fallback (`messages` without errors and partials)
+    // would show of the recovered turn, as a Stop settles it.
+    if (target.context_messages.length) target.context_messages = copyJson([...previousContext, ...recovered.filter((m) => !m._error && !m._partial)])
+    // Settled like a turn without the Agent's report: the run's own state.db rows are covered by what was recovered.
+    if (recovered.length) this.settleStateDb(target, { turnId, previousContext, agentRows: null, startId: stateDbSeenId(before) ?? (read.idCapable ? 0 : null) })
     target.active_stream_id = null
     target.pending_user_message = null
     target.pending_attachments = []

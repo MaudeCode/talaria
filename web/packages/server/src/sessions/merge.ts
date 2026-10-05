@@ -650,10 +650,11 @@ export function buildPartialMessage(contentText: string, reasoningText: string, 
 
 /**
  * TAL-536: a dead run's journaled output as partial rows, in order: each row is a stretch of reasoning and prose with the
- * tool calls that followed it, the shape a Stop's snapshot keeps. A run that ended in `done` keeps its last prose row as
- * the answer, not a partial.
+ * tool calls that followed it, the shape a Stop's snapshot keeps. A run that ended in `done` gets its answer as a settled
+ * row: its last prose row, else the one the `done` frame's session carries (an answer that never streamed, like the
+ * tool-limit summary). `answered` says the run finished with one.
  */
-export function journalOutputRows(events: JournalEvent[], turnId: string): Message[] {
+export function journalOutputRows(events: JournalEvent[], turnId: string): { rows: Message[]; answered: boolean } {
   const rows: Message[] = []
   const calls: Record<string, unknown>[] = []
   let text = ''
@@ -684,9 +685,19 @@ export function journalOutputRows(events: JournalEvent[], turnId: string): Messa
     at = e.created_at || at
   }
   flush()
+  const done = RunJournal.selectAuthoritativeTerminalEvent(events)
+  if (done?.event !== 'done') return { rows, answered: false }
   const last = rows[rows.length - 1]
-  if (last && !last._partial_tool_calls && RunJournal.selectAuthoritativeTerminalEvent(events)?.event === 'done') delete last._partial
-  return rows
+  if (last && !last._partial_tool_calls) {
+    delete last._partial
+    return { rows, answered: true }
+  }
+  const settled = isDict(done.payload) && isDict(done.payload.session) && Array.isArray(done.payload.session.messages) ? done.payload.session.messages : []
+  const answer = settled.findLast((m): m is Message => isDict(m) && m.role === 'assistant' && m._turn_id === turnId)
+  const content = answer && !answer._error && !(Array.isArray(answer.tool_calls) && answer.tool_calls.length) && typeof answer.content === 'string' ? answer.content.trim() : ''
+  if (!content) return { rows, answered: false }
+  rows.push({ role: 'assistant', content, timestamp: Math.trunc(done.created_at), _turn_id: turnId })
+  return { rows, answered: true }
 }
 
 const DSML = '(?:\\s*｜\\s*DSML\\s*[｜|]\\s*)?'
