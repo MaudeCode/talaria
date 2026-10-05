@@ -33,52 +33,56 @@ struct ProviderQuotaWidgetAutomaticSettingsSections: View {
             if let thresholds {
                 if colorBasis == .pace {
                     Section {
-                        Stepper(
-                            "Over pace at \(thresholds.paceTolerancePercent)%",
-                            value: threshold(\.paceTolerancePercent),
-                            in: 0...25
-                        )
-                        Stepper(
-                            "Warning burn rate: \(thresholds.paceWarningBurnRatePercent)%",
-                            value: threshold(\.paceWarningBurnRatePercent),
-                            in: 100...300,
-                            step: 5
-                        )
-                        Stepper(
-                            "Critical burn rate: \(thresholds.paceCriticalBurnRatePercent)%",
-                            value: threshold(\.paceCriticalBurnRatePercent),
-                            in: 100...400,
-                            step: 5
-                        )
-                        Stepper(
-                            "Projection after \(thresholds.paceMinimumElapsedHours) hr",
-                            value: threshold(\.paceMinimumElapsedHours),
-                            in: 0...72
-                        )
+                        Group {
+                            Stepper(
+                                "Over pace at \(thresholds.paceTolerancePercent)%",
+                                value: threshold(\.paceTolerancePercent),
+                                in: 0...25
+                            )
+                            Stepper(
+                                "Warning burn rate: \(thresholds.paceWarningBurnRatePercent)%",
+                                value: threshold(\.paceWarningBurnRatePercent),
+                                in: 100...300,
+                                step: 5
+                            )
+                            Stepper(
+                                "Critical burn rate: \(thresholds.paceCriticalBurnRatePercent)%",
+                                value: threshold(\.paceCriticalBurnRatePercent),
+                                in: 100...400,
+                                step: 5
+                            )
+                            Stepper(
+                                "Projection after \(thresholds.paceMinimumElapsedHours) hr",
+                                value: threshold(\.paceMinimumElapsedHours),
+                                in: 0...72
+                            )
+                        }
+                        .disabled(thresholdsAreCached)
                     } header: {
                         Text("Pace Breakpoints")
                     } footer: {
                         thresholdFooter("Pace compares quota remaining with the share of the weekly reset window remaining. Burn-rate alerts apply only when current usage projects exhaustion before reset.")
                     }
-                    .disabled(thresholdsAreCached)
                 } else {
                     Section {
-                        Stepper(
-                            "Warning at \(thresholds.warningRemainingPercent)% remaining",
-                            value: threshold(\.warningRemainingPercent),
-                            in: 1...99
-                        )
-                        Stepper(
-                            "Critical at \(thresholds.criticalRemainingPercent)% remaining",
-                            value: threshold(\.criticalRemainingPercent),
-                            in: 0...99
-                        )
+                        Group {
+                            Stepper(
+                                "Warning at \(thresholds.warningRemainingPercent)% remaining",
+                                value: threshold(\.warningRemainingPercent),
+                                in: 1...99
+                            )
+                            Stepper(
+                                "Critical at \(thresholds.criticalRemainingPercent)% remaining",
+                                value: threshold(\.criticalRemainingPercent),
+                                in: 0...99
+                            )
+                        }
+                        .disabled(thresholdsAreCached)
                     } header: {
                         Text("Overall Breakpoints")
                     } footer: {
                         thresholdFooter("Overall Percentage ignores reset time and colors the widget from the quota remaining.")
                     }
-                    .disabled(thresholdsAreCached)
                 }
             } else if thresholdsLoaded {
                 Section {
