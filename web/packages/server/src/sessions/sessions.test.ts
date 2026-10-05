@@ -1060,6 +1060,21 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     expect(sent(sid).filter((c) => c === 'background work after stop')).toEqual([])
   })
 
+  it('falls back to the timestamp rules after an older release saves the session without moving a boundary', async () => {
+    const sid = await seeded(FOUR)
+    expect((await post(s, '/api/session/truncate', { session_id: sid, keep_count: 4 })).status).toBe(200)
+    commit(sid, [['user', 'u3', 104], ['assistant', 'a3', 105]])
+    expect(await served(sid)).toEqual(['u1', 'a1', 'u2', 'a2', 'u3', 'a3'])
+    // A Stable truncate at the same keep_count changes no boundary field; it only saves, keeping the unknown marker.
+    const path = join(s.state, 'sessions', `${sid}.json`)
+    const doc = JSON.parse(readFileSync(path, 'utf8')) as Json
+    doc.updated_at = Number(doc.updated_at) + 60
+    writeFileSync(path, JSON.stringify(doc))
+    s.deps.sessionStore.sessions.delete(sid)
+    expect(await served(sid)).toEqual(['u1', 'a1', 'u2', 'a2'])
+    expect(sent(sid)).toEqual(['u1', 'a1', 'u2', 'a2'])
+  })
+
   it('a settlement whose state.db read fails keeps the marker', async () => {
     const sid = await seeded(FOUR)
     expect((await post(s, '/api/session/truncate', { session_id: sid, keep_count: 2 })).status).toBe(200)

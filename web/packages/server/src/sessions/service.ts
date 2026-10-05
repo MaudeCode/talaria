@@ -1622,10 +1622,13 @@ function stateDbMarkKey(s: Session, stateRows: Message[], seenId: number | null)
   return JSON.stringify([s.truncation_watermark ?? null, s.truncation_boundary ?? null, s.intentional_shrink_generation ?? null, s.clear_generation ?? null, anchor ? [anchor.role ?? null, anchor.timestamp ?? null] : null])
 }
 
-/** The recorded state.db marker while what it was recorded under still holds, else null (the timestamp rules apply). */
+/**
+ * The recorded state.db marker while what it was recorded under still holds and this version wrote the session last (an
+ * older release can apply a boundary that changes no field), else null (the timestamp rules apply).
+ */
 function currentStateDbSeenId(s: Session, stateRows: Message[]): number | null {
   const seenId = s.state_db_seen_id
-  return seenId !== null && s.state_db_seen_boundary === stateDbMarkKey(s, stateRows, seenId) ? seenId : null
+  return seenId !== null && s.state_db_seen_stamp === s.updated_at && s.state_db_seen_boundary === stateDbMarkKey(s, stateRows, seenId) ? seenId : null
 }
 
 function truncationWatermarkFor(messages: unknown[]): number {

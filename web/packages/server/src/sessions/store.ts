@@ -379,6 +379,8 @@ export class SessionStore {
       throw new Error(`Refusing to save metadata-only session ${JSON.stringify(session.session_id)}: would atomically overwrite on-disk messages with []. Reload with metadata_only=False before mutating state. See #1558.`)
     }
     if (opts.touchUpdatedAt ?? true) session.updated_at = this.deps.now()
+    // TAL-493: the state.db marker holds only for a document this version wrote; an older release's save moves `updated_at`.
+    session.state_db_seen_stamp = session.updated_at
     const payload = JSON.stringify(session.toDocument(), null, 2)
     const path = session.path = this.pathFor(session.session_id)
     mkdirSync(this.sessionDir, { recursive: true })

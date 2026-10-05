@@ -32,6 +32,7 @@ export const METADATA_FIELDS = [
   'truncation_watermark_compressed',
   'state_db_seen_id',
   'state_db_seen_boundary',
+  'state_db_seen_stamp',
   'clear_generation',
   'intentional_shrink_generation',
   'gateway_routing', 'gateway_routing_history', 'llm_title_generated', 'manual_title',
@@ -231,6 +232,8 @@ export class Session {
   state_db_seen_id: number | null
   /** TAL-493: what `state_db_seen_id` was recorded under (boundary fields, its row); a change makes the marker stale. */
   state_db_seen_boundary: string | null
+  /** TAL-493: `updated_at` as of this version's last save; an older release's save moves one and not the other. */
+  state_db_seen_stamp: number | null
   clear_generation: unknown
   intentional_shrink_generation: unknown
   gateway_routing: Record<string, unknown> | null
@@ -346,6 +349,8 @@ export class Session {
     this.state_db_seen_id = typeof seenId === 'number' && Number.isFinite(seenId) ? seenId : null
     const seenBoundary = take('state_db_seen_boundary', null)
     this.state_db_seen_boundary = typeof seenBoundary === 'string' ? seenBoundary : null
+    const seenStamp = take('state_db_seen_stamp', null)
+    this.state_db_seen_stamp = typeof seenStamp === 'number' && Number.isFinite(seenStamp) ? seenStamp : null
     this.clear_generation = take('clear_generation', null)
     this.intentional_shrink_generation = take('intentional_shrink_generation', null)
     const routing = take('gateway_routing', null)
