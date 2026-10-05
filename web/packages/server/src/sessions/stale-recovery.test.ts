@@ -168,4 +168,3 @@ describe('stale-stream cleanup with a run journal', () => {
     expect(recovered(sid).messages.map((m) => m.content)).toEqual(['summarize the repo', 'Checking the tree.', 'The tree has a README.'])
   })
 })
-
