@@ -626,6 +626,7 @@ struct SessionListView: View {
                 autoStartsVoiceInput: route.autoStartsVoiceInput,
                 profileName: route.profileName,
                 providerID: route.providerID,
+                projectID: route.projectID,
                 server: server,
                 viewModel: viewModel,
                 onAPIError: { authManager.handleAPIError($0, server: server) },
@@ -1648,8 +1649,9 @@ struct SessionListView: View {
         navigationState.select(.providerQuotaWidgetSettings)
     }
 
+    /// A chat started under a project filter joins that project (TAL-455).
     private func openNewChat() {
-        navigationState.select(PendingNewChatRoute())
+        navigationState.select(PendingNewChatRoute(projectID: selectedProjectID))
     }
 
     /// External sessions are imported (or refreshed) server-side before navigation,

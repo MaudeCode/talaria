@@ -216,6 +216,45 @@ final class ChatNavigationUITests: ChatUITestCase {
     }
 }
 
+/// TAL-455: a chat started while the list is filtered to a project joins that project, so it stays in the filtered list.
+final class SessionListProjectNewChatUITests: ChatUITestCase {
+    func testNewChatUnderAProjectFilterStaysInTheFilteredList() throws {
+        launchFixture(additionalArguments: ["--ui-test-projects"])
+        XCTAssertTrue(fixtureSessionButton.awaitExistence(timeout: 15), "Missing deterministic session fixture")
+
+        let allProjects = app.buttons["Project filter: All Projects"]
+        XCTAssertTrue(allProjects.awaitExistence(timeout: 15), "Missing the project filter")
+        allProjects.tap()
+        let project = app.buttons["Fixture Project"]
+        XCTAssertTrue(project.awaitExistence(timeout: 5), "Missing the fixture project")
+        project.tap()
+        XCTAssertTrue(app.buttons["Project filter: Fixture Project"].awaitExistence(timeout: 5))
+        XCTAssertTrue(fixtureSessionButton.awaitNonExistence(timeout: 5), "The filter should hide chats outside the project")
+
+        // The closed sidebar keeps its own New Chat row in the tree, so take the list's.
+        let sidebarNewChat = app.descendants(matching: .any)["app-sidebar"].buttons["New Chat"]
+        let newChats = app.buttons.matching(NSPredicate(format: "label == %@", "New Chat"))
+        func listNewChat() -> XCUIElement? {
+            let sidebarFrame = sidebarNewChat.exists ? sidebarNewChat.frame : .null
+            return newChats.allElementsBoundByIndex.first { $0.exists && $0.frame != sidebarFrame }
+        }
+        XCTAssertTrue(poll(timeout: 5) { listNewChat() != nil }, "Missing the New Chat button")
+        tap(at: try XCTUnwrap(listNewChat()).settledFrame.center)
+        XCTAssertTrue(app.navigationBars["New Fixture Chat"].awaitExistence(timeout: 15))
+        tapCenter(of: app.buttons["BackButton"])
+
+        let created = app.buttons.containing(.staticText, identifier: "New Fixture Chat").firstMatch
+        XCTAssertTrue(created.awaitExistence(timeout: 10), "The new chat left the project's filtered list")
+
+        let list = app.collectionViews.firstMatch
+        list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2))
+            .press(forDuration: 0.1, thenDragTo: list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8)))
+        XCTAssertTrue(app.buttons["Project filter: Fixture Project"].awaitExistence(timeout: 10))
+        XCTAssertTrue(created.awaitExistence(timeout: 10), "The new chat left the filtered list after a refresh")
+        XCTAssertFalse(fixtureSessionButton.exists, "The refresh should keep the project filter")
+    }
+}
+
 /// TAL-461: New Chat sits on the bottom row beside Search instead of floating above it.
 final class SessionListBottomBarUITests: ChatUITestCase {
     func testNewChatSharesTheSearchRowHidesWhileSearchingAndOpensTheComposer() throws {

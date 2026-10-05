@@ -15,6 +15,7 @@ struct PendingNewChatView: View {
     let autoStartsVoiceInput: Bool
     let profileName: String?
     let providerID: String?
+    let projectID: String?
     let draftStore: ChatDraftStore
 
     @State private var createdSession: SessionSummary?
@@ -31,6 +32,7 @@ struct PendingNewChatView: View {
         autoStartsVoiceInput: Bool = false,
         profileName: String? = nil,
         providerID: String? = nil,
+        projectID: String? = nil,
         server: URL,
         viewModel: SessionListViewModel,
         onAPIError: @escaping (Error) -> Void,
@@ -45,6 +47,7 @@ struct PendingNewChatView: View {
         self.autoStartsVoiceInput = autoStartsVoiceInput
         self.profileName = profileName
         self.providerID = providerID
+        self.projectID = projectID
         self.draftStore = draftStore ?? .shared
         _draftMessage = State(initialValue: initialDraft)
     }
@@ -175,7 +178,8 @@ struct PendingNewChatView: View {
         let session = await viewModel.createSession(
             modelContext: modelContext,
             profile: profileName,
-            provider: providerID
+            provider: providerID,
+            projectID: projectID
         )
         guard !Task.isCancelled else { return }
         if let lastError = viewModel.lastError {

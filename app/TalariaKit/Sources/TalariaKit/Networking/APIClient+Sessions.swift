@@ -79,7 +79,13 @@ extension APIClient {
         try await send(endpoint: .toolResult(sessionID: sessionID, toolCallID: toolCallID), method: "GET")
     }
 
-    public func createSession(workspace: String?, model: String?, modelProvider: String?, profile: String?) async throws -> SessionResponse {
+    public func createSession(
+        workspace: String?,
+        model: String?,
+        modelProvider: String?,
+        profile: String?,
+        projectID: String? = nil
+    ) async throws -> SessionResponse {
         try await send(
             endpoint: .newSession,
             method: "POST",
@@ -87,7 +93,8 @@ extension APIClient {
                 workspace: workspace,
                 model: model,
                 modelProvider: modelProvider,
-                profile: profile
+                profile: profile,
+                projectId: projectID
             )
         )
     }
@@ -227,6 +234,7 @@ private struct NewSessionRequest: Encodable {
     let model: String?
     let modelProvider: String?
     let profile: String?
+    let projectId: String?
 }
 
 private struct RenameSessionRequest: Encodable {

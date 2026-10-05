@@ -1368,11 +1368,13 @@ public final class SessionListViewModel {
 
     /// Creates a new session. `profile` pins it to a specific server profile (the "New Chat
     /// in <Profile>" App Intent, #339); nil keeps the legacy behavior of letting the server
-    /// use its active profile (the "+" button / plain New Chat).
+    /// use its active profile (the "+" button / plain New Chat). `projectID` files it under the
+    /// project the list is filtered to (TAL-455); the row shows the server's returned `project_id`.
     public func createSession(
         modelContext: ModelContext? = nil,
         profile: String? = nil,
-        provider: String? = nil
+        provider: String? = nil,
+        projectID: String? = nil
     ) async -> SessionSummary? {
         isCreatingSession = true
         actionErrorMessage = nil
@@ -1396,7 +1398,8 @@ public final class SessionListViewModel {
                 workspace: workspace,
                 model: requestedModel?.id,
                 modelProvider: requestedModel?.providerID,
-                profile: Self.nonEmpty(profile)
+                profile: Self.nonEmpty(profile),
+                projectID: Self.nonEmpty(projectID)
             )
 
             guard let sessionDetail = response.session else {
