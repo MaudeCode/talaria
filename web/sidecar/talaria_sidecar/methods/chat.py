@@ -16,6 +16,7 @@ import hashlib
 import inspect
 import json
 import logging
+import os
 import threading
 import time
 import uuid
@@ -72,6 +73,8 @@ _AGENT_CACHE: "OrderedDict[str, tuple[Any, str, Any]]" = OrderedDict()
 _AGENT_CACHE_LOCK = threading.Lock()
 _RELEASES: set[threading.Thread] = set()
 _RELEASES_LOCK = threading.Lock()
+# Set (under ``_RUNS_LOCK``) when shutdown drains: no turn is admitted after the drain's snapshot of ``_RUNS``.
+_DRAINING = threading.Event()
 
 
 def _snippet(raw: Any, limit: int = _TOOL_RESULT_SNIPPET_MAX) -> str:
@@ -528,7 +531,7 @@ def _evict_idle_agents_locked() -> None:
     _release_agents_locked(dropped)
 
 
-def _release_agent(agent, home) -> None:
+def _release_agent(agent, home) -> threading.Thread:
     """The gateway's soft eviction on a daemon thread under the owning profile: end the memory session with the
     transcript (``on_session_end``, then provider shutdown), then release the LLM clients (the Codex app-server child,
     httpx pools) while session tool state stays for a resumed session."""
@@ -554,16 +557,20 @@ def _release_agent(agent, home) -> None:
     with _RELEASES_LOCK:
         _RELEASES.add(thread)
     thread.start()
+    return thread
 
 
-def _release_agents_locked(entries) -> None:
+def _release_agents_locked(entries) -> list[threading.Thread]:
     """Release cache entries that just left the cache (caller holds ``_AGENT_CACHE_LOCK``). An agent a turn still holds
     keeps its memory provider and clients; that turn releases it when it ends."""
     with _RUNS_LOCK:
         held = [run.agent for run in _RUNS.values()]
-    for agent, _signature, home in entries:
-        if not any(agent is other for other in held):
-            _release_agent(agent, home)
+    return [_release_agent(agent, home) for agent, _signature, home in entries if not any(agent is other for other in held)]
+
+
+def _join(threads, deadline: float) -> None:
+    for thread in threads:
+        thread.join(max(0.0, deadline - time.monotonic()))
 
 
 def evict_all_agents() -> int:
@@ -581,6 +588,7 @@ def drain_agents(timeout: float = _AGENT_RELEASE_TIMEOUT) -> None:
     deadline = time.monotonic() + timeout
     evict_all_agents()
     with _RUNS_LOCK:
+        _DRAINING.set()
         runs = list(_RUNS.values())
     for run in runs:
         run.cancel.set()
@@ -591,8 +599,16 @@ def drain_agents(timeout: float = _AGENT_RELEASE_TIMEOUT) -> None:
         time.sleep(0.05)
     with _RELEASES_LOCK:
         threads = list(_RELEASES)
-    for thread in threads:
-        thread.join(max(0.0, deadline - time.monotonic()))
+    _join(threads, deadline)
+
+
+def release_profile_agents(home, timeout: float = _AGENT_RELEASE_TIMEOUT) -> None:
+    """Profile deletion: release the profile's cached agents and wait, bounded, before its home is removed."""
+    target = os.path.realpath(home)
+    with _AGENT_CACHE_LOCK:
+        entries = [_AGENT_CACHE.pop(sid) for sid, entry in list(_AGENT_CACHE.items()) if os.path.realpath(entry[2]) == target]
+        threads = _release_agents_locked(entries)
+    _join(threads, time.monotonic() + timeout)
 
 
 def _agent_class():
@@ -660,6 +676,8 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
     home = profile_home_param(params)
     run = _Run(stream_id, session_id, ctx)
     with _RUNS_LOCK:
+        if _DRAINING.is_set():
+            raise RpcError("The sidecar is shutting down.", condition="sidecar_unavailable")
         prior = _RUNS.get(_RUNS_BY_SESSION.get(session_id) or "")
         # A previous turn for this session that never returned (a tool ignoring its interrupt) still owns the cached
         # agent; this turn must not share, rebind, or un-interrupt that live instance.

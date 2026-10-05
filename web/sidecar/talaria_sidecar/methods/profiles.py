@@ -241,7 +241,13 @@ def register(registry) -> None:
 
     @registry.method("profiles.delete")
     def delete(ctx: CallContext, params: dict) -> dict:
-        delete_profile(profile_home_param(params, "base_home"), str(params.get("name") or "").strip())
+        base_home, name = profile_home_param(params, "base_home"), str(params.get("name") or "").strip()
+        validate_name(name)
+        # Idle cached agents end their memory sessions while the profile's home still exists.
+        from .chat import release_profile_agents
+
+        release_profile_agents(base_home / "profiles" / name)
+        delete_profile(base_home, name)
         return {"ok": True}
 
     @registry.method("profiles.runtime_env")

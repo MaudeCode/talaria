@@ -7,8 +7,12 @@ from __future__ import annotations
 import contextlib
 import threading
 import time
+import types
 
-from talaria_sidecar.methods import Registry, chat
+import pytest
+
+from talaria_sidecar.errors import RpcError
+from talaria_sidecar.methods import Registry, chat, profiles
 from talaria_sidecar.methods import runtime as runtime_methods
 from test_chat_turn import Ctx, FakeAgent, _params, _patch
 
@@ -38,6 +42,8 @@ TRANSCRIPT = [{"role": "user", "content": "hi"}, {"role": "assistant", "content"
 def _setup(monkeypatch):
     _patch(monkeypatch)
     EVENTS.clear()
+    # Shutdown closes admission for the rest of the process; each test gets a fresh gate.
+    monkeypatch.setattr(chat, "_DRAINING", threading.Event(), raising=False)
     monkeypatch.setattr(chat, "_agent_class", lambda: MemoryAgent)
 
     @contextlib.contextmanager
@@ -166,3 +172,32 @@ def test_shutdown_stops_a_running_turn_and_waits_for_its_release(monkeypatch) ->
     assert EVENTS == _released("running")
     worker.join(5)
     assert result["status"] == "cancelled"
+
+
+def test_no_turn_is_admitted_once_shutdown_has_drained(monkeypatch) -> None:
+    _setup(monkeypatch)
+    registry = Registry(runtime=None)  # type: ignore[arg-type]
+    runtime_methods.register(registry)
+    ctx = Ctx()
+    ctx.server = _Server()
+    assert registry.methods["runtime.shutdown"](ctx, {}) == {"ok": True}
+    # A call dispatched before stdin closed, or one admitted during the drain, reaches ``start`` after the snapshot.
+    with pytest.raises(RpcError) as refused:
+        chat.start(Ctx(), _params("st-late", "late"))
+    assert refused.value.data.get("condition") == "sidecar_unavailable"
+    assert MemoryAgent.instances == [] and chat._AGENT_CACHE == {}
+
+
+def test_profile_deletion_releases_that_profiles_agents_before_removing_its_home(monkeypatch, tmp_path) -> None:
+    _setup(monkeypatch)
+    alpha, beta = tmp_path / "profiles" / "alpha", tmp_path / "profiles" / "beta"
+    for sid, home in (("alpha-chat", alpha), ("beta-chat", beta)):
+        assert chat.start(Ctx(), {**_params(f"st-{sid}", sid), "profile_home": str(home)})["status"] == "completed"
+    seen: dict = {}
+    monkeypatch.setattr(profiles, "delete_profile", lambda base_home, name: seen.update(name=name, events=list(EVENTS)))
+    registry = Registry(runtime=types.SimpleNamespace(load=lambda: None, ensure_current=lambda: None))  # type: ignore[arg-type]
+    profiles.register(registry)
+    assert registry.methods["profiles.delete"](Ctx(), {"base_home": str(tmp_path), "name": "alpha"}) == {"ok": True}
+    # The release finished, under the profile's own home, before the home was removed; other profiles keep theirs.
+    assert seen == {"name": "alpha", "events": [("on_session_end", "alpha-chat", TRANSCRIPT, str(alpha)), ("release_clients", "alpha-chat")]}
+    assert list(chat._AGENT_CACHE) == ["beta-chat"]
