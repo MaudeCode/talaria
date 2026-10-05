@@ -2276,6 +2276,31 @@ describe('chat turns through the sidecar', () => {
     expect(detail.context_used_tokens).toBe(settled)
   })
 
+  it('re-estimates a compressed context after its tool screenshots become text (TAL-544)', async () => {
+    const sid = await newSession(s)
+    const screenshot = `data:image/png;base64,${'A'.repeat(4000)}`
+    const tool = (content: unknown): Json => ({ role: 'tool', tool_call_id: 'c1', content })
+    sidecar.respond('chat.start', (params) => {
+      const rows = (shot: unknown): Json[] => [
+        { role: 'user', content: '[CONTEXT COMPACTION] earlier work' },
+        { role: 'user', content: str(params.user_message) },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'c1', type: 'function', function: { name: 'browser_vision', arguments: '{}' } }] },
+        tool([{ type: 'text', text: 'Shot.' }, shot]),
+        { role: 'assistant', content: 'Looks fine.' },
+      ]
+      const image = { type: 'image_url', image_url: { url: screenshot } }
+      return completed(rows(image), { compressed: true, context_messages: rows(image), post_compression_context_tokens_estimate: 5000, context: { context_length: 200000, last_prompt_tokens: 150000 } })
+    })
+    sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Shot"', usage: null }))
+    // A stand-in estimator: one token per serialized character, so the image's bytes count.
+    sidecar.respond('models.estimate_tokens', (params) => ({ tokens: JSON.stringify(params.messages).length }))
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'look' }))
+    await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    const stored = s.deps.sessionStore.get(sid)
+    const stripped = JSON.stringify({ type: 'image_url', image_url: { url: screenshot } }).length - JSON.stringify({ type: 'text', text: '[screenshot]' }).length
+    expect(stored.post_compression_context_tokens_estimate).toBe(5000 - stripped)
+  })
+
   it.each(['deferred', 'eager'] as const)('stores the anchor key and summary and sends live usage after an auto-compression (TAL-540, %s save)', async (mode) => {
     const turns = s.deps.turns as unknown as { deps: { saveMode: () => 'deferred' | 'eager' } }
     const original = turns.deps.saveMode

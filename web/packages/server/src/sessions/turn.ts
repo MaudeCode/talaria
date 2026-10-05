@@ -672,9 +672,10 @@ export class TurnRunner {
       // ── settle the transcript ──
       // TAL-539: after a mid-turn compression the model context is the sidecar's pruned copy, settled like the transcript.
       const pruned = result.compressed ? result.context_messages ?? null : null
-      const context = pruned ? withoutRequest(withFallback(pruned)) : resultMessages
+      const context = withoutToolImages(pruned ? withoutRequest(withFallback(pruned)) : resultMessages)
       let estimate = result.compressed ? result.post_compression_context_tokens_estimate ?? null : null
-      // The sidecar estimated its own rows; a tool-limit settlement that changed them moves the estimate by the difference.
+      // The sidecar estimated its own rows; a tool-limit settlement or stripped screenshots (TAL-544) that changed them move
+      // the estimate by the difference.
       if (pruned && estimate !== null && context !== pruned) {
         try {
           const [before, after] = await Promise.all([pruned, context].map((messages) => sidecar.call('models.estimate_tokens', { messages })))

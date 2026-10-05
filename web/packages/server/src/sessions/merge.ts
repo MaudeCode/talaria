@@ -649,7 +649,7 @@ export function withoutToolImages(messages: Message[]): Message[] {
   const hasImage = (parts: unknown): parts is unknown[] => Array.isArray(parts) && (parts as unknown[]).some(isImage)
   const compact = (parts: unknown[]): unknown[] => parts.map((p) => (isImage(p) ? { type: 'text', text: '[screenshot]' } : p))
   const isImageResult = (p: unknown): p is Record<string, unknown> => isDict(p) && p.type === 'tool_result' && hasImage(p.content)
-  return messages.map((m) => {
+  const out = messages.map((m) => {
     const content: unknown = m.content
     if (m.role === 'tool' && hasImage(content)) return { ...m, content: compact(content) }
     if (m.role === 'user' && Array.isArray(content) && (content as unknown[]).some(isImageResult)) {
@@ -657,6 +657,8 @@ export function withoutToolImages(messages: Message[]): Message[] {
     }
     return m
   })
+  // The same array when nothing changed, so a caller can tell whether its rows were rewritten.
+  return out.some((m, i) => m !== messages[i]) ? out : messages
 }
 
 /** A settled model context without an assistant row repeated back to back, and without tool-result images. */
