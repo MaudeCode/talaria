@@ -590,31 +590,30 @@ struct ChatView: View {
                     )
                 }
 
-                ToolbarItem(placement: .topBarTrailing) {
-                    ChatToolbarActionCluster {
-                        if viewModel.hasActivatedGoalCommand {
-                            ChatToolbarActionSlot {
-                                goalControlMenu
-                            }
-                        }
+                // One item per action so each bridges to a system bar button: iOS 26+ groups
+                // adjacent trailing items in one glass pill, and iPhone Duo can move them to its
+                // vertical bar, which a single custom-view item prevents.
+                if viewModel.hasActivatedGoalCommand {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        goalControlMenu
+                    }
+                }
 
-                        if showsFilesButton {
-                            ChatToolbarActionSlot {
-                                NavigationLink {
-                                    FileBrowserView(session: session, server: server, onAPIError: onAPIError)
-                                } label: {
-                                    Label("Files", systemImage: "folder")
-                                }
-                                .disabled(viewModel.isViewingCachedData)
-                                .accessibilityLabel("Files")
-                            }
+                if showsFilesButton {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        NavigationLink {
+                            FileBrowserView(session: session, server: server, onAPIError: onAPIError)
+                        } label: {
+                            Label("Files", systemImage: "folder")
                         }
+                        .disabled(viewModel.isViewingCachedData)
+                        .accessibilityLabel("Files")
+                    }
+                }
 
-                        if showsGitControls, gitAvailabilityViewModel.hasRepository {
-                            ChatToolbarActionSlot {
-                                gitActionsMenu
-                            }
-                        }
+                if showsGitControls, gitAvailabilityViewModel.hasRepository {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        gitActionsMenu
                     }
                 }
             }

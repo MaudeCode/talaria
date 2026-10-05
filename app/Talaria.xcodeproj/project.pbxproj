@@ -104,8 +104,6 @@
 		C107A000000000000000001 /* NavigationAppearanceCompletionObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107A000000000000000011 /* NavigationAppearanceCompletionObserver.swift */; };
 		C107A000000000000000002 /* ListenPlaybackBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107A000000000000000012 /* ListenPlaybackBar.swift */; };
 		C107A000000000000000003 /* ChatToolbarTitleLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107A000000000000000013 /* ChatToolbarTitleLabel.swift */; };
-		C107A000000000000000004 /* ChatToolbarActionCluster.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107A000000000000000014 /* ChatToolbarActionCluster.swift */; };
-		C107A000000000000000005 /* ChatToolbarActionSlot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107A000000000000000015 /* ChatToolbarActionSlot.swift */; };
 		C05100000000000000000001 /* ChatTranscriptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C05100000000000000000011 /* ChatTranscriptView.swift */; };
 		C05100000000000000000003 /* ChatGoalControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = C05100000000000000000013 /* ChatGoalControls.swift */; };
 		C05100000000000000000004 /* ChatTranscriptSupportingViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C05100000000000000000014 /* ChatTranscriptSupportingViews.swift */; };
@@ -528,8 +526,6 @@
 		C107A000000000000000011 /* NavigationAppearanceCompletionObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationAppearanceCompletionObserver.swift; sourceTree = "<group>"; };
 		C107A000000000000000012 /* ListenPlaybackBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListenPlaybackBar.swift; sourceTree = "<group>"; };
 		C107A000000000000000013 /* ChatToolbarTitleLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatToolbarTitleLabel.swift; sourceTree = "<group>"; };
-		C107A000000000000000014 /* ChatToolbarActionCluster.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatToolbarActionCluster.swift; sourceTree = "<group>"; };
-		C107A000000000000000015 /* ChatToolbarActionSlot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatToolbarActionSlot.swift; sourceTree = "<group>"; };
 		C05100000000000000000011 /* ChatTranscriptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTranscriptView.swift; sourceTree = "<group>"; };
 		C05100000000000000000013 /* ChatGoalControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatGoalControls.swift; sourceTree = "<group>"; };
 		C05100000000000000000014 /* ChatTranscriptSupportingViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTranscriptSupportingViews.swift; sourceTree = "<group>"; };
@@ -1119,8 +1115,6 @@
 				C107A000000000000000011 /* NavigationAppearanceCompletionObserver.swift */,
 				C107A000000000000000012 /* ListenPlaybackBar.swift */,
 				C107A000000000000000013 /* ChatToolbarTitleLabel.swift */,
-				C107A000000000000000014 /* ChatToolbarActionCluster.swift */,
-				C107A000000000000000015 /* ChatToolbarActionSlot.swift */,
 				C05100000000000000000011 /* ChatTranscriptView.swift */,
 				C107N0000000000000000118 /* ChatTranscriptMessageBlock.swift */,
 				C107N0000000000000000119 /* ChatTranscriptMessageRow.swift */,
@@ -1875,8 +1869,6 @@
 					C107A000000000000000001 /* NavigationAppearanceCompletionObserver.swift in Sources */,
 					C107A000000000000000002 /* ListenPlaybackBar.swift in Sources */,
 					C107A000000000000000003 /* ChatToolbarTitleLabel.swift in Sources */,
-					C107A000000000000000004 /* ChatToolbarActionCluster.swift in Sources */,
-					C107A000000000000000005 /* ChatToolbarActionSlot.swift in Sources */,
 					C05100000000000000000001 /* ChatTranscriptView.swift in Sources */,
 					C05100000000000000000003 /* ChatGoalControls.swift in Sources */,
 					C05100000000000000000004 /* ChatTranscriptSupportingViews.swift in Sources */,
