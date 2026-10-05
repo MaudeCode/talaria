@@ -1,10 +1,11 @@
-import { existsSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { parseProviderQualifiedModel } from '../config/agent-config.js'
+import { AgentConfig, parseProviderQualifiedModel } from '../config/agent-config.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
-import { repairSessionModel, splitPickerOverflow, type ModelEntry, type ModelsCatalog } from './catalog.js'
+import { ProviderCatalog, repairSessionModel, splitPickerOverflow, type ModelEntry, type ModelsCatalog } from './catalog.js'
 import { writeEnvFile } from './env-file.js'
 
 type Json = Record<string, unknown>
@@ -87,6 +88,32 @@ describe('stale session model repair (TAL-542)', () => {
 
   it('prefers a provider that lists a providerless model over the default', () => {
     expect(repairSessionModel(catalog('openai-codex', 'gpt-5.5', { 'openai-codex': ['gpt-5.5'], gemini: ['gemini-3.1-pro-preview'] }), 'gemini-3.1-pro-preview', null)).toEqual(['gemini-3.1-pro-preview', 'gemini'])
+  })
+})
+
+describe('live model ids without a sidecar (TAL-542)', () => {
+  it('never lets ids fetched under another source confirm a repair while the sidecar is down', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'talaria-catalog-'))
+    try {
+      let sidecar: FakeSidecar | null = new FakeSidecar()
+      const config = { model: { provider: 'anthropic', default: 'claude-sonnet-4' }, providers: { ollama: { base_url: 'http://ollama.test/v1', models: ['llama3.2'] }, deepseek: { api_key: 'sk-deepseek-12345' } } }
+      sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config }))
+      sidecar.respond('providers.auth_status', (p) => ({ status: { logged_in: false, provider: p.provider ?? '' } }))
+      sidecar.respond('plugins.providers', () => ({ providers: [] }))
+      sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: p.provider === 'deepseek' ? ['ds-old'] : [] }))
+      writeFileSync(join(home, 'config.yaml'), '# cfg\n')
+      const agentConfig = new AgentConfig({ sidecar: () => sidecar, env: {} })
+      const catalog = new ProviderCatalog({ sidecar: () => sidecar, config: agentConfig, env: {}, now: () => 1_800_000_000, log: () => undefined, costBudget: () => null, isRootProfileHome: () => true })
+      await catalog.warmSessionModelRepair(home)
+      expect(catalog.sessionModelRepair(home, 'ds-old', 'ollama')).toEqual(['ds-old', 'deepseek'])
+      // The credential changes in .env while the sidecar is down: the cached ids belong to the old one.
+      writeFileSync(join(home, '.env'), 'DEEPSEEK_API_KEY=sk-deepseek-67890\n')
+      sidecar = null
+      await catalog.warmSessionModelRepair(home)
+      expect(catalog.sessionModelRepair(home, 'ds-old', 'ollama')).toBeNull()
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
   })
 })
 

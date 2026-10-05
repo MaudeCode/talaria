@@ -623,7 +623,8 @@ export class ProviderCatalog {
     const inflight = this.liveInflight.get(flightKey)
     if (inflight && !opts.force) return inflight
     const sidecar = this.deps.sidecar()
-    if (!sidecar) return hit?.ids ?? []
+    // No sidecar is a failed lookup for this source: the ids it keeps showing never confirm a stale-model repair (TAL-542).
+    if (!sidecar) { this.liveFailed.add(flightKey); return hit?.ids ?? [] }
     const run = sidecar.call('providers.model_ids', { profile_home: profileHome, provider: pid, ...(opts.force ? { force_refresh: true } : {}) }, { timeoutMs: 30_000 })
       .then((r) => { this.liveIds.set(key, { at: this.deps.now(), ids: r.model_ids, source }); this.liveFailed.delete(flightKey); return r.model_ids })
       .catch((error: unknown) => { this.deps.log(`[catalog] live model ids for ${pid} failed: ${str((error as Error).message)}`); this.liveFailed.add(flightKey); return hit?.ids ?? [] })
