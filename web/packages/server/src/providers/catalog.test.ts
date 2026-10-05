@@ -52,9 +52,10 @@ describe('stale session model repair (TAL-542)', () => {
     expect(repairSessionModel(catalog('kilocode', 'kilo/auto', { ollama: ['llama3.2'], kilocode: [kilo] }, { ollama: [kilo] }), kilo, 'ollama')).toBeNull()
   })
 
-  it('keeps the pair when its provider\'s live lookup failed or it is the profile\'s own provider', () => {
+  it('keeps the pair when its provider\'s or the only owner\'s live lookup failed, or it is the profile\'s own provider', () => {
     const c = catalog('kilocode', 'kilo/auto', { ollama: ['llama3.2'], kilocode: [kilo] })
     expect(repairSessionModel(c, kilo, 'ollama', new Set(['ollama']))).toBeNull()
+    expect(repairSessionModel(c, kilo, 'ollama', new Set(['kilocode']))).toBeNull()
     expect(repairSessionModel(catalog('ollama', 'llama3.2', { ollama: ['llama3.2'], kilocode: [kilo] }), kilo, 'ollama')).toBeNull()
   })
 

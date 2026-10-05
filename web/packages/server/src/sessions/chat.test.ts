@@ -2381,6 +2381,30 @@ describe('stale cross-provider session models at chat start (TAL-542)', () => {
     expect(started).toMatchObject({ effective_model: 'gpt-5.5', effective_model_provider: 'openai-codex' })
   })
 
+  it('re-reads live model ids after config.yaml or .env changes outside Web', async () => {
+    let ids = ['ds-old']
+    sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: p.provider === 'deepseek' ? ids : [] }))
+    const configFor = (url: string): Json => ({ model: { provider: 'anthropic', default: 'claude-sonnet-4' }, providers: { ollama: { base_url: 'http://ollama.test/v1', models: ['llama3.2'] }, deepseek: { base_url: url, api_key: 'sk-deepseek-12345' } } })
+    let config = configFor('https://one.test/v1')
+    sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config }))
+    s.deps.agentConfig.invalidate()
+    s.deps.catalog.invalidate()
+    try {
+      await start({ session_id: await sessionWith('claude-sonnet-4', 'anthropic') })
+      // The provider moves to another endpoint in config.yaml; its cached ids describe the old one.
+      ids = ['ds-new']
+      config = configFor('https://two.test/v1')
+      writeFileSync(join(s.state, 'config.yaml'), '# deepseek moved\n')
+      expect(await start({ session_id: await sessionWith('ds-new', 'ollama') })).toMatchObject({ effective_model: 'ds-new', effective_model_provider: 'deepseek' })
+      // A credential edit in .env alone does the same.
+      ids = ['ds-newer']
+      writeFileSync(join(s.state, '.env'), 'TALARIA_TEST_EDIT=1\n')
+      expect(await start({ session_id: await sessionWith('ds-newer', 'ollama') })).toMatchObject({ effective_model: 'ds-newer', effective_model_provider: 'deepseek' })
+    } finally {
+      sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: [] }))
+    }
+  })
+
   it('keeps a pair the catalog lists, an unknown vendor, and a `@provider:` pick', async () => {
     useConfig('openai-codex', 'gpt-5.5', { ollama: ['llama3.2'] })
     for (const [model, provider] of [['llama3.2', 'ollama'], ['lmstudio-community/Qwen2.5-Coder-7B-Instruct-GGUF', null], ['custom/my-local-llm', null]] as const) {
