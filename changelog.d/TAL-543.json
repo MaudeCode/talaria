@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Chats on your main model use its saved Fast mode and extra request settings again.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
