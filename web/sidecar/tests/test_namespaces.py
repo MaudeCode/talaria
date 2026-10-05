@@ -214,3 +214,15 @@ def test_stdout_is_reserved_for_rpc_frames(handshaken: SidecarProcess, hermes_ho
     handshaken.result("profiles.create", {"base_home": home, "name": "printy"})
     assert handshaken.result("profiles.delete", {"base_home": home, "name": "printy"}) == {"ok": True}
     assert "runtime.status" in handshaken.result("rpc.methods")["methods"]
+
+
+@requires_agent
+def test_image_mode_reads_the_profile_config(handshaken: SidecarProcess, hermes_home: pathlib.Path) -> None:
+    """TAL-545: the profile's ``config.yaml`` vision overrides decide the mode, with the requested provider's identity."""
+    home = str(hermes_home)
+    path = hermes_home / "config.yaml"
+    params = {"profile_home": home, "provider": "custom:lab", "model": "lab-vision-1", "requested_provider": "custom:lab"}
+    path.write_text("providers:\n  lab:\n    models:\n      lab-vision-1:\n        supports_vision: true\n", encoding="utf-8")
+    assert handshaken.result("text.image_mode", params) == {"mode": "native", "reason": "", "supports_vision": True}
+    path.write_text("agent:\n  image_input_mode: text\nmodel:\n  supports_vision: true\n", encoding="utf-8")
+    assert handshaken.result("text.image_mode", params)["mode"] == "text"

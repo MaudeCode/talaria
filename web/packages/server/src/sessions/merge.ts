@@ -1226,3 +1226,24 @@ export function sanitizeMessagesForApi(messages: Message[], { preserveApiContent
   }
   return final
 }
+
+const isNativeImagePart = (part: unknown): boolean => isDict(part) && (part.type === 'image_url' || 'image_url' in part)
+
+/** True when any row's content carries a native `image_url` part. */
+export function hasNativeImages(messages: Message[]): boolean {
+  return messages.some((msg) => Array.isArray(msg.content) && msg.content.some(isNativeImagePart))
+}
+
+/**
+ * Python `_strip_native_image_parts_from_content` (TAL-545): the history for a turn whose image mode resolved to text.
+ * Native `image_url` parts are dropped and the text kept; a lone text part collapses to its string, as a text-only
+ * provider rejects a replayed image before the Agent's own strip-and-retry guard can recover.
+ */
+export function withoutNativeImages(messages: Message[]): Message[] {
+  return messages.map((msg) => {
+    if (!Array.isArray(msg.content) || !msg.content.some(isNativeImagePart)) return msg
+    const parts = msg.content.filter((part) => isDict(part) && !isNativeImagePart(part)) as Record<string, unknown>[]
+    const content = !parts.length ? '' : parts.length === 1 && parts[0]!.type === 'text' ? str(parts[0]!.text) : parts
+    return { ...msg, content }
+  })
+}

@@ -16,7 +16,7 @@ def image_mode(*, provider: str, model: str, cfg: dict | None, requested_provide
     try:
         from agent.image_routing import decide_image_input_mode
     except Exception:  # noqa: BLE001
-        return {"mode": "text", "reason": "image routing unavailable"}
+        return {"mode": "text", "reason": "image routing unavailable", "supports_vision": None}
     try:
         decision = decide_image_input_mode(provider, model, cfg, requested_provider=requested_provider)
     except TypeError:
@@ -32,6 +32,18 @@ def image_mode(*, provider: str, model: str, cfg: dict | None, requested_provide
     except Exception:  # noqa: BLE001
         supports_vision = None
     return {"mode": str(decision or "text"), "reason": "", "supports_vision": supports_vision}
+
+
+def _profile_config() -> dict | None:
+    """The scoped profile's ``config.yaml``; None when the Agent cannot load it."""
+    try:
+        from hermes_cli.config import load_config
+
+        cfg = load_config()
+    except Exception:  # noqa: BLE001
+        log.debug("image mode config load failed", exc_info=True)
+        return None
+    return cfg if isinstance(cfg, dict) else None
 
 
 def portal_tags() -> dict:
@@ -58,6 +70,10 @@ def register(registry) -> None:
     def image_mode_(ctx: CallContext, params: dict) -> dict:
         cfg = params.get("cfg") if isinstance(params.get("cfg"), dict) else None
         with scoped_home(profile_home_param(params)):
+            # TAL-545: without an explicit cfg the profile's config.yaml decides, so its vision overrides
+            # (``agent.image_input_mode``, ``supports_vision``) apply as they do for the Agent's own turn.
+            if cfg is None:
+                cfg = _profile_config()
             return image_mode(provider=str(params.get("provider") or ""), model=str(params.get("model") or ""), cfg=cfg, requested_provider=str(params.get("requested_provider") or ""))
 
     @registry.method("text.portal_tags")
