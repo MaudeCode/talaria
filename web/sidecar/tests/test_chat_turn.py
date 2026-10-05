@@ -460,6 +460,35 @@ def test_tool_complete_ships_the_raw_result_and_no_error_decision(monkeypatch) -
     assert frames[3]["raw_result"] == ""
 
 
+def test_usage_changes_and_the_full_todo_result_reach_the_server(monkeypatch) -> None:
+    """TAL-397: a counter change is reported before the next content frame; the todo tool's result travels whole."""
+    _patch(monkeypatch)
+    todo = json.dumps({"todos": [{"id": str(i), "content": "c" * 200, "status": "pending"} for i in range(40)], "summary": {"total": 40}})
+
+    class MeteredAgent(FakeAgent):
+        session_prompt_tokens = 0
+        session_completion_tokens = 0
+        session_estimated_cost_usd = None
+
+        def run_conversation(self, **kwargs):
+            self.kwargs["stream_delta_callback"]("a")
+            self.session_prompt_tokens, self.session_completion_tokens, self.session_estimated_cost_usd = 100, 10, 0.5
+            self.kwargs["tool_start_callback"]("t1", "todo", {})
+            self.kwargs["tool_complete_callback"]("t1", "todo", {}, todo)
+            self.kwargs["stream_delta_callback"]("b")
+            return super().run_conversation(**kwargs)
+
+    monkeypatch.setattr(chat, "_agent_class", lambda: MeteredAgent)
+    ctx = Ctx()
+    assert chat.start(ctx, _params("st-meter"))["status"] == "completed"
+    events = [event for event, _ in ctx.frames if event != "steer_pending"]
+    assert events == ["token", "usage", "tool", "tool_complete", "token"]
+    assert dict(ctx.frames)["usage"] == {"prompt_tokens": 100, "completion_tokens": 10, "cache_read_tokens": 0, "cache_write_tokens": 0, "estimated_cost_usd": 0.5}
+    complete = dict(ctx.frames)["tool_complete"]
+    assert complete["todo_result"] == todo
+    assert len(complete["raw_result"]["todos"]) == 4000
+
+
 def test_a_profile_toolset_change_builds_a_fresh_agent(monkeypatch) -> None:
     _patch(monkeypatch)
     chat.start(Ctx(), _params("st-1", "toolsets"))

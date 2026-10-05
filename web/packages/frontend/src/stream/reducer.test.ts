@@ -80,7 +80,7 @@ describe('stream reducer: ordering and projection', () => {
   })
   it('projects metering, context status, steer consumption and compression', () => {
     let s = started()
-    s = ev(s, 'metering', { tps: 21.5, usage: { output_tokens: 10 } })
+    s = ev(s, 'metering', { tps: 21.5, tps_available: true, usage: { input_tokens: 100, output_tokens: 10, estimated_cost: null, cache_read_tokens: 0, cache_write_tokens: 0 } })
     s = ev(s, 'context_status', { state: 'near_limit', message: 'x' })
     s = ev(s, 'steer_consumed', { steer_id: 's1', text: 'also do y' })
     s = ev(s, 'steer_consumed', { steer_id: 's1', text: 'also do y' })

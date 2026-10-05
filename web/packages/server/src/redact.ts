@@ -1901,7 +1901,7 @@ export function withToolId(data: Record<string, unknown>, id: string): Record<st
   return frame
 }
 
-function redactNestedMessageContainers(value: unknown, enabled: boolean): unknown {
+export function redactNestedMessageContainers(value: unknown, enabled: boolean): unknown {
   const scrubbed = scrubInternalReplayFields(value)
   if (!scrubbed || typeof scrubbed !== 'object' || Array.isArray(scrubbed)) return redactValue(scrubbed, enabled)
   const result: Record<string, unknown> = {}

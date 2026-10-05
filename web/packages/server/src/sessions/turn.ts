@@ -16,15 +16,15 @@ import type { SessionService } from './service.js'
 import { HttpFailure, markSessionTitleGenerated } from './service.js'
 import type { SessionEventBus } from './events.js'
 import { StreamRegistry, SessionChannels, type StreamChannel } from './streams.js'
-import type { ClarifyAnswers, PendingSteer, SidecarResult, SteerWithdrawn, SteerWithdrawRequest } from '@maudecode/talaria-web-contracts'
+import { ChatUsageSchema, type ClarifyAnswers, type PendingSteer, type SidecarResult, type SteerWithdrawn, type SteerWithdrawRequest } from '@maudecode/talaria-web-contracts'
 import { PendingPrompts, clarifyReply } from './pending.js'
 import { RunJournal, type RunJournalWriter } from './journal.js'
 import { CONTEXT_USAGE_FIELDS, Session, titleFrom, type Message } from './session.js'
-import { buildActiveTurnToken, completedToolIndex, publicToolFrame, redactSessionData, redactString, withToolId } from '../redact.js'
+import { buildActiveTurnToken, completedToolIndex, publicToolFrame, redactNestedMessageContainers, redactSessionData, redactString, withToolId } from '../redact.js'
 import { dict, type Config } from '../config/agent-config.js'
 import { ReasoningTitleTracker, reasoningEventPayload } from './reasoning-titles.js'
 import { messageWindowForDisplay, messagesForLimitedPayload, toolCallsForMessageWindow } from './window.js'
-import { attachTodoState } from './todo.js'
+import { attachTodoState, parseTodoToolResult } from './todo.js'
 import { withSessionWireFlags } from './list.js'
 import { hydrateAnchorActivityScenes, turnTerminalState, withTurnIds } from './anchor.js'
 import { persistentStateChanges, persistentStateSnapshot } from './state-saved.js'
@@ -39,6 +39,8 @@ import { str } from '../util.js'
 export const CHAT_LOCK_WAIT_SECONDS = 2
 const IMAGE_MODE_TIMEOUT_MS = 15_000
 const TERMINAL_SSE_VISIBLE_MESSAGE_LIMIT = 80
+/** TAL-397: streamed text reports the live meter at most this often (seconds); a counter change reports at once. */
+const METERING_INTERVAL_S = 1
 /** How long a user's message waits for a stopped background turn to unwind before its own turn is admitted. */
 const BACKGROUND_UNWIND_WAIT_MS = 30_000
 
@@ -120,6 +122,24 @@ export interface StartTurnResponse {
 interface ErrorClassification { label: string; type: string; hint: string }
 
 const COMPRESSION_EXHAUSTED: ErrorClassification = { label: 'Context compression exhausted', type: 'compression_exhausted', hint: 'The conversation context is too large to compress safely. Start a new conversation or retry with a narrower task.' }
+
+type ChatUsage = SidecarResult<'chat.start'>['usage']
+type UsageCounters = Pick<Session, 'input_tokens' | 'output_tokens' | 'estimated_cost' | 'cache_read_tokens' | 'cache_write_tokens'>
+
+/** The Agent's session counters onto a session's: a zero or missing reading keeps the figure it already has. */
+function applyAgentUsage(target: UsageCounters, usage: ChatUsage): void {
+  if (usage.prompt_tokens > 0) target.input_tokens = usage.prompt_tokens
+  if (usage.completion_tokens > 0) target.output_tokens = usage.completion_tokens
+  if (usage.estimated_cost_usd !== null) target.estimated_cost = usage.estimated_cost_usd
+  if (usage.cache_read_tokens > 0) target.cache_read_tokens = usage.cache_read_tokens
+  if (usage.cache_write_tokens > 0) target.cache_write_tokens = usage.cache_write_tokens
+}
+
+/** TAL-397: the `metering` frame's counters, the same figures the session persists. */
+const meteringUsage = (c: UsageCounters): Record<string, unknown> => ({
+  input_tokens: c.input_tokens || 0, output_tokens: c.output_tokens || 0, estimated_cost: typeof c.estimated_cost === 'number' ? c.estimated_cost : null,
+  cache_read_tokens: c.cache_read_tokens || 0, cache_write_tokens: c.cache_write_tokens || 0,
+})
 
 /** `compressionExhausted`: the Agent flagged the turn itself, so its wording does not matter. */
 export function classifyProviderError(errStr: string, opts: { silentFailure?: boolean | undefined; condition?: string | undefined; compressionExhausted?: boolean | undefined } = {}): ErrorClassification {
@@ -380,6 +400,23 @@ export class TurnRunner {
     const toolStartedAt = new WeakMap<Record<string, unknown>, number>()
     let tokenSent = false
     let firstTokenAt: number | null = null
+    // TAL-397: the live meter. Counters start from the session's and follow the Agent's; the rate counts text deltas.
+    const liveUsage: UsageCounters = { input_tokens: s.input_tokens, output_tokens: s.output_tokens, estimated_cost: s.estimated_cost, cache_read_tokens: s.cache_read_tokens, cache_write_tokens: s.cache_write_tokens }
+    const meter = { deltas: 0, first: 0, last: 0, sentAt: null as number | null }
+    const putMetering = (force: boolean): void => {
+      const now = deps.now()
+      if (!force && meter.sentAt !== null && now - meter.sentAt < METERING_INTERVAL_S) return
+      meter.sentAt = now
+      const tps = meter.deltas && meter.last > meter.first ? Math.round((meter.deltas / (meter.last - meter.first)) * 10) / 10 : null
+      put('metering', { session_id: sessionId, usage: meteringUsage(liveUsage), tps, tps_available: tps !== null, estimated: false })
+    }
+    const meterDelta = (): void => {
+      const now = deps.now()
+      if (!meter.deltas) meter.first = now
+      meter.last = now
+      meter.deltas += 1
+      putMetering(false)
+    }
     // TAL-460: a background turn's text is held back while it could still be a silence marker, so one never flashes by.
     // ponytail: checks the turn's whole text, so a marker after earlier prose streams until the settled row hides it;
     // check the last text segment instead if that shows up.
@@ -441,9 +478,10 @@ export class TurnRunner {
               const stable = titles.stableSnapshot(reasoningText.join(''))
               if (stable !== null) put('reasoning', { text: '', titles: stable })
               partialText.push(str(data.text))
-              if (holdSilence && mayBecomeSilentReply(partialText.join(''))) { heldText += str(data.text); return }
+              if (holdSilence && mayBecomeSilentReply(partialText.join(''))) { heldText += str(data.text); meterDelta(); return }
               put('token', { text: heldText + str(data.text) })
               heldText = ''
+              meterDelta()
               return
             }
             case 'reasoning': {
@@ -451,6 +489,13 @@ export class TurnRunner {
               reasoningText.push(str(data.text))
               // Python `reasoning_event_payload`: bold or first-line titles ride on the delta they complete.
               put('reasoning', titles.prepare(reasoningEventPayload(str(data.text), reasoningText.join(''))))
+              meterDelta()
+              return
+            }
+            case 'usage': {
+              const usage = ChatUsageSchema.safeParse(data)
+              if (usage.success) applyAgentUsage(liveUsage, usage.data)
+              putMetering(true)
               return
             }
             case 'steer_pending':
@@ -470,7 +515,7 @@ export class TurnRunner {
             case 'tool_complete': {
               // TAL-313: the server decides failure from the sidecar's raw result, which never leaves the server; TAL-315: so
               // are its display sections, which keep the stderr and exit code the flat preview drops.
-              const { raw_result: rawResult, ...complete } = data
+              const { raw_result: rawResult, todo_result: todoResult, ...complete } = data
               const outcome = toolOutcome(rawResult)
               complete.is_error = outcome.is_error
               if (rawResult !== undefined) complete.result_view = outcome.result_view
@@ -485,6 +530,9 @@ export class TurnRunner {
               this.lastCompletedTool.set(streamId, id)
               const redacted = deps.redactEnabled()
               put('tool_complete', publicToolFrame(withToolId(complete, id), redacted), { redacted })
+              // TAL-397: the todo tool's result is the session's new list; the settled session derives the same one.
+              const todos = data.name === 'todo' ? parseTodoToolResult(todoResult) : null
+              if (todos) put('todo_state', redactNestedMessageContainers({ ...todos, session_id: sessionId, stream_id: streamId, source: 'live', ts: deps.now() }, redacted) as Record<string, unknown>)
               return
             }
             // Python: the live chat frame carries the queue head plus depth, not the entry that just arrived.
@@ -600,11 +648,7 @@ export class TurnRunner {
       const usage = result.usage
       const prevInputTokens = s.input_tokens || 0
       const prevCacheReadTokens = s.cache_read_tokens || 0
-      if (usage.prompt_tokens > 0) s.input_tokens = usage.prompt_tokens
-      if (usage.completion_tokens > 0) s.output_tokens = usage.completion_tokens
-      if (usage.estimated_cost_usd !== null) s.estimated_cost = usage.estimated_cost_usd
-      if (usage.cache_read_tokens > 0) s.cache_read_tokens = usage.cache_read_tokens
-      if (usage.cache_write_tokens > 0) s.cache_write_tokens = usage.cache_write_tokens
+      applyAgentUsage(s, usage)
       if (typeof result.context.context_length === 'number') s.context_length = result.context.context_length
       if (typeof result.context.threshold_tokens === 'number') s.threshold_tokens = result.context.threshold_tokens
       if (typeof result.context.last_prompt_tokens === 'number') s.last_prompt_tokens = result.context.last_prompt_tokens
@@ -692,6 +736,8 @@ export class TurnRunner {
         terminal_state: turnTerminalState(s.messages, streamId),
       }
       if (result.tool_limit_reached) donePayload.terminal_reason = 'max_iterations'
+      // TAL-397: the live meter ends on the persisted counters and turn rate.
+      put('metering', { session_id: sessionId, usage: meteringUsage(s), tps: doneUsage.tps ?? null, tps_available: doneUsage.tps !== undefined, estimated: false })
       put('done', donePayload)
       for (const [event, payload] of steerEvents) put(event, payload)
       // The turn is over: release admission before the title work so a follow-up message is accepted while the

@@ -79,9 +79,11 @@ describe('chat turns through the sidecar', () => {
     const names = eventNames(frames)
     // Python closed the reasoning segment with a stable `{text:'', titles:[...]}` snapshot before the first visible token.
     // Python emits the prefill `context_status` frame before the agent runs; the recall hook is dropped, so it is always not_configured.
-    expect(names.slice(0, 7)).toEqual(['context_status', 'reasoning', 'tool', 'tool_complete', 'reasoning', 'token', 'token'])
-    expect(frames[0]?.data).toEqual({ session_id: sid, prefill: { status: 'not_configured', source: 'none', label: '', message_count: 0 } })
-    expect(frames[4]?.data).toEqual({ text: '', titles: ['thinking'] })
+    // The live meter (TAL-397) interleaves its own frames; the content order is pinned without them.
+    const content = frames.filter((f) => f.event !== 'metering')
+    expect(eventNames(content).slice(0, 7)).toEqual(['context_status', 'reasoning', 'tool', 'tool_complete', 'reasoning', 'token', 'token'])
+    expect(content[0]?.data).toEqual({ session_id: sid, prefill: { status: 'not_configured', source: 'none', label: '', message_count: 0 } })
+    expect(content[4]?.data).toEqual({ text: '', titles: ['thinking'] })
     expect(names).toContain('done')
     expect(names).toContain('title')
     expect(names[names.length - 1]).toBe('stream_end')
@@ -2256,5 +2258,92 @@ describe('live tool outcomes (TAL-313)', () => {
     expect((detail.tool_calls as Json[]).map((c) => [c.tid, c.is_error, c.duration])).toEqual([['toolu-1', true, 2.5]])
     const calls = (detail.messages as Json[]).find((m) => Array.isArray(m.tool_calls))?.tool_calls as Json[]
     expect(calls.map((c) => [c.id, c.done, c.is_error, c.duration])).toEqual([['toolu-1', true, true, 2.5]])
+  })
+})
+
+describe('live metering and todo_state (TAL-397)', () => {
+  let s: TestServer
+  let sidecar: FakeSidecar
+  let clock = 1_800_000_000
+  beforeAll(async () => {
+    sidecar = new FakeSidecar()
+    s = await bootTestServer({ sidecar, now: () => clock })
+    sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Plan"', usage: null }))
+  })
+  afterAll(() => s.close())
+
+  const turn = async (sid: string, message: string): Promise<SseFrame[]> => {
+    const streamId = String((await json(await post(s, '/api/chat/start', { session_id: sid, message }))).stream_id)
+    return s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'stream_end')
+  }
+  const meterings = (frames: SseFrame[]): Json[] => frames.slice(0, frames.findIndex((f) => f.event === 'done')).filter((f) => f.event === 'metering').map((f) => f.data as Json)
+
+  it('streams server-computed metering and todo_state during the turn and ends on the persisted values', async () => {
+    const sid = await newSession(s)
+    const todos = [{ id: '1', content: 'Write the test', status: 'completed' }, { id: '2', content: 'Fix the server', status: 'in_progress' }]
+    const todoResult = JSON.stringify({ todos, summary: { total: 2, pending: 0, in_progress: 1, completed: 1, cancelled: 0 } })
+    sidecar.respond('chat.start', (params, emit) => {
+      emit({ event: 'token', data: { text: 'Planning ' } })
+      clock += 0.5
+      emit({ event: 'token', data: { text: 'now.' } })
+      // The Agent's session counters after its first API call.
+      emit({ event: 'usage', data: { prompt_tokens: 100, completion_tokens: 10, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: 0.0005 } })
+      emit({ event: 'tool', data: { event_type: 'tool.started', name: 'todo', args: {}, tid: 'call_todo' } })
+      // `raw_result` caps nested values; the todo tool's full result rides as `todo_result`.
+      emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'todo', preview: todoResult.slice(0, 20), args: {}, tid: 'call_todo', raw_result: { todos: todoResult.slice(9, 30), summary: '{}' }, todo_result: todoResult } })
+      clock += 2
+      emit({ event: 'token', data: { text: 'Done.' } })
+      return completed([
+        { role: 'user', content: str(params.user_message) },
+        { role: 'assistant', content: 'Planning now.', tool_calls: [{ id: 'call_todo', type: 'function', function: { name: 'todo', arguments: '{}' } }] },
+        { role: 'tool', tool_call_id: 'call_todo', content: todoResult },
+        { role: 'assistant', content: 'Done.' },
+      ])
+    })
+    const frames = await turn(sid, 'plan it')
+    const names = eventNames(frames)
+    const done = frames.find((f) => f.event === 'done')?.data as Json
+    const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
+
+    // Live metering: the first delta reports at once, a usage change reports before the next content frame.
+    const live = meterings(frames)
+    expect(live[0]).toMatchObject({ session_id: sid, usage: { input_tokens: 0, output_tokens: 0 }, tps: null, tps_available: false, estimated: false })
+    const usageIdx = frames.findIndex((f) => f.event === 'metering' && ((f.data as Json).usage as Json).input_tokens === 100)
+    expect(usageIdx).toBeGreaterThan(0)
+    expect(usageIdx).toBeLessThan(names.indexOf('tool'))
+    expect((frames[usageIdx]?.data as Json).usage).toEqual({ input_tokens: 100, output_tokens: 10, estimated_cost: 0.0005, cache_read_tokens: 0, cache_write_tokens: 0 })
+
+    // Live todo_state: the full list, before the turn settles, equal to the settled and reloaded snapshot.
+    const todoFrame = frames.find((f) => f.event === 'todo_state')?.data as Json
+    expect(names.indexOf('todo_state')).toBeGreaterThan(names.indexOf('tool_complete'))
+    expect(names.indexOf('todo_state')).toBeLessThan(names.indexOf('done'))
+    expect(todoFrame).toMatchObject({ session_id: sid, source: 'live', todos, summary: { total: 2, in_progress: 1 }, version: 1 })
+    expect((done.session as Json).todo_state).toMatchObject({ todos: todoFrame.todos, summary: todoFrame.summary, version: todoFrame.version })
+    expect(detail.todo_state).toMatchObject({ todos: todoFrame.todos, summary: todoFrame.summary, version: todoFrame.version })
+
+    // The last metering frame before `done` carries the persisted counters and the persisted turn rate.
+    const last = live[live.length - 1]!
+    expect(last.usage).toEqual({ input_tokens: detail.input_tokens, output_tokens: detail.output_tokens, estimated_cost: detail.estimated_cost, cache_read_tokens: detail.cache_read_tokens, cache_write_tokens: detail.cache_write_tokens })
+    expect(last.usage).toMatchObject({ input_tokens: 120, output_tokens: 30, estimated_cost: 0.001 })
+    const settledRow = (detail.messages as Json[]).filter((m) => m.role === 'assistant').at(-1)!
+    expect(last).toMatchObject({ tps: settledRow._turnTps, tps_available: true, estimated: false })
+    expect(last.tps).toBe((done.usage as Json).tps)
+    // The todo tool's full result is server-only, like `raw_result`.
+    expect(JSON.stringify(frames)).not.toContain('todo_result')
+  })
+
+  it('throttles delta metering to once a second and reports the delta rate', async () => {
+    const sid = await newSession(s)
+    sidecar.respond('chat.start', (params, emit) => {
+      for (let i = 0; i < 20; i += 1) emit({ event: 'token', data: { text: `t${String(i)} ` } })
+      clock += 0.4
+      emit({ event: 'reasoning', data: { text: 'still inside the window' } })
+      clock += 0.6
+      emit({ event: 'token', data: { text: 'end' } })
+      return completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'end' }])
+    })
+    const live = meterings(await turn(sid, 'stream a lot'))
+    // 22 deltas: the first reports at once, the rest of the window is throttled, the delta a second later reports 22/s.
+    expect(live.slice(0, -1).map((m) => [m.tps, m.tps_available])).toEqual([[null, false], [22, true]])
   })
 })

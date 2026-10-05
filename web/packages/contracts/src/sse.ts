@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { ClarifyStepSchema, ContextUsageFields, PendingSteerSchema, SteerWithdrawnSchema, ToolDisplayFields, ToolResultViewSchema, TurnTerminalStateSchema } from './views.js'
+import { ClarifyStepSchema, ContextUsageFields, PendingSteerSchema, SteerWithdrawnSchema, ToolDisplayFields, ToolResultViewSchema, TodoStateSchema, TurnTerminalStateSchema } from './views.js'
 
 /**
  * Wire events of `GET /api/chat/stream` and the per-session relay
@@ -21,7 +21,14 @@ const AppError = z.looseObject({ terminal_state: TurnTerminalStateSchema.optiona
 const Done = z.looseObject({ terminal_state: TurnTerminalStateSchema.optional(), session: z.unknown().optional(), usage: z.looseObject(ContextUsageFields).optional(), status: z.string().optional(), ephemeral: z.boolean().optional(), answer: z.string().optional() })
 const Cancel = z.looseObject({ terminal_state: TurnTerminalStateSchema.optional(), type: z.string().optional(), message: z.string().optional(), hint: z.string().optional(), status: z.string().optional(), session_id: z.string().optional(), session: z.unknown().optional() })
 const StreamEnd = z.looseObject({ session_id: z.string().optional() })
-const Metering = z.looseObject({ session_id: z.string().optional(), usage: z.unknown().optional(), tps: z.number().nullable().optional(), tps_available: z.boolean().optional(), estimated: z.boolean().optional() })
+/** TAL-397: the session's token and cost counters as the turn will persist them. */
+const MeteringUsage = z.looseObject({ input_tokens: z.number(), output_tokens: z.number(), estimated_cost: z.number().nullable(), cache_read_tokens: z.number(), cache_write_tokens: z.number() })
+/**
+ * TAL-397: the live turn's meter, sent when the Agent's counters change and at most once a second while text streams.
+ * `tps` is the stream's delta rate (null, with `tps_available: false`, until two deltas are apart). The last frame before
+ * `done` carries the persisted counters and the persisted turn rate.
+ */
+const Metering = z.looseObject({ session_id: z.string().optional(), usage: MeteringUsage.optional(), tps: z.number().nullable().optional(), tps_available: z.boolean().optional(), estimated: z.boolean().optional() })
 const ContextStatus = z.looseObject({ session_id: z.string().optional(), state: z.string().optional(), decision: z.string().optional(), message: z.string().optional(), message_key: z.string().optional(), message_args: z.array(z.unknown()).optional(), prefill: z.unknown().optional() })
 /**
  * TAL-396: `/goal` progress after a goal turn settles. `state` is `evaluating`, `continuing` or `idle`; `decision` is the
@@ -31,7 +38,8 @@ const Goal = z.looseObject({ session_id: z.string().optional(), state: z.unknown
 /** `after_tool_call_id`: the tool that had completed when the Agent took the steer (null before any tool), its causal place. */
 const Steer = z.looseObject({ session_id: z.string().optional(), steer_id: z.string().optional(), text: z.string().optional(), consumed_at: z.number().optional(), after_tool_call_id: z.string().nullable().optional() })
 const StateSaved = z.looseObject({ session_id: z.string().optional(), status: z.string().optional(), kind: z.string().optional(), name: z.string().optional(), reason: z.string().optional(), action: z.string().optional() })
-const TodoState = z.looseObject({ session_id: z.string().optional(), todos: z.array(z.unknown()).optional(), version: z.number().optional(), ts: z.number().optional(), source: z.string().optional(), description: z.string().optional(), pending_count: z.number().optional() })
+/** TAL-397: the `todo` tool's new list, sent live as the tool completes (`source: 'live'`); the settled session's `todo_state` matches it. */
+const TodoState = TodoStateSchema.extend({ stream_id: z.string().optional() })
 const BgTask = z.looseObject({ session_id: z.string().optional(), task_id: z.string().optional(), id: z.string().optional(), title: z.string().optional(), status: z.string().optional(), summary: z.string().optional(), error: z.string().optional() })
 const ServerTurn = z.looseObject({ session_id: z.string().optional(), stream_id: z.string().optional(), turn_id: z.string().optional(), user_message_id: z.union([z.string(), z.number()]).optional() })
 const Loose = z.looseObject({})
