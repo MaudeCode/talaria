@@ -9,7 +9,7 @@ struct MessageBubbleView: View {
     @AppStorage(ChatTranscriptDisplaySettings.hidesAttachmentPathsKey) private var hidesAttachmentPaths = true
     @AppStorage(ChatTranscriptDisplaySettings.showsAssistantTurnTimestampsKey) private var showsAssistantTurnTimestamps = false
     @AppStorage(ChatTranscriptDisplaySettings.showsResponseSpeedKey) private var showsResponseSpeed = false
-    /// Device-local disclosure for a body the server collapsed (TAL-456).
+    /// Device-local disclosure for a body the server collapsed (TAL-456) or a prompt it folds (TAL-452).
     @State private var isExpanded = false
 
     let message: ChatMessage
@@ -308,6 +308,8 @@ struct MessageBubbleView: View {
     private var userBubble: some View {
         Text(verbatim: userBubbleText)
             .font(.body)
+            .lineLimit(isFoldedPrompt ? Self.foldedPromptLineLimit : nil)
+            .modifier(FoldedPromptFadeModifier(isActive: isFoldedPrompt))
             .textSelection(.enabled)
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
@@ -489,6 +491,13 @@ struct MessageBubbleView: View {
         return content
     }
 
+    private static let foldedPromptLineLimit = 8
+
+    /// A long prompt the server marked collapsible, shown as its first lines with a fade until expanded (TAL-452).
+    private var isFoldedPrompt: Bool {
+        isUserMessage && message.collapsible && !isStreaming && !isExpanded
+    }
+
     /// The server's excerpt while this settled row is collapsed; `nil` shows the whole body.
     private var collapsedExcerpt: String? {
         guard !isStreaming, !isExpanded else { return nil }
@@ -497,7 +506,7 @@ struct MessageBubbleView: View {
 
     @ViewBuilder
     private var collapseToggle: some View {
-        if message.displayExcerpt != nil, !isStreaming {
+        if message.displayExcerpt != nil || (isUserMessage && message.collapsible), !isStreaming {
             Button(isExpanded ? String(localized: "Show less") : String(localized: "Show more")) {
                 isExpanded.toggle()
             }
@@ -532,6 +541,19 @@ private struct PendingSteerMenuModifier<Menu: View>: ViewModifier {
 
     func body(content: Content) -> some View {
         if isEnabled { content.contextMenu { menu() } } else { content }
+    }
+}
+
+/// Fades a folded prompt's last lines (TAL-452); an unfolded bubble is drawn unmasked.
+private struct FoldedPromptFadeModifier: ViewModifier {
+    let isActive: Bool
+
+    func body(content: Content) -> some View {
+        if isActive {
+            content.mask(LinearGradient(stops: [.init(color: .black, location: 0.7), .init(color: .black.opacity(0.15), location: 1)], startPoint: .top, endPoint: .bottom))
+        } else {
+            content
+        }
     }
 }
 

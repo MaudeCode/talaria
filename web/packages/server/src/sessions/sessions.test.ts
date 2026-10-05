@@ -250,6 +250,19 @@ describe('session lifecycle over HTTP', () => {
     expect((before.messages as Json[]).map((m) => m.content)).toEqual(['m4', 'm5', 'm6', 'm7'])
   })
 
+  it('marks a long user message collapsible in full detail and in every window (TAL-452)', async () => {
+    const sid = String((await newSession(s)).session_id)
+    const long = Array.from({ length: 30 }, (_, i) => `log ${i}`).join('\n')
+    const messages: Json[] = []
+    for (let i = 0; i < 8; i += 1) messages.push({ role: i % 2 ? 'assistant' : 'user', content: i % 2 ? long : i === 4 ? long : `m${i}`, timestamp: 1000 + i })
+    writeMessages(s, sid, messages)
+    for (const query of ['', '&msg_limit=4', '&msg_limit=2&msg_before=6']) {
+      const got = ((await json(await s.get(`/api/session?session_id=${sid}${query}`))).session as Json).messages as Json[]
+      expect(got.map((m) => m._collapsible ?? null), query).toEqual(got.map((m) => (m.timestamp === 1004 ? true : null)))
+      expect(got.some((m) => m.timestamp === 1004), query).toBe(true)
+    }
+  })
+
   it('truncates, undoes, retries, clears, and keeps a .bak when the file shrinks', async () => {
     const a = await newSession(s)
     const sid = String(a.session_id)
@@ -1134,6 +1147,17 @@ describe('session detail collapses very long message bodies (TAL-456)', () => {
     const served = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1&msg_limit=50`))).session as Json).messages
     expect(served).toEqual(fixture.messages)
     if (process.env.RECORD_TAL460) { const path = join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'); const all = JSON.parse(readFileSync(path, 'utf8')) as Json; (all.background_update_session as Json).messages = served; writeFileSync(path, `${JSON.stringify(all, null, 2)}\n`) }
+  })
+
+  it('serves the shared collapsible-prompt example exactly as the contract fixture records it (TAL-452)', async () => {
+    const fixture = (JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as Json).collapsible_user_session as Json
+    const sid = String((await newSession(s)).session_id)
+    const session = s.deps.sessionStore.get(sid)
+    session.messages = (fixture.messages as Json[]).map(({ role, content, timestamp, message_id }) => ({ role, content, timestamp, message_id }))
+    s.deps.sessionStore.save(session)
+    const served = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1&msg_limit=50`))).session as Json).messages as Json[]
+    expect(served.map((m) => m._collapsible ?? null)).toEqual([true, null, null, null])
+    expect(served).toEqual(fixture.messages)
   })
 })
 

@@ -655,6 +655,30 @@ describe('redactSessionData', () => {
     const call = ((out.messages as Record<string, unknown>[])[0]!.tool_calls as { function: { arguments: unknown } }[])[0]!
     expect(call.function.arguments).toEqual({ user: 'bob', password: '***' })
   })
+
+  it('marks a user message longer than 20 lines or 2,000 characters collapsible (TAL-452)', () => {
+    const lines = (n: number): string => Array.from({ length: n }, (_, i) => `line ${i}`).join('\n')
+    const collapsible = (message: Record<string, unknown>): unknown => ((redactSessionData({ messages: [message] }, true).messages as Record<string, unknown>[])[0]!)._collapsible
+    expect(collapsible({ role: 'user', content: lines(21) })).toBe(true)
+    expect(collapsible({ role: 'user', content: 'x'.repeat(2001) })).toBe(true)
+    expect(collapsible({ role: 'user', content: [{ type: 'text', text: lines(21) }] })).toBe(true)
+    expect(collapsible({ role: 'user', content: lines(20) })).toBeUndefined()
+    expect(collapsible({ role: 'user', content: 'x'.repeat(2000) })).toBeUndefined()
+    // Measured on the text clients receive: a long credential redacted to `***` brings it under the limit.
+    expect(collapsible({ role: 'user', content: `${'x'.repeat(1980)} API_KEY=${'a'.repeat(30)}` })).toBeUndefined()
+    for (const role of ['assistant', 'tool', 'system']) expect(collapsible({ role, content: lines(40) })).toBeUndefined()
+    expect(collapsible({ role: 'user', content: lines(40), _steer: { steer_id: 's1' } })).toBeUndefined()
+    // Rows the Agent wrote in the user role are not prompts: background wakeups and compaction markers render their own way.
+    expect(collapsible({ role: 'user', content: lines(40), _background_update: { kind: 'process' } })).toBeUndefined()
+    expect(collapsible({ role: 'user', content: lines(40), _marker_kind: 'context_compaction' })).toBeUndefined()
+    // Measured without the `[Attached files: ...]` line clients hide: a short prompt with many long paths stays whole.
+    const attached = `\n\n[Attached files: ${Array.from({ length: 40 }, (_, i) => `/workspace/uploads/${'deep/'.repeat(10)}file-${i}.png`).join(', ')}]`
+    expect(collapsible({ role: 'user', content: `Look at these${attached}` })).toBeUndefined()
+    expect(collapsible({ role: 'user', content: `${lines(21)}${attached}` })).toBe(true)
+    // The server's decision replaces any `_collapsible` a stored or imported row carries.
+    expect(collapsible({ role: 'user', content: 'short', _collapsible: true })).toBeUndefined()
+    expect(collapsible({ role: 'user', content: lines(40), _steer: { steer_id: 's2' }, _collapsible: true })).toBeUndefined()
+  })
 })
 
 /**

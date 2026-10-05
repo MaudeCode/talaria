@@ -3618,6 +3618,9 @@
                               "_display_excerpt": {
                                 "type": "string"
                               },
+                              "_collapsible": {
+                                "type": "boolean"
+                              },
                               "_display_content": {
                                 "type": "string"
                               },
@@ -5672,6 +5675,9 @@
                               "_display_excerpt": {
                                 "type": "string"
                               },
+                              "_collapsible": {
+                                "type": "boolean"
+                              },
                               "_display_content": {
                                 "type": "string"
                               },
@@ -7471,6 +7477,9 @@
                               },
                               "_display_excerpt": {
                                 "type": "string"
+                              },
+                              "_collapsible": {
+                                "type": "boolean"
                               },
                               "_display_content": {
                                 "type": "string"
@@ -10440,6 +10449,9 @@
                               "_display_excerpt": {
                                 "type": "string"
                               },
+                              "_collapsible": {
+                                "type": "boolean"
+                              },
                               "_display_content": {
                                 "type": "string"
                               },
@@ -13252,6 +13264,9 @@
                               "_display_excerpt": {
                                 "type": "string"
                               },
+                              "_collapsible": {
+                                "type": "boolean"
+                              },
                               "_display_content": {
                                 "type": "string"
                               },
@@ -15991,6 +16006,9 @@
                               "_display_excerpt": {
                                 "type": "string"
                               },
+                              "_collapsible": {
+                                "type": "boolean"
+                              },
                               "_display_content": {
                                 "type": "string"
                               },
@@ -17878,6 +17896,9 @@
                               "_display_excerpt": {
                                 "type": "string"
                               },
+                              "_collapsible": {
+                                "type": "boolean"
+                              },
                               "_display_content": {
                                 "type": "string"
                               },
@@ -19751,6 +19772,9 @@
                               },
                               "_display_excerpt": {
                                 "type": "string"
+                              },
+                              "_collapsible": {
+                                "type": "boolean"
                               },
                               "_display_content": {
                                 "type": "string"
@@ -28572,6 +28596,9 @@
                               "_display_excerpt": {
                                 "type": "string"
                               },
+                              "_collapsible": {
+                                "type": "boolean"
+                              },
                               "_display_content": {
                                 "type": "string"
                               },
@@ -30437,6 +30464,9 @@
                                   },
                                   "_display_excerpt": {
                                     "type": "string"
+                                  },
+                                  "_collapsible": {
+                                    "type": "boolean"
                                   },
                                   "_display_content": {
                                     "type": "string"

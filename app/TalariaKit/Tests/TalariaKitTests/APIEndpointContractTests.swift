@@ -580,6 +580,20 @@ final class SharedContractTests: XCTestCase {
         XCTAssertNil(messages.first { $0.messageId == "short-body-reply" }?.activityScene?.finalAnswerExcerpt)
     }
 
+    func testSharedWebSessionFoldsOnlyItsLongPrompt() throws {
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
+        // A release checks this App against every retained Web; one from before TAL-452 has no such example.
+        guard let example = object["collapsible_user_session"] as? [String: Any] else { return }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let messages = try decoder.decode([ChatMessage].self, from: JSONSerialization.data(withJSONObject: example["messages"] ?? []))
+        XCTAssertEqual(messages.map(\.collapsible), [true, false, false, false])
+        let prompt = try XCTUnwrap(messages.first)
+        XCTAssertEqual(prompt.content?.split(separator: "\n").count, 24)
+        // Copy and edit act on the whole prompt, never the folded view of it.
+        XCTAssertEqual(MessageActionContext(message: prompt, visibleIndex: 0, messagesOffset: nil)?.copyText, prompt.content)
+    }
+
     func testOnlyAServerCollapsedExcerptIsKeptAndALongBodyGetsNoLinkPreview() throws {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
