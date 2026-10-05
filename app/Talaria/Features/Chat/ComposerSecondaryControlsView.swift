@@ -126,11 +126,13 @@ struct ComposerSessionStartStrip: View {
     let onRetry: () -> Void
 
     var body: some View {
+        // One footnote line, padded like the controls row, so the strip keeps its height when the
+        // controls replace it; Retry's 44 pt target reaches past the line without taking space.
         HStack(spacing: 8) {
             switch state {
             case .starting:
                 ProgressView()
-                    .controlSize(.small)
+                    .controlSize(.mini)
                 Text("Starting chat…")
                     .font(AppFont.footnote())
                     .foregroundStyle(.secondary)
@@ -143,14 +145,18 @@ struct ComposerSessionStartStrip: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 Spacer(minLength: 0)
-                Button("Retry", action: onRetry)
-                    .font(AppFont.footnote().weight(.semibold))
-                    .frame(minHeight: 44)
+                Button(action: onRetry) {
+                    Text("Retry")
+                        .font(AppFont.footnote().weight(.semibold))
+                        .chatMinimumHitTarget(horizontalPadding: 12, verticalPadding: ComposerMetaControlLabel.hitPadding, in: Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.tint)
             }
         }
+        .lineLimit(1)
         .padding(.horizontal, 12)
         .padding(.vertical, ComposerControlStrip.verticalPadding)
-        .frame(minHeight: 44)
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
         .composerStripChrome(hangingFrom: .bottom)
