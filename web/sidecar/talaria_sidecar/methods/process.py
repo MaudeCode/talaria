@@ -54,6 +54,14 @@ def drain(max_events: int) -> list[dict]:
     completion_queue = getattr(registry, "completion_queue", None) if registry is not None else None
     if completion_queue is None:
         return []
+    try:
+        # A recovered process has no reader thread; only this probe notices its exit and queues its completion (TAL-533).
+        with registry._lock:
+            detached = [s for s in registry._running.values() if getattr(s, "detached", False)]
+        for session in detached:
+            registry._refresh_detached_session(session)
+    except Exception:  # noqa: BLE001
+        log.debug("Failed to reconcile recovered processes", exc_info=True)
     out = []
     while len(out) < max_events:
         try:

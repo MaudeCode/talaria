@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Background processes that keep running through a Talaria Web restart stay in the Background list and report their exit to the chat that started them.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

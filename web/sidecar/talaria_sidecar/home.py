@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import contextlib
 import importlib
+import logging
 import os
 import sys
 import threading
@@ -32,7 +33,11 @@ from pathlib import Path
 
 from .errors import InvalidParams, RpcError
 
+log = logging.getLogger("talaria_sidecar.home")
+
 _ENV_LOCK = threading.RLock()
+_RECOVERY_LOCK = threading.Lock()
+_RECOVERED_HOMES: set[str] = set()
 _LAUNCH_ENV_LOCK = threading.Lock()
 _LAUNCH_ENV: dict[str, str] | None = None
 _PROCESS_HOME = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes").expanduser()
@@ -163,6 +168,25 @@ def profile_home_param(params: dict, key: str = "profile_home") -> Path:
     return Path(raw).expanduser()
 
 
+def _recover_processes(home: Path) -> None:
+    """Re-adopt the live processes a previous run checkpointed in ``home`` (TAL-533), once per home and before the
+    first call in it can spawn: a spawn rewrites ``processes.json`` from the registry and would orphan them."""
+    key = str(home.resolve())
+    with _RECOVERY_LOCK:
+        if key in _RECOVERED_HOMES:
+            return
+        _RECOVERED_HOMES.add(key)
+        try:
+            from tools.process_registry import process_registry
+
+            recovered = process_registry.recover_from_checkpoint()
+        except Exception:  # noqa: BLE001 - an Agent without the registry has nothing to recover
+            log.warning("Background process recovery failed for %s", home, exc_info=True)
+            return
+    if recovered:
+        log.info("Recovered %d background process(es) for %s", recovered, home)
+
+
 @contextlib.contextmanager
 def scoped_home(home: Path):
     """Run the body with Hermes Agent resolving ``get_hermes_home()`` to ``home``."""
@@ -175,6 +199,7 @@ def scoped_home(home: Path):
         token = set_hermes_home_override(home)
         try:
             with _secret_scope(home), _terminal_scope(home):
+                _recover_processes(home)
                 yield home
         finally:
             reset_hermes_home_override(token)
@@ -184,6 +209,7 @@ def scoped_home(home: Path):
         os.environ["HERMES_HOME"] = str(home)
         try:
             with _secret_scope(home), _terminal_scope(home):
+                _recover_processes(home)
                 yield home
         finally:
             if previous is None:
