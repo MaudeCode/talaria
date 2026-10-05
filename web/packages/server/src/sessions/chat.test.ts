@@ -139,6 +139,34 @@ describe('chat turns through the sidecar', () => {
     expect((list.sessions as Json[]).find((r) => r.session_id === sid)).toMatchObject({ title: 'Greeting exchange', message_count: 4 })
   })
 
+  it('saves a completed turn\'s tool screenshots as text in both histories and keeps user images (TAL-544)', async () => {
+    const sid = await newSession(s)
+    const screenshot = `data:image/png;base64,${'A'.repeat(64)}`
+    const attached = 'data:image/png;base64,USERIMAGE'
+    sidecar.respond('chat.start', (params) => completed([
+      { role: 'user', content: [{ type: 'text', text: str(params.user_message) }, { type: 'image_url', image_url: { url: attached } }] },
+      { role: 'assistant', content: '', tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'browser_vision', arguments: '{}' } }] },
+      { role: 'tool', tool_call_id: 'call_1', content: [{ type: 'text', text: 'Image loaded.' }, { type: 'image_url', image_url: { url: screenshot } }, { type: 'input_image', image_url: { url: screenshot } }] },
+      { role: 'assistant', content: '', tool_calls: [{ id: 'call_2', type: 'function', function: { name: 'browser_vision', arguments: '{}' } }] },
+      // An Anthropic-style result: a user row of `tool_result` blocks.
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'call_2', content: [{ type: 'text', text: 'Again.' }, { type: 'image', source: { type: 'base64', media_type: 'image/png', data: screenshot } }] }] },
+      { role: 'assistant', content: 'Looks fine.' },
+    ]))
+    sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Shot"', usage: null }))
+    const streamId = String((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'look' }))).stream_id)
+    await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'stream_end')
+    const saved = JSON.parse(readFileSync(s.deps.sessionStore.pathFor(sid), 'utf8')) as Json
+    for (const rows of [saved.messages, saved.context_messages] as Json[][]) {
+      const tool = rows.find((m) => m.role === 'tool')!
+      expect(tool.content).toEqual([{ type: 'text', text: 'Image loaded.' }, { type: 'text', text: '[screenshot]' }, { type: 'text', text: '[screenshot]' }])
+      const result = rows.find((m) => Array.isArray(m.content) && (m.content as Json[])[0]?.type === 'tool_result')!
+      expect(result.content).toEqual([{ type: 'tool_result', tool_use_id: 'call_2', content: [{ type: 'text', text: 'Again.' }, { type: 'text', text: '[screenshot]' }] }])
+    }
+    expect(JSON.stringify(saved)).not.toContain(screenshot)
+    const user = (saved.context_messages as Json[]).find((m) => m.role === 'user')!
+    expect(user.content).toContainEqual({ type: 'image_url', image_url: { url: attached } })
+  })
+
   it('ships one server-computed context ring on the done usage, the terminal session, a reload, and list and search rows (TAL-299)', async () => {
     const sid = await newSession(s)
     // The provider's cumulative prompt total (900K) is never the ring's numerator.
@@ -2246,6 +2274,31 @@ describe('chat turns through the sidecar', () => {
     expect(stored.post_compression_context_tokens_estimate).toBe(settled)
     const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
     expect(detail.context_used_tokens).toBe(settled)
+  })
+
+  it('re-estimates a compressed context after its tool screenshots become text (TAL-544)', async () => {
+    const sid = await newSession(s)
+    const screenshot = `data:image/png;base64,${'A'.repeat(4000)}`
+    const tool = (content: unknown): Json => ({ role: 'tool', tool_call_id: 'c1', content })
+    sidecar.respond('chat.start', (params) => {
+      const rows = (shot: unknown): Json[] => [
+        { role: 'user', content: '[CONTEXT COMPACTION] earlier work' },
+        { role: 'user', content: str(params.user_message) },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'c1', type: 'function', function: { name: 'browser_vision', arguments: '{}' } }] },
+        tool([{ type: 'text', text: 'Shot.' }, shot]),
+        { role: 'assistant', content: 'Looks fine.' },
+      ]
+      const image = { type: 'image_url', image_url: { url: screenshot } }
+      return completed(rows(image), { compressed: true, context_messages: rows(image), post_compression_context_tokens_estimate: 5000, context: { context_length: 200000, last_prompt_tokens: 150000 } })
+    })
+    sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Shot"', usage: null }))
+    // A stand-in estimator: one token per serialized character, so the image's bytes count.
+    sidecar.respond('models.estimate_tokens', (params) => ({ tokens: JSON.stringify(params.messages).length }))
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'look' }))
+    await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    const stored = s.deps.sessionStore.get(sid)
+    const stripped = JSON.stringify({ type: 'image_url', image_url: { url: screenshot } }).length - JSON.stringify({ type: 'text', text: '[screenshot]' }).length
+    expect(stored.post_compression_context_tokens_estimate).toBe(5000 - stripped)
   })
 
   it.each(['deferred', 'eager'] as const)('stores the anchor key and summary and sends live usage after an auto-compression (TAL-540, %s save)', async (mode) => {

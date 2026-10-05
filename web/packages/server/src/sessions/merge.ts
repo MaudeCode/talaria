@@ -637,11 +637,35 @@ export function attachedFilesPrompt(text: string, attachments: readonly unknown[
   return named.length ? `${text}\n\n[Attached files: ${named.join(', ')}]` : text
 }
 
-/** A model context without an assistant row repeated back to back. */
+const TOOL_IMAGE_PART_TYPES = new Set(['image', 'image_url', 'input_image'])
+
+/**
+ * TAL-544, Python `_compact_image_parts_for_persistence`: a settled turn's tool-result images (browser and vision
+ * screenshots) become `[screenshot]` text, so saves, loads and later turns stop carrying the base64. A result is a `tool`
+ * row or an Anthropic-style `tool_result` block in a user row; the user's own attachments stay.
+ */
+export function withoutToolImages(messages: Message[]): Message[] {
+  const isImage = (p: unknown): boolean => isDict(p) && TOOL_IMAGE_PART_TYPES.has(p.type as string)
+  const hasImage = (parts: unknown): parts is unknown[] => Array.isArray(parts) && (parts as unknown[]).some(isImage)
+  const compact = (parts: unknown[]): unknown[] => parts.map((p) => (isImage(p) ? { type: 'text', text: '[screenshot]' } : p))
+  const isImageResult = (p: unknown): p is Record<string, unknown> => isDict(p) && p.type === 'tool_result' && hasImage(p.content)
+  const out = messages.map((m) => {
+    const content: unknown = m.content
+    if (m.role === 'tool' && hasImage(content)) return { ...m, content: compact(content) }
+    if (m.role === 'user' && Array.isArray(content) && (content as unknown[]).some(isImageResult)) {
+      return { ...m, content: (content as unknown[]).map((p) => (isImageResult(p) ? { ...p, content: compact(p.content as unknown[]) } : p)) }
+    }
+    return m
+  })
+  // The same array when nothing changed, so a caller can tell whether its rows were rewritten.
+  return out.some((m, i) => m !== messages[i]) ? out : messages
+}
+
+/** A settled model context without an assistant row repeated back to back, and without tool-result images. */
 export function dedupeContext(messages: Message[]): Message[] {
   const out: Message[] = []
   let lastKey: string | null = null
-  for (const m of messages) {
+  for (const m of withoutToolImages(messages)) {
     const key = messageIdentity(m)
     if (key !== null && key === lastKey && m.role === 'assistant') continue
     out.push(m)
