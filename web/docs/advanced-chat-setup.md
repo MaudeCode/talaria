@@ -48,8 +48,12 @@ When disabled:
 - the provisional first-message title stays in place and is never replaced
   or overwritten by an automatic LLM call or local fallback;
 - the periodic adaptive refresh is skipped;
-- the explicit "regenerate title" action returns a
-  `title_generation_disabled` response instead of calling a title model.
+- the explicit "regenerate title" action still calls the title model, because
+  you asked for it; leave it unused if the setting is a cost or privacy
+  opt-out.
+
+If the profile's `config.yaml` exists but cannot be read, automatic titling is
+skipped for that turn (`config_unavailable`) rather than assumed enabled.
 
 The WebUI's `auto_title_refresh_every` setting remains a separate control for
 periodic refreshes of already-generated titles; it does not re-enable
