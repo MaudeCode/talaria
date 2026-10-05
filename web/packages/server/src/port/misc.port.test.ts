@@ -207,6 +207,16 @@ describe('runtime seams from review round 10', () => {
         estimated_cost: 0.0125, model: 'used-model', title: session.title, message_count: session.messages.length,
       })
       expect(session.messages.length).toBeGreaterThan(0)
+      // A failed or cancelled turn persists the counters the stream reported, so state.db follows those exits too.
+      for (const [status, usage] of [['error', { prompt_tokens: 200, completion_tokens: 50, cache_read_tokens: 60, cache_write_tokens: 9, estimated_cost_usd: 0.02 }], ['cancelled', { prompt_tokens: 260, completion_tokens: 70, cache_read_tokens: 80, cache_write_tokens: 10, estimated_cost_usd: 0.03 }]] as const) {
+        sidecar.respond('chat.start', () => ({ status, messages: [], final_response: '', error: status === 'error' ? 'HTTP 500: upstream failed' : null, failed: status === 'error', partial: false, compression_exhausted: false, tool_limit_reached: false, usage, context: {}, model: 'used-model', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: false, pending_steer: '', live_tool_calls: [] }))
+        const before = usageSynced.length
+        await turn(`${status} turn`)
+        await expect.poll(() => usageSynced.length).toBe(before + 1)
+        const settled = s.deps.sessionStore.get(sid)
+        expect(usageSynced.at(-1)).toMatchObject({ session_id: sid, input_tokens: settled.input_tokens, output_tokens: settled.output_tokens, estimated_cost: settled.estimated_cost, message_count: settled.messages.length })
+        if (status === 'cancelled') expect(usageSynced.at(-1)).toMatchObject({ input_tokens: usage.prompt_tokens, estimated_cost: usage.estimated_cost_usd })
+      }
     } finally {
       await s.deps.settings.save({ sync_to_insights: false })
     }

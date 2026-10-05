@@ -916,6 +916,8 @@ export class TurnRunner {
     this.keepLiveState(s, streamId)
     this.persistConsumedSteers(s, streamId, startedAt, this.deps.now())
     try { this.deps.store.save(s) } catch (error) { this.deps.log(`[webui] WARNING: failed to save error turn for ${s.session_id}: ${(error as Error).message}`) }
+    // The kept live counters are the session's usage now, so the insights row follows them (the runtime logs failures).
+    void this.deps.syncUsage?.(s, str(s.model) || null)
     this.deps.pending.clearApprovals(s.session_id)
     this.deps.pending.clearClarifies(s.session_id)
     this.deps.events.publish('session_error', { profile: s.profile, sessionId: s.session_id })
@@ -1019,6 +1021,7 @@ export class TurnRunner {
     this.keepLiveState(current, streamId)
     this.persistConsumedSteers(current, streamId, startedAt, this.deps.now())
     try { this.deps.store.save(current) } catch { return false }
+    void this.deps.syncUsage?.(current, str(current.model) || null)
     this.deps.pending.clearApprovals(current.session_id)
     this.deps.pending.clearClarifies(current.session_id)
     this.deps.events.publish('session_cancel', { profile: current.profile, sessionId: current.session_id })
