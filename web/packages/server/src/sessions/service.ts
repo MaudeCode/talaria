@@ -305,7 +305,17 @@ export class SessionService {
     // Without a current marker, the turn's own starting read is the baseline: rows committed after it are judged here.
     const seenId = currentStateDbSeenId(s, read.rows) ?? turn.startId ?? null
     const shown = read.rows.length ? mergeSessionMessagesAppendOnly(s.messages, read.rows, { truncationWatermark: s.truncation_watermark, compressedWatermark: s.truncation_watermark_compressed, stateDbSeenId: seenId }) : s.messages
-    const missed = shown.slice(s.messages.length).filter((m) => {
+    const fresh = new Set(shown.slice(s.messages.length))
+    // The turn's own rows the merge already matched to their local copies use up their share before any shown row can.
+    if (seenId !== null) {
+      for (const m of read.rows) {
+        const id = m._state_db_row_id
+        if (typeof id !== 'number' || id <= seenId || startedWith.has(id) || fresh.has(m)) continue
+        const left = added.get(settledIdentity(m)) ?? 0
+        if (left > 0) added.set(settledIdentity(m), left - 1)
+      }
+    }
+    const missed = [...fresh].filter((m) => {
       const id = m._state_db_row_id
       if (typeof id === 'number' && startedWith.has(id)) return false
       const key = settledIdentity(m)

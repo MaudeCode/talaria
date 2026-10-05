@@ -1138,6 +1138,20 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     expect((await served(sid)).filter((c) => c === 'CLI ask' || c === 'CLI reply')).toEqual(['CLI ask', 'CLI reply'])
   })
 
+  it('a concurrent row that repeats a row of the current turn stays when the turn\'s own row is already local', async () => {
+    const sid = await seeded([['user', 'u1', 100], ['assistant', 'a1', 101]])
+    await turn(sid, 'first')
+    // The Agent's result keeps its rows' timestamps, so its own state.db row matches the settled local row exactly.
+    sidecar.respond('chat.start', (params) => {
+      commit(sid, [['user', 'same', 200], ['assistant', 'done', 201], ['assistant', 'done', 150]])
+      return completedTurn([...params.conversation_history, { role: 'user', content: str(params.user_message), timestamp: 200 }, { role: 'assistant', content: 'done', timestamp: 201 }])
+    })
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'same' }))
+    await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    expect((await served(sid)).filter((c) => c === 'done')).toHaveLength(2)
+    expect(sent(sid).filter((c) => c === 'done')).toHaveLength(2)
+  })
+
   it('a concurrent row that repeats an earlier message exactly stays in the transcript', async () => {
     const sid = await seeded([['user', 'continue', 100], ['assistant', 'a1', 101]])
     await turn(sid, 'first')
