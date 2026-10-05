@@ -145,6 +145,22 @@ describe('event streams deliver past the old 4 MiB cut-off', () => {
     }
   })
 
+  it('a replay to a paused reader parses the journal a page at a time rather than whole', async () => {
+    run('run-paged', 4000)
+    const parse = vi.spyOn(JSON, 'parse')
+    try {
+      const client = read(`${s.base}/api/chat/stream?stream_id=run-paged&replay=1`, true)
+      await new Promise((r) => setTimeout(r, 300))
+      // The run summary reads a bounded tail (at most 512 rows); the replay itself only reaches the rows it has sent.
+      const parsedRows = parse.mock.calls.filter(([text]) => typeof text === 'string' && text.includes('"run_id":"run-paged"')).length
+      expect(parsedRows).toBeLessThan(2000)
+      client.resume()
+      expect(ids(await frames(client))).toEqual(expectedIds('run-paged', 4001))
+    } finally {
+      parse.mockRestore()
+    }
+  })
+
   it('a live run resumes every journaled frame past 4 MiB', async () => {
     const channel = s.deps.registry.create('run-resume', sid)
     run('run-resume', 3000)

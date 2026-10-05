@@ -91,9 +91,9 @@ export class SseWriter {
 
   /**
    * Resolves once the socket has taken what was written, or the client left: true while it is still connected.
-   * Replays await it per frame, so unsent data stays near the socket's high-water mark. ponytail: a replay's rows are
-   * still read whole from the journal, plus the subscriber's bounded queue; frames that queue drops while this waits are
-   * backfilled from the journal (`recoverDropped`).
+   * Replays await it per frame and page the journal (`iterRunEvents`), so a slow reader holds one page plus data near
+   * the socket's high-water mark; frames the subscriber's bounded queue drops while this waits are backfilled from the
+   * journal (`recoverDropped`).
    */
   async ready(): Promise<boolean> {
     const { res } = this.ctx
@@ -193,9 +193,8 @@ async function replayRunJournal(ctx: RequestContext, sse: SseWriter, streamId: s
   const summary = ctx.deps.journal.findRunSummary(streamId)
   if (!summary) return { found: false, terminal: false }
   let terminal = false
-  const events = ctx.deps.journal.readRunEvents(summary.session_id, streamId, { afterSeq, maxSeq: opts.maxSeq ?? null })
   const legacy: LegacyToolIds = new Map()
-  for (const entry of events) {
+  for (const entry of ctx.deps.journal.iterRunEvents(summary.session_id, streamId, { afterSeq, maxSeq: opts.maxSeq ?? null })) {
     if (!(await sse.ready())) return { found: true, terminal }
     sse.event(entry.event || 'message', publicJournalPayload(ctx, entry, legacy), entry.event_id)
     if (SSE_RELAY_CLOSE_EVENTS.has(entry.event)) terminal = true
@@ -214,7 +213,7 @@ function journalCoversGap(ctx: RequestContext, streamId: string, afterSeq: numbe
   const summary = ctx.deps.journal.findRunSummary(streamId)
   if (!summary) return false
   const seqs = new Set<number>()
-  for (const e of ctx.deps.journal.readRunEvents(summary.session_id, streamId, { afterSeq: floor, maxSeq: cutoff })) if (e.seq > floor && e.seq <= cutoff) seqs.add(e.seq)
+  for (const e of ctx.deps.journal.iterRunEvents(summary.session_id, streamId, { afterSeq: floor, maxSeq: cutoff })) if (e.seq > floor && e.seq <= cutoff) seqs.add(e.seq)
   return seqs.size === cutoff - floor
 }
 
@@ -454,7 +453,7 @@ export async function handleSessionJournalStream(ctx: RequestContext, sessionId:
   const sent = new Set<string>()
   const sentOrder: string[] = []
   const note = (id: string): void => { sent.add(id); sentOrder.push(id); while (sentOrder.length > SESSION_SSE_SENT_EVENT_ID_LIMIT) sent.delete(sentOrder.shift()!) }
-  const emitReplay = async (events: JournalEvent[], streamId: string | null, cutoff: number | null): Promise<void> => {
+  const emitReplay = async (events: Iterable<JournalEvent>, streamId: string | null, cutoff: number | null): Promise<void> => {
     const legacy: LegacyToolIds = new Map()
     for (const entry of events) {
       if (!(await sse.ready())) return
@@ -514,7 +513,7 @@ export async function handleSessionJournalStream(ctx: RequestContext, sessionId:
       if (!item) { sse.comment('keepalive'); continue }
       const [event, data, eventId, redacted] = item
       const seq = sameRunSeq(eventId, streamId)
-      if (!(await recoverDropped(ctx, sse, sub, streamId, sessionId, seq, cutoff, (gap) => emitReplay(ctx.deps.journal.readRunEvents(sessionId, streamId, gap), streamId, null)))) return
+      if (!(await recoverDropped(ctx, sse, sub, streamId, sessionId, seq, cutoff, (gap) => emitReplay(ctx.deps.journal.iterRunEvents(sessionId, streamId, gap), streamId, null)))) return
       const terminal = SSE_RELAY_CLOSE_EVENTS.has(event)
       const alreadySent = (cutoff !== null && seq !== null && seq <= cutoff) || (eventId !== null && sent.has(eventId))
       if (alreadySent) { if (terminal) return; continue }
