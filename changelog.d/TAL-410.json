@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Provider settings show each quota's remaining share, reset time, pace, burn rate, hourly or daily budget, and whether it lasts through the reset.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

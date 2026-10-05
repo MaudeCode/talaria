@@ -13,13 +13,15 @@ import { showToast } from '../toast/toast'
 import { cn } from '../../ui/cn'
 import { useSettingField } from './useSettingField'
 import { OpenRouterCost } from './OpenRouterCost'
+import { ProviderQuotaPace } from './ProviderQuotaPace'
 
 const setProviderKey = (provider: string, api_key: string | null) => post('api/providers', { provider, api_key }, OkSchema, { retries: 0 })
 
 export function ProvidersSection() {
   const qc = useQueryClient()
   const providers = useQuery({ queryKey: keys.providers, queryFn: api.fetchProviders, staleTime: 30_000 })
-  const quotas = useQuery({ queryKey: keys.providerQuotas, queryFn: () => api.fetchProviderQuotas(false), staleTime: 60_000 })
+  // The server recomputes pace on every read (provider calls are cached 45 s), so a reset replaces an expired pace within a minute.
+  const quotas = useQuery({ queryKey: keys.providerQuotas, queryFn: () => api.fetchProviderQuotas(false), staleTime: 60_000, refetchInterval: 60_000 })
   const { str } = useSettingField()
   const setDefault = useSetDefaultModel()
   const [editing, setEditing] = useState<string | null>(null)
@@ -38,7 +40,8 @@ export function ProvidersSection() {
       </div>
       <ul className="flex flex-col gap-2">
         {providers.data.providers.map((p) => {
-          const quota = quotas.data?.sources.find((s) => s.provider_id === p.id)
+          const sources = quotas.data?.sources.filter((s) => s.provider_id === p.id) ?? []
+          const quota = sources[0]
           const isEditing = editing === p.id
           return (
             <li key={p.id} className={cn('rounded-lg border border-border bg-surface p-3', p.id === active && 'border-accent-bg-strong')} data-provider={p.id}>
@@ -64,6 +67,7 @@ export function ProvidersSection() {
                   <Button type="submit" variant="primary" disabled={saveKey.isPending}>{m.save()}</Button>
                 </form>
               )}
+              {sources.map((s) => <ProviderQuotaPace key={s.source_id} source={s} showAccount={sources.length > 1} />)}
               {p.id === 'openrouter' && p.has_key && <OpenRouterCost />}
               {p.models && p.models.length > 0 && (
                 <details className="mt-2">
