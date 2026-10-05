@@ -264,6 +264,10 @@ jobs:
           wait_for_boot: true
           boot_timeout_seconds: 600
 
+      # UI tests pick from Photos; give them a photo they own (TAL-633).
+      - name: Seed a test photo
+        run: scripts/seed-simulator-photo "${{ steps.sim.outputs.udid }}"
+
       # Returns once the background poll has seen the build's upload step succeed; fails once it sees the build fail
       # or get cancelled, or if the poll stopped without a result.
       - name: Wait for the build

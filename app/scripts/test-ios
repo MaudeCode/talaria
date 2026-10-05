@@ -54,6 +54,8 @@ print -r -- $$ > "$owner_file"
 
 ios_pool_acquire
 destination="platform=iOS Simulator,id=$simulator_id"
+# UI tests pick from Photos; give them a photo they own (TAL-633).
+scripts/seed-simulator-photo "$simulator_id"
 
 # True when the bundle's only failures are the pre-test runner hang (the test
 # host never connected to testmanagerd), so no test case failed and one clean
@@ -155,6 +157,7 @@ run_tests() {
             ios_pool_release
             ios_pool_acquire || exit "$xcodebuild_status"
             destination="platform=iOS Simulator,id=$simulator_id"
+            scripts/seed-simulator-photo "$simulator_id"
             attempt=2
             continue
         fi

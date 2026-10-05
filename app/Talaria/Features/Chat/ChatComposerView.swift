@@ -401,6 +401,31 @@ struct MessageComposerView: View {
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
+        // The pickers hang off the composer root, not the `+` button: opening one expands the
+        // one-line composer, which replaces the `+` button mid-presentation and dropped the
+        // picked photo with it (TAL-633).
+        .photosPicker(isPresented: $showPhotoPicker, selection: $selectedPhotoItems, matching: .images)
+        .onChange(of: selectedPhotoItems) {
+            let items = selectedPhotoItems
+            guard !items.isEmpty else { return }
+            deferFocusRestoreUntilUploadCompletes()
+            selectedPhotoItems.removeAll()
+            for item in items {
+                onPhotoItemSelected(item)
+            }
+        }
+        .fullScreenCover(isPresented: $showCameraPicker) {
+            CameraPickerView { image in
+                deferFocusRestoreUntilUploadCompletes()
+                onPasteImages([image])
+            }
+            .ignoresSafeArea()
+        }
+        .onChange(of: showCameraPicker) { _, isPresented in
+            if !isPresented {
+                restoreFocusAfterPresentationDismissalSettles()
+            }
+        }
         .fileImporter(
             isPresented: $showFileImporter,
             allowedContentTypes: [.item],
@@ -723,28 +748,6 @@ struct MessageComposerView: View {
         .tint(metaControlColor)
         .disabled(isConfigurationControlDisabled)
         .accessibilityLabel("Composer options")
-        .photosPicker(isPresented: $showPhotoPicker, selection: $selectedPhotoItems, matching: .images)
-        .onChange(of: selectedPhotoItems) {
-            let items = selectedPhotoItems
-            guard !items.isEmpty else { return }
-            deferFocusRestoreUntilUploadCompletes()
-            selectedPhotoItems.removeAll()
-            for item in items {
-                onPhotoItemSelected(item)
-            }
-        }
-        .fullScreenCover(isPresented: $showCameraPicker) {
-            CameraPickerView { image in
-                deferFocusRestoreUntilUploadCompletes()
-                onPasteImages([image])
-            }
-            .ignoresSafeArea()
-        }
-        .onChange(of: showCameraPicker) { _, isPresented in
-            if !isPresented {
-                restoreFocusAfterPresentationDismissalSettles()
-            }
-        }
     }
 
     private func composerOptionsMenu() -> UIMenu {
