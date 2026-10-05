@@ -586,11 +586,14 @@ struct ChatView: View {
         chatWithLifecycle
             // Before `.toolbar`: applied after it, the inspector hides the chat's navigation bar.
             .inspector(isPresented: filesInspectorIsPresented) {
-                FilesInspectorContent(session: session, server: server, onAPIError: onAPIError)
-                    .inspectorColumnWidth(min: 280, ideal: 340, max: 520)
+                // Built only while shown: a hidden browser's "Files" title replaces the chat's.
+                if filesInspectorIsPresented.wrappedValue {
+                    FilesInspectorContent(session: session, server: server, onAPIError: onAPIError)
+                        .inspectorColumnWidth(min: 280, ideal: 340, max: 520)
+                }
             }
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { chatAreaWidth = $0 }
-            // Outside the inspector, which would otherwise keep the title from the navigation bar.
+            // Outside the inspector, which otherwise keeps the title from the navigation bar.
             .navigationTitle(displayTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
