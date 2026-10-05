@@ -507,7 +507,8 @@ function projectStateDbMessage(row: Dict, hasId: boolean): Dict {
     if (value === null || value === undefined || value === '') continue
     msg[col] = JSON_MESSAGE_COLUMNS.has(col) ? jsonLoadsIfString(value) : value
   }
-  if (hasId && row.id !== null && row.id !== undefined && typeof msg.api_content === 'string' && msg.api_content) msg._state_db_row_id = row.id
+  // TAL-493: the merge tells rows committed after the session's last read by this id.
+  if (hasId && row.id !== null && row.id !== undefined) msg._state_db_row_id = row.id
   if (msg.role === 'tool' && msg.tool_name && !msg.name) msg.name = msg.tool_name
   return msg
 }

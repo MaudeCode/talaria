@@ -714,6 +714,8 @@ export class TurnRunner {
         }
       }
       this.persistConsumedSteers(s, streamId, previousStartedAt(s, activeRun), now)
+      // TAL-493: the rows this turn's Agent wrote to state.db are now in the transcript, so the merge must not replay them.
+      deps.service().markStateDbSeen(s)
       deps.store.save(s)
       deps.pending.clearApprovals(sessionId)
       deps.pending.clearClarifies(sessionId)
@@ -911,6 +913,7 @@ export class TurnRunner {
     s.messages.push(errorMessage)
     this.keepLiveState(s, streamId)
     this.persistConsumedSteers(s, streamId, startedAt, this.deps.now())
+    this.deps.service().markStateDbSeen(s)
     try { this.deps.store.save(s) } catch (error) { this.deps.log(`[webui] WARNING: failed to save error turn for ${s.session_id}: ${(error as Error).message}`) }
     this.deps.pending.clearApprovals(s.session_id)
     this.deps.pending.clearClarifies(s.session_id)
@@ -1014,6 +1017,7 @@ export class TurnRunner {
     }
     this.keepLiveState(current, streamId)
     this.persistConsumedSteers(current, streamId, startedAt, this.deps.now())
+    this.deps.service().markStateDbSeen(current)
     try { this.deps.store.save(current) } catch { return false }
     this.deps.pending.clearApprovals(current.session_id)
     this.deps.pending.clearClarifies(current.session_id)

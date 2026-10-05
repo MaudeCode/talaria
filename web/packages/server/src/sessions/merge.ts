@@ -755,15 +755,31 @@ export function normalizeAssistantDisplay<T>(message: T): T {
  * replay): rows at or before it, and, for a truncation cut, rows after it until the sidecar advances past it (TAL-504).
  * A compression watermark only covers the compressed rows. Rows past the sidecar tail (a conversation continued from the
  * CLI) are appended in state.db order.
+ * TAL-493: once a boundary or settled turn recorded the highest state.db id it read (`stateDbSeenId`) and the rows carry
+ * ids, identity replaces the timestamp rules: rows up to that id are covered, and every newer row not already in the
+ * sidecar is appended, even one a writer stamped before the newest local row or the watermark but committed later.
  * ponytail: the Python identity memo (api_content sidecars, message ids, workspace-prefix normalisation) is not ported;
  * add it if a mixed WebUI/CLI transcript shows duplicated turns.
  */
-export function mergeSessionMessagesAppendOnly(sidecar: Message[], state: Message[], opts: { truncationWatermark?: unknown; compressedWatermark?: boolean } = {}): Message[] {
+export function mergeSessionMessagesAppendOnly(sidecar: Message[], state: Message[], opts: { truncationWatermark?: unknown; compressedWatermark?: boolean; stateDbSeenId?: number | null } = {}): Message[] {
   const watermark = Number(opts.truncationWatermark)
   const hasWatermark = opts.truncationWatermark !== null && opts.truncationWatermark !== undefined && Number.isFinite(watermark)
   if (!state.length) return sidecar
   const ts = (m: Message): number | null => { const n = Number(m.timestamp); return Number.isFinite(n) ? n : null }
   const key = (m: Message): string => `${String(m.role)}\0${String(ts(m) ?? '')}\0${typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? null)}`
+  const seenId = opts.stateDbSeenId
+  if (typeof seenId === 'number' && Number.isFinite(seenId) && state.some((m) => stateDbRowId(m) !== null)) {
+    const seen = new Set(sidecar.map(key))
+    const merged = [...sidecar]
+    for (const m of state) {
+      const id = stateDbRowId(m)
+      const k = key(m)
+      if (id === null || id <= seenId || seen.has(k)) continue
+      seen.add(k)
+      merged.push(m)
+    }
+    return merged
+  }
   if (!sidecar.length) {
     if (!hasWatermark) { const seen = new Set<string>(); return state.filter((m) => { const k = key(m); if (seen.has(k)) return false; seen.add(k); return true }) }
     if (watermark === 0) return []
@@ -785,6 +801,19 @@ export function mergeSessionMessagesAppendOnly(sidecar: Message[], state: Messag
     merged.push(m)
   }
   return merged
+}
+
+/** The Agent's `messages.id` a state.db row was read with, or null for a database without the column. */
+function stateDbRowId(m: Message): number | null {
+  const id = m._state_db_row_id
+  return typeof id === 'number' && Number.isFinite(id) ? id : null
+}
+
+/** TAL-493: the `state_db_seen_id` after reading `rows`: their highest id, never below the one already recorded. */
+export function stateDbSeenId(rows: Message[], previous: number | null): number | null {
+  let max = previous
+  for (const m of rows) { const id = stateDbRowId(m); if (id !== null && (max === null || id > max)) max = id }
+  return max
 }
 
 /**

@@ -20,7 +20,7 @@ import { UNSETTLED_TODO_KEY, attachTodoState } from './todo.js'
 import { stateDbSessionMessages, stateDbSessionRow, stateDbSessionSources } from './state-db.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { SidecarError, type SidecarLike } from '../sidecar/client.js'
-import { attachmentObjects, isContextCompressionMarker, mergeSessionMessagesAppendOnly, pendingUserRow, sanitizeMessagesForApi, stripWorkspacePrefix, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, type ToolResultView } from './merge.js'
+import { attachmentObjects, isContextCompressionMarker, mergeSessionMessagesAppendOnly, pendingUserRow, sanitizeMessagesForApi, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, type ToolResultView } from './merge.js'
 import { withBackgroundUpdates } from './background-updates.js'
 import { withBackgroundLinks, type Receipt } from './background-tasks.js'
 import { messagesForLimitedPayload, messageWindowForDisplay, MAX_MSG_LIMIT, parseMsgLimit, toolCallsForMessageWindow } from './window.js'
@@ -261,7 +261,15 @@ export class SessionService {
    */
   mergedTranscript(s: Session, local: Message[] = s.messages, stateRows: Message[] = this.stateDbRows(s)): Message[] {
     if (!stateRows.length) return local
-    return mergeSessionMessagesAppendOnly(local, stateRows, { truncationWatermark: s.truncation_watermark, compressedWatermark: s.truncation_watermark_compressed })
+    return mergeSessionMessagesAppendOnly(local, stateRows, { truncationWatermark: s.truncation_watermark, compressedWatermark: s.truncation_watermark_compressed, stateDbSeenId: s.state_db_seen_id })
+  }
+
+  /**
+   * TAL-493: record the highest state.db id this boundary or settled turn read, under the session lock in the same save,
+   * so the merge never replays a covered row and appends every row committed after the read.
+   */
+  markStateDbSeen(s: Session, stateRows: Message[] = this.stateDbRows(s)): void {
+    s.state_db_seen_id = stateDbSeenId(stateRows, s.state_db_seen_id)
   }
 
   /**
@@ -917,6 +925,7 @@ export class SessionService {
     if (keep < 0) throw new HttpFailure(400, 'keep_count must be non-negative')
     await this.store.withLock(sid, () => {
       truncateSessionAtKeep(s, keep)
+      this.markStateDbSeen(s)
       this.store.save(s)
     })
     this.deps.runtime.evictAgent(sid)
@@ -1041,6 +1050,7 @@ export class SessionService {
         live.truncation_watermark = truncationWatermarkFor(compressed)
         live.truncation_boundary = live.truncation_watermark
         live.truncation_watermark_compressed = true
+        this.markStateDbSeen(live, stateRows)
         live.last_prompt_tokens = result.after_tokens
         live.post_compression_context_tokens_estimate = result.after_tokens
         this.store.save(live)
@@ -1067,6 +1077,7 @@ export class SessionService {
     await this.store.withLock(sid, () => {
       const hadMessages = s.messages.length > 0
       truncateSessionAtKeep(s, 0)
+      this.markStateDbSeen(s)
       s.tool_calls = []
       if (s.parent_session_id) {
         let parentIsSnapshot = false
@@ -1108,6 +1119,7 @@ export class SessionService {
       if (!lastUserPrompt && !lastUserAttachments.length) return { error: 'The last message has nothing to resend.' }
       const removed = history.length - lastUser
       shrinkTo(s, lastUser)
+      this.markStateDbSeen(s)
       this.store.save(s)
       return { ok: true, last_user_text: lastUserText, last_user_prompt: lastUserPrompt, last_user_attachments: lastUserAttachments, removed_count: removed }
     })
@@ -1123,6 +1135,7 @@ export class SessionService {
       const removedText = extractText(history[lastUser]?.content)
       const removed = history.length - lastUser
       shrinkTo(s, lastUser)
+      this.markStateDbSeen(s)
       this.store.save(s)
       const preview = removedText.length > 40 ? `${removedText.slice(0, 40)}...` : removedText
       return { ok: true, removed_count: removed, removed_preview: preview }

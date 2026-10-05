@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Messages from the CLI or a gateway that are saved just after the Web app reads a chat now appear in the chat and reach the model, instead of being dropped.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

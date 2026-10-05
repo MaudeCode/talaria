@@ -313,3 +313,36 @@ describe('compaction markers (TAL-305)', () => {
     expect(merged.map((m) => m.content)).toEqual(['Hi', 'Hello', 'Next', 'Context compaction is a summary step.'])
   })
 })
+
+describe('mergeSessionMessagesAppendOnly by state.db row id (TAL-493)', () => {
+  const row = (id: number, role: string, content: string, timestamp: number) => ({ role, content, timestamp, _state_db_row_id: id })
+  const contents = (rows: { content?: unknown }[]) => rows.map((m) => m.content)
+  const sidecar = [{ role: 'user', content: 'u1', timestamp: 100 }, { role: 'assistant', content: 'a1', timestamp: 101 }, { role: 'user', content: 'web', timestamp: 300 }, { role: 'assistant', content: 'web reply', timestamp: 301 }]
+
+  it('appends a row committed after the last read even when it is stamped before the newest local row', () => {
+    const state = [row(1, 'user', 'u1', 100), row(2, 'assistant', 'a1', 101), row(3, 'user', 'late CLI', 200), row(4, 'assistant', 'late CLI reply', 201)]
+    expect(contents(mergeSessionMessagesAppendOnly(sidecar, state, { stateDbSeenId: 2 }))).toEqual(['u1', 'a1', 'web', 'web reply', 'late CLI', 'late CLI reply'])
+  })
+
+  it('appends a row stamped at or before a truncation or compression watermark once its id is past the boundary', () => {
+    const state = [row(1, 'user', 'u1', 100), row(2, 'assistant', 'a1', 101), row(5, 'user', 'late', 99)]
+    for (const compressedWatermark of [false, true]) expect(contents(mergeSessionMessagesAppendOnly(sidecar.slice(0, 2), state, { truncationWatermark: 101, compressedWatermark, stateDbSeenId: 2 }))).toEqual(['u1', 'a1', 'late'])
+    expect(contents(mergeSessionMessagesAppendOnly([], state, { truncationWatermark: 0, stateDbSeenId: 2 }))).toEqual(['late'])
+  })
+
+  it('never replays a row the boundary covered, whatever its timestamp', () => {
+    const state = [row(1, 'user', 'u1', 100), row(2, 'assistant', 'a1', 101), row(3, 'user', 'cut', 500), row(4, 'assistant', 'cut reply', 501)]
+    expect(contents(mergeSessionMessagesAppendOnly(sidecar, state, { truncationWatermark: 101, stateDbSeenId: 4 }))).toEqual(['u1', 'a1', 'web', 'web reply'])
+    expect(contents(mergeSessionMessagesAppendOnly([], state, { stateDbSeenId: 4 }))).toEqual([])
+  })
+
+  it('skips a new row the sidecar already holds', () => {
+    expect(contents(mergeSessionMessagesAppendOnly(sidecar, [row(7, 'user', 'web', 300), row(8, 'assistant', 'CLI', 302)], { stateDbSeenId: 6 }))).toEqual(['u1', 'a1', 'web', 'web reply', 'CLI'])
+  })
+
+  it('keeps the timestamp rules without a seen id or without row ids', () => {
+    const late = [row(1, 'user', 'u1', 100), row(3, 'user', 'late CLI', 200)]
+    expect(contents(mergeSessionMessagesAppendOnly(sidecar, late, {}))).toEqual(['u1', 'a1', 'web', 'web reply'])
+    expect(contents(mergeSessionMessagesAppendOnly(sidecar, late.map(({ role, content, timestamp }) => ({ role, content, timestamp })), { stateDbSeenId: 2 }))).toEqual(['u1', 'a1', 'web', 'web reply'])
+  })
+})
