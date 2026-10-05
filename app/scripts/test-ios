@@ -68,14 +68,25 @@ runner_hang_only() {
         ' >/dev/null 2>&1
 }
 
-typeset -a test_filters
+# Hosted unit tests and UI tests run as separate xcodebuild phases. In one parallel
+# run Xcode can start a UI runner session on a clone that is still installing and
+# launching the unit-test host; the runner install is then lost and its launch fails
+# with "Unknown application display identifier" (TAL-487). Unit tests take seconds,
+# so they run first on the leased device without clones.
+(( $# )) || set -- TalariaTests TalariaUITests
+typeset -a unit_filters ui_filters
 for selector in "$@"; do
-    test_filters+=("-only-testing:$selector")
+    if [[ "${selector%%/*}" == TalariaTests ]]; then
+        unit_filters+=("-only-testing:$selector")
+    else
+        ui_filters+=("-only-testing:$selector")
+    fi
 done
 # The measuring performance UI classes add minutes of scrolling and relaunching;
 # the scheduled UI Performance workflow records them. Selecting an entire target
 # must not enable these extended checks; name their class or method explicitly
 # to run it.
+typeset -a extended_skips
 for extended_class in \
     TalariaUITests/SidebarPerformanceUITests \
     TalariaUITests/LaunchPerformanceUITests \
@@ -88,12 +99,12 @@ for extended_class in \
             break
         fi
     done
-    (( explicitly_selected )) || test_filters+=("-skip-testing:$extended_class")
+    (( explicitly_selected )) || extended_skips+=("-skip-testing:$extended_class")
 done
-# Xcode clones the leased simulator once per worker, like PR CI's four workers;
-# the clones are removed when the run ends and the pool erases the lease. A single
-# worker runs on the leased device itself: a clone per run would race the previous
-# run's clone teardown on the same device (TAL-304).
+# Xcode clones the leased simulator once per UI worker; the clones are removed when
+# the run ends and the pool erases the lease. A single worker runs on the leased
+# device itself: a clone per run would race the previous run's clone teardown on
+# the same device (TAL-304).
 TALARIA_TEST_WORKER_COUNT=${TALARIA_TEST_WORKER_COUNT:-4}
 parallel_testing=NO
 (( TALARIA_TEST_WORKER_COUNT > 1 )) && parallel_testing=YES
@@ -107,44 +118,52 @@ if [[ -n "${TALARIA_RECORD_VISUAL_REFERENCES:-}" ]]; then
     : > "$visual_reference_marker"
 fi
 
-attempt=1
-while true; do
-    result_bundle="$runtime_dir/results/$(date +%Y%m%d-%H%M%S)-$$-$attempt.xcresult"
-    print "Simulator: $destination"
-    print "Result bundle: $result_bundle"
+# Usage: run_tests phase parallel-testing filter...
+run_tests() {
+    local phase=$1 parallel_testing=$2 attempt=1 xcodebuild_status
+    shift 2
+    while true; do
+        result_bundle="$runtime_dir/results/$(date +%Y%m%d-%H%M%S)-$$-$phase-$attempt.xcresult"
+        print "Simulator: $destination"
+        print "Result bundle: $result_bundle"
 
-    xcodebuild test -quiet \
-        -project Talaria.xcodeproj \
-        -scheme Talaria \
-        -destination "$destination" \
-        -testLanguage en \
-        -testRegion US \
-        -derivedDataPath "$runtime_dir/derived-data" \
-        -disableAutomaticPackageResolution \
-        -parallel-testing-enabled "$parallel_testing" \
-        -parallel-testing-worker-count "$TALARIA_TEST_WORKER_COUNT" \
-        -enableCodeCoverage NO \
-        -collect-test-diagnostics never \
-        -resultBundlePath "$result_bundle" \
-        APP_IDENTIFIER_SUFFIX=.xctest \
-        "${test_filters[@]}" &
-    xcodebuild_pid=$!
-    if wait "$xcodebuild_pid"; then
+        xcodebuild test -quiet \
+            -project Talaria.xcodeproj \
+            -scheme Talaria \
+            -destination "$destination" \
+            -testLanguage en \
+            -testRegion US \
+            -derivedDataPath "$runtime_dir/derived-data" \
+            -disableAutomaticPackageResolution \
+            -parallel-testing-enabled "$parallel_testing" \
+            -parallel-testing-worker-count "$TALARIA_TEST_WORKER_COUNT" \
+            -enableCodeCoverage NO \
+            -collect-test-diagnostics never \
+            -resultBundlePath "$result_bundle" \
+            APP_IDENTIFIER_SUFFIX=.xctest \
+            "$@" &
+        xcodebuild_pid=$!
+        if wait "$xcodebuild_pid"; then
+            xcodebuild_pid=""
+            return
+        else
+            xcodebuild_status=$?
+        fi
         xcodebuild_pid=""
-        break
-    else
-        xcodebuild_status=$?
-    fi
-    xcodebuild_pid=""
-    if (( attempt == 1 )) && runner_hang_only "$result_bundle"; then
-        print -u2 "The test runner hung before establishing connection and no test case failed; releasing $simulator_id and retrying once."
-        ios_pool_release
-        ios_pool_acquire || exit "$xcodebuild_status"
-        destination="platform=iOS Simulator,id=$simulator_id"
-        attempt=2
-        continue
-    fi
-    exit "$xcodebuild_status"
-done
+        if (( attempt == 1 )) && runner_hang_only "$result_bundle"; then
+            print -u2 "The test runner hung before establishing connection and no test case failed; releasing $simulator_id and retrying once."
+            ios_pool_release
+            ios_pool_acquire || exit "$xcodebuild_status"
+            destination="platform=iOS Simulator,id=$simulator_id"
+            attempt=2
+            continue
+        fi
+        exit "$xcodebuild_status"
+    done
+}
 
-scripts/assert-no-skipped-ui-tests "$result_bundle"
+(( ${#unit_filters} == 0 )) || run_tests unit NO "${unit_filters[@]}"
+if (( ${#ui_filters} )); then
+    run_tests ui "$parallel_testing" "${ui_filters[@]}" "${extended_skips[@]}"
+    scripts/assert-no-skipped-ui-tests "$result_bundle"
+fi
