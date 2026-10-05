@@ -63,12 +63,10 @@ struct GitActionsMenuButton: View {
                 .disabled(writesDisabled || isRunningAction)
             }
         } label: {
-            Image(systemName: "arrow.triangle.branch")
-                .frame(width: 24, height: 24)
+            Label("Git", systemImage: "arrow.triangle.branch")
         }
         .disabled(!isEnabled)
         .simultaneousGesture(TapGesture().onEnded(onTap))
-        .frame(minWidth: 28, minHeight: 28)
         .accessibilityLabel("Git actions")
         .accessibilityValue(Text(presentation.accessibilityValue))
     }

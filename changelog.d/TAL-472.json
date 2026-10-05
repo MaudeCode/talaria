@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "The Goal, Files, and Git buttons in a chat are now standard toolbar buttons, so iPhone Duo can move them to its side bar on the outer display.",
+      "highlight": false
+    }
+  ]
+}
