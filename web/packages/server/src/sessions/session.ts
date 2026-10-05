@@ -31,6 +31,7 @@ export const METADATA_FIELDS = [
   'truncation_boundary',
   'truncation_watermark_compressed',
   'state_db_seen_id',
+  'state_db_seen_boundary',
   'clear_generation',
   'intentional_shrink_generation',
   'gateway_routing', 'gateway_routing_history', 'llm_title_generated', 'manual_title',
@@ -228,6 +229,8 @@ export class Session {
   truncation_watermark_compressed: boolean
   /** TAL-493: the highest Agent state.db message id a boundary or settled turn read; newer rows are continuations. */
   state_db_seen_id: number | null
+  /** TAL-493: the boundary fields `state_db_seen_id` was recorded under; an older release that moves one makes it stale. */
+  state_db_seen_boundary: string | null
   clear_generation: unknown
   intentional_shrink_generation: unknown
   gateway_routing: Record<string, unknown> | null
@@ -341,6 +344,8 @@ export class Session {
     this.truncation_watermark_compressed = take('truncation_watermark_compressed', false) === true
     const seenId = take('state_db_seen_id', null)
     this.state_db_seen_id = typeof seenId === 'number' && Number.isFinite(seenId) ? seenId : null
+    const seenBoundary = take('state_db_seen_boundary', null)
+    this.state_db_seen_boundary = typeof seenBoundary === 'string' ? seenBoundary : null
     this.clear_generation = take('clear_generation', null)
     this.intentional_shrink_generation = take('intentional_shrink_generation', null)
     const routing = take('gateway_routing', null)

@@ -992,11 +992,11 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
   })
 
   /** A Web turn whose Agent writes its own rows to state.db, stamped by the Agent rather than the server. */
-  async function turn(sid: string, message: string, result: 'completed' | 'failed' = 'completed'): Promise<unknown[]> {
+  async function turn(sid: string, message: string, result: 'completed' | 'failed' = 'completed', concurrent: Row[] = []): Promise<unknown[]> {
     let history: Json[] = []
     sidecar.respond('chat.start', (params) => {
       history = params.conversation_history
-      commit(sid, [['user', message, 200], ['assistant', `${message} answered`, 201]])
+      commit(sid, [['user', message, 200], ...concurrent, ['assistant', `${message} answered`, 201]])
       const done = completedTurn([...history, { role: 'user', content: str(params.user_message) }, { role: 'assistant', content: `${message} answered` }])
       return result === 'completed' ? done : { ...done, failed: true, error: 'provider down' }
     })
@@ -1016,6 +1016,32 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     expect(s.deps.sessionStore.get(sid).state_db_seen_id).toBe(maxId(sid))
   })
 
+  it('a CLI row committed while a Web turn runs stays in the transcript and reaches the next turn', async () => {
+    const sid = await seeded([['user', 'u1', 100], ['assistant', 'a1', 101]])
+    await turn(sid, 'first')
+    // One row stamped before the settled Web rows, one after them; both commit before the settlement reads state.db.
+    await turn(sid, 'second', 'completed', [['user', 'CLI meanwhile', 150], ['assistant', 'CLI later', 4e9]])
+    const settled = await served(sid)
+    expect(settled.filter((c) => typeof c === 'string' && /^(CLI meanwhile|CLI later|second answered)$/.test(c)).sort()).toEqual(['CLI later', 'CLI meanwhile', 'second answered'])
+    expect((await turn(sid, 'third')).filter((c) => c === 'CLI meanwhile' || c === 'CLI later').sort()).toEqual(['CLI later', 'CLI meanwhile'])
+  })
+
+  it('falls back to the timestamp rules after an older release moves the boundary', async () => {
+    const sid = await seeded(FOUR)
+    expect((await post(s, '/api/session/truncate', { session_id: sid, keep_count: 4 })).status).toBe(200)
+    commit(sid, [['user', 'u3', 104], ['assistant', 'a3', 105]])
+    expect(await served(sid)).toEqual(['u1', 'a1', 'u2', 'a2', 'u3', 'a3'])
+    // A Stable truncate keeps the unknown marker but moves the watermark and the shrink generation.
+    const stable = s.deps.sessionStore.get(sid)
+    stable.messages = stable.messages.slice(0, 2)
+    stable.truncation_watermark = 101
+    stable.truncation_boundary = 101
+    stable.intentional_shrink_generation = 'stable-truncate'
+    s.deps.sessionStore.save(stable)
+    expect(await served(sid)).toEqual(['u1', 'a1'])
+    expect(sent(sid)).toEqual(['u1', 'a1'])
+  })
+
   it('a failed turn covers the rows its Agent wrote, so they do not replay', async () => {
     const sid = await seeded([['user', 'u1', 100], ['assistant', 'a1', 101]])
     await turn(sid, 'first')
@@ -1029,7 +1055,7 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     await turn(sid, 'first')
     sidecar.respond('chat.interrupt', () => ({ ok: true }))
     sidecar.respond('chat.start', (params, emit, opts) => new Promise((resolve) => {
-      commit(sid, [['user', 'stopped', 200], ['assistant', 'stopped work', 201]])
+      commit(sid, [['user', 'stopped', 200], ['assistant', 'partial', 201]])
       emit({ event: 'token', data: { text: 'partial' } })
       opts.signal?.addEventListener('abort', () => { resolve({ ...completedTurn([{ role: 'user', content: str(params.user_message) }]), status: 'cancelled' }) })
     }))
@@ -1037,7 +1063,7 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'token')
     await s.get(`/api/chat/cancel?stream_id=${streamId}`)
     await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'cancel')
-    expect((await served(sid)).filter((c) => c === 'stopped work')).toEqual([])
+    expect((await served(sid)).filter((c) => c === 'stopped' || c === 'partial')).toEqual(['stopped', 'partial'])
     expect(s.deps.sessionStore.get(sid).state_db_seen_id).toBe(maxId(sid))
   })
 

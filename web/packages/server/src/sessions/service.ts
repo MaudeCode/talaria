@@ -20,7 +20,7 @@ import { UNSETTLED_TODO_KEY, attachTodoState } from './todo.js'
 import { stateDbSessionMessages, stateDbSessionRow, stateDbSessionSources } from './state-db.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { SidecarError, type SidecarLike } from '../sidecar/client.js'
-import { attachmentObjects, isContextCompressionMarker, mergeSessionMessagesAppendOnly, pendingUserRow, sanitizeMessagesForApi, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, type ToolResultView } from './merge.js'
+import { attachmentObjects, isContextCompressionMarker, mergeSessionMessagesAppendOnly, messageIdentity, pendingUserRow, sanitizeMessagesForApi, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, type ToolResultView } from './merge.js'
 import { withBackgroundUpdates } from './background-updates.js'
 import { withBackgroundLinks, type Receipt } from './background-tasks.js'
 import { messagesForLimitedPayload, messageWindowForDisplay, MAX_MSG_LIMIT, parseMsgLimit, toolCallsForMessageWindow } from './window.js'
@@ -261,15 +261,33 @@ export class SessionService {
    */
   mergedTranscript(s: Session, local: Message[] = s.messages, stateRows: Message[] = this.stateDbRows(s)): Message[] {
     if (!stateRows.length) return local
-    return mergeSessionMessagesAppendOnly(local, stateRows, { truncationWatermark: s.truncation_watermark, compressedWatermark: s.truncation_watermark_compressed, stateDbSeenId: s.state_db_seen_id })
+    return mergeSessionMessagesAppendOnly(local, stateRows, { truncationWatermark: s.truncation_watermark, compressedWatermark: s.truncation_watermark_compressed, stateDbSeenId: currentStateDbSeenId(s) })
   }
 
   /**
    * TAL-493: record the highest state.db id this boundary or settled turn read, under the session lock in the same save,
-   * so the merge never replays a covered row and appends every row committed after the read.
+   * so the merge never replays a covered row and appends every row committed after the read. Call it after the boundary
+   * fields are set: the marker holds only while they stay as recorded.
    */
   markStateDbSeen(s: Session, stateRows: Message[] = this.stateDbRows(s)): void {
-    s.state_db_seen_id = stateDbSeenId(stateRows, s.state_db_seen_id)
+    s.state_db_seen_id = stateDbSeenId(stateRows, currentStateDbSeenId(s))
+    s.state_db_seen_boundary = stateDbBoundaryKey(s)
+  }
+
+  /**
+   * TAL-493: a turn's settlement. Rows the merge shows now that nothing the turn holds represents (a CLI or gateway row
+   * committed while it ran) join the transcript and the model context before the marker passes them; `known` adds the
+   * Agent's result rows the session does not keep.
+   */
+  settleStateDb(s: Session, known: Message[] = []): void {
+    const stateRows = this.stateDbRows(s)
+    const held = new Set([...s.messages, ...s.context_messages, ...known].map(messageIdentity))
+    const missed = this.mergedTranscript(s, s.messages, stateRows).slice(s.messages.length).filter((m) => { const key = messageIdentity(m); return key !== null && !held.has(key) })
+    if (missed.length) {
+      s.messages.push(...copyJson(missed))
+      if (s.context_messages.length) s.context_messages.push(...copyJson(missed))
+    }
+    this.markStateDbSeen(s, stateRows)
   }
 
   /**
@@ -1077,7 +1095,6 @@ export class SessionService {
     await this.store.withLock(sid, () => {
       const hadMessages = s.messages.length > 0
       truncateSessionAtKeep(s, 0)
-      this.markStateDbSeen(s)
       s.tool_calls = []
       if (s.parent_session_id) {
         let parentIsSnapshot = false
@@ -1095,6 +1112,7 @@ export class SessionService {
       s.pending_user_source = null
       s.clear_generation = hadMessages ? randomUUID().replace(/-/g, '') : null
       applySessionTitleRename(s, 'Untitled')
+      this.markStateDbSeen(s)
       this.store.save(s)
       if (hadMessages) { try { rmSync(`${this.store.pathFor(sid)}.bak`, { force: true }) } catch { /* ignore */ } }
     })
@@ -1559,6 +1577,16 @@ function findLastUserIndex(history: unknown[]): number | null {
 /** Python `_sanitize_error`: absolute paths in an error message never reach the client. */
 export function sanitizePaths(error: unknown): string {
   return str((error as Error)?.message ?? error).replace(/(?:(?:\/[a-zA-Z0-9_.-]+)+|(?:[A-Z]:\\[^\s]+))/g, '<path>')
+}
+
+/** TAL-493: the boundary fields every boundary writer sets; an older release moves them without the state.db marker. */
+function stateDbBoundaryKey(s: Session): string {
+  return JSON.stringify([s.truncation_watermark ?? null, s.truncation_boundary ?? null, s.intentional_shrink_generation ?? null, s.clear_generation ?? null])
+}
+
+/** The recorded state.db marker while its boundary still stands, else null (the timestamp rules apply). */
+function currentStateDbSeenId(s: Session): number | null {
+  return s.state_db_seen_boundary === stateDbBoundaryKey(s) ? s.state_db_seen_id : null
 }
 
 function truncationWatermarkFor(messages: unknown[]): number {

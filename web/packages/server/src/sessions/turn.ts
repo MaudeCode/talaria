@@ -622,7 +622,7 @@ export class TurnRunner {
         await this.steerRewrites.get(streamId)
         const { events: steerEvents, leftovers } = this.finalizeSteers(streamId, str(result.pending_steer), 'followup')
         followUp = leftovers
-        this.persistError(s, streamId, classification.label, payload, activeTurnToken)
+        this.persistError(s, streamId, classification.label, payload, activeTurnToken, resultMessages)
         // TAL-512: a btw error carries no session: its journaled frame must not keep a copy of the parent conversation.
         if (!opts.ephemeral) payload.session = redactSessionData(this.terminalSessionPayload(s), deps.redactEnabled())
         payload.session_id = s.session_id
@@ -715,7 +715,7 @@ export class TurnRunner {
       }
       this.persistConsumedSteers(s, streamId, previousStartedAt(s, activeRun), now)
       // TAL-493: the rows this turn's Agent wrote to state.db are now in the transcript, so the merge must not replay them.
-      deps.service().markStateDbSeen(s)
+      deps.service().settleStateDb(s, resultMessages)
       deps.store.save(s)
       deps.pending.clearApprovals(sessionId)
       deps.pending.clearClarifies(sessionId)
@@ -885,7 +885,7 @@ export class TurnRunner {
   }
 
   /** Python `_materialize_pending_user_turn_before_error` + error message append + save. */
-  private persistError(s: Session, streamId: string, label: string, payload: Record<string, unknown>, activeTurnToken: string | null): void {
+  private persistError(s: Session, streamId: string, label: string, payload: Record<string, unknown>, activeTurnToken: string | null, agentRows: Message[] = []): void {
     const startedAt = s.pending_started_at
     this.materializePendingUserTurn(s, activeTurnToken, streamId)
     const duration = typeof startedAt === 'number' && startedAt > 0 ? Math.max(0, this.deps.now() - startedAt) : null
@@ -913,7 +913,7 @@ export class TurnRunner {
     s.messages.push(errorMessage)
     this.keepLiveState(s, streamId)
     this.persistConsumedSteers(s, streamId, startedAt, this.deps.now())
-    this.deps.service().markStateDbSeen(s)
+    this.deps.service().settleStateDb(s, agentRows)
     try { this.deps.store.save(s) } catch (error) { this.deps.log(`[webui] WARNING: failed to save error turn for ${s.session_id}: ${(error as Error).message}`) }
     this.deps.pending.clearApprovals(s.session_id)
     this.deps.pending.clearClarifies(s.session_id)
@@ -1017,7 +1017,7 @@ export class TurnRunner {
     }
     this.keepLiveState(current, streamId)
     this.persistConsumedSteers(current, streamId, startedAt, this.deps.now())
-    this.deps.service().markStateDbSeen(current)
+    this.deps.service().settleStateDb(current, (checkpoint ?? []) as Message[])
     try { this.deps.store.save(current) } catch { return false }
     this.deps.pending.clearApprovals(current.session_id)
     this.deps.pending.clearClarifies(current.session_id)
