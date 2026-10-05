@@ -32,6 +32,7 @@ struct ComposerReasoningMenu: View {
         .tint(color)
         .disabled(isDisabled)
         .accessibilityLabel("Select reasoning effort")
+        .accessibilityValue(reasoningTitle)
     }
 
     private func makeReasoningMenu() -> UIMenu {

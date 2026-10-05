@@ -13,7 +13,12 @@ struct ComposerMetaControlLabel: View {
     let chevronFont: Font
 
     var body: some View {
-        HStack(spacing: 5) {
+        ComposerChipContent(
+            title: title,
+            collapsesTitle: systemImage != nil,
+            spacing: 5,
+            font: controlFont
+        ) {
             if let systemImage {
                 if systemImage == "lucide.brain" {
                     LucideBrainIcon()
@@ -23,13 +28,7 @@ struct ComposerMetaControlLabel: View {
                         .font(controlFont)
                 }
             }
-
-            Text(title)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .font(controlFont)
-                .layoutPriority(1)
-
+        } trailing: {
             Image(systemName: "chevron.down")
                 .font(chevronFont)
         }
@@ -39,5 +38,43 @@ struct ComposerMetaControlLabel: View {
             transaction.animation = nil
         }
         .chatMinimumHitTarget(horizontalPadding: 0, verticalPadding: 14, in: Rectangle())
+    }
+}
+
+/// A composer chip's icon, title and trailing accessory. A title that does not fit on one line
+/// drops out, leaving the icon, instead of showing an ellipsis (TAL-484); the chip's button
+/// still carries the title for VoiceOver. A chip without an icon keeps its truncating title.
+struct ComposerChipContent<Icon: View, Trailing: View>: View {
+    let title: String
+    var collapsesTitle = true
+    let spacing: CGFloat
+    let font: Font
+    @ViewBuilder let icon: Icon
+    @ViewBuilder let trailing: Trailing
+
+    var body: some View {
+        if collapsesTitle {
+            ViewThatFits(in: .horizontal) {
+                row(showsTitle: true)
+                row(showsTitle: false)
+            }
+        } else {
+            row(showsTitle: true)
+        }
+    }
+
+    private func row(showsTitle: Bool) -> some View {
+        HStack(spacing: spacing) {
+            icon
+
+            if showsTitle {
+                Text(title)
+                    .lineLimit(1)
+                    .font(font)
+                    .layoutPriority(1)
+            }
+
+            trailing
+        }
     }
 }

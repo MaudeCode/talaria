@@ -1169,6 +1169,44 @@ final class HeaderTextSizeUITests: WorkspaceUITestCase {
     }
 }
 
+/// TAL-484: workspace, profile and Git branch chips show their full title or only their icon, and
+/// VoiceOver reads the full title either way. `ComposerChipLayoutTests` pins the collapse; run this
+/// on a narrow destination such as the iPhone Duo outer display to see the icon-only form.
+final class ComposerChipUITests: WorkspaceUITestCase {
+    func testComposerChipsNameTheirFullTitleForVoiceOver() throws {
+        try assertComposerChipsNameTheirFullTitle(textSize: "UICTContentSizeCategoryL")
+    }
+
+    /// Accessibility sizes keep the stacked accessibility layout and collapse the same way.
+    func testComposerChipsStayInsideTheWindowAtAccessibilityTextSize() throws {
+        try assertComposerChipsNameTheirFullTitle(textSize: "UICTContentSizeCategoryAccessibilityXL")
+    }
+
+    private func assertComposerChipsNameTheirFullTitle(textSize: String) throws {
+        launchFixture(additionalArguments: ["-UIPreferredContentSizeCategoryName", textSize])
+        openFixtureSessionChat()
+
+        let branch = app.buttons["Current Git branch"]
+        XCTAssertTrue(branch.awaitExistence(timeout: 15), "Missing the Git branch chip")
+        XCTAssertEqual(branch.value as? String, "fixture-main", "VoiceOver must read the full branch name")
+        for label in ["Choose workspace path", "Choose profile"] {
+            let chip = app.buttons[label]
+            XCTAssertTrue(chip.exists, "Missing the \(label) chip")
+            let title = try XCTUnwrap(chip.value as? String, "\(label) gave VoiceOver no title")
+            XCTAssertFalse(title.isEmpty, "\(label) gave VoiceOver an empty title")
+            XCTAssertFalse(title.contains("…"), "\(label) gave VoiceOver a truncated title")
+        }
+        for chip in [branch, app.buttons["Choose workspace path"], app.buttons["Choose profile"]] {
+            XCTAssertTrue(app.frame.contains(chip.frame), "\(chip.label) is clipped by the window")
+        }
+
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Composer chips [\(textSize)]"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+    }
+}
+
 /// Previews, a chat file link, a file that fails to read and the push guard share one workspace
 /// launch; the fixture grants its Git write capability partway through (TAL-402).
 final class WorkspaceFilePreviewUITests: WorkspaceUITestCase {

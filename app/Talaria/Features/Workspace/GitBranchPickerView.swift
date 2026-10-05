@@ -20,13 +20,15 @@ struct GitBranchPickerButton: View {
             HapticButtonHaptics.tap(isEnabled: isHapticsEnabled)
             showsPicker = true
         } label: {
-            HStack(spacing: 6) {
+            ComposerChipContent(
+                title: currentBranch,
+                spacing: 6,
+                font: AppFont.subheadline()
+            ) {
                 Image(systemName: "arrow.triangle.branch")
                     .font(.system(size: 16, weight: .regular))
-                Text(currentBranch)
-                    .font(AppFont.subheadline())
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+            } trailing: {
+                EmptyView()
             }
             .foregroundStyle(.secondary)
             .padding(.horizontal, 10)

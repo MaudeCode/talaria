@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Composer workspace, profile, branch and reasoning chips show only their icon when their name does not fit, instead of a name cut down to an ellipsis, and VoiceOver reads the full name.",
+      "highlight": false
+    }
+  ]
+}
