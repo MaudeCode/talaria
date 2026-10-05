@@ -1247,3 +1247,13 @@ export function withoutNativeImages(messages: Message[]): Message[] {
     return { ...msg, content }
   })
 }
+
+/**
+ * TAL-545: the image-free history is one request's projection, never the session's. The Agent hands the history it got
+ * back ahead of its own rows, so each row it returned exactly as sent (`sent[i]`, stripped from `original[i]`) is swapped
+ * back for the original; a row the Agent rewrote stays its own.
+ */
+export function withNativeImagesRestored<T extends Record<string, unknown>>(rows: T[], sent: Message[], original: Message[]): T[] {
+  if (sent === original) return rows
+  return rows.map((row, i) => (i < sent.length && sent[i] !== original[i] && JSON.stringify(row) === JSON.stringify(sent[i]) ? original[i] as T : row))
+}
