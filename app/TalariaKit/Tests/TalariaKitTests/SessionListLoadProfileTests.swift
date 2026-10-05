@@ -830,6 +830,42 @@ extension SessionListMutationTests {
         XCTAssertEqual(requestedPaths, ["/api/workspaces", "/api/models", "/api/session/new"])
     }
 
+    /// TAL-455: New Chat under a project filter creates the chat in that project, and the row
+    /// files under the project the server returns. Profile-pinned creation (the App Intent) sends none.
+    @MainActor
+    func testCreateSessionSendsTheFilteredProjectAndIntentCreationSendsNone() async throws {
+        var projectIDs: [String?] = []
+        let viewModel = try makeViewModel { request in
+            switch request.url?.path {
+            case "/api/workspaces":
+                return apiTestJSONResponse(#"{"workspaces":[{"path":"/tmp/workspace"}],"last":"/tmp/workspace"}"#, for: request)
+            case "/api/session/new":
+                let body = try XCTUnwrap(apiTestJSONBody(from: request))
+                let projectID = body["project_id"] as? String
+                projectIDs.append(projectID)
+                let project = projectID.map { #","project_id":"\#($0)""# } ?? ""
+                return apiTestJSONResponse(
+                    #"{"session":{"session_id":"new-\#(projectIDs.count)","message_count":1\#(project)}}"#,
+                    for: request
+                )
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        let created = await viewModel.createSession(projectID: "project-1")
+        _ = await viewModel.createSession(profile: "fixture-profile")
+
+        XCTAssertEqual(projectIDs, ["project-1", nil])
+        XCTAssertEqual(created?.projectId, "project-1")
+        XCTAssertEqual(
+            viewModel.visibleSessions(searchText: "", selectedProjectID: "project-1", automatedVisibility: .showAll)
+                .map(\.sessionId),
+            ["new-1"]
+        )
+    }
+
     @MainActor
     func testCreateSessionKeepsWorktreeBackedUntitledSessionWithoutCounts() async throws {
         let context = try makeContext()

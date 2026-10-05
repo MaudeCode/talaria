@@ -37,6 +37,9 @@ struct UITestFixtureEnvironment {
     /// Adds a pinned long-titled chat and scheduled and webhook groups whose server counts say
     /// more exist than are listed, so the sidebar's row and group chrome can be inspected (TAL-482).
     nonisolated static let sidebarVarietyArgument = "--ui-test-sidebar-variety"
+    /// Serves one project and lists a chat created in a project, so a UI test can start a chat
+    /// under a project filter and find it there (TAL-455).
+    nonisolated static let projectsArgument = "--ui-test-projects"
     nonisolated static let updateNotificationsArgument = "--ui-test-update-notifications"
     /// Answers the chat's first transcript load, so the cache exists, then holds every reopen
     /// until the test releases it, so "Syncing messages" stays over the cached rows (TAL-436).
@@ -93,6 +96,9 @@ struct UITestFixtureEnvironment {
     }
     nonisolated static var hasSidebarVariety: Bool {
         ProcessInfo.processInfo.arguments.contains(sidebarVarietyArgument)
+    }
+    nonisolated static var hasProjects: Bool {
+        ProcessInfo.processInfo.arguments.contains(projectsArgument)
     }
     nonisolated static let serverURL = UITestFixtureLaunch.serverURL
     nonisolated static var relayCredentials: TalariaRelayCredentials { UITestFixtureLaunch.relayCredentials }
@@ -603,11 +609,17 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         case "/api/session/new":
             // The title echoes the requested profile so a UI test can see that a
             // "new chat in <profile>" entry point pinned the session (TAL-77).
-            let requestedProfile = requestJSON(request)["profile"] as? String
-            return json(["session": session(
-                id: "ui-fixture-new-session",
+            let body = requestJSON(request)
+            let requestedProfile = body["profile"] as? String
+            var created = session(
+                id: newSessionID,
                 title: requestedProfile.map { "New Fixture Chat (\($0))" } ?? "New Fixture Chat"
-            )])
+            )
+            if let projectID = body["project_id"] as? String {
+                created["project_id"] = projectID
+                createdSessionProjectID.withLock { $0 = projectID }
+            }
+            return json(["session": created])
         case "/api/upload":
             // Shared attachments upload before the composer can show them, so the
             // fixture has to accept one (TAL-81). Only a non-empty path is required;
@@ -618,7 +630,9 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
                 "is_image": false
             ])
         case "/api/projects":
-            return json(["projects": []])
+            return json(["projects": UITestFixtureEnvironment.hasProjects
+                ? [["project_id": "ui-fixture-project", "name": "Fixture Project"]]
+                : []])
         case "/api/profiles":
             return json([
                 "profiles": [[
@@ -747,6 +761,12 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
                 title: index == 0 ? firstTitle : String(format: "Fixture Session %02d", index)
             )
         }.filter { !archivedIDs.contains($0["session_id"] as? String ?? "") }
+        // The server lists a chat created in a project from then on (TAL-455).
+        if let projectID = createdSessionProjectID.withLock({ $0 }) {
+            var created = session(id: newSessionID, title: "New Fixture Chat")
+            created["project_id"] = projectID
+            sessions.insert(created, at: 0)
+        }
         guard UITestFixtureEnvironment.hasSidebarVariety else {
             return json(["sessions": sessions, "archived_count": 0])
         }
@@ -815,6 +835,8 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
 
     static let backgroundResultText = "The repo has three packages."
     private static let backgroundDismissed = OSAllocatedUnfairLock(initialState: false)
+    private static let newSessionID = "ui-fixture-new-session"
+    private static let createdSessionProjectID = OSAllocatedUnfairLock<String?>(initialState: nil)
 
     /// TAL-372: a running delegation and a finished `/background` task the server pins, until the task is dismissed.
     private static func backgroundTasks() -> [[String: Any]] {

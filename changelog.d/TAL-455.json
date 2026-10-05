@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "New Chat while the Chats list is filtered to a project now starts the chat in that project, so it stays in the filtered list.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

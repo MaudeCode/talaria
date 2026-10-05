@@ -428,4 +428,22 @@ final class APIClientSessionMutationTests: APIClientTestCase {
         XCTAssertEqual(response.session?.messages?.count, 3)
         XCTAssertEqual(response.session?.messagesOffset, 0)
     }
+
+    /// TAL-455: a chat started under a project filter joins that project; without one the body
+    /// carries no `project_id` key at all.
+    func testCreateSessionSendsProjectIDOnlyWhenGiven() async throws {
+        var bodies: [[String: Any]] = []
+        let client = makeClient { request in
+            XCTAssertEqual(request.url?.path, "/api/session/new")
+            bodies.append(try apiTestJSONBody(from: request))
+            return apiTestJSONResponse(#"{"session":{"session_id":"new-1"}}"#, for: request)
+        }
+
+        _ = try await client.createSession(workspace: "/w", model: nil, modelProvider: nil, profile: nil, projectID: "project-1")
+        _ = try await client.createSession(workspace: "/w", model: nil, modelProvider: nil, profile: nil)
+
+        XCTAssertEqual(bodies.count, 2)
+        XCTAssertEqual(bodies.first?["project_id"] as? String, "project-1")
+        XCTAssertEqual(bodies.last.map { Set($0.keys) }, ["workspace"])
+    }
 }
