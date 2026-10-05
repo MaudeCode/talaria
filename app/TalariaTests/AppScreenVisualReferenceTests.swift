@@ -119,13 +119,13 @@ final class AppScreenVisualReferenceTests: XCTestCase {
             try VisualReference.assertMatchesReference(
                 thumbnail(for: image),
                 named: "attachment-image-\(name(for: scheme))",
-                size: CGSize(width: 240, height: 60),
+                size: CGSize(width: 80, height: 80),
                 colorScheme: scheme
             )
         }
 
         try VisualReference.assertMatchesReference(
-            thumbnail(for: document),
+            ComposerFileLinkView(attachment: document, onRemove: {}, onOpen: {}),
             named: "attachment-document-light",
             size: CGSize(width: 260, height: 60)
         )

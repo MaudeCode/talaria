@@ -2,39 +2,28 @@ import SwiftUI
 import UIKit
 import TalariaKit
 
-/// Pending attachments in a strip hanging from the composer card's top edge, the mirror of the
-/// control strip under it (TAL-634). The strip is the only background; each attachment is a plain chip.
+/// Pending photos in a strip hanging from the composer card's top edge, the mirror of the control
+/// strip under it (TAL-634). The strip is the only background; each photo is just its thumbnail.
+/// Files go inside the card as links instead (`ComposerFileLinkView`).
 struct ComposerAttachmentStripView: View {
-    let attachments: [PendingAttachment]
+    let photos: [PendingAttachment]
     let onRemove: (UUID) -> Void
     let onPreview: (PendingAttachment) -> Void
 
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-
     var body: some View {
-        Group {
-            if dynamicTypeSize.isAccessibilitySize {
-                // Large text stacks the chips instead of scrolling them.
-                VStack(alignment: .leading, spacing: 0) { chips }
-                    .padding(.horizontal, 10)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } else {
-                ComposerStripScrollRow(accessibilityIdentifier: "composer-attachment-strip") {
-                    HStack(spacing: 14) { chips }
-                        .padding(.horizontal, 10)
+        ComposerStripScrollRow(accessibilityIdentifier: "composer-attachment-strip") {
+            HStack(spacing: 10) {
+                ForEach(photos) { photo in
+                    ComposerAttachmentThumbnailView(
+                        attachment: photo,
+                        onRemove: { onRemove(photo.id) },
+                        onOpen: { onPreview(photo) }
+                    )
                 }
             }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
         }
         .composerStripChrome(hangingFrom: .top)
-    }
-
-    private var chips: some View {
-        ForEach(attachments) { attachment in
-            ComposerAttachmentThumbnailView(
-                attachment: attachment,
-                onRemove: { onRemove(attachment.id) },
-                onOpen: { onPreview(attachment) }
-            )
-        }
     }
 }

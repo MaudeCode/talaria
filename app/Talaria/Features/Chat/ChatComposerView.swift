@@ -282,11 +282,11 @@ struct MessageComposerView: View {
                 // The control strip hangs from the card's bottom edge (Web's `.composer-strip`); the
                 // card's outline runs across its top.
                 VStack(spacing: 0) {
-                    // Pending attachments hang from the card's top edge, the mirror of the control strip
-                    // (TAL-634); inset the same way so the strip's sides meet the card where its corners end.
-                    if !isAnsweringClarification && !pendingAttachments.isEmpty {
+                    // Pending photos hang from the card's top edge, the mirror of the control strip (TAL-634);
+                    // inset the same way so the strip's sides meet the card where its corners end.
+                    if !isAnsweringClarification && !pendingPhotos.isEmpty {
                         ComposerAttachmentStripView(
-                            attachments: pendingAttachments,
+                            photos: pendingPhotos,
                             onRemove: onRemoveAttachment,
                             onPreview: onPreviewAttachment
                         )
@@ -319,7 +319,7 @@ struct MessageComposerView: View {
                 .padding(.bottom, showsControlStrip ? 4 : 0)
                 .animation(ChatMotion.composerChrome(reduceMotion: reduceMotion), value: usesSingleLineShell)
                 .animation(ChatMotion.composerChrome(reduceMotion: reduceMotion), value: showsControlStrip)
-                .animation(ChatMotion.composerChrome(reduceMotion: reduceMotion), value: pendingAttachments.isEmpty)
+                .animation(ChatMotion.composerChrome(reduceMotion: reduceMotion), value: pendingPhotos.isEmpty)
             }
         }
         .background(
@@ -632,6 +632,27 @@ struct MessageComposerView: View {
             .padding(.vertical, 8)
         } else {
             VStack(spacing: 0) {
+                // Files sit in the card above the text as links, like T3 Code's (TAL-634). Past three
+                // they scroll, so a long list never pushes the composer off screen.
+                if !isAnsweringClarification && !pendingFiles.isEmpty {
+                    ScrollView(.vertical) {
+                        VStack(alignment: .leading, spacing: 0) {
+                            ForEach(pendingFiles) { file in
+                                ComposerFileLinkView(
+                                    attachment: file,
+                                    onRemove: { onRemoveAttachment(file.id) },
+                                    onOpen: { onPreviewAttachment(file) }
+                                )
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .scrollBounceBehavior(.basedOnSize)
+                    .frame(height: fileLinkListHeight)
+                    .padding(.top, 6)
+                }
+
                 ComposerTextInputView(
                     text: $draftMessage,
                     revision: draftWriteRevision,
@@ -817,6 +838,20 @@ struct MessageComposerView: View {
             }
             .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
         }
+    }
+
+    /// Pending photos go in the strip above the card; every other attachment is a file link in it.
+    private var pendingPhotos: [PendingAttachment] {
+        pendingAttachments.filter(\.isImage)
+    }
+
+    private var pendingFiles: [PendingAttachment] {
+        pendingAttachments.filter { !$0.isImage }
+    }
+
+    /// One 44 pt row per file, up to three; more scroll.
+    private var fileLinkListHeight: CGFloat {
+        CGFloat(min(pendingFiles.count, 3)) * 44
     }
 
     private var showsControlStrip: Bool {

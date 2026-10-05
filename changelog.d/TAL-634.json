@@ -2,7 +2,7 @@
   "entries": [
     {
       "category": "Changed",
-      "summary": "Photos and files you attach now sit in a strip above the message box, each with its thumbnail, name and a remove button, so the box keeps its room for your text.",
+      "summary": "Photos you attach now show as thumbnails in a strip above the message box, and files appear inside it as links you can tap or remove.",
       "highlight": false,
       "components": ["app"]
     }
