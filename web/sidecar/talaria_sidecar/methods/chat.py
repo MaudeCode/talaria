@@ -591,15 +591,21 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
         _RUNS_BY_SESSION[session_id] = stream_id
     raw_emit = ctx.emit
     steer_state = {"last": None}
+    usage_state = {"last": None}
 
     def emit(event, data=None):
         """Predecessor ``_webui_steer_events_before``: before content frames, report the Agent's pending steer text
-        whenever it changed so the server can mark consumed steers live rather than only after ``done``."""
+        whenever it changed so the server can mark consumed steers live rather than only after ``done``. TAL-397: the
+        Agent's session counters ride the same boundary, so the server meters cost and tokens while the turn runs."""
         if event in ("token", "reasoning", "interim_assistant", "tool", "tool_complete") and run.agent is not None:
             pending = _agent_pending_steer_text(run.agent)
             if pending != steer_state["last"]:
                 steer_state["last"] = pending
                 raw_emit("steer_pending", {"text": pending})
+            usage = _usage(run.agent)
+            if usage != usage_state["last"]:
+                usage_state["last"] = usage
+                raw_emit("usage", usage)
         raw_emit(event, data)
     try:
         _discover_mcp_tools(run)
@@ -653,6 +659,9 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
                     call["snippet"] = snippet
                     break
             payload = {"event_type": "tool.completed", "name": name, "preview": snippet, "args": _args_snapshot(args), "tid": tid, "raw_result": _raw_result(function_result)}
+            # TAL-397: ``raw_result`` caps nested values, so the todo tool's list travels whole for the server's ``todo_state``.
+            if name == "todo" and function_result is not None:
+                payload["todo_result"] = function_result if isinstance(function_result, str) else json.dumps(function_result, default=str)
             cost = _delegation_cost_usd(name, function_result)
             if cost is not None:
                 payload["cost_usd"] = cost
@@ -790,6 +799,7 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
                 register_gateway_notify(session_id, approval_cb)
                 _APPROVAL_CB_OWNER[session_id] = stream_id
         run.prior_messages = getattr(agent, "_session_messages", None)
+        usage_state["last"] = _usage(agent)
         run.agent = agent
         compressions_before = int(getattr(getattr(agent, "context_compressor", None), "compression_count", 0) or 0)
 

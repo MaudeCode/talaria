@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The tokens-per-second figure and the Web todo list update while a reply streams instead of only when it finishes.",
+      "highlight": false
+    }
+  ]
+}

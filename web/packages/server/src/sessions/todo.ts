@@ -44,10 +44,18 @@ export function deriveTodoState(messages: unknown[] | null | undefined): Record<
   return null
 }
 
-export function attachTodoState(payload: Record<string, unknown>, messages: unknown[] | null | undefined): boolean {
-  if (!messages?.length) return false
+/**
+ * TAL-397: the session key for the list a todo tool wrote in a turn that then errored or was cancelled. Its tool row
+ * never reached the transcript, so it stands until a later todo write in the transcript is newer.
+ */
+export const UNSETTLED_TODO_KEY = 'unsettled_todo_state'
+
+export function attachTodoState(payload: Record<string, unknown>, messages: unknown[] | null | undefined, unsettled?: unknown): boolean {
   try {
-    const snapshot = deriveTodoState(messages)
+    const derived = deriveTodoState(messages)
+    const kept = normalizeTodoSnapshot(unsettled)
+    if (kept) kept.ts = tsFloat(isDict(unsettled) ? unsettled.ts : 0)
+    const snapshot = kept && (!derived || (kept.ts as number) > tsFloat(derived.ts)) ? kept : derived
     if (!snapshot) return false
     payload[TODO_PAYLOAD_KEY] = snapshot
     return true

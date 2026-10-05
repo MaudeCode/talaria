@@ -255,6 +255,7 @@ const Text = z.object({ text: z.string() }).catchall(Json)
 /**
  * A `tool_complete` frame carries `raw_result` (through the catch-all): the result object's first 64 top-level fields
  * (scalars as sent, text and nested values as capped text) or its capped text. The server decides `is_error` from it and never forwards it; `is_error` is only an older sidecar's `false`.
+ * A `todo` tool's frame also carries `todo_result`, the tool's full result text, which the server turns into `todo_state` (TAL-397) and never forwards.
  */
 const ToolFrame = z.object({ event_type: z.string(), name: z.string().nullable().optional(), preview: Json.optional(), args: Loose.optional(), tid: z.string().optional(), is_error: z.boolean().optional() }).catchall(Json)
 export const ChatStreamSchema = z.discriminatedUnion('event', [
@@ -263,6 +264,8 @@ export const ChatStreamSchema = z.discriminatedUnion('event', [
   /** The Agent's pending steer text before a content frame (server-side steer consumption). */
   z.object({ event: z.literal('steer_pending'), data: Text }),
   z.object({ event: z.literal('interim_assistant'), data: Text }),
+  /** TAL-397: the Agent's session counters, before the content frame that follows a change. */
+  z.object({ event: z.literal('usage'), data: ChatUsageSchema }),
   z.object({ event: z.literal('tool'), data: ToolFrame }),
   z.object({ event: z.literal('tool_complete'), data: ToolFrame }),
   z.object({ event: z.literal('approval'), data: Loose }),
