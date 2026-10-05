@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "After a conversation compresses itself mid-reply, large tool output from the rest of that reply is trimmed from what the agent sees next, and the context ring shows the smaller size.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

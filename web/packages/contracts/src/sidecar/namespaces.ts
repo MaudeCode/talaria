@@ -252,9 +252,11 @@ export const ChatUsageSchema = z.object({ prompt_tokens: z.number().int(), compl
  * `failed`, `partial`, and `compression_exhausted` are the Agent's own turn-result flags, forwarded as sent; `failed` also sets `status: 'error'`.
  * `max_iterations_summary_request` is the Agent's text for the user row it appends to ask for a summary once its tool budget runs out
  * (`tool_limit_reached`); the server drops that trailing row of an exhausted turn from the transcript and the model context (TAL-537).
+ * A completed `compressed` turn also carries `context_messages`, its `messages` with tool output pruned and capped for the model (row for row),
+ * and `post_compression_context_tokens_estimate`, the next request's estimated size (TAL-539); both are null otherwise.
  */
 export const ChatStartResultSchema = z.object({
-  status: z.enum(['completed', 'cancelled', 'error']), messages: z.array(Loose), final_response: z.string(), error: z.string().nullable(),
+  status: z.enum(['completed', 'cancelled', 'error']), messages: z.array(Loose), context_messages: z.array(Loose).nullable().optional(), post_compression_context_tokens_estimate: z.number().int().nullable().optional(), final_response: z.string(), error: z.string().nullable(),
   failed: z.boolean(), partial: z.boolean(), compression_exhausted: z.boolean(),
   tool_limit_reached: z.boolean(), max_iterations_summary_request: z.string(), usage: ChatUsageSchema, context: Loose, model: z.string(), provider: z.string(), compressed: z.boolean(), agent_session_id: z.string(),
   token_sent: z.boolean(), pending_steer: z.string(), live_tool_calls: z.array(Loose),

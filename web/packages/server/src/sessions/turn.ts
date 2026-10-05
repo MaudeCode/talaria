@@ -619,8 +619,10 @@ export class TurnRunner {
       s = current
       // Python `_maybe_inject_max_iteration_summary_fallback`: an exhausted tool budget leaves the closing
       // explanation in `final_response` only, so it becomes the turn's assistant answer before anything else reads it.
-      const agentRows = result.tool_limit_reached ? injectMaxIterationSummaryFallback(result.messages, result.final_response) : (result.messages as Message[])
-      const resultMessages = result.tool_limit_reached ? withoutMaxIterationSummaryRequest(agentRows, result.max_iterations_summary_request, msgText) : agentRows
+      const withFallback = (rows: Message[]): Message[] => (result.tool_limit_reached ? injectMaxIterationSummaryFallback(rows, result.final_response) : rows)
+      const withoutRequest = (rows: Message[]): Message[] => (result.tool_limit_reached ? withoutMaxIterationSummaryRequest(rows, result.max_iterations_summary_request, msgText) : rows)
+      const agentRows = withFallback(result.messages)
+      const resultMessages = withoutRequest(agentRows)
       // Python `_assistant_reply_added_after_current_turn`: replayed history never counts as this turn's answer (the
       // sidecar reports `completed` whenever a failed run still carries messages).
       // Python's second chance: a turn that emitted no new row still counts when the merged transcript it produced
@@ -670,8 +672,10 @@ export class TurnRunner {
       await this.steerRewrites.get(streamId)
       const { events: steerEvents, leftovers } = this.finalizeSteers(streamId, result.pending_steer, 'followup')
       s.messages = mergeDisplayMessagesAfterAgentResult(previousMessages, previousContext, resultMessages, msgText, { source: opts.source ?? 'webui', activeTurnToken, now: deps.now(), turnId: streamId, attachments: opts.attachments ?? [] })
-      s.context_messages = dedupeContext(resultMessages)
+      // TAL-539: after a mid-turn compression the model context is the sidecar's pruned copy, settled like the transcript.
+      s.context_messages = dedupeContext(result.compressed && result.context_messages ? withoutRequest(withFallback(result.context_messages)) : resultMessages)
       if (result.compressed) {
+        s.post_compression_context_tokens_estimate = result.post_compression_context_tokens_estimate ?? null
         s.compression_anchor_visible_idx = Math.max(0, previousMessages.length - 1)
         put('compressed', { session_id: sessionId, old_session_id: sessionId, new_session_id: sessionId, continuation_session_id: sessionId, message: 'Compression finished' })
       }
