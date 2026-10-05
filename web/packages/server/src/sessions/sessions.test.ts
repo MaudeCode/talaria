@@ -951,6 +951,17 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     expect(s.deps.sessionStore.get(sid).state_db_seen_id).toBe(covered)
   })
 
+  it('a truncate before the session has any state.db row still lets its first late row through', async () => {
+    const sid = String((await newSession(s)).session_id)
+    writeMessages(s, sid, rows(FOUR))
+    commit(sid, [])
+    expect((await post(s, '/api/session/truncate', { session_id: sid, keep_count: 2 })).status).toBe(200)
+    commit(sid, [['user', 'first CLI row', 100.5]])
+    expect(await served(sid)).toEqual(['u1', 'a1', 'first CLI row'])
+    expect(sent(sid)).toEqual(['u1', 'a1', 'first CLI row'])
+    expect(s.deps.sessionStore.get(sid).state_db_seen_id).toBe(0)
+  })
+
   it('undo and retry cover the rows they read; a later row stamped before the cut still appears', async () => {
     for (const path of ['/api/session/undo', '/api/session/retry']) {
       const sid = await seeded(FOUR)

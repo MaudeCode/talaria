@@ -518,13 +518,22 @@ function projectStateDbMessage(row: Dict, hasId: boolean): Dict {
  * walking compatible compression/close parents so a continued CLI conversation reads as one transcript.
  */
 export function stateDbSessionMessages(dbPath: string, sid: string, opts: { stitch?: boolean } = {}): Dict[] {
+  return stateDbSessionRead(dbPath, sid, opts).rows
+}
+
+/**
+ * `stateDbSessionMessages` and whether the read succeeded on a `messages` table with an `id` column (TAL-493: an empty
+ * such read is a baseline of 0; a missing database or a failed read is not).
+ */
+export function stateDbSessionRead(dbPath: string, sid: string, opts: { stitch?: boolean } = {}): { rows: Dict[]; idCapable: boolean } {
+  const none = { rows: [], idCapable: false }
   const id = sid.trim()
-  if (!id || !existsSync(dbPath)) return []
+  if (!id || !existsSync(dbPath)) return none
   let db: DatabaseSync
-  try { db = openStateDbReadonly(dbPath) } catch { return [] }
+  try { db = openStateDbReadonly(dbPath) } catch { return none }
   try {
     const available = tableColumns(db, 'messages')
-    if (!['role', 'content', 'timestamp'].every((c) => available.has(c))) return []
+    if (!['role', 'content', 'timestamp'].every((c) => available.has(c))) return none
     const hasId = available.has('id')
     const selected = [...(hasId ? ['id'] : []), 'role', 'content', 'timestamp', ...OPTIONAL_MESSAGE_COLUMNS.filter((c) => available.has(c))]
     const chain = [id]
@@ -548,9 +557,9 @@ export function stateDbSessionMessages(dbPath: string, sid: string, opts: { stit
     const activeClause = available.has('active') ? ' AND (active IS NULL OR active != 0)' : ''
     const order = hasId ? 'id' : 'timestamp'
     const rows = db.prepare(`SELECT ${selected.join(', ')}, session_id FROM messages WHERE session_id IN (${chain.map(() => '?').join(', ')})${activeClause} ORDER BY ${order} ASC`).all(...chain) as Dict[]
-    return rows.map((row) => projectStateDbMessage(row, hasId))
+    return { rows: rows.map((row) => projectStateDbMessage(row, hasId)), idCapable: hasId }
   } catch {
-    return []
+    return none
   } finally {
     db.close()
   }

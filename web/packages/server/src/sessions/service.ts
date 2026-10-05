@@ -17,7 +17,7 @@ import { anchorSceneIntOrNull, fullToolResult, hydrateAnchorActivityScenes, norm
 import { isSafeSessionId, lastMessageTimestamp, Session, stripAttachedFilesMarker, titleFrom, type Message } from './session.js'
 import { SessionBusy, SessionNotFound, statSignature, type SessionStore } from './store.js'
 import { UNSETTLED_TODO_KEY, attachTodoState } from './todo.js'
-import { stateDbSessionMessages, stateDbSessionRow, stateDbSessionSources } from './state-db.js'
+import { stateDbSessionMessages, stateDbSessionRead, stateDbSessionRow, stateDbSessionSources } from './state-db.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { SidecarError, type SidecarLike } from '../sidecar/client.js'
 import { attachmentObjects, isContextCompressionMarker, mergeSessionMessagesAppendOnly, messageIdentity, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, type ToolResultView } from './merge.js'
@@ -250,8 +250,13 @@ export class SessionService {
 
   /** The Agent's state.db rows for this session (empty for subagent views, which never merge). */
   stateDbRows(s: Session): Message[] {
-    if (str(s.source_tag || s.raw_source || s.session_source).trim().toLowerCase() === 'subagent') return []
-    return stateDbSessionMessages(join(this.deps.profileHome(s.profile ?? this.deps.activeProfile()), 'state.db'), s.session_id, { stitch: false })
+    return this.stateDbRead(s).rows
+  }
+
+  /** `stateDbRows` and whether the read succeeded on a state.db whose messages carry ids (TAL-493). */
+  stateDbRead(s: Session): { rows: Message[]; idCapable: boolean } {
+    if (str(s.source_tag || s.raw_source || s.session_source).trim().toLowerCase() === 'subagent') return { rows: [], idCapable: false }
+    return stateDbSessionRead(join(this.deps.profileHome(s.profile ?? this.deps.activeProfile()), 'state.db'), s.session_id, { stitch: false })
   }
 
   /**
@@ -269,9 +274,10 @@ export class SessionService {
    * so the merge never replays a covered row and appends every row committed after the read. Call it after the boundary
    * fields are set: the marker holds only while they and the row it names stay as recorded.
    */
-  markStateDbSeen(s: Session, stateRows: Message[] = this.stateDbRows(s)): void {
-    s.state_db_seen_id = stateDbSeenId(stateRows)
-    s.state_db_seen_boundary = stateDbMarkKey(s, stateRows, s.state_db_seen_id)
+  markStateDbSeen(s: Session, read: { rows: Message[]; idCapable: boolean } = this.stateDbRead(s)): void {
+    // A successful read with no rows yet is a baseline: every row the session gets later is new.
+    s.state_db_seen_id = stateDbSeenId(read.rows) ?? (read.idCapable ? 0 : null)
+    s.state_db_seen_boundary = stateDbMarkKey(s, read.rows, s.state_db_seen_id)
   }
 
   /**
@@ -280,7 +286,8 @@ export class SessionService {
    * Agent's result rows the session does not keep.
    */
   settleStateDb(s: Session, known: Message[] = []): void {
-    const stateRows = this.stateDbRows(s)
+    const read = this.stateDbRead(s)
+    const stateRows = read.rows
     // A row with no text (an image or reasoning only) is told apart by its raw role, content, and reasoning.
     // The full text: a row that only starts like a held one is new.
     const identity = (m: Message): string => messageIdentity(m, Infinity) ?? JSON.stringify([m.role ?? null, m.content ?? null, reasoningFieldsText(m)])
@@ -290,7 +297,7 @@ export class SessionService {
       s.messages.push(...copyJson(missed))
       if (s.context_messages.length) s.context_messages.push(...copyJson(missed))
     }
-    this.markStateDbSeen(s, stateRows)
+    this.markStateDbSeen(s, read)
   }
 
   /**
@@ -1043,7 +1050,8 @@ export class SessionService {
         try { live = this.store.get(sid) } catch { throw new HttpFailure(404, 'Session not found') }
         if (streamState(live) !== streamBefore) throw new HttpFailure(409, 'Session stream state changed during compression; please retry.')
         // One state.db read serves the check, the kept display rows, and the boundary.
-        const stateRows = this.stateDbRows(live)
+        const read = this.stateDbRead(live)
+        const stateRows = read.rows
         if (transcriptKey(live, sanitizeMessagesForApi(this.modelContext(live, stateRows))) !== historyKey) throw new HttpFailure(409, 'Session was modified during compression; please retry.')
         // Rows the sidecar returns without a timestamp take the newest one this compression saw, never the clock: the
         // boundary then hides no state.db row the append-only merge would still show (it already drops rows at or
@@ -1071,7 +1079,7 @@ export class SessionService {
         live.truncation_watermark = truncationWatermarkFor(compressed)
         live.truncation_boundary = live.truncation_watermark
         live.truncation_watermark_compressed = true
-        this.markStateDbSeen(live, stateRows)
+        this.markStateDbSeen(live, read)
         live.last_prompt_tokens = result.after_tokens
         live.post_compression_context_tokens_estimate = result.after_tokens
         this.store.save(live)

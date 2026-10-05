@@ -122,7 +122,7 @@ describe('manual session compression', () => {
     const sid = await seeded()
     const cli = { role: 'user', content: 'continued from the CLI', timestamp: 4.5 }
     const cliAnswer = { role: 'assistant', content: 'CLI answer', timestamp: 4.6 }
-    const spy = vi.spyOn(s.deps.sessions, 'stateDbRows').mockImplementation(() => [...structuredClone(ORIGINAL), structuredClone(cli), structuredClone(cliAnswer)])
+    const spy = vi.spyOn(s.deps.sessions, 'stateDbRead').mockImplementation(() => ({ rows: [...structuredClone(ORIGINAL), structuredClone(cli), structuredClone(cliAnswer)], idCapable: false }))
     try {
       let sent: Json[] = []
       sidecar.respond('chat.compress', (params) => { sent = params.conversation_history; return compressed(params) })
@@ -141,7 +141,7 @@ describe('manual session compression', () => {
     const late = { role: 'user', content: 'late CLI row', timestamp: 4.9 }
     // Reads 1-2 are the admission and worker guards, read 3 is the commit's; the row exists only after that read.
     let reads = 0
-    const spy = vi.spyOn(s.deps.sessions, 'stateDbRows').mockImplementation(() => (++reads > 3 ? [...structuredClone(ORIGINAL), structuredClone(late)] : structuredClone(ORIGINAL)))
+    const spy = vi.spyOn(s.deps.sessions, 'stateDbRead').mockImplementation(() => ({ rows: ++reads > 3 ? [...structuredClone(ORIGINAL), structuredClone(late)] : structuredClone(ORIGINAL), idCapable: false }))
     try {
       expect((await post(s, '/api/session/compress', { session_id: sid })).status).toBe(200)
       const stored = s.deps.sessionStore.get(sid)
