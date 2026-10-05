@@ -983,7 +983,14 @@ export class TurnRunner {
     // TAL-460: a background turn stops quietly: its prompt and model context are kept, but no partial and no Stop row,
     // and its first settlement is final.
     const quiet = this.registry.activeRuns.get(streamId)?.origin === 'background'
-    if (quiet && current.active_stream_id === null) return true
+    if (quiet && current.active_stream_id === null) {
+      // TAL-493: rows its worker committed while unwinding are covered by what it reports; others are kept.
+      if (checkpoint) {
+        this.deps.service().settleStateDb(current, checkpoint as Message[])
+        try { this.deps.store.save(current) } catch { return false }
+      }
+      return true
+    }
     const stop = this.stopContexts.get(streamId)
     const canonical = stop !== undefined && checkpoint !== null && checkpointTurnStart(checkpoint, stop.msgText, stop.historyLength) !== null
     const settle = (): Message[] | null => {
