@@ -93,7 +93,7 @@ describe('installed model-provider plugins in the provider catalog', () => {
     let started: Json | null = null
     sidecar.respond('chat.start', (params) => {
       started = params
-      return { status: 'completed', messages: [{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'ok' }], final_response: 'ok', error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: {}, model: 'claude-sonnet-4-6', provider: 'fake-sub', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] }
+      return { status: 'completed', messages: [{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'ok' }], final_response: 'ok', error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, max_iterations_summary_request: '', usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: {}, model: 'claude-sonnet-4-6', provider: 'fake-sub', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] }
     })
     const res = await post(s, '/api/chat/start', { session_id: sid, message: 'hi', model: '@fake-sub:claude-sonnet-4-6', model_provider: 'fake-sub' })
     expect(res.status).toBe(200)

@@ -23,7 +23,7 @@ async function newSession(s: TestServer): Promise<string> {
 }
 
 const completed = (messages: Json[], extra: Partial<ChatResult> = {}): ChatResult => ({
-  status: 'completed', messages, final_response: str(messages[messages.length - 1]?.content), error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false,
+  status: 'completed', messages, final_response: str(messages[messages.length - 1]?.content), error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, max_iterations_summary_request: '',
   usage: { prompt_tokens: 120, completion_tokens: 30, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: 0.001 }, context: { context_length: 200000 }, model: 'test-model', provider: 'test', compressed: false,
   agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [], ...extra,
 })
@@ -2137,6 +2137,56 @@ describe('chat turns through the sidecar', () => {
     expect(str(persisted[persisted.length - 1]?.content)).toBe('I reached the iteration limit and could not finish.')
     const shown = ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages as Json[]
     expect(str(shown[shown.length - 1]?.content)).toBe('I reached the iteration limit and could not finish.')
+  })
+
+  it('drops the Agent\'s max-iterations summary request and keeps its closure text (TAL-537)', async () => {
+    const sid = await newSession(s)
+    const request = 'You have reached the maximum number of tool-calling iterations allowed.'
+    const closure = "I reached the iteration limit and couldn't generate a summary."
+    // The summary came back empty: the Agent's request row ends the transcript and its closure text is only in `final_response`.
+    sidecar.respond('chat.start', (params) => completed([
+      { role: 'user', content: str(params.user_message) },
+      { role: 'assistant', content: '', tool_calls: [{ id: 'm1', type: 'function', function: { name: 'read_file', arguments: '{}' } }] },
+      { role: 'tool', tool_call_id: 'm1', content: 'x' },
+      { role: 'user', content: request },
+    ], { tool_limit_reached: true, final_response: closure, max_iterations_summary_request: request }))
+    sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Limited"', usage: null }))
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'loop forever' }))
+    const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    const done = frames.find((f) => f.event === 'done')?.data as Json
+    expect(done.terminal_reason).toBe('max_iterations')
+    expect(done.terminal_state).toBe('tool_limit_reached')
+    const stored = s.deps.sessionStore.get(sid)
+    const detail = ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages as Json[]
+    for (const messages of [(done.session as Json).messages as Json[], detail, stored.messages, stored.context_messages]) {
+      expect(messages.filter((m) => m.role === 'user').map((m) => str(m.content).endsWith('loop forever'))).toEqual([true])
+      expect(messages.at(-1)).toMatchObject({ role: 'assistant', content: closure })
+    }
+    // A /btw turn that runs out the same way answers with the closure text and carries no request row either.
+    const btw = await json(await post(s, '/api/btw', { session_id: sid, question: 'quick one' }))
+    const btwDone = (await s.sse(`/api/chat/stream?stream_id=${String(btw.stream_id)}&replay=1`, (f) => f.event === 'done')).find((f) => f.event === 'done')?.data as Json
+    expect(btwDone).toMatchObject({ ephemeral: true, answer: closure })
+    expect(((btwDone.session as Json).messages as Json[]).map((m) => m.content)).not.toContain(request)
+  })
+
+  it('keeps a user row that only repeats the summary-request text (TAL-537)', async () => {
+    const sid = await newSession(s)
+    const request = 'Please summarize what you found.'
+    sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Typed"', usage: null }))
+    const send = async (message: string): Promise<void> => {
+      const start = await json(await post(s, '/api/chat/start', { session_id: sid, message }))
+      await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    }
+    // The user's own row carries exactly the Agent's text (as one from a CLI continuation does, without the workspace prefix).
+    sidecar.respond('chat.start', (params) => completed([...params.conversation_history, { role: 'user', content: request }, { role: 'assistant', content: 'Sure.' }], { max_iterations_summary_request: request }))
+    await send(request)
+    // The next turn runs out its budget: only the Agent's own trailing request row goes.
+    sidecar.respond('chat.start', (params) => completed([...params.conversation_history, { role: 'user', content: str(params.user_message) }, { role: 'user', content: request }, { role: 'assistant', content: 'Summary.' }], { tool_limit_reached: true, max_iterations_summary_request: request }))
+    await send('dig deeper')
+    const stored = s.deps.sessionStore.get(sid)
+    for (const messages of [stored.messages, stored.context_messages]) {
+      expect(messages.filter((m) => m.role === 'user').map((m) => str(m.content).split('\n').pop())).toEqual([request, 'dig deeper'])
+    }
   })
 
   it('reports no_cached_agent for a steer against an unknown session', async () => {

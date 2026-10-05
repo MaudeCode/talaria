@@ -29,7 +29,7 @@ import { withSessionWireFlags } from './list.js'
 import { hydrateAnchorActivityScenes, turnTerminalState, withTurnIds } from './anchor.js'
 import { persistentStateChanges, persistentStateSnapshot } from './state-saved.js'
 import { maxIterationsFromConfig, maxTokensFromConfig, processWakeupMaxIterations, reasoningConfigFromConfig, webuiEphemeralSystemPrompt, workspaceSystemMessage } from './turn-context.js'
-import { agentSteerText, assistantReplyAddedAfterCurrentTurn, buildPartialMessage, escapeWorkspacePrefixPath, checkpointTurnStart, extractToolCallsFromMessages, injectMaxIterationSummaryFallback, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitDisplayText, stateDbSeenId, joinReasoning, reasoningFieldsText, stoppedTurnContext, toolOutcome, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withToolCallOutcomes, workspaceContextPrefix } from './merge.js'
+import { agentSteerText, assistantReplyAddedAfterCurrentTurn, buildPartialMessage, escapeWorkspacePrefixPath, checkpointTurnStart, extractToolCallsFromMessages, injectMaxIterationSummaryFallback, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitDisplayText, stateDbSeenId, joinReasoning, reasoningFieldsText, stoppedTurnContext, toolOutcome, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withToolCallOutcomes, withoutMaxIterationSummaryRequest, workspaceContextPrefix } from './merge.js'
 import { mayBecomeSilentReply, turnOrigin, withBackgroundUpdates } from './background-updates.js'
 import { fallbackTitleFromExchange, firstExchangeSnippets, isGenericFallbackTitle, latestExchangeSnippets, looksInvalidGeneratedTitle, looksLikeDefaultCliTitle, sanitizeGeneratedTitle, titleLanguageMismatch, titlePrompts } from './titles.js'
 import { WORKSPACE_BUSY_MESSAGE } from '../workspace/git.js'
@@ -619,7 +619,8 @@ export class TurnRunner {
       s = current
       // Python `_maybe_inject_max_iteration_summary_fallback`: an exhausted tool budget leaves the closing
       // explanation in `final_response` only, so it becomes the turn's assistant answer before anything else reads it.
-      const resultMessages = result.tool_limit_reached ? injectMaxIterationSummaryFallback(result.messages, result.final_response) : (result.messages as Message[])
+      const agentRows = result.tool_limit_reached ? injectMaxIterationSummaryFallback(result.messages, result.final_response) : (result.messages as Message[])
+      const resultMessages = result.tool_limit_reached ? withoutMaxIterationSummaryRequest(agentRows, result.max_iterations_summary_request, msgText) : agentRows
       // Python `_assistant_reply_added_after_current_turn`: replayed history never counts as this turn's answer (the
       // sidecar reports `completed` whenever a failed run still carries messages).
       // Python's second chance: a turn that emitted no new row still counts when the merged transcript it produced
@@ -653,13 +654,13 @@ export class TurnRunner {
       // TAL-512: a btw turn passes the failure check above first, so its last assistant row is this turn's reply.
       if (opts.ephemeral) {
         let answer = ''
-        for (let i = result.messages.length - 1; i >= 0; i -= 1) {
-          const m = result.messages[i]!
+        for (let i = resultMessages.length - 1; i >= 0; i -= 1) {
+          const m = resultMessages[i]!
           if (m.role === 'assistant') { answer = str(m.content); break }
         }
         opts.onDone?.(answer)
         // Python `_ephemeral_session_payload`: only role and content leave the server for a btw turn.
-        put('done', { session: { session_id: sessionId, messages: (result.messages).map((m) => ({ role: m.role, content: m.content })) }, usage: { input_tokens: 0, output_tokens: 0 }, ephemeral: true, answer, terminal_state: answer.trim() ? 'completed' : 'no_response' })
+        put('done', { session: { session_id: sessionId, messages: resultMessages.map((m) => ({ role: m.role, content: m.content })) }, usage: { input_tokens: 0, output_tokens: 0 }, ephemeral: true, answer, terminal_state: answer.trim() ? 'completed' : 'no_response' })
         try { rmSync(deps.store.pathFor(sessionId), { force: true }) } catch { /* ignore */ }
         deps.store.sessions.delete(sessionId)
         return
@@ -732,8 +733,9 @@ export class TurnRunner {
         }
       }
       this.persistConsumedSteers(s, streamId, previousStartedAt(s, activeRun), now)
-      // TAL-493: the rows this turn's Agent wrote to state.db are now in the transcript, so the merge must not replay them.
-      deps.service().settleStateDb(s, { turnId: streamId, previousContext: this.stopContexts.get(streamId)?.previousContext ?? previousContext, agentRows: resultMessages, startId: this.stopContexts.get(streamId)?.stateDbStartId ?? null })
+      // TAL-493: the rows this turn's Agent wrote to state.db are now in the transcript, so the merge must not replay them
+      // (all of them, the dropped summary request too).
+      deps.service().settleStateDb(s, { turnId: streamId, previousContext: this.stopContexts.get(streamId)?.previousContext ?? previousContext, agentRows, startId: this.stopContexts.get(streamId)?.stateDbStartId ?? null })
       deps.store.save(s)
       deps.pending.clearApprovals(sessionId)
       deps.pending.clearClarifies(sessionId)

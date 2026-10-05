@@ -653,6 +653,15 @@ def _agent_class():
     return AIAgent
 
 
+def _max_iterations_summary_request() -> str:
+    """The user row the Agent appends to ask for a summary once its tool budget runs out; the server drops it."""
+    try:
+        from agent.context_compressor import MAX_ITERATIONS_SUMMARY_REQUEST
+    except Exception:  # noqa: BLE001
+        return ""
+    return str(MAX_ITERATIONS_SUMMARY_REQUEST)
+
+
 def _supported(cls, name: str) -> bool:
     """Whether ``cls.__init__`` accepts ``name`` (named, or through ``**kwargs``)."""
     try:
@@ -1026,7 +1035,9 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             "failed": failed,
             "partial": partial,
             "compression_exhausted": bool(result.get("compression_exhausted")),
-            "tool_limit_reached": bool(result.get("tool_limit_reached") or result.get("max_iterations_reached")),
+            # The pinned Agent marks an exhausted tool budget only in ``turn_exit_reason`` (``max_iterations_reached(n/n)``).
+            "tool_limit_reached": bool(result.get("tool_limit_reached") or result.get("max_iterations_reached") or str(result.get("turn_exit_reason") or "").startswith("max_iterations_reached")),
+            "max_iterations_summary_request": _max_iterations_summary_request(),
             "usage": _usage(agent),
             "context": _context_length(agent),
             "model": str(getattr(agent, "model", None) or resolved_model),
