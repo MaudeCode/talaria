@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Talaria Web shows the Compressing context card when the Agent actually compacts the conversation, and no longer shows it or a fallback warning for skipped or completed compression notices.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
