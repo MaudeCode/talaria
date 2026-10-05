@@ -637,11 +637,24 @@ export function attachedFilesPrompt(text: string, attachments: readonly unknown[
   return named.length ? `${text}\n\n[Attached files: ${named.join(', ')}]` : text
 }
 
-/** A model context without an assistant row repeated back to back. */
+const TOOL_IMAGE_PART_TYPES = new Set(['image', 'image_url', 'input_image'])
+
+/**
+ * TAL-544, Python `_compact_image_parts_for_persistence`: a settled turn's tool-result images (browser and vision
+ * screenshots) become `[screenshot]` text, so saves, loads and later turns stop carrying the base64. User attachments stay.
+ */
+export function withoutToolImages(messages: Message[]): Message[] {
+  return messages.map((m) => {
+    if (m.role !== 'tool' || !Array.isArray(m.content) || !m.content.some((p) => isDict(p) && TOOL_IMAGE_PART_TYPES.has(p.type as string))) return m
+    return { ...m, content: m.content.map((p) => (isDict(p) && TOOL_IMAGE_PART_TYPES.has(p.type as string) ? { type: 'text', text: '[screenshot]' } : p)) }
+  })
+}
+
+/** A settled model context without an assistant row repeated back to back, and without tool-result images. */
 export function dedupeContext(messages: Message[]): Message[] {
   const out: Message[] = []
   let lastKey: string | null = null
-  for (const m of messages) {
+  for (const m of withoutToolImages(messages)) {
     const key = messageIdentity(m)
     if (key !== null && key === lastKey && m.role === 'assistant') continue
     out.push(m)

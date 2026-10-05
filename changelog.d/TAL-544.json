@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Chats where the agent took browser or vision screenshots no longer keep the image data after the reply, so they stay small, load faster, and stop resending old screenshots to the model.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

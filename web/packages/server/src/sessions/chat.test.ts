@@ -139,6 +139,29 @@ describe('chat turns through the sidecar', () => {
     expect((list.sessions as Json[]).find((r) => r.session_id === sid)).toMatchObject({ title: 'Greeting exchange', message_count: 4 })
   })
 
+  it('saves a completed turn\'s tool screenshots as text in both histories and keeps user images (TAL-544)', async () => {
+    const sid = await newSession(s)
+    const screenshot = `data:image/png;base64,${'A'.repeat(64)}`
+    const attached = 'data:image/png;base64,USERIMAGE'
+    sidecar.respond('chat.start', (params) => completed([
+      { role: 'user', content: [{ type: 'text', text: str(params.user_message) }, { type: 'image_url', image_url: { url: attached } }] },
+      { role: 'assistant', content: '', tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'browser_vision', arguments: '{}' } }] },
+      { role: 'tool', tool_call_id: 'call_1', content: [{ type: 'text', text: 'Image loaded.' }, { type: 'image_url', image_url: { url: screenshot } }, { type: 'input_image', image_url: { url: screenshot } }] },
+      { role: 'assistant', content: 'Looks fine.' },
+    ]))
+    sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Shot"', usage: null }))
+    const streamId = String((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'look' }))).stream_id)
+    await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'stream_end')
+    const saved = JSON.parse(readFileSync(s.deps.sessionStore.pathFor(sid), 'utf8')) as Json
+    for (const rows of [saved.messages, saved.context_messages] as Json[][]) {
+      const tool = rows.find((m) => m.role === 'tool')!
+      expect(tool.content).toEqual([{ type: 'text', text: 'Image loaded.' }, { type: 'text', text: '[screenshot]' }, { type: 'text', text: '[screenshot]' }])
+    }
+    expect(JSON.stringify(saved)).not.toContain(screenshot)
+    const user = (saved.context_messages as Json[]).find((m) => m.role === 'user')!
+    expect(user.content).toContainEqual({ type: 'image_url', image_url: { url: attached } })
+  })
+
   it('ships one server-computed context ring on the done usage, the terminal session, a reload, and list and search rows (TAL-299)', async () => {
     const sid = await newSession(s)
     // The provider's cumulative prompt total (900K) is never the ring's numerator.

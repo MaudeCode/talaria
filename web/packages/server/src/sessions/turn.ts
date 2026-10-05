@@ -30,7 +30,7 @@ import { withSessionWireFlags } from './list.js'
 import { hydrateAnchorActivityScenes, turnTerminalState, withTurnIds } from './anchor.js'
 import { persistentStateChanges, persistentStateSnapshot } from './state-saved.js'
 import { maxIterationsFromConfig, maxTokensFromConfig, processWakeupMaxIterations, reasoningConfigFromConfig, webuiEphemeralSystemPrompt, workspaceSystemMessage } from './turn-context.js'
-import { agentSteerText, assistantReplyAddedAfterCurrentTurn, attachedFilesPrompt, buildPartialMessage, dedupeContext, checkpointTurnStart, extractToolCallsFromMessages, injectMaxIterationSummaryFallback, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitDisplayText, stateDbSeenId, joinReasoning, reasoningFieldsText, stoppedTurnContext, toolOutcome, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withToolCallOutcomes, workspaceContextPrefix, withoutMaxIterationSummaryRequest } from './merge.js'
+import { agentSteerText, assistantReplyAddedAfterCurrentTurn, attachedFilesPrompt, buildPartialMessage, dedupeContext, checkpointTurnStart, extractToolCallsFromMessages, injectMaxIterationSummaryFallback, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitDisplayText, stateDbSeenId, joinReasoning, reasoningFieldsText, stoppedTurnContext, toolOutcome, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withToolCallOutcomes, workspaceContextPrefix, withoutMaxIterationSummaryRequest, withoutToolImages } from './merge.js'
 import { mayBecomeSilentReply, turnOrigin, withBackgroundUpdates } from './background-updates.js'
 import { fallbackTitleFromExchange, firstExchangeSnippets, isGenericFallbackTitle, latestExchangeSnippets, looksInvalidGeneratedTitle, looksLikeDefaultCliTitle, sanitizeGeneratedTitle, titleLanguageMismatch, titlePrompts } from './titles.js'
 import { WORKSPACE_BUSY_MESSAGE } from '../workspace/git.js'
@@ -684,7 +684,7 @@ export class TurnRunner {
       // The Agent's last pending-steer text settles the remaining steers before the turn is written back.
       await this.steerRewrites.get(streamId)
       const { events: steerEvents, leftovers } = this.finalizeSteers(streamId, result.pending_steer, 'followup')
-      s.messages = mergeDisplayMessagesAfterAgentResult(previousMessages, previousContext, resultMessages, msgText, { source: opts.source ?? 'webui', activeTurnToken, now: deps.now(), turnId: streamId, attachments: opts.attachments ?? [] })
+      s.messages = withoutToolImages(mergeDisplayMessagesAfterAgentResult(previousMessages, previousContext, resultMessages, msgText, { source: opts.source ?? 'webui', activeTurnToken, now: deps.now(), turnId: streamId, attachments: opts.attachments ?? [] }))
       s.context_messages = dedupeContext(context)
       if (result.compressed) {
         s.post_compression_context_tokens_estimate = estimate
