@@ -1031,21 +1031,18 @@ final class ComposerPhotoPickerUITests: ChatUITestCase {
 }
 
 /// TAL-634: pending attachments sit in a strip hanging from the composer card's top edge; removing
-/// the last one takes the strip away.
+/// the last one takes the strip away. The chat's draft restores two staged photos, so the strip
+/// does not wait on the out-of-process Photos picker (TAL-649); `ComposerPhotoPickerUITests`
+/// covers picking.
 final class ComposerAttachmentStripUITests: ChatUITestCase {
     func testAttachmentsShowInTheTopStripAndLeaveWithTheirRemoveButton() throws {
-        launchFixture()
+        launchFixture(additionalArguments: ["--ui-test-draft-attachments"])
         _ = try openFixtureSession()
         let removeButtons = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Remove attachment"))
-
-        // The same seeded photo twice gives two attachments.
-        for expected in 1...2 {
-            pickPhoto()
-            XCTAssertTrue(
-                poll(timeout: 15) { removeButtons.count == expected },
-                "Expected \(expected) attachment chips, found \(removeButtons.count)"
-            )
-        }
+        XCTAssertTrue(
+            poll(timeout: 15) { removeButtons.count == 2 },
+            "Expected 2 restored attachment chips, found \(removeButtons.count)"
+        )
 
         let strip = app.otherElements["composer-attachment-strip"]
         XCTAssertTrue(strip.exists, "The attachments are not in the top strip")
@@ -1057,22 +1054,6 @@ final class ComposerAttachmentStripUITests: ChatUITestCase {
         XCTAssertTrue(poll(timeout: 5) { removeButtons.count == 1 }, "Remove did not take the attachment away")
         tapCenter(of: removeButtons.element(boundBy: 0))
         XCTAssertTrue(strip.awaitNonExistence(timeout: 5), "The strip stayed after its last attachment was removed")
-    }
-
-    private func pickPhoto() {
-        let options = app.buttons["Composer options"]
-        XCTAssertTrue(options.awaitExistence(timeout: 5))
-        options.tap()
-        let photos = app.buttons["Photos"]
-        XCTAssertTrue(photos.awaitExistence(timeout: 5))
-        photos.tap()
-        // The picker loads out of process; its cells are labelled "Photo, <date>".
-        let photo = app.images.matching(NSPredicate(format: "label BEGINSWITH[c] %@", "Photo")).firstMatch
-        XCTAssertTrue(photo.awaitExistence(timeout: 20), "The Photos picker showed no photo")
-        photo.tap()
-        let done = app.buttons["Done"]
-        XCTAssertTrue(done.awaitExistence(timeout: 5), "The Photos picker offered no Done")
-        done.tap()
     }
 }
 
