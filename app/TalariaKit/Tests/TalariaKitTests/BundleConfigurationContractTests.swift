@@ -204,6 +204,28 @@ final class BundleConfigurationContractTests: XCTestCase {
         }
     }
 
+    /// TAL-330: Talaria Dev installs beside the App Store/TestFlight app with its own IDs, name and DEV-banner icon.
+    func testDevConfigurationSwapsIdentityNameAndIcon() throws {
+        let shared = try sourceFile("Config/Shared.xcconfig")
+        let dev = try sourceFile("Config/Dev.xcconfig")
+        let project = try projectFile()
+        assertOccurrences(of: "APP_ICON_NAME = Talaria\n", count: 1, in: shared)
+        assertOccurrences(of: "ASSETCATALOG_COMPILER_APPICON_NAME = \"$(APP_ICON_NAME)\";", count: 2, in: project)
+        for setting in [
+            "APP_IDENTIFIER_SUFFIX = .branch\n",
+            "APP_DISPLAY_NAME = Talaria Dev\n",
+            "APP_URL_SCHEME_SUFFIX = -branch\n",
+            "APP_ICON_NAME = TalariaDev\n"
+        ] {
+            assertOccurrences(of: setting, count: 1, in: dev)
+        }
+        for icon in ["Talaria", "TalariaDev"] {
+            assertOccurrences(of: "/* \(icon).icon in Resources */,", count: 1, in: project)
+            let document = repositoryRoot.appendingPathComponent("Talaria/Resources/\(icon).icon/icon.json")
+            XCTAssertTrue(FileManager.default.fileExists(atPath: document.path), "\(icon).icon is missing")
+        }
+    }
+
     private func propertyList(_ relativePath: String) throws -> [String: Any] {
         let url = repositoryRoot.appendingPathComponent(relativePath)
         let data = try Data(contentsOf: url)

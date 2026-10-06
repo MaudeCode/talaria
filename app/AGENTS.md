@@ -52,7 +52,7 @@ Talaria is a native SwiftUI iPhone client for a self-hosted Talaria Web server
 ## Validation and handoff
 
 - For XCTest and simulator validation, use `$talaria-ios-testing`.
-- For signed physical-iPhone builds, installs, or launches, use
+- To deliver a build to a physical iPhone (DevApps or USB install), use
   `$talaria-device-deploy`.
 - Report files changed, validation commands and results, and any unresolved risk.
   For docs-only changes, `git diff --check` is sufficient.

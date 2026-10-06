@@ -13,6 +13,8 @@ APP_GROUP_IDENTIFIER = group.dev.kil.talaria$(APP_IDENTIFIER_SUFFIX)
 // Must be enabled on the App ID in Certificates, Identifiers & Profiles; see
 // docs/icloud-sync-setup.md.
 ICLOUD_CONTAINER_IDENTIFIER = iCloud.dev.kil.talaria$(APP_IDENTIFIER_SUFFIX)
+// Primary Icon Composer icon; Config/Dev.xcconfig swaps in the DEV-banner icon.
+APP_ICON_NAME = Talaria
 
 // Optional per-machine overrides. This include must stay last: later
 // assignments win, so Local.xcconfig values override the defaults above.

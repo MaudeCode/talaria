@@ -194,6 +194,23 @@ Recognized variables:
 - `TALARIA_SWIFT_FILE_SIZE_LIMIT` — warning threshold for `scripts/check-swift-file-sizes`.
 - `HERMES_WEBUI_BASE_URL` and `HERMES_WEBUI_PASSWORD` — server credentials for `scripts/webui-json`.
 
+## Talaria Dev
+
+Development builds for the maintainer's iPhone use the side-by-side Talaria Dev
+identity in `Config/Dev.xcconfig`: bundle ID `dev.kil.talaria.branch` (plus its
+`.shareextension` and `.liveactivitywidget`), App Group and iCloud container
+`*.dev.kil.talaria.branch`, URL scheme `talaria-branch`, display name
+`Talaria Dev` and the DEV-banner icon `Talaria/Resources/TalariaDev.icon`. It
+has its own data and server setup, so it never replaces the App Store or
+TestFlight app.
+
+- `scripts/publish-devapps --ticket TAL-<n> --ticket-title <title> --title <build title> --notes <notes>`
+  archives Talaria Dev, exports a `release-testing` IPA and publishes it to
+  <https://devapps.thezoo.house/apps/talaria-branch/>. This is the normal way to
+  deliver a build to the phone.
+- `scripts/run-ios-device` installs a Debug Talaria Dev build over USB or local
+  Wi-Fi and refuses any other bundle ID.
+
 ## Signing with your own Apple team
 
 The committed signing identity (`DEVELOPMENT_TEAM`, bundle IDs) belongs to the

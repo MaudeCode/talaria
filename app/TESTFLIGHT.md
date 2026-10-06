@@ -60,13 +60,13 @@ These are owner actions in App Store Connect:
 ## Branch TestFlight builds
 
 When the owner asks to **"push to branch testflight"**, upload the current
-feature branch to the side-by-side `Talaria Branch` app. This is a TestFlight
-upload, not a Git push; never touch the production app unless asked. The branch
-app uses bundle ID `dev.kil.talaria.branch` (extensions
+feature branch to the side-by-side Talaria Dev app (`Config/Dev.xcconfig`, see
+DEVELOPMENT.md). This is a TestFlight upload, not a Git push; never touch the
+production app unless asked. Talaria Dev uses bundle ID `dev.kil.talaria.branch` (extensions
 `dev.kil.talaria.branch.shareextension` and
 `dev.kil.talaria.branch.liveactivitywidget`), App Group
-`group.dev.kil.talaria.branch`, URL scheme `talaria-branch` and display name
-`Talaria Branch`.
+`group.dev.kil.talaria.branch`, URL scheme `talaria-branch`, display name
+`Talaria Dev` and the DEV-banner icon.
 
 1. Validate the branch: at least `git diff --check` and a simulator build.
 2. Archive with a unique build number, for example `YYYYMMDDHHMM`:
@@ -74,7 +74,7 @@ app uses bundle ID `dev.kil.talaria.branch` (extensions
    ```zsh
    xcodebuild -project Talaria.xcodeproj -scheme Talaria -configuration Release \
      -destination 'generic/platform=iOS' -archivePath build/TalariaBranch.xcarchive \
-     -xcconfig Config/BranchTestFlight.xcconfig CURRENT_PROJECT_VERSION=<unique-build-number> \
+     -xcconfig Config/Dev.xcconfig CURRENT_PROJECT_VERSION=<unique-build-number> \
      archive -allowProvisioningUpdates
    ```
 
