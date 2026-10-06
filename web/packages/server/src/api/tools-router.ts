@@ -17,7 +17,7 @@ import { notesSources } from '../tools/mcp.js'
 import { buildInsights } from '../tools/insights.js'
 import { commandCatalog } from '../tools/commands.js'
 import { agentHealth, dashboardStatus, readLogTail, systemHealth } from '../tools/health.js'
-import { normalizeChannel } from '../tools/updates.js'
+import { normalizeChannel, updatesCheckView } from '../tools/updates.js'
 import { pyBool } from '../settings.js'
 import { str } from '../util.js'
 import type { UpdateNotificationScope, UpdateNotificationTarget } from '../tools/update-notifications.js'
@@ -308,17 +308,17 @@ export const toolsRouter = os.router({
   updates: {
     check: os.updates.check.handler(({ context: { ctx } }) => run(() => {
       const settings = ctx.deps.settings.load()
-      if (settings.check_for_updates === false) return { disabled: true as const }
-      return ctx.deps.updates.cachedStatus(!pyBool(settings.ignore_agent_updates)) as never
+      if (settings.check_for_updates === false) return updatesCheckView({ disabled: true }) as never
+      return updatesCheckView(ctx.deps.updates.cachedStatus(!pyBool(settings.ignore_agent_updates))) as never
     })),
     checkNow: os.updates.checkNow.handler(({ input, context: { ctx } }) => run(async () => {
       const settings = ctx.deps.settings.load()
       const force = pyBool(input.force)
-      if (settings.check_for_updates === false && !force) return { disabled: true as const }
+      if (settings.check_for_updates === false && !force) return updatesCheckView({ disabled: true }) as never
       // An explicit body channel wins over a debounced, not-yet-saved setting.
       const channel = input.channel === 'stable' || input.channel === 'experimental' ? input.channel : normalizeChannel(settings.update_channel)
       ctx.deps.log(`[updates] checking for updates (force=${String(force)}, channel=${channel})`)
-      return (await ctx.deps.updates.check(force, !pyBool(settings.ignore_agent_updates), channel, input.agent_channel)) as never
+      return updatesCheckView(await ctx.deps.updates.check(force, !pyBool(settings.ignore_agent_updates), channel, input.agent_channel)) as never
     })),
     apply: os.updates.apply.handler(({ input, context: { ctx } }) => run(() => { const target = updateTarget(input.target); return applyWithNotification(ctx, target, () => ctx.deps.updates.apply(target, bodyChannel(input.channel), () => true, { agentChannel: input.agent_channel, confirmedRevision: input.confirmed_agent_revision }), input.confirmed_agent_revision !== undefined, input.tab_id) as never })),
     force: os.updates.force.handler(({ input, context: { ctx } }) => run(() => { const target = updateTarget(input.target); return applyWithNotification(ctx, target, () => ctx.deps.updates.force(target, bodyChannel(input.channel), { agentChannel: input.agent_channel, confirmedRevision: input.confirmed_agent_revision }), input.confirmed_agent_revision !== undefined, input.tab_id) as never })),

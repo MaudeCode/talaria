@@ -72,6 +72,9 @@ struct UpdateTargetInfo: Decodable, Equatable {
     let compareUrl: String?
     let error: String?
     let staleCheck: Bool?
+    /// TAL-559: the server-decided status and apply availability; nil from a server that predates them.
+    let state: String?
+    let canApply: Bool?
 }
 
 extension UpdatesCheckResponse {
@@ -91,6 +94,8 @@ extension UpdatesCheckResponse {
     public enum ForcedCheckOutcome: Equatable {
         case updateAvailable(behind: Int)
         case upToDate
+        /// The server reports a newer state it cannot apply itself (a manual install or local changes).
+        case manual
         /// Update checks are turned off on this server (`{ "disabled": true }`).
         case disabled
         /// The check failed, returned a stale result, or omitted the webui block.
@@ -106,6 +111,19 @@ extension UpdatesCheckResponse {
             return .error
         }
 
+        if let state = webui.state {
+            if webui.canApply == true {
+                return .updateAvailable(behind: webui.behind ?? 0)
+            }
+            switch state {
+            case "up_to_date": return .upToDate
+            case "off": return .disabled
+            case "manual", "local_changes", "release_ready", "commits_behind", "finish": return .manual
+            default: return .error
+            }
+        }
+
+        // Old-server fallback: delete once a Stable server ships `state` (TAL-559).
         if webui.error != nil || webui.staleCheck == true {
             return .error
         }
@@ -126,7 +144,7 @@ extension UpdatesCheckResponse {
             return .updateAvailable(behind: behind)
         case .upToDate:
             return .upToDate
-        case .disabled, .error:
+        case .manual, .disabled, .error:
             return .unavailable
         }
     }

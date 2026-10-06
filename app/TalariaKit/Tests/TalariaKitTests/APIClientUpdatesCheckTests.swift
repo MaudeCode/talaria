@@ -154,6 +154,40 @@ final class APIClientUpdatesCheckTests: APIClientTestCase {
         XCTAssertEqual(response.webuiUpdateState, .unavailable)
     }
 
+    func testServerStateDecidesTheOutcome() throws {
+        // TAL-559: the server's state and can_apply win over the raw fields.
+        let cases: [(String, UpdatesCheckResponse.ForcedCheckOutcome)] = [
+            (#"{ "behind": 3, "state": "commits_behind", "can_apply": true }"#, .updateAvailable(behind: 3)),
+            (#"{ "behind": 0, "metadata_repair": true, "state": "finish", "can_apply": true }"#, .updateAvailable(behind: 0)),
+            (#"{ "behind": 0, "state": "up_to_date", "can_apply": false }"#, .upToDate),
+            (#"{ "behind": 2, "manual_update": true, "state": "manual", "can_apply": false }"#, .manual),
+            (#"{ "behind": 1, "dirty": true, "state": "local_changes", "can_apply": false }"#, .manual),
+            (#"{ "behind": 0, "error": "fetch failed", "state": "check_failed", "can_apply": false }"#, .error),
+            (#"{ "behind": null, "state": "unknown", "can_apply": false }"#, .error),
+            (#"{ "behind": 5, "stale_check": true, "state": "commits_behind", "can_apply": true }"#, .updateAvailable(behind: 5)),
+        ]
+        for (webui, expected) in cases {
+            let response = try decodeUpdatesCheck(#"{ "webui": \#(webui) }"#)
+            XCTAssertEqual(response.forcedCheckOutcome, expected, webui)
+        }
+    }
+
+    func testManualServerStateShowsNoUpdateIndicator() throws {
+        let response = try decodeUpdatesCheck("""
+        { "webui": { "behind": 2, "manual_update": true, "state": "manual", "can_apply": false } }
+        """)
+
+        XCTAssertEqual(response.webuiUpdateState, .unavailable)
+    }
+
+    func testDisabledPayloadWithOffTargetsStaysDisabled() throws {
+        let response = try decodeUpdatesCheck("""
+        { "disabled": true, "webui": { "state": "off", "can_apply": false }, "agent": { "state": "off", "can_apply": false } }
+        """)
+
+        XCTAssertEqual(response.forcedCheckOutcome, .disabled)
+    }
+
     private func decodeUpdatesCheck(_ json: String) throws -> UpdatesCheckResponse {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase

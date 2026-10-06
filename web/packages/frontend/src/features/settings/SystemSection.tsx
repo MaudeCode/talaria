@@ -96,15 +96,12 @@ export function SystemSection() {
   const canManage = bootstrap.auth.can_manage_server
   const passwordLocked = bool('password_env_var')
   const webUpdate = updates.data?.webui
-  const canApplyWeb = ((webUpdate?.behind ?? 0) > 0 || webUpdate?.metadata_repair === true) && !webUpdate?.error && !webUpdate?.manual_update && (!webUpdate?.no_git || webUpdate?.install_kind === 'npm')
   const agentUpdate = updates.data?.agent
-  const canApplyAgent = (agentUpdate?.behind ?? 0) > 0 && !agentUpdate?.error && !agentUpdate?.manual_update && !agentUpdate?.no_git && !bool('ignore_agent_updates') && !updates.data?.disabled
-  const updatesOff = updates.data?.disabled === true
   // One failed poll is a transport blip, not a failed check: keep rendering the last server payload
   // while it still answers the selected channels.
   const cachedCurrent = updates.data !== undefined && (updates.data.channel ?? channel) === channel && (updates.data.agent_channel ?? agentChannel) === agentChannel
-  const webStatus = pathStatus(webUpdate, WEB, { off: updatesOff, failed: updates.isError && !cachedCurrent, pending: updates.isPending, dirtyBlocks: true })
-  const agentStatus = pathStatus(agentUpdate, AGENT, { off: updatesOff || bool('ignore_agent_updates'), failed: updates.isError && !cachedCurrent, pending: updates.isPending, dirtyBlocks: false })
+  const webStatus = pathStatus(webUpdate, WEB, { failed: updates.isError && !cachedCurrent, pending: updates.isPending })
+  const agentStatus = pathStatus(agentUpdate, AGENT, { failed: updates.isError && !cachedCurrent, pending: updates.isPending })
   const heading = 'text-[15px] font-semibold text-text'
   return (
     <div className="flex flex-col gap-9" data-section="system">
@@ -119,8 +116,8 @@ export function SystemSection() {
               <option value="stable">{m.settings_update_channel_stable()}</option>
               <option value="experimental">{m.settings_update_channel_experimental()}</option>
             </Select>}
-            action={canManage && canApplyWeb ? <Button variant="primary" onClick={() => applyWeb.mutate({})} disabled={applyWeb.isPending}>{applyWeb.isPending ? m.update_updating() : webUpdate?.metadata_repair ? m.system_finish_update() : m.system_apply_web_update()}</Button> : null}
-            manualLink={webUpdate?.manual_update && (webUpdate.error || webUpdate.dirty || webUpdate.behind !== 0)}>
+            action={canManage && webUpdate?.can_apply ? <Button variant="primary" onClick={() => applyWeb.mutate({})} disabled={applyWeb.isPending}>{applyWeb.isPending ? m.update_updating() : webUpdate.state === 'finish' ? m.system_finish_update() : m.system_apply_web_update()}</Button> : null}
+            manualLink={webUpdate?.manual_link === true}>
             <FieldRow label={m.settings_label_auto_apply_updates()} hint={m.system_auto_apply_hint()} htmlFor="settingsAutoApplyUpdates" inline><Switch id="settingsAutoApplyUpdates" disabled={!canManage || !bool('check_for_updates', true)} checked={bool('auto_apply_updates')} onCheckedChange={(checked) => set({ auto_apply_updates: checked })} /></FieldRow>
           </UpdatePath>
           <UpdatePath id="systemAgentPath" title={AGENT} installed={agentUpdate?.current_version ?? str('agent_version', '—')} status={agentStatus}
@@ -128,9 +125,9 @@ export function SystemSection() {
               <option value="stable">{m.settings_update_channel_stable()}</option>
               <option value="experimental">{m.settings_update_channel_experimental()}</option>
             </Select>}
-            action={canManage && canApplyAgent ? <Button variant="primary" onClick={() => applyAgent.mutate({})} disabled={applyAgent.isPending}>{applyAgent.isPending ? m.update_updating() : m.system_apply_agent_update()}</Button> : null}
-            warning={canApplyAgent && agentUpdate?.unsupported === true ? m.system_agent_unsupported_warning() : null}>
-            <FieldRow label={m.settings_label_ignore_agent_updates()} hint={m.system_agent_manual_hint()} htmlFor="settingsIgnoreAgentUpdates" inline><Switch id="settingsIgnoreAgentUpdates" checked={bool('ignore_agent_updates')} onCheckedChange={(checked) => set({ ignore_agent_updates: checked })} /></FieldRow>
+            action={canManage && agentUpdate?.can_apply ? <Button variant="primary" onClick={() => applyAgent.mutate({})} disabled={applyAgent.isPending}>{applyAgent.isPending ? m.update_updating() : m.system_apply_agent_update()}</Button> : null}
+            warning={agentUpdate?.can_apply && agentUpdate.unsupported === true ? m.system_agent_unsupported_warning() : null}>
+            <FieldRow label={m.settings_label_ignore_agent_updates()} hint={m.system_agent_manual_hint()} htmlFor="settingsIgnoreAgentUpdates" inline><Switch id="settingsIgnoreAgentUpdates" checked={bool('ignore_agent_updates')} onCheckedChange={(checked) => save.mutate({ ignore_agent_updates: checked }, { onError: fail, onSettled: () => { void qc.invalidateQueries({ queryKey: keys.updates.check }) } })} /></FieldRow>
           </UpdatePath>
         </div>
         <div className="border-t border-border-subtle pt-1">
@@ -203,28 +200,24 @@ type Tone = 'update' | 'ok' | 'warn' | 'quiet'
 interface PathStatus { tone: Tone; text: string; target?: string | undefined; detail?: string | undefined }
 
 /** One component's update state in the words its channel uses: Stable names releases, Experimental counts commits. */
-// Web refuses dirty checkouts; Agent updates stash local changes and restore them, so only Web reports dirty as blocking.
-function pathStatus(t: Target | null | undefined, name: string, { off, failed, pending, dirtyBlocks }: { off: boolean; failed: boolean; pending: boolean; dirtyBlocks: boolean }): PathStatus {
-  const latest = typeof t?.latest_version === 'string' ? t.latest_version : undefined
-  const release = t?.release_based === true
-  const message = typeof t?.message === 'string' ? t.message : undefined
-  if (off) return { tone: 'quiet', text: m.system_checks_off({ name }) }
+function pathStatus(t: Target | null | undefined, name: string, { failed, pending }: { failed: boolean; pending: boolean }): PathStatus {
   if (pending && !t) return { tone: 'quiet', text: m.system_checking_named({ name }) }
-  if (failed || t?.error) return { tone: 'warn', text: m.system_check_failed_named({ name }), detail: t?.error }
+  if (failed) return { tone: 'warn', text: m.system_check_failed_named({ name }), detail: t?.error }
   if (!t) return { tone: 'quiet', text: m.system_status_unknown_named({ name }) }
-  if (t.dirty && dirtyBlocks) return { tone: 'warn', text: m.system_local_changes_named({ name }), detail: message }
-  if (t.metadata_repair) return { tone: 'update', text: m.system_finish_named({ name }), target: latest, detail: message }
-  if (t.manual_update) return { tone: 'warn', text: m.system_manual_named({ name }), target: (t.behind ?? 0) > 0 && release ? latest : undefined, detail: message }
-  if ((t.behind ?? 0) > 0) return release
-    ? { tone: 'update', text: m.system_release_ready({ name, version: latest ?? '—' }), target: latest, detail: installedUnverified(t) ? m.system_installed_unverified() : undefined }
-    : { tone: 'update', text: m.system_commits_behind({ name, n: t.behind ?? 0 }) }
-  if (t.behind === 0) return { tone: 'ok', text: m.system_up_to_date_named({ name }) }
-  if (t.no_git && t.install_kind !== 'npm') return { tone: 'quiet', text: m.system_manual_named({ name }) }
-  return { tone: 'quiet', text: m.system_status_unknown_named({ name }) }
+  const target = t.target_version ?? undefined
+  const detail = typeof t.message === 'string' ? t.message : undefined
+  switch (t.state) {
+    case 'off': return { tone: 'quiet', text: m.system_checks_off({ name }) }
+    case 'check_failed': return { tone: 'warn', text: m.system_check_failed_named({ name }), detail: t.error }
+    case 'local_changes': return { tone: 'warn', text: m.system_local_changes_named({ name }), detail }
+    case 'finish': return { tone: 'update', text: m.system_finish_named({ name }), target, detail }
+    case 'manual': return { tone: 'warn', text: m.system_manual_named({ name }), target, detail }
+    case 'release_ready': return { tone: 'update', text: m.system_release_ready({ name, version: target ?? '—' }), target, detail: t.installed_unverified ? m.system_installed_unverified() : undefined }
+    case 'commits_behind': return { tone: 'update', text: m.system_commits_behind({ name, n: t.behind ?? 0 }) }
+    case 'up_to_date': return { tone: 'ok', text: m.system_up_to_date_named({ name }) }
+    case 'unknown': return { tone: 'quiet', text: m.system_status_unknown_named({ name }) }
+  }
 }
-
-/** Stable Agent reports a bare 12-hex revision when its checkout sits on no release tag. */
-const installedUnverified = (t: Target) => !t.current_version || /^[0-9a-f]{12}$/.test(t.current_version)
 
 const NODE: Record<Tone | 'installed', string> = {
   installed: 'border-text bg-text',

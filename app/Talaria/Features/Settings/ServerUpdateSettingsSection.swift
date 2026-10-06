@@ -117,8 +117,9 @@ private extension ServerUpdateSettingsSection {
 
     private var forcedCheckAlertTitle: String {
         switch forcedCheckOutcome {
-        case let .updateAvailable(behind): String(localized: "Update available · \(behind) behind")
+        case let .updateAvailable(behind): Self.updateAvailableText(behind: behind)
         case .upToDate: String(localized: "You're up to date")
+        case .manual: String(localized: "Update on the server")
         case .disabled: String(localized: "Update checks are off")
         case .error, .none: String(localized: "Couldn't check for updates")
         }
@@ -130,6 +131,8 @@ private extension ServerUpdateSettingsSection {
             String(localized: "This pulls the latest Hermes server version and restarts it. Active chats may be interrupted briefly; the app reconnects when the server is back.")
         case .upToDate:
             String(localized: "The Hermes server is running the latest version.")
+        case .manual:
+            String(localized: "This server can't update itself from the app. Update it where it's installed.")
         case .disabled:
             String(localized: "Update checks are turned off on this server.")
         case .error, .none:
@@ -144,11 +147,16 @@ private extension ServerUpdateSettingsSection {
             case .upToDate:
                 updateNoteRow(systemImage: "checkmark.circle", tint: .secondary, text: String(localized: "Up to date"))
             case let .updateAvailable(behind):
-                updateNoteRow(systemImage: "arrow.up.circle", tint: .blue, text: String(localized: "Update available · \(behind) behind"))
+                updateNoteRow(systemImage: "arrow.up.circle", tint: .blue, text: Self.updateAvailableText(behind: behind))
             case .unavailable:
                 EmptyView()
             }
         }
+    }
+
+    /// A finish step leaves nothing behind, so it has no count.
+    private static func updateAvailableText(behind: Int) -> String {
+        behind > 0 ? String(localized: "Update available · \(behind) behind") : String(localized: "Update available")
     }
 
     private func updateNoteRow(systemImage: String, tint: Color, text: String) -> some View {

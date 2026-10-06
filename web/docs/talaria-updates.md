@@ -130,8 +130,10 @@ If that backup fails, the switch is aborted and the installed package is kept.
 
 Linked, local, npx-cache, container, and mismatched-prefix packaged installs remain
 manual. Containers use the immutable image digest from the completed
-manifest. Settings distinguishes a failed check, an unknown status, local changes,
-and an available automatic update; manual installations link to the releases page.
+manifest. `/api/updates/check` decides each target's `state` (up to date, release
+ready, commits behind, local changes, finish, manual, check failed, off, unknown),
+`can_apply`, `installed_unverified`, `manual_link`, and `target_version`; Web and
+the App only word those fields. Manual installations link to the releases page.
 
 Validation lives in `packages/server/src/tools/updates.test.ts` and the frontend
 System settings/browser tests. Source tests own their repositories, tags, worktrees, locks, and state;

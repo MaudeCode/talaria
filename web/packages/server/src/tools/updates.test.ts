@@ -18,7 +18,7 @@ import { WEB_ROOT } from '../test/harness.js'
 import { RESTART_EXIT_CODE, supervise } from '../cli/supervise.js'
 import {
   applyAgentUpdate, applyWebUpdate, checkAgentUpdate, checkWebUpdate, forceAgentUpdate, githubJson, inventoryLocks, npmInstallInfo, publishedWebRelease, ReleaseUnavailable,
-  REPOSITORY_URL, runGit, sanitizeGitDiagnostic, UpdateService, waitUntilRestartSafe, type BuildRun, type GetJson, type GitRun, type PublishedRelease, type ReleaseIdentity, type RestartBlockers, type UpdateServiceDeps,
+  REPOSITORY_URL, runGit, sanitizeGitDiagnostic, UpdateService, updatesCheckView, updateTargetView, waitUntilRestartSafe, type BuildRun, type GetJson, type GitRun, type PublishedRelease, type ReleaseIdentity, type RestartBlockers, type UpdateServiceDeps,
 } from './updates.js'
 
 const GIT_ENV = { GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: 'Synthetic', GIT_COMMITTER_NAME: 'Synthetic', GIT_AUTHOR_EMAIL: 'synthetic@example.invalid', GIT_COMMITTER_EMAIL: 'synthetic@example.invalid' }
@@ -1020,5 +1020,40 @@ describe('restart when safe', () => {
     const lines: string[] = []
     expect(await supervise({ command: [process.execPath, '-e', script], env: process.env, log: (l) => lines.push(l), restartDelayMs: 0 })).toBe(3)
     expect(lines).toEqual(['[serve] restarting the server with the updated source'])
+  })
+})
+
+describe('update status view (TAL-559)', () => {
+  const view = (name: 'webui' | 'agent', info: Dict, off = false): Dict => {
+    const v = updateTargetView(name, info, off)
+    return { state: v.state, can_apply: v.can_apply, installed_unverified: v.installed_unverified, manual_link: v.manual_link, target_version: v.target_version }
+  }
+  const row = (state: string, can_apply = false, extra: Dict = {}): Dict => ({ state, can_apply, installed_unverified: false, manual_link: false, target_version: null, ...extra })
+  it.each<[string, 'webui' | 'agent', Dict, boolean, Dict]>([
+    ['up to date', 'webui', { behind: 0 }, false, row('up_to_date')],
+    ['Stable release ready', 'webui', { behind: 1, release_based: true, current_version: 'web-v1.2.3', latest_version: 'web-v1.3.0', install_kind: 'npm', no_git: true, manual_update: false }, false, row('release_ready', true, { target_version: 'web-v1.3.0' })],
+    ['Stable Agent off a release tag', 'agent', { behind: 3, release_based: true, current_version: 'abcdef012345', latest_version: 'v2026.9.30' }, false, row('release_ready', true, { installed_unverified: true, target_version: 'v2026.9.30' })],
+    ['Stable Agent with no version', 'agent', { behind: 3, release_based: true, latest_version: 'v2026.9.30' }, false, row('release_ready', true, { installed_unverified: true, target_version: 'v2026.9.30' })],
+    ['Experimental commits behind', 'agent', { behind: 14, release_based: false, latest_version: 'main' }, false, row('commits_behind', true)],
+    ['dirty Web checkout', 'webui', { behind: 1, manual_update: true, dirty: true }, false, row('local_changes', false, { manual_link: true })],
+    ['dirty Agent checkout still applies', 'agent', { behind: 2, dirty: true }, false, row('commits_behind', true)],
+    ['current npm package needs its finish step', 'webui', { behind: 0, metadata_repair: true, latest_version: 'web-v1.3.0', no_git: true, install_kind: 'npm' }, false, row('finish', true, { target_version: 'web-v1.3.0' })],
+    ['finish step on a manual install', 'webui', { behind: 0, metadata_repair: true, manual_update: true }, false, row('finish')],
+    ['contributor checkout', 'webui', { behind: null, manual_update: true, no_git: false }, false, row('manual', false, { manual_link: true })],
+    ['npm install ahead of Stable', 'webui', { behind: 0, manual_update: true, no_git: true, install_kind: 'npm' }, false, row('manual')],
+    ['manual Stable release behind', 'webui', { behind: 2, release_based: true, manual_update: true, latest_version: 'web-v1.3.0' }, false, row('manual', false, { manual_link: true, target_version: 'web-v1.3.0' })],
+    ['divergent Agent checkout', 'agent', { behind: 0, manual_update: true }, false, row('manual')],
+    ['Agent without a checkout', 'agent', { behind: null, no_git: true }, false, row('manual')],
+    ['failed check', 'webui', { behind: null, manual_update: true, error: 'release metadata unavailable' }, false, row('check_failed', false, { manual_link: true })],
+    ['failed Agent fetch', 'agent', { behind: null, error: 'fetch failed', dirty: true }, false, row('check_failed')],
+    ['ignored Agent', 'agent', { name: 'agent', behind: 0, ignored: true }, false, row('off')],
+    ['disabled checks', 'webui', { behind: 3, manual_update: true }, true, row('off')],
+    ['unknown count', 'webui', { behind: null }, false, row('unknown')],
+  ])('%s', (_label, name, info, off, expected) => { expect(view(name, info, off)).toEqual(expected) })
+
+  it('keeps every target field and leaves a missing target null unless checks are off', () => {
+    const status = updatesCheckView({ cached: true, webui: { name: 'webui', behind: 1, current_version: 'web-v1' }, agent: null })
+    expect(status).toMatchObject({ cached: true, webui: { name: 'webui', behind: 1, current_version: 'web-v1', state: 'commits_behind', can_apply: true }, agent: null })
+    expect(updatesCheckView({ disabled: true })).toMatchObject({ disabled: true, webui: { state: 'off', can_apply: false }, agent: { state: 'off', can_apply: false } })
   })
 })

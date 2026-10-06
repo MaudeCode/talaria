@@ -39959,8 +39959,53 @@
                             },
                             "current_version": {
                               "type": "string"
+                            },
+                            "state": {
+                              "enum": [
+                                "up_to_date",
+                                "release_ready",
+                                "commits_behind",
+                                "local_changes",
+                                "finish",
+                                "manual",
+                                "check_failed",
+                                "off",
+                                "unknown"
+                              ],
+                              "type": "string",
+                              "description": "TAL-559: the status clients word; `off` when checks are disabled or Agent updates are ignored."
+                            },
+                            "can_apply": {
+                              "type": "boolean",
+                              "description": "The apply action is available for this target."
+                            },
+                            "installed_unverified": {
+                              "type": "boolean",
+                              "description": "`release_ready` only: the installed revision sits on no release tag."
+                            },
+                            "manual_link": {
+                              "type": "boolean",
+                              "description": "Show the manual-install (releases) link."
+                            },
+                            "target_version": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "The version the update path leads to, when one is shown."
                             }
                           },
+                          "required": [
+                            "state",
+                            "can_apply",
+                            "installed_unverified",
+                            "manual_link",
+                            "target_version"
+                          ],
                           "additionalProperties": {}
                         },
                         {
@@ -40069,8 +40114,53 @@
                             },
                             "current_version": {
                               "type": "string"
+                            },
+                            "state": {
+                              "enum": [
+                                "up_to_date",
+                                "release_ready",
+                                "commits_behind",
+                                "local_changes",
+                                "finish",
+                                "manual",
+                                "check_failed",
+                                "off",
+                                "unknown"
+                              ],
+                              "type": "string",
+                              "description": "TAL-559: the status clients word; `off` when checks are disabled or Agent updates are ignored."
+                            },
+                            "can_apply": {
+                              "type": "boolean",
+                              "description": "The apply action is available for this target."
+                            },
+                            "installed_unverified": {
+                              "type": "boolean",
+                              "description": "`release_ready` only: the installed revision sits on no release tag."
+                            },
+                            "manual_link": {
+                              "type": "boolean",
+                              "description": "Show the manual-install (releases) link."
+                            },
+                            "target_version": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "The version the update path leads to, when one is shown."
                             }
                           },
+                          "required": [
+                            "state",
+                            "can_apply",
+                            "installed_unverified",
+                            "manual_link",
+                            "target_version"
+                          ],
                           "additionalProperties": {}
                         },
                         {
@@ -40252,8 +40342,53 @@
                             },
                             "current_version": {
                               "type": "string"
+                            },
+                            "state": {
+                              "enum": [
+                                "up_to_date",
+                                "release_ready",
+                                "commits_behind",
+                                "local_changes",
+                                "finish",
+                                "manual",
+                                "check_failed",
+                                "off",
+                                "unknown"
+                              ],
+                              "type": "string",
+                              "description": "TAL-559: the status clients word; `off` when checks are disabled or Agent updates are ignored."
+                            },
+                            "can_apply": {
+                              "type": "boolean",
+                              "description": "The apply action is available for this target."
+                            },
+                            "installed_unverified": {
+                              "type": "boolean",
+                              "description": "`release_ready` only: the installed revision sits on no release tag."
+                            },
+                            "manual_link": {
+                              "type": "boolean",
+                              "description": "Show the manual-install (releases) link."
+                            },
+                            "target_version": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "The version the update path leads to, when one is shown."
                             }
                           },
+                          "required": [
+                            "state",
+                            "can_apply",
+                            "installed_unverified",
+                            "manual_link",
+                            "target_version"
+                          ],
                           "additionalProperties": {}
                         },
                         {
@@ -40362,8 +40497,53 @@
                             },
                             "current_version": {
                               "type": "string"
+                            },
+                            "state": {
+                              "enum": [
+                                "up_to_date",
+                                "release_ready",
+                                "commits_behind",
+                                "local_changes",
+                                "finish",
+                                "manual",
+                                "check_failed",
+                                "off",
+                                "unknown"
+                              ],
+                              "type": "string",
+                              "description": "TAL-559: the status clients word; `off` when checks are disabled or Agent updates are ignored."
+                            },
+                            "can_apply": {
+                              "type": "boolean",
+                              "description": "The apply action is available for this target."
+                            },
+                            "installed_unverified": {
+                              "type": "boolean",
+                              "description": "`release_ready` only: the installed revision sits on no release tag."
+                            },
+                            "manual_link": {
+                              "type": "boolean",
+                              "description": "Show the manual-install (releases) link."
+                            },
+                            "target_version": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "The version the update path leads to, when one is shown."
                             }
                           },
+                          "required": [
+                            "state",
+                            "can_apply",
+                            "installed_unverified",
+                            "manual_link",
+                            "target_version"
+                          ],
                           "additionalProperties": {}
                         },
                         {
