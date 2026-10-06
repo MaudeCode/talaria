@@ -29,6 +29,9 @@ struct SessionListView: View {
     @State private var updateNotificationViewModel: UpdateNotificationCenterViewModel
     @State private var sectionViewModels: SectionViewModels
     @State private var navigationState: SessionNavigationState
+    /// The detail root a page was pushed over (TAL-643).
+    @State private var coveredRegularDetail: RegularDetailIdentity?
+    @State private var regularSplitRevision = 0
     @State private var sessionPendingRename: SessionSummary?
     @State private var sessionPendingDeletion: SessionSummary?
     @State private var isConfirmingBulkDelete = false
@@ -476,18 +479,27 @@ struct SessionListView: View {
                     // default Dynamic Type.
                     .navigationSplitViewColumnWidth(min: 340, ideal: 380, max: 440)
             } detail: {
-                NavigationStack {
-                    regularWidthDetail
-                }
                 // Only the detail rebuilds for a new destination or item, so the sidebar keeps its
                 // scroll position, search text and selection.
-                .id(navigationState.rootRevision)
-                .id(navigationState.displayedItem)
+                NavigationStack {
+                    regularDetailRoot
+                }
+                .id(regularDetailIdentity)
+            }
+            .onChange(of: regularDetailIdentity) { oldIdentity, _ in
+                // The split view keeps pages pushed in its detail column across a new root, so a
+                // detail that changes under a pushed page needs the whole split view rebuilt.
+                guard coveredRegularDetail == oldIdentity else { return }
+                coveredRegularDetail = nil
+                regularSplitRevision += 1
             }
             .navigationSplitViewStyle(.balanced)
-            // Showing the sidebar column again after a full-width section left it without its
-            // navigation bar, so the split view starts fresh when its columns change.
-            .id(navigationState.section.isFullWidth)
+            // Starts fresh when its columns change, since showing the sidebar column again after a
+            // full-width section left it without its navigation bar, and to drop covered pages.
+            .id(RegularSplitIdentity(
+                isFullWidth: navigationState.section.isFullWidth,
+                revision: regularSplitRevision
+            ))
             .environment(\.openArchivedSession) { session in
                 selectSession(session, in: .archived)
             }
@@ -513,6 +525,24 @@ struct SessionListView: View {
                     }
             }
         }
+    }
+
+    /// Records when a page is pushed over the detail root, which hides it without replacing it.
+    private var regularDetailRoot: some View {
+        let identity = regularDetailIdentity
+        return regularWidthDetail
+            .onAppear {
+                if coveredRegularDetail == identity { coveredRegularDetail = nil }
+            }
+            .onDisappear {
+                // A replaced root disappears too; only one still current is covered.
+                guard identity == regularDetailIdentity else { return }
+                coveredRegularDetail = identity
+            }
+    }
+
+    private var regularDetailIdentity: RegularDetailIdentity {
+        RegularDetailIdentity(rootRevision: navigationState.rootRevision, item: navigationState.displayedItem)
     }
 
     /// Kanban and Insights have no list, so they take the whole width.
@@ -1925,4 +1955,14 @@ private struct SectionViewModels {
 private enum CompactSectionPage: Hashable {
     case item(SectionItem)
     case providerQuotaWidget
+}
+
+private struct RegularDetailIdentity: Hashable {
+    let rootRevision: Int
+    let item: SectionItem?
+}
+
+private struct RegularSplitIdentity: Hashable {
+    let isFullWidth: Bool
+    let revision: Int
 }

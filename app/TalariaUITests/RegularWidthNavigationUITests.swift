@@ -60,6 +60,16 @@ final class RegularWidthNavigationUITests: TalariaUITestCase {
         XCTAssertTrue(app.buttons["settings-category-liveActivitiesAndWidgets"].isSelected, "The sub-page left the list")
         app.navigationBars["Customization"].buttons.firstMatch.tap()
         XCTAssertTrue(app.navigationBars["Live Activities & Widgets"].awaitExistence(timeout: Self.navigationTimeout))
+
+        // Another category replaces the whole detail stack, sub-page included.
+        tapSettingsRow(label: "Provider Quotas")
+        XCTAssertTrue(app.navigationBars["Customization"].awaitExistence(timeout: Self.navigationTimeout))
+        tapCenter(of: app.buttons["settings-category-about"])
+        XCTAssertTrue(app.navigationBars["About"].awaitExistence(timeout: Self.navigationTimeout))
+        XCTAssertTrue(
+            app.navigationBars["Customization"].awaitNonExistence(timeout: Self.navigationTimeout),
+            "The previous category's sub-page stayed over the new category"
+        )
     }
 
     func testMemoryListsItsFilesBesideTheOpenFile() throws {
@@ -202,6 +212,9 @@ final class RegularWidthNavigationUITests: TalariaUITestCase {
             "Opening an archived chat must leave Settings"
         )
         XCTAssertTrue(app.navigationBars["Archived Chats"].exists, "The archived list must stay beside its chat")
+        XCTAssertNotNil(waitForComposer(timeout: Self.navigationTimeout), "The archived chat must open in the detail column")
+        XCTAssertEqual(app.navigationBars["Archived Chats"].buttons.matching(identifier: "BackButton").count, 0,
+                       "The Settings stack's Archived page stayed over the chat")
         XCTAssertTrue(app.buttons.containing(.staticText, identifier: "Fixture Archived Session").firstMatch.isSelected)
         attachScreen(named: "Archived chat beside its list")
     }
