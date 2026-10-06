@@ -48,7 +48,7 @@ export function serverSummary(name: string, cfg: unknown, runtime: Dict | null):
   const rt = runtime ?? {}
   const out: Dict = { name }
   if (!isDict(cfg)) {
-    return { ...out, transport: 'invalid', timeout: 120, connect_timeout: 60, enabled: false, active: false, status: 'invalid_config', tool_count: null, health: 'not_checked', health_detail: '', health_checked_at: null, health_pending: false }
+    return { ...out, transport: 'invalid', timeout: 120, connect_timeout: 60, enabled: false, can_toggle: false, active: false, status: 'invalid_config', tool_count: null, health: 'not_checked', health_detail: '', health_checked_at: null, health_pending: false }
   }
   let enabled = parseEnabled(cfg.enabled)
   let connected = enabled && Boolean(rt.connected)
@@ -69,6 +69,7 @@ export function serverSummary(name: string, cfg: unknown, runtime: Dict | null):
   out.timeout = cfg.timeout ?? 120
   out.connect_timeout = cfg.connect_timeout ?? 60
   out.enabled = enabled
+  out.can_toggle = out.transport !== 'invalid'
   out.active = connected
   out.status = out.transport === 'invalid' ? 'invalid_config' : !enabled ? 'disabled' : connected ? 'active' : 'configured'
   out.tool_count = runtime ? (typeof rt.tools === 'number' ? rt.tools : Array.isArray(rt.tools) ? rt.tools.length : null) : null
@@ -203,8 +204,8 @@ export class McpService {
     await this.deps.config.update(profileHome, (c) => {
       const servers = dict(c.mcp_servers)
       if (!(name in servers)) throw new HttpFailure(404, `MCP server '${name}' not found`)
-      if (!isDict(servers[name])) throw new HttpFailure(400, `MCP server '${name}' has invalid config`)
-      servers[name] = { ...servers[name], enabled }
+      if (!serverSummary(name, servers[name], null).can_toggle) throw new HttpFailure(400, `MCP server '${name}' has invalid config`)
+      servers[name] = { ...dict(servers[name]), enabled }
       c.mcp_servers = servers
     })
     return { ok: true, name, enabled }

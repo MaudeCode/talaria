@@ -39615,6 +39615,10 @@
                           "enabled": {
                             "type": "boolean"
                           },
+                          "can_toggle": {
+                            "type": "boolean",
+                            "description": "Whether PATCH can enable or disable this server; false for invalid config."
+                          },
                           "active": {
                             "type": "boolean"
                           },
@@ -39878,6 +39882,10 @@
                         },
                         "enabled": {
                           "type": "boolean"
+                        },
+                        "can_toggle": {
+                          "type": "boolean",
+                          "description": "Whether PATCH can enable or disable this server; false for invalid config."
                         },
                         "active": {
                           "type": "boolean"

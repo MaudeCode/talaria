@@ -63,7 +63,7 @@ export function McpSection({ heading }: { heading: string }) {
                     </div>
                     {typeof s.tool_count === 'number' && <div className="text-[11px] text-muted">{m.mcp_tool_count({ a0: String(s.tool_count) })}</div>}
                   </div>
-                  {servers.data.toggle_supported && (
+                  {servers.data.toggle_supported && s.can_toggle === true && (
                     <Switch checked={s.enabled !== false} disabled={toggle.isPending} onCheckedChange={(enabled) => toggle.mutate({ name: s.name, enabled })} aria-label={`${s.name}: ${s.enabled !== false ? m.mcp_enabled_yes() : m.mcp_enabled_no()}`} />
                   )}
                 </li>

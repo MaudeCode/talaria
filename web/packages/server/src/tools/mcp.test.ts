@@ -35,4 +35,15 @@ describe('MCP tool inventory', () => {
     expect(await names('notes by')).toEqual({ names: ['search'], total: 3 })
     expect(await names('nothing')).toEqual({ names: [], total: 3 })
   })
+
+  it('a server with invalid config cannot be toggled: the row says so and the PATCH is rejected without writing', async () => {
+    const cfg: Record<string, unknown> = { mcp_servers: { incomplete: { timeout: 5 }, broken: 'oops', ok: { command: 'ok-mcp' } } }
+    const config = { read: () => Promise.resolve(cfg), update: (_home: string, fn: (c: Record<string, unknown>) => void) => { fn(cfg); return Promise.resolve() } } as unknown as AgentConfig
+    const service = new McpService({ sidecar: () => null, config })
+    const rows = (await service.servers('/profiles/a')).servers as { name: string; can_toggle: boolean }[]
+    expect(Object.fromEntries(rows.map((r) => [r.name, r.can_toggle]))).toEqual({ incomplete: false, broken: false, ok: true })
+    await expect(service.toggle('/profiles/a', 'incomplete', true)).rejects.toMatchObject({ status: 400 })
+    expect(cfg.mcp_servers).toEqual({ incomplete: { timeout: 5 }, broken: 'oops', ok: { command: 'ok-mcp' } })
+    await expect(service.toggle('/profiles/a', 'ok', false)).resolves.toEqual({ ok: true, name: 'ok', enabled: false })
+  })
 })

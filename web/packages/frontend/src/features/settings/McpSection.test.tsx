@@ -7,7 +7,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 const enabled: Record<string, boolean> = { github: true }
 const TOOLS = [{ name: 'create_issue', server: 'github', description: 'Open an issue', status: 'active' }, { name: 'list_pulls', server: 'github', description: 'List pull requests', status: 'active' }]
 vi.mock('../../api/endpoints', () => ({
-  fetchMcpServers: vi.fn(() => Promise.resolve({ toggle_supported: true, reload_required: true, servers: Object.entries(enabled).map(([name, on]) => ({ name, transport: 'stdio', enabled: on, status: on ? 'active' : 'disabled', health: on ? 'unhealthy' : 'not_checked', tool_count: on ? 2 : null })) })),
+  fetchMcpServers: vi.fn(() => Promise.resolve({ toggle_supported: true, reload_required: true, servers: Object.entries(enabled).map(([name, on]) => ({ name, transport: 'stdio', enabled: on, status: on ? 'active' : 'disabled', can_toggle: true, health: on ? 'unhealthy' : 'not_checked', tool_count: on ? 2 : null })) })),
   fetchMcpTools: vi.fn((q: string) => Promise.resolve({ tools: TOOLS.filter((t) => !q || t.name.includes(q)), total: TOOLS.length })),
   toggleMcpServer: vi.fn((name: string, on: boolean) => { enabled[name] = on; return Promise.resolve({ ok: true, name, enabled: on }) }),
 }))

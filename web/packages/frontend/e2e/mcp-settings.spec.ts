@@ -13,7 +13,7 @@ const TOOLS = [
 for (const width of [1280, 390]) {
   test(`MCP servers toggle through PATCH and tool search filters at ${String(width)}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 1400 })
-    const config: Record<string, Record<string, unknown>> = { github: { command: 'gh-mcp', args: ['serve'] }, notes: { url: 'https://notes.example/mcp', enabled: false } }
+    const config: Record<string, Record<string, unknown>> = { github: { command: 'gh-mcp', args: ['serve'] }, notes: { url: 'https://notes.example/mcp', enabled: false }, broken: { timeout: 5 } }
     const patches: unknown[] = []
     const queries: string[] = []
     await page.route('**/api/mcp/servers', (route) => route.fulfill({ json: {
@@ -39,6 +39,9 @@ for (const width of [1280, 390]) {
     await expect(github).toContainText('Active')
     await expect(github).toContainText('Needs sign-in')
     await expect(notes).toContainText('Disabled')
+    const broken = page.locator('[data-mcp-server="broken"]')
+    await expect(broken).toContainText('Invalid config')
+    await expect(broken.getByRole('switch')).toHaveCount(0)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     await page.getByRole('heading', { name: 'MCP Servers' }).scrollIntoViewIfNeeded()
     await page.screenshot({ path: testInfo.outputPath(`mcp-${String(width)}.png`) })
