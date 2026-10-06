@@ -4,10 +4,9 @@ import TalariaKit
 struct SkillCategorySection: View {
     let category: String
     let skills: [SkillSummary]
-    let server: URL
+    @Binding var selection: SectionItem?
     let togglingSkillNames: Set<String>
     let onToggleSkill: (SkillSummary, Bool) async -> Void
-    let onAPIError: (Error) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -22,18 +21,16 @@ struct SkillCategorySection: View {
                     let onToggle: ((Bool) -> Void)? = canToggle(skill) ? { enabled in
                         Task { await onToggleSkill(skill, enabled) }
                     } : nil
-                    NavigationLink {
-                        SkillDetailView(
-                            skill: skill,
-                            server: server,
-                            onAPIError: onAPIError
-                        )
+                    // Selecting opens the skill beside the list or pushes it (TAL-643).
+                    Button {
+                        selection = .skill(id: skill.id)
                     } label: {
                         SkillRow(skill: skill, isToggling: isToggling(skill), onToggle: onToggle)
                     }
                     .buttonStyle(.plain)
-                    // The switch sits over the link, where it lines up with the slot SkillRow
-                    // keeps for it, rather than inside the link's label: there the link could
+                    .selectedRowBackground(selection == .skill(id: skill.id))
+                    // The switch sits over the row button, where it lines up with the slot SkillRow
+                    // keeps for it, rather than inside the button's label: there the button could
                     // take a tap on the switch and open the skill instead (TAL-647).
                     .overlay(alignment: .topTrailing) {
                         if let onToggle {

@@ -34,6 +34,9 @@ public final class SkillsViewModel {
             let response = try await client.skills(caching: responseCache?.entry(ResponseCache.Kind.skills))
             skills = response.skills ?? []
         } catch {
+            // The view model outlives its screen (TAL-643), so a rebuilt screen's cancelled
+            // load must not replace what the new load shows.
+            guard !APIError.isCancellation(error) else { return }
             lastError = error
             errorMessage = error.localizedDescription
         }

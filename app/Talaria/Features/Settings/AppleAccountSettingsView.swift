@@ -5,48 +5,35 @@ import TalariaKit
 /// The one account row above the Settings category directory: Sign in with
 /// Apple for both iCloud Sync (TAL-91) and Talaria Relay (TAL-97).
 struct AppleAccountSettingsRow: View {
-    @Bindable var authManager: AuthManager
-    let server: URL
     private var coordinator = ConfigurationSyncCoordinator.shared
 
-    init(authManager: AuthManager, server: URL) {
-        self.authManager = authManager
-        self.server = server
-    }
-
     var body: some View {
-        NavigationLink {
-            AppleAccountSettingsView(authManager: authManager, server: server)
-        } label: {
-            HStack(spacing: 12) {
-                Image(systemName: "apple.logo")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .frame(width: 40, height: 40)
-                    .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .accessibilityHidden(true)
+        HStack(spacing: 12) {
+            Image(systemName: "apple.logo")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.primary)
+                .frame(width: 40, height: 40)
+                .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .accessibilityHidden(true)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Apple Account")
-                        .font(.body.weight(.semibold))
-                    Group {
-                        if coordinator.isSignedInWithApple {
-                            Text(coordinator.status.summary)
-                        } else {
-                            Text("Sign in for iCloud sync, remote Live Activities, and alerts")
-                        }
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Apple Account")
+                    .font(.body.weight(.semibold))
+                Group {
+                    if coordinator.isSignedInWithApple {
+                        Text(coordinator.status.summary)
+                    } else {
+                        Text("Sign in for iCloud sync, remote Live Activities, and alerts")
                     }
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
                 }
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             }
-            .frame(minHeight: 48)
-            .accessibilityElement(children: .combine)
         }
+        .frame(minHeight: 48)
+        .accessibilityElement(children: .combine)
         .task { coordinator.adoptRelayIdentityIfNeeded() }
-        .accessibilityHint("Opens Apple account, iCloud sync, and Talaria Relay settings.")
-        .accessibilityIdentifier("settings-apple-account")
     }
 }
 

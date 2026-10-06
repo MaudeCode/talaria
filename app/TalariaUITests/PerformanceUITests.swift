@@ -48,21 +48,10 @@ class PerformanceUITestCase: TalariaUITestCase {
         )).tap()
     }
 
-    func waitForComposer(timeout: TimeInterval = 30) -> Bool {
-        let idle = app.buttons["Message"]
-        let expanded = app.textViews.firstMatch
-        let deadline = Date().addingTimeInterval(timeout)
-        repeat {
-            if idle.exists || expanded.exists { return true }
-            Thread.sleep(forTimeInterval: 0.1)
-        } while Date() < deadline
-        return false
-    }
-
     func openDenseSession() {
         waitForSessionList()
         tapCentre(of: denseSessionRow)
-        XCTAssertTrue(waitForComposer(), "The dense fixture session never opened")
+        XCTAssertTrue(waitForComposer(timeout: 30) != nil, "The dense fixture session never opened")
     }
 }
 
@@ -134,7 +123,7 @@ final class TranscriptPerformanceUITests: PerformanceUITestCase {
 
             startMeasuring()
             tapCentre(of: denseSessionRow)
-            XCTAssertTrue(waitForComposer(), "The dense fixture session never opened")
+            XCTAssertTrue(waitForComposer(timeout: 30) != nil, "The dense fixture session never opened")
             stopMeasuring()
 
             app.navigationBars.buttons["BackButton"].firstMatch.tap()
@@ -155,7 +144,7 @@ final class TranscriptPerformanceUITests: PerformanceUITestCase {
 
             startMeasuring()
             tapCentre(of: denseSessionRow)
-            XCTAssertTrue(waitForComposer(), "The long-body fixture session never opened")
+            XCTAssertTrue(waitForComposer(timeout: 30) != nil, "The long-body fixture session never opened")
             stopMeasuring()
 
             app.navigationBars.buttons["BackButton"].firstMatch.tap()
@@ -197,7 +186,7 @@ final class NavigationPerformanceUITests: PerformanceUITestCase {
         ) {
             for _ in 0..<3 {
                 tapCentre(of: denseSessionRow)
-                XCTAssertTrue(waitForComposer(), "The dense fixture session never opened")
+                XCTAssertTrue(waitForComposer(timeout: 30) != nil, "The dense fixture session never opened")
                 app.navigationBars.buttons["BackButton"].firstMatch.tap()
                 XCTAssertTrue(
                     app.navigationBars["Chats"].awaitExistence(timeout: 15),

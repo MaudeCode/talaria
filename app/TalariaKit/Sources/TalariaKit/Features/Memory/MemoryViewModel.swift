@@ -26,6 +26,9 @@ public final class MemoryViewModel {
     /// True while the screen shows the last saved memory rather than the server's (TAL-437).
     /// Saves carry no version check, so editing waits for the live content.
     public private(set) var isShowingCachedContent = false
+    /// The section open in the editor. The file page presents it and the list's live refresh
+    /// waits for it, so both columns read one value (TAL-643).
+    public var editingSection: MemorySection?
 
     private let client: APIClient
     private let responseCache: ResponseCache?
@@ -50,6 +53,9 @@ public final class MemoryViewModel {
             apply(response)
             isShowingCachedContent = false
         } catch {
+            // The view model outlives its screen (TAL-643), so a rebuilt screen's cancelled
+            // load must not replace what the new load shows.
+            guard !APIError.isCancellation(error) else { return }
             lastError = error
             errorMessage = error.localizedDescription
         }

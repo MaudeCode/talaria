@@ -27,6 +27,7 @@ struct SessionListView: View {
     @State private var viewModel: SessionListViewModel
     @State private var quotaViewModel: ProvidersViewModel
     @State private var updateNotificationViewModel: UpdateNotificationCenterViewModel
+    @State private var sectionViewModels: SectionViewModels
     @State private var navigationState: SessionNavigationState
     @State private var sessionPendingRename: SessionSummary?
     @State private var sessionPendingDeletion: SessionSummary?
@@ -120,6 +121,7 @@ struct SessionListView: View {
         ))
         _quotaViewModel = State(initialValue: ProvidersViewModel(server: server))
         _updateNotificationViewModel = State(initialValue: UpdateNotificationCenterViewModel(server: server))
+        _sectionViewModels = State(initialValue: SectionViewModels(server: server))
         #if DEBUG
         _isPresentingUpdateNotifications = State(
             initialValue: ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.updateNotificationsArgument)
@@ -162,6 +164,14 @@ struct SessionListView: View {
             ZStack {
                 Color(.systemBackground)
                 navigationContainer
+            }
+            .onChange(of: horizontalSizeClass) { _, sizeClass in
+                // Closing an iPhone Duo or narrowing an iPad window keeps the open page (TAL-643).
+                guard sizeClass == .compact else { return }
+                navigationState.pinDisplayedItem()
+            }
+            .onChange(of: viewModel.activeProfileName) {
+                sectionViewModels = SectionViewModels(server: server)
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
@@ -456,38 +466,91 @@ struct SessionListView: View {
     @ViewBuilder
     private var navigationContainer: some View {
         if horizontalSizeClass == .regular {
-            // The App drawer button is the sessions column's only sidebar control, so the
-            // column stays visible instead of offering the system toggle beside it (TAL-482).
-            NavigationSplitView(columnVisibility: .constant(.all)) {
-                sessionListSurface
+            // The section decides both columns (TAL-643). The drawer button leads the first visible
+            // column, so the system sidebar toggle stays hidden (TAL-482).
+            NavigationSplitView(columnVisibility: regularColumnVisibility) {
+                regularWidthSidebar
                     .toolbar(removing: .sidebarToggle)
-                    // 340pt is the narrowest width where "Scheduled sessions", a "200+" count
-                    // and the chevron fit at default Dynamic Type.
+                    // Every section's sidebar shares this one column width. 340pt is the narrowest
+                    // width where "Scheduled sessions", a "200+" count and the chevron fit at
+                    // default Dynamic Type.
                     .navigationSplitViewColumnWidth(min: 340, ideal: 380, max: 440)
             } detail: {
                 NavigationStack {
                     regularWidthDetail
                 }
+                // Only the detail rebuilds for a new destination or item, so the sidebar keeps its
+                // scroll position, search text and selection.
+                .id(navigationState.rootRevision)
+                .id(navigationState.displayedItem)
             }
             .navigationSplitViewStyle(.balanced)
-            .id(navigationState.rootRevision)
+            // Showing the sidebar column again after a full-width section left it without its
+            // navigation bar, so the split view starts fresh when its columns change.
+            .id(navigationState.section.isFullWidth)
+            .environment(\.openArchivedSession) { session in
+                selectSession(session, in: .archived)
+            }
         } else if let utility = navigationState.destination?.compactRootUtility {
             NavigationStack {
-                utilityDestination(utility)
+                withDrawerButton(sectionRoot(AppSection(utility)))
                     .background(NavigationBarLeadingMarginObserver())
-                    .toolbar {
-                        ToolbarItem(placement: .topBarLeading) {
-                            sidebarButton
-                        }
+                    .navigationDestination(item: $navigationState.selectedItem) { item in
+                        sectionItemPage(item)
                     }
             }
         } else {
             NavigationStack {
-                sessionListSurface
+                withDrawerButton(sessionListSurface)
                     .background(NavigationBarLeadingMarginObserver())
                     .navigationDestination(item: navigationDestinationBinding) { destination in
                         navigationDestination(destination)
                     }
+            }
+        }
+    }
+
+    /// Kanban and Insights have no list, so they take the whole width.
+    private var regularColumnVisibility: Binding<NavigationSplitViewVisibility> {
+        .constant(navigationState.section.isFullWidth ? .detailOnly : .all)
+    }
+
+    @ViewBuilder
+    private var regularWidthSidebar: some View {
+        let section = navigationState.section
+        Group {
+            if section == .chats {
+                sessionListSurface
+            } else if section.isFullWidth {
+                Color.clear
+            } else {
+                sectionRoot(section)
+            }
+        }
+        .toolbar {
+            // A full-width section's hidden column must not hold a second drawer button.
+            if !section.isFullWidth {
+                ToolbarItem(placement: .topBarLeading) {
+                    sidebarButton
+                }
+            }
+            if section.chatList != nil {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        navigationState.returnToChats()
+                    } label: {
+                        Label("Chats", systemImage: "chevron.backward")
+                            .labelStyle(.titleAndIcon)
+                    }
+                }
+            }
+        }
+    }
+
+    private func withDrawerButton(_ content: some View) -> some View {
+        content.toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                sidebarButton
             }
         }
     }
@@ -528,10 +591,6 @@ struct SessionListView: View {
         )
         .minimizingSearchToolbar()
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                sidebarButton
-            }
-
             if updateNotificationViewModel.supportsNotifications {
                 ToolbarItem(placement: .topBarTrailing) {
                     updateNotificationsButton
@@ -604,8 +663,17 @@ struct SessionListView: View {
 
     @ViewBuilder
     private var regularWidthDetail: some View {
-        if let destination = navigationState.destination {
-            navigationDestination(destination)
+        let section = navigationState.section
+        if section.isFullWidth {
+            withDrawerButton(sectionRoot(section))
+        } else if let item = navigationState.displayedItem {
+            sectionItemPage(item)
+        } else if section == .skills {
+            ContentUnavailableView("Select a Skill", systemImage: "hammer")
+        } else if section == .tasks {
+            ContentUnavailableView("Select a Task", systemImage: "calendar.badge.clock")
+        } else if let chat = regularWidthChat {
+            navigationDestination(chat)
         } else {
             ContentUnavailableView {
                 Label("Select a Chat", systemImage: "bubble.left.and.bubble.right")
@@ -616,6 +684,12 @@ struct SessionListView: View {
                     .buttonStyle(.borderedProminent)
             }
         }
+    }
+
+    /// The chat or new chat beside a chat list; a list's own destination leaves nothing open yet.
+    private var regularWidthChat: SessionNavigationDestination? {
+        if case .utility = navigationState.destination { return nil }
+        return navigationState.destination
     }
 
     @ViewBuilder
@@ -645,47 +719,45 @@ struct SessionListView: View {
             )
             .id(route.id)
         case .utility(let destination):
-            utilityDestination(destination)
+            sectionRoot(AppSection(destination))
         }
     }
 
+    /// A section's list, or its whole screen when it has none: the sidebar column at regular
+    /// width and the stack root at compact width (TAL-643).
     @ViewBuilder
-    private func utilityDestination(_ destination: SessionListUtilityDestination) -> some View {
+    private func sectionRoot(_ section: AppSection) -> some View {
         Group {
-            switch destination {
-            case .settings(let scrollTo):
-                SettingsView(authManager: authManager, server: server, initialScrollTarget: scrollTo)
-            case .providers(let sourceID):
-                InsightsView(
-                    server: server,
-                    quotaViewModel: quotaViewModel,
-                    initialQuotaSourceID: sourceID,
-                    openProviderSettings: {
-                        navigationState.select(.settings(.providerQuotas))
-                    },
-                    onAPIError: { authManager.handleAPIError($0, server: server) }
-                )
-            case .providerQuotaWidgetSettings:
-                ProviderQuotaWidgetAppearanceView()
-            case .tasks:
-                TasksView(server: server, onAPIError: { authManager.handleAPIError($0, server: server) })
-            case .kanban:
-                KanbanView(server: server, onAPIError: { authManager.handleAPIError($0, server: server) })
-            case .skills:
-                SkillsView(server: server, onAPIError: { authManager.handleAPIError($0, server: server) })
+            switch section {
+            case .chats:
+                // The sessions list is its own surface in both width branches.
+                EmptyView()
+            case .settings:
+                SettingsView(server: server, selection: sectionSelection)
             case .memory:
-                MemoryView(server: server, onAPIError: { authManager.handleAPIError($0, server: server) })
+                MemoryView(viewModel: sectionViewModels.memory, selection: sectionSelection, onAPIError: handleAPIError)
+            case .skills:
+                SkillsView(viewModel: sectionViewModels.skills, selection: sectionSelection, onAPIError: handleAPIError)
+            case .tasks:
+                TasksView(viewModel: sectionViewModels.tasks, selection: sectionSelection, onAPIError: handleAPIError)
+            case .kanban:
+                KanbanView(server: server, onAPIError: handleAPIError)
             case .insights:
                 InsightsView(
                     server: server,
                     quotaViewModel: quotaViewModel,
+                    initialQuotaSourceID: insightsQuotaSourceID,
                     openProviderSettings: {
                         navigationState.select(.settings(.providerQuotas))
                     },
-                    onAPIError: { authManager.handleAPIError($0, server: server) }
+                    onAPIError: handleAPIError
                 )
             case .archived:
-                ArchivedSessionsView(server: server, onAPIError: { authManager.handleAPIError($0, server: server) })
+                ArchivedSessionsView(
+                    server: server,
+                    onAPIError: handleAPIError,
+                    selectedSessionID: horizontalSizeClass == .regular ? navigationState.selectedSessionID : nil
+                )
             case .scheduled:
                 GroupedSessionsView(
                     title: String(localized: "Scheduled sessions"),
@@ -698,7 +770,7 @@ struct SessionListView: View {
                     selectedSessionID: horizontalSizeClass == .regular
                         ? navigationState.selectedSessionID
                         : nil,
-                    actions: sessionRowActions
+                    actions: sessionRowActions(in: .scheduled)
                 )
             case .webhook:
                 GroupedSessionsView(
@@ -712,13 +784,71 @@ struct SessionListView: View {
                     selectedSessionID: horizontalSizeClass == .regular
                         ? navigationState.selectedSessionID
                         : nil,
-                    actions: sessionRowActions
+                    actions: sessionRowActions(in: .webhook)
                 )
             }
         }
         // Each screen reads its profile's data; a switch rebuilds it for the new profile (TAL-553).
         .id(viewModel.activeProfileName)
         .adaptiveSecondaryNavigationTitle()
+    }
+
+    /// The page a section list's item opens: beside the list at regular width, pushed over it at
+    /// compact width.
+    @ViewBuilder
+    private func sectionItemPage(_ item: SectionItem) -> some View {
+        Group {
+            switch item {
+            case .settings(let pane):
+                SettingsPaneView(authManager: authManager, server: server, pane: pane)
+                    .navigationDestination(isPresented: $navigationState.pushesProviderQuotaWidget) {
+                        ProviderQuotaWidgetAppearanceView()
+                    }
+            case .memory(let file):
+                MemoryFileView(viewModel: sectionViewModels.memory, file: file, onAPIError: handleAPIError)
+            case .skill(let id):
+                if let skill = sectionViewModels.skills.skills.first(where: { $0.id == id }) {
+                    SkillDetailView(skill: skill, server: server, onAPIError: handleAPIError)
+                } else {
+                    ContentUnavailableView("Select a Skill", systemImage: "hammer")
+                }
+            case .task(let id):
+                let tasks = sectionViewModels.tasks
+                if let job = tasks.jobs.first(where: { $0.id == id }) {
+                    TaskDetailView(
+                        job: job,
+                        runningElapsed: tasks.runningElapsed(for: job),
+                        server: server,
+                        onAPIError: handleAPIError,
+                        onMutation: { tasks.apply($0) }
+                    )
+                } else {
+                    ContentUnavailableView("Select a Task", systemImage: "calendar.badge.clock")
+                }
+            }
+        }
+        .id(viewModel.activeProfileName)
+        .adaptiveSecondaryNavigationTitle()
+    }
+
+    /// A section list's selection. At regular width it includes the default item the detail
+    /// column shows; at compact width it is only the pushed item.
+    private var sectionSelection: Binding<SectionItem?> {
+        Binding(
+            get: {
+                horizontalSizeClass == .regular ? navigationState.displayedItem : navigationState.selectedItem
+            },
+            set: { navigationState.selectedItem = $0 }
+        )
+    }
+
+    private var insightsQuotaSourceID: String? {
+        guard case .utility(.providers(let sourceID)) = navigationState.destination else { return nil }
+        return sourceID
+    }
+
+    private func handleAPIError(_ error: Error) {
+        authManager.handleAPIError(error, server: server)
     }
 
     private var navigationDestinationBinding: Binding<SessionNavigationDestination?> {
@@ -775,7 +905,7 @@ struct SessionListView: View {
                         ? navigationState.selectedSessionID
                         : nil,
                     userIsExpanded: $scheduledSessionsAreExpanded,
-                    actions: sessionRowActions,
+                    actions: sessionRowActions(),
                     viewAll: { navigationState.select(.scheduled) }
                 )
             }
@@ -799,7 +929,7 @@ struct SessionListView: View {
                         ? navigationState.selectedSessionID
                         : nil,
                     userIsExpanded: $webhookSessionsAreExpanded,
-                    actions: sessionRowActions,
+                    actions: sessionRowActions(),
                     viewAll: { navigationState.select(.webhook) }
                 )
             }
@@ -816,7 +946,7 @@ struct SessionListView: View {
                 selectedSessionID: horizontalSizeClass == .regular
                     ? navigationState.selectedSessionID
                     : nil,
-                actions: sessionRowActions,
+                actions: sessionRowActions(),
                 suppressEmptyState: !scheduledSessionGroups.scheduled.isEmpty
                     || !scheduledSessionGroups.webhook.isEmpty
             )
@@ -1030,9 +1160,10 @@ struct SessionListView: View {
         SessionListAutoRefresh.TaskID(
             server: server,
             isSceneActive: scenePhase == .active,
-            // In regular width the sidebar stays beside the detail column, so
-            // the list is only off screen when a compact destination has
-            // replaced or covered it.
+            // In regular width the list keeps polling in every section, as it did
+            // while it stayed beside them, so returning to Chats needs no restart;
+            // in compact width it is off screen once a destination replaces or
+            // covers it.
             isListVisible: horizontalSizeClass == .regular
                 || navigationState.destination == nil
                 || navigationState.destination?.showsSessionListRows == true
@@ -1285,13 +1416,14 @@ struct SessionListView: View {
         )
     }
 
-    private var sessionRowActions: SessionListRowActions {
+    /// `list` is the chat list the rows belong to; a chat opened from it keeps it in the sidebar.
+    private func sessionRowActions(in list: AppSection = .chats) -> SessionListRowActions {
         SessionListRowActions(
             retryLoad: {
                 Task { await refreshSessionsAndActiveProfile() }
             },
             open: { session in
-                Task { await openSession(session) }
+                Task { await openSession(session, in: list) }
             },
             togglePinned: { session in
                 Task { await togglePinned(session) }
@@ -1354,6 +1486,8 @@ struct SessionListView: View {
     private func openSearchFromKeyboard() {
         if horizontalSizeClass != .regular {
             navigationState.clearDestination()
+        } else if navigationState.section != .chats {
+            navigationState.returnToChats()
         }
 
         Task { @MainActor in
@@ -1667,7 +1801,7 @@ struct SessionListView: View {
     /// External sessions are imported (or refreshed) server-side before navigation,
     /// so the opened session carries the server's authoritative writability. A failed
     /// import stays on the list and surfaces through the action-error alert.
-    private func openSession(_ session: SessionSummary) async {
+    private func openSession(_ session: SessionSummary, in list: AppSection = .chats) async {
         let navigationRevision = navigationState.rootRevision
         guard let resolvedSession = await viewModel.sessionToOpen(
             for: session,
@@ -1682,11 +1816,11 @@ struct SessionListView: View {
         // Any destination chosen while the import was in flight — New Chat, a
         // utility, another row — is newer than this one and must not be replaced.
         guard navigationRevision == navigationState.rootRevision else { return }
-        selectSession(resolvedSession)
+        selectSession(resolvedSession, in: list)
     }
 
-    private func selectSession(_ session: SessionSummary) {
-        navigationState.select(session)
+    private func selectSession(_ session: SessionSummary, in list: AppSection = .chats) {
+        navigationState.select(session, in: list)
         persistLastSelectedSession()
     }
 
@@ -1746,4 +1880,19 @@ private struct ActiveSessionMonitorTaskID: Hashable {
     let streamIDs: [String]
     let hasActiveRows: Bool
     let isViewingCachedData: Bool
+}
+
+/// View models a section's list and its item page share, so both columns at regular width read
+/// one load (TAL-643). Rebuilt when the active profile changes, with the screens (TAL-553).
+@MainActor
+private struct SectionViewModels {
+    let memory: MemoryViewModel
+    let skills: SkillsViewModel
+    let tasks: TasksViewModel
+
+    init(server: URL) {
+        memory = MemoryViewModel(server: server, responseCache: .app(server: server))
+        skills = SkillsViewModel(server: server, responseCache: .app(server: server))
+        tasks = TasksViewModel(server: server, responseCache: .app(server: server))
+    }
 }

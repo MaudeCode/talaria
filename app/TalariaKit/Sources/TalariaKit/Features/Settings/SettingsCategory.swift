@@ -62,8 +62,3 @@ public enum SettingsCategory: String, Identifiable {
         }
     }
 }
-
-public enum SettingsDestination: Hashable {
-    case servers
-    case providerQuotas
-}

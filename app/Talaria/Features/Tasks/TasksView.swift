@@ -1,19 +1,15 @@
 import SwiftUI
 import TalariaKit
 
+/// The job list. A row selects its job, which `TaskDetailView` shows beside the list or pushed
+/// over it (TAL-643).
 struct TasksView: View {
-    let server: URL
+    let viewModel: TasksViewModel
+    @Binding var selection: SectionItem?
     let onAPIError: (Error) -> Void
 
-    @State private var viewModel: TasksViewModel
     @State private var showsLoading = false
     @State private var isPresentingCreateTask = false
-
-    init(server: URL, onAPIError: @escaping (Error) -> Void) {
-        self.server = server
-        self.onAPIError = onAPIError
-        _viewModel = State(initialValue: TasksViewModel(server: server, responseCache: .app(server: server)))
-    }
 
     var body: some View {
         content
@@ -102,9 +98,7 @@ struct TasksView: View {
                     Section("Recent Completions") {
                         ForEach(viewModel.recentCompletions) { completion in
                             if let job = viewModel.job(for: completion) {
-                                NavigationLink {
-                                    detail(for: job)
-                                } label: {
+                                SectionSelectionRow(item: .task(id: job.id), selection: $selection) {
                                     CronCompletionRowView(completion: completion)
                                 }
                             } else {
@@ -121,9 +115,7 @@ struct TasksView: View {
                             .foregroundStyle(.secondary)
                     }
                     ForEach(viewModel.jobs) { job in
-                        NavigationLink {
-                            detail(for: job)
-                        } label: {
+                        SectionSelectionRow(item: .task(id: job.id), selection: $selection) {
                             CronJobRowView(
                                 job: job,
                                 runningElapsed: viewModel.runningElapsed(for: job)
@@ -136,18 +128,6 @@ struct TasksView: View {
                 await loadTasks()
             }
         }
-    }
-
-    private func detail(for job: CronJob) -> some View {
-        TaskDetailView(
-            job: job,
-            runningElapsed: viewModel.runningElapsed(for: job),
-            server: server,
-            onAPIError: onAPIError,
-            onMutation: { mutation in
-                viewModel.apply(mutation)
-            }
-        )
     }
 
     /// The feed runs beside the job list as a child of the view's own task,

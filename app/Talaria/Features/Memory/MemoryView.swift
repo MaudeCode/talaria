@@ -1,56 +1,22 @@
 import SwiftUI
 import TalariaKit
 
+/// Memory's file list: one row per document with its modified time. A row selects the file,
+/// which `MemoryFileView` shows beside the list or pushed over it (TAL-643).
 struct MemoryView: View {
-    let server: URL
+    let viewModel: MemoryViewModel
+    @Binding var selection: SectionItem?
     let onAPIError: (Error) -> Void
-
-    @State private var viewModel: MemoryViewModel
-    @State private var editingSection: MemorySection?
-
-    init(server: URL, onAPIError: @escaping (Error) -> Void) {
-        self.server = server
-        self.onAPIError = onAPIError
-        _viewModel = State(initialValue: MemoryViewModel(server: server, responseCache: .app(server: server)))
-    }
 
     var body: some View {
         content
             .navigationTitle("Memory")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        Task { await loadMemory() }
-                    } label: {
-                        if viewModel.isLoading {
-                            ProgressView()
-                        } else {
-                            Label("Refresh", systemImage: "arrow.clockwise")
-                        }
-                    }
-                    .disabled(viewModel.isLoading)
-                }
-            }
-            .sheet(item: $editingSection) { section in
-                MemoryEditSheet(
-                    section: section,
-                    initialContent: viewModel.content(for: section),
-                    isSaving: viewModel.isSaving,
-                    errorMessage: viewModel.actionErrorMessage
-                ) { content in
-                    let didSave = await viewModel.save(section: section, content: content)
-                    if let lastError = viewModel.lastError {
-                        onAPIError(lastError)
-                    }
-                    return didSave
-                }
-            }
             .task {
-                await loadMemory()
+                await loadMemory(viewModel, onAPIError: onAPIError)
             }
             .refreshesLive(on: .runEnded, showsStatus: false) {
-                guard editingSection == nil else { return }
-                await loadMemory()
+                guard viewModel.editingSection == nil else { return }
+                await loadMemory(viewModel, onAPIError: onAPIError)
             }
     }
 
@@ -65,7 +31,7 @@ struct MemoryView: View {
                 Text(errorMessage)
             } actions: {
                 Button("Try Again") {
-                    Task { await loadMemory() }
+                    Task { await loadMemory(viewModel, onAPIError: onAPIError) }
                 }
             }
         } else if !viewModel.hasLoaded {
@@ -73,51 +39,113 @@ struct MemoryView: View {
         } else {
             List {
                 ForEach(MemorySection.allCases) { section in
-                    Section {
-                        MemorySectionContent(
-                            section: section,
-                            content: viewModel.content(for: section)
-                        )
-                            .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
-                    } header: {
-                        MemorySectionHeader(
-                            section: section,
-                            modifiedAt: viewModel.modifiedAt(for: section),
-                            // Saves carry no version check, so cached notes are not editable (TAL-437).
-                            isEditingDisabled: viewModel.isSaving || viewModel.isShowingCachedContent
+                    SectionSelectionRow(item: .memory(.section(section)), selection: $selection) {
+                        MemoryHeaderRow(
+                            title: section.title,
+                            systemImage: section.systemImage,
+                            modifiedAt: viewModel.modifiedAt(for: section)
                         ) {
-                            viewModel.clearActionError()
-                            editingSection = section
+                            EmptyView()
                         }
                     }
                 }
 
                 if viewModel.showsProjectContext {
-                    Section {
-                        MarkdownRenderer(content: viewModel.projectContextText ?? "")
-                            .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
-                    } header: {
+                    SectionSelectionRow(item: .memory(.projectContext), selection: $selection) {
                         ProjectContextSectionHeader(modifiedAt: viewModel.projectContextMtime)
-                    } footer: {
-                        ProjectContextSectionFooter(
-                            detail: viewModel.projectContextDetail,
-                            isShadowed: viewModel.isProjectContextShadowed
-                        )
                     }
                 }
             }
             .refreshable {
-                await loadMemory()
+                await loadMemory(viewModel, onAPIError: onAPIError)
             }
         }
     }
+}
 
-    private func loadMemory() async {
-        await viewModel.load()
+/// One Memory document with its Edit and Refresh actions.
+struct MemoryFileView: View {
+    @Bindable var viewModel: MemoryViewModel
+    let file: MemoryFile
+    let onAPIError: (Error) -> Void
 
-        if let lastError = viewModel.lastError {
-            onAPIError(lastError)
+    var body: some View {
+        List {
+            switch file {
+            case .section(let section):
+                MemorySectionContent(section: section, content: viewModel.content(for: section))
+                    .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
+            case .projectContext:
+                Section {
+                    MarkdownRenderer(content: viewModel.projectContextText ?? "")
+                        .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
+                } footer: {
+                    ProjectContextSectionFooter(
+                        detail: viewModel.projectContextDetail,
+                        isShadowed: viewModel.isProjectContextShadowed
+                    )
+                }
+            }
         }
+        .navigationTitle(title)
+        .toolbar {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                if case .section(let section) = file {
+                    Button {
+                        viewModel.clearActionError()
+                        viewModel.editingSection = section
+                    } label: {
+                        Label("Edit \(section.title)", systemImage: "pencil")
+                    }
+                    // Saves carry no version check, so cached notes are not editable (TAL-437).
+                    .disabled(viewModel.isSaving || viewModel.isShowingCachedContent)
+                }
+
+                Button {
+                    Task { await loadMemory(viewModel, onAPIError: onAPIError) }
+                } label: {
+                    if viewModel.isLoading {
+                        ProgressView()
+                    } else {
+                        Label("Refresh", systemImage: "arrow.clockwise")
+                    }
+                }
+                .disabled(viewModel.isLoading)
+            }
+        }
+        .sheet(item: $viewModel.editingSection) { section in
+            MemoryEditSheet(
+                section: section,
+                initialContent: viewModel.content(for: section),
+                isSaving: viewModel.isSaving,
+                errorMessage: viewModel.actionErrorMessage
+            ) { content in
+                let didSave = await viewModel.save(section: section, content: content)
+                if let lastError = viewModel.lastError {
+                    onAPIError(lastError)
+                }
+                return didSave
+            }
+        }
+        .refreshable {
+            await loadMemory(viewModel, onAPIError: onAPIError)
+        }
+    }
+
+    private var title: String {
+        switch file {
+        case .section(let section): section.title
+        case .projectContext: String(localized: "Project Context")
+        }
+    }
+}
+
+@MainActor
+private func loadMemory(_ viewModel: MemoryViewModel, onAPIError: (Error) -> Void) async {
+    await viewModel.load()
+
+    if let lastError = viewModel.lastError {
+        onAPIError(lastError)
     }
 }
 

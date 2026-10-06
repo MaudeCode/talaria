@@ -43,6 +43,19 @@ public struct SessionNavigationState: Equatable {
     public private(set) var destination: SessionNavigationDestination?
     public private(set) var lastSelectedSessionID: String?
     public private(set) var rootRevision = 0
+    /// What the regular-width sidebar column shows. A chat opened from Archived, Scheduled or
+    /// Webhook keeps that list as its section (TAL-643).
+    public private(set) var section = AppSection.chats
+    /// The current section's selected item. Kept here, outside both width branches, so a size
+    /// class change keeps it: the pushed page at compact width is the detail at regular width.
+    public var selectedItem: SectionItem? {
+        didSet {
+            guard selectedItem != oldValue else { return }
+            pushesProviderQuotaWidget = false
+        }
+    }
+    /// The quota widget's appearance page is pushed over Live Activities & Widgets.
+    public var pushesProviderQuotaWidget = false
     private var newChatSessionID: String?
     private var deepLinkedSessionLoadID: String?
 
@@ -59,10 +72,12 @@ public struct SessionNavigationState: Equatable {
         return newChatSessionID == nil
     }
 
-    public mutating func select(_ session: SessionSummary) {
+    /// `list` is the chat list the session was opened from, which stays in the sidebar.
+    public mutating func select(_ session: SessionSummary, in list: AppSection = .chats) {
         rootRevision += 1
         newChatSessionID = nil
         destination = .session(session)
+        section = list
         remember(session)
     }
 
@@ -70,12 +85,36 @@ public struct SessionNavigationState: Equatable {
         rootRevision += 1
         newChatSessionID = nil
         destination = .newChat(route)
+        section = .chats
     }
 
+    /// Entering a section starts from its default item, or from the page an anchor names.
     public mutating func select(_ utility: SessionListUtilityDestination) {
         rootRevision += 1
         newChatSessionID = nil
         destination = .utility(utility)
+        section = AppSection(utility)
+        selectedItem = SectionItem(entering: utility)
+        pushesProviderQuotaWidget = utility == .providerQuotaWidgetSettings
+    }
+
+    /// The regular-width detail column's item: the selected one, or the section's default.
+    public var displayedItem: SectionItem? {
+        selectedItem ?? section.defaultItem
+    }
+
+    /// Called when the width turns compact, so the page the detail column showed is pushed.
+    public mutating func pinDisplayedItem() {
+        selectedItem = displayedItem
+    }
+
+    /// The back control of the Archived, Scheduled and Webhook sidebars. An open chat stays open.
+    public mutating func returnToChats() {
+        guard case .utility = destination else {
+            section = .chats
+            return
+        }
+        clearDestination()
     }
 
     public mutating func remember(_ session: SessionSummary) {
@@ -93,6 +132,7 @@ public struct SessionNavigationState: Equatable {
         rootRevision += 1
         destination = nil
         newChatSessionID = nil
+        section = .chats
     }
 
     public mutating func beginDeepLinkedSessionLoad(id: String?) -> String? {
@@ -147,7 +187,8 @@ public struct SessionNavigationState: Equatable {
         guard let sessionID = Self.normalized(sessionID) else { return }
 
         if selectedSessionID == sessionID {
-            destination = nil
+            // A chat list in the sidebar stays there with nothing beside it.
+            destination = section.chatList.map { .utility($0) }
             newChatSessionID = nil
         }
 

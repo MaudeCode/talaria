@@ -171,6 +171,7 @@
 		C0DE20000000000000000001 /* ChatTactileButtonStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE20000000000000000002 /* ChatTactileButtonStyle.swift */; };
 		C09300000000000000000001 /* HapticButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = C09300000000000000000002 /* HapticButton.swift */; };
 		C43600000000000000000001 /* StatusChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43600000000000000000002 /* StatusChip.swift */; };
+		TAL643000000000000001002 /* SectionSelectionRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = TAL643000000000000000002 /* SectionSelectionRow.swift */; };
 		C43600000000000000000003 /* AccessorySurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43600000000000000000004 /* AccessorySurface.swift */; };
 		C02100000000000000000001 /* FileExportPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = C02100000000000000000002 /* FileExportPresentation.swift */; };
 		C43400000000000000000001 /* LiveRefresh.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43400000000000000000002 /* LiveRefresh.swift */; };
@@ -373,6 +374,7 @@
 		C0DEC0DE0000000000000001 /* ChatComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DEC0DE0000000000000002 /* ChatComposerView.swift */; };
 		A19000000000000000000001 /* TalariaUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A19000000000000000000002 /* TalariaUITests.swift */; };
 		A19000000000000000000101 /* AgentPanelUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A19000000000000000000102 /* AgentPanelUITests.swift */; };
+		TAL643000000000000001001 /* RegularWidthNavigationUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = TAL643000000000000000001 /* RegularWidthNavigationUITests.swift */; };
 		A19000000000000000000103 /* AppEntryPointUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A19000000000000000000104 /* AppEntryPointUITests.swift */; };
 		D74A00000000000000000006 /* AgentRunLiveActivityStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = D74A00000000000000000001 /* AgentRunLiveActivityStyle.swift */; };
 		D74A00000000000000000007 /* AgentRunIslandCompactTrailing.swift in Sources */ = {isa = PBXBuildFile; fileRef = D74A00000000000000000002 /* AgentRunIslandCompactTrailing.swift */; };
@@ -474,6 +476,7 @@
 		1A2B3C4D5E6F700000000015 /* TalariaTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TalariaTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A19000000000000000000002 /* TalariaUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TalariaUITests.swift; sourceTree = "<group>"; };
 		A19000000000000000000102 /* AgentPanelUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPanelUITests.swift; sourceTree = "<group>"; };
+		TAL643000000000000000001 /* RegularWidthNavigationUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RegularWidthNavigationUITests.swift; sourceTree = "<group>"; };
 		A19000000000000000000104 /* AppEntryPointUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppEntryPointUITests.swift; sourceTree = "<group>"; };
 		A19000000000000000000112 /* PerformanceUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceUITests.swift; sourceTree = "<group>"; };
 		A19000000000000000000003 /* TalariaUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TalariaUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -599,6 +602,7 @@
 		C0DE20000000000000000002 /* ChatTactileButtonStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTactileButtonStyle.swift; sourceTree = "<group>"; };
 		C09300000000000000000002 /* HapticButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HapticButton.swift; sourceTree = "<group>"; };
 		C43600000000000000000002 /* StatusChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusChip.swift; sourceTree = "<group>"; };
+		TAL643000000000000000002 /* SectionSelectionRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SectionSelectionRow.swift; sourceTree = "<group>"; };
 		C43600000000000000000004 /* AccessorySurface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessorySurface.swift; sourceTree = "<group>"; };
 		C02100000000000000000002 /* FileExportPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileExportPresentation.swift; sourceTree = "<group>"; };
 		C43400000000000000000002 /* LiveRefresh.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveRefresh.swift; sourceTree = "<group>"; };
@@ -922,6 +926,7 @@
 				D81000000000000000000022 /* ShareExtensionUITests.swift */,
 				A19000000000000000000002 /* TalariaUITests.swift */,
 				A19000000000000000000102 /* AgentPanelUITests.swift */,
+				TAL643000000000000000001 /* RegularWidthNavigationUITests.swift */,
 				A19000000000000000000104 /* AppEntryPointUITests.swift */,
 				A19000000000000000000112 /* PerformanceUITests.swift */,
 			);
@@ -1070,6 +1075,7 @@
 			children = (
 				C09300000000000000000002 /* HapticButton.swift */,
 				C43600000000000000000002 /* StatusChip.swift */,
+				TAL643000000000000000002 /* SectionSelectionRow.swift */,
 				C43600000000000000000004 /* AccessorySurface.swift */,
 				C02100000000000000000002 /* FileExportPresentation.swift */,
 				C43400000000000000000002 /* LiveRefresh.swift */,
@@ -1879,6 +1885,7 @@
 				C06900000000000000000007 /* UITestFixture+Workspace.swift in Sources */,
 				C09300000000000000000001 /* HapticButton.swift in Sources */,
 				C43600000000000000000001 /* StatusChip.swift in Sources */,
+				TAL643000000000000001002 /* SectionSelectionRow.swift in Sources */,
 				C43600000000000000000003 /* AccessorySurface.swift in Sources */,
 				C02100000000000000000001 /* FileExportPresentation.swift in Sources */,
 				C43400000000000000000001 /* LiveRefresh.swift in Sources */,
@@ -2037,6 +2044,7 @@
 				D81000000000000000000021 /* ShareExtensionUITests.swift in Sources */,
 				A19000000000000000000001 /* TalariaUITests.swift in Sources */,
 				A19000000000000000000101 /* AgentPanelUITests.swift in Sources */,
+				TAL643000000000000001001 /* RegularWidthNavigationUITests.swift in Sources */,
 				A19000000000000000000103 /* AppEntryPointUITests.swift in Sources */,
 				A19000000000000000000111 /* PerformanceUITests.swift in Sources */,
 			);
