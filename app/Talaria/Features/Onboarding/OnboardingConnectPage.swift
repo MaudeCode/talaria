@@ -115,6 +115,7 @@ struct OnboardingConnectPage: View {
             .padding(.horizontal, 22)
             .padding(.top, dynamicTypeSize.isAccessibilitySize ? 18 : 24)
             .padding(.bottom, 24)
+            .onboardingReadableWidth()
         }
         .scrollBounceBehavior(.basedOnSize)
     }

@@ -147,6 +147,7 @@ struct OnboardingView: View {
             }
         }
         .padding(.horizontal, 24)
+        .onboardingReadableWidth()
         .padding(.top, 12)
         .padding(.bottom, 12)
         .background(
@@ -166,6 +167,7 @@ struct OnboardingView: View {
             connectActionButtons
         }
         .padding(.horizontal, 22)
+        .onboardingReadableWidth()
         .padding(.top, 10)
         .padding(.bottom, 8)
     }

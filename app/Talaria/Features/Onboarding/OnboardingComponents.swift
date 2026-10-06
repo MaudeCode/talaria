@@ -1,5 +1,12 @@
 import SwiftUI
 
+extension View {
+    /// Centers onboarding content in a readable column on wide screens (iPad, the Duo inner
+    /// display). iPhone widths are narrower than the column, so their layout is unchanged.
+    func onboardingReadableWidth() -> some View {
+        frame(maxWidth: 520).frame(maxWidth: .infinity)
+    }
+}
 
 struct OnboardingPrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {

@@ -2453,6 +2453,21 @@ class AdaptiveLayoutAppUITestCase: AdaptiveLayoutUITestCase {
 /// Onboarding in the portrait-light and dark RTL AXXXL variants, each rotating once to check focus
 /// retention; the landscape onboarding audit is no longer run (TAL-402).
 final class AdaptiveLayoutOnboardingUITests: AdaptiveLayoutUITestCase {
+    /// Wide windows (iPad, the Duo inner display) keep onboarding text and buttons in a centered
+    /// 520 pt column; iPhone widths are narrower than the column, so they still fill it (TAL-497).
+    func testOnboardingContentKeepsReadableWidth() throws {
+        launchFixture(variant: Self.variants[0], additionalArguments: ["--ui-test-onboarding"])
+        let getStarted = app.buttons["Get Started"]
+        XCTAssertTrue(getStarted.awaitExistence(timeout: 15), "Missing onboarding fixture")
+        let headline = app.staticTexts["Control your Hermes agent from iPhone or iPad."]
+        let column = app.frame.insetBy(dx: max(0, (app.frame.width - 520) / 2), dy: 0)
+        for (name, element) in [("Get Started", getStarted), ("Headline", headline)] {
+            let frame = element.settledFrame
+            XCTAssertGreaterThanOrEqual(frame.minX, column.minX - 1, "\(name) leaves the readable column")
+            XCTAssertLessThanOrEqual(frame.maxX, column.maxX + 1, "\(name) leaves the readable column")
+        }
+    }
+
     func testOnboardingScalesTitleAndRetainsFocusAcrossVariants() throws {
         var titleHeights: [String: CGFloat] = [:]
         for variant in Self.variants {
