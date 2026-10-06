@@ -45,7 +45,13 @@ public struct SessionNavigationState: Equatable {
     public private(set) var rootRevision = 0
     /// What the regular-width sidebar column shows. A chat opened from Archived, Scheduled or
     /// Webhook keeps that list as its section (TAL-643).
-    public private(set) var section = AppSection.chats
+    public private(set) var section = AppSection.chats {
+        didSet {
+            // An item belongs to its section; Chats must not keep showing a settings page.
+            guard section != oldValue else { return }
+            selectedItem = nil
+        }
+    }
     /// The current section's selected item. Kept here, outside both width branches, so a size
     /// class change keeps it: the pushed page at compact width is the detail at regular width.
     public var selectedItem: SectionItem? {

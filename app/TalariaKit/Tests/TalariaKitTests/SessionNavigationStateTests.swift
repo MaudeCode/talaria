@@ -622,6 +622,24 @@ final class AppSectionLayoutTests: XCTestCase {
         XCTAssertNil(chats.destination)
     }
 
+    /// A section's item never outlives the section, so Chats shows the chat again.
+    func testLeavingASectionDropsItsSelectedItem() {
+        let session = SessionSummary(sessionId: "chat")
+        for leave: (inout SessionNavigationState) -> Void in [
+            { $0.clearDestination() },
+            { $0.select(session) },
+            { $0.select(PendingNewChatRoute()) },
+            { $0.select(.kanban) },
+        ] {
+            var state = SessionNavigationState()
+            state.select(.settings(nil))
+            state.selectedItem = .settings(.category(.about))
+            leave(&state)
+            XCTAssertNil(state.selectedItem)
+            XCTAssertNil(state.displayedItem)
+        }
+    }
+
     func testNewChatAndClearingReturnToChats() {
         var state = SessionNavigationState()
         state.select(.memory)

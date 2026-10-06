@@ -180,6 +180,9 @@ final class RegularWidthNavigationUITests: TalariaUITestCase {
                 "\(destination) must show exactly one drawer button"
             )
         }
+        // Settings opened Appearance beside its list; back in Chats the detail is a chat again.
+        XCTAssertTrue(app.staticTexts["Select a Chat"].exists, "Chats kept showing the Settings page")
+        XCTAssertFalse(app.navigationBars["Appearance"].exists)
         openSidebar()
     }
 
