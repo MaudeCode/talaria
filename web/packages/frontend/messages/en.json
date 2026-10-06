@@ -130,6 +130,8 @@
 	"mcp_tools_previous_page_aria": "Previous MCP tools page",
 	"mcp_tools_next_page": "Next ›",
 	"mcp_tools_next_page_aria": "Next MCP tools page",
+	"mcp_tools_search": "Search MCP tools",
+	"mcp_reload_hint": "Enable and disable write config.yaml; Hermes Agent picks the change up after it restarts.",
 	"pdf_loading": "Loading PDF {a0}…",
 	"pdf_too_large": "PDF too large for inline preview",
 	"pdf_no_pages": "PDF has no pages",

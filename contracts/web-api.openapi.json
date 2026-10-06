@@ -39677,8 +39677,20 @@
     "/api/mcp/tools": {
       "get": {
         "operationId": "mcp.tools",
+        "summary": "`q` keeps tools whose name, server, or description contains it (case-insensitive); `total` counts every known tool.",
         "tags": [
           "tools"
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
         ],
         "responses": {
           "200": {

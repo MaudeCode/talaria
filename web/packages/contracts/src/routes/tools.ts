@@ -50,7 +50,7 @@ export const toolsContract = {
   },
   mcp: {
     servers: oc.route({ method: 'GET', path: '/api/mcp/servers', tags }).output(McpServersSchema),
-    tools: oc.route({ method: 'GET', path: '/api/mcp/tools', tags }).output(McpToolsSchema),
+    tools: oc.route({ method: 'GET', path: '/api/mcp/tools', tags, summary: '`q` keeps tools whose name, server, or description contains it (case-insensitive); `total` counts every known tool.' }).input(z.object({ q: z.string().optional() })).output(McpToolsSchema),
     action: oc.route({ method: 'POST', path: '/api/mcp/servers/{name}', tags, summary: '`{enabled}` toggles, `{delete: true}` removes, `{url|command, ...}` adds or updates the server in config.yaml.' }).input(z.object({ name: z.string() }).catchall(Json)).output(Loose),
     toggle: oc.route({ method: 'PATCH', path: '/api/mcp/servers/{name}', tags }).input(z.object({ name: z.string(), enabled: Json.optional() })).output(z.object({ ok: z.literal(true), name: z.string(), enabled: z.boolean() })),
     update: oc.route({ method: 'PUT', path: '/api/mcp/servers/{name}', tags }).input(z.object({ name: z.string() }).catchall(Json)).output(z.object({ ok: z.literal(true), server: McpServerSchema })),

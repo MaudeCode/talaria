@@ -278,7 +278,7 @@ export const toolsRouter = os.router({
   },
   mcp: {
     servers: os.mcp.servers.handler(({ context: { ctx } }) => run(() => ctx.deps.mcp.servers(home(ctx)) as Promise<never>)),
-    tools: os.mcp.tools.handler(({ context: { ctx } }) => run(() => ctx.deps.mcp.tools(home(ctx)) as Promise<never>)),
+    tools: os.mcp.tools.handler(({ input, context: { ctx } }) => run(() => ctx.deps.mcp.tools(home(ctx), input.q) as Promise<never>)),
     action: os.mcp.action.handler(({ input, context: { ctx } }) => run(async () => {
       const { name, ...body } = input
       const target = decodeURIComponent(name)

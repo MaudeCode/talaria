@@ -154,7 +154,8 @@ export class McpService {
     return { servers: rows, toggle_supported: true, reload_required: true, health_pending: rows.some((r) => Boolean(r.enabled) && Boolean(r.health_pending)) }
   }
 
-  async tools(profileHome: string): Promise<Dict> {
+  /** `q` keeps tools whose name, server, or description contains it (case-insensitive); `total` counts the unfiltered inventory. */
+  async tools(profileHome: string, q = ''): Promise<Dict> {
     const { runtime, summaries } = await this.inventory(profileHome)
     let tools: Dict[] = []
     for (const [serverName, rt] of runtime) {
@@ -178,7 +179,10 @@ export class McpService {
       source = tools.length ? 'tool_registry' : 'none'
     }
     tools.sort((a, b) => `${str(a.server)}\0${str(a.name)}`.localeCompare(`${str(b.server)}\0${str(b.name)}`))
-    return { tools, total: tools.length, source, inventory_scope: 'already_known_runtime_only', unavailable_servers: [...summaries.values()].filter((s) => Boolean(s.enabled) && !s.active).map((s) => str(s.name)) }
+    const total = tools.length
+    const needle = q.trim().toLowerCase()
+    if (needle) tools = tools.filter((t) => [t.name, t.server, t.description].some((v) => str(v).toLowerCase().includes(needle)))
+    return { tools, total, source, inventory_scope: 'already_known_runtime_only', unavailable_servers: [...summaries.values()].filter((s) => Boolean(s.enabled) && !s.active).map((s) => str(s.name)) }
   }
 
   async delete(profileHome: string, name: string): Promise<{ ok: true; deleted: string }> {

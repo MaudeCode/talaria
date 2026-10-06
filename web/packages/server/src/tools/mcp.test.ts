@@ -19,4 +19,20 @@ describe('MCP tool inventory', () => {
     expect((result.tools as { name: string }[]).map((tool) => tool.name)).toEqual(['mcp__plugin_srv__ping', 'mcp__stub_b__ping'])
     expect(result.source).toBe('tool_registry')
   })
+
+  it('search keeps tools matching name, server, or description and still counts the whole inventory', async () => {
+    const sidecar = new FakeSidecar()
+    sidecar.respond('mcp.status', () => ({ servers: [
+      { name: 'github', connected: true, tools: [{ name: 'create_issue', description: 'Open an issue' }, { name: 'list_pulls', description: 'List pull requests' }] },
+      { name: 'notes', connected: true, tools: [{ name: 'search', description: 'Find NOTES by text' }] },
+    ] }))
+    const config = { read: () => Promise.resolve({ mcp_servers: { github: { command: 'gh-mcp' }, notes: { url: 'https://notes.example/mcp' } } }) } as unknown as AgentConfig
+    const service = new McpService({ sidecar: () => sidecar, config })
+    const names = async (q: string) => { const r = await service.tools('/profiles/a', q); return { names: (r.tools as { name: string }[]).map((t) => t.name), total: r.total } }
+    expect(await names('')).toEqual({ names: ['create_issue', 'list_pulls', 'search'], total: 3 })
+    expect(await names('PULL')).toEqual({ names: ['list_pulls'], total: 3 })
+    expect(await names(' github ')).toEqual({ names: ['create_issue', 'list_pulls'], total: 3 })
+    expect(await names('notes by')).toEqual({ names: ['search'], total: 3 })
+    expect(await names('nothing')).toEqual({ names: [], total: 3 })
+  })
 })

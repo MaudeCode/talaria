@@ -18,6 +18,9 @@ vi.mock('../../api/endpoints', () => ({
   applyUpdates: vi.fn(),
   cancelUpdateNotification: vi.fn(() => Promise.resolve({ id: '00000000-0000-4000-8000-000000000001' })),
   saveSettings: vi.fn(),
+  fetchMcpServers: vi.fn(() => Promise.resolve({ servers: [] })),
+  fetchMcpTools: vi.fn(() => Promise.resolve({ tools: [] })),
+  toggleMcpServer: vi.fn(),
 }))
 vi.mock('../toast/toast', () => ({ showToast: vi.fn() }))
 import * as api from '../../api/endpoints'

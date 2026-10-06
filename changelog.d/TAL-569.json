@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Settings › System lists your MCP servers again with their status and health, lets you enable or disable each one, and searches their tools.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
