@@ -23,8 +23,12 @@ export const GitBranchesSchema = z.object({ is_git: z.literal(true), current: z.
 export const GitDiffSchema = z.object({ path: z.string(), kind: z.string(), binary: z.boolean(), too_large: z.boolean(), additions: z.number().int(), deletions: z.number().int(), diff: z.string() })
 /** Every git failure answers `{error, code}`; `code` is the classified reason (`not_a_repo`, `dirty_worktree`, ...). */
 export const GitErrorSchema = z.object({ error: z.string(), code: z.string() })
+/** One agent file checkpoint, newest first; `date_display` is the server's minute-precision rendering of `date`. */
+export const CheckpointSchema = z.object({ id: z.string(), commit: z.string(), message: z.string(), date: z.string(), date_display: z.string(), files: z.number().int(), path: z.string() })
 
 const SessionQuery = z.object({ session_id: z.string() })
+/** A checkpoint target: a configured workspace path, or a session, whose own workspace (a worktree chat's included) it names. */
+const RollbackTarget = z.object({ workspace: z.string().optional(), session_id: z.string().optional() })
 const SessionBody = z.object({ session_id: z.string() })
 const PathsBody = SessionBody.extend({ paths: z.union([z.array(Json), z.string()]).optional(), path: z.string().optional() })
 const GitOk = z.object({ ok: z.literal(true), git: GitStatusSchema })
@@ -52,9 +56,9 @@ export const gitContract = {
     stashCheckout: oc.route({ method: 'POST', path: '/api/git/stash-checkout', tags }).input(CheckoutBody.omit({ dirty_mode: true })).output(CheckoutResult.extend({ stash_name: z.string(), stashed: z.boolean(), restored_stash: Loose.nullable(), restore_failed: z.boolean(), restore_error: z.string(), restore_stash: Loose.nullable() })),
   },
   rollback: {
-    list: oc.route({ method: 'GET', path: '/api/rollback/list', tags: ['rollback'] }).input(z.object({ workspace: z.string().optional() })).output(z.object({ checkpoints: z.array(Loose), workspace: z.string(), checkpoint_dir: z.string() })),
-    diff: oc.route({ method: 'GET', path: '/api/rollback/diff', tags: ['rollback'] }).input(z.object({ workspace: z.string().optional(), checkpoint: z.string().optional(), id: z.string().optional() })).output(z.object({ checkpoint: z.string(), workspace: z.string(), diff: z.string(), files_changed: z.array(z.object({ file: z.string(), status: z.string() })), total_changes: z.number().int() })),
-    restore: oc.route({ method: 'POST', path: '/api/rollback/restore', tags: ['rollback'] }).input(z.object({ workspace: z.string().optional(), checkpoint: z.string().optional(), id: z.string().optional() }).catchall(Json)).output(z.object({ ok: z.literal(true), checkpoint: z.string(), workspace: z.string(), files_restored: z.array(z.string()), files_restored_count: z.number().int(), errors: z.array(z.object({ file: z.string(), error: z.string() })) })),
+    list: oc.route({ method: 'GET', path: '/api/rollback/list', tags: ['rollback'] }).input(RollbackTarget).output(z.object({ checkpoints: z.array(CheckpointSchema), workspace: z.string(), checkpoint_dir: z.string() })),
+    diff: oc.route({ method: 'GET', path: '/api/rollback/diff', tags: ['rollback'] }).input(RollbackTarget.extend({ checkpoint: z.string().optional(), id: z.string().optional() })).output(z.object({ checkpoint: z.string(), workspace: z.string(), diff: z.string(), files_changed: z.array(z.object({ file: z.string(), status: z.string() })), total_changes: z.number().int() })),
+    restore: oc.route({ method: 'POST', path: '/api/rollback/restore', tags: ['rollback'] }).input(RollbackTarget.extend({ checkpoint: z.string().optional(), id: z.string().optional() }).catchall(Json)).output(z.object({ ok: z.literal(true), checkpoint: z.string(), workspace: z.string(), files_restored: z.array(z.string()), files_restored_count: z.number().int(), errors: z.array(z.object({ file: z.string(), error: z.string() })) })),
   },
   worktree: {
     status: oc.route({ method: 'GET', path: '/api/session/worktree/status', tags: ['sessions'] }).input(SessionQuery).output(z.object({ status: Loose })),

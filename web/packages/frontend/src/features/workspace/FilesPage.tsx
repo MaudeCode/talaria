@@ -31,12 +31,15 @@ type Pending = { kind: 'new-file' } | { kind: 'new-folder' } | { kind: 'rename';
 
 /** The right panel's Files page (TAL-373): directory tree, file preview/edit, git status. Its folder, preview and draft
  * stay while another page is shown; it fetches only while `active`. */
-export function FilesPage({ workspace, sessionId, active }: { workspace: string | null | undefined; sessionId: string; active: boolean }) {
+/** Files a checkpoint restore rewrote; `seq` tells one restore from the next. */
+export interface RestoredFiles { seq: number; paths: string[] }
+
+export function FilesPage({ workspace, sessionId, active, restored = null }: { workspace: string | null | undefined; sessionId: string; active: boolean; restored?: RestoredFiles | null }) {
   if (!workspace) return <div className="p-3 text-xs text-muted" role="status">{m.panel_files_unavailable()}</div>
-  return <WorkspaceFiles key={workspace} workspace={workspace} sessionId={sessionId} active={active} />
+  return <WorkspaceFiles key={workspace} workspace={workspace} sessionId={sessionId} active={active} restored={restored} />
 }
 
-function WorkspaceFiles({ workspace, sessionId, active }: { workspace: string; sessionId: string; active: boolean }) {
+function WorkspaceFiles({ workspace, sessionId, active, restored }: { workspace: string; sessionId: string; active: boolean; restored: RestoredFiles | null }) {
   const qc = useQueryClient()
   const [dir, setDir] = useState('.')
   const [showHidden, setShowHidden] = useState(false)
@@ -46,6 +49,12 @@ function WorkspaceFiles({ workspace, sessionId, active }: { workspace: string; s
   const [menuFor, setMenuFor] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  // TAL-571: a restore rewrote these files; a draft of one would put the pre-restore text back on Save, so it goes.
+  const [seenRestore, setSeenRestore] = useState(restored?.seq)
+  if (restored && restored.seq !== seenRestore) {
+    setSeenRestore(restored.seq)
+    if (file && restored.paths.includes(file)) setDraft(null)
+  }
   const listing = useQuery({ queryKey: keys.files.list(workspace, dir, showHidden), queryFn: () => api.listDir(sessionId, dir, showHidden), staleTime: 10_000, enabled: active })
   const git = useQuery({ queryKey: keys.files.git(sessionId), queryFn: () => api.fetchGitInfo(sessionId), staleTime: 30_000, retry: false, enabled: active })
   const content = useQuery({ queryKey: keys.files.content(workspace, file ?? ''), queryFn: () => api.readFile(sessionId, file ?? ''), enabled: !!file && active, staleTime: 5_000 })

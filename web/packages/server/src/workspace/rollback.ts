@@ -55,7 +55,8 @@ export class RollbackStore {
     return join(this.deps.hermesHome(), 'checkpoints')
   }
 
-  resolveWorkspace(workspace: unknown): string {
+  /** `allowed` adds paths the caller already vouches for (a session's own workspace) to the configured list. */
+  resolveWorkspace(workspace: unknown, allowed: string[] = []): string {
     if (!workspace || typeof workspace !== 'string') throw new Error('workspace is required')
     let resolved: string
     try {
@@ -67,7 +68,7 @@ export class RollbackStore {
     try { isDir = statSync(resolved).isDirectory() } catch { isDir = false }
     if (!isDir) throw new Error(`Workspace does not exist: ${workspace}`)
     const known = new Set<string>()
-    for (const p of this.deps.knownWorkspaces()) {
+    for (const p of [...this.deps.knownWorkspaces(), ...allowed]) {
       try { known.add(realpathSync(p)) } catch { known.add(p) }
     }
     if (!known.has(resolved)) throw new Error(`Workspace not in configured list: ${workspace}`)
@@ -133,8 +134,8 @@ export class RollbackStore {
     }
   }
 
-  list(workspace: unknown): Record<string, unknown> {
-    const resolved = this.resolveWorkspace(workspace)
+  list(workspace: unknown, allowed: string[] = []): Record<string, unknown> {
+    const resolved = this.resolveWorkspace(workspace, allowed)
     const ckptDir = join(this.root(), workspaceHash(resolved))
     const checkpoints: Record<string, unknown>[] = []
     let isDir = false
@@ -182,8 +183,8 @@ export class RollbackStore {
     return { id: name, commit: commitHash.slice(0, 12), message, date: dateStr, date_display: dateDisplay, files: files ? files.split('\n').length : 0, path: ckptPath }
   }
 
-  diff(workspace: unknown, checkpoint: unknown): Record<string, unknown> {
-    const resolved = this.resolveWorkspace(workspace)
+  diff(workspace: unknown, checkpoint: unknown, allowed: string[] = []): Record<string, unknown> {
+    const resolved = this.resolveWorkspace(workspace, allowed)
     const cid = validateCheckpointId(checkpoint)
     const ckptDir = join(this.root(), workspaceHash(resolved), cid)
     let isDir = false
@@ -207,15 +208,16 @@ export class RollbackStore {
         const diff = unifiedDiff(splitKeepEnds(ckptContent), splitKeepEnds(wsContent), `a/${relPath}`, `b/${relPath}`)
         if (diff.length) {
           filesChanged.push({ file: relPath, status: 'modified' })
-          diffLines.push(...diff)
+          // difflib keeps each line's own ending; drop it so the '\n' join below yields one line per diff line.
+          diffLines.push(...diff.map((line) => line.replace(LINE_END, '')))
         }
       }
     }
     return { checkpoint: cid, workspace: resolved, diff: diffLines.length ? diffLines.join('\n') : '', files_changed: filesChanged, total_changes: filesChanged.length }
   }
 
-  restore(workspace: unknown, checkpoint: unknown): Record<string, unknown> {
-    const resolved = this.resolveWorkspace(workspace)
+  restore(workspace: unknown, checkpoint: unknown, allowed: string[] = []): Record<string, unknown> {
+    const resolved = this.resolveWorkspace(workspace, allowed)
     const cid = validateCheckpointId(checkpoint)
     const ckptDir = join(this.root(), workspaceHash(resolved), cid)
     let isDir = false
@@ -248,6 +250,7 @@ export class RollbackStore {
 
 /** Python `str.splitlines()`: also breaks on \v, \f, \x1c-\x1e, \x85, \u2028 and \u2029. */
 export const PY_LINE_BREAK = /\r\n|[\n\r\v\f\x1c\x1d\x1e\x85\u2028\u2029]/
+const LINE_END = new RegExp(`(?:${PY_LINE_BREAK.source})$`)
 export function splitLinesPy(text: string): string[] {
   const lines = text.split(PY_LINE_BREAK)
   if (lines.length && lines[lines.length - 1] === '') lines.pop()

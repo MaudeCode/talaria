@@ -81,6 +81,13 @@ async function generateCommitMessage(ctx: RequestContext, session: Session, prom
 
 const asStatus = (s: GitStatus): GitStatus => s
 
+/** A rollback request names a configured workspace, or a session that vouches for its own workspace (a worktree chat's is not a configured one). */
+function rollbackTarget(ctx: RequestContext, input: { workspace?: string | undefined; session_id?: string | undefined }): { workspace: string | undefined; allowed: string[] } {
+  if (!input.session_id) return { workspace: input.workspace, allowed: [] }
+  const { workspace } = gitSession(ctx, input.session_id)
+  return { workspace, allowed: [workspace] }
+}
+
 /** Python rollback handlers: `ValueError` → 400 with the message, anything else → 500 with the sanitised text. */
 function rollbackError(error: unknown): HttpError {
   if (error instanceof RollbackInternalError) return new HttpError(500, sanitizeError(error))
@@ -166,18 +173,20 @@ export const gitRouter = os.router({
   },
   rollback: {
     list: os.rollback.list.handler(({ input, context: { ctx } }) => {
-      if (!input.workspace) throw new HttpError(400, 'workspace query parameter is required')
+      const { workspace, allowed } = rollbackTarget(ctx, input)
+      if (!workspace) throw new HttpError(400, 'workspace query parameter is required')
       try {
-        return ctx.deps.rollback.list(input.workspace) as { checkpoints: Record<string, unknown>[]; workspace: string; checkpoint_dir: string }
+        return ctx.deps.rollback.list(workspace, allowed) as never
       } catch (error) {
         throw rollbackError(error)
       }
     }),
     diff: os.rollback.diff.handler(({ input, context: { ctx } }) => {
       const checkpoint = input.checkpoint ?? input.id
-      if (!input.workspace || !checkpoint) throw new HttpError(400, 'workspace and checkpoint query parameters are required')
+      const { workspace, allowed } = rollbackTarget(ctx, input)
+      if (!workspace || !checkpoint) throw new HttpError(400, 'workspace and checkpoint query parameters are required')
       try {
-        return ctx.deps.rollback.diff(input.workspace, checkpoint) as never
+        return ctx.deps.rollback.diff(workspace, checkpoint, allowed) as never
       } catch (error) {
         throw rollbackError(error)
       }
@@ -185,11 +194,12 @@ export const gitRouter = os.router({
     restore: os.rollback.restore.handler(({ input, context: { ctx } }) => {
       if (!Object.keys(input).length) throw new HttpError(400, 'request body is required')
       const checkpoint = input.checkpoint ?? input.id
-      if (!input.workspace || !checkpoint) throw new HttpError(400, 'workspace and checkpoint are required')
+      const { workspace, allowed } = rollbackTarget(ctx, input)
+      if (!workspace || !checkpoint) throw new HttpError(400, 'workspace and checkpoint are required')
       // The restore is synchronous, so refusing while Git holds the workspace keeps the two from overlapping.
-      if (ctx.deps.git.workspaceBusy(input.workspace)) throw new HttpError(409, WORKSPACE_BUSY_MESSAGE)
+      if (ctx.deps.git.workspaceBusy(workspace)) throw new HttpError(409, WORKSPACE_BUSY_MESSAGE)
       try {
-        return ctx.deps.rollback.restore(input.workspace, checkpoint) as never
+        return ctx.deps.rollback.restore(workspace, checkpoint, allowed) as never
       } catch (error) {
         throw rollbackError(error)
       }

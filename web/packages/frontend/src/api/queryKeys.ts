@@ -30,6 +30,11 @@ export const keys = {
     content: (workspace: string, path: string) => ['files', 'content', workspace, path] as const,
     git: (workspace: string) => ['files', 'git', workspace] as const,
   },
+  checkpoints: {
+    all: (workspace: string) => ['checkpoints', workspace] as const,
+    list: (workspace: string) => ['checkpoints', workspace, 'list'] as const,
+    diff: (workspace: string, id: string) => ['checkpoints', workspace, 'diff', id] as const,
+  },
   skills: { all: ['skills'] as const, content: (name: string) => ['skills', 'content', name] as const, usage: ['skills', 'usage'] as const },
   memory: ['memory'] as const,
   crons: { contextSources: (profile: string, editingId: string, excludeId: string, refs: string[]) => ['crons', 'context-sources', profile, editingId, excludeId, refs] as const, all: ['crons'] as const, list: (allProfiles: boolean) => ['crons', 'list', allProfiles] as const, status: ['crons', 'status'] as const, history: (id: string) => ['crons', 'history', id] as const, run: (id: string, filename: string) => ['crons', 'history', id, filename] as const, output: (id: string) => ['crons', 'output', id] as const, deliveryOptions: ['crons', 'delivery-options'] as const },
