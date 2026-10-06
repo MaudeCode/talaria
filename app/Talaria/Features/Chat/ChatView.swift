@@ -53,6 +53,7 @@ struct ChatView: View {
     private let composerAccessoryVerticalSpacing: CGFloat = 8
     private let activeRunStatusSpacerHeight: CGFloat = 36
     private let approvalBypassStatusSpacerHeight: CGFloat = 44
+    private let queuedMessagesChipSpacerHeight: CGFloat = 44
 
     @State private var completionAcknowledgementTask: Task<Void, Never>?
     @State private var completionAcknowledgementGeneration = 0
@@ -1485,6 +1486,10 @@ struct ChatView: View {
         }
         if showsApprovalBypassStatus {
             height += approvalBypassStatusSpacerHeight
+            itemCount += 1
+        }
+        if !viewModel.queuedMessagePreviews.isEmpty {
+            height += queuedMessagesChipSpacerHeight
             itemCount += 1
         }
 
