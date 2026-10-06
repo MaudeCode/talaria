@@ -27,8 +27,9 @@ export const BoolPrefSchema = z.boolean()
 /** A message queued behind the running turn (`hermes-queue:<sid>`, TAL-562): its text, upload receipts and the request it was composed against. */
 export const QueuedTurnSchema = z.object({
   id: z.string().min(1).max(64),
-  text: z.string().max(200_000),
-  attachments: z.array(UploadResponseSchema).max(100),
+  text: z.string(),
+  attachments: z.array(UploadResponseSchema),
   request: z.object({ model: z.string().optional(), model_provider: z.string().nullable().optional(), workspace: z.string().optional(), profile: z.string() }),
 })
-export const QueuedTurnsSchema = z.array(QueuedTurnSchema).max(100)
+// No size caps: the composer queues without one, and a cap here would drop a whole queue the user built on reload.
+export const QueuedTurnsSchema = z.array(QueuedTurnSchema)

@@ -555,7 +555,7 @@ export function Composer(props: ComposerProps) {
     ...(dictating ? [{ id: 'dictation', content: <span className="inline-flex items-center gap-1.5" role="status"><span className="mic-dot" aria-hidden="true" />{m.voice_listening()}</span> }] : []),
     ...(showYolo ? [{ id: 'yolo', tone: 'warning' as const, content: <><span aria-hidden="true">⚡</span><span className="truncate">{m.yolo_tab_active()}</span></>, action: { label: m.yolo_turn_off(), run: onToggleYolo } }] : []),
     ...(sessionId && backgroundTasks.some((t) => t.pinned) ? [{ id: 'background', content: <BackgroundWorkCard sessionId={sessionId} tasks={backgroundTasks} /> }] : []),
-    ...(queued.length > 0 ? [{ id: 'queue', content: <QueueCard queued={queued} onChange={onQueueChange} /> }] : []),
+    ...(sessionId && queued.length > 0 ? [{ id: 'queue', content: <QueueCard sessionId={sessionId} queued={queued} onChange={onQueueChange} /> }] : []),
   ]
   // A `/btw` draft asks beside the turn instead of steering, queueing or interrupting it (TAL-518).
   const busyLabel = parseCommand(text)?.name === 'btw' ? m.composer_send() : busyMode === 'queue' ? m.composer_queue() : busyMode === 'interrupt' ? m.composer_interrupt() : m.composer_steer()
