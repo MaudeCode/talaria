@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Insights and the chat status line format token counts more efficiently, keeping your region's number grouping.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

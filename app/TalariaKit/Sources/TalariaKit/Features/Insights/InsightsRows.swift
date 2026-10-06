@@ -1,9 +1,8 @@
 import SwiftUI
 
-public func formatTokens(_ value: Int) -> String {
-    let formatter = NumberFormatter()
-    formatter.numberStyle = .decimal
-    return formatter.string(from: NSNumber(value: value)) ?? "\(value)"
+/// Formats a token count with the locale's digit grouping ("1,234,567").
+public func formatTokens(_ value: Int, locale: Locale = .current) -> String {
+    value.formatted(.number.locale(locale))
 }
 
 /// Formats a server-reported 0–100 percentage (e.g. `cache_hit_percent`) with a

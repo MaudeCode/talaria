@@ -132,4 +132,16 @@ final class APIClientInsightsTests: APIClientTestCase {
         XCTAssertEqual(insightsFormattedPercent(12, locale: locale), "12%")
         XCTAssertEqual(insightsFormattedPercent(0.19, locale: locale), "0.2%")
     }
+
+    func testFormatTokensUsesLocaleGrouping() {
+        let english = Locale(identifier: "en_US")
+        XCTAssertEqual(formatTokens(0, locale: english), "0")
+        XCTAssertEqual(formatTokens(42, locale: english), "42")
+        XCTAssertEqual(formatTokens(1_234, locale: english), "1,234")
+        XCTAssertEqual(formatTokens(9_876_543_210, locale: english), "9,876,543,210")
+
+        let german = Locale(identifier: "de_DE")
+        XCTAssertEqual(formatTokens(1_234, locale: german), "1.234")
+        XCTAssertEqual(formatTokens(9_876_543_210, locale: german), "9.876.543.210")
+    }
 }

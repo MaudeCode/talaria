@@ -5613,8 +5613,8 @@ public final class ChatViewModel {
             return String(localized: "No token usage available")
         }
 
-        let inputText = Self.formatTokenCount(input)
-        let outputText = Self.formatTokenCount(output)
+        let inputText = formatTokens(input)
+        let outputText = formatTokens(output)
         guard cost > 0 else {
             return String(localized: "\(inputText) in / \(outputText) out")
         }
@@ -5626,10 +5626,6 @@ public final class ChatViewModel {
         let parts = model.split(separator: "/", maxSplits: 1).map(String.init)
         guard parts.count > 1 else { return nil }
         return parts[0]
-    }
-
-    private static func formatTokenCount(_ value: Int) -> String {
-        value.formatted(.number)
     }
 
     private static func displayTitle(from title: String?) -> String {
