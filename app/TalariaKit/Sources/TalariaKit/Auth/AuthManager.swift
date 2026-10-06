@@ -682,13 +682,15 @@ public final class AuthManager {
 
     /// Records the server-authorized profile for `server`. A sign-in without a
     /// reconciled profile (password) forgets the marker, so the next OIDC
-    /// sign-in cannot mistake that session's cache for its own.
-    private func recordAuthenticatedProfile(_ profile: String?, for server: URL) {
+    /// sign-in cannot mistake that session's cache for its own. A failed write
+    /// aborts the commit: a stale marker would let a later sign-in as the old
+    /// profile skip its purge (TAL-134).
+    private func recordAuthenticatedProfile(_ profile: String?, for server: URL) throws {
         let scope = server.absoluteString
         if let profile {
-            try? keychain.save(profile, forKey: .authenticatedProfile, scope: scope)
+            try keychain.save(profile, forKey: .authenticatedProfile, scope: scope)
         } else {
-            try? keychain.delete(.authenticatedProfile, scope: scope)
+            try keychain.delete(.authenticatedProfile, scope: scope)
         }
     }
 
@@ -712,10 +714,14 @@ public final class AuthManager {
             guard persistServerPassword(password, for: serverURL) else {
                 throw PasswordRetentionError()
             }
+            try recordAuthenticatedProfile(authenticatedProfile, for: serverURL)
             try serverRegistry.activate(url: serverURL)
         } catch {
             clearStoredSessionCookies(serverURL)
             restoreServerPassword(previousPassword, for: serverURL)
+            // The purge may already have run: forget the marker so the next
+            // sign-in purges again rather than trusting this server's cache.
+            try? recordAuthenticatedProfile(nil, for: serverURL)
             throw error
         }
         try? keychain.save(serverURL.absoluteString, forKey: .serverURL)
@@ -723,7 +729,6 @@ public final class AuthManager {
         persistCustomHeaders(for: serverURL)
         refreshServers()
         clearQuotaWidgetSnapshot()
-        recordAuthenticatedProfile(authenticatedProfile, for: serverURL)
         finishRecovery()
         state = .loggedIn(server: serverURL)
     }
@@ -741,10 +746,14 @@ public final class AuthManager {
             throw PasswordRetentionError()
         }
         do {
+            try recordAuthenticatedProfile(authenticatedProfile, for: serverURL)
             try serverRegistry.activate(url: serverURL)
         } catch {
             // Never leave a password stored for a server that was not registered.
             restoreServerPassword(previousPassword, for: serverURL)
+            // The purge may already have run: forget the marker so the next
+            // sign-in purges again rather than trusting this server's cache.
+            try? recordAuthenticatedProfile(nil, for: serverURL)
             throw error
         }
         try? keychain.save(serverURL.absoluteString, forKey: .serverURL)
@@ -753,7 +762,6 @@ public final class AuthManager {
         if previousServerID != serverURL.absoluteString {
             clearQuotaWidgetSnapshot()
         }
-        recordAuthenticatedProfile(authenticatedProfile, for: serverURL)
         state = .loggedIn(server: serverURL)
         finishRecovery()
         NotificationCenter.default.post(name: .talariaReauthenticated, object: serverURL)

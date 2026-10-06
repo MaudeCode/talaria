@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Single sign-on now stops with an error if the iPhone cannot save which profile signed in, so another profile can never reuse that profile's cached chats and drafts.",
+      "highlight": false
+    }
+  ]
+}
