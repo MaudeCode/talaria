@@ -4,10 +4,9 @@ the pinned Agent's own ``_get_platform_tools`` under the turn's profile home; an
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 
-from conftest import AGENT_DIR, AGENT_PYTHON, SIDECAR_ROOT, requires_agent
+from conftest import AGENT_DIR, AGENT_PYTHON, isolated_env, requires_agent
 
 # Runs on the Agent interpreter: real config loading and toolset resolution, a stand-in AIAgent that records its kwargs.
 PROBE = """
@@ -54,9 +53,7 @@ def test_turn_toolsets_follow_the_profile_config_unless_overridden(tmp_path) -> 
     (root / "profiles" / "plain").mkdir(parents=True)
     (root / "profiles" / "legacy").mkdir(parents=True)
     (root / "profiles" / "legacy" / "config.yaml").write_text("platform_toolsets:\n  cli: [hermes]\n")
-    env = {"PATH": os.environ.get("PATH", ""), "HOME": str(tmp_path), "HERMES_HOME": str(root), "PYTHONPATH": str(SIDECAR_ROOT), "HERMES_STATE_DB_GUARD_BYPASS": "1"}
-    if os.environ.get("LD_LIBRARY_PATH"):  # relocated actions/setup-python interpreter
-        env["LD_LIBRARY_PATH"] = os.environ["LD_LIBRARY_PATH"]
+    env = isolated_env(root)
     run = subprocess.run([AGENT_PYTHON, "-c", PROBE, str(AGENT_DIR)], env=env, capture_output=True, text=True, timeout=120)
     assert run.returncode == 0, run.stderr[-4000:]
     custom, plain, legacy, override = json.loads(run.stdout.strip().splitlines()[-1])

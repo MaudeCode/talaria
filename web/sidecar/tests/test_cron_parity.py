@@ -4,12 +4,11 @@ a failed profile snapshot leaves no job behind, and pause/resume answer the raw 
 from __future__ import annotations
 
 import pathlib
-import os
 import subprocess
 
 import pytest
 
-from conftest import AGENT_DIR, AGENT_PYTHON, SidecarProcess, requires_agent
+from conftest import AGENT_DIR, AGENT_PYTHON, SidecarProcess, isolated_env, requires_agent
 
 
 @requires_agent
@@ -104,10 +103,7 @@ if job:
 tick(verbose=False)
 """
     for home in (hermes_home, execution_home):
-        env = {"PATH": os.environ.get("PATH", ""), "HOME": str(tmp_path), "HERMES_HOME": str(home), "HERMES_STATE_DB_GUARD_BYPASS": "1"}
-        if os.environ.get("LD_LIBRARY_PATH"):
-            env["LD_LIBRARY_PATH"] = os.environ["LD_LIBRARY_PATH"]
-        subprocess.run([AGENT_PYTHON, "-c", code, str(AGENT_DIR), created["id"]], env=env, check=True, capture_output=True, text=True, timeout=60)
+        subprocess.run([AGENT_PYTHON, "-c", code, str(AGENT_DIR), created["id"]], env=isolated_env(home, home=tmp_path), check=True, capture_output=True, text=True, timeout=60)
     outputs = handshaken.result("cron.output", {"profile_home": str(execution_home), "job_id": created["id"]})
     assert outputs["outputs"], outputs
     assert "synthetic-execution-key" in outputs["outputs"][0]["content"]

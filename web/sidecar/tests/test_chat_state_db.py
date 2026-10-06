@@ -5,7 +5,6 @@ OpenAI-compatible endpoint."""
 from __future__ import annotations
 
 import json
-import os
 import sqlite3
 import subprocess
 import textwrap
@@ -15,7 +14,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from conftest import AGENT_DIR, AGENT_PYTHON, SidecarProcess, requires_agent
+from conftest import AGENT_DIR, AGENT_PYTHON, SidecarProcess, isolated_env, requires_agent
 
 pytestmark = requires_agent
 
@@ -123,7 +122,7 @@ def _seed_compressed(home) -> None:
         db.close()
         """
     )
-    env = {"PATH": os.environ.get("PATH", ""), "HOME": str(home.parent), "HERMES_HOME": str(home), "PYTHONPATH": str(AGENT_DIR), "HERMES_STATE_DB_GUARD_BYPASS": "1"}
+    env = isolated_env(home, PYTHONPATH=str(AGENT_DIR))
     subprocess.run([AGENT_PYTHON, "-c", script], env=env, check=True, timeout=60)
 
 

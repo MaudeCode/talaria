@@ -5,10 +5,9 @@ request-size estimate, and leaves the display ``messages`` untouched."""
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 
-from conftest import AGENT_DIR, AGENT_PYTHON, SIDECAR_ROOT, requires_agent
+from conftest import AGENT_DIR, AGENT_PYTHON, isolated_env, requires_agent
 
 # Runs on the Agent interpreter: a stand-in AIAgent holding the Agent's real ContextCompressor.
 PROBE = """
@@ -88,9 +87,7 @@ print(json.dumps(out))
 def test_an_auto_compressed_turn_returns_pruned_context_and_its_estimate(tmp_path) -> None:
     root = tmp_path / ".hermes"
     root.mkdir()
-    env = {"PATH": os.environ.get("PATH", ""), "HOME": str(tmp_path), "HERMES_HOME": str(root), "PYTHONPATH": str(SIDECAR_ROOT), "HERMES_STATE_DB_GUARD_BYPASS": "1"}
-    if os.environ.get("LD_LIBRARY_PATH"):  # relocated actions/setup-python interpreter
-        env["LD_LIBRARY_PATH"] = os.environ["LD_LIBRARY_PATH"]
+    env = isolated_env(root)
     run = subprocess.run([AGENT_PYTHON, "-c", PROBE, str(AGENT_DIR)], env=env, capture_output=True, text=True, timeout=120)
     assert run.returncode == 0, run.stderr[-4000:]
     out = json.loads(run.stdout.strip().splitlines()[-1])

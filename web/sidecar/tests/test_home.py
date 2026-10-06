@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import AGENT_DIR, AGENT_PYTHON, SIDECAR_ROOT, requires_agent
+from conftest import AGENT_DIR, AGENT_PYTHON, isolated_env, requires_agent
 from talaria_sidecar import home as home_module
 from talaria_sidecar.errors import RpcError
 
@@ -193,14 +193,8 @@ def test_concurrent_profiles_resolve_only_their_own_credentials_on_the_installed
     for name, dotenv in (("alpha", "OPENAI_API_KEY=sk-alpha\nALPHA_ONLY=alpha\n"), ("beta", "OPENAI_API_KEY=sk-beta\n")):
         (root / "profiles" / name).mkdir(parents=True)
         (root / "profiles" / name / ".env").write_text(dotenv)
-    env = {
-        "PATH": os.environ.get("PATH", ""), "HOME": str(tmp_path), "HERMES_HOME": str(root), "PYTHONPATH": str(SIDECAR_ROOT),
-        "HERMES_STATE_DB_GUARD_BYPASS": "1",
-        # The launch profile's credentials arrive only through the process environment (systemd, op run).
-        "OPENAI_API_KEY": "sk-launch", "LAUNCH_ENV_ONLY": "launch",
-    }
-    if os.environ.get("LD_LIBRARY_PATH"):  # relocated actions/setup-python interpreter
-        env["LD_LIBRARY_PATH"] = os.environ["LD_LIBRARY_PATH"]
+    # The launch profile's credentials arrive only through the process environment (systemd, op run).
+    env = isolated_env(root, OPENAI_API_KEY="sk-launch", LAUNCH_ENV_ONLY="launch")
     probe = Path(__file__).with_name("profile_isolation_probe.py")
     run = subprocess.run([AGENT_PYTHON, str(probe), str(AGENT_DIR)], env=env, capture_output=True, text=True, timeout=120)
     assert run.returncode == 0, run.stderr[-4000:]
@@ -233,14 +227,8 @@ def test_concurrent_turns_run_under_their_own_profiles_terminal_backend_on_the_i
         home.mkdir(parents=True, exist_ok=True)
         (home / "config.yaml").write_text(config)
         (home / ".env").write_text("")
-    env = {
-        "PATH": os.environ.get("PATH", ""), "HOME": str(tmp_path), "HERMES_HOME": str(root), "PYTHONPATH": str(SIDECAR_ROOT),
-        "HERMES_STATE_DB_GUARD_BYPASS": "1",
-        # The host default, plus a launch-only policy key with no file to rebuild it from (systemd, op run).
-        "TERMINAL_ENV": "local", "TERMINAL_SSH_USER": "launch-user",
-    }
-    if os.environ.get("LD_LIBRARY_PATH"):  # relocated actions/setup-python interpreter
-        env["LD_LIBRARY_PATH"] = os.environ["LD_LIBRARY_PATH"]
+    # The host default, plus a launch-only policy key with no file to rebuild it from (systemd, op run).
+    env = isolated_env(root, TERMINAL_ENV="local", TERMINAL_SSH_USER="launch-user")
     probe = Path(__file__).with_name("terminal_scope_probe.py")
     run = subprocess.run([AGENT_PYTHON, str(probe), str(AGENT_DIR)], env=env, capture_output=True, text=True, timeout=120)
     assert run.returncode == 0, run.stderr[-4000:]

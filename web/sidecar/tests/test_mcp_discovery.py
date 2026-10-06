@@ -5,11 +5,10 @@ Both run the pinned Agent's real MCP client against a stub stdio server."""
 from __future__ import annotations
 
 import json
-import os
 import pathlib
 import subprocess
 
-from conftest import AGENT_DIR, AGENT_PYTHON, SIDECAR_ROOT, SidecarProcess, requires_agent
+from conftest import AGENT_DIR, AGENT_PYTHON, SidecarProcess, isolated_env, requires_agent
 
 STUB_SERVER = """
 import sys
@@ -107,9 +106,7 @@ def _configure_stub(home: pathlib.Path, name: str, script: pathlib.Path) -> None
 
 
 def _probe(tmp_path: pathlib.Path, root: pathlib.Path, script: str):
-    env = {"PATH": os.environ.get("PATH", ""), "HOME": str(tmp_path), "HERMES_HOME": str(root), "PYTHONPATH": str(SIDECAR_ROOT), "HERMES_STATE_DB_GUARD_BYPASS": "1"}
-    if os.environ.get("LD_LIBRARY_PATH"):  # relocated actions/setup-python interpreter
-        env["LD_LIBRARY_PATH"] = os.environ["LD_LIBRARY_PATH"]
+    env = isolated_env(root)
     run = subprocess.run([AGENT_PYTHON, "-c", script, str(AGENT_DIR)], env=env, capture_output=True, text=True, timeout=180)
     assert run.returncode == 0, run.stderr[-4000:]
     return json.loads(run.stdout.strip().splitlines()[-1])
