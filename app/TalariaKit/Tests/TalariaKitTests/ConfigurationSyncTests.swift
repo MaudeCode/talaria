@@ -34,6 +34,26 @@ final class ConfigurationSyncTests: XCTestCase {
         XCTAssertNotEqual(setup.fingerprint, original)
     }
 
+    /// Production CloudKit cannot create record types at runtime, so every type the app
+    /// writes must be in the schema imported and deployed from `docs/cloudkit-schema.ckdb`.
+    func testCheckedInCloudKitSchemaDeclaresEveryRecordTypeWithEncryptedPayload() throws {
+        let schemaURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("docs/cloudkit-schema.ckdb")
+        let blocks = try String(contentsOf: schemaURL, encoding: .utf8).components(separatedBy: "RECORD TYPE ")
+        let types: [ConfigurationSyncRecord.RecordType] = [.serverSetup, .preferences]
+        for type in types {
+            // Fails to compile when a record type is added: list it above and in the schema.
+            switch type { case .serverSetup, .preferences: break }
+            let block = try XCTUnwrap(blocks.first { $0.hasPrefix("\(type.rawValue) (") }, type.rawValue)
+            XCTAssertNotNil(
+                block.range(of: #"\#(CloudKitConfigurationSyncStore.payloadKey)\s+ENCRYPTED BYTES"#, options: .regularExpression),
+                "\(type.rawValue).payload must be ENCRYPTED BYTES"
+            )
+        }
+    }
+
     func testCloudKitRecordCarriesPayloadOnlyInEncryptedValues() throws {
         let setup = makeSetup(
             url: serverA,

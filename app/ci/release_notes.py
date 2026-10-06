@@ -137,7 +137,7 @@ def repository_only(path):
         or re.fullmatch(r"[A-Z][A-Z_]*", path) is not None
         or path.startswith((
             "web/", "relay/", "contracts/", "releases/", "docs/", "ci/", "scripts/", ".github/", ".agents/", ".agy/", ".codex/",
-            ".xcodebuildmcp/", DIRECTORY + "/", "TalariaTests/", "TalariaUITests/",
+            ".xcodebuildmcp/", DIRECTORY + "/", "TalariaTests/", "TalariaUITests/", "TalariaKit/Tests/",
         ))
         or path in {".gitignore", ".gitattributes", ".gitleaksignore", "CLAUDE.md"}
     )

@@ -39,22 +39,39 @@ the Live Activity widget do not read synced records and must not gain access.
    device build; the release workflow's manually signed profiles must be
    replaced by hand.
 
-## CloudKit Console (owner task, before any TestFlight or App Store build)
+## CloudKit schema (owner task, before any release-signed build)
 
-1. Open CloudKit Console → `iCloud.dev.kil.talaria` → **Development** schema.
-2. Run a Debug build signed for a device, sign in with Apple in Settings →
-   iCloud Sync, and enable sync. The first save creates the `TalariaConfiguration`
-   zone and the `ServerSetup` / `AppPreferences` record types with `payload`
-   as an **encrypted** Bytes field. Verify in the schema editor that `payload`
-   shows as encrypted for both types. An encrypted field cannot be converted
-   from a plaintext one later, so if it ever appears unencrypted, delete the
-   record type in Development before retrying.
-3. Confirm the records show no other fields and that record names are UUIDs.
-4. **Deploy Schema Changes** to **Production**.
-5. Install a production-signed build (TestFlight) on two iPhones signed into
-   the same iCloud account with iCloud Keychain on, and confirm a
-   password-authenticated server configured on one restores and signs in on the
-   other.
+`docs/cloudkit-schema.ckdb` is the schema every Talaria container needs:
+`ServerSetup` and `AppPreferences`, each with one `payload` field declared
+`ENCRYPTED BYTES`. An encrypted field cannot be converted from a plaintext one
+later. `ConfigurationSyncTests` fails when the app writes a record type this
+file does not declare.
+
+Release-signed builds (TestFlight, App Store, DevApps Talaria Dev) use the
+**Production** environment, which cannot create record types at runtime. A
+missing type fails with "Cannot create new type … in production schema".
+Apply the schema to each container: `iCloud.dev.kil.talaria` and
+`iCloud.dev.kil.talaria.branch` (Talaria Dev).
+
+1. Save a management token once:
+   `xcrun cktool save-token --type management` opens CloudKit Console; create
+   the token under your account's Settings and paste it at the prompt. It is
+   stored in the macOS Keychain.
+2. Import into Development (cktool cannot write Production):
+
+   ```zsh
+   xcrun cktool import-schema --validate --team-id Q28NF3NH3D \
+     --container-id iCloud.dev.kil.talaria.branch --environment development \
+     --file docs/cloudkit-schema.ckdb
+   ```
+
+3. Deploy to Production: CloudKit Console → **CloudKit Database** → choose the
+   container → **Deploy Schema Changes** → review → **Deploy**.
+4. Confirm both environments match the file:
+   `xcrun cktool export-schema --team-id Q28NF3NH3D --container-id <container> --environment production`.
+5. Install a release-signed build on two devices signed into the same iCloud
+   account with iCloud Keychain on, and confirm a password-authenticated server
+   configured on one restores and signs in on the other.
 
 ## Local validation
 
