@@ -719,7 +719,8 @@ export function buildSessionListPayload(store: SessionStore, params: ListParams)
   let otherProfileCount = 0
   if (params.allProfiles) scoped = merged
   else {
-    scoped = merged.filter((r) => params.profilesMatch(str(r.profile) || null, params.activeProfile))
+    // Claude Code transcripts belong to no Hermes profile, so every profile lists them (TAL-551).
+    scoped = merged.filter((r) => sourceKind(r) === 'claude_code' || params.profilesMatch(str(r.profile) || null, params.activeProfile))
     otherProfileCount = params.isolatedProfileMode ? 0 : merged.length - scoped.length
   }
   const identity = params.gatewayIdentity ?? new Map<string, GatewayIdentity>()

@@ -12,6 +12,7 @@ import { OidcService } from './auth/oidc.js'
 import { PasskeyStore } from './auth/passkeys.js'
 import { PresenceLeases, RelayService } from './sessions/relay.js'
 import { CliSessionSource } from './sessions/cli-sessions.js'
+import { ClaudeCodeSessionSource, claudeCodeProjectsDir } from './sessions/claude-code.js'
 import { GatewayWatcherRegistry } from './sessions/gateway-watcher.js'
 import { CompletionDrain } from './sessions/completions.js'
 import { BackgroundActivity, BackgroundTaskStore } from './sessions/background-tasks.js'
@@ -275,6 +276,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     clearRelayCompletions: (sid, profile) => { relay.clearDeleted(sid, profile) },
     store,
     cliSessions: (profile, o) => cliSessions.read(profile, o),
+    claudeCode: new ClaudeCodeSessionSource(() => claudeCodeProjectsDir(env, home)),
     profileHome,
     // The commit runs detached from the request, so it is registered as profile activity until it settles: profile
     // deletion must not remove the memory files the cached Agent is still writing.

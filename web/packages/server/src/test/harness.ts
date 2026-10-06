@@ -73,6 +73,8 @@ export async function bootTestServer(opts: BootOptions = {}): Promise<TestServer
     HERMES_HOME: state,
     HERMES_WEBUI_STATE_DIR: state,
     HERMES_WEBUI_DEFAULT_WORKSPACE: join(state, 'workspace'),
+    // Never scan the real ~/.claude/projects (TAL-551).
+    HERMES_WEBUI_CLAUDE_PROJECTS_DIR: join(state, 'claude-projects'),
     HERMES_WEBUI_HOST: '127.0.0.1',
     HERMES_WEBUI_PORT: '0',
     ...opts.env,
