@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Development builds are now named Talaria Dev and show a red DEV banner on their icon, so they stand apart from the App Store app.",
+      "highlight": false
+    }
+  ]
+}

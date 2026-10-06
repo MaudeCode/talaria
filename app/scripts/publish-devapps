@@ -1,0 +1,64 @@
+#!/bin/zsh
+
+set -euo pipefail
+
+repo_root=${0:A:h:h}
+work_dir="$repo_root/.codex-tmp/devapps"
+dev_bundle_id=dev.kil.talaria.branch
+
+usage() {
+    print "Usage: scripts/publish-devapps --ticket TAL-<n> --ticket-title <title> --title <build title> [--notes <notes>]"
+    print
+    print "Archives Talaria Dev (Config/Dev.xcconfig), exports a release-testing IPA and"
+    print "publishes it to https://devapps.thezoo.house/apps/talaria-dev/."
+    print "Arguments are passed to the devapps publisher; see the devapps skill."
+}
+
+[[ "${1:-}" != -h && "${1:-}" != --help ]] || { usage; exit 0; }
+(( $# > 0 )) || { usage >&2; exit 64; }
+devapps=${DEVAPPS:-$(command -v devapps || print "$HOME/.agents/skills/devapps/scripts/devapps.py")}
+icon_tool="$(xcode-select -p)/../Applications/Icon Composer.app/Contents/Executables/ictool"
+
+cd "$repo_root"
+rm -rf "$work_dir"
+mkdir -p "$work_dir"
+print "Archiving Talaria Dev"
+if ! xcodebuild archive -quiet \
+    -project Talaria.xcodeproj \
+    -scheme Talaria \
+    -configuration Release \
+    -destination 'generic/platform=iOS' \
+    -archivePath "$work_dir/Talaria.xcarchive" \
+    -derivedDataPath "$repo_root/.codex-tmp/devapps-build" \
+    -xcconfig Config/Dev.xcconfig \
+    -allowProvisioningUpdates \
+    CURRENT_PROJECT_VERSION="$(date +%Y%m%d%H%M)" >"$work_dir/archive.log" 2>&1; then
+    cat "$work_dir/archive.log" >&2
+    exit 1
+fi
+print "Exporting"
+if ! xcodebuild -exportArchive \
+    -archivePath "$work_dir/Talaria.xcarchive" \
+    -exportPath "$work_dir/export" \
+    -exportOptionsPlist Config/DevAppsExportOptions.plist \
+    -allowProvisioningUpdates >"$work_dir/export.log" 2>&1; then
+    cat "$work_dir/export.log" >&2
+    exit 1
+fi
+
+bundle_id=$(/usr/libexec/PlistBuddy -c 'Print :ApplicationProperties:CFBundleIdentifier' "$work_dir/Talaria.xcarchive/Info.plist")
+[[ "$bundle_id" == "$dev_bundle_id" ]] || {
+    print -u2 "Refusing to publish $bundle_id; expected Talaria Dev ($dev_bundle_id)."
+    exit 1
+}
+
+"$icon_tool" Talaria/Resources/TalariaDev.icon --export-image --output-file "$work_dir/icon.png" \
+    --platform iOS --rendition Default --width 1024 --height 1024 --scale 1 >/dev/null
+
+print "Publishing"
+python3 "$devapps" \
+    --app talaria-dev --name 'Talaria Dev' --platform ios \
+    --file "$work_dir/export/Talaria.ipa" \
+    --icon "$work_dir/icon.png" \
+    --commit "$(git rev-parse HEAD)" \
+    "$@"

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Synthetic device-runner target and cleanup checks; never builds, installs on or launches a real iPhone."""
 import os
+import plistlib
 from pathlib import Path
 import shutil
 import subprocess
@@ -12,6 +13,10 @@ UDID = '00008150-000A0B0C0D0E0F10'
 FAKE = '''#!/bin/sh
 printf '%s\\n' "$(basename "$0") $*" >> "$CALL_LOG"
 [ "$(basename "$0")" != xcodebuild ] || { echo "synthetic build output"; exit "${XCODEBUILD_STATUS:-0}"; }
+'''
+PLIST_BUDDY = '''#!/usr/bin/env python3
+import plistlib, sys
+print(plistlib.load(open(sys.argv[-1], 'rb'))['CFBundleIdentifier'])
 '''
 SELECTOR = '''#!/bin/sh
 [ -z "$SELECT_FAILS" ] || { echo "No paired physical iPhone found." >&2; exit 69; }
@@ -31,6 +36,8 @@ def run(*options, prepare=lambda repo: None, **environment):
     for tool in ('xcodebuild', 'xcrun', 'codesign'):
         (tools / tool).write_text(FAKE)
         (tools / tool).chmod(0o755)
+    (tools / 'PlistBuddy').write_text(PLIST_BUDDY)
+    (tools / 'PlistBuddy').chmod(0o755)
     prepare(repo)
     env = dict(os.environ, PATH=f'{tools}:{os.environ["PATH"]}', _TALARIA_ENV_LOADED='1',
                CALL_LOG=str(work / 'calls'), SELECTED_UDID=UDID)
@@ -94,6 +101,23 @@ try:
     cleanups.append(work)
     assert result.returncode == 1 and 'the app was not found' in result.stderr, result
     assert [call.split()[0] for call in calls] == ['xcodebuild'], calls
+
+    # The build is Talaria Dev, and any other bundle ID is refused before devicectl install.
+    for bundle_id in ('dev.kil.talaria', 'dev.kil.talaria.xctest'):
+        def built(repo, bundle_id=bundle_id):
+            app = repo / '.codex-tmp' / 'device-build' / 'Build' / 'Products' / 'Debug-iphoneos' / 'Talaria.app'
+            app.mkdir(parents=True)
+            with (app / 'Info.plist').open('wb') as info:
+                plistlib.dump({'CFBundleIdentifier': bundle_id}, info)
+        result, calls, repo, work = run('--no-launch', prepare=built)
+        cleanups.append(work)
+        assert result.returncode == 1 and f'Refusing to install {bundle_id}' in result.stderr, result
+        assert [call.split()[0] for call in calls] == ['xcodebuild', 'codesign'], calls
+        assert '-xcconfig Config/Dev.xcconfig ' in calls[0], calls
+    result, calls, repo, work = run('--no-launch', prepare=lambda repo: built(repo, 'dev.kil.talaria.branch'))
+    cleanups.append(work)
+    assert result.returncode == 0 and 'Launch skipped' in result.stdout, result
+    assert calls[-1].startswith(f'xcrun devicectl device install app --device {UDID} '), calls
 finally:
     for path in cleanups:
         shutil.rmtree(path, ignore_errors=True)

@@ -1,0 +1,19 @@
+// Talaria Dev: the side-by-side development app, installed beside the App Store
+// or TestFlight app without sharing its data. Used for USB installs
+// (scripts/run-ios-device), DevApps delivery (scripts/publish-devapps) and
+// branch TestFlight uploads (TESTFLIGHT.md).
+//
+// Use with:
+// xcodebuild ... -xcconfig Config/Dev.xcconfig
+//
+// The derived bundle IDs are:
+// - dev.kil.talaria.branch
+// - dev.kil.talaria.branch.shareextension
+// - dev.kil.talaria.branch.liveactivitywidget
+
+APP_IDENTIFIER_SUFFIX = .branch
+APP_DISPLAY_NAME = Talaria Dev
+APP_URL_SCHEME_SUFFIX = -branch
+APP_ICON_NAME = TalariaDev
+// Alternate icons lack the DEV banner, so Talaria Dev ships none; Settings hides the picker.
+ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES =

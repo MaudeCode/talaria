@@ -5,13 +5,15 @@ set -euo pipefail
 repo_root=${0:A:h:h}
 [[ "${_TALARIA_ENV_LOADED:-}" == 1 ]] || exec "$repo_root/scripts/load-env" "$repo_root/scripts/run-ios-device" "$@"
 build_dir="$repo_root/.codex-tmp/device-build"
+# Talaria Dev (Config/Dev.xcconfig) installs beside the App Store/TestFlight app and never replaces it.
+dev_bundle_id=dev.kil.talaria.branch
 fresh=false
 no_launch=false
 
 usage() {
     print "Usage: scripts/run-ios-device [--fresh] [--no-launch]"
     print
-    print "Builds, installs, and launches Talaria on the connected physical iPhone."
+    print "Builds, installs, and launches Talaria Dev on the connected physical iPhone."
     print "  --fresh  Clear the local device build cache first. Phone data is preserved."
     print "  --no-launch  Install the app without launching it."
     print
@@ -61,6 +63,7 @@ if ! xcodebuild build -quiet \
     -configuration Debug \
     -destination "platform=iOS,id=$device_id" \
     -derivedDataPath "$build_dir" \
+    -xcconfig Config/Dev.xcconfig \
     COMPILER_INDEX_STORE_ENABLE=NO >"$build_log" 2>&1; then
     cat "$build_log" >&2
     exit 1
@@ -73,7 +76,12 @@ app_path="$build_dir/Build/Products/Debug-iphoneos/Talaria.app"
     exit 1
 }
 codesign --verify --deep --strict "$app_path"
-bundle_id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app_path/Info.plist")
+path+=(/usr/libexec)
+bundle_id=$(PlistBuddy -c 'Print :CFBundleIdentifier' "$app_path/Info.plist")
+[[ "$bundle_id" == "$dev_bundle_id" ]] || {
+    print -u2 "Refusing to install $bundle_id; expected Talaria Dev ($dev_bundle_id)."
+    exit 1
+}
 
 print "Installing $bundle_id"
 xcrun devicectl device install app --device "$device_id" "$app_path"

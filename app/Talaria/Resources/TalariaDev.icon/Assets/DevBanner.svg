@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <g transform="translate(774 250) rotate(45)">
+    <rect x="-700" y="-70" width="1400" height="140" fill="#E5484D"/>
+    <g transform="scale(0.9) translate(-143 -50)" fill="#FFFFFF" fill-rule="evenodd">
+      <path d="M0 0H40A50 50 0 0 1 40 100H0Z M22 22V78H40A28 28 0 0 0 40 22Z"/>
+      <path d="M108 0H178V22H130V39H168V61H130V78H178V100H108Z"/>
+      <path d="M196 0H220L241 72L262 0H286L253 100H229Z"/>
+    </g>
+  </g>
+</svg>

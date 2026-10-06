@@ -44,6 +44,9 @@ references); `scripts/check-committed-images.py` enforces this on every PR.
 
 Pushing, PR publication/updates, merging, releases, deployments, TestFlight
 uploads, repository administration, and archival retain explicit human gates.
+Publishing a Talaria Dev build to DevApps (`app/scripts/publish-devapps`) is
+the owner-approved phone delivery path, not a deployment, and its Apple
+provisioning refresh is part of that approval.
 Use `--repo MaudeCode/talaria` with repository-scoped `gh` commands.
 Preserve unrelated work and component runtime identities. Keep component
 credentials isolated. Do not change live services.
