@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Attachments waiting above the message box are now checked reliably before every release.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

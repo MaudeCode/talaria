@@ -26,6 +26,10 @@ struct UITestFixtureEnvironment {
     /// extension does, so a UI test can reopen through `talaria://share` and see it import.
     nonisolated static let pendingShareArgument = "--ui-test-pending-share"
     nonisolated static let pendingShareDraft = "FixtureSharedDraft"
+    /// Restores two staged photos into the fixture chat's draft, so the composer's attachment
+    /// strip is reached through draft restore rather than the out-of-process Photos picker,
+    /// which can stay on "Loading…" on a starved hosted runner (TAL-649).
+    nonisolated static let draftAttachmentsArgument = "--ui-test-draft-attachments"
     /// Scales the deterministic transcript and session list up for the performance
     /// budgets (TAL-75). The functional fixtures keep the small counts so their
     /// scrolling and layout assertions stay fast.
@@ -136,10 +140,12 @@ struct UITestFixtureEnvironment {
     static func make() -> UITestFixtureEnvironment {
         let chatScenario = UITestChatScenario.current
         var initialDrafts: [ChatDraftKey: ChatDraft] = [:]
+        let fixtureSessionDraft = ChatDraftKey.session(server: serverURL, sessionID: UITestFixtureURLProtocol.sessionID)
         if chatScenario == .clarification || chatScenario == .batchClarification {
             UITestChatFixtureState.shared.startChat()
-            initialDrafts[.session(server: serverURL, sessionID: UITestFixtureURLProtocol.sessionID)] = ChatDraft(text: "Ordinary fixture draft")
+            initialDrafts[fixtureSessionDraft] = ChatDraft(text: "Ordinary fixture draft")
         }
+        let stagedPhotosDraft = ProcessInfo.processInfo.arguments.contains(draftAttachmentsArgument) ? fixtureSessionDraft : nil
         UITestFixtureHold.shared.listen()
         if UITestLifecycleFixture.isEnabled { UITestLifecycleServer.shared.listen() }
         UITestFixtureURLProtocol.WorkspaceFixture.listenForGitWriteGrant()
@@ -213,7 +219,9 @@ struct UITestFixtureEnvironment {
         return UITestFixtureEnvironment(
             authManager: authManager,
             client: client,
-            draftStore: ChatDraftStore(persistence: UITestFixtureDraftPersistence(drafts: initialDrafts))
+            draftStore: ChatDraftStore(
+                persistence: UITestFixtureDraftPersistence(drafts: initialDrafts, stagedPhotosDraft: stagedPhotosDraft)
+            )
         )
     }
 }
@@ -318,10 +326,32 @@ private final class UITestFixtureKeychainStore: KeychainStoring {
 
 private actor UITestFixtureDraftPersistence: ChatDraftPersisting {
     private var drafts: [ChatDraftKey: ChatDraft]
+    /// The draft that gains two staged photos on the first load, which writes their durable
+    /// copies the way staging does.
+    private var stagedPhotosDraft: ChatDraftKey?
 
-    init(drafts: [ChatDraftKey: ChatDraft] = [:]) { self.drafts = drafts }
+    init(drafts: [ChatDraftKey: ChatDraft] = [:], stagedPhotosDraft: ChatDraftKey? = nil) {
+        self.drafts = drafts
+        self.stagedPhotosDraft = stagedPhotosDraft
+    }
 
-    func load() async -> [ChatDraftKey: ChatDraft] { drafts }
+    func load() async -> [ChatDraftKey: ChatDraft] {
+        if let key = stagedPhotosDraft {
+            stagedPhotosDraft = nil
+            let photo = UIGraphicsImageRenderer(size: CGSize(width: 64, height: 48)).pngData { context in
+                UIColor.systemBlue.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 64, height: 48))
+            }
+            for index in 1...2 {
+                let name = "fixture-photo-\(index).png"
+                guard let file = try? await ChatDraftAttachmentStore.shared.save(data: photo, suggestedFilename: name) else { continue }
+                drafts[key, default: ChatDraft()].attachments.append(ChatDraftAttachment(pending: PendingAttachment(
+                    name: name, path: "", mime: "image/png", isImage: true, draftFileName: file
+                )))
+            }
+        }
+        return drafts
+    }
 
     func write(_ drafts: [ChatDraftKey: ChatDraft]) async throws {
         self.drafts = drafts
