@@ -4,6 +4,7 @@ import Observation
 @MainActor
 @Observable
 public final class MemoryViewModel {
+    private var loadGeneration = 0
     private(set) var memoryText: String?
     private(set) var userText: String?
     private(set) var soulText: String?
@@ -43,19 +44,24 @@ public final class MemoryViewModel {
     }
 
     public func load() async {
+        // The view model outlives its screen (TAL-643): a rebuilt screen starts a new load while
+        // the old one may still be in flight, so only the latest load updates the model.
+        loadGeneration += 1
+        let generation = loadGeneration
         isLoading = true
         errorMessage = nil
         lastError = nil
-        defer { isLoading = false }
+        defer {
+            if generation == loadGeneration { isLoading = false }
+        }
 
         do {
             let response = try await client.memory(caching: responseCache?.entry(ResponseCache.Kind.memory))
+            guard generation == loadGeneration else { return }
             apply(response)
             isShowingCachedContent = false
         } catch {
-            // The view model outlives its screen (TAL-643), so a rebuilt screen's cancelled
-            // load must not replace what the new load shows.
-            guard !APIError.isCancellation(error) else { return }
+            guard generation == loadGeneration, !APIError.isCancellation(error) else { return }
             lastError = error
             errorMessage = error.localizedDescription
         }
