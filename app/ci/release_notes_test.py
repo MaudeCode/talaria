@@ -363,6 +363,7 @@ class ReleaseNotesTests(unittest.TestCase):
         self.write("NOTICE", "Repository metadata\n")
         self.write(".codex/environments/environment.toml", "# Local agent tooling\n")
         self.write(".xcodebuildmcp/config.yaml", "# Local test runner settings\n")
+        self.write("TalariaKit/Tests/TalariaKitTests/FixtureTests.swift", "// Package test\n")
         self.commit("TAL-2: documentation")
         self.cli("validate", "--base", "v1.0.0", error="missing release metadata")
         self.generate(error="missing release fragments")
