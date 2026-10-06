@@ -2,7 +2,7 @@ import { useEffect, useRef, type Dispatch, type RefObject, type SetStateAction }
 import * as api from '../../api/endpoints'
 import { isApiError } from '../../contracts/common'
 import { readPersistedJson, writePersistedJson, removePersisted } from '../../lib/persisted'
-import { LocalDraftSchema } from '../../contracts/persisted'
+import { DraftRevisionSchema, LocalDraftSchema } from '../../contracts/persisted'
 
 const key = (sid: string) => `hermes-draft:${sid}`
 
@@ -19,14 +19,19 @@ export function readLocalDraft(sessionId: string): string {
  * The server orders draft writes by `draft_version`: this browser's wall time in microseconds, kept above every
  * revision seen so far, so a slow request never overwrites later text and a load can tell which copy is newer (TAL-564).
  * Local copies are stamped the same way, so an edit outranks a server copy from a device whose clock runs ahead.
+ * A revision ahead of this clock is kept across reloads (behind it, the clock carries the order); a stored one beyond the
+ * server's five-minute limit is corrupt and dropped.
  */
-let revision = 0
+const REVISION_KEY = 'hermes-draft-revision'
+let revision = ((stored) => (stored <= (Date.now() + 300_000) * 1000 ? stored : 0))(readPersistedJson(REVISION_KEY, DraftRevisionSchema) ?? 0)
 function observe(version: unknown): void {
   const n = Number(version)
-  if (Number.isSafeInteger(n) && n > revision) revision = n
+  if (!Number.isSafeInteger(n) || n <= revision) return
+  revision = n
+  if (n > Date.now() * 1000) writePersistedJson(REVISION_KEY, n)
 }
 function stamp(): number {
-  revision = Math.max(Date.now() * 1000, revision + 1)
+  observe(Math.max(Date.now() * 1000, revision + 1))
   return revision
 }
 function writeLocal(sessionId: string, text: string, revision = stamp()): void {
@@ -53,8 +58,14 @@ function publish(sessionId: string, text: string): void {
       observe(saved.draft_version)
       if (text === '' && readPersistedJson(key(sessionId), LocalDraftSchema)?.revision === version) removePersisted(key(sessionId))
     },
-    // A 409 means another tab or device saved a later revision; this text stays local and the next edit outranks it.
-    (e: unknown) => { if (isApiError(e) && e.status === 409) observe((e.body as { draft_version?: unknown } | null)?.draft_version) },
+    // A 409 means another tab or device saved this or a later revision first: the next edit outranks it, but this copy
+    // must not, or the next load would publish it over the one the server kept.
+    (e: unknown) => {
+      if (!isApiError(e) || e.status !== 409) return
+      observe((e.body as { draft_version?: unknown } | null)?.draft_version)
+      const local = readPersistedJson(key(sessionId), LocalDraftSchema)
+      if (local?.revision === version) writePersistedJson(key(sessionId), { ...local, revision: 0 })
+    },
   )
 }
 

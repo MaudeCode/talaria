@@ -4,6 +4,7 @@ import { useState } from 'react'
 
 vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await importOriginal()), saveDraft: vi.fn(), fetchDraft: vi.fn() }))
 import * as api from '../../api/endpoints'
+import { ApiError } from '../../contracts/common'
 import { readLocalDraft, useDraftPersistence, useServerDraft } from './useDraft'
 
 describe('useDraftPersistence', () => {
@@ -335,5 +336,67 @@ describe('failed clears, and caching the server draft (TAL-564)', () => {
     const second = mount()
     await act(async () => { await Promise.resolve() })
     expect(second.result.current.text).toBe('newer elsewhere')
+  })
+})
+
+describe('rejected saves, and the revision watermark (TAL-564)', () => {
+  beforeEach(() => { vi.useFakeTimers(); localStorage.clear(); vi.mocked(api.saveDraft).mockReset().mockResolvedValue({ ok: true, draft: { text: '', files: [] }, draft_version: null }) })
+  afterEach(() => { vi.useRealTimers() })
+  const mount = () => renderHook(() => {
+    const [text, setText] = useState(() => readLocalDraft('s1'))
+    useDraftPersistence('s1', text)
+    useServerDraft('s1', setText)
+    return { text, setText }
+  })
+
+  it('lets the server copy win after it rejected this tab\'s save at the same revision', async () => {
+    vi.mocked(api.fetchDraft).mockResolvedValue({ draft: { text: '', files: [] }, draft_version: null })
+    let rejected = ''
+    vi.mocked(api.saveDraft).mockImplementation(({ draft_version }) => {
+      rejected = draft_version!
+      return Promise.reject(new ApiError({ kind: 'http', status: 409, path: 'api/session/draft', message: 'conflict', body: { error: 'conflict', draft: { text: 'other tab', files: [] }, draft_version } }))
+    })
+    const first = mount()
+    await act(async () => { await Promise.resolve() })
+    act(() => { first.result.current.setText('this tab') })
+    vi.advanceTimersByTime(1200)
+    await act(async () => { await Promise.resolve() })
+    first.unmount()
+
+    vi.mocked(api.saveDraft).mockReset().mockResolvedValue({ ok: true, draft: { text: '', files: [] }, draft_version: null })
+    vi.mocked(api.fetchDraft).mockResolvedValue({ draft: { text: 'other tab', files: [] }, draft_version: rejected })
+    const second = mount()
+    await act(async () => { await Promise.resolve() })
+    expect(second.result.current.text).toBe('other tab')
+    expect(vi.mocked(api.saveDraft)).not.toHaveBeenCalled()
+  })
+
+  it('keeps the revision watermark across a reload after an empty draft wins', async () => {
+    // Past every revision an earlier test observed, so this test's server revision is the highest one seen.
+    vi.setSystemTime(Date.now() + 14_400_000)
+    const ahead = (Date.now() + 120_000) * 1000
+    localStorage.setItem('hermes-draft:s1', JSON.stringify({ text: 'old', updatedAt: 1 }))
+    vi.mocked(api.fetchDraft).mockResolvedValue({ draft: { text: '', files: [] }, draft_version: String(ahead) })
+    const first = mount()
+    await act(async () => { await Promise.resolve() })
+    expect(first.result.current.text).toBe('')
+    first.unmount()
+
+    // A reload: a fresh module instance whose revision counter starts over.
+    vi.resetModules()
+    const fresh = await import('./useDraft')
+    const freshApi = await import('../../api/endpoints')
+    vi.mocked(freshApi.fetchDraft).mockImplementation(() => new Promise(() => undefined))
+    vi.mocked(freshApi.saveDraft).mockResolvedValue({ ok: true, draft: { text: '', files: [] }, draft_version: null })
+    const { result } = renderHook(() => {
+      const [text, setText] = useState(() => fresh.readLocalDraft('s1'))
+      fresh.useDraftPersistence('s1', text)
+      fresh.useServerDraft('s1', setText)
+      return { text, setText }
+    })
+    act(() => { result.current.setText('typed after reload') })
+    vi.advanceTimersByTime(300)
+    const stored = JSON.parse(localStorage.getItem('hermes-draft:s1')!) as { revision: number }
+    expect(stored.revision).toBeGreaterThan(ahead)
   })
 })
