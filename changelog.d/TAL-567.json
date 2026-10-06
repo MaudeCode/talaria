@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Kanban in Talaria Web again has search, assignee, tenant and Only mine filters, a stats strip, bulk status changes, task dependency links, board create and archive, and lanes by profile.",
+      "highlight": false,
+      "components": ["web"]
+    },
+    {
+      "category": "Fixed",
+      "summary": "Kanban in Talaria Web refreshes on its own when a task changes in another window, app or agent.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

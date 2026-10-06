@@ -47030,10 +47030,14 @@
                           },
                           "description": {
                             "type": "string"
+                          },
+                          "removable": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
-                          "slug"
+                          "slug",
+                          "removable"
                         ],
                         "additionalProperties": {}
                       }
@@ -47180,6 +47184,15 @@
           },
           {
             "name": "since",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "search",
             "in": "query",
             "schema": {
               "type": "string"
@@ -47363,10 +47376,172 @@
                       "items": {
                         "type": "string"
                       }
+                    },
+                    "lane_by_profile": {
+                      "type": "boolean"
+                    },
+                    "lanes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "assignee": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "count": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "columns": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "name": {
+                                  "type": "string"
+                                },
+                                "tasks": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "number"
+                                          }
+                                        ]
+                                      },
+                                      "title": {
+                                        "type": "string"
+                                      },
+                                      "status": {
+                                        "type": "string"
+                                      },
+                                      "assignee": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "priority": {
+                                        "anyOf": [
+                                          {
+                                            "anyOf": [
+                                              {
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "number"
+                                              }
+                                            ]
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "description": {
+                                        "type": "string"
+                                      },
+                                      "tags": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "session_id": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "archived": {
+                                        "type": "boolean"
+                                      },
+                                      "created_at": {},
+                                      "updated_at": {},
+                                      "available_actions": {
+                                        "type": "object",
+                                        "properties": {
+                                          "block": {
+                                            "type": "boolean"
+                                          },
+                                          "unblock": {
+                                            "type": "boolean"
+                                          },
+                                          "complete": {
+                                            "type": "boolean"
+                                          },
+                                          "archive": {
+                                            "type": "boolean"
+                                          },
+                                          "move_to": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string"
+                                            }
+                                          }
+                                        },
+                                        "required": [
+                                          "block",
+                                          "unblock",
+                                          "complete",
+                                          "archive",
+                                          "move_to"
+                                        ]
+                                      },
+                                      "requires_running_exit_confirmation": {
+                                        "type": "boolean"
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "available_actions",
+                                      "requires_running_exit_confirmation"
+                                    ],
+                                    "additionalProperties": {}
+                                  }
+                                }
+                              },
+                              "required": [
+                                "name",
+                                "tasks"
+                              ],
+                              "additionalProperties": {}
+                            }
+                          }
+                        },
+                        "required": [
+                          "assignee",
+                          "count",
+                          "columns"
+                        ]
+                      }
                     }
                   },
                   "required": [
-                    "bulk_move_targets"
+                    "bulk_move_targets",
+                    "lane_by_profile"
                   ],
                   "additionalProperties": {}
                 }
@@ -47470,9 +47645,47 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "propertyNames": {
-                    "type": "string"
+                  "properties": {
+                    "by_status": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "type": "number"
+                      }
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "status_counts": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "status": {
+                            "type": "string"
+                          },
+                          "count": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "status",
+                          "count"
+                        ]
+                      }
+                    }
                   },
+                  "required": [
+                    "by_status",
+                    "total",
+                    "status_counts"
+                  ],
                   "additionalProperties": {}
                 }
               }
@@ -48299,11 +48512,33 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "links": {
+                      "type": "object",
+                      "properties": {
+                        "parents": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "children": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": [
+                        "parents",
+                        "children"
+                      ]
                     }
                   },
                   "required": [
                     "task",
-                    "last_card_action"
+                    "last_card_action",
+                    "links"
                   ],
                   "additionalProperties": {}
                 }

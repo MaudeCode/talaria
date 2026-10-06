@@ -180,20 +180,32 @@ export const fetchCronRun = (job_id: string, filename: string) => orpc().crons.r
 export const fetchCronDeliveryOptions = () => orpc().crons.deliveryOptions()
 export const fetchCronStatus = () => orpc().crons.status({})
 export const fetchKanbanBoards = () => orpc().kanban.boards({})
-export const fetchKanbanBoard = (params: Record<string, string | boolean | undefined> = {}) => orpc().kanban.board(Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, typeof v === 'boolean' ? (v ? '1' : '0') : v])))
+/** Every Kanban read and write names the board the page shows (`board`), so a switch elsewhere cannot redirect it; omitted, the server uses its active board. */
+const onBoard = (board: string | undefined) => (board ? { board } : {})
+export const fetchKanbanBoard = (board: string | undefined, params: Record<string, string | boolean | undefined> = {}) => orpc().kanban.board({ ...onBoard(board), ...Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, typeof v === 'boolean' ? (v ? '1' : '0') : v])) })
 export const switchKanbanBoard = (slug: string) => orpc().kanban.switchBoard({ slug })
 /** The real task action set: `patch`, `comments`, `block`, `unblock`, `dispatch` (archive is `patch {status: 'archived'}`). */
-export const kanbanTaskAction = (id: string | number, action: 'patch' | 'comments' | 'block' | 'unblock' | 'dispatch', body: Record<string, unknown>) => {
+export const kanbanTaskAction = (board: string | undefined, id: string | number, action: 'patch' | 'comments' | 'block' | 'unblock' | 'dispatch', body: Record<string, unknown>) => {
   const k = orpc().kanban
   const task_id = String(id)
-  if (action === 'comments') return k.comment({ task_id, ...body })
-  if (action === 'block') return k.block({ task_id, ...body })
-  if (action === 'unblock') return k.unblock({ task_id, ...body })
-  if (action === 'dispatch') return k.dispatch({})
-  return k.patch({ task_id, ...body })
+  const input = { task_id, ...body, ...onBoard(board) }
+  if (action === 'comments') return k.comment(input)
+  if (action === 'block') return k.block(input)
+  if (action === 'unblock') return k.unblock(input)
+  if (action === 'dispatch') return k.dispatch(onBoard(board))
+  return k.patch(input)
 }
-export const createKanbanTask = (body: Record<string, unknown>) => orpc().kanban.createTask(body)
-export const fetchKanbanTaskLog = (id: string | number) => orpc().kanban.taskLog({ task_id: String(id) })
+export const createKanbanTask = (board: string | undefined, body: Record<string, unknown>) => orpc().kanban.createTask({ ...body, ...onBoard(board) })
+export const fetchKanbanTaskLog = (board: string | undefined, id: string | number) => orpc().kanban.taskLog({ task_id: String(id), ...onBoard(board) })
+export const fetchKanbanTask = (board: string | undefined, id: string | number) => orpc().kanban.task({ task_id: String(id), ...onBoard(board) })
+export const fetchKanbanStats = (board: string | undefined) => orpc().kanban.stats(onBoard(board))
+export const updateKanbanConfig = (lane_by_profile: boolean) => orpc().kanban.updateConfig({ lane_by_profile })
+export const bulkKanbanStatus = (board: string | undefined, ids: string[], status: string) => orpc().kanban.bulk({ ids, status, ...onBoard(board) })
+export const linkKanbanTasks = (board: string | undefined, parent_id: string, child_id: string) => orpc().kanban.link({ parent_id, child_id, ...onBoard(board) })
+export const unlinkKanbanTasks = (board: string | undefined, parent_id: string, child_id: string) => orpc().kanban.unlink({ parent_id, child_id, ...onBoard(board) })
+export const createKanbanBoard = (name: string) => orpc().kanban.createBoard({ name, switch: true })
+/** Archives the board (the server's default); `?delete=1` would remove it. */
+export const archiveKanbanBoard = (slug: string) => orpc().kanban.deleteBoard({ slug })
 export const fetchInsights = (days: number) => orpc().insights({ days: String(days) })
 export const fetchLogs = (file: string, tail: number) => orpc().logs({ file, tail: String(tail) })
 export const fetchOnboarding = () => orpc().onboarding.status(undefined, { signal: timeout(45_000) })

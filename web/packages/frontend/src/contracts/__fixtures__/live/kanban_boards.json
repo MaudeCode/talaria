@@ -13,6 +13,7 @@
         "is_current": true,
         "name": "Default",
         "project_id": null,
+        "removable": false,
         "slug": "default",
         "total": 0
       }
