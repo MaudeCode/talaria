@@ -34,7 +34,8 @@ struct QueuedMessagesSheet: View {
                 }
             }
         }
-        .onChange(of: previews.isEmpty) { _, isEmpty in
+        // Initially too: the queue can drain between the chip's tap and the sheet appearing.
+        .onChange(of: previews.isEmpty, initial: true) { _, isEmpty in
             if isEmpty { dismiss() }
         }
     }
