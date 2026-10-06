@@ -168,7 +168,7 @@ export const gitRouter = os.router({
     list: os.rollback.list.handler(({ input, context: { ctx } }) => {
       if (!input.workspace) throw new HttpError(400, 'workspace query parameter is required')
       try {
-        return ctx.deps.rollback.list(input.workspace) as { checkpoints: Record<string, unknown>[]; workspace: string; checkpoint_dir: string }
+        return ctx.deps.rollback.list(input.workspace) as never
       } catch (error) {
         throw rollbackError(error)
       }

@@ -27673,10 +27673,40 @@
                       "type": "array",
                       "items": {
                         "type": "object",
-                        "propertyNames": {
-                          "type": "string"
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "commit": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          },
+                          "date": {
+                            "type": "string"
+                          },
+                          "date_display": {
+                            "type": "string"
+                          },
+                          "files": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "path": {
+                            "type": "string"
+                          }
                         },
-                        "additionalProperties": {}
+                        "required": [
+                          "id",
+                          "commit",
+                          "message",
+                          "date",
+                          "date_display",
+                          "files",
+                          "path"
+                        ]
                       }
                     },
                     "workspace": {

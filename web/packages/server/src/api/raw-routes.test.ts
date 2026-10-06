@@ -360,8 +360,8 @@ describe('raw byte routes', () => {
     expect(res.status).toBe(200)
     const diff = await json(res)
     expect(diff.files_changed).toEqual([{ file: 'docs/a.txt', status: 'modified' }, { file: 'removed.txt', status: 'deleted' }])
-    // difflib keeps each line's own newline and the Python route joins with '\n', so context lines carry a blank line after them.
-    expect(diff.diff).toContain('--- a/docs/a.txt\n+++ b/docs/a.txt\n@@ -1,2 +1 @@\n alpha\n\n-gamma\n')
+    // TAL-571: one line per diff line; each line's own ending is dropped before the '\n' join, so no blank line follows it.
+    expect(diff.diff).toContain('--- a/docs/a.txt\n+++ b/docs/a.txt\n@@ -1,2 +1 @@\n alpha\n-gamma\n--- a/removed.txt')
     expect(diff.diff).toContain('--- a/removed.txt\n+++ /dev/null\n@@ -1,1 +0,0 @@\n-gone')
     expect(diff.diff).not.toContain('link')
     res = await post(s, '/api/rollback/restore', { workspace: ws, id: 'abc123' })

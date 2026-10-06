@@ -207,7 +207,8 @@ export class RollbackStore {
         const diff = unifiedDiff(splitKeepEnds(ckptContent), splitKeepEnds(wsContent), `a/${relPath}`, `b/${relPath}`)
         if (diff.length) {
           filesChanged.push({ file: relPath, status: 'modified' })
-          diffLines.push(...diff)
+          // difflib keeps each line's own ending; drop it so the '\n' join below yields one line per diff line.
+          diffLines.push(...diff.map((line) => line.replace(LINE_END, '')))
         }
       }
     }
@@ -248,6 +249,7 @@ export class RollbackStore {
 
 /** Python `str.splitlines()`: also breaks on \v, \f, \x1c-\x1e, \x85, \u2028 and \u2029. */
 export const PY_LINE_BREAK = /\r\n|[\n\r\v\f\x1c\x1d\x1e\x85\u2028\u2029]/
+const LINE_END = new RegExp(`(?:${PY_LINE_BREAK.source})$`)
 export function splitLinesPy(text: string): string[] {
   const lines = text.split(PY_LINE_BREAK)
   if (lines.length && lines[lines.length - 1] === '') lines.pop()

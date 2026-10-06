@@ -117,7 +117,7 @@ describe('chat side panel (TAL-373)', () => {
   it('keeps Agents open in a chat without a workspace, where Files says so', async () => {
     render(<Panel workspace={null} />)
     await userEvent.click(await screen.findByRole('tab', { name: 'Files' }))
-    expect(screen.getByText('This chat has no workspace.')).toBeInTheDocument()
+    expect(within(screen.getByRole('tabpanel')).getByText('This chat has no workspace.')).toBeInTheDocument()
     expect(api.listDir).not.toHaveBeenCalled()
     await userEvent.click(screen.getByRole('tab', { name: 'Agents' }))
     expect(await screen.findByText('No agents have run in this chat.')).toBeInTheDocument()

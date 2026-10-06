@@ -1,5 +1,5 @@
 /**
- * TAL-373: the chat's right panel, a page host with Files and Agents. A later page (a terminal, say) is one more entry in
+ * TAL-373: the chat's right panel, a page host with Files, Agents and (TAL-571) Checkpoints. A later page (a terminal, say) is one more entry in
  * `pages`. The user's tab choice persists; when a session's panel first opens it shows Agents if agents are running or
  * need attention, else the last chosen page, and nothing switches it after that.
  */
@@ -8,6 +8,7 @@ import { m } from '../../paraglide/messages.js'
 import { readPersisted, writePersisted } from '../../lib/persisted'
 import { PanelPageHost, type PanelPage } from '../../shell/PanelPageHost'
 import { FilesPage } from '../workspace/FilesPage'
+import { CheckpointsPage } from '../workspace/CheckpointsPage'
 import { AgentsPage, useHasActiveAgents } from '../background/AgentsPage'
 
 const PAGE_KEY = 'talaria-right-panel-page'
@@ -24,6 +25,7 @@ export function ChatSidePanel({ sessionId, workspace, open, onToggle, onClose }:
   const pages: PanelPage[] = [
     { id: 'files', label: m.ws_panel_files(), render: (active) => <FilesPage workspace={workspace} sessionId={sessionId} active={active} /> },
     { id: 'agents', label: m.panel_agents(), render: (active) => <AgentsPage sessionId={sessionId} active={active} /> },
+    { id: 'checkpoints', label: m.checkpoint_title(), render: (active) => <CheckpointsPage workspace={workspace} sessionId={sessionId} active={active} /> },
   ]
   return (
     <PanelPageHost
