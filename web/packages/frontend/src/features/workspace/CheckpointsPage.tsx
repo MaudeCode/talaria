@@ -1,7 +1,7 @@
 /**
  * TAL-571: the right panel's Checkpoints page. It lists the Agent's file checkpoints for the chat's workspace as the
  * server reads them (newest first), shows each one's diff against the current files, and restores one behind a danger
- * confirmation. It loads only while shown.
+ * confirmation. It loads only while shown, and each read is fresh: the Agent changes these files and checkpoints at will.
  */
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -25,7 +25,7 @@ function WorkspaceCheckpoints({ workspace, sessionId, active }: { workspace: str
   const qc = useQueryClient()
   const [viewing, setViewing] = useState<Picked | null>(null)
   const [restoring, setRestoring] = useState<Picked | null>(null)
-  const list = useQuery({ queryKey: keys.checkpoints.list(workspace), queryFn: () => api.fetchCheckpoints(workspace), enabled: active })
+  const list = useQuery({ queryKey: keys.checkpoints.list(workspace), queryFn: () => api.fetchCheckpoints(workspace), enabled: active, staleTime: 0 })
   const restore = useMutation({
     mutationFn: (id: string) => api.restoreCheckpoint(workspace, id),
     onSuccess: (res) => {
@@ -57,7 +57,7 @@ function WorkspaceCheckpoints({ workspace, sessionId, active }: { workspace: str
                 <div className="flex min-w-0 gap-1 text-[11px] text-muted">
                   <code className="truncate">{c.id}</code>
                   {c.date_display && <span className="shrink-0">· {c.date_display}</span>}
-                  {c.files > 0 && <span className="shrink-0">· {m.checkpoint_files()}: {c.files}</span>}
+                  <span className="shrink-0">· {m.checkpoint_files()}: {c.files}</span>
                 </div>
               </div>
               <IconButton label={m.checkpoint_view_diff()} onClick={() => setViewing({ id: c.id, message: c.message })}><FileDiff size={15} aria-hidden="true" /></IconButton>
@@ -71,7 +71,7 @@ function WorkspaceCheckpoints({ workspace, sessionId, active }: { workspace: str
         open={restoring !== null}
         onOpenChange={(o) => { if (!o) setRestoring(null) }}
         title={m.checkpoint_restore_confirm_title()}
-        description={restoring ? m.checkpoint_restore_confirm_message({ ckpt: restoring.message || restoring.id }) : undefined}
+        description={restoring ? m.checkpoint_restore_confirm_message({ ckpt: restoring.message }) : undefined}
         confirmLabel={m.checkpoint_restore()}
         cancelLabel={m.cancel()}
         danger
@@ -82,7 +82,7 @@ function WorkspaceCheckpoints({ workspace, sessionId, active }: { workspace: str
 }
 
 function CheckpointDiff({ workspace, checkpoint, onClose }: { workspace: string; checkpoint: Picked; onClose: () => void }) {
-  const diff = useQuery({ queryKey: keys.checkpoints.diff(workspace, checkpoint.id), queryFn: () => api.fetchCheckpointDiff(workspace, checkpoint.id) })
+  const diff = useQuery({ queryKey: keys.checkpoints.diff(workspace, checkpoint.id), queryFn: () => api.fetchCheckpointDiff(workspace, checkpoint.id), staleTime: 0, gcTime: 0 })
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }} title={m.checkpoint_diff_title()} description={checkpoint.message} className="flex max-h-[80vh] w-[min(92vw,800px)] flex-col">
       {diff.isPending && <LoadingState label={m.checkpoint_loading()} />}
