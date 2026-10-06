@@ -22,6 +22,8 @@ export const MIME_MAP: Record<string, string> = {
   '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.m4a': 'audio/mp4', '.aac': 'audio/aac', '.ogg': 'audio/ogg', '.oga': 'audio/ogg', '.opus': 'audio/opus', '.flac': 'audio/flac',
   '.mp4': 'video/mp4', '.mov': 'video/quicktime', '.m4v': 'video/mp4', '.webm': 'video/webm', '.ogv': 'video/ogg',
   '.ts': 'text/plain', '.tsx': 'text/plain',
+  // An HTML preview's stylesheets and scripts: with `nosniff`, a browser applies or runs them only under these types.
+  '.css': 'text/css', '.js': 'text/javascript', '.mjs': 'text/javascript',
 }
 
 export function mimeFor(path: string): string {

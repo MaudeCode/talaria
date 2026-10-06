@@ -99,7 +99,8 @@ function WorkspaceFiles({ workspace, sessionId, active }: { workspace: string; s
           {content.isPending && <LoadingState />}
           {content.isError && <ErrorState error={content.error} onRetry={() => { void content.refetch() }} />}
           {kind === 'binary' && <div className="p-3 text-xs text-muted">{m.ws_panel_binary({ size: formatBytes(content.data?.size) })}</div>}
-          {(kind === 'image' || kind === 'pdf' || kind === 'audio' || kind === 'video') && (
+          {/* Media and HTML frames mount only while the page is shown, so a hidden page stops playing; the selection stays. */}
+          {active && (kind === 'image' || kind === 'pdf' || kind === 'audio' || kind === 'video') && (
             <div className="flex min-h-0 flex-1 flex-col">
               <MediaPreview kind={kind} name={file} src={rawUrl(kind === 'pdf')} />
               <div className="border-t border-border-subtle px-2 py-1.5 text-right text-[11px] text-muted">{formatBytes(content.data?.size)}</div>
@@ -109,9 +110,10 @@ function WorkspaceFiles({ workspace, sessionId, active }: { workspace: string; s
             <div className="flex min-h-0 flex-1 flex-col">
               {rendered && kind === 'markdown' && <div className="min-h-0 flex-1 overflow-auto p-3 text-[13px]"><Markdown text={text} /></div>}
               {rendered && kind === 'csv' && <CsvTable rows={content.data.table ?? []} truncated={!!content.data.table_truncated} />}
-              {rendered && kind === 'html' && (
-                // The raw route serves inline HTML with a sandbox CSP; the frame sandbox repeats it without same-origin.
-                <iframe src={rawUrl(true)} title={file} sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox" className="min-h-0 w-full flex-1 border-0 bg-white" />
+              {rendered && kind === 'html' && active && (
+                // The server's preview URL serves the page and its relative assets with a sandbox CSP; the frame sandbox
+                // repeats it without same-origin. An older server's raw inline route serves the page alone.
+                <iframe src={content.data.preview_url ? appUrl(content.data.preview_url).href : rawUrl(true)} title={file} sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox" className="min-h-0 w-full flex-1 border-0 bg-white" />
               )}
               {!rendered && (
                 <textarea value={text} onChange={(e) => setDraft(e.target.value)} spellCheck={false} aria-label={m.ws_panel_preview()} className="min-h-0 flex-1 resize-none bg-code-bg p-3 font-mono text-[12px] text-pre-text outline-none" />

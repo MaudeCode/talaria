@@ -10,6 +10,7 @@ import { AuthStore, CSRF_HEADER_NAME, type SessionInfo } from './store.js'
 import { validProfileName, type RequestContext } from '../http/context.js'
 import { checkSameOriginBrowserRequest, csrfRejectionError, isBrowserUnsafeRequest, rawPeerIsTrustedProxy, type CsrfFailure } from '../http/origin.js'
 import type { AuthStatus } from '@maudecode/talaria-web-contracts'
+import { PREVIEW_PREFIX } from '../workspace/preview.js'
 
 export const PUBLIC_PATHS = new Set([
   '/login', '/health', '/favicon.ico', '/sw.js',
@@ -38,6 +39,8 @@ export function isPublicPath(path: string): boolean {
     PUBLIC_PATHS.has(path) ||
     path.startsWith('/share/') ||
     (path.startsWith('/api/share/') && path !== '/api/share/create' && path !== '/api/share/revoke') ||
+    // The HTML preview frame is sandboxed and sends no cookie; its signed path grant authorizes it (TAL-566).
+    path.startsWith(PREVIEW_PREFIX) ||
     path.startsWith('/static/') ||
     path.startsWith('/assets/') ||
     path.startsWith('/session/static/')

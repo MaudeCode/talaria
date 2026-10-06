@@ -23966,6 +23966,9 @@
                     },
                     "table_truncated": {
                       "type": "boolean"
+                    },
+                    "preview_url": {
+                      "type": "string"
                     }
                   },
                   "additionalProperties": {}

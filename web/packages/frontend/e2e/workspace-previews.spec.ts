@@ -1,4 +1,4 @@
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from './fixtures'
@@ -23,7 +23,11 @@ test('the Files page previews images, PDF, audio, video, HTML, CSV, Markdown and
   put('logo.svg', '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><rect width="40" height="20" fill="teal"/></svg>')
   put('doc.pdf', '%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 100]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n')
   put('tone.wav', wav())
-  put('page.html', '<h1>Hello from HTML</h1><p id="js"></p><script>document.getElementById("js").textContent = "script ran"</script>')
+  // Relative assets load from the page's signed preview URL.
+  mkdirSync(join(workspace, 'assets'))
+  put('assets/style.css', 'h1 { color: rgb(0, 128, 128) }')
+  put('assets/app.js', 'document.getElementById("js").textContent = "script ran"')
+  put('page.html', '<link rel="stylesheet" href="assets/style.css"><h1>Hello from HTML</h1><p id="js"></p><script src="assets/app.js"></script>')
   put('table.csv', 'name,note\n"Ada","said ""hi"", twice"\nGrace,compilers\n')
   put('notes.md', '# Notes heading\n')
   put('blob.bin', Buffer.from([0x68, 0, 0xff]))
@@ -89,6 +93,12 @@ test('the Files page previews images, PDF, audio, video, HTML, CSV, Markdown and
   const audio = page.getByLabel('tone.wav')
   await expect.poll(() => audio.evaluate((el: HTMLAudioElement) => el.duration)).toBeGreaterThan(0.4)
   await shot('audio')
+  // A hidden Files page unmounts its player, so playback stops; the open file comes back with the page.
+  const tabs = page.getByRole('tablist', { name: 'Side panel' })
+  await tabs.getByRole('tab', { name: 'Agents' }).click()
+  await expect(page.locator('audio')).toHaveCount(0)
+  await tabs.getByRole('tab', { name: 'Files' }).click()
+  await expect(audio).toBeVisible()
   await back()
 
   await open('clip.webm')
@@ -101,6 +111,7 @@ test('the Files page previews images, PDF, audio, video, HTML, CSV, Markdown and
   const frame = page.frameLocator('iframe[title="page.html"]')
   await expect(frame.getByRole('heading', { name: 'Hello from HTML' })).toBeVisible()
   await expect(frame.getByText('script ran')).toBeVisible()
+  await expect(frame.getByRole('heading', { name: 'Hello from HTML' })).toHaveCSS('color', 'rgb(0, 128, 128)')
   await shot('html')
   // Edit swaps the preview for the source text.
   await page.getByRole('button', { name: 'Edit' }).click()
