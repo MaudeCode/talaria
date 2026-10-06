@@ -29,8 +29,8 @@ function stamp(): number {
   revision = Math.max(Date.now() * 1000, revision + 1)
   return revision
 }
-function saveServerDraft(sessionId: string, text: string): void {
-  void api.saveDraft({ session_id: sessionId, draft: { text }, draft_version: String(stamp()) }).then(
+function saveServerDraft(sessionId: string, text: string, version = stamp()): void {
+  void api.saveDraft({ session_id: sessionId, draft: { text }, draft_version: String(version) }).then(
     (saved) => { observe(saved.draft_version) },
     // A 409 means another tab or device saved a later revision; this text stays local and the next edit outranks it.
     (e: unknown) => { if (isApiError(e) && e.status === 409) observe((e.body as { draft_version?: unknown } | null)?.draft_version) },
@@ -39,7 +39,7 @@ function saveServerDraft(sessionId: string, text: string): void {
 
 /**
  * On session load, the server's draft replaces this browser's copy when it is newer, or when this browser has none
- * (another device, cleared site data). Text typed or handed in while the request runs is never replaced.
+ * (another device, cleared site data). Once the box is edited (typed, sent, handed in) a late answer is dropped.
  */
 export function useServerDraft(sessionId: string | null, setText: Dispatch<SetStateAction<string>>) {
   useEffect(() => {
@@ -50,9 +50,8 @@ export function useServerDraft(sessionId: string | null, setText: Dispatch<SetSt
       observe(draft_version)
       if (!current) return
       if (local && (draft_version === null || Number(draft_version) <= local.updatedAt * 1000)) return
-      const prior = local?.text ?? ''
       setText((text) => {
-        if (text !== prior) return text
+        if (loaded?.sessionId !== sessionId || loaded.text !== text) return text
         loaded = { sessionId, text: draft.text }
         return draft.text
       })
@@ -105,7 +104,12 @@ export function useDraftPersistence(sessionId: string | null, text: string) {
     }
     unsaved.current = { sessionId, text }
     const local = window.setTimeout(() => flush(unsaved), 300)
-    const server = window.setTimeout(() => { saveServerDraft(sessionId, text) }, 1200)
+    const server = window.setTimeout(() => {
+      // The server may truncate what it stores; the full local copy carries the same revision, so it is never ranked older.
+      const version = stamp()
+      writePersistedJson(key(sessionId), { text, updatedAt: Math.ceil(version / 1000) })
+      saveServerDraft(sessionId, text, version)
+    }, 1200)
     return () => { window.clearTimeout(local); window.clearTimeout(server) }
   }, [sessionId, text])
 }

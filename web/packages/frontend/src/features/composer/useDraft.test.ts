@@ -172,3 +172,42 @@ describe('loaded drafts and clock skew (TAL-564)', () => {
     expect(second.result.current.text).toBe('my later edit')
   })
 })
+
+describe('restores that race an edit, and server truncation (TAL-564)', () => {
+  beforeEach(() => { vi.useFakeTimers(); localStorage.clear(); vi.mocked(api.saveDraft).mockReset().mockResolvedValue({ ok: true, draft: { text: '', files: [] }, draft_version: null }) })
+  afterEach(() => { vi.useRealTimers() })
+  const mount = () => renderHook(() => {
+    const [text, setText] = useState(() => readLocalDraft('s1'))
+    useDraftPersistence('s1', text)
+    useServerDraft('s1', setText)
+    return { text, setText }
+  })
+
+  it('drops a slow restore once the box was edited, even if it is empty again after a send', async () => {
+    let answer!: (value: Awaited<ReturnType<typeof api.fetchDraft>>) => void
+    vi.mocked(api.fetchDraft).mockImplementation(() => new Promise((r) => { answer = r }))
+    const { result } = mount()
+    act(() => { result.current.setText('sent message') })
+    act(() => { result.current.setText('') })
+    await act(async () => { answer({ draft: { text: 'sent message', files: [] }, draft_version: String((Date.now() + 1) * 1000) }); await Promise.resolve() })
+    expect(result.current.text).toBe('')
+  })
+
+  it('keeps the full local draft over the copy the server truncated on save', async () => {
+    const long = 'x'.repeat(60_000)
+    // Past every revision an earlier test observed, so this browser's clock alone orders the two saves.
+    vi.setSystemTime(Date.now() + 3_600_000)
+    vi.mocked(api.fetchDraft).mockResolvedValue({ draft: { text: '', files: [] }, draft_version: null })
+    const first = mount()
+    await act(async () => { await Promise.resolve() })
+    act(() => { first.result.current.setText(long) })
+    vi.advanceTimersByTime(2000)
+    const saved = vi.mocked(api.saveDraft).mock.calls.at(-1)![0]
+    first.unmount()
+
+    vi.mocked(api.fetchDraft).mockResolvedValue({ draft: { text: long.slice(0, 50_000), files: [] }, draft_version: saved.draft_version! })
+    const second = mount()
+    await act(async () => { await Promise.resolve() })
+    expect(second.result.current.text).toBe(long)
+  })
+})
