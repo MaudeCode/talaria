@@ -83,13 +83,56 @@ struct NotificationsHapticsSettingsView: View {
 
                 SettingsDivider()
 
-                NotificationPermissionToggle(kind: .providerQuota)
-
-                SettingsDivider()
-
                 RelayNotificationSettingsRow(authManager: authManager)
             }
+
+            SettingsCard(title: String(localized: "Provider Quotas")) {
+                NotificationPermissionToggle(kind: .providerQuota)
+                ProviderQuotaAlertLevelToggles()
+            }
         }
+    }
+}
+
+/// Per-level quota alert controls; each is unavailable while the master quota switch or its parent level is off.
+private struct ProviderQuotaAlertLevelToggles: View {
+    @AppStorage(ProviderQuotaAlertSettings.isEnabledKey) private var isEnabled = false
+    @AppStorage(ProviderQuotaAlertSettings.warningEnabledKey)
+    private var warning = ProviderQuotaAlertSettings.defaultWarningEnabled
+    @AppStorage(ProviderQuotaAlertSettings.criticalEnabledKey)
+    private var critical = ProviderQuotaAlertSettings.defaultCriticalEnabled
+    @AppStorage(ProviderQuotaAlertSettings.criticalTimeSensitiveKey)
+    private var timeSensitive = ProviderQuotaAlertSettings.defaultCriticalTimeSensitive
+
+    var body: some View {
+        SettingsDivider()
+
+        SettingsToggleRow(
+            title: String(localized: "Warning Alerts"),
+            systemImage: "exclamationmark.triangle",
+            isOn: $warning
+        )
+        .disabled(!isEnabled)
+
+        SettingsDivider()
+
+        SettingsToggleRow(
+            title: String(localized: "Critical Alerts"),
+            systemImage: "exclamationmark.octagon",
+            isOn: $critical
+        )
+        .disabled(!isEnabled)
+
+        SettingsDivider()
+
+        SettingsToggleRow(
+            title: String(localized: "Time Sensitive"),
+            systemImage: "clock.badge.exclamationmark",
+            isOn: $timeSensitive
+        )
+        .disabled(!isEnabled || !critical)
+
+        SettingsFootnote(String(localized: "Time Sensitive applies to critical quota alerts only."))
     }
 }
 
@@ -102,7 +145,7 @@ struct NotificationPermissionToggle: View {
         var title: String {
             switch self {
             case .responseCompletion: String(localized: "Response Complete Alerts")
-            case .providerQuota: String(localized: "Quota Pace Alerts")
+            case .providerQuota: String(localized: "Provider Quota Alerts")
             case .approval: String(localized: "Approval Alerts")
             }
         }

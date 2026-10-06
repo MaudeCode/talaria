@@ -39,7 +39,14 @@ final class TalariaAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificat
             NotificationCenter.default.post(name: .talariaSessionNotificationArrived, object: nil)
         }
 
-        return [.banner, .sound]
+        return Self.foregroundPresentation(for: notification.request.content)
+    }
+
+    /// Quota alerts also go to Notification Center's list so they outlive the banner; other families keep theirs.
+    static func foregroundPresentation(for content: UNNotificationContent) -> UNNotificationPresentationOptions {
+        content.categoryIdentifier == ProviderQuotaAlertSettings.categoryIdentifier
+            ? [.banner, .sound, .list]
+            : [.banner, .sound]
     }
 
     func userNotificationCenter(

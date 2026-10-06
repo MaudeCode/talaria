@@ -1,3 +1,4 @@
+import UserNotifications
 import XCTest
 @testable import Talaria
 @testable import TalariaKit
@@ -618,8 +619,12 @@ final class ProvidersViewModelTests: APIClientTestCase {
     }
 
     func testQuotaAlertsFireOnEnteringWarningOrCriticalAndOnEscalation() {
-        func run(_ urgency: ProviderQuotaUrgency, after previous: [String: String]) -> (ProviderQuotaAlertService.Level?, [String: String]) {
-            let result = ProviderQuotaAlertService.transitions([("qsrc", urgency)], previous: previous)
+        func run(
+            _ urgency: ProviderQuotaUrgency,
+            after previous: [String: String],
+            preferences: ProviderQuotaAlertService.Preferences = .init()
+        ) -> (ProviderQuotaAlertService.Level?, [String: String]) {
+            let result = ProviderQuotaAlertService.transitions([("qsrc", urgency)], previous: previous, preferences: preferences)
             return (result.alerts["qsrc"], result.states)
         }
         XCTAssertEqual(run(.warning, after: [:]).0, .warning)
@@ -632,6 +637,75 @@ final class ProvidersViewModelTests: APIClientTestCase {
         XCTAssertEqual(recovered.1, [:], "recovering re-arms the alert")
         XCTAssertNil(run(.stale, after: [:]).0)
         XCTAssertNil(run(.unavailable, after: [:]).0)
+
+        let criticalOnly = ProviderQuotaAlertService.Preferences(warning: false, critical: true)
+        let silentWarning = run(.warning, after: [:], preferences: criticalOnly)
+        XCTAssertNil(silentWarning.0, "a disabled warning level stays silent")
+        XCTAssertEqual(silentWarning.1, ["qsrc": "warning"], "a silent warning still records the level")
+        XCTAssertEqual(run(.critical, after: silentWarning.1, preferences: criticalOnly).0, .critical, "escalation still alerts")
+
+        let warningOnly = ProviderQuotaAlertService.Preferences(warning: true, critical: false)
+        XCTAssertEqual(run(.warning, after: [:], preferences: warningOnly).0, .warning)
+        let silentCritical = run(.critical, after: ["qsrc": "warning"], preferences: warningOnly)
+        XCTAssertNil(silentCritical.0, "a disabled critical level stays silent")
+        XCTAssertNil(run(.warning, after: silentCritical.1, preferences: warningOnly).0, "falling back to warning does not re-alert")
+    }
+
+    func testQuotaAlertPreferencesReadEachLevelIndependently() throws {
+        let suite = "ProviderQuotaAlertPreferences.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        XCTAssertEqual(
+            ProviderQuotaAlertService.Preferences.stored(defaults: defaults),
+            .init(warning: true, critical: true, criticalTimeSensitive: false),
+            "both levels default on and Time Sensitive defaults off"
+        )
+
+        defaults.set(false, forKey: ProviderQuotaAlertSettings.warningEnabledKey)
+        defaults.set(true, forKey: ProviderQuotaAlertSettings.criticalTimeSensitiveKey)
+        let criticalOnly = ProviderQuotaAlertService.Preferences.stored(defaults: defaults)
+        XCTAssertFalse(criticalOnly.allows(.warning))
+        XCTAssertTrue(criticalOnly.allows(.critical))
+        XCTAssertTrue(criticalOnly.criticalTimeSensitive)
+
+        defaults.set(true, forKey: ProviderQuotaAlertSettings.warningEnabledKey)
+        defaults.set(false, forKey: ProviderQuotaAlertSettings.criticalEnabledKey)
+        let warningOnly = ProviderQuotaAlertService.Preferences.stored(defaults: defaults)
+        XCTAssertTrue(warningOnly.allows(.warning))
+        XCTAssertFalse(warningOnly.allows(.critical))
+        XCTAssertFalse(warningOnly.criticalTimeSensitive, "Time Sensitive is unavailable without critical alerts")
+    }
+
+    func testOnlyTimeSensitiveCriticalQuotaAlertsUseTheTimeSensitiveLevel() {
+        func request(_ level: ProviderQuotaAlertService.Level, timeSensitive: Bool) -> UNNotificationRequest {
+            ProviderQuotaAlertService.request(
+                level,
+                sourceID: "qsrc_a",
+                name: "Claude",
+                remaining: 12.5,
+                preferences: .init(criticalTimeSensitive: timeSensitive)
+            )
+        }
+        XCTAssertEqual(request(.critical, timeSensitive: true).content.interruptionLevel, .timeSensitive)
+        XCTAssertEqual(request(.critical, timeSensitive: false).content.interruptionLevel, .active)
+        XCTAssertEqual(request(.warning, timeSensitive: true).content.interruptionLevel, .active)
+
+        let critical = request(.critical, timeSensitive: true)
+        XCTAssertEqual(critical.identifier, "provider-quota-qsrc_a-critical")
+        XCTAssertEqual(critical.content.categoryIdentifier, ProviderQuotaAlertSettings.categoryIdentifier)
+        XCTAssertEqual(critical.content.userInfo as? [String: String], ["quota_source_id": "qsrc_a"])
+        XCTAssertEqual(critical.content.title, "Claude quota critical")
+    }
+
+    func testOnlyQuotaAlertsStayInNotificationCenterWhileForegrounded() {
+        let quota = ProviderQuotaAlertService.request(.warning, sourceID: "qsrc_a", name: "Claude", remaining: nil, preferences: .init())
+        XCTAssertEqual(TalariaAppDelegate.foregroundPresentation(for: quota.content), [.banner, .sound, .list])
+
+        let session = UNMutableNotificationContent()
+        session.userInfo = [SessionNotificationRefresh.sessionIDKey: "session-1"]
+        XCTAssertEqual(TalariaAppDelegate.foregroundPresentation(for: session), [.banner, .sound])
+        XCTAssertEqual(TalariaAppDelegate.foregroundPresentation(for: UNMutableNotificationContent()), [.banner, .sound])
     }
 
     @MainActor
