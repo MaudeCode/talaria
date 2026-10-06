@@ -23,13 +23,14 @@ enum ComposerControlStrip {
     }
 }
 
-/// The strip under the composer card: the model and reasoning controls, then workspace, branch and
-/// profile. The strip is the only background; its controls are plain buttons, like T3 Code's footer.
+/// The strip under the composer card: the model and reasoning controls, then workspace, branch,
+/// toolsets and profile. The strip is the only background; its controls are plain buttons, like T3 Code's footer.
 struct ComposerSecondaryControlsView<Leading: View>: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let state: ComposerSecondaryControlsState
     let onChooseWorkspace: () -> Void
+    let onChooseToolsets: () -> Void
     let onSelectProfile: (ProfileSummary) -> Void
     let onSelectGitBranch: (GitCheckoutTarget) -> Void
     let onCreateGitBranch: (GitCheckoutTarget) -> Void
@@ -97,6 +98,21 @@ struct ComposerSecondaryControlsView<Leading: View>: View {
                         onRefresh: onRefreshGitBranches
                     )
                 }
+            case .toolsets:
+                Button(action: onChooseToolsets) {
+                    ComposerMetaControlLabel(
+                        title: state.toolsetsTitle ?? "",
+                        systemImage: "wrench",
+                        maxWidth: ComposerControlStrip.titleMaxWidth,
+                        color: .secondary,
+                        controlFont: AppFont.footnote(),
+                        chevronFont: AppFont.caption2()
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(state.isDisabled)
+                .accessibilityLabel("Session toolsets")
+                .accessibilityValue(state.toolsetsTitle ?? "")
             case .profile:
                 ComposerProfileSelectorMenu(
                     profileOptions: state.profileOptions,

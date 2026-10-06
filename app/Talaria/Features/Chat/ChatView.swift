@@ -53,6 +53,7 @@ struct ChatView: View {
     private let composerAccessoryVerticalSpacing: CGFloat = 8
     private let activeRunStatusSpacerHeight: CGFloat = 36
     private let approvalBypassStatusSpacerHeight: CGFloat = 44
+    private let queuedMessagesChipSpacerHeight: CGFloat = 44
 
     @State private var completionAcknowledgementTask: Task<Void, Never>?
     @State private var completionAcknowledgementGeneration = 0
@@ -131,6 +132,7 @@ struct ChatView: View {
     @State private var showEditSheet = false
     @State private var showEditDiscardConfirmation = false
     @State private var showApprovalBypassOffConfirmation = false
+    @State private var showsQueuedMessagesSheet = false
     @State private var regenerateContext: MessageActionContext?
     @State private var showRegenerateDiscardConfirmation = false
     @State private var selectableResponseText: SelectableTextPresentation?
@@ -307,6 +309,9 @@ struct ChatView: View {
                     }
                 }
             },
+            onSendAs: { command in
+                Task { await sendDraftMessage(as: command) }
+            },
             onSendVoiceNote: { data, filename in
                 Task { await sendVoiceNote(audioData: data, filename: filename) }
             },
@@ -421,7 +426,11 @@ struct ChatView: View {
                 Task { await submitClarification(response, promptID: prompt.id) }
             },
             sessionStart: sessionStart,
-            onRetrySessionStart: retrySessionStart
+            onRetrySessionStart: retrySessionStart,
+            sessionToolsets: viewModel.sessionToolsets,
+            onSaveToolsets: { names in
+                await viewModel.saveSessionToolsets(names)
+            }
         )
     }
 
@@ -702,6 +711,19 @@ struct ChatView: View {
                 InAppSafariView(url: page.url).ignoresSafeArea()
             }
             .sheet(item: $activeGitSheet, content: gitSheet)
+            .sheet(isPresented: $showsQueuedMessagesSheet) {
+                QueuedMessagesSheet(
+                    previews: viewModel.queuedMessagePreviews,
+                    onSendNow: { id in Task { await viewModel.sendQueuedMessageNow(id: id) } },
+                    onEdit: { id in
+                        showsQueuedMessagesSheet = false
+                        viewModel.editQueuedMessage(id: id)
+                    },
+                    onRemove: { id in Task { await viewModel.removeQueuedMessage(id: id) } }
+                )
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+            }
             .sheet(item: $turnDiffPresentation, content: turnDiffSheet)
             .alert(item: $gitAlert, content: gitAlertPresentation)
             .sheet(isPresented: $showsGoalSheet) {
@@ -1086,6 +1108,11 @@ struct ChatView: View {
                     .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
                 }
 
+                if !viewModel.queuedMessagePreviews.isEmpty {
+                    queuedMessagesChip(viewModel.queuedMessagePreviews)
+                        .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
+                }
+
                 if let activeRunStatusPresentation, activeRunStatusPresentation.reservesTranscriptSpace {
                     runStatusRow(activeRunStatusPresentation)
                         .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
@@ -1125,7 +1152,21 @@ struct ChatView: View {
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: viewModel.pinnedLocalNotices)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: showsApprovalBypassStatus)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: viewModel.pinnedBackgroundTasks)
+            .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: viewModel.queuedMessagePreviews)
         }
+    }
+
+    /// What waits to send after this response (TAL-630); tapping opens the queue sheet.
+    private func queuedMessagesChip(_ previews: [QueuedMessagePreview]) -> some View {
+        Button {
+            showsQueuedMessagesSheet = true
+        } label: {
+            StatusChip(label: String(localized: "\(previews.count) queued"), icon: .symbol("text.badge.plus"))
+                .frame(minHeight: 44)
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint(String(localized: "Shows the queued messages"))
     }
 
     /// The run status chip, joined by the scroll chip on the chosen side while it shows. A
@@ -1447,6 +1488,10 @@ struct ChatView: View {
             height += approvalBypassStatusSpacerHeight
             itemCount += 1
         }
+        if !viewModel.queuedMessagePreviews.isEmpty {
+            height += queuedMessagesChipSpacerHeight
+            itemCount += 1
+        }
 
         if itemCount > 1 {
             height += CGFloat(itemCount - 1) * composerAccessoryVerticalSpacing
@@ -1466,6 +1511,9 @@ struct ChatView: View {
             count += 1
         }
         if showsApprovalBypassStatus {
+            count += 1
+        }
+        if !viewModel.queuedMessagePreviews.isEmpty {
             count += 1
         }
         return count
@@ -1701,20 +1749,24 @@ struct ChatView: View {
         }
     }
 
-    private func sendDraftMessage() async {
+    /// Sends the draft; `command` (the send button's long-press menu) sends it as that slash command.
+    private func sendDraftMessage(as command: String? = nil) async {
         guard viewModel.clarificationPrompt == nil else { return }
         let submittedDraft = draftMessage
         let submittedDraftRevision = draftRevision
         let shouldRestoreFocusAfterSend = composerIsFocused
+        let commandText = command.map { "/\($0) \(submittedDraft)" } ?? submittedDraft
 
-        if submittedDraft.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("/") {
-            let parsedCommand = SlashCommandExecutor.parse(submittedDraft, catalog: viewModel.agentCommands)?.command
-            let result = await SlashCommandExecutor.execute(text: submittedDraft, viewModel: viewModel)
+        if commandText.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("/") {
+            let parsedCommand = SlashCommandExecutor.parse(commandText, catalog: viewModel.agentCommands)?.command
+            let result = await SlashCommandExecutor.execute(text: commandText, viewModel: viewModel)
             handleSlashExecutionResult(
                 result,
                 parsedCommand: parsedCommand,
                 submittedDraft: submittedDraft,
-                submittedDraftRevision: submittedDraftRevision
+                submittedDraftRevision: submittedDraftRevision,
+                // A typed command leaves the composer either way; a menu send that fails keeps the draft to retry.
+                consumesDraft: command == nil || result.isSuccessfulSubmission
             )
 
             if result != .sendAsMessage {

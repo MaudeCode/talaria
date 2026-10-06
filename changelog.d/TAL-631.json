@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "The composer's control strip has a toolsets control, like Web's, to set a chat's toolsets or go back to the profile's defaults.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

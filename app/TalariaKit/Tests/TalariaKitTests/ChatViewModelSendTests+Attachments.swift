@@ -405,7 +405,7 @@ extension ChatViewModelSendTests {
         await viewModel.uploadAttachment(data: Data("hello".utf8), filename: "notes.txt")
         let result = await viewModel.submitStreamingMessage("", behavior: .steer)
 
-        XCTAssertEqual(result, .executed(message: "Queued for next turn (#1)."))
+        XCTAssertEqual(result, .executed(message: nil))
         XCTAssertTrue(viewModel.pendingAttachments.isEmpty)
 
         streamClient.emit(.streamEnd)

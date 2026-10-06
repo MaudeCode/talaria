@@ -205,6 +205,7 @@ public final class ChatViewModel {
         if let readOnly = session?.readOnly { isSessionReadOnly = readOnly }
         if let canBranch = session?.canBranch { self.canBranch = canBranch }
         if let assistantName = session?.assistantName { self.assistantName = assistantName }
+        if let session, session.statesEnabledToolsets { sessionToolsets = SessionToolsets(names: session.enabledToolsets) }
         // A detail relabels the workspace it reports, so a registry rename shows on the next load (TAL-303).
         if let workspace = session?.workspace, workspace == serverWorkspacePath {
             serverWorkspaceName = session?.workspaceName
@@ -418,7 +419,14 @@ public final class ChatViewModel {
     @ObservationIgnored private var personalitySuggestionsLoad: Task<Void, Error>?
     @ObservationIgnored private var skillSlashSuggestionsLoad: Task<Void, Error>?
     private var queuedSlashMessages: [QueuedSlashMessage] = []
-    private var isDrainingQueuedSlashMessage = false
+    /// What waits to send after the running response, in send order (TAL-630).
+    public var queuedMessagePreviews: [QueuedMessagePreview] {
+        queuedSlashMessages.map { QueuedMessagePreview(id: $0.id, text: $0.text, attachmentNames: $0.attachments.map(\.name), mayBeOnServer: $0.steerID != nil) }
+    }
+    /// The session's toolset override (TAL-631); nil until a session detail reports it.
+    public private(set) var sessionToolsets: SessionToolsets?
+    /// One queued message sends at a time, by the drain or by Send now.
+    private var isSendingQueuedMessage = false
     private var activeBtwStreamID: String?
     private var activeBtwMessageID: String?
     private var activeBtwQuestion: String?
@@ -2394,7 +2402,12 @@ public final class ChatViewModel {
         Set((message.attachments ?? []).compactMap(\.identityKey))
     }
 
-    public func sendMessage(_ draft: String, modelContext: ModelContext? = nil) async -> Bool {
+    /// `queuedAttachments` sends a queued message's own files; nil sends the composer's staged ones.
+    public func sendMessage(
+        _ draft: String,
+        queuedAttachments: [PendingAttachment]? = nil,
+        modelContext: ModelContext? = nil
+    ) async -> Bool {
         // Reentrancy guard, mirroring `sendVoiceNote`. It must run before
         // `prepareForSend` so a rejected send never consumes the composer's
         // staged attachments, and before `performChatSend` so a rejected caller
@@ -2410,7 +2423,7 @@ public final class ChatViewModel {
         // (TAL-635). An older server still gets the files named in the text. A textless send is
         // valid when it carries staged files: compose before `prepareForSend` consumes them.
         let draftText = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        let attachmentsToSend = attachmentCoordinator.pendingAttachments
+        let attachmentsToSend = queuedAttachments ?? attachmentCoordinator.pendingAttachments
         let message = PendingAttachment.chatMessageText(draft: draftText, attachments: attachmentsToSend)
         let hasSendableAttachments = attachmentsToSend.contains {
             !$0.path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -2423,7 +2436,7 @@ public final class ChatViewModel {
         }
 
         let localMessageID = "local-\(UUID().uuidString)"
-        let attachmentPreparation = attachmentCoordinator.prepareForSend(localMessageID: localMessageID)
+        let attachmentPreparation = attachmentCoordinator.prepareForSend(queuedAttachments, localMessageID: localMessageID)
 
         let didStart = await performChatSend(
             sessionID: sessionID,
@@ -2434,7 +2447,8 @@ public final class ChatViewModel {
             messageForAPI: message,
             messageAttachments: attachmentPreparation.messageAttachments,
             apiPayloads: attachmentPreparation.apiPayloads,
-            attachmentsToRestoreOnFailure: attachmentPreparation.attachments,
+            // A queued message keeps its files in the queue when its send fails, not in the composer.
+            attachmentsToRestoreOnFailure: queuedAttachments == nil ? attachmentPreparation.attachments : [],
             modelContext: modelContext
         )
         if didStart {
@@ -2971,11 +2985,16 @@ public final class ChatViewModel {
             return sent ? .executed(message: nil) : .unsupported(friendlyMessage: sendErrorMessage ?? String(localized: "Could not send the queued message."))
         }
 
-        let position = enqueueQueuedSlashMessage(message, attachments: attachmentCoordinator.consumePendingAttachments())
-        return .executed(message: String(localized: "Queued for next turn (#\(position))."))
+        // The queued-messages chip shows the queue, so no notice (TAL-630).
+        enqueueQueuedSlashMessage(message, attachments: attachmentCoordinator.consumePendingAttachments())
+        return .executed(message: nil)
     }
 
-    private func steerResponseFromSlashCommand(_ args: String) async -> SlashCommandExecutionResult {
+    /// `requeuedAttachments` go with the message if the run cannot take it; by default the composer's pending files do.
+    private func steerResponseFromSlashCommand(
+        _ args: String,
+        requeuedAttachments: [PendingAttachment]? = nil
+    ) async -> SlashCommandExecutionResult {
         let message = args.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !message.isEmpty else {
             return .unsupported(friendlyMessage: String(localized: "Usage: /steer <message>"))
@@ -3030,7 +3049,7 @@ public final class ChatViewModel {
         // TAL-441: the run may still be alive, so the message waits for it rather than stopping it.
         _ = enqueueQueuedSlashMessage(
             message,
-            attachments: attachmentCoordinator.consumePendingAttachments(),
+            attachments: requeuedAttachments ?? attachmentCoordinator.consumePendingAttachments(),
             steerID: unconfirmedSteerID
         )
         return .executed(message: String(localized: "Steer was unavailable, so the message was queued for after this response."))
@@ -4702,6 +4721,26 @@ public final class ChatViewModel {
         await pendingActionCoordinator.disableApprovalBypassForCurrentSession()
     }
 
+    /// Sets the session's toolsets, nil for the profile's defaults; the control then shows what the
+    /// server saved. The strip's controls stay disabled until it answers, so saves never overlap. A
+    /// failure keeps the old value and reports in the composer (TAL-631).
+    @discardableResult
+    public func saveSessionToolsets(_ names: [String]?) async -> Bool {
+        guard let sessionID, !isUpdatingComposerConfiguration else { return false }
+        isUpdatingComposerConfiguration = true
+        composerConfigurationErrorMessage = nil
+        defer { isUpdatingComposerConfiguration = false }
+        do {
+            let response = try await client.setSessionToolsets(sessionID: sessionID, toolsets: names)
+            sessionToolsets = SessionToolsets(names: response.enabledToolsets)
+            return true
+        } catch {
+            lastError = error
+            composerConfigurationErrorMessage = error.localizedDescription
+            return false
+        }
+    }
+
     func applyApprovalUpdate(_ update: ApprovalPendingResponse, sessionID: String) {
         pendingActionCoordinator.applyApprovalUpdate(update, sessionID: sessionID)
     }
@@ -5328,6 +5367,59 @@ public final class ChatViewModel {
         return queuedSlashMessages.count
     }
 
+    /// Remove: drops a queued message and its files' saved draft copies (TAL-630).
+    public func removeQueuedMessage(id: UUID) async {
+        guard let message = takeQueuedMessage(id: id)?.message else { return }
+        for fileName in message.attachments.compactMap(\.draftFileName) {
+            await attachmentCoordinator.deleteDraftCopy(named: fileName)
+        }
+    }
+
+    /// Edit: takes a queued message out of the queue and puts it back in the composer with its files.
+    public func editQueuedMessage(id: UUID) {
+        guard let message = takeQueuedMessage(id: id)?.message else { return }
+        attachmentCoordinator.restorePendingAttachments(message.attachments)
+        if !message.text.isEmpty { returnedComposerTexts.append(message.text) }
+    }
+
+    /// Send now: steers a queued text message into the running reply instead of waiting for it to end;
+    /// a steer the run cannot take queues it again, as `/steer` does, and a send that cannot start puts it back.
+    public func sendQueuedMessageNow(id: UUID) async {
+        guard !isSendingQueuedMessage,
+              queuedMessagePreviews.first(where: { $0.id == id })?.canSendNow == true,
+              let (message, index) = takeQueuedMessage(id: id)
+        else { return }
+        guard activeStreamID != nil else {
+            // Nothing running to steer into: it goes first, and the queue sends it.
+            queuedSlashMessages.insert(message, at: 0)
+            drainQueuedSlashMessageIfIdle()
+            return
+        }
+        isSendingQueuedMessage = true
+        // A steer the run refuses queues again with the message's own files, never the composer's.
+        let result = await steerResponseFromSlashCommand(message.text, requeuedAttachments: message.attachments)
+        isSendingQueuedMessage = false
+        if case .unsupported(let notice) = result {
+            // Back in place, with no drain: a send that keeps failing must not retry in a loop (issue #202).
+            queuedSlashMessages.insert(message, at: min(index, queuedSlashMessages.count))
+            pinLocalNoticeMessage(notice)
+            return
+        }
+        if case .executed(let notice?) = result { pinLocalNoticeMessage(notice) }
+        // A reply that ended meanwhile skipped its drain while this one held the queue.
+        drainQueuedSlashMessageIfIdle()
+    }
+
+    /// TAL-441: a queued copy of a failed steer may be on the server, which cannot say whether it never arrived or the
+    /// Agent took it, so it stays as it is until the server reports it or the run ends.
+    private func takeQueuedMessage(id: UUID) -> (message: QueuedSlashMessage, index: Int)? {
+        guard let index = queuedSlashMessages.firstIndex(where: { $0.id == id }),
+              queuedSlashMessages[index].steerID == nil
+        else { return nil }
+        return (queuedSlashMessages.remove(at: index), index)
+    }
+
+
     /// TAL-441: the server reported a steer whose request failed, so it owns the message; the queued copy goes.
     @discardableResult
     private func dropQueuedCopy(ofSteer id: String) -> Bool {
@@ -5344,22 +5436,19 @@ public final class ChatViewModel {
         guard activeStreamID == nil,
               !isStartingChat,
               !isSendingVoiceNote,
-              !isDrainingQueuedSlashMessage,
+              !isSendingQueuedMessage,
               !queuedSlashMessages.isEmpty
         else { return }
 
         let next = queuedSlashMessages.removeFirst()
-        isDrainingQueuedSlashMessage = true
+        isSendingQueuedMessage = true
 
         Task { @MainActor in
-            let savedAttachments = attachmentCoordinator.pendingAttachments
-            attachmentCoordinator.replacePendingAttachments(next.attachments)
-            let sent = await sendMessage(next.text)
+            let sent = await sendMessage(next.text, queuedAttachments: next.attachments)
             if !sent {
                 queuedSlashMessages.insert(next, at: 0)
             }
-            attachmentCoordinator.replacePendingAttachments(savedAttachments)
-            isDrainingQueuedSlashMessage = false
+            isSendingQueuedMessage = false
             // Only chain-drain after a *successful* send. A failed send requeues the message and
             // waits for the next natural trigger (a queue append, stream completion, or an explicit
             // user send) instead of immediately re-firing the drain — which, with a persistently

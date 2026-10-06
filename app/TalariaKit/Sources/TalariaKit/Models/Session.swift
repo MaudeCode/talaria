@@ -792,6 +792,28 @@ public struct AutomatedSessionVisibility: Hashable {
     }
 }
 
+/// A session's toolset override as the server reports it (TAL-631).
+public struct SessionToolsets: Equatable, Sendable {
+    /// Nil means the profile's defaults.
+    public let names: [String]?
+
+    public init(names: [String]?) {
+        self.names = names
+    }
+
+    /// The strip control's title: the toolsets, or the profile's defaults when there are none.
+    public var title: String {
+        guard let names, !names.isEmpty else { return String(localized: "Profile defaults") }
+        return names.joined(separator: ", ")
+    }
+
+    /// The sheet's comma-separated input, split as typed; the server trims the names, drops blanks
+    /// and treats an empty list as the profile's defaults.
+    public static func names(fromInput input: String) -> [String] {
+        input.split(separator: ",", omittingEmptySubsequences: false).map(String.init)
+    }
+}
+
 public struct SessionDetail: Decodable, Equatable, Identifiable {
     public var id: String {
         if let sessionId, !sessionId.isEmpty {
@@ -866,6 +888,10 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
     public let transcriptSeq: TranscriptSeq?
     /// False for a server that predates `transcript_seq` (the key is absent, not null).
     public let statesTranscriptSeq: Bool
+    /// The session's toolset override (TAL-631); nil means the profile's defaults.
+    public let enabledToolsets: [String]?
+    /// False for a server that does not report `enabled_toolsets` (the key is absent, not null).
+    public let statesEnabledToolsets: Bool
 
     enum CodingKeys: String, CodingKey {
         case sessionId
@@ -924,6 +950,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
         case transformedMessagesTruncated = "_messagesTruncated"
         case transformedMessagesOffset = "_messagesOffset"
         case compressionReference
+        case enabledToolsets
         case transcriptSeq
     }
 
@@ -988,6 +1015,8 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
         compressionReference = try? container.decodeIfPresent(CompressionReference.self, forKey: .compressionReference)
         transcriptSeq = try? container.decodeIfPresent(TranscriptSeq.self, forKey: .transcriptSeq)
         statesTranscriptSeq = container.contains(.transcriptSeq)
+        enabledToolsets = try? container.decodeIfPresent([String].self, forKey: .enabledToolsets)
+        statesEnabledToolsets = container.contains(.enabledToolsets)
     }
 
     private static func decodeMessagesTolerantly(

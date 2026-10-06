@@ -227,6 +227,36 @@ extension APIClient {
             body: SessionYoloRequest(sessionId: sessionID, enabled: enabled)
         )
     }
+
+    /// Sets the session's toolset override; nil restores the profile's defaults (TAL-631).
+    public func setSessionToolsets(sessionID: String, toolsets: [String]?) async throws -> SessionToolsetsResponse {
+        try await send(
+            endpoint: .sessionToolsets,
+            method: "POST",
+            body: SessionToolsetsRequest(sessionId: sessionID, toolsets: toolsets)
+        )
+    }
+}
+
+public struct SessionToolsetsResponse: Decodable, Equatable {
+    public let enabledToolsets: [String]?
+}
+
+private struct SessionToolsetsRequest: Encodable {
+    let sessionId: String
+    let toolsets: [String]?
+
+    enum CodingKeys: String, CodingKey {
+        case sessionId
+        case toolsets
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(sessionId, forKey: .sessionId)
+        // An explicit null, not an absent key: null is the request for the profile's defaults.
+        try container.encode(toolsets, forKey: .toolsets)
+    }
 }
 
 private struct NewSessionRequest: Encodable {

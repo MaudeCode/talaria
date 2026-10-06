@@ -1,0 +1,28 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Messages you queue while a response runs show as a chip above the composer instead of a notice; tap it to see them in full and send one now, edit it or remove it.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    },
+    {
+      "category": "Added",
+      "summary": "Long-press Send to queue, steer, stop and send, ask a side question or run the message in the background, without typing a slash command; the keyboard stays up while the menu is open.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    },
+    {
+      "category": "Added",
+      "summary": "A chevron beside + shows or hides the control strip under the composer, and the choice holds across chats.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}

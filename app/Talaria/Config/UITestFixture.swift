@@ -155,6 +155,8 @@ struct UITestFixtureEnvironment {
         // workspace tests reach their destinations through them, so restore both.
         UserDefaults.standard.set(true, forKey: SectionVisibilitySettings.chatFilesKey)
         UserDefaults.standard.set(true, forKey: SectionVisibilitySettings.chatGitKey)
+        // Tests reach the composer's controls through its strip, so every launch starts with it shown.
+        UserDefaults.standard.set(true, forKey: ComposerVisibilitySettings.controlStripKey)
         UserDefaults.standard.set(
             StreamingSendBehavior.steer.rawValue,
             forKey: StreamingSendBehavior.storageKey
@@ -455,6 +457,8 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     static let sessionTitle = "UI Fixture Session"
     private static let recoveryState = NSLock()
     nonisolated(unsafe) private static var approvalBypassOverride: Bool?
+    /// The session's toolsets as the fixture saved them (TAL-631); nil is the profile's defaults.
+    private static let sessionToolsets = OSAllocatedUnfairLock<[String]?>(initialState: nil)
     nonisolated(unsafe) private static var sessionReads = 0
     nonisolated(unsafe) private static var transcriptReads = 0
     nonisolated(unsafe) private static var hasChangedWhileBackgrounded = false
@@ -816,6 +820,14 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         case let path where path.hasPrefix("/api/update-notifications/") && path.contains("/actions/"):
             recoveryState.withLock { urgentNotificationAcknowledged = true; readUpdateNotificationIDs.insert("ui-update-urgent") }
             return json(updateNotificationRecord(id: "ui-update-urgent"))
+        case "/api/session/toolsets":
+            // Like the server: trimmed, blanks dropped, nothing left is the profile's defaults.
+            let names = (requestJSON(request)["toolsets"] as? [String] ?? [])
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+            let saved = names.isEmpty ? nil : names
+            sessionToolsets.withLock { $0 = saved }
+            return json(["ok": true, "enabled_toolsets": saved.map { $0 as Any } ?? NSNull()])
         case "/api/session/yolo":
             let requested = request.httpMethod == "POST" ? requestJSON(request)["enabled"] as? Bool : nil
             let enabled = recoveryState.withLock {
@@ -1238,7 +1250,8 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             "profile": "fixture-profile",
             "archived": false,
             "can_archive": true,
-            "can_delete": true
+            "can_delete": true,
+            "enabled_toolsets": sessionToolsets.withLock { $0 }.map { $0 as Any } ?? NSNull()
         ]
     }
 

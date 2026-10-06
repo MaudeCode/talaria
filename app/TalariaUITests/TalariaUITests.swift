@@ -2647,6 +2647,11 @@ extension XCUIElement {
         poll(timeout: timeout) { !exists }
     }
 
+    /// Waits until the element reads `value` for VoiceOver.
+    func awaitValue(_ value: String, timeout: TimeInterval) -> Bool {
+        poll(timeout: timeout) { exists && self.value as? String == value }
+    }
+
     /// Where the element comes to rest (`awaitStable`): a coordinate taken while a sheet, menu or
     /// sidebar is still sliding in lands on the wrong spot. The last frame read if it never settles.
     var settledFrame: CGRect {
@@ -3347,5 +3352,149 @@ final class KanbanCardActionsUITests: TalariaUITestCase {
         // Close the menu by tapping clear of it.
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap()
         XCTAssertTrue(app.buttons[offers.last ?? "Archive"].awaitNonExistence(timeout: 3), "Card menu did not close [\(screenshot)]")
+    }
+}
+
+/// Messages queued during a run show as a floating chip above the composer; it opens a sheet that shows
+/// each one in full and sends it now, edits it or removes it (TAL-630).
+final class QueuedMessagesChipUITests: ChatUITestCase {
+    /// Picks an option in Send's open menu the way a finger does: hold Send and slide onto it. The runner's
+    /// taps do not reach the items of a menu a long press opened, so the open menu only supplies the point.
+    private func chooseSendOption(_ option: XCUIElement) {
+        let frame = option.settledFrame
+        app.staticTexts["Run the deterministic fixture"].tap() // closes the menu
+        XCTAssertTrue(option.awaitNonExistence(timeout: 5), "The send menu did not close")
+        let origin = app.coordinate(withNormalizedOffset: .zero)
+        let send = app.buttons["Send"].settledFrame
+        origin.withOffset(CGVector(dx: send.midX, dy: send.midY))
+            .press(forDuration: 1, thenDragTo: origin.withOffset(CGVector(dx: frame.midX, dy: frame.midY)))
+    }
+
+    func testQueuedMessagesSheetShowsThemInFullAndRemovesAndEditsThem() throws {
+        launchChatFixture(argument: "--ui-test-chat-controls", trace: "start -> token -> /queue -> Send menu queue -> remove -> edit")
+        try sendFixtureMessage("Run the deterministic fixture")
+        XCTAssertTrue(app.staticTexts["Waiting for control input."].awaitExistence(timeout: 5))
+
+        // The first is queued with `/queue`; the chip replaces the old "Queued for next turn" notice.
+        let input = app.textViews.firstMatch
+        input.typeText("/queue First queued message")
+        tapCenter(of: app.buttons["Send"])
+        XCTAssertTrue(app.buttons["1 queued"].awaitExistence(timeout: 5), "/queue did not queue the message")
+        XCTAssertFalse(element(labelContaining: "Queued for next turn").exists, "Queuing still shows a notice")
+
+        // The second, a paragraph so the sheet shows a long message in full, is queued from Send's long-press menu.
+        let long = "Second queued message: once this finishes, rerun the full suite on the hosted runner, "
+            + "compare the timings against yesterday's run, and write up anything that got slower than ten percent."
+        input.typeText(long)
+        let keyboard = app.keyboards.firstMatch
+        XCTAssertTrue(keyboard.awaitExistence(timeout: 5), "The composer has no keyboard")
+        // A fresh simulator keyboard shows its swipe-typing tip once, over the keys; it takes touches meant for the menu.
+        let swipeTypingTip = app.staticTexts["Speed up your typing by sliding your finger across the letters to compose a word."]
+        if swipeTypingTip.exists { app.buttons["Continue"].firstMatch.tap() }
+        let keyboardTop = keyboard.frame.minY
+        app.buttons["Send"].press(forDuration: 1)
+        let queueOption = app.buttons["Queue"]
+        XCTAssertTrue(queueOption.awaitExistence(timeout: 5), "Long-pressing Send did not open the send menu")
+        Thread.sleep(forTimeInterval: 0.6) // a dismissal would be under way by now
+        XCTAssertTrue(keyboard.exists && abs(keyboard.frame.minY - keyboardTop) < 2, "Opening the send menu dropped the keyboard")
+        XCTAssertTrue(app.buttons["Steer"].exists)
+        XCTAssertTrue(app.buttons["Stop and send"].exists)
+        XCTAssertFalse(app.buttons["Side question"].exists, "A side question waits for the running reply")
+        attachScreenshot(named: "send-menu")
+        chooseSendOption(queueOption)
+
+        let chip = app.buttons["2 queued"]
+        XCTAssertTrue(chip.awaitExistence(timeout: 5), "The queue chip is missing")
+        XCTAssertGreaterThanOrEqual(chip.frame.height, 43, "The queue chip's hit area is under 44 pt")
+        attachScreenshot(named: "queued-chip")
+        tapCenter(of: chip)
+        XCTAssertTrue(app.staticTexts["First queued message"].awaitExistence(timeout: 5), "The sheet does not show the first message")
+        let longText = app.staticTexts.matching(NSPredicate(format: "label == %@", long)).firstMatch
+        XCTAssertTrue(longText.exists, "The sheet does not show the second message in full")
+        XCTAssertEqual(app.buttons.matching(identifier: "Send now").count, 2)
+        XCTAssertEqual(app.buttons.matching(identifier: "Remove").count, 2)
+        attachScreenshot(named: "queued-sheet")
+
+        // Remove drops the second message; the sheet stays for the first.
+        app.buttons.matching(identifier: "Remove").element(boundBy: 1).tap()
+        XCTAssertTrue(longText.awaitNonExistence(timeout: 5), "Remove left the message in the queue")
+        XCTAssertTrue(app.staticTexts["First queued message"].exists)
+
+        // Edit takes the last one back into the composer; the sheet and the chip leave with it.
+        app.buttons["Edit"].tap()
+        XCTAssertTrue(app.buttons["1 queued"].awaitNonExistence(timeout: 5), "The queue chip stayed after its last message was edited")
+        let composerInput = app.textViews.firstMatch
+        XCTAssertTrue(composerInput.awaitExistence(timeout: 5))
+        XCTAssertEqual(composerInput.value as? String, "First queued message", "Edit did not put the message back in the composer")
+
+        // The fixture starts no background task, so the menu send fails and the draft stays to retry.
+        app.buttons["Send"].press(forDuration: 1)
+        let backgroundOption = app.buttons["Run in background"]
+        XCTAssertTrue(backgroundOption.awaitExistence(timeout: 5), "Long-pressing Send did not open the send menu")
+        chooseSendOption(backgroundOption)
+        XCTAssertTrue(element(labelContaining: "did not return a background task").awaitExistence(timeout: 5))
+        XCTAssertEqual(composerInput.value as? String, "First queued message", "A failed menu send cleared the draft")
+    }
+}
+
+/// The strip's toolsets control shows the session's toolsets and sets them in a sheet (TAL-631).
+final class ComposerToolsetsUITests: WorkspaceUITestCase {
+    /// The chevron beside + hides the control strip and shows it again (TAL-630).
+    func testChevronHidesAndShowsTheControlStrip() throws {
+        launchFixture(additionalArguments: ["-composerVisibility.workspace", "NO", "-composerVisibility.gitBranch", "NO"])
+        openFixtureSessionChat()
+
+        let toolsets = app.buttons["Session toolsets"]
+        XCTAssertTrue(toolsets.awaitExistence(timeout: 15), "The strip is not shown at launch")
+        let hide = app.buttons["Hide composer controls"]
+        XCTAssertTrue(hide.awaitExistence(timeout: 5), "Missing the strip chevron")
+        XCTAssertGreaterThanOrEqual(hide.frame.height, 43, "The chevron's hit area is under 44 pt")
+        tapCenter(of: hide)
+        XCTAssertTrue(toolsets.awaitNonExistence(timeout: 5), "The chevron did not hide the strip")
+        attachScreenshot(named: "strip-hidden")
+
+        tapCenter(of: app.buttons["Show composer controls"])
+        XCTAssertTrue(toolsets.awaitExistence(timeout: 5), "The chevron did not show the strip again")
+
+        // With the keyboard up, the chevron leaves it up both ways.
+        tapCenter(of: app.buttons["Message"])
+        let keyboard = app.keyboards.firstMatch
+        XCTAssertTrue(keyboard.awaitExistence(timeout: 5), "The composer has no keyboard")
+        let swipeTypingTip = app.staticTexts["Speed up your typing by sliding your finger across the letters to compose a word."]
+        if swipeTypingTip.exists { app.buttons["Continue"].firstMatch.tap() }
+        let keyboardTop = keyboard.settledFrame.minY
+        for label in ["Hide composer controls", "Show composer controls"] {
+            tapCenter(of: app.buttons[label])
+            Thread.sleep(forTimeInterval: 0.6) // a dismissal would be under way by now
+            XCTAssertTrue(keyboard.exists && abs(keyboard.frame.minY - keyboardTop) < 2, "\(label) dropped the keyboard")
+        }
+    }
+
+    func testToolsetsControlSavesAListAndRestoresProfileDefaults() throws {
+        // With workspace and branch hidden the control fits without scrolling the strip; a drag that
+        // low on the screen can turn into the system's app-switch swipe.
+        launchFixture(additionalArguments: ["-composerVisibility.workspace", "NO", "-composerVisibility.gitBranch", "NO"])
+        openFixtureSessionChat()
+
+        let control = app.buttons["Session toolsets"]
+        XCTAssertTrue(control.awaitExistence(timeout: 15), "Missing the toolsets control")
+        XCTAssertEqual(control.value as? String, "Profile defaults")
+        tapCenter(of: control)
+
+        let field = app.textFields["Session toolsets"]
+        XCTAssertTrue(field.awaitExistence(timeout: 5), "The toolsets sheet did not open")
+        field.tap()
+        field.typeText("web, terminal")
+        attachScreenshot(named: "toolsets-sheet")
+        app.buttons["Save"].tap()
+        XCTAssertTrue(field.awaitNonExistence(timeout: 5))
+        XCTAssertTrue(control.awaitValue("web, terminal", timeout: 5), "The control does not show the saved toolsets")
+        attachScreenshot(named: "toolsets-saved")
+
+        tapCenter(of: control)
+        XCTAssertTrue(field.awaitExistence(timeout: 5), "The toolsets sheet did not reopen")
+        XCTAssertEqual(field.value as? String, "web, terminal")
+        app.buttons["Use profile defaults"].tap()
+        XCTAssertTrue(control.awaitValue("Profile defaults", timeout: 5), "Profile defaults did not restore")
     }
 }

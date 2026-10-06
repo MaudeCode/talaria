@@ -251,6 +251,8 @@ public enum ComposerVisibilitySettings {
     public static let profileKey = "composerVisibility.profile"
     public static let gitBranchKey = "composerVisibility.gitBranch"
     public static let contextUsageKey = "composerVisibility.contextUsage"
+    /// The chevron beside + shows or hides the control strip under the composer, app-wide (TAL-630).
+    public static let controlStripKey = "composerVisibility.controlStrip"
 }
 
 /// Pure helpers for the few *physical* layout values SwiftUI does not mirror on

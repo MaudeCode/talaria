@@ -231,6 +231,8 @@
 		C107O0000000000000000009 /* PinnedLocalNoticeStack.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000109 /* PinnedLocalNoticeStack.swift */; };
 		C107O0000000000000000010 /* ComposerSecondaryControlsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000110 /* ComposerSecondaryControlsView.swift */; };
 		C107O0000000000000000011 /* ComposerWorkspaceSelectorButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000111 /* ComposerWorkspaceSelectorButton.swift */; };
+		TAL631000000000000000001 /* ComposerToolsetsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = TAL631000000000000000002 /* ComposerToolsetsSheet.swift */; };
+		TAL630000000000000000001 /* QueuedMessagesSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = TAL630000000000000000002 /* QueuedMessagesSheet.swift */; };
 		C107O0000000000000000012 /* ComposerProfileSelectorMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000112 /* ComposerProfileSelectorMenu.swift */; };
 		C107O0000000000000000013 /* ComposerModelMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000113 /* ComposerModelMenu.swift */; };
 		C107O0000000000000000014 /* ComposerReasoningMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000114 /* ComposerReasoningMenu.swift */; };
@@ -656,6 +658,8 @@
 		C107O0000000000000000109 /* PinnedLocalNoticeStack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedLocalNoticeStack.swift; sourceTree = "<group>"; };
 		C107O0000000000000000110 /* ComposerSecondaryControlsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerSecondaryControlsView.swift; sourceTree = "<group>"; };
 		C107O0000000000000000111 /* ComposerWorkspaceSelectorButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerWorkspaceSelectorButton.swift; sourceTree = "<group>"; };
+		TAL631000000000000000002 /* ComposerToolsetsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerToolsetsSheet.swift; sourceTree = "<group>"; };
+		TAL630000000000000000002 /* QueuedMessagesSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueuedMessagesSheet.swift; sourceTree = "<group>"; };
 		C107O0000000000000000112 /* ComposerProfileSelectorMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerProfileSelectorMenu.swift; sourceTree = "<group>"; };
 		C107O0000000000000000113 /* ComposerModelMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerModelMenu.swift; sourceTree = "<group>"; };
 		C107O0000000000000000114 /* ComposerReasoningMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerReasoningMenu.swift; sourceTree = "<group>"; };
@@ -1160,6 +1164,8 @@
 				C107O0000000000000000109 /* PinnedLocalNoticeStack.swift */,
 				C107O0000000000000000110 /* ComposerSecondaryControlsView.swift */,
 				C107O0000000000000000111 /* ComposerWorkspaceSelectorButton.swift */,
+				TAL631000000000000000002 /* ComposerToolsetsSheet.swift */,
+				TAL630000000000000000002 /* QueuedMessagesSheet.swift */,
 				C107O0000000000000000112 /* ComposerProfileSelectorMenu.swift */,
 				C107O0000000000000000113 /* ComposerModelMenu.swift */,
 				C107O0000000000000000114 /* ComposerReasoningMenu.swift */,
@@ -1781,6 +1787,8 @@
 				C107O0000000000000000009 /* PinnedLocalNoticeStack.swift in Sources */,
 				C107O0000000000000000010 /* ComposerSecondaryControlsView.swift in Sources */,
 				C107O0000000000000000011 /* ComposerWorkspaceSelectorButton.swift in Sources */,
+				TAL631000000000000000001 /* ComposerToolsetsSheet.swift in Sources */,
+				TAL630000000000000000001 /* QueuedMessagesSheet.swift in Sources */,
 				C107O0000000000000000012 /* ComposerProfileSelectorMenu.swift in Sources */,
 				C107O0000000000000000013 /* ComposerModelMenu.swift in Sources */,
 				C107O0000000000000000014 /* ComposerReasoningMenu.swift in Sources */,

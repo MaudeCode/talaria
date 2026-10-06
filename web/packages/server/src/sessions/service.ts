@@ -865,11 +865,13 @@ export class SessionService {
     return workspace
   }
 
+  /** The server owns the names' normalization (TAL-631): trimmed, blanks dropped, and nothing left is the profile's defaults. */
   validateToolsetsShape(toolsets: unknown): string[] | null {
     if (toolsets === null || toolsets === undefined) return null
-    if (!Array.isArray(toolsets) || !toolsets.length) throw new HttpFailure(400, 'toolsets must be a non-empty list or null')
-    if (!toolsets.every((t) => typeof t === 'string' && t)) throw new HttpFailure(400, 'each toolset must be a non-empty string')
-    return toolsets as string[]
+    if (!Array.isArray(toolsets)) throw new HttpFailure(400, 'toolsets must be a list or null')
+    if (!toolsets.every((t) => typeof t === 'string')) throw new HttpFailure(400, 'each toolset must be a string')
+    const names = toolsets.map((t) => t.trim()).filter(Boolean)
+    return names.length ? names : null
   }
 
   create(body: Record<string, unknown>, opts: { worktree?: { path: string; branch: string; repo_root: string; created_at: number } | null } = {}): Session {
