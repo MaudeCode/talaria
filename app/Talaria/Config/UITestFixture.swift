@@ -150,6 +150,8 @@ struct UITestFixtureEnvironment {
         // workspace tests reach their destinations through them, so restore both.
         UserDefaults.standard.set(true, forKey: SectionVisibilitySettings.chatFilesKey)
         UserDefaults.standard.set(true, forKey: SectionVisibilitySettings.chatGitKey)
+        // Tests reach the composer's controls through its strip, so every launch starts with it shown.
+        UserDefaults.standard.set(true, forKey: ComposerVisibilitySettings.controlStripKey)
         UserDefaults.standard.set(
             StreamingSendBehavior.steer.rawValue,
             forKey: StreamingSendBehavior.storageKey

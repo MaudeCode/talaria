@@ -49,6 +49,7 @@ enum SyncedPreferenceAllowlist {
         .init(key: ComposerVisibilitySettings.profileKey, suite: .standard),
         .init(key: ComposerVisibilitySettings.gitBranchKey, suite: .standard),
         .init(key: ComposerVisibilitySettings.contextUsageKey, suite: .standard),
+        .init(key: ComposerVisibilitySettings.controlStripKey, suite: .standard),
         .init(key: SessionRowDisplaySettings.showMessageCountKey, suite: .standard),
         .init(key: SessionRowDisplaySettings.showWorkspaceKey, suite: .standard),
         .init(key: SessionRowDisplaySettings.showCronSessionsKey, suite: .standard),

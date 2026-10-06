@@ -3168,6 +3168,18 @@ final class KanbanCardActionsUITests: TalariaUITestCase {
 /// Messages queued during a run show as a floating chip above the composer; it opens a sheet that shows
 /// each one in full and sends it now, edits it or removes it (TAL-630).
 final class QueuedMessagesChipUITests: ChatUITestCase {
+    /// Picks an option in Send's open menu the way a finger does: hold Send and slide onto it. The runner's
+    /// taps do not reach the items of a menu a long press opened, so the open menu only supplies the point.
+    private func chooseSendOption(_ option: XCUIElement) {
+        let frame = option.settledFrame
+        app.staticTexts["Run the deterministic fixture"].tap() // closes the menu
+        XCTAssertTrue(option.awaitNonExistence(timeout: 5), "The send menu did not close")
+        let origin = app.coordinate(withNormalizedOffset: .zero)
+        let send = app.buttons["Send"].settledFrame
+        origin.withOffset(CGVector(dx: send.midX, dy: send.midY))
+            .press(forDuration: 1, thenDragTo: origin.withOffset(CGVector(dx: frame.midX, dy: frame.midY)))
+    }
+
     func testQueuedMessagesSheetShowsThemInFullAndRemovesAndEditsThem() throws {
         launchChatFixture(argument: "--ui-test-chat-controls", trace: "start -> token -> /queue -> Send menu queue -> remove -> edit")
         try sendFixtureMessage("Run the deterministic fixture")
@@ -3184,14 +3196,22 @@ final class QueuedMessagesChipUITests: ChatUITestCase {
         let long = "Second queued message: once this finishes, rerun the full suite on the hosted runner, "
             + "compare the timings against yesterday's run, and write up anything that got slower than ten percent."
         input.typeText(long)
+        let keyboard = app.keyboards.firstMatch
+        XCTAssertTrue(keyboard.awaitExistence(timeout: 5), "The composer has no keyboard")
+        // A fresh simulator keyboard shows its swipe-typing tip once, over the keys; it takes touches meant for the menu.
+        let swipeTypingTip = app.staticTexts["Speed up your typing by sliding your finger across the letters to compose a word."]
+        if swipeTypingTip.exists { app.buttons["Continue"].firstMatch.tap() }
+        let keyboardTop = keyboard.frame.minY
         app.buttons["Send"].press(forDuration: 1)
         let queueOption = app.buttons["Queue"]
         XCTAssertTrue(queueOption.awaitExistence(timeout: 5), "Long-pressing Send did not open the send menu")
+        Thread.sleep(forTimeInterval: 0.6) // a dismissal would be under way by now
+        XCTAssertTrue(keyboard.exists && abs(keyboard.frame.minY - keyboardTop) < 2, "Opening the send menu dropped the keyboard")
         XCTAssertTrue(app.buttons["Steer"].exists)
         XCTAssertTrue(app.buttons["Stop and send"].exists)
         XCTAssertFalse(app.buttons["Side question"].exists, "A side question waits for the running reply")
         attachScreenshot(named: "send-menu")
-        queueOption.tap()
+        chooseSendOption(queueOption)
 
         let chip = app.buttons["2 queued"]
         XCTAssertTrue(chip.awaitExistence(timeout: 5), "The queue chip is missing")
@@ -3221,7 +3241,7 @@ final class QueuedMessagesChipUITests: ChatUITestCase {
         app.buttons["Send"].press(forDuration: 1)
         let backgroundOption = app.buttons["Run in background"]
         XCTAssertTrue(backgroundOption.awaitExistence(timeout: 5), "Long-pressing Send did not open the send menu")
-        backgroundOption.tap()
+        chooseSendOption(backgroundOption)
         XCTAssertTrue(element(labelContaining: "did not return a background task").awaitExistence(timeout: 5))
         XCTAssertEqual(composerInput.value as? String, "First queued message", "A failed menu send cleared the draft")
     }
@@ -3229,6 +3249,24 @@ final class QueuedMessagesChipUITests: ChatUITestCase {
 
 /// The strip's toolsets control shows the session's toolsets and sets them in a sheet (TAL-631).
 final class ComposerToolsetsUITests: WorkspaceUITestCase {
+    /// The chevron beside + hides the control strip and shows it again (TAL-630).
+    func testChevronHidesAndShowsTheControlStrip() throws {
+        launchFixture(additionalArguments: ["-composerVisibility.workspace", "NO", "-composerVisibility.gitBranch", "NO"])
+        openFixtureSessionChat()
+
+        let toolsets = app.buttons["Session toolsets"]
+        XCTAssertTrue(toolsets.awaitExistence(timeout: 15), "The strip is not shown at launch")
+        let hide = app.buttons["Hide composer controls"]
+        XCTAssertTrue(hide.awaitExistence(timeout: 5), "Missing the strip chevron")
+        XCTAssertGreaterThanOrEqual(hide.frame.height, 43, "The chevron's hit area is under 44 pt")
+        tapCenter(of: hide)
+        XCTAssertTrue(toolsets.awaitNonExistence(timeout: 5), "The chevron did not hide the strip")
+        attachScreenshot(named: "strip-hidden")
+
+        tapCenter(of: app.buttons["Show composer controls"])
+        XCTAssertTrue(toolsets.awaitExistence(timeout: 5), "The chevron did not show the strip again")
+    }
+
     func testToolsetsControlSavesAListAndRestoresProfileDefaults() throws {
         // With workspace and branch hidden the control fits without scrolling the strip; a drag that
         // low on the screen can turn into the system's app-switch swipe.

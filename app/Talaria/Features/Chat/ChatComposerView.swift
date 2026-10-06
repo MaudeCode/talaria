@@ -146,6 +146,7 @@ struct MessageComposerView: View {
     @AppStorage(ComposerVisibilitySettings.profileKey) private var showsProfileControl = true
     @AppStorage(ComposerVisibilitySettings.gitBranchKey) private var showsGitBranchControl = true
     @AppStorage(ComposerVisibilitySettings.contextUsageKey) private var showsContextUsageControl = true
+    @AppStorage(ComposerVisibilitySettings.controlStripKey) private var isControlStripExpanded = true
 
     private enum DeferredUploadFocusPhase: Equatable {
         case none
@@ -325,9 +326,9 @@ struct MessageComposerView: View {
                         .padding(.horizontal, composerCornerRadius)
                 }
                 .padding(.horizontal)
-                .padding(.bottom, showsControlStrip ? 4 : 0)
+                .padding(.bottom, showsStripUnderCard ? 4 : 0)
                 .animation(ChatMotion.composerChrome(reduceMotion: reduceMotion), value: usesSingleLineShell)
-                .animation(ChatMotion.composerChrome(reduceMotion: reduceMotion), value: showsControlStrip)
+                .animation(ChatMotion.composerChrome(reduceMotion: reduceMotion), value: showsStripUnderCard)
                 .animation(ChatMotion.composerChrome(reduceMotion: reduceMotion), value: pendingPhotos.isEmpty)
             }
         }
@@ -625,7 +626,7 @@ struct MessageComposerView: View {
     private var composerSurface: some View {
         if usesSingleLineShell {
             HStack(spacing: 10) {
-                composerPlusMenu
+                leadingComposerControls
 
                 Button {
                     requestTextViewFocusIfPossible()
@@ -688,9 +689,7 @@ struct MessageComposerView: View {
                 )
 
                 HStack(alignment: .center, spacing: 12) {
-                    if !isAnsweringClarification {
-                        composerPlusMenu
-                    }
+                    leadingComposerControls
 
                     Spacer(minLength: 0)
                     if !isAnsweringClarification {
@@ -724,36 +723,27 @@ struct MessageComposerView: View {
     }
 
     private var actionButton: some View {
-        Button(action: actionButtonTapped) {
-            actionButtonLabel
-                .frame(width: actionButtonSize, height: actionButtonSize)
-                .background(actionButtonBackground)
-                .foregroundStyle(actionButtonForeground)
-                .clipShape(Circle())
-                .chatMinimumHitTarget(in: Circle())
-        }
-        .buttonStyle(.chatTactile(.icon))
-        .disabled(isActionButtonDisabled)
-        .contentShape(.contextMenuPreview, Circle())
-        .contextMenu { sendOptionsMenu }
-        .accessibilityLabel(isAnsweringClarification
-            ? (clarificationPrompt?.isLastQuestion == false ? "Next" : "Submit clarification")
-            : (showsStopButton ? "Stop response" : "Send"))
+        ComposerSendButton(
+            glyph: actionButtonGlyph,
+            background: actionButtonBackground,
+            foreground: actionButtonForeground,
+            size: actionButtonSize,
+            iconSize: actionIconSize,
+            accessibilityLabel: isAnsweringClarification
+                ? (clarificationPrompt?.isLastQuestion == false ? "Next" : "Submit clarification")
+                : (showsStopButton ? "Stop response" : "Send"),
+            options: sendOptions,
+            isDisabled: isActionButtonDisabled,
+            onTap: actionButtonTapped,
+            onOption: { submitDraft(as: $0) }
+        )
+        .equatable()
     }
 
-    @ViewBuilder
-    private var actionButtonLabel: some View {
-        if isSending || isCancellingStream || isCompressingSession {
-            ProgressView()
-                .tint(actionButtonForeground)
-                .scaleEffect(0.82)
-        } else if showsStopButton {
-            Image(systemName: "stop.fill")
-                .font(.system(size: actionIconSize, weight: .semibold))
-        } else {
-            Image(systemName: clarificationPrompt?.isLastQuestion == false ? "arrow.right" : "arrow.up")
-                .font(.system(size: actionIconSize, weight: .semibold))
-        }
+    private var actionButtonGlyph: ComposerSendButton.Glyph {
+        if isSending || isCancellingStream || isCompressingSession { return .progress }
+        if showsStopButton { return .symbol("stop.fill") }
+        return .symbol(clarificationPrompt?.isLastQuestion == false ? "arrow.right" : "arrow.up")
     }
 
     private func loadSlashAutocompleteSubArgsIfNeeded() async {
@@ -835,13 +825,15 @@ struct MessageComposerView: View {
     }
 
     /// Every configuration control, one tap away in the strip under the card (TAL-629). It stays up
-    /// with the keyboard and in the one-line shell; only a clarification or a read-only session hides it.
+    /// with the keyboard and in the one-line shell; a clarification or a read-only session hides it, and
+    /// so does the chevron beside +, until it is tapped again (TAL-630). A new chat's start status shows
+    /// either way.
     @ViewBuilder
     private var controlStrip: some View {
         if showsControlStrip, let sessionStart {
             ComposerSessionStartStrip(state: sessionStart, onRetry: onRetrySessionStart)
                 .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
-        } else if showsControlStrip {
+        } else if showsControlStrip, isControlStripExpanded {
             ComposerSecondaryControlsView(
                 state: secondaryControlsState,
                 onChooseWorkspace: {
@@ -882,6 +874,37 @@ struct MessageComposerView: View {
 
     private var showsControlStrip: Bool {
         !isAnsweringClarification && !isReadOnly
+    }
+
+    private var showsStripUnderCard: Bool {
+        showsControlStrip && (sessionStart != nil || isControlStripExpanded)
+    }
+
+    /// + and, beside it, the chevron that shows or hides the control strip.
+    @ViewBuilder
+    private var leadingComposerControls: some View {
+        if !isAnsweringClarification {
+            composerPlusMenu
+        }
+        if showsControlStrip, sessionStart == nil {
+            controlStripToggle
+        }
+    }
+
+    /// Shows or hides the control strip; the choice holds for every chat until it is changed.
+    private var controlStripToggle: some View {
+        Button {
+            isControlStripExpanded.toggle()
+        } label: {
+            Image(systemName: "chevron.down")
+                .font(.system(size: plusIconSize * 0.62, weight: .semibold))
+                .rotationEffect(.degrees(isControlStripExpanded ? 0 : 180))
+                .foregroundStyle(metaControlColor)
+                .frame(width: plusButtonSize, height: plusButtonSize)
+                .chatMinimumHitTarget(in: Circle())
+        }
+        .buttonStyle(.chatTactile(.icon))
+        .accessibilityLabel(isControlStripExpanded ? "Hide composer controls" : "Show composer controls")
     }
 
     @ViewBuilder
@@ -1231,23 +1254,21 @@ struct MessageComposerView: View {
     /// Long-pressing Send offers the other ways to send the draft, so no one types `/queue` (TAL-630).
     /// Steer, side questions and background tasks cannot carry files, so staged files hide them; a side
     /// question waits for the running reply, so it shows only between replies.
-    @ViewBuilder
-    private var sendOptionsMenu: some View {
-        if !isAnsweringClarification, !showsStopButton, !isActionButtonDisabled {
-            let carriesFiles = !pendingAttachments.isEmpty
-            if isWaitingForStream {
-                Button("Queue", systemImage: "text.badge.plus") { submitDraft(as: "queue") }
-                if !carriesFiles {
-                    Button("Steer", systemImage: "arrow.turn.down.right") { submitDraft(as: "steer") }
-                }
-                Button("Stop and send", systemImage: "stop.circle") { submitDraft(as: "interrupt") }
-            } else if !carriesFiles {
-                Button("Side question", systemImage: "bubble.left.and.text.bubble.right") { submitDraft(as: "btw") }
-            }
-            if !carriesFiles {
-                Button("Run in background", systemImage: "square.stack.3d.down.right") { submitDraft(as: "background") }
-            }
+    private var sendOptions: [ComposerSendButton.Option] {
+        guard !isAnsweringClarification, !showsStopButton, !isActionButtonDisabled else { return [] }
+        let carriesFiles = !pendingAttachments.isEmpty
+        var options: [ComposerSendButton.Option] = []
+        if isWaitingForStream {
+            options.append((.init(title: String(localized: "Queue"), systemImage: "text.badge.plus", command: "queue")))
+            if !carriesFiles { options.append((.init(title: String(localized: "Steer"), systemImage: "arrow.turn.down.right", command: "steer"))) }
+            options.append((.init(title: String(localized: "Stop and send"), systemImage: "stop.circle", command: "interrupt")))
+        } else if !carriesFiles {
+            options.append((.init(title: String(localized: "Side question"), systemImage: "bubble.left.and.text.bubble.right", command: "btw")))
         }
+        if !carriesFiles {
+            options.append((.init(title: String(localized: "Run in background"), systemImage: "square.stack.3d.down.right", command: "background")))
+        }
+        return options
     }
 
     /// Starts dictation once for a composer opened by the "New Chat with Voice" intent (#338),
@@ -1386,5 +1407,70 @@ struct MessageComposerView: View {
         let nsError = error as NSError
         return nsError.domain == NSCocoaErrorDomain
             && nsError.code == CocoaError.Code.userCancelled.rawValue
+    }
+}
+
+/// The send button (TAL-630): a tap sends, a long press lists the other ways to send the draft. A menu, unlike
+/// `contextMenu`, leaves the keyboard up. SwiftUI rebuilds an open menu on every redraw, which cancels a tap on
+/// its items, and a streaming reply redraws the composer constantly; so this redraws only when its look or its
+/// options change.
+struct ComposerSendButton: View, Equatable {
+    enum Glyph: Equatable {
+        case progress
+        case symbol(String)
+    }
+
+    struct Option: Equatable {
+        let title: String
+        let systemImage: String
+        let command: String
+    }
+
+    let glyph: Glyph
+    let background: Color
+    let foreground: Color
+    let size: CGFloat
+    let iconSize: CGFloat
+    let accessibilityLabel: String
+    let options: [Option]
+    let isDisabled: Bool
+    let onTap: () -> Void
+    let onOption: (String) -> Void
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.glyph == rhs.glyph && lhs.background == rhs.background && lhs.foreground == rhs.foreground
+            && lhs.size == rhs.size && lhs.iconSize == rhs.iconSize && lhs.accessibilityLabel == rhs.accessibilityLabel
+            && lhs.options == rhs.options && lhs.isDisabled == rhs.isDisabled
+    }
+
+    var body: some View {
+        Menu {
+            ForEach(options, id: \.command) { option in
+                Button(option.title, systemImage: option.systemImage) { onOption(option.command) }
+            }
+        } label: {
+            Group {
+                switch glyph {
+                case .progress:
+                    ProgressView()
+                        .tint(foreground)
+                        .scaleEffect(0.82)
+                case .symbol(let name):
+                    Image(systemName: name)
+                        .font(.system(size: iconSize, weight: .semibold))
+                }
+            }
+            .frame(width: size, height: size)
+            .background(background)
+            .foregroundStyle(foreground)
+            .clipShape(Circle())
+            .chatMinimumHitTarget(in: Circle())
+        } primaryAction: {
+            onTap()
+        }
+        .menuStyle(.button)
+        .buttonStyle(.chatTactile(.icon))
+        .disabled(isDisabled)
+        .accessibilityLabel(accessibilityLabel)
     }
 }
