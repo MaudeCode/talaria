@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Opening Talaria from the share sheet with two queued shares now routes both instead of losing one.",
+      "highlight": false
+    }
+  ]
+}

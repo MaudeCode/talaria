@@ -410,6 +410,34 @@ final class SharedDraftStoreTests: XCTestCase {
         XCTAssertFalse(hasPendingImport)
     }
 
+    /// TAL-554: launch, foreground, and the share URL fire together; only one reservation may win.
+    @MainActor
+    func testConcurrentImportTriggersRouteTwoQueuedSharesOneAfterAnother() async throws {
+        let directory = try temporaryDirectory()
+        try TalariaShareDraft.savePendingDraft("First share", in: directory, now: Date(timeIntervalSinceNow: -2))
+        try TalariaShareDraft.savePendingDraft("Second share", in: directory, now: Date(timeIntervalSinceNow: -1))
+        let router = SharedImportRouter(directory: { directory })
+
+        let triggers = (0..<3).map { _ in Task { await router.importIfAvailable() } }
+        for trigger in triggers { await trigger.value }
+
+        let first = try XCTUnwrap(router.pendingImport)
+        XCTAssertEqual(first.sharedImport.draft, "First share")
+        XCTAssertTrue(router.hasWaitingImport)
+
+        await router.didRoute(first).value
+        XCTAssertNil(router.pendingImport)
+        XCTAssertTrue(router.hasWaitingImport)
+
+        await router.openNext().value
+        let second = try XCTUnwrap(router.pendingImport)
+        XCTAssertEqual(second.sharedImport.draft, "Second share")
+
+        await router.didRoute(second).value
+        XCTAssertNil(router.pendingImport)
+        XCTAssertFalse(router.hasWaitingImport)
+    }
+
     func testPendingImportSaveRejectsAggregateOverflowWithoutReplacingExistingDraft() throws {
         let directory = try temporaryDirectory()
         try TalariaShareDraft.savePendingDraft("Keep me", in: directory)
