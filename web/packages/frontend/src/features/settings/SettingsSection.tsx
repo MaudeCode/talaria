@@ -4,6 +4,7 @@ import { SECTION_LABEL } from './SettingsLayout'
 import { AppearanceSection } from './AppearanceSection'
 import { PreferencesSection } from './PreferencesSection'
 import { ConversationSection } from './ConversationSection'
+import { SpeechSection } from './SpeechSection'
 import { ProvidersSection } from './ProvidersSection'
 import { PluginsSection } from './PluginsSection'
 import { ExtensionsSection } from './ExtensionsSection'
@@ -16,6 +17,7 @@ const SECTIONS: Partial<Record<Section, () => ReactNode>> = {
   appearance: () => <AppearanceSection />,
   preferences: () => <PreferencesSection />,
   conversation: () => <ConversationSection />,
+  speech: () => <SpeechSection />,
   providers: () => <ProvidersSection />,
   plugins: () => <PluginsSection />,
   extensions: () => <ExtensionsSection />,

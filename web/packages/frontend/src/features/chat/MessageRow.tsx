@@ -5,7 +5,7 @@ import type { BackgroundLine, Message } from '../../contracts'
 import { Markdown } from './render/Markdown'
 import { messageText } from './render/text'
 import type { ActivityMode } from './blocks/Worklog'
-import { continuedActivity, persistedActivity } from './turnActivity'
+import { activityText, continuedActivity, persistedActivity } from './turnActivity'
 import type { LiveTurn } from '../../stream/reducer'
 import { TurnActivityView } from './TurnActivityView'
 import { CollapsedBody } from './CollapsedBody'
@@ -151,7 +151,7 @@ export const MarkerRow = memo(function MarkerRow({ row }: { row: VisibleMessage 
 /** `continuation`: the live turn that continues this running scene (TAL-374). */
 export const AssistantMessageRow = memo(function AssistantMessageRow({ row, name, mode, actions, tts, isLast, sessionId, scope, continuation }: { row: VisibleMessage; name: string; mode: ActivityMode; actions: RowActions; tts: boolean; isLast: boolean; sessionId?: string | undefined; scope?: string | undefined; continuation?: LiveTurn | undefined }) {
   const activity = continuation ? continuedActivity(persistedActivity(row), continuation) : persistedActivity(row)
-  const content = activity.finalAnswer || activity.items.flatMap((item) => item.kind === 'text' ? [item.text] : []).join('\n\n')
+  const content = activityText(activity)
   const run = row.message as { _turnDuration?: number | null; _usedModel?: string | null }
   const meta = [typeof run._turnDuration === 'number' && run._turnDuration >= 0.5 ? `${run._turnDuration < 10 ? run._turnDuration.toFixed(1) : Math.round(run._turnDuration)}s` : null, run._usedModel || null].filter(Boolean).join(' · ')
   return (

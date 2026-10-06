@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Settings has a Speech section again: turn on Read aloud for replies, have new replies read automatically, and pick the engine, voice, rate, and pitch for this device.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

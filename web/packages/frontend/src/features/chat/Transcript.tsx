@@ -13,6 +13,7 @@ import { groupAssistantTurns, persistedActivity, toolIdsOf } from './turnActivit
 import { cn } from '../../ui/cn'
 import { Button } from '../../ui/Button'
 import { onScrollRequest, requestComposerRest } from './sendMotion'
+import { useAutoRead } from './useAutoRead'
 
 const VIRTUALIZE_AT = 200
 
@@ -29,6 +30,8 @@ export interface TranscriptProps {
   focusKey?: string | undefined
   actions: RowActions
   tts: boolean
+  /** `tts_auto_read` setting: speak each reply this view watched finish. */
+  autoRead?: boolean
   truncated: boolean
   /** Absolute index of the oldest loaded message; it drops with every older page, visible rows or not. */
   loadedFrom: number
@@ -71,6 +74,7 @@ export function Transcript(props: TranscriptProps) {
   // handover neither flashes nor duplicates.
   // A persisted user row as the tail means the server already carries the pending text; never show it twice.
   const liveUserText = showLiveUser ? (live?.userText ?? '') : !live && pendingUserText && !lastRowIsUser ? pendingUserText : ''
+  useAutoRead(props.autoRead === true, rows, live, !showLive)
   const lastAssistantIndex = useMemo(() => { for (let i = rows.length - 1; i >= 0; i--) if (rows[i]?.message.role === 'assistant' && !rows[i]?.message._marker_kind) return i; return -1 }, [rows])
   const virtualize = virtualizeLongTranscripts && rows.length > VIRTUALIZE_AT
 

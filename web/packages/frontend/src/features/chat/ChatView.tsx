@@ -322,6 +322,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
             focusKey={focusKey}
             actions={{ ...(session?.read_only ? {} : { onEdit: (row: VisibleMessage, text: string) => { void onEdit(row, text) }, onRegenerate: () => { void onRegenerate() } }), ...(session?.can_branch ? { onBranch: (row: VisibleMessage) => { void onBranch(row) } } : {}) }}
             tts={!!(settings.data as Record<string, unknown> | undefined)?.tts_enabled}
+            autoRead={(settings.data as Record<string, unknown> | undefined)?.tts_auto_read === true}
             truncated={truncated}
             loadedFrom={base}
             onLoadOlder={() => { void loadOlder() }}

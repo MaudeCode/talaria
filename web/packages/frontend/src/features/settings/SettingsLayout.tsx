@@ -7,13 +7,14 @@ import { cn } from '../../ui/cn'
 import { SettingsSectionSchema, type SettingsSection as Section } from '../../contracts/url'
 import { useLocale } from '../../i18n/useLocale'
 import { closeMobileSidebar } from '../../shell/useShellState'
-import { MessageSquare, SunMedium, SlidersHorizontal, Key, Star, Puzzle, Server, CircleHelp, type LucideIcon } from 'lucide-react'
+import { MessageSquare, AudioLines, SunMedium, SlidersHorizontal, Key, Star, Puzzle, Server, CircleHelp, type LucideIcon } from 'lucide-react'
 
-const SECTION_ICON: Record<Section, LucideIcon> = { conversation: MessageSquare, appearance: SunMedium, preferences: SlidersHorizontal, providers: Key, plugins: Star, extensions: Puzzle, system: Server, help: CircleHelp }
+const SECTION_ICON: Record<Section, LucideIcon> = { conversation: MessageSquare, speech: AudioLines, appearance: SunMedium, preferences: SlidersHorizontal, providers: Key, plugins: Star, extensions: Puzzle, system: Server, help: CircleHelp }
 
 export const SECTION_LABEL: Record<Section, () => string> = {
   appearance: () => m.settings_section_appearance_title(),
   conversation: () => m.settings_section_conversation_title(),
+  speech: () => m.settings_section_speech_title(),
   preferences: () => m.settings_section_preferences_title(),
   providers: () => m.settings_section_providers_title(),
   plugins: () => m.settings_section_plugins_title(),

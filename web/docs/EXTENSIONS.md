@@ -424,7 +424,7 @@ Hermes.connect().then((hermes) => {
 })
 ```
 
-The engine appears in Settings, Conversation. When selected, the host sends
+The engine appears in Settings, Speech. When selected, the host sends
 `tts:synthesize` events to the panel and plays the returned audio buffer through
 the same path as the OpenAI and ElevenLabs engines. The engine is only available while its panel is
 open; the host falls back to the browser voice otherwise.
