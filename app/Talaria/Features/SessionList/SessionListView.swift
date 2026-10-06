@@ -492,11 +492,16 @@ struct SessionListView: View {
                 selectSession(session, in: .archived)
             }
         } else if let utility = navigationState.destination?.compactRootUtility {
-            NavigationStack {
+            NavigationStack(path: compactSectionPath) {
                 withDrawerButton(sectionRoot(AppSection(utility)))
                     .background(NavigationBarLeadingMarginObserver())
-                    .navigationDestination(item: $navigationState.selectedItem) { item in
-                        sectionItemPage(item)
+                    .navigationDestination(for: CompactSectionPage.self) { page in
+                        switch page {
+                        case .item(let item):
+                            sectionItemPage(item)
+                        case .providerQuotaWidget:
+                            ProviderQuotaWidgetAppearanceView()
+                        }
                     }
             }
         } else {
@@ -668,6 +673,9 @@ struct SessionListView: View {
             withDrawerButton(sectionRoot(section))
         } else if let item = navigationState.displayedItem {
             sectionItemPage(item)
+                .navigationDestination(isPresented: $navigationState.pushesProviderQuotaWidget) {
+                    ProviderQuotaWidgetAppearanceView()
+                }
         } else if section == .skills {
             ContentUnavailableView("Select a Skill", systemImage: "hammer")
         } else if section == .tasks {
@@ -801,9 +809,6 @@ struct SessionListView: View {
             switch item {
             case .settings(let pane):
                 SettingsPaneView(authManager: authManager, server: server, pane: pane)
-                    .navigationDestination(isPresented: $navigationState.pushesProviderQuotaWidget) {
-                        ProviderQuotaWidgetAppearanceView()
-                    }
             case .memory(let file):
                 MemoryFileView(viewModel: sectionViewModels.memory, file: file, onAPIError: handleAPIError)
             case .skill(let id):
@@ -839,6 +844,25 @@ struct SessionListView: View {
                 horizontalSizeClass == .regular ? navigationState.displayedItem : navigationState.selectedItem
             },
             set: { navigationState.selectedItem = $0 }
+        )
+    }
+
+    /// The compact section stack: the selected item, then the quota widget page over its
+    /// category. One path, because a push requested inside another initial push is dropped.
+    private var compactSectionPath: Binding<[CompactSectionPage]> {
+        Binding(
+            get: {
+                guard let item = navigationState.selectedItem else { return [] }
+                return navigationState.pushesProviderQuotaWidget ? [.item(item), .providerQuotaWidget] : [.item(item)]
+            },
+            set: { path in
+                guard case .item(let item)? = path.first else {
+                    navigationState.selectedItem = nil
+                    return
+                }
+                navigationState.selectedItem = item
+                navigationState.pushesProviderQuotaWidget = path.count > 1
+            }
         )
     }
 
@@ -1816,7 +1840,8 @@ struct SessionListView: View {
         // Any destination chosen while the import was in flight — New Chat, a
         // utility, another row — is newer than this one and must not be replaced.
         guard navigationRevision == navigationState.rootRevision else { return }
-        selectSession(resolvedSession, in: list)
+        // A compact chat pushes over the Chats list whichever list it came from.
+        selectSession(resolvedSession, in: horizontalSizeClass == .regular ? list : .chats)
     }
 
     private func selectSession(_ session: SessionSummary, in list: AppSection = .chats) {
@@ -1895,4 +1920,9 @@ private struct SectionViewModels {
         skills = SkillsViewModel(server: server, responseCache: .app(server: server))
         tasks = TasksViewModel(server: server, responseCache: .app(server: server))
     }
+}
+
+private enum CompactSectionPage: Hashable {
+    case item(SectionItem)
+    case providerQuotaWidget
 }

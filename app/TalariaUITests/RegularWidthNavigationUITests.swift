@@ -273,3 +273,28 @@ final class SizeClassRoundTripUITests: TalariaUITestCase {
         _ = app.navigationBars.firstMatch.settledFrame
     }
 }
+
+/// TAL-643: the quota widget's settings link opens its page over Live Activities & Widgets, at
+/// both widths, so Back leads into Settings.
+final class QuotaWidgetSettingsLinkUITests: TalariaUITestCase {
+    func testWidgetSettingsLinkOpensItsPageOverItsCategory() throws {
+        launchFixture()
+        XCTAssertTrue(app.buttons["Open navigation"].awaitExistence(timeout: 15), "Missing deterministic app fixture")
+        app.open(try XCTUnwrap(URL(string: "talaria://provider-quota-widget-settings")))
+        let confirm = XCUIApplication(bundleIdentifier: "com.apple.springboard").buttons["Open"]
+        if confirm.waitForExistence(timeout: 5) {
+            confirm.tap()
+        }
+
+        let page = app.navigationBars["Customization"]
+        XCTAssertTrue(page.awaitExistence(timeout: Self.navigationTimeout), "The link did not open the widget page")
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            XCTAssertTrue(app.buttons["settings-category-liveActivitiesAndWidgets"].isSelected)
+        }
+        page.buttons.firstMatch.tap()
+        XCTAssertTrue(
+            app.navigationBars["Live Activities & Widgets"].awaitExistence(timeout: Self.navigationTimeout),
+            "Back must lead to the widget's category"
+        )
+    }
+}
