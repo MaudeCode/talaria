@@ -101,6 +101,7 @@ done
 
 print -rl -- "$@" > "$state/last-args"
 [[ ! -e TalariaTests/VisualReferences/.record ]] || print -r -- "${selectors[1]:-}" >> "$state/recorded"
+print -rl -- "$@" >> "$state/all-args"
 lock="$state/counter.lock"
 while ! mkdir "$lock" 2>/dev/null; do sleep 0.01; done
 read -r active < "$state/active"
@@ -279,8 +280,12 @@ read -r active < "$state/active"
 [[ "$maximum" == 1 && "$active" == 0 ]]
 [[ ! -e "$lock_file.owner" ]]
 
+: > "$state/all-args"
 "$repo/scripts/test-ios" TalariaUITests > "$state/whole-target.log" 2>&1
-grep -Fqx -- '-skip-testing:TalariaUITests/SidebarPerformanceUITests' "$state/last-args"
+grep -Fqx -- '-skip-testing:TalariaUITests/SidebarPerformanceUITests' "$state/all-args"
+# The clone phase leaves the notification journey to its own phase on the leased device.
+grep -Fqx -- '-skip-testing:TalariaUITests/ResponseCompletionAlertUITests' "$state/all-args"
+grep -Fqx -- '-only-testing:TalariaUITests/ResponseCompletionAlertUITests' "$state/all-args"
 "$repo/scripts/test-ios" TalariaUITests/SidebarPerformanceUITests > "$state/explicit-performance.log" 2>&1
 ! grep -Fqx -- '-skip-testing:TalariaUITests/SidebarPerformanceUITests' "$state/last-args"
 
@@ -293,10 +298,22 @@ phases_for() {
     "$repo/scripts/test-ios" "$@" > "$state/phases.log" 2>&1
     tail -n "+$(( before + 1 ))" "$state/runs" | cut -d'|' -f3-
 }
-expected=$'-only-testing:TalariaTests|NO\n-only-testing:TalariaUITests|YES'
+# A clone's notification service does not answer, so the notification journey runs last on the
+# leased device (TAL-80).
+expected=$'-only-testing:TalariaTests|NO\n-only-testing:TalariaUITests|YES\n-only-testing:TalariaUITests/ResponseCompletionAlertUITests|NO'
 [[ "$(phases_for)" == "$expected" ]] || {
-    print -u2 "Expected a full run to test TalariaTests without clones, then TalariaUITests on clones:"
+    print -u2 "Expected a full run to test TalariaTests without clones, TalariaUITests on clones, then the notification journey without clones:"
     phases_for >&2
+    exit 1
+}
+expected=$'-only-testing:TalariaUITests/ResponseCompletionAlertUITests/testAlert|NO'
+[[ "$(phases_for TalariaUITests/ResponseCompletionAlertUITests/testAlert)" == "$expected" ]] || {
+    print -u2 "Expected a selected notification journey to run alone without clones."
+    exit 1
+}
+expected=$'-only-testing:TalariaUITests/ResponseCompletionAlertUITests|NO'
+[[ "$(TALARIA_TEST_WORKER_COUNT=1 phases_for TalariaUITests/ResponseCompletionAlertUITests)" == "$expected" ]] || {
+    print -u2 "Expected a single-worker run to keep its one phase."
     exit 1
 }
 expected=$'-only-testing:TalariaTests/Unit|NO\n-only-testing:TalariaUITests/First -only-testing:TalariaUITests/Second|YES'

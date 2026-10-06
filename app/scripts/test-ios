@@ -119,6 +119,28 @@ done
 TALARIA_TEST_WORKER_COUNT=${TALARIA_TEST_WORKER_COUNT:-4}
 parallel_testing=NO
 (( TALARIA_TEST_WORKER_COUNT > 1 )) && parallel_testing=YES
+# A parallel-testing clone's notification service does not answer, so a class that needs a
+# delivered local notification runs on the leased device itself, after the parallel UI phase
+# (a clone made after it would inherit its app state), as CI runs every class without clones
+# (TAL-80).
+typeset -a serial_ui_classes=(TalariaUITests/ResponseCompletionAlertUITests)
+typeset -a parallel_ui_filters serial_ui_filters serial_skips
+if [[ "$parallel_testing" == YES ]]; then
+    for filter in "${ui_filters[@]}"; do
+        selector=${filter#-only-testing:}
+        for serial_class in "${serial_ui_classes[@]}"; do
+            if [[ "$selector" == TalariaUITests ]]; then
+                serial_ui_filters+=("-only-testing:$serial_class")
+                serial_skips+=("-skip-testing:$serial_class")
+            elif [[ "$selector" == "$serial_class" || "$selector" == "$serial_class/"* ]]; then
+                serial_ui_filters+=("$filter")
+                continue 2
+            fi
+        done
+        parallel_ui_filters+=("$filter")
+    done
+    ui_filters=("${parallel_ui_filters[@]}")
+fi
 
 cd "$repo_root"
 # Clear first: a recording run killed before its EXIT trap would otherwise leave
@@ -166,7 +188,7 @@ run_tests() {
             ios_pool_release
             ios_pool_acquire || exit "$xcodebuild_status"
             destination="platform=iOS Simulator,id=$simulator_id"
-            [[ "$phase" != ui ]] || seed_ui_photo
+            [[ "$phase" == unit ]] || seed_ui_photo
             attempt=2
             continue
         fi
@@ -175,8 +197,12 @@ run_tests() {
 }
 
 (( ${#unit_filters} == 0 )) || run_tests unit NO "${unit_filters[@]}"
+(( ${#ui_filters} + ${#serial_ui_filters} == 0 )) || seed_ui_photo
 if (( ${#ui_filters} )); then
-    seed_ui_photo
-    run_tests ui "$parallel_testing" "${ui_filters[@]}" "${extended_skips[@]}"
+    run_tests ui "$parallel_testing" "${ui_filters[@]}" "${extended_skips[@]}" "${serial_skips[@]}"
+    scripts/assert-no-skipped-ui-tests "$result_bundle"
+fi
+if (( ${#serial_ui_filters} )); then
+    run_tests ui-serial NO "${serial_ui_filters[@]}"
     scripts/assert-no-skipped-ui-tests "$result_bundle"
 fi

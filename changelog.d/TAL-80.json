@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Running responses are now checked end to end through leaving and reopening the app, relaunching it, dropped connections, and expired sign-ins.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}
