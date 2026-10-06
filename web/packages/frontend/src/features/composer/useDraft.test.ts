@@ -294,3 +294,46 @@ describe('unknown server order, and exact revisions (TAL-564)', () => {
     expect(second.result.current.text).toBe('newer elsewhere')
   })
 })
+
+describe('failed clears, and caching the server draft (TAL-564)', () => {
+  beforeEach(() => { vi.useFakeTimers(); localStorage.clear(); vi.mocked(api.saveDraft).mockReset().mockResolvedValue({ ok: true, draft: { text: '', files: [] }, draft_version: null }) })
+  afterEach(() => { vi.useRealTimers() })
+  const mount = () => renderHook(() => {
+    const [text, setText] = useState(() => readLocalDraft('s1'))
+    useDraftPersistence('s1', text)
+    useServerDraft('s1', setText)
+    return { text, setText }
+  })
+
+  it('keeps a clear the server never acknowledged, so a later load does not restore the sent text', async () => {
+    vi.mocked(api.fetchDraft).mockResolvedValue({ draft: { text: '', files: [] }, draft_version: null })
+    const first = mount()
+    await act(async () => { await Promise.resolve() })
+    act(() => { first.result.current.setText('sent message') })
+    vi.mocked(api.saveDraft).mockRejectedValue(new Error('offline'))
+    act(() => { first.result.current.setText('') })
+    await act(async () => { await Promise.resolve() })
+    first.unmount()
+
+    vi.mocked(api.saveDraft).mockReset().mockResolvedValue({ ok: true, draft: { text: '', files: [] }, draft_version: null })
+    vi.mocked(api.fetchDraft).mockResolvedValue({ draft: { text: 'sent message', files: [] }, draft_version: '1000' })
+    const second = mount()
+    await act(async () => { await Promise.resolve() })
+    expect(second.result.current.text).toBe('')
+    expect(vi.mocked(api.saveDraft).mock.calls.map(([body]) => body.draft.text)).toEqual([''])
+  })
+
+  it('caches a server draft that wins, so an offline load still shows it', async () => {
+    localStorage.setItem('hermes-draft:s1', JSON.stringify({ text: 'stale here', updatedAt: 1 }))
+    vi.mocked(api.fetchDraft).mockResolvedValue({ draft: { text: 'newer elsewhere', files: [] }, draft_version: String(Date.now() * 1000) })
+    const first = mount()
+    await act(async () => { await Promise.resolve() })
+    expect(first.result.current.text).toBe('newer elsewhere')
+    first.unmount()
+
+    vi.mocked(api.fetchDraft).mockRejectedValue(new Error('offline'))
+    const second = mount()
+    await act(async () => { await Promise.resolve() })
+    expect(second.result.current.text).toBe('newer elsewhere')
+  })
+})

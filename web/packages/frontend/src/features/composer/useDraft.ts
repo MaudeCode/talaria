@@ -40,15 +40,19 @@ function readLocal(sessionId: string) {
   observe(revision)
   return { text: local.text, revision }
 }
-/** Save to the server, stamping the local copy with the same revision: a copy the server truncated never outranks it. */
+/**
+ * Save to the server, stamping the local copy with the same revision: a copy the server truncated never outranks it.
+ * A clear keeps an empty local copy until the server acknowledges it, so a failed clear is retried by the next load
+ * instead of bringing sent text back.
+ */
 function publish(sessionId: string, text: string): void {
   const version = stamp()
   writeLocal(sessionId, text, version)
-  saveServerDraft(sessionId, text, version)
-}
-function saveServerDraft(sessionId: string, text: string, version = stamp()): void {
   void api.saveDraft({ session_id: sessionId, draft: { text }, draft_version: String(version) }).then(
-    (saved) => { observe(saved.draft_version) },
+    (saved) => {
+      observe(saved.draft_version)
+      if (text === '' && readPersistedJson(key(sessionId), LocalDraftSchema)?.revision === version) removePersisted(key(sessionId))
+    },
     // A 409 means another tab or device saved a later revision; this text stays local and the next edit outranks it.
     (e: unknown) => { if (isApiError(e) && e.status === 409) observe((e.body as { draft_version?: unknown } | null)?.draft_version) },
   )
@@ -75,6 +79,9 @@ export function useServerDraft(sessionId: string | null, setText: Dispatch<SetSt
       setText((text) => {
         if (loaded?.sessionId !== sessionId || loaded.text !== text) return text
         loaded = { sessionId, text: draft.text }
+        // Cached with its exact revision, so an offline load shows it rather than this browser's older copy.
+        if (draft_version !== null && draft.text) writeLocal(sessionId, draft.text, Number(draft_version))
+        else removePersisted(key(sessionId))
         return draft.text
       })
     }, () => undefined)
@@ -119,9 +126,9 @@ export function useDraftPersistence(sessionId: string | null, text: string) {
     loaded = null
     if (text.trim() === '') {
       unsaved.current = null
-      removePersisted(key(sessionId))
       // Emptied by a send, queue, steer, command or by hand: the server copy goes too, or a later load restores it.
-      if (prev.text?.trim()) saveServerDraft(sessionId, '')
+      if (prev.text?.trim()) publish(sessionId, '')
+      else removePersisted(key(sessionId))
       return
     }
     unsaved.current = { sessionId, text }
@@ -132,6 +139,5 @@ export function useDraftPersistence(sessionId: string | null, text: string) {
 }
 
 export function clearDraft(sessionId: string): void {
-  removePersisted(key(sessionId))
-  saveServerDraft(sessionId, '')
+  publish(sessionId, '')
 }
