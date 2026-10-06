@@ -55,17 +55,17 @@ print -r -- $$ > "$owner_file"
 ios_pool_acquire
 destination="platform=iOS Simulator,id=$simulator_id"
 
-# UI tests pick from Photos; give them a photo they own (TAL-633). Only a disposable pool
-# device is seeded: it is erased on release, while a personal simulator would keep every photo.
-# The completion alert test needs the notification service, which a fresh boot can leave
-# hanging (TAL-651).
+# Only a disposable pool device is prepared: it is erased on release, while a personal simulator
+# keeps its state. UI tests pick from Photos, so it gets a photo they own (TAL-633). The completion
+# alert test needs the notification service, which a fresh boot can leave hanging until its dasd
+# restarts (TAL-651); a personal simulator's processes are never restarted.
 prepare_ui_simulator() {
-    # Explicit exits: zsh skips the EXIT trap, and the lease release, when errexit fires in a function.
-    scripts/ready-simulator-notifications "$simulator_id" || exit $?
     if [[ "$simulator_disposable" == true ]]; then
+        # Explicit exits: zsh skips the EXIT trap, and the lease release, when errexit fires in a function.
+        scripts/ready-simulator-notifications "$simulator_id" || exit $?
         scripts/seed-simulator-photo "$simulator_id" || exit $?
     else
-        print -u2 "Not seeding a test photo into personal simulator $simulator_id; Photos picker tests use its library."
+        print -u2 "Not preparing personal simulator $simulator_id: Photos picker tests use its library, and its notification service is not restarted."
     fi
 }
 

@@ -326,17 +326,18 @@ expected=$'-only-testing:TalariaTests/Unit|NO\n-only-testing:TalariaUITests/Firs
     exit 1
 }
 
-# Only a disposable pool device is seeded with a photo; a personal simulator keeps its library.
-# Both get a notification service that answers (TAL-651).
+# Only a disposable pool device is seeded with a photo and has its notification service readied
+# (TAL-651); a personal simulator keeps its library and its processes.
 : > "$state/seeded"
 : > "$state/notifications-readied"
 "$repo/scripts/test-ios" TalariaUITests/PoolSeed > "$state/pool-seed.log" 2>&1
 [[ "$(<"$state/seeded")" == (AAAAAAAA|BBBBBBBB)-* ]]
 TALARIA_DEVICE_FIXTURE="$state/fallback-devices" IOS_SIMULATOR_ID=DDDDDDDD-DDDD-DDDD-DDDD-DDDDDDDDDDDD \
     "$repo/scripts/test-ios" TalariaUITests/PersonalSeed > "$state/personal-seed.log" 2>&1
-grep -q "Not seeding a test photo into personal simulator DDDDDDDD" "$state/personal-seed.log"
+grep -q "Not preparing personal simulator DDDDDDDD" "$state/personal-seed.log"
 [[ $(wc -l < "$state/seeded" | tr -d ' ') == 1 ]]
-[[ "$(<"$state/notifications-readied")" == (AAAAAAAA|BBBBBBBB)-*$'\n'DDDDDDDD-DDDD-DDDD-DDDD-DDDDDDDDDDDD ]]
+[[ "$(<"$state/notifications-readied")" == (AAAAAAAA|BBBBBBBB)-* ]]
+[[ $(wc -l < "$state/notifications-readied" | tr -d ' ') == 1 ]]
 
 # A failed seed stops before testing and still returns its lease.
 touch "$state/seed-fail"
