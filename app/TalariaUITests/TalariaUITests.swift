@@ -135,6 +135,8 @@ final class TranscriptMediaUITests: ChatUITestCase {
         XCTAssertTrue(audioTile, "The audio file did not render as a tile")
         XCTAssertFalse(literalBold, "Bold text around an image rendered literally")
         XCTAssertFalse(literalToken, "A media token rendered as text")
+
+        assertPresentsFileExporter(from: app.buttons["Export audio narration.mp3"].firstMatch, name: "audio-exporter")
     }
 }
 
@@ -1576,6 +1578,7 @@ final class WorkspaceFilePreviewUITests: WorkspaceUITestCase {
             .firstMatch
         XCTAssertTrue(body.awaitExistence(timeout: 20), "The text preview did not render its content")
         XCTAssertTrue(app.buttons["Export file"].awaitExistence(timeout: 5), "A text file should be exportable")
+        assertPresentsFileExporter(from: app.buttons["Export file"], name: "file-exporter")
         XCTAssertFalse(app.buttons["Save image to Photos"].exists, "Only images save to Photos")
         app.buttons["BackButton"].tap()
 
@@ -2486,6 +2489,20 @@ class TalariaUITestCase: XCTestCase {
 
     func launchFixture(additionalArguments: [String] = []) {
         launch(arguments: fixtureLaunchArguments + additionalArguments)
+    }
+
+    /// Taps `button`, expects the system file exporter, keeps a screenshot named `name`, and dismisses it.
+    func assertPresentsFileExporter(from button: XCUIElement, name: String) {
+        let save = app.buttons["DOCPicker.actionButton"].firstMatch
+        XCTAssertTrue(button.awaitExistence(timeout: 10), "Missing export button for \(name)")
+        button.tap()
+        XCTAssertTrue(save.awaitExistence(timeout: Self.navigationTimeout), "The file exporter did not open for \(name)")
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = name
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        app.navigationBars["FullDocumentManagerViewControllerNavigationBar"].swipeDown(velocity: .fast)
+        XCTAssertTrue(save.awaitNonExistence(timeout: 10), "The file exporter did not dismiss for \(name)")
     }
 
     /// Backgrounds the app under test and returns once it has left the foreground, so work the

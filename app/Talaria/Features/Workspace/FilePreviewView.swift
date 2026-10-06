@@ -1,6 +1,5 @@
 import SwiftUI
 import UIKit
-import UniformTypeIdentifiers
 import TalariaKit
 
 struct FilePreviewView: View {
@@ -10,10 +9,7 @@ struct FilePreviewView: View {
     private let initialLine: Int?
     @State private var viewModel: FilePreviewViewModel
     @State private var selectableText: SelectableTextPresentation?
-    @State private var exportDocument = ExportedFileDocument(data: Data())
-    @State private var exportContentType = UTType.data
-    @State private var exportFilename = String(localized: "Hermes File")
-    @State private var isFileExporterPresented = false
+    @State private var exportPayload: FileExportPayload?
     @State private var exportErrorMessage: String?
     @State private var saveConfirmationMessage: String?
     @State private var isSavingToPhotos = false
@@ -102,53 +98,11 @@ struct FilePreviewView: View {
         .refreshable {
             await loadFile()
         }
-        .fileExporter(
-            isPresented: $isFileExporterPresented,
-            document: exportDocument,
-            contentType: exportContentType,
-            defaultFilename: exportFilename
-        ) { result in
-            if case let .failure(error) = result {
-                exportErrorMessage = error.localizedDescription
-            }
-        }
+        .fileExporter(payload: $exportPayload, errorTitle: "Export Failed", errorMessage: $exportErrorMessage)
         .fullScreenCover(item: $selectableText) { selection in
             SelectableTextPresentationView(selection: selection)
         }
-        .alert(
-            "Export Failed",
-            isPresented: Binding(
-                get: { exportErrorMessage != nil },
-                set: { isPresented in
-                    if !isPresented {
-                        exportErrorMessage = nil
-                    }
-                }
-            )
-        ) {
-            Button("OK") {
-                exportErrorMessage = nil
-            }
-        } message: {
-            Text(exportErrorMessage ?? "")
-        }
-        .alert(
-            "Saved",
-            isPresented: Binding(
-                get: { saveConfirmationMessage != nil },
-                set: { isPresented in
-                    if !isPresented {
-                        saveConfirmationMessage = nil
-                    }
-                }
-            )
-        ) {
-            Button("OK") {
-                saveConfirmationMessage = nil
-            }
-        } message: {
-            Text(saveConfirmationMessage ?? "")
-        }
+        .messageAlert("Saved", message: $saveConfirmationMessage)
     }
 
     @ViewBuilder
@@ -338,11 +292,7 @@ struct FilePreviewView: View {
 
     private func exportFile() async {
         do {
-            let payload = try await viewModel.exportPayload()
-            exportDocument = ExportedFileDocument(data: payload.data)
-            exportContentType = payload.contentType
-            exportFilename = payload.filename
-            isFileExporterPresented = true
+            exportPayload = try await viewModel.exportPayload()
         } catch {
             exportErrorMessage = error.localizedDescription
             onAPIError(error)

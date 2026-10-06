@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Saving files and media from chats and file previews now uses one consistent export flow.",
+      "highlight": false
+    }
+  ]
+}

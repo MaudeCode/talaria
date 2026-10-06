@@ -2,7 +2,6 @@ import AVFoundation
 import AVKit
 import SwiftUI
 import UIKit
-import UniformTypeIdentifiers
 import TalariaKit
 
 struct TranscriptMediaPreviewView: View {
@@ -10,10 +9,7 @@ struct TranscriptMediaPreviewView: View {
 
     private let item: TranscriptMediaPreviewItem
     @State private var viewModel: TranscriptMediaPreviewViewModel
-    @State private var exportDocument = ExportedFileDocument(data: Data())
-    @State private var exportContentType = UTType.data
-    @State private var exportFilename = String(localized: "Hermes Media")
-    @State private var isFileExporterPresented = false
+    @State private var exportPayload: FileExportPayload?
     @State private var isExportingMedia = false
     @State private var isSavingToPhotos = false
     @State private var saveConfirmationMessage: String?
@@ -96,50 +92,8 @@ struct TranscriptMediaPreviewView: View {
             .refreshable {
                 await loadMedia(force: true)
             }
-            .fileExporter(
-                isPresented: $isFileExporterPresented,
-                document: exportDocument,
-                contentType: exportContentType,
-                defaultFilename: exportFilename
-            ) { result in
-                if case let .failure(error) = result {
-                    errorMessage = error.localizedDescription
-                }
-            }
-            .alert(
-                "Saved",
-                isPresented: Binding(
-                    get: { saveConfirmationMessage != nil },
-                    set: { isPresented in
-                        if !isPresented {
-                            saveConfirmationMessage = nil
-                        }
-                    }
-                )
-            ) {
-                Button("OK") {
-                    saveConfirmationMessage = nil
-                }
-            } message: {
-                Text(saveConfirmationMessage ?? "")
-            }
-            .alert(
-                "Media Action Failed",
-                isPresented: Binding(
-                    get: { errorMessage != nil },
-                    set: { isPresented in
-                        if !isPresented {
-                            errorMessage = nil
-                        }
-                    }
-                )
-            ) {
-                Button("OK") {
-                    errorMessage = nil
-                }
-            } message: {
-                Text(errorMessage ?? "")
-            }
+            .fileExporter(payload: $exportPayload, errorTitle: "Media Action Failed", errorMessage: $errorMessage)
+            .messageAlert("Saved", message: $saveConfirmationMessage)
             .onDisappear {
                 viewModel.cleanupTemporaryFiles()
             }
@@ -239,11 +193,7 @@ struct TranscriptMediaPreviewView: View {
         }
 
         do {
-            let payload = try await viewModel.exportPayload()
-            exportDocument = ExportedFileDocument(data: payload.data)
-            exportContentType = payload.contentType
-            exportFilename = payload.filename
-            isFileExporterPresented = true
+            exportPayload = try await viewModel.exportPayload()
         } catch {
             errorMessage = error.localizedDescription
             onAPIError(error)

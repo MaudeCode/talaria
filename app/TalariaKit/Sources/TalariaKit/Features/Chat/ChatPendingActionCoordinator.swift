@@ -121,17 +121,13 @@ final class ChatPendingActionCoordinator {
     var approvalHeadDidBecomeVisible: (ApprovalPromptState) -> Void = { _ in }
 
     private let client: APIClient
-    private let approvalStreamClient: SSEStreamingClient
-    private let clarifyStreamClient: SSEStreamingClient
     private let pollingIntervals: ChatPollingIntervals
 
     private var approvalPendingBySession: [String: ApprovalPromptState] = [:]
-    private var approvalMonitoringSessionID: String?
-    @ObservationIgnored private var approvalPollingTask: Task<Void, Never>?
+    @ObservationIgnored private var approvalMonitor: PendingPromptMonitor
 
     private var clarificationPendingBySession: [String: ClarificationPromptState] = [:]
-    private var clarificationMonitoringSessionID: String?
-    @ObservationIgnored private var clarificationPollingTask: Task<Void, Never>?
+    @ObservationIgnored private var clarificationMonitor: PendingPromptMonitor
     @ObservationIgnored private var clarificationUpdateRevision = 0
     private var clarificationUsesPollingFallback = false
 
@@ -146,14 +142,14 @@ final class ChatPendingActionCoordinator {
         pollingIntervals: ChatPollingIntervals
     ) {
         self.client = client
-        self.approvalStreamClient = approvalStreamClient
-        self.clarifyStreamClient = clarifyStreamClient
+        self.approvalMonitor = PendingPromptMonitor(stream: approvalStreamClient)
+        self.clarificationMonitor = PendingPromptMonitor(stream: clarifyStreamClient)
         self.pollingIntervals = pollingIntervals
     }
 
     deinit {
-        approvalPollingTask?.cancel()
-        clarificationPollingTask?.cancel()
+        approvalMonitor.pollingTask?.cancel()
+        clarificationMonitor.pollingTask?.cancel()
     }
 
     func refreshApprovalBypassState() async {
@@ -397,27 +393,52 @@ final class ChatPendingActionCoordinator {
         renderClarificationPromptForCurrentSession()
     }
 
-    private func startApprovalMonitoring() {
+    /// The session a monitor should start watching: the open one, while its stream runs and the
+    /// monitor watches another.
+    private func sessionToMonitor(_ monitor: PendingPromptMonitor) -> String? {
         guard let sessionID = delegate?.pendingActionSessionID,
               delegate?.pendingActionHasActiveStream == true,
-              approvalMonitoringSessionID != sessionID
-        else { return }
+              monitor.sessionID != sessionID
+        else { return nil }
+        return sessionID
+    }
 
-        stopApprovalMonitoring(clearPrompt: false)
-        approvalMonitoringSessionID = sessionID
-        approvalStreamClient.start(url: client.approvalStreamURL(sessionID: sessionID)) { [weak self] event in
+    /// Whether `sessionID` is still the open session with a live, connected stream.
+    private func isLiveSession(_ sessionID: String) -> Bool {
+        delegate?.pendingActionSessionID == sessionID
+            && delegate?.pendingActionHasActiveStream == true
+            && delegate?.pendingActionIsStreamConnectionSuspended != true
+    }
+
+    /// Runs `poll` every `interval` until cancelled or `sessionID` stops being the live session.
+    private func pollingTask(
+        sessionID: String,
+        interval: UInt64,
+        poll: @escaping @MainActor (ChatPendingActionCoordinator) async -> Void
+    ) -> Task<Void, Never> {
+        let sleep = pollingIntervals.sleep
+        return Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                // Scoped so the sleep below does not retain the coordinator.
+                do {
+                    guard let self, self.isLiveSession(sessionID) else { break }
+                    await poll(self)
+                }
+                guard !Task.isCancelled else { break }
+                try? await sleep(interval)
+            }
+        }
+    }
+
+    private func startApprovalMonitoring() {
+        guard let sessionID = sessionToMonitor(approvalMonitor) else { return }
+        approvalMonitor.start(sessionID: sessionID, url: client.approvalStreamURL(sessionID: sessionID)) { [weak self] event in
             self?.handleApprovalMonitorEvent(event, sessionID: sessionID)
         }
     }
 
     private func stopApprovalMonitoring(clearPrompt: Bool) {
-        let shouldStopStream = approvalMonitoringSessionID != nil || approvalPollingTask != nil
-        approvalPollingTask?.cancel()
-        approvalPollingTask = nil
-        if shouldStopStream {
-            approvalStreamClient.stop()
-        }
-        approvalMonitoringSessionID = nil
+        approvalMonitor.stop()
 
         guard clearPrompt else { return }
         if let sessionID = delegate?.pendingActionSessionID {
@@ -440,27 +461,12 @@ final class ChatPendingActionCoordinator {
     }
 
     private func startApprovalFallbackPolling(sessionID: String) {
-        guard approvalMonitoringSessionID == sessionID else { return }
+        guard approvalMonitor.sessionID == sessionID else { return }
 
-        approvalStreamClient.stop()
-        approvalPollingTask?.cancel()
-        let pollingInterval = pollingIntervals.approvalNanoseconds
-        let sleep = pollingIntervals.sleep
-        approvalPollingTask = Task { @MainActor [weak self] in
-            pollingLoop: while !Task.isCancelled {
-                do {
-                    guard let self,
-                          self.delegate?.pendingActionSessionID == sessionID,
-                          self.delegate?.pendingActionHasActiveStream == true,
-                          self.delegate?.pendingActionIsStreamConnectionSuspended != true
-                    else { break pollingLoop }
-
-                    await self.refreshApprovalPending(sessionID: sessionID)
-                }
-
-                guard !Task.isCancelled else { break }
-                try? await sleep(pollingInterval)
-            }
+        approvalMonitor.stream.stop()
+        approvalMonitor.pollingTask?.cancel()
+        approvalMonitor.pollingTask = pollingTask(sessionID: sessionID, interval: pollingIntervals.approvalNanoseconds) {
+            await $0.refreshApprovalPending(sessionID: sessionID)
         }
     }
 
@@ -502,28 +508,17 @@ final class ChatPendingActionCoordinator {
     }
 
     private func startClarificationMonitoring() {
-        guard let sessionID = delegate?.pendingActionSessionID,
-              delegate?.pendingActionHasActiveStream == true,
-              clarificationMonitoringSessionID != sessionID
-        else { return }
-
-        stopClarificationMonitoring(clearPrompt: false)
-        clarificationMonitoringSessionID = sessionID
+        guard let sessionID = sessionToMonitor(clarificationMonitor) else { return }
+        clarificationUsesPollingFallback = false
         let initialRevision = clarificationUpdateRevision
-        clarifyStreamClient.start(url: client.clarifyStreamURL(sessionID: sessionID)) { [weak self] event in
+        clarificationMonitor.start(sessionID: sessionID, url: client.clarifyStreamURL(sessionID: sessionID)) { [weak self] event in
             self?.handleClarificationMonitorEvent(event, sessionID: sessionID, initialRevision: initialRevision)
         }
         startClarificationPolling(sessionID: sessionID)
     }
 
     private func stopClarificationMonitoring(clearPrompt: Bool) {
-        let shouldStopStream = clarificationMonitoringSessionID != nil || clarificationPollingTask != nil
-        clarificationPollingTask?.cancel()
-        clarificationPollingTask = nil
-        if shouldStopStream {
-            clarifyStreamClient.stop()
-        }
-        clarificationMonitoringSessionID = nil
+        clarificationMonitor.stop()
         clarificationUsesPollingFallback = false
 
         guard clearPrompt else { return }
@@ -557,31 +552,24 @@ final class ChatPendingActionCoordinator {
     }
 
     private func startClarificationFallbackPolling(sessionID: String) {
-        guard clarificationMonitoringSessionID == sessionID else { return }
+        guard clarificationMonitor.sessionID == sessionID else { return }
         clarificationUsesPollingFallback = true
-        clarifyStreamClient.stop()
+        clarificationMonitor.stream.stop()
         startClarificationPolling(sessionID: sessionID)
     }
 
     private func startClarificationPolling(sessionID: String) {
-        guard clarificationMonitoringSessionID == sessionID, clarificationPollingTask == nil else { return }
-        let pollingInterval = pollingIntervals.clarificationNanoseconds
-        let sleep = pollingIntervals.sleep
-        clarificationPollingTask = Task { @MainActor [weak self] in
-            while !Task.isCancelled {
-                guard let self,
-                      self.delegate?.pendingActionSessionID == sessionID,
-                      self.delegate?.pendingActionHasActiveStream == true,
-                      self.delegate?.pendingActionIsStreamConnectionSuspended != true else { break }
-
-                // Healthy streams need HTTP only when a running clarification
-                // tool has no visible prompt, including a missed startup event.
-                if self.clarificationUsesPollingFallback
-                    || (self.clarificationPrompt == nil && self.delegate?.pendingActionHasRunningClarificationTool == true) {
-                    await self.refreshClarificationPending(sessionID: sessionID)
-                }
-                guard !Task.isCancelled else { break }
-                try? await sleep(pollingInterval)
+        guard clarificationMonitor.sessionID == sessionID, clarificationMonitor.pollingTask == nil else { return }
+        clarificationMonitor.pollingTask = pollingTask(
+            sessionID: sessionID,
+            interval: pollingIntervals.clarificationNanoseconds
+        ) { coordinator in
+            // Healthy streams need HTTP only when a running clarification
+            // tool has no visible prompt, including a missed startup event.
+            if coordinator.clarificationUsesPollingFallback
+                || (coordinator.clarificationPrompt == nil
+                    && coordinator.delegate?.pendingActionHasRunningClarificationTool == true) {
+                await coordinator.refreshClarificationPending(sessionID: sessionID)
             }
         }
     }
@@ -592,10 +580,7 @@ final class ChatPendingActionCoordinator {
 
         do {
             let response = try await client.clarifyPending(sessionID: sessionID)
-            guard !Task.isCancelled, revision == clarificationUpdateRevision,
-                  delegate?.pendingActionSessionID == sessionID,
-                  delegate?.pendingActionHasActiveStream == true,
-                  delegate?.pendingActionIsStreamConnectionSuspended != true else { return }
+            guard !Task.isCancelled, revision == clarificationUpdateRevision, isLiveSession(sessionID) else { return }
             applyClarificationUpdate(response, sessionID: sessionID)
         } catch {
             // The web UI also ignores degraded-mode polling failures.
@@ -619,5 +604,28 @@ final class ChatPendingActionCoordinator {
         }
 
         clarificationPrompt = prompt
+    }
+}
+
+/// One prompt kind's SSE stream and fallback polling task, bound to the session they watch.
+private struct PendingPromptMonitor {
+    let stream: SSEStreamingClient
+    private(set) var sessionID: String?
+    var pollingTask: Task<Void, Never>?
+
+    @MainActor mutating func start(sessionID: String, url: URL, onEvent: @escaping @MainActor (SSEEvent) -> Void) {
+        stop()
+        self.sessionID = sessionID
+        stream.start(url: url, onEvent: onEvent)
+    }
+
+    @MainActor mutating func stop() {
+        let isActive = sessionID != nil || pollingTask != nil
+        pollingTask?.cancel()
+        pollingTask = nil
+        if isActive {
+            stream.stop()
+        }
+        sessionID = nil
     }
 }
