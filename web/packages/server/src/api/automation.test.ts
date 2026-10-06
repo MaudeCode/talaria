@@ -387,11 +387,11 @@ describe('crons, kanban, extensions, terminal', () => {
   it('kanban tasks carry the server-owned card actions and running-exit policy for their status (TAL-557)', async () => {
     const methods = ['kanban.board', 'kanban.task', 'kanban.task_action', 'kanban.patch_task', 'kanban.create_task'] as const
     const saved = methods.map((m) => [m, sidecar.responderFor(m)] as const)
-    onTestFinished(() => { for (const [m, r] of saved) sidecar.respond(m, r as never) })
+    onTestFinished(() => { for (const [m, r] of saved) sidecar.respond(m, r) })
     const statuses = ['triage', 'todo', 'ready', 'running', 'blocked', 'done', 'archived', 'future']
     sidecar.respond('kanban.board', () => ({ changed: true, columns: statuses.map((st) => ({ name: st, tasks: [{ id: `t_${st}`, title: st, status: st, priority: 0 }] })), tenants: [], assignees: [], latest_event_id: 1, read_only: false, filters: { tenant: null, assignee: null, include_archived: true, only_mine: false, profile: null } }))
     const board = await json(await s.get('/api/kanban/board?include_archived=1'))
-    const policy = Object.fromEntries((board.columns as Json[]).map((c) => { const t = (c.tasks as Json[])[0] as Json; return [c.name, { actions: t.available_actions, confirm: t.requires_running_exit_confirmation }] }))
+    const policy = Object.fromEntries((board.columns as Json[]).map((c) => { const t = (c.tasks as Json[])[0]!; return [String(c.name), { actions: t.available_actions, confirm: t.requires_running_exit_confirmation }] }))
     const a = (block: boolean, unblock: boolean, complete: boolean, archive: boolean, move_to: string[]) => ({ block, unblock, complete, archive, move_to })
     expect(policy).toEqual({
       triage: { actions: a(false, false, false, true, ['todo', 'ready']), confirm: false },

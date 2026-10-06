@@ -49,7 +49,7 @@ const MOVE_TARGETS: Record<string, string[]> = {
 /** Every board column except `running`; the sidecar applies each row through the same transitions. */
 export const KANBAN_BULK_MOVE_TARGETS = ['triage', 'todo', 'ready', 'blocked', 'done']
 
-export type KanbanTaskActions = { block: boolean; unblock: boolean; complete: boolean; archive: boolean; move_to: string[] }
+export interface KanbanTaskActions { block: boolean; unblock: boolean; complete: boolean; archive: boolean; move_to: string[] }
 
 /** The card actions offered for `status`; an unknown status offers none. */
 export function kanbanTaskActions(status: unknown): KanbanTaskActions {
