@@ -57,9 +57,12 @@ destination="platform=iOS Simulator,id=$simulator_id"
 
 # UI tests pick from Photos; give them a photo they own (TAL-633). Only a disposable pool
 # device is seeded: it is erased on release, while a personal simulator would keep every photo.
-seed_ui_photo() {
+# The completion alert test needs the notification service, which a fresh boot can leave
+# hanging (TAL-651).
+prepare_ui_simulator() {
+    # Explicit exits: zsh skips the EXIT trap, and the lease release, when errexit fires in a function.
+    scripts/ready-simulator-notifications "$simulator_id" || exit $?
     if [[ "$simulator_disposable" == true ]]; then
-        # Explicit exit: zsh skips the EXIT trap, and the lease release, when errexit fires in a function.
         scripts/seed-simulator-photo "$simulator_id" || exit $?
     else
         print -u2 "Not seeding a test photo into personal simulator $simulator_id; Photos picker tests use its library."
@@ -188,7 +191,7 @@ run_tests() {
             ios_pool_release
             ios_pool_acquire || exit "$xcodebuild_status"
             destination="platform=iOS Simulator,id=$simulator_id"
-            [[ "$phase" == unit ]] || seed_ui_photo
+            [[ "$phase" == unit ]] || prepare_ui_simulator
             attempt=2
             continue
         fi
@@ -197,7 +200,7 @@ run_tests() {
 }
 
 (( ${#unit_filters} == 0 )) || run_tests unit NO "${unit_filters[@]}"
-(( ${#ui_filters} + ${#serial_ui_filters} == 0 )) || seed_ui_photo
+(( ${#ui_filters} + ${#serial_ui_filters} == 0 )) || prepare_ui_simulator
 if (( ${#ui_filters} )); then
     run_tests ui "$parallel_testing" "${ui_filters[@]}" "${extended_skips[@]}" "${serial_skips[@]}"
     scripts/assert-no-skipped-ui-tests "$result_bundle"

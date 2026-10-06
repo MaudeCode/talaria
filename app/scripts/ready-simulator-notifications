@@ -1,0 +1,44 @@
+#!/bin/zsh
+# Waits until a booted simulator's notification service answers (TAL-651). After a fresh boot the
+# iOS 27 simulator's dasd can hang in its own launch, and SpringBoard starts its notification
+# server only once dasd answers: until then every notification settings, permission and delivery
+# request hangs, for minutes on a hosted runner. Restarting dasd unblocks SpringBoard. A push to an
+# uninstalled bundle is the probe: it waits for the notification server, then fails as
+# unauthorized without showing anything.
+# Usage: scripts/ready-simulator-notifications <simulator-udid>
+
+set -euo pipefail
+(( $# == 1 )) || { print -u2 "Usage: scripts/ready-simulator-notifications <simulator-udid>"; exit 64; }
+simulator_id=$1
+
+payload=$(mktemp -t talaria-notification-probe)
+probe_pid=""
+trap '[[ -z "$probe_pid" ]] || kill "$probe_pid" 2>/dev/null || true; rm -f "$payload"' EXIT
+print -r -- '{"aps":{"alert":"probe"}}' > "$payload"
+
+# True once the probe returns within 5 seconds; an answering service takes well under one.
+notification_service_answers() {
+    xcrun simctl push "$simulator_id" dev.kil.talaria.notification-probe "$payload" >/dev/null 2>&1 &
+    probe_pid=$!
+    for _ in {1..10}; do
+        if ! kill -0 "$probe_pid" 2>/dev/null; then
+            probe_pid=""
+            return 0
+        fi
+        sleep 0.5
+    done
+    kill "$probe_pid" 2>/dev/null || true
+    probe_pid=""
+    return 1
+}
+
+# A relaunched dasd can hang the same way, but each kill fails the call SpringBoard is waiting on,
+# so its setup moves on by at least one call per restart.
+for attempt in {1..30}; do
+    notification_service_answers && exit 0
+    print -u2 "The simulator's notification service did not answer; restarting its dasd (attempt $attempt)."
+    xcrun simctl spawn "$simulator_id" launchctl kill SIGKILL user/foreground/com.apple.dasd 2>/dev/null || true
+done
+notification_service_answers && exit 0
+print -u2 "The notification service of simulator $simulator_id never answered."
+exit 1

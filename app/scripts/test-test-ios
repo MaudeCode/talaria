@@ -44,6 +44,10 @@ cat > "$repo/scripts/seed-simulator-photo" <<'EOF'
 [[ ! -e "$TALARIA_TEST_STATE/seed-fail" ]] || exit 3
 print -r -- "$1" >> "$TALARIA_TEST_STATE/seeded"
 EOF
+cat > "$repo/scripts/ready-simulator-notifications" <<'EOF'
+#!/bin/zsh
+print -r -- "$1" >> "$TALARIA_TEST_STATE/notifications-readied"
+EOF
 cat > "$repo/.xcodebuildmcp/config.yaml" <<'EOF'
 defaults:
   simulatorName: "iPhone 17"
@@ -130,7 +134,7 @@ print -r -- "$(( active - 1 ))" > "$state/active"
 rmdir "$lock"
 exit "$exit_status"
 EOF
-chmod +x "$repo/scripts/assert-no-skipped-ui-tests" "$repo/scripts/seed-simulator-photo" "$fake_bin/xcrun" "$fake_bin/xcodebuild"
+chmod +x "$repo/scripts/assert-no-skipped-ui-tests" "$repo/scripts/seed-simulator-photo" "$repo/scripts/ready-simulator-notifications" "$fake_bin/xcrun" "$fake_bin/xcodebuild"
 
 cat > "$state/pool-devices" <<'EOF'
 {"devices":{"com.apple.CoreSimulator.SimRuntime.iOS-27-0":[{"name":"iOS Test 1","udid":"AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA","state":"Shutdown"},{"name":"iOS Test 2","udid":"BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB","state":"Shutdown"}]}}
@@ -323,13 +327,16 @@ expected=$'-only-testing:TalariaTests/Unit|NO\n-only-testing:TalariaUITests/Firs
 }
 
 # Only a disposable pool device is seeded with a photo; a personal simulator keeps its library.
+# Both get a notification service that answers (TAL-651).
 : > "$state/seeded"
+: > "$state/notifications-readied"
 "$repo/scripts/test-ios" TalariaUITests/PoolSeed > "$state/pool-seed.log" 2>&1
 [[ "$(<"$state/seeded")" == (AAAAAAAA|BBBBBBBB)-* ]]
 TALARIA_DEVICE_FIXTURE="$state/fallback-devices" IOS_SIMULATOR_ID=DDDDDDDD-DDDD-DDDD-DDDD-DDDDDDDDDDDD \
     "$repo/scripts/test-ios" TalariaUITests/PersonalSeed > "$state/personal-seed.log" 2>&1
 grep -q "Not seeding a test photo into personal simulator DDDDDDDD" "$state/personal-seed.log"
 [[ $(wc -l < "$state/seeded" | tr -d ' ') == 1 ]]
+[[ "$(<"$state/notifications-readied")" == (AAAAAAAA|BBBBBBBB)-*$'\n'DDDDDDDD-DDDD-DDDD-DDDD-DDDDDDDDDDDD ]]
 
 # A failed seed stops before testing and still returns its lease.
 touch "$state/seed-fail"
