@@ -388,6 +388,7 @@ final class UpdateNotificationsSheetUITests: ChatUITestCase {
         launchFixture(additionalArguments: ["--ui-test-update-notifications"])
         let sheetBar = app.navigationBars["Notifications"]
         XCTAssertTrue(sheetBar.awaitExistence(timeout: 20), "The notifications sheet did not open")
+        attachScreenshot(named: "Notifications sheet")
         if UIDevice.current.userInterfaceIdiom == .pad {
             XCTAssertLessThan(sheetBar.settledFrame.width, app.windows.firstMatch.frame.width, "The sheet spans the full window width")
         }
