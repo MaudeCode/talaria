@@ -412,12 +412,19 @@ describe('crons, kanban, extensions, terminal', () => {
     sidecar.respond('kanban.board', () => ({ changed: false, latest_event_id: 1, read_only: false }))
     expect((await json(await s.get('/api/kanban/board?since=1'))).bulk_move_targets).toEqual(['triage', 'todo', 'ready', 'blocked', 'done'])
     // Detail and every mutation envelope carry the policy of the status the server returned.
-    sidecar.respond('kanban.task', () => ({ task: { id: 't_1', title: 'T', status: 'running', priority: 0, claim_live: false, has_completion_evidence: false }, comments: [], events: [], links: { parents: [], children: [] }, runs: [], read_only: false }))
+    // The detail names the newest Block or Unblock event, so a client whose write outcome was lost can confirm it landed.
+    const events = [{ id: 3, task_id: 't_1', run_id: null, kind: 'blocked', payload: null, created_at: 1 }, { id: 7, task_id: 't_1', run_id: null, kind: 'unblocked', payload: null, created_at: 2 }, { id: 9, task_id: 't_1', run_id: null, kind: 'commented', payload: null, created_at: 3 }]
+    sidecar.respond('kanban.task', () => ({ task: task('t_1', 'running'), comments: [], events, links: { parents: [], children: [] }, runs: [], read_only: false }))
+    expect((await json(await s.get('/api/kanban/tasks/t_1'))).last_card_action).toEqual({ action: 'unblock', event_id: 7 })
     expect((await json(await s.get('/api/kanban/tasks/t_1'))).task).toMatchObject({ requires_running_exit_confirmation: true, available_actions: { block: true, move_to: ['triage', 'todo', 'ready'] } })
     // Unblock lands where the Agent re-gates it (here `todo`), and the actions follow that status.
     sidecar.respond('kanban.task_action', (params) => ({ task: { id: params.task_id, title: 'T', status: params.action === 'block' ? 'blocked' : 'todo', priority: 0, claim_live: false, has_completion_evidence: false }, read_only: false }))
     expect((await json(await post(s, '/api/kanban/tasks/t_1/unblock', {}))).task).toMatchObject({ status: 'todo', available_actions: a(false, false, false, true, ['triage', 'ready']) })
     expect((await json(await post(s, '/api/kanban/tasks/t_1/block', {}))).task).toMatchObject({ available_actions: { unblock: true } })
+    // Leaving Running needs the client's confirmation; the sidecar judges it on the row the write sees.
+    const blockCalls = () => sidecar.calls.filter((c) => c.method === 'kanban.task_action' && (c.params as Json).action === 'block').map((c) => (c.params as Json).confirm_running_exit)
+    await post(s, '/api/kanban/tasks/t_1/block', { confirm_running_exit: true })
+    expect(blockCalls().slice(-2)).toEqual([false, true])
     sidecar.respond('kanban.patch_task', (params) => ({ task: { id: params.task_id, title: 'T', status: String((params.patch as Json).status), priority: 0, claim_live: false, has_completion_evidence: false }, read_only: false }))
     expect((await json(await post(s, '/api/kanban/tasks/t_1/patch', { status: 'done' }))).task).toMatchObject({ available_actions: { complete: false, archive: true } })
     expect((await json(await post(s, '/api/kanban/tasks/t_1', { status: 'archived' }, 'PATCH'))).task).toMatchObject({ available_actions: { archive: false } })

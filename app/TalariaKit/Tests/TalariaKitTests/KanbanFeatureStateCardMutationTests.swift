@@ -167,6 +167,30 @@ extension KanbanFeatureStateTests {
         XCTAssertEqual(state.allCards.first { $0.cardID == "CARD-1" }?.status?.rawValue, "triage")
     }
 
+    func testLostBlockOutcomeSettlesOnlyOnTheServersRecordOfIt() async throws {
+        let network = APIError.network(underlying: URLError(.networkConnectionLost))
+        // The first lost Unblock reads a card that another actor moved: no newer Unblock event, so it fails.
+        // The second reads the server's record of the Unblock and succeeds.
+        let client = ImmediateMutationClient(
+            snapshot: mutationSnapshot(status: "blocked"),
+            statusResults: [.failure(network), .failure(network)],
+            detailResults: [
+                .success(mutationDecode(#"{"task":{"id":"CARD-1","status":"todo",\#(allCardActions)},"last_card_action":{"action":"block","event_id":4}}"#)),
+                .success(mutationDecode(#"{"task":{"id":"CARD-1","status":"todo",\#(allCardActions)},"last_card_action":{"action":"unblock","event_id":5}}"#))
+            ]
+        )
+        let state = KanbanFeatureState(server: URL(string: "https://example.test")!, defaults: defaults, client: client)
+        await state.load()
+        let card = try XCTUnwrap(state.allCards.first { $0.cardID == "CARD-1" })
+
+        await state.unblockCard(card)
+        XCTAssertEqual(state.mutationState(for: "CARD-1")?.phase, .failed)
+
+        let moved = try XCTUnwrap(state.allCards.first { $0.cardID == "CARD-1" })
+        await state.unblockCard(moved)
+        XCTAssertEqual(state.mutationState(for: "CARD-1")?.phase, .succeeded)
+    }
+
     func testBulkStatusTargetsComeFromTheServer() async throws {
         let client = ImmediateMutationClient()
         let state = KanbanFeatureState(server: URL(string: "https://example.test")!, defaults: defaults, client: client)

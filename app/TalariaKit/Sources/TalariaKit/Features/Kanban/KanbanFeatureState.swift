@@ -71,6 +71,9 @@ public final class KanbanFeatureState {
     private var activeCardMutationIDs: [String: UUID] = [:]
     private var pendingOptimisticStatuses: [String: String] = [:]
     private var settledDetailStatuses: [String: String] = [:]
+    /// The Board's event cursor when each Card's latest write began; a lost Block or Unblock outcome is
+    /// confirmed only by a matching server event newer than it.
+    private var mutationEventCursors: [String: Int] = [:]
     private var uncertainProtectedCards: [String: KanbanCard] = [:]
     private var pendingDependencyChanges: [String: KanbanPendingDependencyChange] = [:]
     private var archiveUndoTask: Task<Void, Never>?
@@ -423,7 +426,12 @@ public final class KanbanFeatureState {
         ) { [client, selectedBoardSlug] cardID in
             guard let board = selectedBoardSlug else { throw CancellationError() }
             return try await client.blockKanbanCard(
-                KanbanCardActionRequest(cardID: cardID, board: board, reason: reason)
+                KanbanCardActionRequest(
+                    cardID: cardID,
+                    board: board,
+                    reason: reason,
+                    confirmRunningExit: confirmingRunningExit
+                )
             )
         }
     }
@@ -551,10 +559,8 @@ public final class KanbanFeatureState {
             switch mutation.kind {
             case let .status(status), let .undoArchive(status):
                 succeeded = authoritative.status?.rawValue == status
-            case .block:
-                succeeded = authoritative.availableActions.map { !$0.block } ?? false
-            case .unblock:
-                succeeded = authoritative.availableActions.map { !$0.unblock } ?? false
+            case .block, .unblock:
+                succeeded = serverRecordedAction(of: mutation.kind, in: detail, cardID: cardID)
             case .archive:
                 succeeded = authoritative.status?.rawValue == "archived"
             case let .addPrerequisite(prerequisiteID):
@@ -1491,6 +1497,7 @@ public final class KanbanFeatureState {
         settledDetailStatuses[cardID] = nil
         let mutationID = UUID()
         activeCardMutationIDs[cardID] = mutationID
+        mutationEventCursors[cardID] = liveCursor
         cardMutationStates[cardID] = KanbanCardMutationState(kind: kind, phase: .updating)
         if let status {
             pendingOptimisticStatuses[cardID] = status
@@ -1503,7 +1510,12 @@ public final class KanbanFeatureState {
                 response = try await write(cardID)
             } else if let status {
                 response = try await client.setKanbanCardStatus(
-                    KanbanCardStatusRequest(cardID: cardID, board: board, status: status)
+                    KanbanCardStatusRequest(
+                        cardID: cardID,
+                        board: board,
+                        status: status,
+                        confirmRunningExit: confirmingRunningExit
+                    )
                 )
             } else {
                 throw KanbanMutationSettlementError.unexpectedStatus
@@ -1542,11 +1554,29 @@ public final class KanbanFeatureState {
         }
     }
 
-    /// Whether the server's card shows the write took effect: the requested status, or for a
+    /// Whether the write's own response shows it took effect: the requested status, or for a
     /// server-decided write (`expectedStatus` nil) any status other than the one it left.
     private static func landed(_ authoritative: KanbanCard, expectedStatus: String?, from baseline: KanbanCard) -> Bool {
         guard let expectedStatus else { return authoritative.status != baseline.status }
         return authoritative.status?.rawValue == expectedStatus
+    }
+
+    /// Whether the server recorded this Card's Block or Unblock after the write began (TAL-557). Another
+    /// actor's move or a dispatcher claim leaves no such event, so it never reads as this write landing.
+    private func serverRecordedAction(
+        of kind: KanbanCardMutationKind,
+        in detail: KanbanCardDetailEnvelope,
+        cardID: String
+    ) -> Bool {
+        let action: String
+        switch kind {
+        case .block: action = "block"
+        case .unblock: action = "unblock"
+        default: return false
+        }
+        guard let recorded = detail.lastCardAction, recorded.action == action,
+              let cursor = mutationEventCursors[cardID] else { return false }
+        return recorded.eventID > cursor
     }
 
     private func reconcileStatusMutation(
@@ -1563,7 +1593,9 @@ public final class KanbanFeatureState {
             )
             try KanbanCardDetailValidator.validate(detail, requestedCardID: cardID)
             guard activeCardMutationIDs[cardID] == mutationID, let authoritative = detail.card else { return }
-            if Self.landed(authoritative, expectedStatus: expectedStatus, from: baseline) {
+            let succeeded = expectedStatus.map { authoritative.status?.rawValue == $0 }
+                ?? serverRecordedAction(of: kind, in: detail, cardID: cardID)
+            if succeeded {
                 settleSuccessfulStatusMutation(
                     authoritative,
                     baseline: baseline,

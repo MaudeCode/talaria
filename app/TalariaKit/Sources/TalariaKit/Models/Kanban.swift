@@ -372,10 +372,12 @@ public struct KanbanCardDetailEnvelope: Decodable, Equatable, Sendable {
     public let links: KanbanDependencyLinks?
     public let runs: [KanbanDispatchRun]?
     let readOnly: Bool?
+    /// The newest Block or Unblock the server recorded for the Card (TAL-557).
+    public let lastCardAction: KanbanLastCardAction?
 
     enum CodingKeys: String, CodingKey {
         case card = "task"
-        case comments, events, links, runs, readOnly
+        case comments, events, links, runs, readOnly, lastCardAction
     }
 
     public init(from decoder: Decoder) throws {
@@ -386,6 +388,18 @@ public struct KanbanCardDetailEnvelope: Decodable, Equatable, Sendable {
         links = try? container.decodeIfPresent(KanbanDependencyLinks.self, forKey: .links)
         runs = try? container.decodeIfPresent([KanbanDispatchRun].self, forKey: .runs)
         readOnly = container.decodeLossyBoolIfPresent(forKey: .readOnly)
+        lastCardAction = try? container.decodeIfPresent(KanbanLastCardAction.self, forKey: .lastCardAction)
+    }
+}
+
+public struct KanbanLastCardAction: Decodable, Equatable, Sendable {
+    /// `block` or `unblock`.
+    public let action: String
+    public let eventID: Int
+
+    enum CodingKeys: String, CodingKey {
+        case action
+        case eventID = "eventId"
     }
 }
 

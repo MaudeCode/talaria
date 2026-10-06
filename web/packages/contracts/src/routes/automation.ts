@@ -12,7 +12,11 @@ const Ok = z.object({ ok: z.literal(true) })
 
 const JobId = z.object({ job_id: z.string().optional() })
 const PolicyTaskSchema = KanbanTaskSchema.extend(KanbanTaskPolicyShape)
+/** The newest Block or Unblock in the task's events (TAL-557); a client whose write outcome was lost compares `event_id` with the cursor it held when writing. */
+const KanbanLastCardActionSchema = z.object({ action: z.enum(['block', 'unblock']), event_id: z.number().int() }).nullable()
 export const TaskEnvelopeSchema = z.object({ task: PolicyTaskSchema, read_only: z.boolean() })
+/** A card write taking a task out of Running must carry `confirm_running_exit: true`, or the server answers 409 (TAL-557). */
+const CardWriteInput = z.object({ task_id: z.string(), confirm_running_exit: z.boolean().optional() }).catchall(Json)
 const TerminalBody = z.object({ session_id: z.string().optional() })
 
 export const automationContract = {
@@ -50,13 +54,13 @@ export const automationContract = {
     link: oc.route({ method: 'POST', path: '/api/kanban/links', tags }).input(Loose).output(Loose),
     unlink: oc.route({ method: 'POST', path: '/api/kanban/links/delete', tags }).input(Loose).output(Loose),
     unlinkDelete: oc.route({ method: 'DELETE', path: '/api/kanban/links', tags }).input(Loose).output(Loose),
-    task: oc.route({ method: 'GET', path: '/api/kanban/tasks/{task_id}', tags }).input(z.object({ task_id: z.string(), board: z.string().optional() })).output(z.looseObject({ task: PolicyTaskSchema })),
+    task: oc.route({ method: 'GET', path: '/api/kanban/tasks/{task_id}', tags }).input(z.object({ task_id: z.string(), board: z.string().optional() })).output(z.looseObject({ task: PolicyTaskSchema, last_card_action: KanbanLastCardActionSchema })),
     taskLog: oc.route({ method: 'GET', path: '/api/kanban/tasks/{task_id}/log', tags }).input(z.object({ task_id: z.string(), board: z.string().optional(), tail: z.string().optional() })).output(z.looseObject({ log: z.array(Json).optional(), entries: z.array(Json).optional() })),
     comment: oc.route({ method: 'POST', path: '/api/kanban/tasks/{task_id}/comments', tags }).input(z.object({ task_id: z.string() }).catchall(Json)).output(Loose),
-    block: oc.route({ method: 'POST', path: '/api/kanban/tasks/{task_id}/block', tags }).input(z.object({ task_id: z.string() }).catchall(Json)).output(TaskEnvelopeSchema),
+    block: oc.route({ method: 'POST', path: '/api/kanban/tasks/{task_id}/block', tags }).input(CardWriteInput).output(TaskEnvelopeSchema),
     unblock: oc.route({ method: 'POST', path: '/api/kanban/tasks/{task_id}/unblock', tags }).input(z.object({ task_id: z.string() }).catchall(Json)).output(TaskEnvelopeSchema),
-    patch: oc.route({ method: 'POST', path: '/api/kanban/tasks/{task_id}/patch', tags }).input(z.object({ task_id: z.string() }).catchall(Json)).output(TaskEnvelopeSchema),
-    patchTask: oc.route({ method: 'PATCH', path: '/api/kanban/tasks/{task_id}', tags }).input(z.object({ task_id: z.string() }).catchall(Json)).output(TaskEnvelopeSchema),
+    patch: oc.route({ method: 'POST', path: '/api/kanban/tasks/{task_id}/patch', tags }).input(CardWriteInput).output(TaskEnvelopeSchema),
+    patchTask: oc.route({ method: 'PATCH', path: '/api/kanban/tasks/{task_id}', tags }).input(CardWriteInput).output(TaskEnvelopeSchema),
   },
   extensions: {
     status: oc.route({ method: 'GET', path: '/api/extensions/status', tags }).output(ExtensionStatusSchema),

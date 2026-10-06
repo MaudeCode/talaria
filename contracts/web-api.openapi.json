@@ -47848,10 +47848,39 @@
                         "requires_running_exit_confirmation"
                       ],
                       "additionalProperties": {}
+                    },
+                    "last_card_action": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "action": {
+                              "enum": [
+                                "block",
+                                "unblock"
+                              ],
+                              "type": "string"
+                            },
+                            "event_id": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "action",
+                            "event_id"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
-                    "task"
+                    "task",
+                    "last_card_action"
                   ],
                   "additionalProperties": {}
                 }
@@ -47875,6 +47904,22 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "confirm_running_exit": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK",
@@ -48090,6 +48135,22 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "confirm_running_exit": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK",
@@ -48306,6 +48367,22 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "confirm_running_exit": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK",

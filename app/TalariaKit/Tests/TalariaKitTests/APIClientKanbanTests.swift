@@ -611,6 +611,27 @@ final class APIClientKanbanTests: APIClientTestCase {
         XCTAssertNoThrow(try KanbanDependencyMutationValidator.validate(unlinked, request: dependency))
     }
 
+    func testConfirmedRunningExitWritesSayTheUserConfirmed() async throws {
+        var bodies: [NSDictionary] = []
+        let client = makeClient { request in
+            let data = try XCTUnwrap(apiTestBodyData(from: request))
+            bodies.append(try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? NSDictionary))
+            return apiTestJSONResponse(#"{"task":{"id":"CARD-1","status":"done"},"read_only":false}"#, for: request)
+        }
+
+        _ = try await client.setKanbanCardStatus(
+            KanbanCardStatusRequest(cardID: "CARD-1", board: "main", status: "done", confirmRunningExit: true)
+        )
+        _ = try await client.blockKanbanCard(
+            KanbanCardActionRequest(cardID: "CARD-1", board: "main", reason: nil, confirmRunningExit: true)
+        )
+
+        XCTAssertEqual(bodies, [
+            ["status": "done", "confirm_running_exit": true],
+            ["confirm_running_exit": true]
+        ])
+    }
+
     func testRunningEntryIsRejectedBeforeRequestConstruction() async {
         let client = makeClient { _ in
             XCTFail("Running must never reach URLSession")

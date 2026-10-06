@@ -74,12 +74,27 @@ export function withTaskPolicy(task: unknown): unknown {
   return { ...t, available_actions: kanbanTaskActions(t), requires_running_exit_confirmation: str(t.status) === 'running' }
 }
 
-/** Adds the card policy to a payload's `task` and `columns[].tasks`; anything else passes through. */
+/** Agent event kinds a Block or Unblock writes (`block_task` routes a block to `blocked`, or to `triage`/`todo` with its own kind). */
+const CARD_ACTION_EVENTS: Record<string, 'block' | 'unblock'> = { blocked: 'block', block_loop_detected: 'block', dependency_wait: 'block', unblocked: 'unblock' }
+
+/** The newest Block or Unblock recorded in a task's events, so a client can confirm its own write landed (TAL-557). */
+export function lastCardAction(events: unknown[]): { action: 'block' | 'unblock'; event_id: number } | null {
+  let last: { action: 'block' | 'unblock'; event_id: number } | null = null
+  for (const e of events) {
+    const event = e && typeof e === 'object' ? (e as Dict) : {}
+    const action = CARD_ACTION_EVENTS[str(event.kind)]
+    if (action && typeof event.id === 'number' && (!last || event.id > last.event_id)) last = { action, event_id: event.id }
+  }
+  return last
+}
+
+/** Adds the card policy to a payload's `task` and `columns[].tasks`, and a detail's `last_card_action`; anything else passes through. */
 export function withKanbanPolicy<T>(payload: T): T {
   const p = payload as Dict
   if (!p || typeof p !== 'object' || Array.isArray(p)) return payload
   const out: Dict = { ...p }
   if ('task' in p) out.task = withTaskPolicy(p.task)
+  if ('task' in p && Array.isArray(p.events)) out.last_card_action = lastCardAction(p.events as unknown[])
   if (Array.isArray(p.columns)) out.columns = p.columns.map((c: unknown) => (c && typeof c === 'object' && Array.isArray((c as Dict).tasks) ? { ...(c as Dict), tasks: ((c as Dict).tasks as unknown[]).map(withTaskPolicy) } : c))
   return out as T
 }

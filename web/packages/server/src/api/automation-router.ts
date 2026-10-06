@@ -121,7 +121,7 @@ export const automationRouter = os.router({
       return ctx.deps.kanban.sidecar().call('kanban.comment', { profile_home: home(ctx), board: boardOf(board), task_id: task_id.trim(), body: str(body).trim(), ...(author ? { author: str(author) } : {}) })
     }))),
     // Python: `body.get("reason") or body.get("block_reason")` — an empty reason falls through to `block_reason`.
-    block: os.kanban.block.handler(({ input, context: { ctx } }) => run(() => kb(() => ctx.deps.kanban.sidecar().call('kanban.task_action', { profile_home: home(ctx), board: boardOf(input.board), task_id: pathParam(ctx, 'task_id', input.task_id).trim(), action: 'block', reason: str(input.reason) || str(input.block_reason) || null })))),
+    block: os.kanban.block.handler(({ input, context: { ctx } }) => run(() => kb(() => ctx.deps.kanban.sidecar().call('kanban.task_action', { profile_home: home(ctx), board: boardOf(input.board), task_id: pathParam(ctx, 'task_id', input.task_id).trim(), action: 'block', reason: str(input.reason) || str(input.block_reason) || null, confirm_running_exit: input.confirm_running_exit === true })))),
     unblock: os.kanban.unblock.handler(({ input, context: { ctx } }) => run(() => kb(() => ctx.deps.kanban.sidecar().call('kanban.task_action', { profile_home: home(ctx), board: boardOf(input.board), task_id: pathParam(ctx, 'task_id', input.task_id).trim(), action: 'unblock' })))),
     patch: os.kanban.patch.handler(({ input, context: { ctx } }) => run(() => kb(() => patchCall(ctx, input)))),
     patchTask: os.kanban.patchTask.handler(({ input, context: { ctx } }) => run(() => kb(() => patchCall(ctx, input)))),

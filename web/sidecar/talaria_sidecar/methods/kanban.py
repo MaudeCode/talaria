@@ -8,6 +8,7 @@ server; the sidecar receives typed params.
 from __future__ import annotations
 
 import json
+import secrets
 import time
 from dataclasses import asdict, is_dataclass
 from typing import Any
@@ -105,10 +106,43 @@ def _claim_live(conn, task_id) -> bool:
     return _row_claim_live(conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone())
 
 
-def _refuse_live_claim(conn, task_id) -> None:
-    """Point-of-use check: a client's card policy can predate a dispatcher claim."""
-    if _claim_live(conn, task_id):
-        raise Conflict(LIVE_CLAIM_MESSAGE)
+RUNNING_EXIT_MESSAGE = "task is running; confirm leaving Running"
+
+
+def _guard_running_exit(row, confirm_running_exit: bool) -> None:
+    """A write that takes a task out of Running needs the client's explicit confirmation, judged on the row the
+    write sees: a client's card policy can predate a dispatcher claim (TAL-557)."""
+    if row["status"] == "running" and not confirm_running_exit:
+        raise Conflict(RUNNING_EXIT_MESSAGE)
+
+
+def _fenced(conn, task_id: str, write, *, confirm_running_exit: bool, releases_claim: bool = True):
+    """Run an Agent transition (block, complete, archive) with the dispatcher fenced out.
+
+    The Agent's helpers open their own write transaction, which cannot nest, so the checks and a fence lock share
+    one transaction first: ``claim_task`` claims only while ``claim_lock IS NULL``, so the card cannot become a
+    live run before the helper runs. ``releases_claim`` writes (block, complete) refuse a live worker's claim;
+    archive keeps it, because ``archive_task`` terminates that worker.
+    """
+    kb = _kb()
+    fence = f"talaria-fence:{secrets.token_hex(8)}"
+    with kb.write_txn(conn):
+        row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        if row is None:
+            raise NotFound("task not found")
+        _guard_running_exit(row, confirm_running_exit)
+        live = _row_claim_live(row)
+        if live and releases_claim:
+            raise Conflict(LIVE_CLAIM_MESSAGE)
+        previous = row["claim_lock"]
+        if not live:
+            conn.execute("UPDATE tasks SET claim_lock = ? WHERE id = ?", (fence, task_id))
+    try:
+        return write()
+    finally:
+        if not live:
+            with kb.write_txn(conn):
+                conn.execute("UPDATE tasks SET claim_lock = ? WHERE id = ? AND claim_lock = ?", (previous, task_id, fence))
 
 
 def _task_dict(task, conn):
@@ -164,13 +198,14 @@ def _validate_status(status: str) -> str:
     return value
 
 
-def _set_status_direct(conn, task_id: str, new_status: str) -> bool:
+def _set_status_direct(conn, task_id: str, new_status: str, *, confirm_running_exit: bool = False) -> bool:
     kb = _kb()
     with kb.write_txn(conn):
         prev = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
         if prev is None:
             return False
         # Checked inside the write transaction, so a claim taken since the client's read is never released.
+        _guard_running_exit(prev, confirm_running_exit)
         if _row_claim_live(prev):
             raise Conflict(LIVE_CLAIM_MESSAGE)
         was_running = prev["status"] == "running"
@@ -238,17 +273,15 @@ def _patch_task(conn, task_id: str, body: dict) -> None:
     if "status" not in body or body.get("status") in (None, ""):
         return
     status = _validate_status(body.get("status"))
-    if status in ("done", "blocked"):
-        # The Agent's block_task releases a live claim without stopping the worker.
-        _refuse_live_claim(conn, task_id)
+    confirm = bool(body.get("confirm_running_exit"))
     if status == "done":
-        if not kb.complete_task(conn, task_id, result=body.get("result"), summary=body.get("summary")):
+        if not _fenced(conn, task_id, lambda: kb.complete_task(conn, task_id, result=body.get("result"), summary=body.get("summary")), confirm_running_exit=confirm):
             raise NotFound("task not found")
     elif status == "blocked":
-        if not kb.block_task(conn, task_id, reason=body.get("block_reason") or body.get("reason")):
+        if not _fenced(conn, task_id, lambda: kb.block_task(conn, task_id, reason=body.get("block_reason") or body.get("reason")), confirm_running_exit=confirm):
             raise NotFound("task not found")
     elif status == "archived":
-        if not kb.archive_task(conn, task_id):
+        if not _fenced(conn, task_id, lambda: kb.archive_task(conn, task_id), confirm_running_exit=confirm, releases_claim=False):
             raise NotFound("task not found")
     elif status == "running":
         raise InvalidParams("Cannot set status to 'running' directly; use the dispatcher/claim path")
@@ -259,10 +292,10 @@ def _patch_task(conn, task_id: str, body: dict) -> None:
         if current.status == "blocked":
             if not kb.unblock_task(conn, task_id):
                 raise NotFound("task not found")
-        elif not _set_status_direct(conn, task_id, "ready"):
+        elif not _set_status_direct(conn, task_id, "ready", confirm_running_exit=confirm):
             raise NotFound("task not found")
     elif status in ("triage", "todo"):
-        if not _set_status_direct(conn, task_id, status):
+        if not _set_status_direct(conn, task_id, status, confirm_running_exit=confirm):
             raise NotFound("task not found")
 
 
@@ -572,7 +605,8 @@ def bulk_payload(params: dict) -> dict:
                     results.append(entry)
                     continue
                 if body.get("archive"):
-                    if not kb.archive_task(conn, task_id):
+                    # Bulk carries no running-exit confirmation, so a running row is refused like a card write.
+                    if not _fenced(conn, task_id, lambda: kb.archive_task(conn, task_id), confirm_running_exit=False, releases_claim=False):
                         entry.update(ok=False, error="archive refused")
                 elif body.get("status") is not None:
                     _patch_task(conn, task_id, {"status": body.get("status")})
@@ -617,8 +651,7 @@ def task_action_payload(params: dict) -> dict:
         if not kb.get_task(conn, task_id):
             raise NotFound("task not found")
         if action == "block":
-            _refuse_live_claim(conn, task_id)
-            ok = kb.block_task(conn, task_id, reason=params.get("reason"))
+            ok = _fenced(conn, task_id, lambda: kb.block_task(conn, task_id, reason=params.get("reason")), confirm_running_exit=bool(params.get("confirm_running_exit")))
         elif action == "unblock":
             if hasattr(kb, "unblock_task"):
                 ok = kb.unblock_task(conn, task_id)

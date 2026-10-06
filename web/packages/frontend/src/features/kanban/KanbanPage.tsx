@@ -99,13 +99,15 @@ function TaskDialog({ task, readOnly, onClose, onChanged }: { task: KanbanTask; 
   const act = useMutation({
     mutationFn: ({ action, body }: { action: Parameters<typeof api.kanbanTaskAction>[1]; body: Record<string, unknown> }) => api.kanbanTaskAction(task.id, action, body),
     onSuccess: () => { showToast(m.saved()); onChanged(); void log.refetch() },
-    onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error'),
+    // A refusal (the task changed since this board was read) refetches, so the dialog shows its current actions.
+    onError: (e) => { showToast(e instanceof Error ? e.message : String(e), 4000, 'error'); onChanged() },
   })
   const entries: unknown[] = log.data?.log ?? log.data?.entries ?? []
   // The server owns which actions a card offers and whether leaving Running needs confirmation (TAL-557).
   const actions = task.available_actions
-  const request = (fn: () => void) => { if (task.requires_running_exit_confirmation) setPendingRunningExit(() => fn); else fn() }
-  const setStatus = (status: string) => request(() => act.mutate({ action: 'patch', body: { status } }))
+  // A confirmed write says so; the server refuses to take a task out of Running without it.
+  const request = (fn: (confirm: { confirm_running_exit: boolean }) => void) => { if (task.requires_running_exit_confirmation) setPendingRunningExit(() => () => fn({ confirm_running_exit: true })); else fn({ confirm_running_exit: false }) }
+  const setStatus = (status: string) => request((confirm) => act.mutate({ action: 'patch', body: { status, ...confirm } }))
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }} title={task.title ?? String(task.id)} description={task.description ?? undefined} className="w-[min(92vw,640px)]">
       <div className="flex flex-col gap-3 text-sm">
@@ -120,7 +122,7 @@ function TaskDialog({ task, readOnly, onClose, onChanged }: { task: KanbanTask; 
         {!readOnly && (
           <div className="flex flex-wrap gap-2">
             <Button onClick={() => act.mutate({ action: 'dispatch', body: {} })}>{m.kanban_dispatch()}</Button>
-            {actions.block && <Button onClick={() => request(() => act.mutate({ action: 'block', body: {} }))}>{m.kanban_block()}</Button>}
+            {actions.block && <Button onClick={() => request((confirm) => act.mutate({ action: 'block', body: confirm }))}>{m.kanban_block()}</Button>}
             {actions.unblock && <Button onClick={() => request(() => act.mutate({ action: 'unblock', body: {} }))}>{m.kanban_unblock()}</Button>}
             {actions.complete && <Button onClick={() => setStatus('done')}>{m.kanban_complete()}</Button>}
             {actions.archive && <Button onClick={() => setStatus('archived')}>{m.kanban_archive()}</Button>}
