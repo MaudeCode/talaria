@@ -77,9 +77,10 @@ export function openTerminalStream(sessionId: string, cb: TerminalStreamCallback
   return { close: () => source.close(), readyState: () => source.readyState }
 }
 
-/** Kanban task events (`/api/kanban/events/stream`) after `since`, following the active board; `onEvents` fires once per non-empty batch. */
-export function openKanbanEventStream(since: number, onEvents: () => void): SseHandle {
-  const source = new EventSource(resolveApiUrl(`api/kanban/events/stream?since=${since}`).href, { withCredentials: true })
+/** Kanban task events (`/api/kanban/events/stream`) on `board` after `since`; `onEvents` fires once per non-empty batch. */
+export function openKanbanEventStream(board: string | undefined, since: number, onEvents: () => void): SseHandle {
+  const params = new URLSearchParams({ since: String(since), ...(board ? { board } : {}) })
+  const source = new EventSource(resolveApiUrl(`api/kanban/events/stream?${params.toString()}`).href, { withCredentials: true })
   source.addEventListener('events', (ev) => {
     try {
       const data = JSON.parse((ev as MessageEvent<string>).data) as { events?: unknown }

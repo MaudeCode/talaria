@@ -467,6 +467,8 @@ describe('crons, kanban, extensions, terminal', () => {
       [null, 1, [['todo', ['t_2']], ['ready', []]]],
     ])
     expect(((board.lanes as Json[])[0]!.columns as Json[])[0]).toMatchObject({ tasks: [{ id: 't_1', available_actions: { archive: true } }] })
+    // A board with no matching tasks still ships one empty lane, so its columns and empty states render.
+    expect((await json(await s.get('/api/kanban/board?search=nothing-matches'))).lanes).toEqual([{ assignee: null, count: 0, columns: [{ name: 'todo', tasks: [] }, { name: 'ready', tasks: [] }] }])
     // Lanes follow the search too.
     expect((await json(await s.get('/api/kanban/board?search=reviewer'))).lanes).toMatchObject([{ assignee: 'reviewer', count: 1 }])
     sidecar.respond('kanban.board', () => ({ changed: false, latest_event_id: 4, read_only: false }))

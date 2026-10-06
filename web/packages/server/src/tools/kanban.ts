@@ -112,11 +112,12 @@ export function searchColumns(columns: Column[], query: string): Column[] {
   return columns.map((c) => ({ ...c, tasks: c.tasks.filter((t) => [t.id, t.title, t.body, t.description, t.prompt, t.assignee, t.tenant].some((v) => typeof v === 'string' && v.toLowerCase().includes(q))) }))
 }
 
-/** One lane per assignee in name order, unassigned (`null`) last, each holding every column. */
+/** One lane per assignee in name order, unassigned (`null`) last, each holding every column; never empty. */
 export function profileLanes(columns: Column[]): { assignee: string | null; count: number; columns: Column[] }[] {
   const key = (t: Dict): string | null => str(t.assignee).trim() || null
   const named = [...new Set(columns.flatMap((c) => c.tasks.map(key)).filter((a): a is string => a !== null))].sort((a, b) => a.localeCompare(b))
-  const keys: (string | null)[] = columns.some((c) => c.tasks.some((t) => key(t) === null)) ? [...named, null] : named
+  // With no tasks at all, one empty unassigned lane still carries the columns and their empty states.
+  const keys: (string | null)[] = columns.some((c) => c.tasks.some((t) => key(t) === null)) || named.length === 0 ? [...named, null] : named
   return keys.map((assignee) => {
     const laneColumns = columns.map((c) => ({ ...c, tasks: c.tasks.filter((t) => key(t) === assignee) }))
     return { assignee, count: laneColumns.reduce((n, c) => n + c.tasks.length, 0), columns: laneColumns }

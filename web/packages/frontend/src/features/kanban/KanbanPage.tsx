@@ -41,8 +41,8 @@ function useKanbanLiveRefresh(board: string | undefined, latestEventId: number |
     if (!ready) return
     let timer: number | undefined
     const refresh = () => { void qc.invalidateQueries({ queryKey: ['kanban'] }) }
-    // The stream follows the active board, so a board switch reopens it at that board's cursor.
-    const handle = openKanbanEventStream(since(), () => {
+    // The stream is pinned to the shown board, so a board switch reopens it at that board's cursor.
+    const handle = openKanbanEventStream(board, since(), () => {
       window.clearTimeout(timer)
       timer = window.setTimeout(refresh, 250)
     })
@@ -70,15 +70,15 @@ export function KanbanPage() {
   const current = boards.data?.current
   const filters = { include_archived: includeArchived, assignee, tenant, only_mine: onlyMine, search }
   // The server filters and searches; the previous board stays on screen while the next answer loads.
-  const board = useQuery({ queryKey: [...keys.kanban.board(current), filters], queryFn: () => api.fetchKanbanBoard(filters), staleTime: 10_000, enabled: boards.isSuccess, placeholderData: keepPreviousData })
-  const stats = useQuery({ queryKey: ['kanban', 'stats', current ?? ''], queryFn: api.fetchKanbanStats, staleTime: 10_000, enabled: boards.isSuccess })
+  const board = useQuery({ queryKey: [...keys.kanban.board(current), filters], queryFn: () => api.fetchKanbanBoard(current, filters), staleTime: 10_000, enabled: boards.isSuccess, placeholderData: keepPreviousData })
+  const stats = useQuery({ queryKey: ['kanban', 'stats', current ?? ''], queryFn: () => api.fetchKanbanStats(current), staleTime: 10_000, enabled: boards.isSuccess })
   useKanbanLiveRefresh(current, board.isPlaceholderData ? undefined : board.data?.latest_event_id)
   const invalidate = () => qc.invalidateQueries({ queryKey: ['kanban'] })
   const toastError = (e: unknown) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error')
   const switchBoard = useMutation({ mutationFn: (slug: string) => api.switchKanbanBoard(slug), onSuccess: () => { setSelected([]); void invalidate() } })
   const saveView = useMutation({ mutationFn: (lanes: boolean) => api.updateKanbanConfig(lanes), onSuccess: () => { void invalidate() }, onError: (e) => showToast(m.kanban_view_update_failed() + (e instanceof Error ? e.message : String(e)), 4000, 'error') })
   const bulk = useMutation({
-    mutationFn: () => api.bulkKanbanStatus(shownSelected, bulkStatus),
+    mutationFn: () => api.bulkKanbanStatus(current, shownSelected, bulkStatus),
     onSuccess: (res) => {
       const failed = res.results.filter((r) => r.ok === false).map((r) => `${String(r.id)}: ${typeof r.error === 'string' ? r.error : ''}`)
       if (failed.length) showToast(failed.join('; '), 6000, 'error')
@@ -185,8 +185,8 @@ export function KanbanPage() {
           </div>
         )
         : renderColumns(columns))}
-      {openTask && <TaskDialog task={openTask} readOnly={readOnly} onClose={() => setOpenTaskId(null)} onChanged={() => { void invalidate() }} />}
-      {creating && <CreateTaskDialog columns={columnNames} onClose={() => setCreating(false)} onCreated={() => { setCreating(false); void invalidate() }} />}
+      {openTask && <TaskDialog board={current} task={openTask} readOnly={readOnly} onClose={() => setOpenTaskId(null)} onChanged={() => { void invalidate() }} />}
+      {creating && <CreateTaskDialog board={current} columns={columnNames} onClose={() => setCreating(false)} onCreated={() => { setCreating(false); void invalidate() }} />}
       {creatingBoard && <CreateBoardDialog onClose={() => setCreatingBoard(false)} onCreated={() => { setCreatingBoard(false); setSelected([]); void invalidate() }} />}
       <ConfirmDialog open={archivingBoard} onOpenChange={setArchivingBoard} title={m.kanban_archive_board_title()} description={m.kanban_archive_board_body({ a0: currentBoard?.name ?? current ?? '' })} confirmLabel={m.kanban_archive()} cancelLabel={m.cancel()} danger onConfirm={() => { if (current) archiveBoard.mutate(current) }} />
     </HubPage>
@@ -226,20 +226,20 @@ function KanbanColumns({ columns, readOnly, stale, selected, onToggle, onOpen }:
   )
 }
 
-function TaskDialog({ task, readOnly, onClose, onChanged }: { task: KanbanTask; readOnly: boolean; onClose: () => void; onChanged: () => void }) {
+function TaskDialog({ board, task, readOnly, onClose, onChanged }: { board: string | undefined; task: KanbanTask; readOnly: boolean; onClose: () => void; onChanged: () => void }) {
   const [comment, setComment] = useState('')
   const [pendingRunningExit, setPendingRunningExit] = useState<(() => void) | null>(null)
   const [parentId, setParentId] = useState('')
-  const log = useQuery({ queryKey: ['kanban', 'task-log', String(task.id)], queryFn: () => api.fetchKanbanTaskLog(task.id), staleTime: 10_000 })
-  const detail = useQuery({ queryKey: ['kanban', 'task', String(task.id)], queryFn: () => api.fetchKanbanTask(task.id), staleTime: 10_000 })
+  const log = useQuery({ queryKey: ['kanban', 'task-log', board ?? '', String(task.id)], queryFn: () => api.fetchKanbanTaskLog(board, task.id), staleTime: 10_000 })
+  const detail = useQuery({ queryKey: ['kanban', 'task', board ?? '', String(task.id)], queryFn: () => api.fetchKanbanTask(board, task.id), staleTime: 10_000 })
   const link = useMutation({
-    mutationFn: ({ parent, child, remove }: { parent: string; child: string; remove: boolean }) => (remove ? api.unlinkKanbanTasks(parent, child) : api.linkKanbanTasks(parent, child)),
+    mutationFn: ({ parent, child, remove }: { parent: string; child: string; remove: boolean }) => (remove ? api.unlinkKanbanTasks(board, parent, child) : api.linkKanbanTasks(board, parent, child)),
     onSuccess: (_r, v) => { if (!v.remove) setParentId(''); onChanged() },
     onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error'),
   })
   const links = detail.data?.links
   const act = useMutation({
-    mutationFn: ({ action, body }: { action: Parameters<typeof api.kanbanTaskAction>[1]; body: Record<string, unknown> }) => api.kanbanTaskAction(task.id, action, body),
+    mutationFn: ({ action, body }: { action: Parameters<typeof api.kanbanTaskAction>[2]; body: Record<string, unknown> }) => api.kanbanTaskAction(board, task.id, action, body),
     onSuccess: () => { showToast(m.saved()); onChanged(); void log.refetch() },
     // A refusal (the task changed since this board was read) refetches, so the dialog shows its current actions.
     onError: (e) => { showToast(e instanceof Error ? e.message : String(e), 4000, 'error'); onChanged() },
@@ -325,13 +325,13 @@ function TaskDialog({ task, readOnly, onClose, onChanged }: { task: KanbanTask; 
   )
 }
 
-function CreateTaskDialog({ columns, onClose, onCreated }: { columns: string[]; onClose: () => void; onCreated: () => void }) {
+function CreateTaskDialog({ board, columns, onClose, onCreated }: { board: string | undefined; columns: string[]; onClose: () => void; onCreated: () => void }) {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [status, setStatus] = useState(columns[0] ?? '')
   const [error, setError] = useState<string | null>(null)
   const create = useMutation({
-    mutationFn: () => api.createKanbanTask({ title: title.trim(), description: description.trim() || undefined, status: status || undefined }),
+    mutationFn: () => api.createKanbanTask(board, { title: title.trim(), description: description.trim() || undefined, status: status || undefined }),
     onSuccess: () => { onCreated() },
     onError: (e) => setError(e instanceof Error ? e.message : String(e)),
   })

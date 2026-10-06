@@ -46,13 +46,19 @@ test('kanban filters, stats, profile lanes and live refresh render the server fi
   })
   // Another client's write reaches this page as an `events` frame; EventSource reconnects every second until then.
   let streamed = false
+  const streamUrls: string[] = []
   await page.route('**/api/kanban/events/stream**', (route) => {
+    streamUrls.push(route.request().url())
     const frames = ['retry: 1000', '', 'event: hello', 'data: {"cursor":4,"board":null}', '']
     if (live && !streamed) { streamed = true; frames.push('id: 5', 'event: events', 'data: {"events":[{"id":5,"task_id":"T9","run_id":null,"kind":"created","payload":null,"created_at":1}],"cursor":5}', '') }
     return route.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' }, body: frames.join('\n') + '\n' })
   })
   await page.goto('/kanban')
   await settle(page)
+
+  // Reads and the event stream name the shown board, so a switch elsewhere cannot swap the data under this view.
+  expect(queries.at(-1)?.get('board')).toBe('ops')
+  expect(new URL(streamUrls[0] ?? 'http://x/').searchParams.get('board')).toBe('ops')
 
   // Stats strip: the server's total and per-status counts, in its order.
   const strip = page.getByRole('group', { name: 'Stats' })
@@ -133,7 +139,7 @@ test('kanban bulk status, task links and board create and archive write through 
   await page.getByRole('option', { name: 'done' }).click()
   await page.screenshot({ path: testInfo.outputPath(`kanban-bulk-${testInfo.project.name}.png`) })
   await bulk.getByRole('button', { name: 'Apply' }).click()
-  await expect.poll(() => writes.at(-1)).toEqual({ method: 'POST', path: '/api/kanban/tasks/bulk', body: { ids: ['T1', 'T2'], status: 'done' } })
+  await expect.poll(() => writes.at(-1)).toEqual({ method: 'POST', path: '/api/kanban/tasks/bulk', body: { ids: ['T1', 'T2'], status: 'done', board: 'ops' } })
   await expect(bulk).toHaveCount(0)
 
   // Links: the task's parents and children, removable, and a new parent by id.
@@ -144,12 +150,12 @@ test('kanban bulk status, task links and board create and archive write through 
   await expect(links).toContainText('C1')
   await page.screenshot({ path: testInfo.outputPath(`kanban-links-${testInfo.project.name}.png`) })
   await links.getByRole('button', { name: 'Remove dependency P1' }).click()
-  await expect.poll(() => writes.at(-1)).toEqual({ method: 'POST', path: '/api/kanban/links/delete', body: { parent_id: 'P1', child_id: 'T1' } })
+  await expect.poll(() => writes.at(-1)).toEqual({ method: 'POST', path: '/api/kanban/links/delete', body: { parent_id: 'P1', child_id: 'T1', board: 'ops' } })
   await links.getByRole('button', { name: 'Remove dependency C1' }).click()
-  await expect.poll(() => writes.at(-1)).toEqual({ method: 'POST', path: '/api/kanban/links/delete', body: { parent_id: 'T1', child_id: 'C1' } })
+  await expect.poll(() => writes.at(-1)).toEqual({ method: 'POST', path: '/api/kanban/links/delete', body: { parent_id: 'T1', child_id: 'C1', board: 'ops' } })
   await links.getByRole('textbox', { name: 'Parent task ID' }).fill('P2')
   await links.getByRole('button', { name: 'Add dependency' }).click()
-  await expect.poll(() => writes.at(-1)).toEqual({ method: 'POST', path: '/api/kanban/links', body: { parent_id: 'P2', child_id: 'T1' } })
+  await expect.poll(() => writes.at(-1)).toEqual({ method: 'POST', path: '/api/kanban/links', body: { parent_id: 'P2', child_id: 'T1', board: 'ops' } })
   await page.keyboard.press('Escape')
 
   // Boards: create by name (the server derives the slug) and archive the removable current board.
