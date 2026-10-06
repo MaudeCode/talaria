@@ -831,6 +831,27 @@ final class AuthManagerStateTests: XCTestCase {
         XCTAssertEqual(saved.headerLogoColorHex, "#5B7CFF")
     }
 
+    func testLaunchRestoresTheSavedIdentityOverAnUnsavedPreview() async throws {
+        let keychain = InMemoryKeychainStore()
+        let defaults = UserDefaults.ephemeral()
+        let registry = ServerRegistry(keychain: keychain, identityDefaults: defaults)
+        let (manager, aAccount, _) = try await makeTwoServerManager(keychain: keychain, registry: registry)
+        keychain.saveErrors[.servers] = PreconditionFailure()
+        manager.updateServerIdentity(aAccount, displayName: "Unsaved", initials: "UN", headerLogoColorHex: "#5B7CFF")
+        XCTAssertFalse(manager.flushServerIdentityEdits())
+
+        // Relaunch: the edit never saved, so the saved identity replaces its preview.
+        _ = AuthManager(
+            keychain: keychain,
+            clientFactory: { _ in MockAuthAPIClient(authStatus: AuthStatusResponse(authEnabled: false)) },
+            cookieStorage: cookieStorage,
+            serverRegistry: ServerRegistry(keychain: keychain, identityDefaults: defaults)
+        )
+
+        XCTAssertEqual(defaults.string(forKey: SessionIdentitySettings.displayNameKey), aAccount.displayName)
+        XCTAssertEqual(defaults.string(forKey: HeaderLogoColor.storageKey), aAccount.headerLogoColorHex)
+    }
+
     func testIdentitySavesOnceTypingPauses() async throws {
         let keychain = InMemoryKeychainStore()
         let registry = ServerRegistry(keychain: keychain, identityDefaults: UserDefaults.ephemeral())

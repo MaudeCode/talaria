@@ -178,8 +178,7 @@ public final class ServerRegistry: @unchecked Sendable {
         let id = url.absoluteString
         // When re-activating an already-registered server we mirror its (possibly
         // per-server-edited, #17) identity into the global identity defaults so the
-        // existing @AppStorage-backed consumers follow the switch, and so a launch
-        // drops a preview whose save never landed (TAL-123). We never mirror
+        // existing @AppStorage-backed consumers follow the switch. We never mirror
         // on first insert: a new entry is *seeded from* those defaults, so writing
         // back would change first-run identity for single-server users.
         var identityToMirror: ServerAccount?
@@ -194,8 +193,8 @@ public final class ServerRegistry: @unchecked Sendable {
                     updated.activeServerID = id
                     try persist(updated)
                     snapshot = updated
+                    identityToMirror = existing
                 }
-                identityToMirror = existing
                 return existing
             }
 
@@ -295,10 +294,11 @@ public final class ServerRegistry: @unchecked Sendable {
         }
     }
 
-    /// Mirrors an unsaved identity edit of the active server into the global
-    /// identity defaults, so the avatar and header tint preview it before the
-    /// edit is written through by `update(_:)` (TAL-123).
-    public func previewIdentity(_ account: ServerAccount) {
+    /// Mirrors `account`'s identity into the global identity defaults when it is
+    /// the active server: an unsaved edit to preview before `update(_:)` writes
+    /// it through, or the saved entry at launch so a preview whose save never
+    /// landed does not outlive the process (TAL-123).
+    public func mirrorIdentityIfActive(_ account: ServerAccount) {
         guard activeServerID == account.id else { return }
         mirrorIdentityToDefaults(account)
     }

@@ -893,7 +893,7 @@ public final class AuthManager {
         edit.initials = initials
         edit.headerLogoColorHex = headerLogoColorHex
         pendingIdentityEdits[account.id] = edit
-        serverRegistry.previewIdentity(edit)
+        serverRegistry.mirrorIdentityIfActive(edit)
         identitySaveTask?.cancel()
         identitySaveTask = Task { [weak self, identitySaveDelay] in
             try? await Task.sleep(for: identitySaveDelay)
@@ -1414,6 +1414,7 @@ public final class AuthManager {
         if let active = serverRegistry.activeServer,
            let activeURL = URL(string: active.urlString) {
             savedURL = activeURL
+            serverRegistry.mirrorIdentityIfActive(active)
         } else {
             guard
                 let savedValue = try? keychain.load(.serverURL),
