@@ -1239,6 +1239,17 @@
             "cli_only": true,
             "gateway_only": false,
             "exec": false
+          },
+          {
+            "name": "credits",
+            "description": "Show your Nous credits",
+            "category": "Info",
+            "aliases": [],
+            "args_hint": "",
+            "subcommands": [],
+            "cli_only": false,
+            "gateway_only": false,
+            "exec": true
           }
         ]
       }

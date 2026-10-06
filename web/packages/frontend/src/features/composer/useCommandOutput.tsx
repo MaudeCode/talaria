@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
+import { Markdown } from '../chat/render/Markdown'
 import type { ComposerNotice } from './ComposerTab'
 
 interface Run { sessionId: string | null; command: string; output: string; state: 'running' | 'done' | 'failed' }
@@ -33,10 +34,11 @@ export function useCommandOutput(sessionId: string | null): { run: (command: str
     content: (
       <span className="flex min-w-0 flex-1 flex-col gap-1" role="region" aria-label={m.command_output_label()} aria-live="polite" aria-busy={current.state === 'running'}>
         <span className="truncate font-mono" title={current.command}>{current.command}</span>
-        <span className="max-h-72 overflow-auto whitespace-pre-wrap rounded-md bg-surface-subtle px-2 py-1 font-mono text-[13px]">
+        <span className="max-h-72 overflow-auto rounded-md bg-surface-subtle px-2 py-1 text-[13px]">
           {current.state === 'running'
-            ? <span className="inline-flex items-center gap-1.5 font-sans text-muted"><Loader2 size={12} className="animate-spin" aria-hidden="true" />{m.command_running()}</span>
-            : current.output}
+            ? <span className="inline-flex items-center gap-1.5 text-muted"><Loader2 size={12} className="animate-spin" aria-hidden="true" />{m.command_running()}</span>
+            // Command output is line-oriented: a single newline stays a line break.
+            : <Markdown text={current.output} className="hermes-prose [&_p]:whitespace-pre-wrap" />}
         </span>
       </span>
     ),

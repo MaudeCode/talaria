@@ -15,7 +15,7 @@ import { cn } from '../../ui/cn'
 import { showToast } from '../toast/toast'
 import { AttachmentTray, type PendingFile } from './Attachments'
 import { CommandPaletteList, useCommandPalette } from './CommandPalette'
-import { parseCommand, resolveCommand, type CommandSuggestion } from './commands'
+import { parseCommand, resolveCommand, runsOnServer, type CommandSuggestion } from './commands'
 import { ContextRing, ContextRow, type ContextFigures, ModelChip, ReasoningChip, ToolsetsChip, WorkspaceChip } from './chips'
 import { clearDraft, readLocalDraft, useDraftPersistence } from './useDraft'
 import { createRecognition, dictationSupported, classifyDictationError } from '../voice/dictation'
@@ -372,7 +372,7 @@ export function Composer(props: ComposerProps) {
     const entry = parsed ? resolveCommand(parsed.name, catalog) : undefined
     if (entry && !entry.clients.includes('web')) { showToast(entry.unsupported_message ?? m.cmd_unsupported(), 3000); return }
     // TAL-561: an entry the server runs shows its output in the composer tab; it never reaches the model.
-    if (entry?.exec) { setText(''); void runCommand(value); return }
+    if (entry && runsOnServer(entry)) { setText(''); void runCommand(value); return }
     const cmd = parsed && { ...parsed, name: entry?.name ?? parsed.name }
     if (cmd) {
       if (cmd.name === 'theme') { const v = ThemeSchema.safeParse(cmd.args); if (v.success) setTheme(v.data); setText(''); return }

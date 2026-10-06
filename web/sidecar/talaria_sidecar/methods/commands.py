@@ -15,7 +15,14 @@ log = logging.getLogger("talaria_sidecar.commands")
 
 _NEVER_EXPOSE = frozenset({"sethome", "restart", "update", "commands"})
 _ALIASES = {"reload_mcp": "reload-mcp", "reload_skills": "reload-skills", "codex_runtime": "codex-runtime"}
-_ALLOWED = frozenset({"reload-mcp", "reload-skills", "codex-runtime", "credits"})
+# The commands ``commands.exec`` runs, with the catalog row the sidecar lists when the Agent registry lacks one.
+_RUNTIME_COMMANDS = {
+    "reload-mcp": ("Reload MCP servers from config", "Tools & Skills", ""),
+    "reload-skills": ("Re-scan skills from disk", "Tools & Skills", ""),
+    "codex-runtime": ("Toggle codex app-server runtime for OpenAI/Codex models", "Configuration", "[auto|codex_app_server]"),
+    "credits": ("Show your Nous credits", "Info", ""),
+}
+_ALLOWED = frozenset(_RUNTIME_COMMANDS)
 _RELOAD_MCP_LOCK = threading.Lock()
 _RELOAD_SKILLS_LOCK = threading.Lock()
 _CODEX_RUNTIME_LOCK = threading.Lock()
@@ -48,6 +55,11 @@ def list_commands() -> list[dict[str, Any]]:
             "args_hint": cmd.args_hint, "subcommands": list(cmd.subcommands), "cli_only": bool(cmd.cli_only), "gateway_only": bool(cmd.gateway_only),
             "exec": cmd.name in _ALLOWED,
         })
+    listed = {c["name"] for c in out}
+    for name, (description, category, args_hint) in _RUNTIME_COMMANDS.items():
+        if name not in listed:
+            out.append({"name": name, "description": description, "category": category, "aliases": [a for a, n in _ALIASES.items() if n == name],
+                        "args_hint": args_hint, "subcommands": [], "cli_only": False, "gateway_only": False, "exec": True})
     try:
         from hermes_cli.plugins import get_plugin_commands
 

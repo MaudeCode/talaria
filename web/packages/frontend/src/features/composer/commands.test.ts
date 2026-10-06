@@ -54,3 +54,18 @@ describe('resolveCommand', () => {
     expect(commands.resolveCommand('nope', catalog)).toBeUndefined()
   })
 })
+
+describe('runsOnServer', () => {
+  const agent = (name: string, extra: Partial<Command> = {}): Command => ({ name, aliases: [], handler: 'agent', clients: ['web', 'ios'], ...extra })
+  it('follows the server exec field', () => {
+    expect(commands.runsOnServer(agent('reload-skills', { exec: true }))).toBe(true)
+    expect(commands.runsOnServer(agent('reload-skills', { exec: false }))).toBe(false)
+    expect(commands.runsOnServer(agent('save', { exec: false }))).toBe(false)
+  })
+  it('falls back to the legacy rule for a server that sends no exec field', () => {
+    expect(commands.runsOnServer(agent('reload-skills'))).toBe(true)
+    expect(commands.runsOnServer(agent('hello', { category: 'Plugin' }))).toBe(true)
+    expect(commands.runsOnServer(agent('save', { category: 'Session' }))).toBe(false)
+    expect(commands.runsOnServer({ name: 'stop', aliases: [], handler: 'client', clients: ['web', 'ios'] })).toBe(false)
+  })
+})

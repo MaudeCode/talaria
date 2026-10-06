@@ -35,3 +35,26 @@ test('/reload-skills runs on the server and shows its output above the composer;
   await page.locator('[data-notice="command"]').getByRole('button', { name: 'Dismiss' }).click()
   await expect(panel).toHaveCount(0)
 })
+
+test('a plugin command from a server that sends no exec field still runs on the server; its Markdown output renders (TAL-561)', async ({ page }, testInfo) => {
+  await page.route('**/api/commands', (route) => route.fulfill({ json: { commands: [
+    { name: 'standup', description: 'Post the standup', aliases: [], category: 'Plugin', handler: 'agent', clients: ['web', 'ios'] },
+  ] } }))
+  const executed: unknown[] = []
+  await page.route('**/api/commands/exec', (route) => { executed.push(route.request().postDataJSON()); return route.fulfill({ json: { output: '**Standup posted**\nChannel: #team' } }) })
+  const sent: string[] = []
+  await page.route('**/api/chat/{steer,start}', (route) => { sent.push(route.request().url()); return route.fulfill({ status: 500, json: { error: 'not expected' } }) })
+  await page.route('**/api/session/new', (route) => { sent.push(route.request().url()); return route.fulfill({ status: 500, json: { error: 'not expected' } }) })
+
+  await page.goto('/')
+  await page.locator('#msg').fill('/standup today')
+  await page.locator('#btnSend').click()
+  await expect.poll(() => executed.length + sent.length).toBeGreaterThan(0)
+  expect(sent).toEqual([])
+  expect(executed).toEqual([{ command: '/standup today' }])
+  const panel = page.getByRole('region', { name: 'Command output' })
+  await expect(panel.locator('[data-streamdown="strong"]')).toHaveText('Standup posted')
+  await expect(panel).toContainText('Channel: #team')
+  await expect(panel).not.toContainText('**')
+  if (process.env.TAL561_SHOTS) await page.screenshot({ path: `${process.env.TAL561_SHOTS}/plugin-output-${testInfo.project.name}.png` })
+})
