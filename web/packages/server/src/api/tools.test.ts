@@ -307,6 +307,11 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     body = await json(res)
     expect(body.generated_by).toBe('fallback')
     expect(body.summary).toContain('WebUI has 2 update(s) available.')
+    // A check made while Agent updates were ignored must not keep the Agent off once they are re-enabled.
+    await post(s, '/api/settings', { ignore_agent_updates: true })
+    expect((await json(await post(s, '/api/updates/check', { force: true }))).agent).toMatchObject({ ignored: true, state: 'off' })
+    await post(s, '/api/settings', { ignore_agent_updates: false })
+    expect((await json(await s.get('/api/updates/check'))).agent).toBeNull()
     res = await post(s, '/api/settings', { check_for_updates: false })
     expect(res.status).toBe(200)
     res = await s.get('/api/updates/check')

@@ -1019,7 +1019,8 @@ export class UpdateService {
     if (cached.agent_channel !== agentChannel) { cached.agent_channel = agentChannel; cached.agent = null; cached.stale_agent_channel = true }
     if (cached.include_agent !== includeAgent) {
       cached.include_agent = includeAgent
-      if (!includeAgent) cached.agent = ignoredAgent()
+      // A cached result from the other mode never answers this one: re-enabled Agent checks wait for the next check.
+      cached.agent = includeAgent ? null : ignoredAgent()
     }
     cached.cached = true
     return cached
