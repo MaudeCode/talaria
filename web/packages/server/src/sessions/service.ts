@@ -1340,6 +1340,17 @@ export class SessionService {
     return { session_id: branch.session_id, title, parent_session_id: source.session_id }
   }
 
+  /** The run that keeps `delete` answering 409, if any; stream status reports it so a draining client can wait on it (TAL-622). */
+  activeRunBlocking(sid: string): string | null {
+    const live = this.deps.runtime.activeRunStream(sid)
+    if (live) return live
+    try {
+      const candidate = str(this.store.get(sid, { metadataOnly: true, promote: false, cacheOnMiss: false }).active_stream_id).trim()
+      if (candidate && this.deps.runtime.activeStreamIds.has(candidate)) return candidate
+    } catch { /* absent */ }
+    return null
+  }
+
   async delete(sid: string): Promise<Record<string, unknown>> {
     if (!sid) throw new HttpFailure(400, 'session_id is required')
     if (!isSafeSessionId(sid)) throw new HttpFailure(400, 'Invalid session_id')
@@ -1353,20 +1364,10 @@ export class SessionService {
     try { eventProfile = this.store.get(sid, { metadataOnly: true }).profile } catch { eventProfile = null; hadSidecar = false }
     // Python `_is_messaging_session_id`: decided before the JSON is gone, from WebUI metadata or the Agent's row.
     const isMessaging = (() => { try { if (isMessagingSessionRecord(this.store.get(sid, { metadataOnly: true }).compact())) return true } catch { /* absent */ } const meta = this.lookupCliMeta(sid); return meta !== null && isMessagingSessionRecord(meta) })()
-    const blocking = (): string | null => {
-      const live = this.deps.runtime.activeRunStream(sid)
-      if (live) return live
-      try {
-        const snapshot = this.store.get(sid, { metadataOnly: true })
-        const candidate = str(snapshot.active_stream_id).trim()
-        if (candidate && this.deps.runtime.activeStreamIds.has(candidate)) return candidate
-      } catch { /* absent */ }
-      return null
-    }
-    if (blocking()) throw new HttpFailure(409, 'Session has an active run; stop it before deleting')
+    if (this.activeRunBlocking(sid)) throw new HttpFailure(409, 'Session has an active run; stop it before deleting')
     try {
       await this.store.withLock(sid, () => {
-        if (blocking()) throw new HttpFailure(409, 'Session has an active run; stop it before deleting')
+        if (this.activeRunBlocking(sid)) throw new HttpFailure(409, 'Session has an active run; stop it before deleting')
         // A public share outlives its session file, and revokeShare needs the session, so revoke it first.
         try { this.deps.shares.revoke(this.store.get(sid, { metadataOnly: true })) } catch (error) { if (!(error instanceof SessionNotFound)) throw error }
         if (!this.store.deleteFiles(sid)) throw new HttpFailure(500, 'Failed to delete session data')

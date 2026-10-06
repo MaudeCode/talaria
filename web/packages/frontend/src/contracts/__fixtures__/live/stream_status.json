@@ -1,6 +1,7 @@
 {
   "body": {
     "active": false,
+    "blocking_stream_id": null,
     "replay_available": false,
     "stream_id": "nope"
   },

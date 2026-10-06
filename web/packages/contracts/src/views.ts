@@ -327,7 +327,12 @@ export const ChatStartResponseSchema = z.looseObject({
   title: z.string().optional(), effective_model: z.string().optional(), effective_model_provider: z.string().optional(), queued: z.boolean().optional(), ok: z.boolean().optional(), status: z.string().optional(), reason: z.string().optional(), session: SessionSchema.optional(),
 })
 export type ChatStartResponse = z.infer<typeof ChatStartResponseSchema>
-export const StreamStatusSchema = z.looseObject({ active: z.boolean(), stream_id: z.string(), replay_available: z.boolean().optional(), journal: Json.optional() })
+/**
+ * `active` is whether this stream's channel is still live. `blocking_stream_id` (TAL-622) is the run that still holds the
+ * stream's session: this run while it unwinds after a Stop, or a successor such as a goal continuation. A session delete
+ * answers 409 while it is set, so a client draining a session before deleting it waits until it is null.
+ */
+export const StreamStatusSchema = z.looseObject({ active: z.boolean(), stream_id: z.string(), replay_available: z.boolean().optional(), journal: Json.optional(), blocking_stream_id: z.string().nullable() })
 export type StreamStatus = z.infer<typeof StreamStatusSchema>
 /**
  * TAL-424: a pending steer is no longer pending without the Agent taking it: Edit and Cancel by the user, `stopped` by a
