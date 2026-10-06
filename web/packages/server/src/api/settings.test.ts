@@ -440,12 +440,13 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     const resetAt = (hours: number): string => new Date(Date.now() + hours * 3_600_000).toISOString().replace(/\.\d{3}Z$/, 'Z')
     const pools: Record<string, SidecarResult<'usage.pool'>['entries']> = {
       zai: [
-        { credential_id: 'zai-work', label: 'Work', status: 'available', unavailable_reason: null, retry_after: null },
-        { credential_id: 'zai-home', label: 'Home', status: 'exhausted', unavailable_reason: 'Credential pool marked this credential exhausted after provider status 429.', retry_after: resetAt(1) },
+        // The configured GLM_API_KEY is the Work account, so the provider's own key adds no separate source.
+        { credential_id: 'zai-work', label: 'Work', status: 'available', unavailable_reason: null, retry_after: null, matches_api_key: true },
+        { credential_id: 'zai-home', label: 'Home', status: 'exhausted', unavailable_reason: 'Credential pool marked this credential exhausted after provider status 429.', retry_after: resetAt(1), matches_api_key: false },
       ],
-      'opencode-go': [{ credential_id: 'oc-1', label: 'OPENCODE_GO_API_KEY', status: 'available', unavailable_reason: null, retry_after: null }],
+      'opencode-go': [{ credential_id: 'oc-1', label: 'OPENCODE_GO_API_KEY', status: 'available', unavailable_reason: null, retry_after: null, matches_api_key: true }],
     }
-    const empty = { status: 'ok' as const, http_status: null, quota: null, label: null, is_available: null, balances: [], windows: [], matches_api_key: false }
+    const empty = { status: 'ok' as const, http_status: null, quota: null, label: null, is_available: null, balances: [], windows: [] }
     sidecar.respond('usage.pool', (params) => ({ entries: pools[params.provider] ?? [] }))
     sidecar.respond('usage.balance', (params) => params.provider === 'deepseek'
       ? { ...empty, is_available: true, balances: [{ currency: 'USD' as const, total: 12.5, granted: 2.5, topped_up: 10 }] }
@@ -479,7 +480,7 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
 
   it('a provider configured only through the credential pool lists its accounts (TAL-548)', async () => {
     sidecar.respond('usage.pool_providers', () => ({ providers: ['opencode-go'] }))
-    sidecar.respond('usage.pool', (params) => ({ entries: params.provider === 'opencode-go' ? [{ credential_id: 'oc-pool', label: 'go@example.test', status: 'exhausted', unavailable_reason: 'Credential pool marked this credential exhausted.', retry_after: null }] : [] }))
+    sidecar.respond('usage.pool', (params) => ({ entries: params.provider === 'opencode-go' ? [{ credential_id: 'oc-pool', label: 'go@example.test', status: 'exhausted', unavailable_reason: 'Credential pool marked this credential exhausted.', retry_after: null, matches_api_key: false }] : [] }))
     s.deps.catalog.invalidate()
     try {
       const body = await json(await s.get('/api/provider/quotas'))
@@ -488,6 +489,26 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     } finally {
       sidecar.respond('usage.pool_providers', () => ({ providers: [] }))
       sidecar.respond('usage.pool', () => ({ entries: [] }))
+    }
+  })
+
+  it('a configured key that no pool account holds keeps its own source beside the pool accounts (TAL-548)', async () => {
+    const envFile = join(s.state, '.env')
+    writeEnvFile(envFile, { DEEPSEEK_API_KEY: 'sk-synthetic-deepseek' })
+    sidecar.respond('usage.pool', (params) => ({ entries: params.provider === 'deepseek' ? [{ credential_id: 'ds-other', label: 'other@example.test', status: 'available', unavailable_reason: null, retry_after: null, matches_api_key: false }] : [] }))
+    sidecar.respond('usage.balance', () => ({ status: 'ok', http_status: null, quota: null, label: null, is_available: true, balances: [{ currency: 'USD', total: 1, granted: null, topped_up: 1 }], windows: [] }))
+    s.deps.catalog.invalidate()
+    try {
+      const body = await json(await s.get('/api/provider/quotas'))
+      const id = (credential: string): string => `qsrc_${createHash('sha256').update(`${String(body.scope_id)}\0deepseek\0${credential}`).digest('hex').slice(0, 32)}`
+      const deepseek = (body.sources as Json[]).filter((q) => q.provider_id === 'deepseek').map((q) => [q.source_id, q.account_label, q.status])
+      expect(deepseek).toEqual([[id('provider'), 'DeepSeek', 'available'], [id('ds-other'), 'other@example.test', 'available']])
+      // The sidecar compares the pool's keys with the configured one; the key itself never comes back.
+      expect(sidecar.calls.filter((c) => c.method === 'usage.pool').map((c) => c.params as Json)).toContainEqual(expect.objectContaining({ provider: 'deepseek', api_key: 'sk-synthetic-deepseek' }))
+    } finally {
+      sidecar.respond('usage.pool', () => ({ entries: [] }))
+      writeEnvFile(envFile, { DEEPSEEK_API_KEY: null })
+      s.deps.catalog.invalidate()
     }
   })
 
@@ -1048,14 +1069,15 @@ describe('OpenRouter cost history accrues on quota reads and ships server-comput
     writeEnvFile(join(s.state, '.env'), { OPENROUTER_API_KEY: 'sk-or-synthetic-cost-history-1234' })
     sidecar.respond('providers.model_ids', (params) => ({ provider: params.provider, model_ids: [] }))
     sidecar.respond('providers.auth_status', (params) => ({ status: { logged_in: false, provider: params.provider ?? '', error: 'not logged in' } }))
-    // The sidecar reads OpenRouter's key endpoint (TAL-548); a pool account's key matches the configured one when `matches`.
-    sidecar.respond('usage.balance', (params) => ({
-      status: keyAvailable ? 'ok' : 'http_error', http_status: keyAvailable ? null : 503, quota: keyAvailable ? { usage, limit: 100, limit_remaining: 50 } : null, label: keyAvailable ? 'synthetic' : null,
-      is_available: null, balances: [], windows: [], matches_api_key: Boolean(params.credential_id && params.api_key && pool[0]?.matches),
-    }))
-    sidecar.respond('usage.pool', (params) => ({ entries: params.provider === 'openrouter' ? pool.map((e) => ({ ...e, matches: undefined })) : [] }))
+    // The sidecar reads OpenRouter's key endpoint (TAL-548); `configuredDown` fails only the configured key's own read.
+    sidecar.respond('usage.balance', (params) => {
+      const ok = keyAvailable && !(configuredDown && !params.credential_id)
+      return { status: ok ? 'ok' : 'http_error', http_status: ok ? null : 503, quota: ok ? { usage, limit: 100, limit_remaining: 50 } : null, label: ok ? 'synthetic' : null, is_available: null, balances: [], windows: [] }
+    })
+    sidecar.respond('usage.pool', (params) => ({ entries: params.provider === 'openrouter' ? pool : [] }))
   })
-  let pool: (SidecarResult<'usage.pool'>['entries'][number] & { matches: boolean })[] = []
+  let pool: SidecarResult<'usage.pool'>['entries'] = []
+  let configuredDown = false
   afterAll(() => s.close())
 
   it('a quota read records today\'s snapshot, so cost history shows it without being called first', async () => {
@@ -1078,18 +1100,25 @@ describe('OpenRouter cost history accrues on quota reads and ships server-comput
   })
 
   it('a pooled OpenRouter account records the cost snapshot only when it is the configured key (TAL-548)', async () => {
-    const account = { credential_id: 'or-1', label: 'OPENROUTER_API_KEY', status: 'available' as const, unavailable_reason: null, retry_after: null }
+    const account = { credential_id: 'or-1', label: 'work@example.test', status: 'available' as const, unavailable_reason: null, retry_after: null }
     try {
-      for (const matches of [false, true]) {
-        rmSync(snapshotFile, { force: true })
-        pool = [{ ...account, matches }]
-        usage = 4
-        const sources = (await json(await s.get('/api/provider/quotas'))).sources as Json[]
-        expect(sources.filter((q) => q.provider_id === 'openrouter')).toEqual([expect.objectContaining({ account_label: 'OPENROUTER_API_KEY', status: 'available', quota: { usage: 4, limit: 100, limit_remaining: 50 } })])
-        expect(existsSync(snapshotFile)).toBe(matches)
-      }
+      // Another account's read records nothing; the configured key's own source is the one that would.
+      rmSync(snapshotFile, { force: true })
+      pool = [{ ...account, matches_api_key: false }]
+      configuredDown = true
+      usage = 4
+      let sources = ((await json(await s.get('/api/provider/quotas'))).sources as Json[]).filter((q) => q.provider_id === 'openrouter')
+      expect(sources.map((q) => [q.account_label, q.status])).toEqual([['OpenRouter', 'unavailable'], ['work@example.test', 'available']])
+      expect(existsSync(snapshotFile)).toBe(false)
+      // The account holding the configured key is its only source, and its read records the snapshot.
+      pool = [{ ...account, matches_api_key: true }]
+      configuredDown = false
+      sources = ((await json(await s.get('/api/provider/quotas'))).sources as Json[]).filter((q) => q.provider_id === 'openrouter')
+      expect(sources).toEqual([expect.objectContaining({ account_label: 'work@example.test', status: 'available', quota: { usage: 4, limit: 100, limit_remaining: 50 } })])
+      expect(stored()).toEqual([{ date: '2026-09-28', used: 4, limit: 100 }])
     } finally {
       pool = []
+      configuredDown = false
       usage = 2.52
     }
   })

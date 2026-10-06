@@ -3,9 +3,11 @@ balance endpoints with stubbed HTTP, from a pool account's key or the server-res
 
 from __future__ import annotations
 
+import dataclasses
 import io
 import json
 import pathlib
+import sys
 import time
 import types
 import urllib.error
@@ -101,11 +103,58 @@ def test_a_pool_account_reads_with_its_own_key(monkeypatch):
     monkeypatch.setattr(usage, "_pool", lambda provider: (None, entries))
     requests = _stub_http(monkeypatch, {"data": {"usage": 3, "limit": "100", "limit_remaining": None, "label": " synthetic "}})
     result = _read("openrouter", credential_id="or-2", api_key="sk-work")
-    assert result == {**result, "status": "ok", "quota": {"limit_remaining": None, "usage": 3, "limit": 100}, "label": "synthetic", "matches_api_key": False}
+    assert result == {**result, "status": "ok", "quota": {"limit_remaining": None, "usage": 3, "limit": 100}, "label": "synthetic"}
     assert requests[-1].get_header("Authorization") == "Bearer sk-home"
-    assert _read("openrouter", credential_id="or-1", api_key="sk-work")["matches_api_key"] is True
     # An account the pool no longer has has no key, whatever the server configured.
     assert _read("openrouter", credential_id="or-gone")["status"] == "no_key"
+
+
+def test_pool_rows_say_which_account_holds_the_configured_key(monkeypatch):
+    entries = [types.SimpleNamespace(id="or-1", label="Work", runtime_api_key="sk-work"), types.SimpleNamespace(id="or-2", label="Home", runtime_api_key="sk-home")]
+    monkeypatch.setattr(usage, "_pool", lambda provider: (None, entries))
+    rows = usage.pool("openrouter", api_key="sk-home")
+    assert [(r["credential_id"], r["matches_api_key"]) for r in rows] == [("or-1", False), ("or-2", True)]
+    assert not any(r["matches_api_key"] for r in usage.pool("openrouter"))
+    assert "sk-" not in json.dumps(rows)
+
+
+def test_each_anthropic_pool_account_reads_its_own_limits(monkeypatch):
+    """The Agent's Anthropic fetcher reads only the ambient token; a pool account's usage is read with its own."""
+    entries = [types.SimpleNamespace(id="work", label="work@example.test", runtime_api_key="sk-ant-oat-work"),
+               types.SimpleNamespace(id="home", label="home@example.test", runtime_api_key="sk-ant-oat-home")]
+    monkeypatch.setattr(usage, "_pool", lambda provider: (None, entries))
+    used = {"Bearer sk-ant-oat-work": 0.25, "Bearer sk-ant-oat-home": 0.9}
+
+    @dataclasses.dataclass(frozen=True)
+    class Snapshot:
+        provider: str
+        source: str
+        windows: tuple
+        details: tuple
+        unavailable_reason: str | None = None
+
+        @property
+        def available(self):
+            return bool(self.windows) and not self.unavailable_reason
+
+    agent_usage = types.ModuleType("agent.account_usage")
+    agent_usage.fetch_account_usage = lambda provider, base_url=None, api_key=None: Snapshot(provider, "ambient", ({"label": "Current session", "used_percent": 1.0},), ())
+    agent_usage._is_oauth_token = lambda token: token.startswith("sk-ant-oat")
+    agent_usage._is_num = lambda value: isinstance(value, (int, float))
+    agent_usage._get_json = lambda url, headers, *, timeout: {"five_hour": {"utilization": used[headers["Authorization"]]}}
+    agent_usage._usage_windows = lambda payload, mapping, used_key, reset_key, *, fraction: [
+        {"label": label, "used_percent": payload[key][used_key] * 100} for key, label in mapping if key in payload]
+    agent_usage._snapshot = lambda provider, source, windows, details, **kw: Snapshot(provider, source, tuple(windows), tuple(details), **kw)
+    monkeypatch.setitem(sys.modules, "agent", types.ModuleType("agent"))
+    monkeypatch.setitem(sys.modules, "agent.account_usage", agent_usage)
+
+    work = usage.account("anthropic", base_url=None, api_key=None, credential_id="work")
+    home = usage.account("anthropic", base_url=None, api_key=None, credential_id="home")
+    assert [w["used_percent"] for w in work["windows"]] == [25.0]
+    assert [w["used_percent"] for w in home["windows"]] == [90.0]
+    assert work["available"] is True and work["source"] == "oauth_usage_api"
+    # Without a pool account the Agent's own fetcher still answers.
+    assert usage.account("anthropic", base_url=None, api_key=None)["source"] == "ambient"
 
 
 @requires_agent

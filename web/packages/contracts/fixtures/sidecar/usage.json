@@ -34,8 +34,7 @@
         "label": null,
         "is_available": null,
         "balances": [],
-        "windows": [],
-        "matches_api_key": false
+        "windows": []
       }
     }
   ],

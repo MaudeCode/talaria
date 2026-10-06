@@ -102,9 +102,11 @@ def _label(entry, index: int) -> str:
     return label[:61].rstrip() + "..." if len(label) > 64 else label
 
 
-def pool(provider: str) -> list[dict]:
-    """Python `_local_pool_snapshot` rows: one per pool entry with an id, its local status, and no secrets."""
+def pool(provider: str, *, api_key: str | None = None) -> list[dict]:
+    """Python `_local_pool_snapshot` rows: one per pool entry with an id, its local status, whether it holds the
+    server-resolved ``api_key``, and no secrets."""
     agent_pool, entries = _pool(provider)
+    configured = str(api_key or "").strip()
     try:
         from agent.credential_pool import _exhausted_until
     except Exception:  # noqa: BLE001 - an Agent without it cannot date an exhausted mark, so the entry reads as available
@@ -117,7 +119,8 @@ def pool(provider: str) -> list[dict]:
         credential_id = str(getattr(entry, "id", "") or "").strip()
         if not credential_id:
             continue
-        row = {"credential_id": credential_id, "label": _label(entry, index), "status": "available", "unavailable_reason": None, "retry_after": None}
+        row = {"credential_id": credential_id, "label": _label(entry, index), "status": "available", "unavailable_reason": None, "retry_after": None,
+               "matches_api_key": bool(configured) and _entry_key(entry) == configured}
         status = str(getattr(entry, "last_status", "") or "").strip().lower()
         until = _exhausted_until(entry, sole_credential=sole) if status == "exhausted" else None
         if status == "dead":
@@ -203,13 +206,11 @@ _BALANCE_PARSERS = {"openrouter": _openrouter, "deepseek": _deepseek, "opencode-
 
 def balance(provider: str, *, credential_id: str | None, api_key: str | None) -> dict:
     """One key-based balance read. A pool credential's key resolves here; otherwise the server passes the configured key."""
-    result = {"status": "unavailable", "http_status": None, "quota": None, "label": None, "is_available": None, "balances": [], "windows": [], "matches_api_key": False}
-    configured = str(api_key or "").strip()
-    key = configured
+    result = {"status": "unavailable", "http_status": None, "quota": None, "label": None, "is_available": None, "balances": [], "windows": []}
+    key = str(api_key or "").strip()
     if credential_id:
         entry = _entry(provider, credential_id)
         key = _entry_key(entry) if entry is not None else ""
-        result["matches_api_key"] = bool(key) and key == configured
     if not key:
         return {**result, "status": "no_key"}
     request = urllib.request.Request(_BALANCE_URLS[provider], headers={"Authorization": f"Bearer {key}", "Accept": "application/json", "User-Agent": "Talaria-Web/1.0"})
@@ -227,9 +228,31 @@ def balance(provider: str, *, credential_id: str | None, api_key: str | None) ->
     return {**result, **parsed, "status": "ok"} if parsed is not None else result
 
 
+_ANTHROPIC_WINDOWS = (("five_hour", "Current session"), ("seven_day", "Current week"), ("seven_day_opus", "Opus week"), ("seven_day_sonnet", "Sonnet week"))
+
+
+def _anthropic_usage(token: str):
+    """The Agent's Anthropic account-usage read for one given token. The Agent's fetcher reads only the ambient token, so a
+    pool account would otherwise report the active account's limits."""
+    # ponytail: mirrors agent.account_usage._fetch_anthropic_account_usage on the Agent's own helpers; drop it once that
+    # fetcher honours its api_key argument.
+    from agent import account_usage as agent_usage
+
+    if not agent_usage._is_oauth_token(token):
+        return agent_usage._snapshot("anthropic", "oauth_usage_api", [], [], unavailable_reason="Anthropic account limits are only available for OAuth-backed Claude accounts.")
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json", "Content-Type": "application/json",
+               "anthropic-beta": "oauth-2025-04-20", "User-Agent": "claude-code/2.1.0"}
+    payload = agent_usage._get_json("https://api.anthropic.com/api/oauth/usage", headers, timeout=15.0)
+    windows = agent_usage._usage_windows(payload, _ANTHROPIC_WINDOWS, "utilization", "resets_at", fraction=True)
+    extra = payload.get("extra_usage") or {}
+    used, limit = extra.get("used_credits"), extra.get("monthly_limit")
+    details = [f"Extra usage: {used:.2f} / {limit:.2f} {extra.get('currency') or 'USD'}"] if extra.get("is_enabled") and agent_usage._is_num(used) and agent_usage._is_num(limit) else []
+    return agent_usage._snapshot("anthropic", "oauth_usage_api", windows, details)
+
+
 def account(provider: str, *, base_url: str | None, api_key: str | None, credential_id: str | None = None) -> dict | None:
     if credential_id:
-        # One pool account's usage: the Agent reads the usage of the credential it is handed.
+        # One pool account's usage, read with that account's own key.
         entry = _entry(provider, credential_id)
         if entry is None:
             return None
@@ -242,7 +265,10 @@ def account(provider: str, *, base_url: str | None, api_key: str | None, credent
     except Exception as exc:  # noqa: BLE001
         raise RpcError(f"account usage unavailable: {exc}", condition="usage_unavailable") from exc
     try:
-        snapshot = fetch_account_usage(provider, base_url=base_url, api_key=api_key)
+        if credential_id and provider == "anthropic":
+            snapshot = _anthropic_usage(api_key)
+        else:
+            snapshot = fetch_account_usage(provider, base_url=base_url, api_key=api_key)
     except Exception as exc:  # noqa: BLE001
         log.debug("fetch_account_usage(%r) failed", provider, exc_info=True)
         return {"provider": provider, "available": False, "unavailable_reason": f"{type(exc).__name__}: {exc}", "windows": [], "details": []}
@@ -275,7 +301,7 @@ def register(registry) -> None:
         if not provider:
             raise InvalidParams("provider is required")
         with scoped_home(profile_home_param(params)):
-            return {"entries": pool(provider)}
+            return {"entries": pool(provider, api_key=params.get("api_key"))}
 
     @registry.method("usage.pool_providers")
     def pool_providers_(ctx: CallContext, params: dict) -> dict:

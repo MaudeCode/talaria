@@ -1072,14 +1072,14 @@ export class ProviderCatalog {
     }
     if (provider === 'openrouter' || provider === 'deepseek' || provider === 'opencode-go') {
       const apiKey = this.apiKeyFor(provider, profileHome, config)
-      // An OpenRouter account read carries the configured key too, so the cost chart records only that key's spend.
-      const key = credential ? { credential_id: credential.credential_id, ...(provider === 'openrouter' && apiKey ? { api_key: apiKey } : {}) } : apiKey ? { api_key: apiKey } : null
+      const key = credential ? { credential_id: credential.credential_id } : apiKey ? { api_key: apiKey } : null
       const read = key ? await this.balance(profileHome, provider, key) : null
       const status = !key || read?.status === 'no_key' ? 'no_key' : read?.status === 'ok' ? 'ok' : read?.status === 'http_error' ? read.http_status : null
       if (provider === 'openrouter') {
         if (status === 'no_key') return answer(false, 'no_key', 'OpenRouter quota status needs an OPENROUTER_API_KEY configured on the server.')
         if (status === 'ok' && read?.quota) {
-          if (!credential || read.matches_api_key) this.recordCostSnapshot(profileHome, read.quota, at)
+          // The cost chart follows the configured key, so another pool account's spend never lands in it.
+          if (!credential || credential.matches_api_key) this.recordCostSnapshot(profileHome, read.quota, at)
           return answer(true, 'available', 'OpenRouter quota status loaded.', { label: 'OpenRouter credits', quota: read.quota })
         }
         return status === 401 || status === 403 ? answer(false, 'invalid_key', 'OpenRouter rejected the configured API key.') : answer(false, 'unavailable', 'OpenRouter quota status is temporarily unavailable.')
@@ -1103,7 +1103,7 @@ export class ProviderCatalog {
       return answer(false, 'unavailable', status === 403 ? 'OpenCode Go account limits require an active subscription.' : 'OpenCode Go account limits are temporarily unavailable.', { account_limits: null })
     }
     // Python `_local_pool_snapshot`: any other provider with a credential pool shows its accounts' local state.
-    const entries = credential ? [credential] : await this.poolEntries(profileHome, provider)
+    const entries = credential ? [credential] : await this.poolEntries(profileHome, provider, null)
     if (entries.length) {
       const limits = credential ? poolEntryLimits(credential, at) : poolLimits(entries, at)
       return limits.available ? answer(true, 'available', `${name} credential pool status loaded.`, { label: 'Credential pool', account_limits: limits }) : answer(false, 'unavailable', `${name} credential pool: all credentials are unavailable.`, { account_limits: limits })
@@ -1111,12 +1111,15 @@ export class ProviderCatalog {
     return { computed_at, ok: false, provider, display_name: name, supported: false, status: 'unsupported', quota: null, message: `No verified server-side quota or balance endpoint is available for ${name}.` }
   }
 
-  /** TAL-548: the provider's credential-pool accounts as the sidecar reads them locally; none when it cannot. */
-  private async poolEntries(profileHome: string, pid: string): Promise<PoolEntry[]> {
+  /**
+   * TAL-548: the provider's credential-pool accounts as the sidecar reads them locally; none when it cannot. Each says
+   * whether it holds `apiKey`, the provider's configured key.
+   */
+  private async poolEntries(profileHome: string, pid: string, apiKey: string | null): Promise<PoolEntry[]> {
     const sidecar = this.deps.sidecar()
     if (!sidecar) return []
     try {
-      return (await sidecar.call('usage.pool', { profile_home: profileHome, provider: pid })).entries
+      return (await sidecar.call('usage.pool', { profile_home: profileHome, provider: pid, ...(apiKey ? { api_key: apiKey } : {}) })).entries
     } catch (error) {
       this.deps.log(`[catalog] credential pool for ${pid} failed: ${str((error as Error).message)}`)
       return []
@@ -1187,12 +1190,16 @@ export class ProviderCatalog {
     const sourceId = (pid: string, credential: string): string => `qsrc_${createHash('sha256').update(`${scopeId}\0${pid}\0${credential}`).digest('hex').slice(0, 32)}`
     // A provider configured only through `hermes auth add` has no key in .env or config.yaml, yet its pool accounts are sources.
     const pooled = new Set(await this.poolProviders(profileHome))
+    const config = await this.deps.config.read(profileHome)
     const perProvider = await Promise.all(status.providers.filter((p) => p.has_key || p.is_custom || pooled.has(str(p.id))).map(async (p) => {
       const pid = str(p.id)
       const label = str(p.display_name) || pid
-      const entries = await this.poolEntries(profileHome, pid)
-      if (!entries.length) return [{ source_id: sourceId(pid, 'provider'), provider_id: pid, provider_label: label, account_label: label, credential: null }]
-      return entries.map((e) => ({ source_id: sourceId(pid, e.credential_id), provider_id: pid, provider_label: label, account_label: e.label, credential: e }))
+      const apiKey = this.apiKeyFor(pid, profileHome, config)
+      const entries = await this.poolEntries(profileHome, pid, apiKey)
+      const accounts = entries.map((e) => ({ source_id: sourceId(pid, e.credential_id), provider_id: pid, provider_label: label, account_label: e.label, credential: e }))
+      // The provider's own key is a source unless a pool account already holds it.
+      const ownKey = !entries.length || (apiKey !== null && !entries.some((e) => e.matches_api_key))
+      return ownKey ? [{ source_id: sourceId(pid, 'provider'), provider_id: pid, provider_label: label, account_label: label, credential: null }, ...accounts] : accounts
     }))
     let descriptors = uniqueQuotaSources(perProvider.flat())
     const requested = str(opts.sourceId).trim() || null

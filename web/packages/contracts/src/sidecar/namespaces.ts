@@ -234,28 +234,30 @@ export const PROCESS_METHODS = {
   'process.delegation_result': { params: ProfileHomeParams.extend({ session_id: z.string().min(1), delegation_id: z.string().min(1) }), result: z.object({ text: z.string() }) },
 } as const
 export const AccountUsageSnapshotSchema = z.object({ provider: z.string().nullable(), available: z.boolean(), unavailable_reason: z.string().nullable().optional(), windows: z.array(Loose), details: z.array(Json) }).catchall(Json)
-/** TAL-548: one credential-pool entry's local state (no network, no secrets); the server derives a quota source per entry. */
+/**
+ * TAL-548: one credential-pool entry's local state (no network, no secrets); the server derives a quota source per entry.
+ * `matches_api_key`: the entry's key is the server-resolved `api_key` passed to `usage.pool`.
+ */
 export const PoolEntrySchema = z.object({
   credential_id: z.string(), label: z.string(), status: z.enum(['available', 'exhausted', 'dead']), unavailable_reason: z.string().nullable(), retry_after: z.string().nullable(),
+  matches_api_key: z.boolean(),
 })
 const BalanceNumber = z.number().nullable()
 /**
  * TAL-548: one key-based balance read. The key is the pool entry's (`credential_id`) or the server-resolved `api_key`.
  * `ok` carries the provider's sanitised fields: OpenRouter `quota`/`label`, DeepSeek `balances`/`is_available`, OpenCode Go
- * `windows`; `http_error` carries the status code. With both a `credential_id` and an `api_key`, the credential's key is
- * read and `matches_api_key` says whether it is that configured key.
+ * `windows`; `http_error` carries the status code.
  */
 export const BalanceResultSchema = z.object({
   status: z.enum(['ok', 'no_key', 'http_error', 'unavailable']), http_status: z.number().int().nullable(),
   quota: z.object({ limit_remaining: BalanceNumber, usage: BalanceNumber, limit: BalanceNumber }).nullable(), label: z.string().nullable(),
   is_available: z.boolean().nullable(), balances: z.array(z.object({ currency: z.enum(['CNY', 'USD']), total: z.number(), granted: BalanceNumber, topped_up: BalanceNumber })),
   windows: z.array(z.object({ key: z.enum(['rolling', 'weekly', 'monthly']), used_percent: z.number(), reset_at: z.string(), rate_limited: z.boolean() })),
-  matches_api_key: z.boolean(),
 })
 const CredentialId = z.string().min(1).nullable().optional()
 export const USAGE_METHODS = {
   'usage.account': { params: ProfileHomeParams.extend({ provider: z.string().min(1), base_url: z.string().nullable().optional(), api_key: z.string().nullable().optional(), credential_id: CredentialId }), result: z.object({ snapshot: AccountUsageSnapshotSchema.nullable() }) },
-  'usage.pool': { params: ProfileHomeParams.extend({ provider: z.string().min(1) }), result: z.object({ entries: z.array(PoolEntrySchema) }) },
+  'usage.pool': { params: ProfileHomeParams.extend({ provider: z.string().min(1), api_key: z.string().nullable().optional() }), result: z.object({ entries: z.array(PoolEntrySchema) }) },
   /** TAL-548: the providers whose persisted credential pool holds an account the user added, keyed or not. */
   'usage.pool_providers': { params: ProfileHomeParams, result: z.object({ providers: z.array(z.string()) }) },
   'usage.balance': { params: ProfileHomeParams.extend({ provider: z.enum(['openrouter', 'deepseek', 'opencode-go']), credential_id: CredentialId, api_key: z.string().nullable().optional() }), result: BalanceResultSchema },

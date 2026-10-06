@@ -3794,6 +3794,9 @@
                 "string",
                 "null"
               ]
+            },
+            "matches_api_key": {
+              "type": "boolean"
             }
           },
           "required": [
@@ -3801,7 +3804,8 @@
             "label",
             "status",
             "unavailable_reason",
-            "retry_after"
+            "retry_after",
+            "matches_api_key"
           ],
           "additionalProperties": false
         }
@@ -3969,9 +3973,6 @@
           ],
           "additionalProperties": false
         }
-      },
-      "matches_api_key": {
-        "type": "boolean"
       }
     },
     "required": [
@@ -3981,8 +3982,7 @@
       "label",
       "is_available",
       "balances",
-      "windows",
-      "matches_api_key"
+      "windows"
     ],
     "additionalProperties": false
   },
