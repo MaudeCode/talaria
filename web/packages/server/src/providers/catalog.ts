@@ -1123,6 +1123,18 @@ export class ProviderCatalog {
     }
   }
 
+  /** TAL-548: the providers whose persisted credential pool holds an added account; none when the sidecar cannot say. */
+  private async poolProviders(profileHome: string): Promise<string[]> {
+    const sidecar = this.deps.sidecar()
+    if (!sidecar) return []
+    try {
+      return (await sidecar.call('usage.pool_providers', { profile_home: profileHome })).providers
+    } catch (error) {
+      this.deps.log(`[catalog] credential pool providers failed: ${str((error as Error).message)}`)
+      return []
+    }
+  }
+
   /** TAL-548: one key-based balance read through the sidecar, which resolves a pool account's key itself; null when it fails. */
   private async balance(profileHome: string, provider: SidecarParams<'usage.balance'>['provider'], key: { credential_id?: string; api_key?: string }): Promise<SidecarResult<'usage.balance'> | null> {
     const sidecar = this.deps.sidecar()
@@ -1173,7 +1185,9 @@ export class ProviderCatalog {
     const scopeId = this.quotaProfileScopeId(profile)
     // Python `_quota_source_id(profile, provider, credential_id)`: a pool account's id, or "provider" for the provider's own key.
     const sourceId = (pid: string, credential: string): string => `qsrc_${createHash('sha256').update(`${scopeId}\0${pid}\0${credential}`).digest('hex').slice(0, 32)}`
-    const perProvider = await Promise.all(status.providers.filter((p) => p.has_key || p.is_custom).map(async (p) => {
+    // A provider configured only through `hermes auth add` has no key in .env or config.yaml, yet its pool accounts are sources.
+    const pooled = new Set(await this.poolProviders(profileHome))
+    const perProvider = await Promise.all(status.providers.filter((p) => p.has_key || p.is_custom || pooled.has(str(p.id))).map(async (p) => {
       const pid = str(p.id)
       const label = str(p.display_name) || pid
       const entries = await this.poolEntries(profileHome, pid)

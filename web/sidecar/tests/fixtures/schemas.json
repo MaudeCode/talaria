@@ -3812,6 +3812,22 @@
     ],
     "additionalProperties": false
   },
+  "usage.pool_providers": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "providers": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "required": [
+      "providers"
+    ],
+    "additionalProperties": false
+  },
   "usage.balance": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

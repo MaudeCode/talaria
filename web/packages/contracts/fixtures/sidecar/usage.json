@@ -38,5 +38,15 @@
         "matches_api_key": false
       }
     }
+  ],
+  "usage.pool_providers": [
+    {
+      "params": {
+        "profile_home": "<home>"
+      },
+      "result": {
+        "providers": []
+      }
+    }
   ]
 }

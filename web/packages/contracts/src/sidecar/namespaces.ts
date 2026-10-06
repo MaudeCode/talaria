@@ -256,6 +256,8 @@ const CredentialId = z.string().min(1).nullable().optional()
 export const USAGE_METHODS = {
   'usage.account': { params: ProfileHomeParams.extend({ provider: z.string().min(1), base_url: z.string().nullable().optional(), api_key: z.string().nullable().optional(), credential_id: CredentialId }), result: z.object({ snapshot: AccountUsageSnapshotSchema.nullable() }) },
   'usage.pool': { params: ProfileHomeParams.extend({ provider: z.string().min(1) }), result: z.object({ entries: z.array(PoolEntrySchema) }) },
+  /** TAL-548: the providers whose persisted credential pool holds an account the user added, keyed or not. */
+  'usage.pool_providers': { params: ProfileHomeParams, result: z.object({ providers: z.array(z.string()) }) },
   'usage.balance': { params: ProfileHomeParams.extend({ provider: z.enum(['openrouter', 'deepseek', 'opencode-go']), credential_id: CredentialId, api_key: z.string().nullable().optional() }), result: BalanceResultSchema },
 } as const
 export const CONFIG_METHODS = {

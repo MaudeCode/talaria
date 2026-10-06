@@ -477,6 +477,20 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     }
   })
 
+  it('a provider configured only through the credential pool lists its accounts (TAL-548)', async () => {
+    sidecar.respond('usage.pool_providers', () => ({ providers: ['opencode-go'] }))
+    sidecar.respond('usage.pool', (params) => ({ entries: params.provider === 'opencode-go' ? [{ credential_id: 'oc-pool', label: 'go@example.test', status: 'exhausted', unavailable_reason: 'Credential pool marked this credential exhausted.', retry_after: null }] : [] }))
+    s.deps.catalog.invalidate()
+    try {
+      const body = await json(await s.get('/api/provider/quotas'))
+      const opencode = (body.sources as Json[]).filter((q) => q.provider_id === 'opencode-go')
+      expect(opencode).toEqual([expect.objectContaining({ account_label: 'go@example.test', status: 'exhausted', source_id: `qsrc_${createHash('sha256').update(`${String(body.scope_id)}\0opencode-go\0oc-pool`).digest('hex').slice(0, 32)}` })])
+    } finally {
+      sidecar.respond('usage.pool_providers', () => ({ providers: [] }))
+      sidecar.respond('usage.pool', () => ({ entries: [] }))
+    }
+  })
+
   it('uniqueQuotaSources keeps the first row per source id and distinct ids of one provider (TAL-272)', () => {
     const row = (source_id: string, provider_id: string, account_label: string, n = 0) => ({ source_id, provider_id, account_label, n })
     expect(uniqueQuotaSources([row('qsrc_c', 'openai-codex', 'Work'), row('qsrc_z', 'anthropic', 'Claude'), row('qsrc_c', 'openai-codex', 'Work', 1), row('qsrc_b', 'openai-codex', 'Personal'), row('qsrc_a', 'openai-codex', 'Work')]))

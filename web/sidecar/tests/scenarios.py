@@ -72,6 +72,7 @@ SCENARIOS: list[tuple[str, dict]] = [
     ("stt.capability", {"profile_home": "{home}"}),
     ("usage.account", {"profile_home": "{home}", "provider": "zai"}),
     ("usage.pool", {"profile_home": "{home}", "provider": "deepseek"}),
+    ("usage.pool_providers", {"profile_home": "{home}"}),
     ("usage.balance", {"profile_home": "{home}", "provider": "deepseek"}),
     # cron
     ("cron.list", {"profile_home": "{home}"}),

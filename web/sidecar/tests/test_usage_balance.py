@@ -116,13 +116,16 @@ def test_pool_lists_each_account_with_its_local_state(hermes_home: pathlib.Path)
         entry("zai-work", "Work"),
         entry("zai-home", "  Home\n  laptop ", last_status="exhausted", last_status_at=now, last_error_code=429),
         entry("zai-old", "Old", last_status="dead"),
-    ]}}))
+    ], "copilot": [entry("gh", "gh auth token", source="gh_cli")]}}))
     proc = SidecarProcess(hermes_home)
     try:
         assert proc.result("runtime.handshake", {"rpc_version": SIDECAR_RPC_VERSION})["compatible"]
         rows = proc.result("usage.pool", {"profile_home": str(hermes_home), "provider": "zai"})["entries"]
+        providers = proc.result("usage.pool_providers", {"profile_home": str(hermes_home)})["providers"]
     finally:
         proc.close()
     assert [(r["credential_id"], r["label"], r["status"]) for r in rows] == [("zai-work", "Work", "available"), ("zai-home", "Home laptop", "exhausted"), ("zai-old", "Old", "dead")]
     assert rows[1]["retry_after"] and rows[1]["unavailable_reason"].startswith("Credential pool marked this credential exhausted after provider status 429; retry after ")
     assert "sk-synthetic" not in json.dumps(rows)
+    # A seeded `gh` CLI token is ambient, not an account the user added.
+    assert providers == ["zai"]

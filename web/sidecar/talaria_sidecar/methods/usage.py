@@ -46,6 +46,25 @@ def _iso(epoch: float | None) -> str | None:
 _AMBIENT_GH_SOURCES = frozenset({"gh_cli", "gh auth token", "env:github_token", "env:gh_token"})
 
 
+def _is_ambient(entry) -> bool:
+    return any(str((entry.get(k) if isinstance(entry, dict) else getattr(entry, k, "")) or "").strip().lower() in _AMBIENT_GH_SOURCES for k in ("source", "label", "key_source"))
+
+
+def pool_providers() -> list[str]:
+    """Providers whose persisted credential pool holds an account the user added; a read of ``auth.json`` with no seeding."""
+    try:
+        from hermes_cli.auth import read_credential_pool
+    except Exception as exc:  # noqa: BLE001
+        raise RpcError(f"credential pool unavailable: {exc}", condition="usage_unavailable") from exc
+    try:
+        pools = read_credential_pool()
+    except Exception:  # noqa: BLE001
+        log.debug("read_credential_pool() failed", exc_info=True)
+        return []
+    return sorted(str(pid) for pid, entries in (pools or {}).items()
+                  if isinstance(entries, list) and any(isinstance(e, dict) and str(e.get("id") or "").strip() and not _is_ambient(e) for e in entries))
+
+
 def _pool(provider: str) -> tuple[Any, list]:
     """The Agent's credential pool for the scoped profile and its non-ambient entries; ``(None, [])`` when unreadable."""
     try:
@@ -58,7 +77,7 @@ def _pool(provider: str) -> tuple[Any, list]:
     except Exception:  # noqa: BLE001
         log.debug("load_pool(%r) failed", provider, exc_info=True)
         return None, []
-    return pool, [e for e in entries if not any(str(getattr(e, k, "") or "").strip().lower() in _AMBIENT_GH_SOURCES for k in ("source", "label", "key_source"))]
+    return pool, [e for e in entries if not _is_ambient(e)]
 
 
 def _entry(provider: str, credential_id: str):
@@ -257,6 +276,11 @@ def register(registry) -> None:
             raise InvalidParams("provider is required")
         with scoped_home(profile_home_param(params)):
             return {"entries": pool(provider)}
+
+    @registry.method("usage.pool_providers")
+    def pool_providers_(ctx: CallContext, params: dict) -> dict:
+        with scoped_home(profile_home_param(params)):
+            return {"providers": pool_providers()}
 
     @registry.method("usage.balance")
     def balance_(ctx: CallContext, params: dict) -> dict:
