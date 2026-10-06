@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The context compaction reference card now appears right after the message it refers to, including after loading older messages.",
+      "highlight": false,
+      "components": ["app", "web"]
+    }
+  ]
+}

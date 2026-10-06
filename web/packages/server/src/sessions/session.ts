@@ -463,8 +463,6 @@ export class Session {
       cache_write_tokens: this.cache_write_tokens,
       cache_hit_percent: promptCacheHitPercent(this.cache_read_tokens, this.input_tokens),
       personality: this.personality,
-      compression_anchor_visible_idx: this.compression_anchor_visible_idx,
-      compression_anchor_message_key: this.compression_anchor_message_key,
       compression_anchor_summary: this.compression_anchor_summary,
       pre_compression_snapshot: this.pre_compression_snapshot,
       context_engine: this.context_engine,
