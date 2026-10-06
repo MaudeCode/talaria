@@ -1,6 +1,6 @@
 import { oc } from '@orpc/contract'
 import { z } from 'zod'
-import { CronsSchema, CronContextSourcesSchema, CronRecentSchema, CronHistorySchema, CronRunSchema, CronStatusSchema, CronMutationSchema, KanbanBoardsViewSchema, KanbanBoardViewSchema, ExtensionStatusSchema } from '../views.js'
+import { CronsSchema, CronContextSourcesSchema, CronRecentSchema, CronHistorySchema, CronRunSchema, CronStatusSchema, CronMutationSchema, KanbanBoardsViewSchema, KanbanBoardViewSchema, KanbanTaskPolicyShape, ExtensionStatusSchema } from '../views.js'
 import { KanbanAssigneeSchema, KanbanBoardMetaSchema, KanbanEventSchema, KanbanTaskSchema } from '../sidecar/namespaces.js'
 
 /** Crons, kanban, extensions, and the embedded terminal. */
@@ -11,7 +11,8 @@ const tags = ['automation']
 const Ok = z.object({ ok: z.literal(true) })
 
 const JobId = z.object({ job_id: z.string().optional() })
-export const TaskEnvelopeSchema = z.object({ task: KanbanTaskSchema, read_only: z.boolean() })
+const PolicyTaskSchema = KanbanTaskSchema.extend(KanbanTaskPolicyShape)
+export const TaskEnvelopeSchema = z.object({ task: PolicyTaskSchema, read_only: z.boolean() })
 const TerminalBody = z.object({ session_id: z.string().optional() })
 
 export const automationContract = {
@@ -49,7 +50,7 @@ export const automationContract = {
     link: oc.route({ method: 'POST', path: '/api/kanban/links', tags }).input(Loose).output(Loose),
     unlink: oc.route({ method: 'POST', path: '/api/kanban/links/delete', tags }).input(Loose).output(Loose),
     unlinkDelete: oc.route({ method: 'DELETE', path: '/api/kanban/links', tags }).input(Loose).output(Loose),
-    task: oc.route({ method: 'GET', path: '/api/kanban/tasks/{task_id}', tags }).input(z.object({ task_id: z.string(), board: z.string().optional() })).output(Loose),
+    task: oc.route({ method: 'GET', path: '/api/kanban/tasks/{task_id}', tags }).input(z.object({ task_id: z.string(), board: z.string().optional() })).output(z.looseObject({ task: PolicyTaskSchema })),
     taskLog: oc.route({ method: 'GET', path: '/api/kanban/tasks/{task_id}/log', tags }).input(z.object({ task_id: z.string(), board: z.string().optional(), tail: z.string().optional() })).output(z.looseObject({ log: z.array(Json).optional(), entries: z.array(Json).optional() })),
     comment: oc.route({ method: 'POST', path: '/api/kanban/tasks/{task_id}/comments', tags }).input(z.object({ task_id: z.string() }).catchall(Json)).output(Loose),
     block: oc.route({ method: 'POST', path: '/api/kanban/tasks/{task_id}/block', tags }).input(z.object({ task_id: z.string() }).catchall(Json)).output(TaskEnvelopeSchema),

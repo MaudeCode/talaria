@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { request } from 'node:http'
 import { deflateRawSync } from 'node:zlib'
 import { DatabaseSync } from 'node:sqlite'
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
 import { bootTestServer, type SseFrame, type TestServer } from '../test/harness.js'
@@ -382,6 +382,42 @@ describe('crons, kanban, extensions, terminal', () => {
     const eventsFrame = frames.find((f) => f.event === 'events')
     expect(eventsFrame?.id).toBe('7')
     expect((eventsFrame?.data as Json).cursor).toBe(7)
+  })
+
+  it('kanban tasks carry the server-owned card actions and running-exit policy for their status (TAL-557)', async () => {
+    const methods = ['kanban.board', 'kanban.task', 'kanban.task_action', 'kanban.patch_task', 'kanban.create_task'] as const
+    const saved = methods.map((m) => [m, sidecar.responderFor(m)] as const)
+    onTestFinished(() => { for (const [m, r] of saved) sidecar.respond(m, r as never) })
+    const statuses = ['triage', 'todo', 'ready', 'running', 'blocked', 'done', 'archived', 'future']
+    sidecar.respond('kanban.board', () => ({ changed: true, columns: statuses.map((st) => ({ name: st, tasks: [{ id: `t_${st}`, title: st, status: st, priority: 0 }] })), tenants: [], assignees: [], latest_event_id: 1, read_only: false, filters: { tenant: null, assignee: null, include_archived: true, only_mine: false, profile: null } }))
+    const board = await json(await s.get('/api/kanban/board?include_archived=1'))
+    const policy = Object.fromEntries((board.columns as Json[]).map((c) => { const t = (c.tasks as Json[])[0] as Json; return [c.name, { actions: t.available_actions, confirm: t.requires_running_exit_confirmation }] }))
+    const a = (block: boolean, unblock: boolean, complete: boolean, archive: boolean, move_to: string[]) => ({ block, unblock, complete, archive, move_to })
+    expect(policy).toEqual({
+      triage: { actions: a(false, false, false, true, ['todo', 'ready']), confirm: false },
+      todo: { actions: a(false, false, false, true, ['triage', 'ready']), confirm: false },
+      ready: { actions: a(true, false, true, true, ['triage', 'todo']), confirm: false },
+      running: { actions: a(true, false, true, true, ['triage', 'todo', 'ready']), confirm: true },
+      blocked: { actions: a(false, true, true, true, ['triage', 'todo']), confirm: false },
+      done: { actions: a(false, false, false, true, ['triage', 'todo', 'ready']), confirm: false },
+      archived: { actions: a(false, false, false, false, ['triage', 'todo', 'ready']), confirm: false },
+      future: { actions: a(false, false, false, false, []), confirm: false },
+    })
+    expect(board.bulk_move_targets).toEqual(['triage', 'todo', 'ready', 'blocked', 'done'])
+    sidecar.respond('kanban.board', () => ({ changed: false, latest_event_id: 1, read_only: false }))
+    expect((await json(await s.get('/api/kanban/board?since=1'))).bulk_move_targets).toEqual(['triage', 'todo', 'ready', 'blocked', 'done'])
+    // Detail and every mutation envelope carry the policy of the status the server returned.
+    sidecar.respond('kanban.task', () => ({ task: { id: 't_1', title: 'T', status: 'running', priority: 0 }, comments: [], events: [], links: { parents: [], children: [] }, runs: [], read_only: false }))
+    expect((await json(await s.get('/api/kanban/tasks/t_1'))).task).toMatchObject({ requires_running_exit_confirmation: true, available_actions: { block: true, move_to: ['triage', 'todo', 'ready'] } })
+    // Unblock lands where the Agent re-gates it (here `todo`), and the actions follow that status.
+    sidecar.respond('kanban.task_action', (params) => ({ task: { id: params.task_id, title: 'T', status: params.action === 'block' ? 'blocked' : 'todo', priority: 0 }, read_only: false }))
+    expect((await json(await post(s, '/api/kanban/tasks/t_1/unblock', {}))).task).toMatchObject({ status: 'todo', available_actions: a(false, false, false, true, ['triage', 'ready']) })
+    expect((await json(await post(s, '/api/kanban/tasks/t_1/block', {}))).task).toMatchObject({ available_actions: { unblock: true } })
+    sidecar.respond('kanban.patch_task', (params) => ({ task: { id: params.task_id, title: 'T', status: String((params.patch as Json).status), priority: 0 }, read_only: false }))
+    expect((await json(await post(s, '/api/kanban/tasks/t_1/patch', { status: 'done' }))).task).toMatchObject({ available_actions: { complete: false, archive: true } })
+    expect((await json(await post(s, '/api/kanban/tasks/t_1', { status: 'archived' }, 'PATCH'))).task).toMatchObject({ available_actions: { archive: false } })
+    sidecar.respond('kanban.create_task', () => ({ task: { id: 't_new', title: 'N', status: 'triage', priority: 0 }, read_only: false }))
+    expect((await json(await post(s, '/api/kanban/tasks', { title: 'N' }))).task).toMatchObject({ available_actions: { move_to: ['todo', 'ready'] } })
   })
 
   it('extension status, registry, install, static serving, consent, proxy, and uninstall', async () => {

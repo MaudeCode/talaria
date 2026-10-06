@@ -1,0 +1,22 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Kanban cards offer only the actions that work for their current status, and the same actions on iPhone and the web.",
+      "highlight": false,
+      "components": ["app", "web"]
+    },
+    {
+      "category": "Fixed",
+      "summary": "Unblocking or blocking a Kanban card follows it to the column it actually lands in instead of reporting a failure.",
+      "highlight": false,
+      "components": ["app"]
+    },
+    {
+      "category": "Fixed",
+      "summary": "Archiving a Kanban task on the web now archives it, and leaving Running asks for confirmation first.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

@@ -50,9 +50,10 @@ export class FakeSidecar implements SidecarLike {
     return this.responders.get(method)
   }
 
-  /** Override one method for the rest of the test. */
-  respond<M extends SidecarMethodName>(method: M, responder: Responder<M>): void {
-    this.responders.set(method, responder)
+  /** Override one method for the rest of the test; `undefined` restores its recorded fixture. */
+  respond<M extends SidecarMethodName>(method: M, responder: Responder<M> | undefined): void {
+    if (responder) this.responders.set(method, responder)
+    else this.responders.delete(method)
   }
 
   async call<M extends SidecarMethodName>(method: M, params: SidecarParams<M>, opts: CallOptions = {}): Promise<SidecarResult<M>> {

@@ -46852,10 +46852,45 @@
                                   "type": "boolean"
                                 },
                                 "created_at": {},
-                                "updated_at": {}
+                                "updated_at": {},
+                                "available_actions": {
+                                  "type": "object",
+                                  "properties": {
+                                    "block": {
+                                      "type": "boolean"
+                                    },
+                                    "unblock": {
+                                      "type": "boolean"
+                                    },
+                                    "complete": {
+                                      "type": "boolean"
+                                    },
+                                    "archive": {
+                                      "type": "boolean"
+                                    },
+                                    "move_to": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "block",
+                                    "unblock",
+                                    "complete",
+                                    "archive",
+                                    "move_to"
+                                  ]
+                                },
+                                "requires_running_exit_confirmation": {
+                                  "type": "boolean"
+                                }
                               },
                               "required": [
-                                "id"
+                                "id",
+                                "available_actions",
+                                "requires_running_exit_confirmation"
                               ],
                               "additionalProperties": {}
                             }
@@ -46899,8 +46934,17 @@
                     },
                     "changed": {
                       "type": "boolean"
+                    },
+                    "bulk_move_targets": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
                     }
                   },
+                  "required": [
+                    "bulk_move_targets"
+                  ],
                   "additionalProperties": {}
                 }
               }
@@ -47523,13 +47567,48 @@
                           "type": "integer",
                           "minimum": -9007199254740991,
                           "maximum": 9007199254740991
+                        },
+                        "available_actions": {
+                          "type": "object",
+                          "properties": {
+                            "block": {
+                              "type": "boolean"
+                            },
+                            "unblock": {
+                              "type": "boolean"
+                            },
+                            "complete": {
+                              "type": "boolean"
+                            },
+                            "archive": {
+                              "type": "boolean"
+                            },
+                            "move_to": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "block",
+                            "unblock",
+                            "complete",
+                            "archive",
+                            "move_to"
+                          ]
+                        },
+                        "requires_running_exit_confirmation": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
                         "id",
                         "title",
                         "status",
-                        "priority"
+                        "priority",
+                        "available_actions",
+                        "requires_running_exit_confirmation"
                       ],
                       "additionalProperties": {}
                     },
@@ -47692,9 +47771,72 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "propertyNames": {
-                    "type": "string"
+                  "properties": {
+                    "task": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string"
+                        },
+                        "priority": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "available_actions": {
+                          "type": "object",
+                          "properties": {
+                            "block": {
+                              "type": "boolean"
+                            },
+                            "unblock": {
+                              "type": "boolean"
+                            },
+                            "complete": {
+                              "type": "boolean"
+                            },
+                            "archive": {
+                              "type": "boolean"
+                            },
+                            "move_to": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "block",
+                            "unblock",
+                            "complete",
+                            "archive",
+                            "move_to"
+                          ]
+                        },
+                        "requires_running_exit_confirmation": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "title",
+                        "status",
+                        "priority",
+                        "available_actions",
+                        "requires_running_exit_confirmation"
+                      ],
+                      "additionalProperties": {}
+                    }
                   },
+                  "required": [
+                    "task"
+                  ],
                   "additionalProperties": {}
                 }
               }
@@ -47741,13 +47883,48 @@
                           "type": "integer",
                           "minimum": -9007199254740991,
                           "maximum": 9007199254740991
+                        },
+                        "available_actions": {
+                          "type": "object",
+                          "properties": {
+                            "block": {
+                              "type": "boolean"
+                            },
+                            "unblock": {
+                              "type": "boolean"
+                            },
+                            "complete": {
+                              "type": "boolean"
+                            },
+                            "archive": {
+                              "type": "boolean"
+                            },
+                            "move_to": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "block",
+                            "unblock",
+                            "complete",
+                            "archive",
+                            "move_to"
+                          ]
+                        },
+                        "requires_running_exit_confirmation": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
                         "id",
                         "title",
                         "status",
-                        "priority"
+                        "priority",
+                        "available_actions",
+                        "requires_running_exit_confirmation"
                       ],
                       "additionalProperties": {}
                     },
@@ -47913,13 +48090,48 @@
                           "type": "integer",
                           "minimum": -9007199254740991,
                           "maximum": 9007199254740991
+                        },
+                        "available_actions": {
+                          "type": "object",
+                          "properties": {
+                            "block": {
+                              "type": "boolean"
+                            },
+                            "unblock": {
+                              "type": "boolean"
+                            },
+                            "complete": {
+                              "type": "boolean"
+                            },
+                            "archive": {
+                              "type": "boolean"
+                            },
+                            "move_to": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "block",
+                            "unblock",
+                            "complete",
+                            "archive",
+                            "move_to"
+                          ]
+                        },
+                        "requires_running_exit_confirmation": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
                         "id",
                         "title",
                         "status",
-                        "priority"
+                        "priority",
+                        "available_actions",
+                        "requires_running_exit_confirmation"
                       ],
                       "additionalProperties": {}
                     },
@@ -47978,13 +48190,48 @@
                           "type": "integer",
                           "minimum": -9007199254740991,
                           "maximum": 9007199254740991
+                        },
+                        "available_actions": {
+                          "type": "object",
+                          "properties": {
+                            "block": {
+                              "type": "boolean"
+                            },
+                            "unblock": {
+                              "type": "boolean"
+                            },
+                            "complete": {
+                              "type": "boolean"
+                            },
+                            "archive": {
+                              "type": "boolean"
+                            },
+                            "move_to": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "block",
+                            "unblock",
+                            "complete",
+                            "archive",
+                            "move_to"
+                          ]
+                        },
+                        "requires_running_exit_confirmation": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
                         "id",
                         "title",
                         "status",
-                        "priority"
+                        "priority",
+                        "available_actions",
+                        "requires_running_exit_confirmation"
                       ],
                       "additionalProperties": {}
                     },
@@ -48043,13 +48290,48 @@
                           "type": "integer",
                           "minimum": -9007199254740991,
                           "maximum": 9007199254740991
+                        },
+                        "available_actions": {
+                          "type": "object",
+                          "properties": {
+                            "block": {
+                              "type": "boolean"
+                            },
+                            "unblock": {
+                              "type": "boolean"
+                            },
+                            "complete": {
+                              "type": "boolean"
+                            },
+                            "archive": {
+                              "type": "boolean"
+                            },
+                            "move_to": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "block",
+                            "unblock",
+                            "complete",
+                            "archive",
+                            "move_to"
+                          ]
+                        },
+                        "requires_running_exit_confirmation": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
                         "id",
                         "title",
                         "status",
-                        "priority"
+                        "priority",
+                        "available_actions",
+                        "requires_running_exit_confirmation"
                       ],
                       "additionalProperties": {}
                     },

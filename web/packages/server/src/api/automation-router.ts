@@ -10,7 +10,7 @@ import { SessionNotFound } from '../sessions/store.js'
 import { ConfigUnavailable, type Dict } from '../config/agent-config.js'
 import { SidecarError } from '../sidecar/client.js'
 import { ExtensionError } from '../tools/extensions.js'
-import { intQuery, kanbanFailure, truthyQuery } from '../tools/kanban.js'
+import { intQuery, kanbanFailure, truthyQuery, withKanbanPolicy } from '../tools/kanban.js'
 import { TerminalNotRunning } from '../tools/terminal.js'
 import { onboardingGateAllows } from './settings-router.js'
 import { sanitizeError } from '../workspace/media.js'
@@ -44,10 +44,10 @@ async function run<T>(fn: () => Promise<T> | T): Promise<never> {
 const home = (ctx: RequestContext): string => ctx.deps.profileHome(activeProfileName(ctx))
 const boardOf = (v: unknown): string | null => str(v).trim() || null
 
-/** Kanban dispatcher mapping: sidecar refusals → 400/404/409 like Python. */
+/** Kanban dispatcher mapping: sidecar refusals → 400/404/409 like Python. Every returned task carries its card policy. */
 async function kb<T>(fn: () => Promise<T>): Promise<T> {
   try {
-    return await fn()
+    return withKanbanPolicy(await fn())
   } catch (error) {
     return kanbanFailure(error)
   }
