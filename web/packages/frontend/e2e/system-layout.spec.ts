@@ -1,15 +1,16 @@
 import { expect, settle, test } from './fixtures'
+import { updatesCheckView } from '../../server/dist/tools/updates.js'
 
 // Service-worker requests bypass page routing; these fixtures own every response.
 test.use({ serviceWorkers: 'block' })
 
 test('failed checks keep both update paths aligned', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1280, height: 900 })
-  await page.route('**/api/updates/check', (route) => route.fulfill({ json: {
+  await page.route('**/api/updates/check', (route) => route.fulfill({ json: updatesCheckView({
     cached: false,
     webui: { behind: null, manual_update: true, error: 'GitHub answered 404', current_version: 'web-v1.0.0-46-g8c2d4c2-dirty' },
     agent: { behind: null, error: 'fetch failed: git fetch origin --tags --force timed out after 15s', current_version: '0.21.3' },
-  } }))
+  }) }))
   await page.goto('/settings/system')
   await settle(page)
   const web = page.getByRole('switch', { name: 'Automatically apply Web updates', exact: true })
@@ -27,11 +28,11 @@ for (const width of [1280, 760, 390]) {
       update_channel: 'stable', agent_update_channel: 'experimental', check_for_updates: true, auto_apply_updates: false,
       webui_version: 'web-v1.2.3', agent_version: 'v2026.9.21',
     } }))
-    await page.route('**/api/updates/check', (route) => route.fulfill({ json: {
+    await page.route('**/api/updates/check', (route) => route.fulfill({ json: updatesCheckView({
       cached: false,
       webui: { behind: 1, release_based: true, current_version: 'web-v1.2.3', latest_version: 'web-v1.3.0', install_kind: 'npm', no_git: true, manual_update: false },
       agent: { behind: 14, release_based: false, current_version: 'v2026.9.21', latest_version: 'main' },
-    } }))
+    }) }))
     await page.goto('/settings/system')
     await settle(page)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)

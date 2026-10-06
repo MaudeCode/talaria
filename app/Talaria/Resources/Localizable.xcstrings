@@ -2882,6 +2882,9 @@
     "The SSO response didn't match this server. Try signing in again." : {
 
     },
+    "This server can't update itself from the app. Update it where it's installed." : {
+
+    },
     "This server doesn't offer single sign-on." : {
 
     },
@@ -125505,6 +125508,9 @@
         }
       }
     },
+    "Update available" : {
+
+    },
     "Update available · %lld behind" : {
       "localizations" : {
         "ar" : {
@@ -125722,6 +125728,9 @@
           }
         }
       }
+    },
+    "Update on the server" : {
+
     },
     "Update server?" : {
       "localizations" : {

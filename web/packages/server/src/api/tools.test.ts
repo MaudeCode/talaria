@@ -290,8 +290,9 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     expect(body).toMatchObject({ webui: null, agent: null, cached: true, channel: 'stable' })
     res = await post(s, '/api/updates/check', { force: true })
     body = await json(res)
-    expect((body.webui as Json)).toMatchObject({ name: 'webui', manual_update: true, no_git: true, current_version: 'web-v0.0.0-test' })
-    expect((body.agent as Json)).toMatchObject({ name: 'agent', behind: null, no_git: true })
+    // TAL-559: the server decides each target's status and apply availability.
+    expect((body.webui as Json)).toMatchObject({ name: 'webui', manual_update: true, no_git: true, current_version: 'web-v0.0.0-test', state: 'check_failed', can_apply: false, installed_unverified: false, manual_link: true, target_version: null })
+    expect((body.agent as Json)).toMatchObject({ name: 'agent', behind: null, no_git: true, state: 'manual', can_apply: false, manual_link: false })
     expect((await json(await s.get('/api/updates/check'))).cached).toBe(true)
     res = await post(s, '/api/updates/apply', { target: 'webui' })
     body = await json(res)
@@ -309,7 +310,8 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     res = await post(s, '/api/settings', { check_for_updates: false })
     expect(res.status).toBe(200)
     res = await s.get('/api/updates/check')
-    expect(await json(res)).toEqual({ disabled: true })
+    const off = { state: 'off', can_apply: false, installed_unverified: false, manual_link: false, target_version: null }
+    expect(await json(res)).toEqual({ disabled: true, webui: off, agent: off })
     res = await post(s, '/api/updates/check', { force: true })
     expect((await json(res)).channel).toBe('stable')
     res = await s.get('/api/transcribe/capability')

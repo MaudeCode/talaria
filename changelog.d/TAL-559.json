@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The server now decides each update status and whether Update is offered, so a manual install or local changes no longer show an update the server cannot apply.",
+      "highlight": false,
+      "components": ["app", "web"]
+    }
+  ]
+}

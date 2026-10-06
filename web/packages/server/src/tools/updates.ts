@@ -1277,6 +1277,43 @@ export class UpdateService {
 
 const ignoredAgent = (): Dict => ({ name: 'agent', behind: 0, ignored: true })
 
+export type UpdateState = 'up_to_date' | 'release_ready' | 'commits_behind' | 'local_changes' | 'finish' | 'manual' | 'check_failed' | 'off' | 'unknown'
+
+/** TAL-559: one target's status and apply availability, decided here so clients only word them. */
+export function updateTargetView(name: 'webui' | 'agent', info: Dict, off: boolean): Dict {
+  const behind = typeof info.behind === 'number' ? info.behind : null
+  // Web refuses dirty checkouts; Agent updates stash local changes and restore them, so only Web dirt blocks.
+  const state: UpdateState = off || info.ignored === true ? 'off'
+    : info.error ? 'check_failed'
+    : info.dirty === true && name === 'webui' ? 'local_changes'
+    : info.metadata_repair === true ? 'finish'
+    : info.manual_update === true ? 'manual'
+    : behind !== null && behind > 0 ? (info.release_based === true ? 'release_ready' : 'commits_behind')
+    : behind === 0 ? 'up_to_date'
+    : info.no_git === true && info.install_kind !== 'npm' ? 'manual'
+    : 'unknown'
+  const latest = typeof info.latest_version === 'string' ? info.latest_version : null
+  const current = typeof info.current_version === 'string' ? info.current_version : ''
+  return {
+    ...info, state,
+    can_apply: ['release_ready', 'commits_behind', 'finish'].includes(state) && info.manual_update !== true && (info.no_git !== true || info.install_kind === 'npm'),
+    // Stable Agent reports a bare 12-hex revision when its checkout sits on no release tag.
+    installed_unverified: state === 'release_ready' && (!current || /^[0-9a-f]{12}$/.test(current)),
+    manual_link: name === 'webui' && state !== 'off' && info.manual_update === true && Boolean(info.error || info.dirty || info.behind !== 0),
+    target_version: state === 'finish' || state === 'release_ready' || (state === 'manual' && info.release_based === true && (behind ?? 0) > 0) ? latest : null,
+  }
+}
+
+/** `/api/updates/check`: every present target carries its view; disabled checks report both targets off. */
+export function updatesCheckView(status: Dict): Dict {
+  const off = status.disabled === true
+  const view = (name: 'webui' | 'agent'): Dict | null => {
+    const info = status[name]
+    return info && typeof info === 'object' ? updateTargetView(name, info as Dict, off) : off ? updateTargetView(name, {}, true) : null
+  }
+  return { ...status, webui: view('webui'), agent: view('agent') }
+}
+
 /** Python `_wait_until_restart_safe`: poll until no chat work is active, bounded so a stuck run cannot jam the update forever. */
 export async function waitUntilRestartSafe(blockers: () => RestartBlockers, opts: { pollMs?: number; maxWaitMs?: number; sleep?: (ms: number) => Promise<void>; now?: () => number; log?: (line: string) => void } = {}): Promise<RestartBlockers & { wait_timed_out?: boolean }> {
   const now = opts.now ?? (() => Date.now())

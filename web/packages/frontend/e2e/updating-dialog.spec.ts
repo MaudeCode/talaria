@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test'
 import { expect, settle, test } from './fixtures'
+import { updatesCheckView } from '../../server/dist/tools/updates.js'
 
 // Service-worker requests bypass page routing; these fixtures own every update response and never install anything.
 test.use({ serviceWorkers: 'block' })
@@ -50,7 +51,7 @@ async function serveNotifications(page: Page) {
 }
 
 async function serveUpdatesCheck(page: Page, updates: { web: number; agent: number }) {
-  await page.route('**/api/updates/check', (route) => route.fulfill({ json: { cached: true, webui: { behind: updates.web }, agent: { behind: updates.agent } } }))
+  await page.route('**/api/updates/check', (route) => route.fulfill({ json: updatesCheckView({ cached: true, webui: { behind: updates.web }, agent: { behind: updates.agent } }) }))
 }
 
 /** Dropped connections are this test's subject; their console noise is expected. */

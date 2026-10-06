@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test'
 import { expect, settle, test } from './fixtures'
+import { updatesCheckView } from '../../server/dist/tools/updates.js'
 
 /** Each apply opens the Updating dialog; with no server record to follow it shows the server's answer. */
 async function closeUpdating(page: Page, name: string, text: string) {
@@ -19,9 +20,9 @@ test('automatic updates retain the selected channel and can apply a Stable npm u
     if (route.request().method() === 'POST') settings = { ...settings, ...route.request().postDataJSON() as Partial<typeof settings> }
     return route.fulfill({ json: settings })
   })
-  await page.route('**/api/updates/check', (route) => route.fulfill({ json: {
+  await page.route('**/api/updates/check', (route) => route.fulfill({ json: updatesCheckView({
     webui: { behind: applied ? 0 : 1, install_kind: 'npm', no_git: true, manual_update: false }, agent: { behind: 0 },
-  } }))
+  }) }))
   await page.route('**/api/updates/apply', (route) => {
     expect(route.request().postDataJSON()).toEqual({ target: 'webui', channel: 'stable', tab_id: expect.any(String) })
     applied = true
@@ -49,9 +50,9 @@ for (const initialWebBehind of [0, 1]) {
     let webBehind = initialWebBehind
     let agentBehind = 1
     const targets: string[] = []
-    await page.route('**/api/updates/check', (route) => route.fulfill({ json: {
+    await page.route('**/api/updates/check', (route) => route.fulfill({ json: updatesCheckView({
       cached: false, webui: { behind: webBehind }, agent: { behind: agentBehind },
-    } }))
+    }) }))
     await page.route('**/api/updates/apply', (route) => {
       const body = route.request().postDataJSON() as { target: string; channel?: string }
       expect(body).toEqual(body.target === 'webui' ? { target: 'webui', channel: 'stable', tab_id: expect.any(String) } : { target: 'agent', agent_channel: 'stable', tab_id: expect.any(String) })
@@ -80,9 +81,9 @@ for (const initialWebBehind of [0, 1]) {
 test('Web updates: finish an incomplete release at the current source', async ({ page }, testInfo) => {
   let repair = true
   let applied = 0
-  await page.route('**/api/updates/check', (route) => route.fulfill({ json: {
+  await page.route('**/api/updates/check', (route) => route.fulfill({ json: updatesCheckView({
     cached: false, webui: { behind: 0, metadata_repair: repair, current_sha: 'a'.repeat(40), latest_sha: 'a'.repeat(40) }, agent: { behind: 0 },
-  } }))
+  }) }))
   await page.route('**/api/updates/apply', (route) => {
     expect(route.request().method()).toBe('POST')
     expect(route.request().postDataJSON()).toEqual({ target: 'webui', channel: 'stable', tab_id: expect.any(String) })
@@ -113,10 +114,10 @@ test('Experimental uses the existing check and update buttons', async ({ page },
     }
     return route.fulfill({ json: { update_channel: channel, check_for_updates: true, ignore_agent_updates: true } })
   })
-  await page.route('**/api/updates/check', (route) => route.fulfill({ json: {
+  await page.route('**/api/updates/check', (route) => route.fulfill({ json: updatesCheckView({
     channel, cached: false, webui: { channel, branch: 'origin/main', release_based: false, behind,
-      current_sha: 'a'.repeat(40), latest_sha: 'b'.repeat(40) }, agent: { behind: 0 },
-  } }))
+      current_sha: 'a'.repeat(40), latest_sha: 'b'.repeat(40) }, agent: { name: 'agent', behind: 0, ignored: true },
+  }) }))
   await page.route('**/api/updates/apply', (route) => {
     expect(route.request().postDataJSON()).toEqual({ target: 'webui', channel: 'experimental', tab_id: expect.any(String) })
     applied += 1
@@ -137,12 +138,37 @@ test('Experimental uses the existing check and update buttons', async ({ page },
   expect(applied).toBe(1)
 })
 
+test('ignoring Agent updates shows the server status and removes the Agent action (TAL-559)', async ({ page }, testInfo) => {
+  let settings = { update_channel: 'stable', agent_update_channel: 'stable', check_for_updates: true, ignore_agent_updates: false }
+  await page.route('**/api/settings', (route) => {
+    if (route.request().method() === 'POST') settings = { ...settings, ...route.request().postDataJSON() as Partial<typeof settings> }
+    return route.fulfill({ json: settings })
+  })
+  await page.route('**/api/updates/check', (route) => route.fulfill({ json: updatesCheckView({
+    cached: true, webui: { behind: 0 }, agent: settings.ignore_agent_updates ? { name: 'agent', behind: 0, ignored: true } : { behind: 2, release_based: true, current_version: 'abcdef012345', latest_version: 'v2026.10.1' },
+  }) }))
+  await page.goto('/settings/system')
+  await settle(page)
+  const agent = page.getByRole('region', { name: 'Hermes Agent', exact: true })
+  await expect(agent.getByText('Hermes Agent v2026.10.1 is available', { exact: true })).toBeVisible()
+  await expect(agent.getByText('The installed release could not be verified.', { exact: true })).toBeVisible()
+  await expect(agent.getByRole('button', { name: 'Update Agent', exact: true })).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('agent-release-ready.png'), fullPage: true })
+  await agent.getByRole('switch', { name: 'Ignore Agent updates', exact: true }).click()
+  await expect.poll(() => settings.ignore_agent_updates).toBe(true)
+  await expect(agent.getByText('Hermes Agent is not being checked for updates', { exact: true })).toBeVisible()
+  await expect(agent.getByRole('button', { name: 'Update Agent', exact: true })).toHaveCount(0)
+  await expect(page.getByText('Talaria Web is up to date', { exact: true })).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath('agent-ignored.png'), fullPage: true })
+})
+
 for (const scenario of [
   { name: 'private-access', update: { behind: null, manual_update: true, error: 'Synthetic release access unavailable' }, status: 'Talaria Web update check failed' },
   { name: 'local-changes', update: { behind: 1, manual_update: true, dirty: true }, status: 'Local changes block Talaria Web updates' },
 ]) {
   test(`Web updates: ${scenario.name}`, async ({ page }, testInfo) => {
-    await page.route('**/api/updates/check', (route) => route.fulfill({ json: { cached: false, webui: scenario.update, agent: { behind: 0 } } }))
+    await page.route('**/api/updates/check', (route) => route.fulfill({ json: updatesCheckView({ cached: false, webui: scenario.update, agent: { behind: 0 } }) }))
     await page.goto('/settings/system')
     await settle(page)
     await expect(page.getByText(scenario.status, { exact: true })).toBeVisible()
