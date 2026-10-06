@@ -263,7 +263,7 @@ export const SessionSchema = z.looseObject({
   context_length: NullableNumber.optional(), threshold_tokens: NullableNumber.optional(), last_prompt_tokens: NullableNumber.optional(), post_compression_context_tokens_estimate: NullableNumber.optional(), ...ContextUsageFields,
   enabled_toolsets: z.array(z.string()).nullable().optional(), composer_draft: ComposerDraftSchema.optional(), is_cli_session: z.boolean().optional(), source_kind: SourceKindSchema, is_messaging_session: IsMessagingSessionSchema, sort_ts: SortTsSchema, read_only: ReadOnlySchema, can_branch: CanBranchSchema, can_pin: CanPinSchema, can_archive: CanArchiveSchema, can_delete: CanDeleteSchema, can_duplicate: CanDuplicateSchema, source_tag: NullableString.optional(),
   source_label: NullableString.optional(), session_source: NullableString.optional(), raw_source: NullableString.optional(), parent_session_id: NullableString.optional(), worktree_path: NullableString.optional(),
-  worktree_branch: NullableString.optional(), worktree_repo_root: NullableString.optional(), share_token: NullableString.optional(), share_created_at: NullableNumber.optional(), manual_title: z.boolean().optional(),
+  worktree_branch: NullableString.optional(), worktree_repo_root: NullableString.optional(), share_token: NullableString.optional(), share_url: NullableString.optional(), share_created_at: NullableNumber.optional(), manual_title: z.boolean().optional(),
   compression_anchor_summary: NullableString.optional(), compression_recovery: z.record(z.string(), Json).optional(), recommended_recovery_action: NullableString.optional(), compression_recovery_action: NullableString.optional(),
   compression_recovery_source_session_id: NullableString.optional(), gateway_routing: Json.optional(), _messages_offset: z.number().optional(), _messages_truncated: z.boolean().optional(), _msg_limit_max: z.number().optional(), _load_revision: z.string().optional(),
   /**
@@ -286,7 +286,7 @@ export const SessionRowSchema = z.looseObject({
   message_count: z.number().optional(), pinned: z.boolean().optional(), archived: z.boolean().optional(), project_id: NullableString.optional(), profile: NullableString.optional(), is_streaming: IsStreamingSchema,
   is_cli_session: z.boolean().optional(), source_kind: SourceKindSchema, is_messaging_session: IsMessagingSessionSchema, sort_ts: SortTsSchema, cron_running: z.boolean().optional(), read_only: ReadOnlySchema, can_branch: CanBranchSchema, can_pin: CanPinSchema, can_archive: CanArchiveSchema, can_delete: CanDeleteSchema, can_duplicate: CanDuplicateSchema, attention: z.looseObject({ kind: z.string().optional(), count: z.number().optional() }).nullable().optional(),
   source_tag: NullableString.optional(), source_label: NullableString.optional(), session_source: NullableString.optional(), raw_source: NullableString.optional(), parent_session_id: NullableString.optional(),
-  active_stream_id: ActiveStreamIdSchema, share_token: NullableString.optional(), worktree_branch: NullableString.optional(), match_type: z.enum(['title', 'metadata', 'content']).optional(), match_preview: NullableString.optional(),
+  active_stream_id: ActiveStreamIdSchema, share_token: NullableString.optional(), share_url: NullableString.optional(), worktree_branch: NullableString.optional(), match_type: z.enum(['title', 'metadata', 'content']).optional(), match_preview: NullableString.optional(),
   workspace_name: WorkspaceNameSchema,
   ...ContextUsageFields,
 })

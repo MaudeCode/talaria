@@ -564,6 +564,21 @@ describe('session lifecycle over HTTP', () => {
     expect((await s.get('/api/share/../etc')).status).toBe(404)
   })
 
+  it('ships each shared row its public share URL, sidebar list included (TAL-563)', async () => {
+    const a = await newSession(s)
+    const sid = String(a.session_id)
+    writeMessages(s, sid, [{ role: 'user', content: 'share me' }, { role: 'assistant', content: 'ok' }])
+    const created = await json(await post(s, '/api/share/create', { session_id: sid }))
+    const url = String((created.share as Json).url)
+    expect(url).toBe(`/share/${String((created.share as Json).token)}`)
+    expect((created.session as Json).share_url).toBe(url)
+    const row = async () => ((await json(await s.get('/api/sessions'))).sessions as Json[]).find((r) => r.session_id === sid)
+    expect((await row())?.share_url).toBe(url)
+    const revoked = await json(await post(s, '/api/share/revoke', { session_id: sid }))
+    expect((revoked.session as Json).share_url).toBeNull()
+    expect((await row())?.share_url).toBeNull()
+  })
+
   it('revokes a session share when the session is deleted', async () => {
     const a = await newSession(s)
     const sid = String(a.session_id)

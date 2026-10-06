@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A shared conversation's menu can copy its public link and refresh its snapshot again, and revoking the link now asks for confirmation.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
