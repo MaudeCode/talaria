@@ -5,10 +5,9 @@ cached agent like it does for the CLI and gateway."""
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 
-from conftest import AGENT_DIR, AGENT_PYTHON, SIDECAR_ROOT, requires_agent
+from conftest import AGENT_DIR, AGENT_PYTHON, isolated_env, requires_agent
 
 # Runs on the Agent interpreter: real config loading, a stand-in AIAgent that records its kwargs.
 PROBE = """
@@ -72,9 +71,7 @@ def test_turns_carry_the_profile_fallback_chain_and_rebuild_when_it_changes(tmp_
     root.mkdir()
     (root / "config.yaml").write_text(CONFIG)
     (root / "profiles" / "plain").mkdir(parents=True)
-    env = {"PATH": os.environ.get("PATH", ""), "HOME": str(tmp_path), "HERMES_HOME": str(root), "PYTHONPATH": str(SIDECAR_ROOT), "HERMES_STATE_DB_GUARD_BYPASS": "1"}
-    if os.environ.get("LD_LIBRARY_PATH"):  # relocated actions/setup-python interpreter
-        env["LD_LIBRARY_PATH"] = os.environ["LD_LIBRARY_PATH"]
+    env = isolated_env(root)
     run = subprocess.run([AGENT_PYTHON, "-c", PROBE, str(AGENT_DIR)], env=env, capture_output=True, text=True, timeout=120)
     assert run.returncode == 0, run.stderr[-4000:]
     seen = json.loads(run.stdout.strip().splitlines()[-1])

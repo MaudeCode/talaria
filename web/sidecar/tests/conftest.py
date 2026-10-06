@@ -54,26 +54,37 @@ AGENT_PYTHON = discover_python(AGENT_DIR)
 requires_agent = pytest.mark.skipif(AGENT_DIR is None or AGENT_PYTHON is None, reason="pinned Hermes Agent checkout with venv not found")
 
 
+def isolated_env(hermes_home: pathlib.Path, *, home: pathlib.Path | None = None, **extra: str) -> dict[str, str]:
+    """Environment for a process on the Agent's interpreter: a disposable home and only PATH from the caller."""
+    env = {
+        "PATH": os.environ.get("PATH", ""),
+        "HOME": str(home or hermes_home.parent),
+        "HERMES_HOME": str(hermes_home),
+        "PYTHONPATH": str(SIDECAR_ROOT),
+        # The Agent's hermes_state refuses paths that look like a test tree
+        # unless told the state is disposable; every home here is.
+        "HERMES_STATE_DB_GUARD_BYPASS": "1",
+        # A tirith scan downloads tirith into the home and leaves a detached
+        # threat-DB updater writing there after the test ends.
+        "TIRITH_ENABLED": "0",
+    }
+    # GitHub's relocated Linux Python (actions/setup-python) only loads libpython with this set.
+    if os.environ.get("LD_LIBRARY_PATH"):
+        env["LD_LIBRARY_PATH"] = os.environ["LD_LIBRARY_PATH"]
+    env.update(extra)
+    return env
+
+
 class SidecarProcess:
     """Drive one sidecar over stdio from a test."""
 
     def __init__(self, hermes_home: pathlib.Path, *, env: dict | None = None, python: str | None = None, agent_dir: pathlib.Path | None = None):
-        environ = {
-            "PATH": os.environ.get("PATH", ""),
-            "HOME": str(hermes_home.parent),
-            "HERMES_HOME": str(hermes_home),
+        environ = isolated_env(hermes_home, **{
             "TALARIA_SIDECAR_AGENT_DIR": str(agent_dir or AGENT_DIR or ""),
-            "PYTHONPATH": str(SIDECAR_ROOT),
             "PYTHONUNBUFFERED": "1",
             "TALARIA_SIDECAR_LOG_LEVEL": "DEBUG",
-            # The Agent's hermes_state refuses paths that look like a test tree
-            # unless told the state is disposable; every home here is.
-            "HERMES_STATE_DB_GUARD_BYPASS": "1",
-        }
-        # GitHub's relocated Linux Python (actions/setup-python) only loads libpython with this set.
-        if os.environ.get("LD_LIBRARY_PATH"):
-            environ["LD_LIBRARY_PATH"] = os.environ["LD_LIBRARY_PATH"]
-        environ.update(env or {})
+            **(env or {}),
+        })
         self.proc = subprocess.Popen(
             [python or AGENT_PYTHON or sys.executable, "-m", "talaria_sidecar"],
             cwd=str(SIDECAR_ROOT), env=environ, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1,
@@ -139,6 +150,27 @@ class SidecarProcess:
         except subprocess.TimeoutExpired:
             self.proc.kill()
             return self.proc.wait(timeout=timeout)
+
+
+@pytest.fixture(autouse=True)
+def no_surviving_processes(tmp_path_factory: pytest.TempPathFactory):
+    """Fail a test that leaves a process naming the session's temp tree running, so cleanup never races a writer."""
+    yield
+    base = str(tmp_path_factory.getbasetemp())
+    listing = subprocess.run(["ps", "-eo", "pid=,ppid=,args="], capture_output=True, text=True, check=True).stdout
+    rows = [(int(parts[0]), int(parts[1]), parts[2]) for parts in (line.split(None, 2) for line in listing.splitlines()) if len(parts) == 3]
+    # The runner and its parents may name the temp tree themselves (--basetemp).
+    parents, runner, pid = {pid: ppid for pid, ppid, _ in rows}, set(), os.getpid()
+    while pid > 1 and pid not in runner:
+        runner.add(pid)
+        pid = parents.get(pid, 0)
+    left = [(pid, args) for pid, _, args in rows if base in args and pid not in runner]
+    for pid, _ in left:
+        try:
+            os.kill(pid, 9)
+        except ProcessLookupError:
+            pass
+    assert not left, f"processes outlived the test: {left}"
 
 
 @pytest.fixture

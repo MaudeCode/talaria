@@ -10,7 +10,7 @@ import sys
 
 import pytest
 
-from conftest import AGENT_DIR, AGENT_PYTHON, SidecarProcess, assert_matches, load_schema, requires_agent
+from conftest import AGENT_DIR, AGENT_PYTHON, SidecarProcess, assert_matches, isolated_env, load_schema, requires_agent
 from scenarios import SCENARIOS, UNEXERCISED
 from talaria_sidecar import SIDECAR_RPC_VERSION
 
@@ -21,10 +21,7 @@ def _seed_state_db(home: pathlib.Path) -> None:
         "db = SessionDB(pathlib.Path(sys.argv[2]) / 'state.db'); db.create_session('cli-1', source='cli'); "
         "db.append_message('cli-1', role='user', content='hi'); db.close()"
     )
-    env = {"HOME": str(home.parent), "HERMES_HOME": str(home), "PATH": "/usr/bin:/bin", "HERMES_STATE_DB_GUARD_BYPASS": "1"}
-    if os.environ.get("LD_LIBRARY_PATH"):  # relocated actions/setup-python interpreter
-        env["LD_LIBRARY_PATH"] = os.environ["LD_LIBRARY_PATH"]
-    subprocess.run([AGENT_PYTHON, "-c", code, str(AGENT_DIR), str(home)], check=True, env=env)
+    subprocess.run([AGENT_PYTHON, "-c", code, str(AGENT_DIR), str(home)], check=True, env=isolated_env(home, PATH="/usr/bin:/bin"))
 
 
 def run_scenarios(proc: SidecarProcess, home: pathlib.Path):

@@ -5,10 +5,9 @@ the server can drop the row."""
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 
-from conftest import AGENT_DIR, AGENT_PYTHON, SIDECAR_ROOT, requires_agent
+from conftest import AGENT_DIR, AGENT_PYTHON, isolated_env, requires_agent
 
 # Runs on the Agent interpreter: the Agent's own summary-request constant, a stand-in AIAgent returning its exit shape.
 PROBE = """
@@ -55,9 +54,7 @@ print(json.dumps({"status": result["status"], "tool_limit_reached": result["tool
 def test_an_exhausted_tool_budget_reports_the_limit_and_the_agents_summary_request(tmp_path) -> None:
     root = tmp_path / ".hermes"
     root.mkdir()
-    env = {"PATH": os.environ.get("PATH", ""), "HOME": str(tmp_path), "HERMES_HOME": str(root), "PYTHONPATH": str(SIDECAR_ROOT), "HERMES_STATE_DB_GUARD_BYPASS": "1"}
-    if os.environ.get("LD_LIBRARY_PATH"):  # relocated actions/setup-python interpreter
-        env["LD_LIBRARY_PATH"] = os.environ["LD_LIBRARY_PATH"]
+    env = isolated_env(root)
     run = subprocess.run([AGENT_PYTHON, "-c", PROBE, str(AGENT_DIR)], env=env, capture_output=True, text=True, timeout=120)
     assert run.returncode == 0, run.stderr[-4000:]
     assert json.loads(run.stdout.strip().splitlines()[-1]) == {"status": "completed", "tool_limit_reached": True, "request_matches": True}

@@ -3,18 +3,15 @@
 from __future__ import annotations
 
 import json
-import os
 import pathlib
 import subprocess
 
-from conftest import AGENT_DIR, AGENT_PYTHON, SidecarProcess
+from conftest import AGENT_DIR, AGENT_PYTHON, SidecarProcess, isolated_env
 
 
 def _agent(home: pathlib.Path, code: str, *args: str) -> str:
     """Run ``code`` on the pinned Agent's interpreter with ``home`` as its Hermes home."""
-    env = {"HOME": str(home.parent), "HERMES_HOME": str(home), "PATH": "/usr/bin:/bin", "HERMES_STATE_DB_GUARD_BYPASS": "1"}
-    if os.environ.get("LD_LIBRARY_PATH"):
-        env["LD_LIBRARY_PATH"] = os.environ["LD_LIBRARY_PATH"]
+    env = isolated_env(home, PATH="/usr/bin:/bin")
     prelude = "import sys, json, time; sys.path.insert(0, sys.argv[1]); from tools import async_delegation as ad\n"
     out = subprocess.run([AGENT_PYTHON, "-c", prelude + code, str(AGENT_DIR), *args], check=True, env=env, capture_output=True, text=True)
     return out.stdout.strip()
