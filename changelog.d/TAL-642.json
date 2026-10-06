@@ -1,0 +1,14 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Signing in to Talaria Relay on a second iPhone or iPad connects instead of failing.",
+      "highlight": false
+    },
+    {
+      "category": "Changed",
+      "summary": "Talaria Relay errors explain what went wrong in plain language instead of showing raw server responses.",
+      "highlight": false
+    }
+  ]
+}

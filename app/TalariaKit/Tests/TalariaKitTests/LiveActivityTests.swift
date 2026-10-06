@@ -389,6 +389,29 @@ final class LiveActivityTests: XCTestCase {
         )
     }
 
+    func testRelayErrorsReadAsSentencesNotResponseBodies() {
+        func message(_ status: Int, _ body: String?) -> String? {
+            TalariaRelayClient.ClientError.invalidResponse(status, body).errorDescription
+        }
+        XCTAssertEqual(
+            message(404, #"{"error":"device_not_registered"}"#),
+            "This device isn't registered with Talaria Relay yet. Try again."
+        )
+        XCTAssertEqual(
+            message(404, #"{"ok":false}"#),
+            "Talaria Relay couldn't complete the request (error 404)."
+        )
+        XCTAssertEqual(
+            message(401, #"{"error":"unauthorized"}"#),
+            "Your Talaria Relay sign-in expired. Sign in again."
+        )
+        XCTAssertEqual(message(502, "<html>Bad Gateway</html>"), "Talaria Relay is unavailable right now. Try again shortly.")
+        XCTAssertEqual(
+            TalariaRelayClient.ClientError.rejected("Apple did not return a valid identity token.").errorDescription,
+            "Apple did not return a valid identity token."
+        )
+    }
+
     func testRelayAppleCredentialLookupPreservesIndeterminateErrors() {
         XCTAssertEqual(
             TalariaRelayAppleCredentialState.resolvedStatus(state: .authorized, error: nil),

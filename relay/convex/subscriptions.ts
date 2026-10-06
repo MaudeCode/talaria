@@ -82,7 +82,7 @@ export const setForDevice = internalMutation({
     subscribed: v.boolean(),
     now: v.number(),
   },
-  returns: v.object({ ok: v.boolean() }),
+  returns: v.object({ ok: v.boolean(), reason: v.optional(v.string()) }),
   handler: async (ctx, args) => {
     const grant = await ctx.db
       .query("publisherGrants")
@@ -90,7 +90,7 @@ export const setForDevice = internalMutation({
         query.eq("userId", args.userId).eq("publisherId", args.publisherId),
       )
       .unique();
-    if (!grant) return { ok: false };
+    if (!grant) return { ok: false, reason: "publisher_not_enrolled" };
     const [device, publisher, exclusion] = await Promise.all([
       ctx.db
         .query("devices")
@@ -113,7 +113,9 @@ export const setForDevice = internalMutation({
         )
         .unique(),
     ]);
-    if (!device || device.revokedAt !== undefined || !publisher?.enabled) return { ok: false };
+    if (!device) return { ok: false, reason: "device_not_registered" };
+    if (device.revokedAt !== undefined) return { ok: false, reason: "device_revoked" };
+    if (!publisher?.enabled) return { ok: false, reason: "publisher_disabled" };
     if (args.subscribed) {
       if (exclusion) await ctx.db.delete(exclusion._id);
     } else if (!exclusion) {

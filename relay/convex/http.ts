@@ -117,6 +117,14 @@ function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: jsonHeaders });
 }
 
+function mutationResponse(
+  result: { ok: boolean; reason?: string },
+  failureStatus: number,
+  fallbackError: string,
+): Response {
+  return result.ok ? json(200, result) : json(failureStatus, { error: result.reason ?? fallbackError });
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -561,7 +569,7 @@ http.route({
       tokenHash: await sha256(credential),
       now: Date.now(),
     });
-    return json(result.ok ? 200 : 404, result);
+    return mutationResponse(result, 404, "session_not_found");
   }),
 });
 
@@ -609,7 +617,7 @@ http.route({
         subscribed,
         now: Date.now(),
       });
-      return json(result.ok ? 200 : 404, result);
+      return mutationResponse(result, 404, "not_found");
     }
 
     if (parts.length === 3) {
@@ -692,7 +700,7 @@ http.route({
         seededLocally,
         now: Date.now(),
       });
-      return result.ok ? json(200, result) : json(400, { error: result.reason });
+      return mutationResponse(result, 400, "invalid_activity");
     }
 
     return json(404, { error: "not_found" });
@@ -714,7 +722,7 @@ http.route({
         deviceId,
         now: Date.now(),
       });
-      return json(result.ok ? 200 : 404, result);
+      return mutationResponse(result, 404, "device_not_found");
     }
     if (parts.length === 5 && parts[3] === "live-activities") {
       const result = await ctx.runMutation(internal.devices.endActivity, {
@@ -723,7 +731,7 @@ http.route({
         activityId: parts[4]!,
         now: Date.now(),
       });
-      return json(result.ok ? 200 : 404, result);
+      return mutationResponse(result, 404, "activity_not_found");
     }
     return json(404, { error: "not_found" });
   }),
@@ -742,7 +750,7 @@ http.route({
       publisherId,
       now: Date.now(),
     });
-    return json(result.ok ? 200 : 404, result);
+    return mutationResponse(result, 404, "publisher_not_enrolled");
   }),
 });
 
@@ -777,7 +785,7 @@ http.route({
     const result = await ctx.runMutation(internal.completions.acknowledge, {
       userId: auth.userId, deviceId, ids: body.ids as string[],
     });
-    return json(result.ok ? 200 : 403, result);
+    return mutationResponse(result, 403, "unauthorized");
   }),
 });
 
