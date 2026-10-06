@@ -66,7 +66,15 @@ describe('raw byte routes', () => {
     expect(res.status).toBe(200)
     expect(res.headers.get('content-security-policy')).toBe('sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox')
     expect(res.headers.get('x-frame-options')).toBeNull()
+    // TAL-566: the default policy's report-only twin (`frame-ancestors 'none'`) would report every framed preview.
+    expect(res.headers.get('content-security-policy-report-only')).toBeNull()
     expect(await res.text()).toContain('<head><base target="_blank">')
+    res = await s.get(`/api/file/raw?session_id=${sid}&path=photo.png&inline=1`)
+    expect(res.headers.get('x-frame-options')).toBeNull()
+    expect(res.headers.get('content-security-policy-report-only')).toBeNull()
+    res = await s.get(`/api/file/raw?session_id=${sid}&path=photo.png`)
+    expect(res.headers.get('x-frame-options')).toBe('DENY')
+    expect(res.headers.get('content-security-policy-report-only')).toContain("frame-ancestors 'none'")
     res = await s.get(`/api/file/raw?session_id=${sid}&path=photo.png&download=1`)
     expect(res.headers.get('content-disposition')).toContain('attachment')
 

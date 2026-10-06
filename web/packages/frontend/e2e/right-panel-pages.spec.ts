@@ -28,7 +28,7 @@ test('the right panel shows Agents and Files as tabs that keep their state', asy
     return route.fulfill({ json: path === 'src' ? { path, entries: [{ name: 'notes.txt', path: 'src/notes.txt', size: 12 }] } : { path, entries: [{ name: 'src', path: 'src', is_dir: true }, { name: 'README.md', path: 'README.md', size: 20 }] } })
   })
   await page.route('**/api/git-info?**', (route) => route.fulfill({ json: { git: { is_git: true, branch: 'main', dirty: 0 } } }))
-  await page.route('**/api/file?**', (route) => route.fulfill({ json: { path: 'src/notes.txt', content: 'first line\n', size: 11, lines: 1 } }))
+  await page.route('**/api/file?**', (route) => route.fulfill({ json: { path: 'src/notes.txt', content: 'first line\n', size: 11, lines: 1, preview: 'text' } }))
 
   await page.goto(`/session/${sid}`)
   // Wide screens open the panel from its edge tab; narrow ones, which have no edge tab, from the titlebar.

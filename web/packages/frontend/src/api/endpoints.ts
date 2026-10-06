@@ -139,7 +139,8 @@ export const reorderWorkspaces = (paths: string[]) => orpc().workspaces.reorder(
 export const suggestWorkspaces = (prefix: string) => orpc().workspaces.suggest({ prefix })
 export const listDir = (session_id: string, path = '.', showHidden = false) => orpc().files.list({ session_id, path, ...(showHidden ? { show_hidden: '1' } : {}) })
 export const readFile = (session_id: string, path: string) => orpc().files.read({ session_id, path })
-export const rawFileUrl = (session_id: string, path: string) => `api/file/raw${qs({ session_id, path })}`
+/** `inline` asks for the sandboxed, frameable preview response (HTML, PDF). */
+export const rawFileUrl = (session_id: string, path: string, inline?: boolean) => `api/file/raw${qs({ session_id, path, inline: flag(inline) })}`
 export const saveFile = (session_id: string, path: string, content: string) => orpc().files.save({ session_id, path, content })
 export const createFile = (session_id: string, path: string) => orpc().files.create({ session_id, path, content: '' })
 export const createDir = (session_id: string, path: string) => orpc().files.createDir({ session_id, path })

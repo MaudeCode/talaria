@@ -19,7 +19,8 @@ import { SessionNotFound } from '../sessions/store.js'
 import { isSafeSessionId, type Session } from '../sessions/session.js'
 import { isBlockedSystemPath, REMOTE_WORKSPACE_UNSUPPORTED_CODE, REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE, stripSurroundingQuotes } from '../workspace/workspaces.js'
 import { isWithin, resolvePathLikePython } from '../workspace/paths.js'
-import { dirSignature, FileExistsError, listDir, makeAnchoredDir, NotFoundError, openAnchoredCreateFd, openAnchoredWriteFd, PathTraversalError, readFileContent, renameAnchored, rmtreeAnchored, safeResolve, serializeEntriesForBrowser, unlinkAnchored, FileTooLargeError } from '../workspace/fs.js'
+import { readFilePreview } from '../workspace/preview.js'
+import { dirSignature, FileExistsError, listDir, makeAnchoredDir, NotFoundError, openAnchoredCreateFd, openAnchoredWriteFd, PathTraversalError, renameAnchored, rmtreeAnchored, safeResolve, serializeEntriesForBrowser, unlinkAnchored, FileTooLargeError } from '../workspace/fs.js'
 import { randomUUID } from 'node:crypto'
 import { pyOsError, pyRepr, str } from '../util.js'
 import { ensureTrustedAuthSession, sessionCanManageServer } from '../auth/gate.js'
@@ -520,7 +521,7 @@ export const sessionsRouter = os.router({
       const s = fileOpsSession(ctx, input.session_id)
       if (!input.path) throw new HttpError(400, 'path is required')
       try {
-        return readFileContent(s.workspace, input.path)
+        return readFilePreview(s.workspace, input.path)
       } catch (error) {
         throw fileError(error, 404)
       }

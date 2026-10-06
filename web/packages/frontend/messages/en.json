@@ -2202,6 +2202,7 @@
 	"ws_panel_reveal": "Reveal in file manager",
 	"ws_panel_download": "Download folder",
 	"ws_panel_binary": "Binary file ({size})",
+	"ws_panel_csv_truncated": "Showing the first {n} rows",
 	"ws_panel_saved": "File saved",
 	"model_menu_default": "Default ({model})",
 	"model_menu_search": "Search models…",
