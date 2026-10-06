@@ -117,6 +117,33 @@ describe('live model ids without a sidecar (TAL-542)', () => {
   })
 })
 
+describe('keyless self-hosted providers (TAL-570)', () => {
+  it('count an endpoint as configured, list its live models, and refresh them', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'talaria-catalog-'))
+    try {
+      let ids = ['qwen3', 'llama3.2']
+      const sidecar = new FakeSidecar()
+      const config = { model: { provider: 'lmstudio', default: 'qwen3', base_url: 'http://gpu-box:1234/v1' }, providers: { lmstudio: { base_url: 'http://gpu-box:1234/v1' } } }
+      sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config }))
+      sidecar.respond('providers.auth_status', (p) => ({ status: { logged_in: false, provider: p.provider ?? '' } }))
+      sidecar.respond('plugins.providers', () => ({ providers: [] }))
+      sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: p.provider === 'lmstudio' ? ids : [] }))
+      writeFileSync(join(home, 'config.yaml'), '# cfg\n')
+      const catalog = new ProviderCatalog({ sidecar: () => sidecar, config: new AgentConfig({ sidecar: () => sidecar, env: {} }), env: {}, now: () => 1_800_000_000, log: () => undefined, costBudget: () => null, isRootProfileHome: () => true })
+      const row = async (id: string) => (await catalog.providers(home)).providers.find((p) => p.id === id)!
+      expect(await row('lmstudio')).toMatchObject({ has_key: false, configured: true, models_total: 2 })
+      // Ollama has no endpoint configured here, so it stays unconfigured.
+      expect(await row('ollama')).toMatchObject({ has_key: false, configured: false })
+      expect((await catalog.models(home)).groups.find((g) => g.provider_id === 'lmstudio')?.models.map((m) => m.id)).toEqual(expect.arrayContaining(['qwen3', 'llama3.2']))
+      ids = ['qwen3', 'llama3.2', 'gemma3']
+      catalog.invalidate(home, 'lmstudio')
+      expect(await row('lmstudio')).toMatchObject({ models_total: 3 })
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+})
+
 describe('live model ids after an Agent account switch (TAL-542)', () => {
   it('re-reads live ids when the Agent\'s sign-in store changes', async () => {
     const home = mkdtempSync(join(tmpdir(), 'talaria-catalog-'))

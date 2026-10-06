@@ -61,7 +61,7 @@ export function ProvidersSection() {
                 <div className="min-w-0 flex-1 basis-48">
                   <div className="text-sm font-medium text-text">{p.display_name ?? p.id}</div>
                   <div className="text-[11px] text-muted">
-                    {p.has_key ? m.providers_configured() : m.providers_not_configured()}{p.key_source ? ` · ${p.key_source}` : ''}{p.base_url ? ` · ${p.base_url}` : ''}{p.models_total !== undefined ? ` · ${m.providers_models_count({ n: p.models_total })}` : ''}
+                    {p.configured ? m.providers_configured() : m.providers_not_configured()}{p.key_source ? ` · ${p.key_source}` : ''}{p.base_url ? ` · ${p.base_url}` : ''}{p.models_total !== undefined ? ` · ${m.providers_models_count({ n: p.models_total })}` : ''}
                     {quota?.message ? ` · ${quota.message}` : ''}
                   </div>
                   {p.auth_error && <div className="text-[11px] text-error">{p.auth_error}</div>}

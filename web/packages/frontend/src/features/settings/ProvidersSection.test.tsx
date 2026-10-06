@@ -37,7 +37,7 @@ describe('ProvidersSection', () => {
   it('sets up a self-hosted provider from its row and rereads the providers it activated (TAL-570)', async () => {
     providersResponse.current = { active_provider: 'openrouter', providers: [{ id: 'openrouter', display_name: 'OpenRouter', has_key: true }, { id: 'ollama', display_name: 'Ollama', has_key: false, is_self_hosted: true, base_url: null, models: [], models_total: 0 }] }
     vi.mocked(api.saveSelfHostedProvider).mockImplementation(() => {
-      providersResponse.current = { active_provider: 'ollama', providers: [{ id: 'ollama', display_name: 'Ollama', has_key: false, is_self_hosted: true, base_url: 'http://gpu-box:11434/v1', models: [{ id: 'qwen3:32b', label: 'Qwen3 32B' }], models_total: 1 }, { id: 'openrouter', display_name: 'OpenRouter', has_key: true }] }
+      providersResponse.current = { active_provider: 'ollama', providers: [{ id: 'ollama', display_name: 'Ollama', has_key: false, configured: true, is_self_hosted: true, base_url: 'http://gpu-box:11434/v1', models: [{ id: 'qwen3:32b', label: 'Qwen3 32B' }], models_total: 1 }, { id: 'openrouter', display_name: 'OpenRouter', has_key: true }] }
       return Promise.resolve({ ok: true, provider: 'ollama', base_url: 'http://gpu-box:11434/v1', model: 'qwen3:32b' })
     })
     renderSection()
@@ -51,14 +51,14 @@ describe('ProvidersSection', () => {
     await waitFor(() => expect(api.saveSelfHostedProvider).toHaveBeenCalledWith({ provider: 'ollama', base_url: 'http://gpu-box:11434/v1', model: 'qwen3:32b', api_key: 'local-key' }))
     expect(await screen.findByText('ollama', { selector: 'strong' })).toBeInTheDocument()
     const saved = screen.getByText('Ollama').closest<HTMLElement>('[data-provider="ollama"]')!
-    expect(within(saved).getByText('Not configured · http://gpu-box:11434/v1 · 1 models')).toBeInTheDocument()
+    expect(within(saved).getByText('Configured · http://gpu-box:11434/v1 · 1 models')).toBeInTheDocument()
     expect(within(saved).queryByRole('textbox', { name: 'Base URL' })).toBeNull()
   })
 
   it("refreshes one provider's models and shows the server's new count (TAL-570)", async () => {
-    providersResponse.current = { active_provider: 'zai', providers: [{ id: 'zai', display_name: 'Z.AI', has_key: true, models: [], models_total: 3 }] }
+    providersResponse.current = { active_provider: 'zai', providers: [{ id: 'zai', display_name: 'Z.AI', has_key: true, configured: true, models: [], models_total: 3 }] }
     vi.mocked(api.refreshModels).mockImplementation(() => {
-      providersResponse.current = { active_provider: 'zai', providers: [{ id: 'zai', display_name: 'Z.AI', has_key: true, models: [], models_total: 5 }] }
+      providersResponse.current = { active_provider: 'zai', providers: [{ id: 'zai', display_name: 'Z.AI', has_key: true, configured: true, models: [], models_total: 5 }] }
       return Promise.resolve({ ok: true, provider: 'zai', models: { active_provider: 'zai', default_model: 'glm-5', groups: [] } } as never)
     })
     renderSection()

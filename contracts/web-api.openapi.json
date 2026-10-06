@@ -35321,6 +35321,9 @@
                           "has_key": {
                             "type": "boolean"
                           },
+                          "configured": {
+                            "type": "boolean"
+                          },
                           "configurable": {
                             "type": "boolean"
                           },
