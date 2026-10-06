@@ -1,7 +1,8 @@
 # The full iOS unit and UI suite on GitHub-hosted runners: App build plus four simulator shards (the hosted unit
 # tests, the launch smoke and every UI test) and the TalariaKit package tests (app-tests.yml, full mode). It is too
-# long for every main push, so it runs nightly and on demand. A release calls app-tests.yml directly instead
-# (TAL-417), so this workflow's concurrency never holds a release's suite.
+# long for every main push, so it runs nightly, on demand, and on main after every fifth App-changing merge since its
+# last run (ci.yml's ui-suite-cadence, TAL-655). A failed run on main goes to the fix agent (ui-suite-failed.yml). A
+# release calls app-tests.yml directly instead (TAL-417), so this workflow's concurrency never holds a release's suite.
 #
 # A manual run can scope and repeat the suite instead (TAL-401), for example 10 runs in a row of one flaky test:
 #   gh workflow run ui-suite.yml --repo MaudeCode/talaria --ref <branch> \
@@ -9,8 +10,9 @@
 # only_testing runs those identifiers in one shard; test_iterations above 1 stops at the first failing iteration.
 #
 # The run name records the tested commit (TAL-408): "UI suite on <commit>", or "UI suite (scoped) on <ref>" with
-# only_testing. A release reuses a successful unscoped run named for its exact source commit instead of calling the
-# suite again (app/ci/find-ui-suite-run), so keep this format in step with that script.
+# only_testing. A release reuses a successful unscoped run named for its source commit, or for an earlier main commit
+# with no App changes since, instead of calling the suite again (app/ci/find-ui-suite-run), and the cadence counts
+# from the newest one (app/ci/ui-suite-due), so keep this format in step with those scripts.
 
 name: UI suite
 run-name: ${{ inputs.only_testing && format('UI suite (scoped) on {0}', inputs.ref || github.sha) || format('UI suite on {0}', inputs.ref || github.sha) }}

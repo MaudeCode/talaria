@@ -1,7 +1,7 @@
 # Pull requests and main pushes run suites selected by the complete changed-path diff. App changes run
 # the TalariaKit package tests with `swift test` and build the App, its extensions and test bundles for
 # testing; nothing runs in a simulator (TAL-405). The simulator-hosted unit tests, the launch smoke test
-# and the full iOS UI suite run nightly and as a release gate (ui-suite.yml).
+# and the full iOS UI suite run nightly, every fifth App-changing main merge, and as a release gate (ui-suite.yml).
 # Release metadata always validates; uncertain classification runs every suite.
 # The always-reporting CI Gate is the required check, including skipped jobs.
 #
@@ -149,6 +149,40 @@ jobs:
           retention-days: 1
           overwrite: true
           if-no-files-found: error
+
+  ui-suite-cadence:
+    # Between nightlies, every fifth App-changing main merge since the last UI suite run starts the suite on main, so
+    # regressions surface within a few merges instead of at release (TAL-655). Main pushes take turns deciding, and a
+    # started suite counts as the last run, queued or not.
+    name: UI suite cadence
+    needs: changes
+    if: ${{ github.event_name == 'push' && needs.changes.outputs.app == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: write
+    concurrency:
+      group: ui-suite-cadence
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          filter: blob:none
+          sparse-checkout: |
+            app/ci
+            scripts
+      - name: Start the UI suite after five App changes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          due=$(ci/ui-suite-due "$GITHUB_SHA" 5)
+          if [[ "$due" == due=true ]]; then
+            gh workflow run ui-suite.yml --repo "$GITHUB_REPOSITORY" --ref main
+            echo "Started the UI suite on main." | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
 
   gate:
     name: CI Gate

@@ -111,8 +111,9 @@ jobs:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
   ui-suite-lookup:
     # A release that ships the App reuses a completed, successful, unscoped ui-suite.yml run (the nightly schedule or
-    # a dispatch) on exactly the release source instead of running the suite again (TAL-408). Read-only; a lookup
-    # error fails this job, which skips the suite call and fails build-gate: it never counts as "no run found".
+    # a dispatch) on exactly the release source instead of running the suite again (TAL-408), or one on an earlier
+    # main commit when nothing since selects the App suite (TAL-655). Read-only; a lookup error fails this job, which
+    # skips the suite call and fails build-gate: it never counts as "no run found".
     needs: prepare
     if: needs.prepare.outputs.app_changed == 'true'
     runs-on: ubuntu-latest
@@ -126,7 +127,11 @@ jobs:
     steps:
     - uses: actions/checkout@v7
       with:
-        sparse-checkout: app/ci
+        # History for the earlier-commit check.
+        fetch-depth: 0
+        sparse-checkout: |
+          app/ci
+          scripts
     - name: Find a successful UI suite run on the release source
       id: lookup
       env:
@@ -134,8 +139,7 @@ jobs:
         SOURCE: ${{ needs.prepare.outputs.source }}
       run: |
         set -euo pipefail
-        # TAL-654: the owner waived the UI suite gate for v1.17.2; this run stands in for a reused suite.
-        url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+        url=$(app/ci/find-ui-suite-run "$SOURCE")
         if [[ -n "$url" ]]; then
           printf 'reused=true\nrun_url=%s\n' "$url" >> "$GITHUB_OUTPUT"
           printf '### UI suite\n\nReused the successful run on %s: %s\n' "$SOURCE" "$url" | tee -a "$GITHUB_STEP_SUMMARY"

@@ -105,6 +105,7 @@ class RoutingTests(unittest.TestCase):
             ([".github/workflows/ci.yml"], {"app", "contracts", "tooling"}),
             ([".github/workflows/app-tests.yml"], {"app", "contracts", "tooling"}),
             ([".github/workflows/ui-suite.yml"], {"tooling"}),
+            ([".github/workflows/ui-suite-failed.yml"], {"tooling"}),
             ([".github/actions/setup-xcode/action.yml"], {"app", "tooling"}),
             (["app/ci/test_shards.py", "app/ci/test-shard-weights.json"], {"app", "tooling"}),
             (["app/ci/build-for-testing", "app/ci/wait-for-job", "app/ci/gh-api-poll"], {"app", "tooling"}),
