@@ -21,6 +21,7 @@ Release in one step: sign and push one tag, then watch.
    incomplete; inspect its side effects before retrying. A fix that needs code
    ships as the next patch version.
 
-App Store Connect supplies the next build number. Repository version fields
-remain development defaults. External tester assignment, Beta App Review,
-agreements and compliance prompts remain owner actions in App Store Connect.
+[`app/TESTFLIGHT.md`](../../../app/TESTFLIGHT.md) owns the App-specific gates:
+build numbers, the closed-train preflight, App recovery, credentials and the
+owner actions in App Store Connect (agreements, compliance, external testers,
+Beta App Review).

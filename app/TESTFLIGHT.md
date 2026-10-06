@@ -7,43 +7,25 @@ Run commands in this document from `app/`. Workflows live in `../.github/`.
 
 ## Release
 
-A release is one signed tag on a green `main` commit:
-
-```zsh
-git tag -s vX.Y.Z <main-commit> -m "Talaria X.Y.Z"
-git push origin vX.Y.Z
-```
-
-Pick one version that exceeds every component's published version; a version is
-used once. The `Release` workflow (`release.yml`) validates the tag, waits for
-that commit's main CI, tags the changed components (`app-vX.Y.Z`, `web-vX.Y.Z`,
-`relay-vX.Y.Z`) and starts `Production cutover` (`production-cutover.yml`) on
-`main`. The cutover repeats every gate, deploys Relay, publishes Web, builds and
-uploads the App through `ios-release-build.yml` (a GitHub-hosted Xcode 27 runner
-that signs from a keychain the job creates and deletes), waits for App Store Connect
-processing, and publishes the release-set manifest last. Unchanged components are
-not rebuilt. The [release procedure](../releases/README.md) has the details, and
-`$talaria-release` is the agent runbook.
+A release is one signed `vX.Y.Z` tag on a green `main` commit; CI tags the
+changed components, including `app-vX.Y.Z`, and runs the production cutover.
+The [release procedure](../releases/README.md#root-workflow) owns the steps,
+gates and partial-failure recovery, and `$talaria-release` is the agent runbook.
 
 For the App:
 
 - The tag supplies the marketing version; App Store Connect supplies the next
   build number. Repository version fields are development defaults.
-- The build is preflighted against App Store Connect: once a version is approved
-  for the App Store, Apple closes its TestFlight train, and the run fails fast.
-  Release the next version instead.
-- The signed IPA contains the app, the share extension and the widget extension.
-  One external-capable build serves internal and external testing.
+- Once Apple approves a version for the App Store, it closes that version's
+  TestFlight train and the run fails its preflight. Release the next version.
+- One external-capable IPA (app, share extension, widget extension) serves
+  internal and external testing.
 - Release notes come from `../changelog.d/`; see
   [release-note authoring](docs/release-notes.md).
-
-A failed or partial run is incomplete. Inspect its side effects before retrying,
-and ship a code fix as the next patch version. If Relay and Web published but the
-App upload failed, rerun the failed job, or use `Recover failed cutover App
-publication` (`recover-cutover.yml`) within 30 days, while the original run's
-handoff artifacts are retained, to resume the same IPA.
-`Inspect existing TestFlight upload` (`inspect-testflight.yml`) reads an existing
-build's metadata without changing it.
+- If Relay and Web published but the App upload failed, rerun the failed job,
+  or run `Recover failed cutover App publication` (`recover-cutover.yml`) within
+  30 days to resume the same IPA. `Inspect existing TestFlight upload`
+  (`inspect-testflight.yml`) reads a build's metadata without changing it.
 
 ## Credentials
 
@@ -57,6 +39,9 @@ The Apple Developer portal needs the App IDs `dev.kil.talaria`,
 `dev.kil.talaria.shareextension` and `dev.kil.talaria.liveactivitywidget`, the
 App Group `group.dev.kil.talaria` on all three, and Sign in with
 Apple plus iCloud on the app ([iCloud sync setup](docs/icloud-sync-setup.md)).
+The Account Holder must accept each updated Apple Developer Program License
+Agreement at <https://developer.apple.com/account>; TestFlight uploads and App
+Store Connect API access stop until it is accepted.
 
 ## After upload
 
