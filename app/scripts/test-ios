@@ -59,7 +59,8 @@ destination="platform=iOS Simulator,id=$simulator_id"
 # device is seeded: it is erased on release, while a personal simulator would keep every photo.
 seed_ui_photo() {
     if [[ "$simulator_disposable" == true ]]; then
-        scripts/seed-simulator-photo "$simulator_id"
+        # Explicit exit: zsh skips the EXIT trap, and the lease release, when errexit fires in a function.
+        scripts/seed-simulator-photo "$simulator_id" || exit $?
     else
         print -u2 "Not seeding a test photo into personal simulator $simulator_id; Photos picker tests use its library."
     fi

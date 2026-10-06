@@ -1,0 +1,101 @@
+#!/usr/bin/env python3
+"""Synthetic device-runner target and cleanup checks; never builds, installs on or launches a real iPhone."""
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+
+source = Path(__file__).resolve().parent / 'run-ios-device'
+UDID = '00008150-000A0B0C0D0E0F10'
+
+FAKE = '''#!/bin/sh
+printf '%s\\n' "$(basename "$0") $*" >> "$CALL_LOG"
+[ "$(basename "$0")" != xcodebuild ] || { echo "synthetic build output"; exit "${XCODEBUILD_STATUS:-0}"; }
+'''
+SELECTOR = '''#!/bin/sh
+[ -z "$SELECT_FAILS" ] || { echo "No paired physical iPhone found." >&2; exit 69; }
+echo "$SELECTED_UDID"
+'''
+
+
+def run(*options, prepare=lambda repo: None, **environment):
+    """Run a copied runner in a disposable repository; return its result, fake-tool calls and repo."""
+    work = Path(tempfile.mkdtemp(prefix='device-runner-'))
+    repo, tools = work / 'repo', work / 'bin'
+    (repo / 'scripts').mkdir(parents=True)
+    tools.mkdir()
+    shutil.copy(source, repo / 'scripts' / 'run-ios-device')
+    (repo / 'scripts' / 'select-ios-device').write_text(SELECTOR)
+    (repo / 'scripts' / 'select-ios-device').chmod(0o755)
+    for tool in ('xcodebuild', 'xcrun', 'codesign'):
+        (tools / tool).write_text(FAKE)
+        (tools / tool).chmod(0o755)
+    prepare(repo)
+    env = dict(os.environ, PATH=f'{tools}:{os.environ["PATH"]}', _TALARIA_ENV_LOADED='1',
+               CALL_LOG=str(work / 'calls'), SELECTED_UDID=UDID)
+    for inherited in ('TALARIA_DEVICE_ID', 'SELECT_FAILS', 'XCODEBUILD_STATUS'):
+        env.pop(inherited, None)
+    env.update(environment)
+    result = subprocess.run([str(repo / 'scripts' / 'run-ios-device'), *options], env=env,
+                            capture_output=True, text=True, timeout=30)
+    calls = (work / 'calls').read_text().splitlines() if (work / 'calls').exists() else []
+    return result, calls, repo, work
+
+
+def stale_cache(repo):
+    build = repo / '.codex-tmp' / 'device-build'
+    (build / 'Build').mkdir(parents=True)
+    (build / 'Build' / 'stale').write_text('old product')
+    (repo / '.codex-tmp' / 'keep').write_text('sibling scratch state')
+
+
+cleanups = []
+try:
+    # An unknown option changes nothing on disk or on the device.
+    result, calls, repo, work = run('--launch-everything')
+    cleanups.append(work)
+    assert result.returncode == 64 and 'Unknown option' in result.stderr, result
+    assert calls == [] and not (repo / '.codex-tmp').exists()
+
+    # --fresh never follows a symlinked cache into state outside it.
+    outside = Path(tempfile.mkdtemp(prefix='device-runner-outside-'))
+    cleanups.append(outside)
+    (outside / 'precious').write_text('not a build product')
+    def linked(repo):
+        (repo / '.codex-tmp').mkdir()
+        (repo / '.codex-tmp' / 'device-build').symlink_to(outside, target_is_directory=True)
+    result, calls, repo, work = run('--fresh', prepare=linked)
+    cleanups.append(work)
+    assert result.returncode == 1 and 'Refusing to clear symlinked build directory' in result.stderr, result
+    assert (outside / 'precious').read_text() == 'not a build product'
+    assert calls == []
+
+    # --fresh clears only the cache contents; a failed selection stops before any build.
+    result, calls, repo, work = run('--fresh', prepare=stale_cache, SELECT_FAILS='1')
+    cleanups.append(work)
+    assert result.returncode == 69 and 'No paired physical iPhone' in result.stderr, result
+    assert (repo / '.codex-tmp' / 'device-build').is_dir()
+    assert list((repo / '.codex-tmp' / 'device-build').iterdir()) == []
+    assert (repo / '.codex-tmp' / 'keep').read_text() == 'sibling scratch state'
+    assert calls == []
+
+    # Without --fresh the cache survives; the build targets only the selected iPhone and its own cache.
+    result, calls, repo, work = run(prepare=stale_cache, XCODEBUILD_STATUS='65')
+    cleanups.append(work)
+    assert result.returncode == 1 and 'synthetic build output' in result.stderr, result
+    assert (repo / '.codex-tmp' / 'device-build' / 'Build' / 'stale').exists()
+    assert len(calls) == 1 and calls[0].startswith('xcodebuild build '), calls
+    assert f'-destination platform=iOS,id={UDID} ' in calls[0], calls
+    assert f'-derivedDataPath {repo.resolve()}/.codex-tmp/device-build ' in calls[0], calls
+
+    # A build that produced no app installs nothing.
+    result, calls, repo, work = run('--no-launch')
+    cleanups.append(work)
+    assert result.returncode == 1 and 'the app was not found' in result.stderr, result
+    assert [call.split()[0] for call in calls] == ['xcodebuild'], calls
+finally:
+    for path in cleanups:
+        shutil.rmtree(path, ignore_errors=True)
+
+print('device runner target and cleanup checks passed')

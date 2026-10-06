@@ -50,6 +50,15 @@ ios_pool_release() {
 }
 
 ios_pool_acquire() {
+    # zsh skips the caller's EXIT trap when errexit fires on a function's status,
+    # so a failed acquisition releases the pool lock and any lease it took itself.
+    ios_pool_try_acquire && return
+    local acquire_status=$?
+    ios_pool_release
+    return "$acquire_status"
+}
+
+ios_pool_try_acquire() {
     ios_pool_lock || return $?
     local devices_json candidates candidate_id candidate_state candidate_disposable candidate_lease candidate
     devices_json=$(xcrun simctl list devices available --json) || return $?

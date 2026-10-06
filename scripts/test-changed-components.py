@@ -95,7 +95,7 @@ class RoutingTests(unittest.TestCase):
             (["scripts/check-web-server"], {"web_server", "tooling"}),
             (["scripts/check-web-browser"], {"web_frontend", "tooling"}),
             (["scripts/check-docker.py"], {"docker", "tooling"}),
-            (["scripts/stamp-release.py"], {"tooling"}),
+            (["scripts/stamp-release.py", "scripts/test-stamp-release.py"], {"tooling"}),
             (["scripts/check-agent-compatibility.py"], {"web_server", "docker", "tooling"}),
             (["scripts/check-release-agent.py"], {"tooling"}),
             (["releases/publish.py"], {"tooling"}),
@@ -203,6 +203,41 @@ class RoutingTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("trailing whitespace", result.stdout)
             self.assertNotEqual(check_diff("--base", "missing-ref").returncode, 0)
+
+    def test_unreadable_app_config_requires_the_ui_suite(self):
+        with tempfile.TemporaryDirectory(prefix="talaria-ci-plist-") as temporary:
+            root = Path(temporary)
+            env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+            plist = root / "app/Talaria/Resources/Info.plist"
+            entry = root / "app/Talaria/TalariaApp.swift"
+
+            def commit(name):
+                for args in (("add", "-A"), ("commit", "-m", name)):
+                    subprocess.run(["git", "-c", "user.name=Synthetic", "-c", "user.email=test@example.invalid",
+                                    "-c", "commit.gpgsign=false", *args], cwd=root, env=env, check=True,
+                                   capture_output=True)
+                return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, env=env, text=True).strip()
+
+            def app_ui(base, head):
+                result = subprocess.run([os.sys.executable, str(SCRIPT), f"--base={base}", f"--head={head}"],
+                                        cwd=root, env=env, text=True, capture_output=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                return dict(line.split("=", 1) for line in result.stdout.splitlines())["app_ui"]
+
+            subprocess.run(["git", "init", "-b", "main"], cwd=root, env=env, check=True, capture_output=True)
+            plist.parent.mkdir(parents=True)
+            plist.write_bytes(plistlib.dumps({"CFBundleName": "Talaria"}))
+            entry.write_text("init() {}\nvar body: some Scene { Main() }\n")
+            base = commit("base")
+            plist.write_bytes(plistlib.dumps({"CFBundleName": "Talaria", "TalariaRelease": {"version": "1.0.0"}}))
+            entry.write_text("init() { log() }\nvar body: some Scene { Main() }\n")
+            metadata = commit("release metadata and startup diagnostics only")
+            self.assertEqual(app_ui(base, metadata), "false")
+            plist.write_text("<plist><dict><key>Unclosed")
+            self.assertEqual(app_ui(base, commit("malformed property list")), "true")
+            plist.write_bytes(plistlib.dumps({"CFBundleName": "Talaria"}))
+            entry.unlink()
+            self.assertEqual(app_ui(metadata, commit("missing App entry point")), "true")
 
     def test_gate_rejects_missing_or_skipped_required_checks(self):
         job_suites = {"app": {"app", "contracts"}, "app-tooling": {"app_tooling"},
