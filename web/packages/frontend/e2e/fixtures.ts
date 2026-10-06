@@ -26,6 +26,8 @@ export const test = base.extend<{ errors: string[] }>({
     // TAL-372: specs that mock their session in the page have no server record of it, so the composer's background card
     // gets an empty list by default; a spec that tests background work routes its own (later routes win).
     await page.route('**/api/background/tasks?**', (route) => route.fulfill({ json: { session_id: new URL(route.request().url()).searchParams.get('session_id') ?? '', agent_available: true, tasks: [] } }))
+    // TAL-564: likewise the composer's server draft is empty; draft-sync.spec.ts unroutes this to read the real one.
+    await page.route('**/api/session/draft?**', (route) => route.fulfill({ json: { draft: { text: '', files: [] }, draft_version: null } }))
     page.on('console', onConsole)
     page.on('pageerror', (err) => errors.push(`pageerror: ${err.message}`))
     page.on('response', (res) => {

@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { renderHook } from '@testing-library/react'
+import { act, renderHook } from '@testing-library/react'
+import { useState } from 'react'
 
-vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await importOriginal()), saveDraft: vi.fn() }))
-import { readLocalDraft, useDraftPersistence } from './useDraft'
+vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await importOriginal()), saveDraft: vi.fn(), fetchDraft: vi.fn() }))
+import * as api from '../../api/endpoints'
+import { readLocalDraft, useDraftPersistence, useServerDraft } from './useDraft'
 
 describe('useDraftPersistence', () => {
   beforeEach(() => { vi.useFakeTimers(); localStorage.clear() })
@@ -41,5 +43,70 @@ describe('useDraftPersistence', () => {
     expect(readLocalDraft('s1')).toBe('')
     vi.advanceTimersByTime(2000)
     expect(readLocalDraft('s1')).toBe('')
+  })
+})
+
+describe('useServerDraft (TAL-564)', () => {
+  beforeEach(() => { localStorage.clear(); vi.mocked(api.saveDraft).mockResolvedValue({ ok: true, draft: { text: '', files: [] }, draft_version: null }) })
+  afterEach(() => { vi.restoreAllMocks() })
+
+  const serverHas = (text: string, draft_version: string | null) => {
+    let resolve!: () => void
+    const done = new Promise<void>((r) => { resolve = r })
+    vi.mocked(api.fetchDraft).mockImplementation(() => { resolve(); return Promise.resolve({ draft: { text, files: [] }, draft_version }) })
+    return done
+  }
+  const local = (text: string, updatedAt: number) => { localStorage.setItem('hermes-draft:s1', JSON.stringify({ text, updatedAt })) }
+  const mount = () => renderHook(() => {
+    const [text, setText] = useState(() => readLocalDraft('s1'))
+    useServerDraft('s1', setText)
+    return { text, setText }
+  })
+
+  it('restores the server draft when this browser has none, versioned or not', async () => {
+    for (const version of ['1700000000000000', null]) {
+      const fetched = serverHas('from another device', version)
+      const { result, unmount } = mount()
+      await act(async () => { await fetched })
+      expect(result.current.text).toBe('from another device')
+      unmount()
+    }
+  })
+
+  it('keeps whichever copy is newer', async () => {
+    local('local, newer', 2_000)
+    let fetched = serverHas('server, older', String(1_000 * 1000))
+    const older = mount()
+    await act(async () => { await fetched })
+    expect(older.result.current.text).toBe('local, newer')
+    older.unmount()
+
+    local('local, older', 1_000)
+    fetched = serverHas('server, newer', String(2_000 * 1000))
+    const newer = mount()
+    await act(async () => { await fetched })
+    expect(newer.result.current.text).toBe('server, newer')
+  })
+
+  it('never replaces text typed while the request runs', async () => {
+    let answer!: (value: Awaited<ReturnType<typeof api.fetchDraft>>) => void
+    vi.mocked(api.fetchDraft).mockImplementation(() => new Promise((r) => { answer = r }))
+    const { result } = mount()
+    act(() => { result.current.setText('typed meanwhile') })
+    await act(async () => { answer({ draft: { text: 'server text', files: [] }, draft_version: String(Date.now() * 1000) }); await Promise.resolve() })
+    expect(result.current.text).toBe('typed meanwhile')
+  })
+
+  it('versions every server save above the last one, so a slow request cannot overwrite later text', () => {
+    vi.useFakeTimers()
+    try {
+      const { rerender } = renderHook(({ text }) => { useDraftPersistence('s1', text) }, { initialProps: { text: 'first' } })
+      vi.advanceTimersByTime(1200)
+      rerender({ text: 'second' })
+      vi.advanceTimersByTime(1200)
+      const versions = vi.mocked(api.saveDraft).mock.calls.map(([body]) => Number(body.draft_version))
+      expect(versions).toHaveLength(2)
+      expect(versions[1]!).toBeGreaterThan(versions[0]!)
+    } finally { vi.useRealTimers() }
   })
 })

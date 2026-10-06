@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "An unsent message draft now follows you to another browser or device, and returns after clearing site data.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

@@ -17,7 +17,7 @@ import { AttachmentTray, type PendingFile } from './Attachments'
 import { CommandPaletteList, useCommandPalette } from './CommandPalette'
 import { parseCommand, resolveCommand, runsOnServer, type CommandSuggestion } from './commands'
 import { ContextRing, ContextRow, type ContextFigures, ModelChip, ReasoningChip, ToolsetsChip, WorkspaceChip } from './chips'
-import { clearDraft, readLocalDraft, useDraftPersistence } from './useDraft'
+import { clearDraft, readLocalDraft, useDraftPersistence, useServerDraft } from './useDraft'
 import { createRecognition, dictationSupported, classifyDictationError } from '../voice/dictation'
 import { ProfileMenu } from '../../shell/ProfileMenu'
 import { setTheme } from '../../app/appearance'
@@ -195,6 +195,7 @@ export function Composer(props: ComposerProps) {
   const palette = useCommandPalette(clarify ? '' : text)
   const catalog = palette.catalog
   useDraftPersistence(sessionId, text)
+  useServerDraft(sessionId, setText)
 
   // T3 Code's resting composer: a hand scroll of an overflowing transcript flattens the card to one row until the next
   // composer interaction. Losing focus never rests it. A request is decided when it arrives and never left pending, so
