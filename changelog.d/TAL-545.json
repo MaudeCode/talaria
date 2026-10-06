@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Chats that shared an image keep working after switching to a text-only model or text image mode.",
+      "highlight": false,
+      "components": ["web"]
+    },
+    {
+      "category": "Fixed",
+      "summary": "Vision settings in your profile config now decide whether an attached image is sent to the model directly.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

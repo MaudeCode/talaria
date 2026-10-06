@@ -30,7 +30,7 @@ import { withSessionWireFlags } from './list.js'
 import { hydrateAnchorActivityScenes, turnTerminalState, withTurnIds } from './anchor.js'
 import { persistentStateChanges, persistentStateSnapshot } from './state-saved.js'
 import { maxIterationsFromConfig, maxTokensFromConfig, processWakeupMaxIterations, reasoningConfigFromConfig, webuiEphemeralSystemPrompt, workspaceSystemMessage } from './turn-context.js'
-import { agentSteerText, assistantReplyAddedAfterCurrentTurn, attachedFilesPrompt, buildPartialMessage, dedupeContext, checkpointTurnStart, extractToolCallsFromMessages, injectMaxIterationSummaryFallback, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitDisplayText, stateDbSeenId, joinReasoning, reasoningFieldsText, stoppedTurnContext, toolOutcome, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withToolCallOutcomes, workspaceContextPrefix, withoutMaxIterationSummaryRequest, withoutToolImages } from './merge.js'
+import { agentSteerText, assistantReplyAddedAfterCurrentTurn, attachedFilesPrompt, buildPartialMessage, dedupeContext, checkpointTurnStart, extractToolCallsFromMessages, hasNativeImages, injectMaxIterationSummaryFallback, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitDisplayText, stateDbSeenId, joinReasoning, reasoningFieldsText, stoppedTurnContext, toolOutcome, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withToolCallOutcomes, workspaceContextPrefix, withoutMaxIterationSummaryRequest, withNativeImagesRestored, withoutNativeImages, withoutToolImages } from './merge.js'
 import { mayBecomeSilentReply, turnOrigin, withBackgroundUpdates } from './background-updates.js'
 import { fallbackTitleFromExchange, firstExchangeSnippets, isGenericFallbackTitle, latestExchangeSnippets, looksInvalidGeneratedTitle, looksLikeDefaultCliTitle, sanitizeGeneratedTitle, titleLanguageMismatch, titlePrompts } from './titles.js'
 import { WORKSPACE_BUSY_MESSAGE } from '../workspace/git.js'
@@ -249,6 +249,8 @@ export function titleGenerationEnabled(cfg: Config): boolean {
 }
 
 /** Python `_explicit_text_signal`: `agent.image_input_mode: text` or a configured `auxiliary.vision` backend. */
+const isImageAttachment = (att: Record<string, unknown>): boolean => Boolean(str(att.path).trim()) && str(att.mime).trim().startsWith('image/')
+
 export function explicitTextSignal(cfg: Config): boolean {
   const agent = dict(cfg.agent)
   if (str(agent.image_input_mode ?? 'auto').trim().toLowerCase() === 'text') return true
@@ -451,7 +453,12 @@ export class TurnRunner {
     let capturedTerminalError: string | null = null
     const controller = new AbortController()
     this.abortControllers.set(streamId, controller)
-    const userMessage = await this.buildUserMessage(workspaceCtx, msgText, opts.attachments ?? [], opts.workspace, sessionId, s, opts, controller.signal)
+    const attachments = opts.attachments ?? []
+    // TAL-545: one image mode decides both this turn's upload and the replayed history, which a text-mode turn sends
+    // without native images; only a turn with an image on either side asks for it.
+    const imageMode = attachments.some(isImageAttachment) || hasNativeImages(apiHistory) ? await this.imageInputMode(sessionId, s, opts, controller.signal) : null
+    const userMessage = this.buildUserMessage(workspaceCtx, msgText, attachments, opts.workspace, sessionId, imageMode)
+    const conversationHistory = imageMode === 'text' ? withoutNativeImages(apiHistory) : apiHistory
     // The prompt the Agent actually gets, native image parts included.
     const stop = this.stopContexts.get(streamId)
     if (stop) stop.prompt = userMessage
@@ -489,7 +496,7 @@ export class TurnRunner {
       put('context_status', { session_id: sessionId, prefill: { status: 'not_configured', source: 'none', label: '', message_count: 0 } })
       const result = await sidecar.call('chat.start', {
         profile_home: deps.profileHome(s.profile), session_id: sessionId, stream_id: streamId, workspace: opts.workspace, model: opts.model ?? '', model_provider: opts.modelProvider,
-        user_message: userMessage, ...turnContext, conversation_history: apiHistory, enabled_toolsets: deps.toolsetsFor(s), ...(msgText ? { persist_user_message: msgText } : {}), ...(opts.ephemeral ? { ephemeral: true } : {}),
+        user_message: userMessage, ...turnContext, conversation_history: conversationHistory, enabled_toolsets: deps.toolsetsFor(s), ...(msgText ? { persist_user_message: msgText } : {}), ...(opts.ephemeral ? { ephemeral: true } : {}),
       }, {
         signal: controller.signal,
         timeoutMs: 0,
@@ -601,13 +608,17 @@ export class TurnRunner {
         },
       })
       settledAt.value = true
+      // TAL-545: every transcript the Agent hands back settles with the history's images, not the request's projection.
+      const withImages = <T extends Record<string, unknown>>(rows: T[]): T[] => withNativeImagesRestored(rows, conversationHistory, apiHistory)
+      result.messages = withImages(result.messages)
+      if (result.context_messages) result.context_messages = withImages(result.context_messages)
       if (this.registry.cancelled.has(streamId) || result.status === 'cancelled') {
         // The Stop's pre-interrupt snapshot is the boundary, even when its reply lands after this result (the sidecar
         // answers each request on its own thread); without one, the Agent's interrupted result is its canonical transcript.
         const interrupted = await this.interrupts.get(streamId)
         applyAgentUsage(liveUsage, result.usage)
         this.liveUsage.set(streamId, liveUsage)
-        this.finalizeCancelled(s, streamId, opts.ephemeral, interrupted?.checkpoint ?? result.messages)
+        this.finalizeCancelled(s, streamId, opts.ephemeral, interrupted?.checkpoint ? withImages(interrupted.checkpoint) : result.messages)
         put('cancel', this.cancelFrame(sessionId))
         return
       }
@@ -863,35 +874,42 @@ export class TurnRunner {
   }
 
   /**
-   * Python `_build_user_message`: image attachments are embedded as native `image_url` parts only when the Agent's
-   * resolved image mode for this model is `native` (text mode routes them through the Agent's vision tool path), and
-   * only after the bytes are read through an anchored descriptor and sniffed as a real image format. Every attached
-   * file is also named by path after the text (TAL-276), so an attachment-only turn still gives the model a request
-   * and its transcript row a distinct identity.
+   * Python `_resolve_image_input_mode`: the Agent's image mode for this turn's model under its profile config, or null
+   * when it is unknown (no sidecar, a cancel, a failed lookup). A canonical "text" is honoured only with an explicit
+   * text signal or a model KNOWN to be text-only; an unknown/custom model forwards natively and lets the Agent's retry
+   * guard downgrade.
    */
-  private async buildUserMessage(workspaceCtx: string, msgText: string, attachments: Record<string, unknown>[], workspace: string, sessionId: string, s: Session, opts: StartTurnOptions, signal: AbortSignal): Promise<string | Record<string, unknown>[]> {
-    const text = workspaceCtx + msgText
-    const withFiles = (): string => attachedFilesPrompt(text, attachments)
-    const candidates = attachments.filter((att) => str(att.path).trim() && str(att.mime).trim().startsWith('image/'))
-    if (!candidates.length) return withFiles()
+  private async imageInputMode(sessionId: string, s: Session, opts: StartTurnOptions, signal: AbortSignal): Promise<'native' | 'text' | null> {
     const sidecar = this.deps.sidecar()
-    if (!sidecar) return withFiles()
     // A cancel that landed before this point is final: never start the lookup or wait on it.
-    if (signal.aborted) return text
+    if (!sidecar || signal.aborted) return null
+    // The session's provider before the Agent canonicalizes it, so a `custom:<name>` override entry still matches.
+    const provider = str(opts.modelProvider ?? s.model_provider)
     try {
       // A cancelled turn must not sit behind this lookup: the abort wins the race and `run()` then takes the cancelled path.
-      const lookup = sidecar.call('text.image_mode', { profile_home: this.deps.profileHome(s.profile), provider: str(opts.modelProvider ?? s.model_provider), model: str(opts.model ?? s.model) }, { signal, timeoutMs: IMAGE_MODE_TIMEOUT_MS })
+      const lookup = sidecar.call('text.image_mode', { profile_home: this.deps.profileHome(s.profile), provider, model: str(opts.model ?? s.model), requested_provider: provider }, { signal, timeoutMs: IMAGE_MODE_TIMEOUT_MS })
       const mode = await Promise.race([lookup, new Promise<never>((_, reject) => { if (signal.aborted) { reject(new Error('turn cancelled')); return } signal.addEventListener('abort', () => { reject(new Error('turn cancelled')) }, { once: true }) })])
-      // Python `_resolve_image_input_mode`: a canonical "text" is honoured only with an explicit text signal or a model
-      // KNOWN to be text-only; an unknown/custom model forwards natively and lets the Agent's retry guard downgrade.
-      if (mode.mode !== 'native') {
-        const cfg = (await this.deps.profileConfig?.(s.profile ?? null)) ?? {}
-        if (explicitTextSignal(cfg) || mode.supports_vision === false) return withFiles()
-      }
+      if (mode.mode === 'native') return 'native'
+      const cfg = (await this.deps.profileConfig?.(s.profile ?? null)) ?? {}
+      return explicitTextSignal(cfg) || mode.supports_vision === false ? 'text' : 'native'
     } catch (error) {
       if (!signal.aborted) this.deps.log(`[webui] image mode lookup failed for ${sessionId}: ${(error as Error).message}`)
-      return withFiles()
+      return null
     }
+  }
+
+  /**
+   * Python `_build_user_message`: image attachments are embedded as native `image_url` parts only when the turn's
+   * image mode is `native` (text mode routes them through the Agent's vision tool path), and only after the bytes are
+   * read through an anchored descriptor and sniffed as a real image format. Every attached file is also named by path
+   * after the text (TAL-276), so an attachment-only turn still gives the model a request and its transcript row a
+   * distinct identity.
+   */
+  private buildUserMessage(workspaceCtx: string, msgText: string, attachments: Record<string, unknown>[], workspace: string, sessionId: string, imageMode: 'native' | 'text' | null): string | Record<string, unknown>[] {
+    const text = workspaceCtx + msgText
+    const withFiles = (): string => attachedFilesPrompt(text, attachments)
+    const candidates = attachments.filter(isImageAttachment)
+    if (!candidates.length || imageMode !== 'native') return withFiles()
     const parts: Record<string, unknown>[] = []
     let images = 0
     const roots = [workspace, this.deps.attachmentDir(sessionId)].map((r) => resolvePathLikePython(r))

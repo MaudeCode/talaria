@@ -405,6 +405,52 @@ describe('image attachments in user messages (review round 14)', () => {
     expect(recovered.filter((m) => m.role === 'user').map((m) => (m.attachments as Json[]).map((a) => a.name))).toEqual([['kept.pdf']])
   })
 
+  it('strips historical native images from the history when the turn resolves text mode (TAL-545)', async () => {
+    let history: Json[] = []
+    const lookups: Json[] = []
+    sidecar.respond('text.image_mode', (params) => { lookups.push(params); return { mode, reason: 'test', supports_vision: mode === 'native' } })
+    let status: 'completed' | 'cancelled' = 'completed'
+    // The Agent hands back the history it was sent, as the real one does, ahead of this turn's rows.
+    sidecar.respond('chat.start', (params) => { history = params.conversation_history; return { ...agentAnswer(params), status, messages: [...history, { role: 'user', content: params.user_message }, { role: 'assistant', content: 'ok' }] } })
+    const image = { type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA' } }
+    const turnAfter = async (messages: Json[]): Promise<string> => {
+      const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+      const session = s.deps.sessionStore.get(sid)
+      Object.assign(session, { messages, model: 'text-model', model_provider: 'custom:lab' })
+      s.deps.sessionStore.save(session)
+      const res = await post(s, '/api/chat/start', { session_id: sid, message: 'and now?' })
+      await s.sse(`/api/chat/stream?stream_id=${String((await json(res)).stream_id)}&replay=1`, (f) => f.event === 'done' || f.event === 'apperror' || f.event === 'cancel')
+      return sid
+    }
+    const imageTurns = [{ role: 'user', content: [{ type: 'text', text: 'what is this' }, image] }, { role: 'assistant', content: 'a cat' }]
+    try {
+      mode = 'text'
+      const sid = await turnAfter([{ role: 'user', content: [{ type: 'text', text: 'what is this' }, image] }, { role: 'assistant', content: 'a cat' }, { role: 'user', content: [image] }, { role: 'assistant', content: 'a dog' }])
+      expect(JSON.stringify(history)).not.toContain('image_url')
+      expect(history.map((m) => m.content)).toEqual(['what is this', 'a cat', '', 'a dog'])
+      // The lookup resolves the session's own provider identity against its profile config.
+      expect(lookups.at(-1)).toMatchObject({ provider: 'custom:lab', model: 'text-model', requested_provider: 'custom:lab' })
+      expect(String(lookups.at(-1)!.profile_home)).not.toBe('')
+      // The image-free history is that request's projection only: the settled model context keeps the images.
+      expect(s.deps.sessionStore.get(sid).context_messages.slice(0, 4).map((m) => m.content)).toEqual([[{ type: 'text', text: 'what is this' }, image], 'a cat', [image], 'a dog'])
+      status = 'cancelled'
+      const stopped = await turnAfter(imageTurns)
+      expect(JSON.stringify(history)).not.toContain('image_url')
+      expect(s.deps.sessionStore.get(stopped).context_messages[0]!.content).toEqual([{ type: 'text', text: 'what is this' }, image])
+      status = 'completed'
+      mode = 'native'
+      await turnAfter(imageTurns)
+      expect(history[0]!.content).toEqual([{ type: 'text', text: 'what is this' }, image])
+      // A history without native images needs no lookup.
+      const before = lookups.length
+      await turnAfter([{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'hello' }])
+      expect(lookups).toHaveLength(before)
+    } finally {
+      mode = 'native'
+      sidecar.respond('text.image_mode', () => ({ mode, reason: 'test', supports_vision: mode === 'native' }))
+    }
+  })
+
   it('sends plain text when the Agent resolves text mode for the model', async () => {
     mode = 'text'
     writeFileSync(join(ws(), 'shot2.png'), png)
@@ -459,9 +505,8 @@ describe('image attachments in user messages (review round 14)', () => {
       const session = s.deps.sessionStore.get(sid)
       const controller = new AbortController()
       controller.abort()
-      interface Builder { buildUserMessage: (ctx: string, text: string, atts: Record<string, unknown>[], workspace: string, sid: string, session: unknown, opts: Record<string, unknown>, signal: AbortSignal) => Promise<unknown> }
-      const built = await (s.deps.turns as unknown as Builder).buildUserMessage('', 'look', [{ path: join(ws(), 'pre.png'), mime: 'image/png', name: 'pre.png' }], ws(), sid, session, {}, controller.signal)
-      expect(built).toBe('look')
+      interface Resolver { imageInputMode: (sid: string, session: unknown, opts: Record<string, unknown>, signal: AbortSignal) => Promise<unknown> }
+      expect(await (s.deps.turns as unknown as Resolver).imageInputMode(sid, session, {}, controller.signal)).toBeNull()
       expect(lookups).toBe(0)
     } finally {
       sidecar.respond('text.image_mode', () => ({ mode, reason: 'test', supports_vision: mode === 'native' }))
