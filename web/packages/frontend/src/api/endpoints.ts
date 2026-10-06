@@ -48,6 +48,10 @@ export const fetchAuxiliaryModels = () => orpc().models.auxiliary()
 /** One auxiliary task slot (`__reset__` returns every slot to Auto); answers the refreshed `auxiliary` state. */
 export const setAuxiliaryModel = (task: string, model: string, provider?: string | null) => orpc().models.set({ scope: 'auxiliary', task, model, ...(provider ? { provider } : {}) })
 export const fetchProviders = () => orpc().providers.list()
+/** Ollama / LM Studio: saves the base URL (and optional key) and makes `model` the default. */
+export const saveSelfHostedProvider = (body: { provider: string; base_url: string; model: string; api_key?: string }) => orpc().providers.selfHosted(body)
+/** Evicts one provider's live model cache; answers the rebuilt `/api/models` catalog. */
+export const refreshModels = (provider: string) => orpc().models.refresh({ provider })
 export const fetchProviderQuotas = (refresh = false) => orpc().providers.quotas(refresh ? { refresh: '1' } : {}, { signal: timeout(45_000) })
 export const fetchOpenRouterCostHistory = () => orpc().providers.costHistory({ provider: 'openrouter' }, { signal: timeout(45_000) })
 export const setPersonality = (session_id: SessionId, personality: string | null) => orpc().personalities.set({ session_id, name: personality ?? '' })

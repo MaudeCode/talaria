@@ -485,8 +485,9 @@ export const ModelEntrySchema = z.looseObject({ id: z.string(), label: z.string(
 export const ModelGroupSchema = z.looseObject({ provider: z.string(), provider_id: z.string().optional(), models: z.array(ModelEntrySchema), extra_models: z.array(ModelEntrySchema).optional() })
 export const ModelsSchema = z.looseObject({ active_provider: NullableString.optional(), default_model: z.string().optional(), default_provider_id: NullableString.optional(), default_bare_id: z.string().optional(), default_option_id: NullableString.optional(), groups: z.array(ModelGroupSchema), aliases: z.record(z.string(), Json).optional(), configured_model_badges: z.record(z.string(), Json).optional() })
 export type Models = z.infer<typeof ModelsSchema>
+/** `has_key` reports a credential; `configured` (TAL-570) is the row's setup status, which a keyless Ollama or LM Studio endpoint also meets. */
 export const ProviderSchema = z.looseObject({
-  id: z.string(), display_name: z.string().optional(), has_key: z.boolean().optional(), configurable: z.boolean().optional(), is_oauth: z.boolean().optional(), is_plugin_provider: z.boolean().optional(), is_self_hosted: z.boolean().optional(),
+  id: z.string(), display_name: z.string().optional(), has_key: z.boolean().optional(), configured: z.boolean().optional(), configurable: z.boolean().optional(), is_oauth: z.boolean().optional(), is_plugin_provider: z.boolean().optional(), is_self_hosted: z.boolean().optional(),
   is_custom: z.boolean().optional(), key_source: z.string().optional(), base_url: NullableString.optional(), auth_error: NullableString.optional(), env_var: NullableString.optional(), models: z.array(ModelEntrySchema).optional(), models_total: z.number().optional(),
 })
 export const ProvidersSchema = z.looseObject({ providers: z.array(ProviderSchema), active_provider: NullableString.optional() })

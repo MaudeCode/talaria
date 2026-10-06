@@ -34717,7 +34717,7 @@
     "/api/models/refresh": {
       "post": {
         "operationId": "models.refresh",
-        "summary": "Evict the live model cache for one provider (or all when omitted) and answer the rebuilt catalog.",
+        "summary": "Evict the live model cache for one provider (or all when omitted) and answer the rebuilt catalog; a named provider is re-read past the Agent's own catalog cache.",
         "tags": [
           "settings"
         ],
@@ -35332,6 +35332,9 @@
                           "has_key": {
                             "type": "boolean"
                           },
+                          "configured": {
+                            "type": "boolean"
+                          },
                           "configurable": {
                             "type": "boolean"
                           },
@@ -35564,6 +35567,7 @@
     "/api/providers/self-hosted": {
       "post": {
         "operationId": "providers.selfHosted",
+        "summary": "Save an Ollama or LM Studio endpoint (optional key) and make `model` the default; an endpoint whose `/models` does not answer is refused with 400 and nothing is saved.",
         "tags": [
           "settings"
         ],

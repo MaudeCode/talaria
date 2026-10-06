@@ -165,6 +165,14 @@ export interface CatalogDeps {
 
 /** Python `_BESPOKE_CATALOG_PROVIDERS`: cards whose catalog is resolved by their own rule, never the generic live probe. */
 const BESPOKE_CATALOG_PROVIDERS = new Set(['openai-codex', 'nous', 'xai-oauth', 'lmstudio', 'opencode-go'])
+/** A provider's configured endpoint: its `providers.<id>.base_url` (alias-aware), else the active model's `base_url`. */
+const configuredBaseUrl = (pid: string, config: Config): string => {
+  const providers = dict(config.providers)
+  const cfg = dict(providers[pid] ?? providers[Object.keys(providers).find((k) => providerIdentity(k) === providerIdentity(pid)) ?? ''])
+  return str(cfg.base_url).trim() || (activeProviderFromConfig(config) === pid ? str(modelSection(config).base_url).trim() : '')
+}
+/** TAL-570: Ollama and LM Studio run keyless, so a configured endpoint makes them ready the way a key does. */
+const selfHostedEndpoint = (pid: string, config: Config): boolean => SELF_HOSTED_PROVIDER_IDS.has(pid) && Boolean(configuredBaseUrl(pid, config))
 /** Python `_unqualified_model_id`: strip a picker routing hint (`@provider:`). */
 const unqualifiedModelId = (id: string): string => parseProviderQualifiedModel(id)?.[0] ?? id.trim()
 /** Python `_MODEL_PICKER_OVERFLOW_THRESHOLD` / `_MODEL_PICKER_VISIBLE_TARGET`. */
@@ -706,11 +714,12 @@ export class ProviderCatalog {
     for (const pid of [...known].sort()) {
       const probe = await this.probeKey(profileHome, pid, config, envValues)
       if (pid === 'openai' && !probe.hasKey && looksLikeCodexOauthToken(str(envValues[providerEnvVar('openai') ?? ''] ?? this.deps.env.OPENAI_API_KEY))) continue
+      const configured = probe.hasKey || selfHostedEndpoint(pid, config)
       let models: ModelEntry[] = pid === 'openrouter' ? FALLBACK_MODELS.map((m) => ({ id: m.id, label: m.label })) : [...(PROVIDER_MODELS[pid] ?? [])]
       let modelsTotal = models.length
       // Python: the card prefers the live catalog for every keyed provider (exactly like the picker), keeping the
       // static list as the cold/failed-probe fallback; Nous renders a featured subset with the full count.
-      if (probe.hasKey && (probe.isOauth || pid === 'lmstudio' || pid === 'nous' || !BESPOKE_CATALOG_PROVIDERS.has(pid))) {
+      if (configured && (probe.isOauth || pid === 'lmstudio' || pid === 'nous' || !BESPOKE_CATALOG_PROVIDERS.has(pid))) {
         const live = await this.liveModelIds(profileHome, pid)
         if (live.length) {
           models = pid === 'nous' ? live.slice(0, 25).map((id) => ({ id: `@nous:${id}`, label: `${formatOllamaLabel(id.includes('/') ? id.slice(id.indexOf('/') + 1) : id)} (via Nous)` })) : live.map((id) => ({ id, label: labelForModel(id, []) }))
@@ -725,11 +734,12 @@ export class ProviderCatalog {
         models = [...models, ...added]
         if (pid !== 'nous') modelsTotal += added.length
       }
-      const baseUrl = str(providerCfg.base_url).trim() || (active === pid ? str(modelSection(config).base_url).trim() : '') || null
+      const baseUrl = configuredBaseUrl(pid, config) || null
       rows.push({
         id: pid,
         display_name: displayName(pid),
         has_key: probe.hasKey,
+        configured,
         configurable: !probe.isOauth && Boolean(providerEnvVar(pid)),
         is_oauth: probe.isOauth,
         is_plugin_provider: false,
@@ -748,7 +758,7 @@ export class ProviderCatalog {
       const ready = plugin.setup === 'ready'
       const live = ready ? await this.liveModelIds(profileHome, plugin.name) : []
       rows.push({
-        id: plugin.name, display_name: plugin.display_name || plugin.name, has_key: ready,
+        id: plugin.name, display_name: plugin.display_name || plugin.name, has_key: ready, configured: ready,
         configurable: false, is_oauth: false, is_plugin_provider: true, is_self_hosted: false, is_custom: false, key_source: ready ? 'plugin' : 'none',
         base_url: null, auth_error: plugin.setup === 'ready' ? (live.length ? null : PLUGIN_NO_MODELS) : PLUGIN_SETUP_ERRORS[plugin.setup], env_var: null,
         models: live.map((id) => ({ id, label: labelForModel(id, []) })), models_total: live.length,
@@ -764,7 +774,7 @@ export class ProviderCatalog {
       const envRef = /^\$\{([^}]+)\}$/.exec(cpKey)?.[1] ?? ''
       const hasKey = envRef ? Boolean((this.processEnv(envRef, profileHome) ?? '').trim()) : valueCountsAsApiKey(slug, cp.api_key) || Boolean(str(cp.key_env).trim() && this.processEnv(str(cp.key_env).trim(), profileHome))
       rows.push({
-        id: slug, display_name: name, has_key: hasKey,
+        id: slug, display_name: name, has_key: hasKey, configured: hasKey,
         configurable: false, is_oauth: false, is_plugin_provider: false, is_self_hosted: false, is_custom: true, key_source: str(cp.api_key).trim() ? 'config_yaml' : 'none',
         base_url: str(cp.base_url).trim() || null, auth_error: null, env_var: null, models: ids.map((id) => ({ id, label: labelForModel(id, []) })), models_total: ids.length,
       })
@@ -864,7 +874,7 @@ export class ProviderCatalog {
       const providerCfg = dict(providersCfg[rawKeyFor.get(pid) ?? pid])
       let raw: ModelEntry[] = []
       if ('models' in providerCfg && providerCfg.models_discovered !== true) raw = configuredModelOptions(providerCfg.models)
-      if (!raw.length && (this.providerHasKey(pid, config, envValues, profileHome) || signedIn.has(pid))) {
+      if (!raw.length && (this.providerHasKey(pid, config, envValues, profileHome) || selfHostedEndpoint(pid, config) || signedIn.has(pid))) {
         const live = await this.liveModelIds(profileHome, pid)
         // TAL-542: a failed lookup leaves this group's list unconfirmed, so the stale-model repair never trusts it.
         if (this.liveFailed.has(`${profileHome}\0${pid}\0${source}`)) unconfirmed.add(pid)
