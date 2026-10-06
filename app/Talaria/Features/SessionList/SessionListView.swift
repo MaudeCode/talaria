@@ -655,7 +655,6 @@ struct SessionListView: View {
                     },
                     onAPIError: { authManager.handleAPIError($0, server: server) }
                 )
-                    .id(viewModel.activeProfileName)
             case .providerQuotaWidgetSettings:
                 ProviderQuotaWidgetAppearanceView()
             case .tasks:
@@ -675,7 +674,6 @@ struct SessionListView: View {
                     },
                     onAPIError: { authManager.handleAPIError($0, server: server) }
                 )
-                    .id(viewModel.activeProfileName)
             case .archived:
                 ArchivedSessionsView(server: server, onAPIError: { authManager.handleAPIError($0, server: server) })
             case .scheduled:
@@ -708,6 +706,8 @@ struct SessionListView: View {
                 )
             }
         }
+        // Each screen reads its profile's data; a switch rebuilds it for the new profile (TAL-553).
+        .id(viewModel.activeProfileName)
         .adaptiveSecondaryNavigationTitle()
     }
 

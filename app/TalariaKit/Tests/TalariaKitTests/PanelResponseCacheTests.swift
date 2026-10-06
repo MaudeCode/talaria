@@ -5,11 +5,15 @@ import XCTest
 // update from the server.
 @MainActor
 final class PanelResponseCacheTests: XCTestCase {
-    private let server = URL(string: "https://example.test")!
+    // A server of its own per test, so the recorded active profile is test-owned.
+    private let server = URL(string: "https://\(UUID().uuidString.lowercased()).test")!
 
     private func makeCache() -> ResponseCache {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock { [server] in
+            try? FileManager.default.removeItem(at: root)
+            ActiveServerProfile.record(nil, for: server)
+        }
         return ResponseCache(server: server, root: root)
     }
 
@@ -71,5 +75,45 @@ final class PanelResponseCacheTests: XCTestCase {
 
         XCTAssertEqual(nextVisit.content(for: .memory), "Newer notes")
         XCTAssertFalse(nextVisit.isShowingCachedContent)
+    }
+
+    // TAL-553: Memory and Tasks come from the active profile's home, so a profile switch must not
+    // show the previous profile's cached copy; switching back shows its own copy at once.
+    func testMemoryAndTasksNeverShowAnotherProfilesCachedCopy() async throws {
+        let cache = makeCache()
+        let profileA = makeClient { request in
+            switch request.url?.path {
+            case "/api/profiles": return apiTestJSONResponse(#"{"active": "alpha", "profiles": [{"name": "alpha"}, {"name": "beta"}]}"#, for: request)
+            case "/api/memory": return apiTestJSONResponse(#"{"memory": "Alpha notes", "user": "", "soul": ""}"#, for: request)
+            case "/api/crons": return apiTestJSONResponse(#"{"jobs": [{"id": "alpha-job", "name": "Digest"}]}"#, for: request)
+            case "/api/crons/status": return apiTestJSONResponse("{}", for: request)
+            default: return apiTestJSONResponse(#"{"platforms": []}"#, for: request)
+            }
+        }
+        _ = try await profileA.profiles()
+        await MemoryViewModel(server: server, client: profileA, responseCache: cache).load()
+        await TasksViewModel(server: server, client: profileA, responseCache: cache).load()
+
+        let switcher = makeClient { request in
+            let name = apiTestBodyData(from: request).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: String] }?["name"]
+            return apiTestJSONResponse(#"{"active": "\#(name ?? "")"}"#, for: request)
+        }
+        _ = try await switcher.switchProfile(name: "beta")
+
+        let memoryForB = MemoryViewModel(server: server, client: offlineClient(), responseCache: cache)
+        let tasksForB = TasksViewModel(server: server, client: offlineClient(), responseCache: cache)
+        XCTAssertEqual(memoryForB.content(for: .memory), "", "Profile beta must not show alpha's cached memory")
+        XCTAssertEqual(tasksForB.jobs.compactMap(\.jobId), [], "Profile beta must not show alpha's cached jobs")
+
+        _ = try await switcher.switchProfile(name: "alpha")
+
+        XCTAssertEqual(
+            MemoryViewModel(server: server, client: offlineClient(), responseCache: cache).content(for: .memory),
+            "Alpha notes"
+        )
+        XCTAssertEqual(
+            TasksViewModel(server: server, client: offlineClient(), responseCache: cache).jobs.compactMap(\.jobId),
+            ["alpha-job"]
+        )
     }
 }
