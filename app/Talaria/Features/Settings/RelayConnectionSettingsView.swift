@@ -305,13 +305,16 @@ enum RelayConnectionOperations {
         guard let publisherID = TalariaRelayClient.originURL(server) else {
             throw TalariaRelayClient.ClientError.invalidURL
         }
-        let invitation = try await TalariaRelayClient(credentials: credentials).createPublisherInvitation()
+        let client = TalariaRelayClient(credentials: credentials)
+        let invitation = try await client.createPublisherInvitation()
         try await APIClient(baseURL: server, customHeaderProvider: { headers }).pairTalariaRelay(
             invitation: invitation,
             relayURL: credentials.baseURL,
             publisherID: publisherID
         )
-        try await TalariaRelayClient(credentials: credentials).setPublisherSubscription(
+        // A device signing in for the first time has no relay record to subscribe yet.
+        try await client.configureDevice(pushToStartEnabled: TalariaLiveActivityMode.current == .allRunning)
+        try await client.setPublisherSubscription(
             publisherID,
             subscribed: true
         )

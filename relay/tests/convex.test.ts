@@ -906,6 +906,9 @@ describe("Convex relay state", () => {
         headers: { ...headers, "x-talaria-device-id": deviceId },
       });
 
+    const unregistered = await setSubscription("device-unregistered", true);
+    expect(unregistered.status).toBe(404);
+    await expect(unregistered.json()).resolves.toEqual({ error: "device_not_registered" });
     await expect(setSubscription("device-1", false).then((response) => response.status)).resolves.toBe(200);
     await expect(subscriptions("device-1").then((response) => response.json())).resolves.toMatchObject({
       publishers: expect.arrayContaining([

@@ -1,6 +1,7 @@
 # Relay HTTP API v1
 
 All bodies are JSON. User-authenticated routes use `Authorization: Bearer <relay session token>`.
+User-authenticated route failures return a non-2xx status with `{ "error": "<code>" }`. Signed publisher state routes answer conflicts with their `status` result instead (below).
 
 ## Health and release identity
 
@@ -170,7 +171,7 @@ Subscribe or unsubscribe only that device with authenticated `PUT /v1/devices/{d
 }
 ```
 
-An unsubscribed publisher is excluded from that device's aggregate snapshots, ActivityKit delivery, and notifications. Other devices remain subscribed.
+An unsubscribed publisher is excluded from that device's aggregate snapshots, ActivityKit delivery, and notifications. Other devices remain subscribed. Register the device with `PUT /v1/devices/{deviceId}` first; otherwise the relay returns 404 `device_not_registered`.
 
 Revoke the signed-in relay account's profile grant with authenticated `DELETE /v1/publisher-enrollment?publisherId=https%3A%2F%2Fhermes.example.com`. Revocation retires only that account's states and recomputes its devices. The registered publisher, signing key, and other profile grants remain active.
 

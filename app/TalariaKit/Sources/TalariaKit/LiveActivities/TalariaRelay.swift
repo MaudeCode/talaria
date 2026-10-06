@@ -170,6 +170,7 @@ public final class TalariaRelayClient {
     public enum ClientError: LocalizedError {
         case invalidURL
         case invalidResponse(Int, String?)
+        case rejected(String)
 
         public var isRetryable: Bool {
             guard case .invalidResponse(let status, _) = self else { return false }
@@ -178,8 +179,45 @@ public final class TalariaRelayClient {
 
         public var errorDescription: String? {
             switch self {
-            case .invalidURL: "Enter the HTTPS origin for the Talaria relay."
-            case .invalidResponse(let status, let body): body ?? "Relay returned HTTP \(status)."
+            case .invalidURL: String(localized: "Enter the HTTPS origin for the Talaria relay.")
+            case .invalidResponse(let status, let body): Self.message(status: status, body: body)
+            case .rejected(let message): message
+            }
+        }
+
+        /// Readable copy for a relay failure; never the raw response body.
+        static func message(status: Int, body: String?) -> String {
+            struct Failure: Decodable { var error: String }
+            let code = body.flatMap { try? JSONDecoder().decode(Failure.self, from: Data($0.utf8)).error }
+            switch code {
+            case "device_not_registered":
+                return String(localized: "This device isn't registered with Talaria Relay yet. Try again.")
+            case "device_revoked":
+                return String(localized: "This device was disconnected from Talaria Relay. Sign in again.")
+            case "publisher_not_enrolled":
+                return String(localized: "This server isn't connected to your Talaria Relay account.")
+            case "publisher_disabled":
+                return String(localized: "This server is turned off in Talaria Relay. Connect it again.")
+            case "publisher_already_registered":
+                return String(localized: "This server is connected to a different Talaria Relay account.")
+            case "invalid_invitation", "expired_invitation":
+                return String(localized: "The pairing request expired. Try again.")
+            case "invalid_apple_credential":
+                return String(localized: "Apple couldn't verify your sign-in. Try signing in again.")
+            default:
+                break
+            }
+            switch status {
+            case 401, 403:
+                return String(localized: "Your Talaria Relay sign-in expired. Sign in again.")
+            case 429:
+                return String(localized: "Too many attempts. Wait a minute and try again.")
+            case 500...:
+                return String(localized: "Talaria Relay is unavailable right now. Try again shortly.")
+            case ..<0:
+                return String(localized: "Talaria Relay didn't respond. Check your connection and try again.")
+            default:
+                return String(localized: "Talaria Relay couldn't complete the request (error \(status)).")
             }
         }
     }
@@ -215,7 +253,7 @@ public final class TalariaRelayClient {
         session: URLSession? = nil
     ) async throws -> TalariaRelayCredentials {
         guard let identityToken = String(data: identityToken, encoding: .utf8) else {
-            throw ClientError.invalidResponse(-1, "Apple did not return a valid identity token.")
+            throw ClientError.rejected(String(localized: "Apple did not return a valid identity token."))
         }
         let body = try JSONEncoder().encode(["identityToken": identityToken, "nonce": nonce])
         var request = URLRequest(url: endpoint(baseURL, "v1/auth/apple"))
@@ -570,6 +608,10 @@ public enum TalariaRelayAppleCredentialState {
 extension APIClient {
     public func pairTalariaRelay(invitation: String, relayURL: URL, publisherID: URL) async throws {
         let accepted = try await requestTalariaRelayPairing(invitation: invitation, relayURL: relayURL, publisherID: publisherID)
-        guard accepted else { throw TalariaRelayClient.ClientError.invalidResponse(500, nil) }
+        guard accepted else {
+            throw TalariaRelayClient.ClientError.rejected(
+                String(localized: "Your server didn't accept the Talaria Relay pairing. Try again.")
+            )
+        }
     }
 }
