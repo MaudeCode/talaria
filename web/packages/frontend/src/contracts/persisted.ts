@@ -14,8 +14,13 @@ export type ChatWidth = z.infer<typeof ChatWidthSchema>
 /** Sidebar/rail tab order and hidden tabs (`hermes-webui-tab-order`, `hermes-webui-hidden-tabs`). */
 export const TabIdListSchema = z.array(z.string().trim().min(1).max(64)).max(32)
 
-/** Per-session composer draft mirror kept locally before the server draft round-trips. */
-export const LocalDraftSchema = z.object({ text: z.string().max(200_000), updatedAt: z.number() })
+/**
+ * Per-session composer draft mirror kept locally before the server draft round-trips. `revision` is the exact
+ * `draft_version`-ordered stamp (TAL-564); a copy written before it existed ranks by `updatedAt`.
+ */
+export const LocalDraftSchema = z.object({ text: z.string().max(200_000), updatedAt: z.number(), revision: z.number().int().optional() })
+/** Highest composer draft revision this browser has issued or seen (`hermes-draft-revision`, TAL-564). */
+export const DraftRevisionSchema = z.number().int().nonnegative()
 
 /** Sidebar collapsed groups (`hermes-webui-collapsed-groups`). */
 export const CollapsedGroupsSchema = z.array(z.string().max(128)).max(200)

@@ -94,6 +94,7 @@ export const fetchSessionYolo = (session_id: SessionId) => orpc().session.yoloGe
 export const setSessionToolsets = (session_id: SessionId, toolsets: string[] | null) => orpc().session.toolsets({ session_id, toolsets })
 export const compressSession = (session_id: SessionId) => orpc().session.compressStart({ session_id })
 export const compressStatus = (session_id: SessionId) => orpc().session.compressStatus({ session_id })
+export const fetchDraft = (session_id: SessionId) => orpc().session.draftGet({ session_id })
 export const saveDraft = (body: z.infer<typeof DraftRequestSchema>) => orpc().session.draftSave({ session_id: body.session_id, text: body.draft.text, files: body.draft.files ?? [], draft_version: body.draft_version ?? null })
 
 export const fetchProjects = () => orpc().projects.list({})
