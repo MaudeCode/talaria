@@ -421,7 +421,7 @@ public final class ChatViewModel {
     private var queuedSlashMessages: [QueuedSlashMessage] = []
     /// What waits to send after the running response, in send order (TAL-630).
     public var queuedMessagePreviews: [QueuedMessagePreview] {
-        queuedSlashMessages.map { QueuedMessagePreview(id: $0.id, text: $0.text, attachmentCount: $0.attachments.count) }
+        queuedSlashMessages.map { QueuedMessagePreview(id: $0.id, text: $0.text, attachmentNames: $0.attachments.map(\.name)) }
     }
     /// The session's toolset override (TAL-631); nil until a session detail reports it.
     public private(set) var sessionToolsets: SessionToolsets?

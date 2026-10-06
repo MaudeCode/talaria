@@ -3165,16 +3165,19 @@ final class KanbanCardActionsUITests: TalariaUITestCase {
     }
 }
 
-/// Messages queued during a run show as a floating chip above the composer; its menu sends each one
-/// now, edits it or removes it (TAL-630).
+/// Messages queued during a run show as a floating chip above the composer; it opens a sheet that shows
+/// each one in full and sends it now, edits it or removes it (TAL-630).
 final class QueuedMessagesChipUITests: ChatUITestCase {
-    func testQueuedMessagesChipListsThemAndEditsAndRemovesThem() throws {
-        launchChatFixture(argument: "--ui-test-chat-controls", trace: "start -> token -> queue x2 -> edit -> remove")
+    func testQueuedMessagesSheetShowsThemInFullAndRemovesAndEditsThem() throws {
+        launchChatFixture(argument: "--ui-test-chat-controls", trace: "start -> token -> queue x2 -> remove -> edit")
         try sendFixtureMessage("Run the deterministic fixture")
         XCTAssertTrue(app.staticTexts["Waiting for control input."].awaitExistence(timeout: 5))
 
         let input = app.textViews.firstMatch
-        for message in ["First queued message", "Second queued message"] {
+        // The second is a paragraph, so the sheet shows a long message in full.
+        let long = "Second queued message: once this finishes, rerun the full suite on the hosted runner, "
+            + "compare the timings against yesterday's run, and write up anything that got slower than ten percent."
+        for message in ["First queued message", long] {
             input.typeText("/queue \(message)")
             tapCenter(of: app.buttons["Send"])
             XCTAssertTrue(element(labelContaining: "Queued for next turn").awaitExistence(timeout: 5))
@@ -3185,24 +3188,24 @@ final class QueuedMessagesChipUITests: ChatUITestCase {
         XCTAssertGreaterThanOrEqual(chip.frame.height, 43, "The queue chip's hit area is under 44 pt")
         attachScreenshot(named: "queued-chip")
         tapCenter(of: chip)
-        XCTAssertTrue(element(label: "First queued message").awaitExistence(timeout: 5), "The menu does not list the first message")
-        XCTAssertTrue(element(label: "Second queued message").exists, "The menu does not list the second message")
+        XCTAssertTrue(app.staticTexts["First queued message"].awaitExistence(timeout: 5), "The sheet does not show the first message")
+        let longText = app.staticTexts.matching(NSPredicate(format: "label == %@", long)).firstMatch
+        XCTAssertTrue(longText.exists, "The sheet does not show the second message in full")
         XCTAssertEqual(app.buttons.matching(identifier: "Send now").count, 2)
         XCTAssertEqual(app.buttons.matching(identifier: "Remove").count, 2)
-        attachScreenshot(named: "queued-menu")
+        attachScreenshot(named: "queued-sheet")
 
-        // Edit takes the first message back into the composer and out of the queue.
-        app.buttons.matching(identifier: "Edit").firstMatch.tap()
-        let oneQueued = app.buttons["1 queued"]
-        XCTAssertTrue(oneQueued.awaitExistence(timeout: 5), "Edit left the message in the queue")
-        XCTAssertEqual(input.value as? String, "First queued message", "Edit did not put the message back in the composer")
+        // Remove drops the second message; the sheet stays for the first.
+        app.buttons.matching(identifier: "Remove").element(boundBy: 1).tap()
+        XCTAssertTrue(longText.awaitNonExistence(timeout: 5), "Remove left the message in the queue")
+        XCTAssertTrue(app.staticTexts["First queued message"].exists)
 
-        // Remove drops the last one, and the chip leaves with it.
-        tapCenter(of: oneQueued)
-        let remove = app.buttons["Remove"]
-        XCTAssertTrue(remove.awaitExistence(timeout: 5))
-        remove.tap()
-        XCTAssertTrue(oneQueued.awaitNonExistence(timeout: 5), "The queue chip stayed after its last message was removed")
+        // Edit takes the last one back into the composer; the sheet and the chip leave with it.
+        app.buttons["Edit"].tap()
+        XCTAssertTrue(app.buttons["1 queued"].awaitNonExistence(timeout: 5), "The queue chip stayed after its last message was edited")
+        let composerInput = app.textViews.firstMatch
+        XCTAssertTrue(composerInput.awaitExistence(timeout: 5))
+        XCTAssertEqual(composerInput.value as? String, "First queued message", "Edit did not put the message back in the composer")
     }
 }
 

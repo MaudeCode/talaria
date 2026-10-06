@@ -131,6 +131,7 @@ struct ChatView: View {
     @State private var showEditSheet = false
     @State private var showEditDiscardConfirmation = false
     @State private var showApprovalBypassOffConfirmation = false
+    @State private var showsQueuedMessagesSheet = false
     @State private var regenerateContext: MessageActionContext?
     @State private var showRegenerateDiscardConfirmation = false
     @State private var selectableResponseText: SelectableTextPresentation?
@@ -706,6 +707,19 @@ struct ChatView: View {
                 InAppSafariView(url: page.url).ignoresSafeArea()
             }
             .sheet(item: $activeGitSheet, content: gitSheet)
+            .sheet(isPresented: $showsQueuedMessagesSheet) {
+                QueuedMessagesSheet(
+                    previews: viewModel.queuedMessagePreviews,
+                    onSendNow: { id in Task { await viewModel.sendQueuedMessageNow(id: id) } },
+                    onEdit: { id in
+                        showsQueuedMessagesSheet = false
+                        viewModel.editQueuedMessage(id: id)
+                    },
+                    onRemove: { id in Task { await viewModel.removeQueuedMessage(id: id) } }
+                )
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+            }
             .sheet(item: $turnDiffPresentation, content: turnDiffSheet)
             .alert(item: $gitAlert, content: gitAlertPresentation)
             .sheet(isPresented: $showsGoalSheet) {
@@ -1138,54 +1152,17 @@ struct ChatView: View {
         }
     }
 
-    /// What waits to send after this response (TAL-630); tapping lists each message with Send now,
-    /// Edit and Remove, like a pending steer's actions.
+    /// What waits to send after this response (TAL-630); tapping opens the queue sheet.
     private func queuedMessagesChip(_ previews: [QueuedMessagePreview]) -> some View {
-        StatusChip(label: String(localized: "\(previews.count) queued"), icon: .symbol("text.badge.plus"))
-            .accessibilityHidden(true)
-            .overlay { queuedMessagesMenu(previews) }
-    }
-
-    private func queuedMessagesMenu(_ previews: [QueuedMessagePreview]) -> some View {
-        Menu {
-            ForEach(previews) { preview in
-                Section(queuedMessageTitle(preview)) {
-                    if preview.canSendNow {
-                        Button {
-                            Task { await viewModel.sendQueuedMessageNow(id: preview.id) }
-                        } label: {
-                            Label(String(localized: "Send now"), systemImage: "arrow.up")
-                        }
-                    }
-                    Button {
-                        viewModel.editQueuedMessage(id: preview.id)
-                    } label: {
-                        Label(String(localized: "Edit"), systemImage: "pencil")
-                    }
-                    Button(role: .destructive) {
-                        Task { await viewModel.removeQueuedMessage(id: preview.id) }
-                    } label: {
-                        Label(String(localized: "Remove"), systemImage: "trash")
-                    }
-                }
-            }
+        Button {
+            showsQueuedMessagesSheet = true
         } label: {
-            // A clear 44 pt target over the chip: a label with the chip's glass in it would spread
-            // that glass over the whole target.
-            Color.clear
-                .frame(minWidth: 44, minHeight: 44)
+            StatusChip(label: String(localized: "\(previews.count) queued"), icon: .symbol("text.badge.plus"))
+                .frame(minHeight: 44)
                 .contentShape(.rect)
         }
-        .menuStyle(.button)
         .buttonStyle(.plain)
-        .accessibilityLabel(String(localized: "\(previews.count) queued"))
-    }
-
-    /// A queued message's section title: its text, with its file count when it carries files.
-    private func queuedMessageTitle(_ preview: QueuedMessagePreview) -> String {
-        guard preview.attachmentCount > 0 else { return preview.text }
-        let files = String(localized: "\(preview.attachmentCount) attached")
-        return preview.text.isEmpty ? files : "\(preview.text) · \(files)"
+        .accessibilityHint(String(localized: "Shows the queued messages"))
     }
 
     /// The run status chip, joined by the scroll chip on the chosen side while it shows. A

@@ -9,17 +9,19 @@ struct QueuedSlashMessage {
     let steerID: String?
 }
 
-/// A queued message as the floating queue chip lists it (TAL-630): its text and how many files go with it.
+/// A queued message as the queue sheet lists it (TAL-630): its text and the files that go with it.
 public struct QueuedMessagePreview: Equatable, Identifiable, Sendable {
     public let id: UUID
     public let text: String
-    public let attachmentCount: Int
+    public let attachmentNames: [String]
 
-    public init(id: UUID, text: String, attachmentCount: Int) {
+    public init(id: UUID, text: String, attachmentNames: [String]) {
         self.id = id
         self.text = text
-        self.attachmentCount = attachmentCount
+        self.attachmentNames = attachmentNames
     }
+
+    public var attachmentCount: Int { attachmentNames.count }
 
     /// Send now steers the message into the running reply, and a steer carries text only.
     public var canSendNow: Bool { attachmentCount == 0 && !text.isEmpty }
