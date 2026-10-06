@@ -157,7 +157,7 @@ function preflight(ctx: RequestContext): void {
 }
 
 /** Every implemented procedure, keyed like the contract. */
-export const appRouter = { ...coreRouter, ...sessionsRouter, ...gitRouter, ...chatRouter, ...settingsRouter, ...toolsRouter, ...automationRouter }
+const appRouter = { ...coreRouter, ...sessionsRouter, ...gitRouter, ...chatRouter, ...settingsRouter, ...toolsRouter, ...automationRouter }
 
 const SSE_GET_ROUTES: Record<string, (ctx: RequestContext) => Promise<void>> = {
   '/api/chat/stream': handleChatStream,
