@@ -125,18 +125,34 @@ describe('TTS validation, limits, and engines', () => {
     expect(requests[0]?.url).toContain('/text-to-speech/voiceABC/')
     expect((requests[0]?.init?.headers as Record<string, string>)['xi-api-key']).toBe('el-key-1234')
     expect(JSON.parse(requests[0]?.init?.body as string) as Json).toMatchObject({ text: 'hello there', model_id: 'eleven_turbo', voice_settings: { stability: 0.5, similarity_boost: 0.75 } })
-    // Python read `tts.elevenlabs.model` before `model_id`, defaulted the voice to Adam, and defaulted the engine to
-    // Edge — which this release answers with the documented 503 rather than running OpenAI on the operator's key.
+    // Python read `tts.elevenlabs.model` before `model_id` and defaulted the voice to Adam.
     fresh()
     setEnv({ ELEVENLABS_API_KEY: 'el-key-1234' })
     setConfig({ tts: { elevenlabs: { model: 'eleven_v3' } } })
     await post(s, '/api/tts', { text: 'again', engine: 'elevenlabs' })
     expect(requests[0]?.url).toContain('/text-to-speech/pNInz6obpgDQGcFmaJgB/')
     expect(JSON.parse(requests[0]?.init?.body as string) as Json).toMatchObject({ model_id: 'eleven_v3' })
+  })
+
+  it('a request without an engine uses the profile tts.provider, and answers 503 tts_unconfigured without one', async () => {
     fresh()
-    const defaulted = await post(s, '/api/tts', { text: 'no engine' })
-    expect(defaulted.status).toBe(503)
+    setEnv({ OPENAI_API_KEY: 'sk-openai-1234', ELEVENLABS_API_KEY: 'el-key-1234' })
+    setConfig({ tts: { provider: 'openai', openai: { voice: 'nova' } } })
+    let res = await post(s, '/api/tts', { text: 'Hello', voice: 'en-US-AriaNeural' })
+    expect(res.status).toBe(200)
+    expect(requests[0]?.url).toBe('https://api.openai.com/v1/audio/speech')
+    expect(JSON.parse(requests[0]?.init?.body as string)).toEqual({ model: 'gpt-4o-mini-tts', input: 'Hello', voice: 'nova' })
+    // An explicit engine still wins over the configured provider.
+    fresh()
+    expect((await post(s, '/api/tts', { text: 'Hello', engine: 'elevenlabs' })).status).toBe(200)
+    expect(requests[0]?.url).toContain('api.elevenlabs.io')
+    fresh()
+    setConfig({ tts: { elevenlabs: { model: 'eleven_v3' } } })
+    res = await post(s, '/api/tts', { text: 'Hello' })
+    expect(res.status).toBe(503)
+    expect(await json(res)).toMatchObject({ code: 'tts_unconfigured' })
     expect(requests).toEqual([])
+    setEnv({ ELEVENLABS_API_KEY: null })
   })
 
   it('the 5000-character cap applies to ElevenLabs before any request', async () => {

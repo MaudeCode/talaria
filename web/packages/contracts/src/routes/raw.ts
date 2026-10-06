@@ -101,8 +101,8 @@ export const RAW_ROUTES: readonly RawRoute[] = [
   },
   {
     method: 'POST', path: '/api/tts', summary: 'Text-to-speech proxy (`engine`: openai or elevenlabs); answers `audio/mpeg`.', tags: ['tools'],
-    requestBody: { contentType: 'application/json', description: '`{text, engine, voice?, rate?, pitch?}`.' },
-    responses: { 200: { description: 'MP3 audio.', contentType: 'audio/mpeg' }, 400: { description: 'Invalid text, voice, or engine.', contentType: 'application/json' }, 429: { description: 'Rate limited (one request per 2 s per client).', contentType: 'application/json' }, 503: { description: 'Engine not configured.', contentType: 'application/json' } },
+    requestBody: { contentType: 'application/json', description: '`{text, engine?, voice?, rate?, pitch?}`; `engine` defaults to the profile `tts.provider`.' },
+    responses: { 200: { description: 'MP3 audio.', contentType: 'audio/mpeg' }, 400: { description: 'Invalid text, voice, or engine.', contentType: 'application/json' }, 429: { description: 'Rate limited (one request per 2 s per client).', contentType: 'application/json' }, 503: { description: 'Engine not configured; `code: tts_unconfigured` when no engine is named and no `tts.provider` is set.', contentType: 'application/json' } },
   },
   {
     method: 'POST', path: '/api/csp-report', summary: 'Browser CSP report sink (public, rate limited, always 204).', tags: ['tools'],

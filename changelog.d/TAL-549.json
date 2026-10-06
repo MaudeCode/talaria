@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Listen now plays the server's configured OpenAI or ElevenLabs voice instead of always falling back to the on-device voice.",
+      "highlight": false,
+      "components": ["web", "app"]
+    }
+  ]
+}

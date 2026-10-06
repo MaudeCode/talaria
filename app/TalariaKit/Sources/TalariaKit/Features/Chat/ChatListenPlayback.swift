@@ -157,15 +157,15 @@ struct SpeechTextNormalizer {
     }
 }
 
-/// Routing policy for the "Listen" action (#15): prefer the server's neural TTS
-/// (`POST /api/tts`, edge engine — no API key needed) and fall back to the
-/// on-device synthesizer when the server can't serve the request.
+/// Routing policy for the "Listen" action (#15): prefer the server's configured
+/// TTS engine (`POST /api/tts`) and fall back to the on-device synthesizer when
+/// the server can't serve the request.
 enum ServerTTSPolicy {
     /// Server-enforced request cap (`400 text too long` above it); longer text
     /// routes straight to the on-device synthesizer (chunking is a non-goal).
     static let maximumTextLength = 5000
-    /// The client always sends an explicit voice because the server default is
-    /// Chinese. A voice picker remains outside this module's current scope.
+    /// Sent with every request; the server's configured engine uses its own
+    /// configured voice. A voice picker remains outside this module's current scope.
     static let defaultVoice = "en-US-AriaNeural"
 
     static func shouldUseServerTTS(for text: String) -> Bool {
