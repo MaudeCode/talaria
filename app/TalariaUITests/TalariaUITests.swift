@@ -1137,6 +1137,40 @@ final class SettingsStructureUITests: SettingsUITestCase {
         assertChatsAndProvidersShowTheirControlsAndServerContent()
     }
 
+    /// Settings follows the applied update's server notification through the restart and shows
+    /// the server's own explanation when it fails (TAL-558).
+    func testServerUpdateFollowsTheServerPhaseAndShowsItsFailureDetail() throws {
+        launchFixture(additionalArguments: ["--ui-test-server-update"])
+        openSettings()
+        tapSettingsCategory(id: "servers", title: "Servers")
+        let update = app.buttons["Update"]
+        repeatStep(8, until: { update.exists && update.isHittable }) { app.swipeUp() }
+        _ = update.settledFrame
+        update.tap()
+        let confirm = app.alerts["Update server?"].buttons["Update"]
+        XCTAssertTrue(confirm.awaitExistence(timeout: 5))
+        confirm.tap()
+
+        let restarting = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@", "Updating & restarting"))
+            .firstMatch
+        XCTAssertTrue(restarting.awaitExistence(timeout: 5))
+        let restartingShot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        restartingShot.name = "Server update restarting"
+        restartingShot.lifetime = .keepAlways
+        add(restartingShot)
+
+        let failure = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@", "unresolved merge conflicts"))
+            .firstMatch
+        XCTAssertTrue(failure.awaitExistence(timeout: 20))
+        XCTAssertTrue(app.buttons["Retry update"].exists)
+        let failedShot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        failedShot.name = "Server update failed with server detail"
+        failedShot.lifetime = .keepAlways
+        add(failedShot)
+    }
+
     /// Starts at the Settings root.
     private func assertChatsAndProvidersShowTheirControlsAndServerContent() {
         tapSettingsCategory(id: "chats", title: "Chats")

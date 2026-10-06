@@ -233,6 +233,63 @@ final class APIClientUpdatesApplyTests: APIClientTestCase {
         XCTAssertTrue(replacement.supportsNotifications)
     }
 
+    func testFollowUpdateReportsSuccessWhenServerFinishesAfterNinetySeconds() async throws {
+        var polls = 0
+        let client = makeClient { request in
+            XCTAssertEqual(request.url?.path, "/api/update-notifications")
+            polls += 1
+            switch polls * 2 {
+            case ..<20: return self.updateNotificationList(phase: "applying", active: true, for: request)
+            case ..<60: return self.updateNotificationList(phase: "restarting", active: true, for: request)
+            case ..<90: throw URLError(.cannotConnectToHost)
+            default: return self.updateNotificationList(phase: "succeeded", active: false, for: request)
+            }
+        }
+
+        let completion = await client.followUpdate(notificationID: Self.updateNotificationID, sleep: { _ in })
+
+        XCTAssertEqual(completion, .succeeded)
+        XCTAssertEqual(polls * 2, 90)
+    }
+
+    func testFollowUpdateShowsTheServerExplanationOfAFailedPhase() async throws {
+        let client = makeClient { request in
+            self.updateNotificationList(
+                phase: "failed",
+                active: false,
+                message: "The update could not be completed. Open System settings for details.",
+                detail: "The local webui repo has unresolved merge conflicts.",
+                for: request
+            )
+        }
+
+        let completion = await client.followUpdate(notificationID: Self.updateNotificationID, sleep: { _ in })
+
+        XCTAssertEqual(completion, .failed(message: "The local webui repo has unresolved merge conflicts."))
+    }
+
+    private static let updateNotificationID = "00000000-0000-4000-8000-000000000558"
+
+    private func updateNotificationList(
+        phase: String,
+        active: Bool,
+        message: String = "Talaria Web update in progress.",
+        detail: String? = nil,
+        for request: URLRequest
+    ) -> (HTTPURLResponse, Data) {
+        let detailJSON = detail.map { "\"\($0)\"" } ?? "null"
+        return apiTestJSONResponse("""
+        {"scope_id":"scope-a","notifications":[{
+          "id": "\(Self.updateNotificationID)", "kind": "update", "target": "webui", "phase": "\(phase)",
+          "severity": "info", "persistent": false, "requires_acknowledgement": false, "actions": [], "destination": null,
+          "title": "Talaria Web update", "message": "\(message)",
+          "created_at": "2026-10-05T12:00:00Z", "updated_at": "2026-10-05T12:00:00Z", "read_at": null,
+          "acknowledged_at": null, "acknowledged_action_id": null, "verified_revision": null, "verified_version": null,
+          "detail": \(detailJSON), "unread": true, "active": \(active), "requires_interaction": false, "can_dismiss": true
+        }],"unread_count":1,"clearable_count":1,"can_clear":true}
+        """, for: request)
+    }
+
     private func decodeApply(_ json: String) throws -> UpdatesApplyResponse {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase

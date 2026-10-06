@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Server updates started from Settings now follow the server's own progress, so a slow update no longer shows as failed and a failed one shows the server's reason.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}
