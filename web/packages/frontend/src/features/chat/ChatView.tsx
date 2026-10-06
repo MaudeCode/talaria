@@ -17,7 +17,8 @@ import { isTerminal } from '../../stream/reducer'
 import { useTranscript, type VisibleMessage } from './useTranscript'
 import { Transcript } from './Transcript'
 import { TranscriptSkeleton } from './TranscriptSkeleton'
-import { Composer, turnRequest, type QueuedTurn } from '../composer/Composer'
+import { Composer, turnRequest } from '../composer/Composer'
+import { useQueuedTurns } from '../composer/queue'
 import { returnToComposer } from '../composer/composerReturn'
 import { ApprovalCard } from './ApprovalCard'
 import { ClarifyCard } from './ClarifyCard'
@@ -46,7 +47,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   useMarkViewed(sessionId, query.isFetchedAfterMount || (query.isSuccess && !query.isStale), live && isTerminal(live.status) ? live.streamId : null)
   const [terminalOpen, setTerminalOpen] = useState(false)
   const { sidePanelOpen } = useShellState()
-  const [queued, setQueued] = useState<QueuedTurn[]>([])
+  const [queued, setQueued] = useQueuedTurns(sessionId)
   const draining = useRef(false)
   const [yolo, setYolo] = useState(false)
   // Choices made on the unsaved chat (no session yet) apply when the session is created.
@@ -63,19 +64,20 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   }, [sessionId])
   const yoloOn = sessionId ? yolo : false
 
-  // Queue drain: when the live turn settles, send the next queued message.
+  // Queue drain: when the live turn settles, send the next queued message. A queue a reload restored onto a session
+  // whose run ended meanwhile has no turn to settle; the server reporting no active stream starts it instead.
   useEffect(() => {
-    if (!sessionId || !session || !live || !isTerminal(live.status)) return
+    if (!sessionId || !session || (live ? !isTerminal(live.status) : session.active_stream_id)) return
     const next = queued[0]
     if (!next || draining.current) return
     // One drain in flight at a time; the item leaves the queue only once its turn has started, so a
     // failed start keeps it and a re-render mid-request cannot start the next item concurrently.
     draining.current = true
     void startTurn({ sessionId, message: next.text, request: { ...next.request, ...(next.attachments.length ? { attachments: next.attachments } : {}) } })
-      .then(() => setQueued((q) => (q[0] === next ? q.slice(1) : q)))
+      .then(() => setQueued((q) => q.filter((t) => t.id !== next.id)))
       .catch((e: unknown) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error'))
       .finally(() => { draining.current = false })
-  }, [live?.status, sessionId, session, queued, live])
+  }, [sessionId, session, queued, live, setQueued])
 
   const ensureSession = useCallback(async (onCreated?: (sessionId: string) => void): Promise<Session> => {
     if (session) return session
@@ -359,6 +361,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
           queued={queued}
           locked={compressing}
           onQueue={(entry) => setQueued((q) => [...q, entry])}
+          onQueueChange={setQueued}
           clarify={clarify}
           notices={runtime.notices}
         />

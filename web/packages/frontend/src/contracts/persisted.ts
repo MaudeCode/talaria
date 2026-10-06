@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { SKIN_KEYS } from '../theme/skins'
+import { UploadResponseSchema } from './chat'
 
 export const ThemeSchema = z.enum(['light', 'dark', 'system'])
 export type Theme = z.infer<typeof ThemeSchema>
@@ -22,3 +23,12 @@ export const CollapsedGroupsSchema = z.array(z.string().max(128)).max(200)
 
 export const NumberPrefSchema = z.number()
 export const BoolPrefSchema = z.boolean()
+
+/** A message queued behind the running turn (`hermes-queue:<sid>`, TAL-562): its text, upload receipts and the request it was composed against. */
+export const QueuedTurnSchema = z.object({
+  id: z.string().min(1).max(64),
+  text: z.string().max(200_000),
+  attachments: z.array(UploadResponseSchema).max(100),
+  request: z.object({ model: z.string().optional(), model_provider: z.string().nullable().optional(), workspace: z.string().optional(), profile: z.string() }),
+})
+export const QueuedTurnsSchema = z.array(QueuedTurnSchema).max(100)

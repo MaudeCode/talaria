@@ -220,6 +220,8 @@
 	"queued_label": "Sends after response",
 	"queued_count": "{n} queued",
 	"queued_cancel": "Cancel queued message",
+	"queued_edit": "Edit queued message",
+	"queued_reorder": "Reorder queued message",
 	"model_unavailable": " (unavailable)",
 	"model_unavailable_title": "This model is no longer in your current provider list",
 	"provider_mismatch_warning": "\"{m}\" may not work with your configured provider ({p}). Send anyway, or run `hermes model` in your terminal to switch.",

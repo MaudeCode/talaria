@@ -40,7 +40,7 @@ function Chat({ live = streaming }: { live?: LiveTurn }) {
       <Composer
         sessionId="s1" session={session} live={live} settings={undefined} onEnsureSession={() => Promise.resolve(session)} onLocalCommand={() => Promise.resolve(false)}
         terminalOpen={false} onToggleTerminal={noop} onModelChange={noop} onWorkspaceChange={noop} onToolsetsChange={noop} onReasoningChange={noop} reasoning={null}
-        yolo={false} onToggleYolo={noop} queued={[]} onQueue={onQueue} clarify={clarify}
+        yolo={false} onToggleYolo={noop} queued={[]} onQueue={onQueue} onQueueChange={noop} clarify={clarify}
       />
     </>
   )

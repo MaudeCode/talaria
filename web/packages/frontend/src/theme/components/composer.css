@@ -139,7 +139,11 @@
 @keyframes composer-tab-row-out{to{transform:translateY(100%)}}
 @media (prefers-reduced-motion:reduce){.composer-tab,.composer-tab-item,.composer-tab-item > .composer-tab-row{animation:none}}
 .queue-card-title{font-weight:600;color:var(--text)}
-.queue-card-list{margin:0;padding:0;list-style:none;max-height:3lh;overflow-y:auto}
+.queue-card-list{margin:0;padding:0;list-style:none;max-height:calc(28px * 4);overflow-y:auto}
+.queue-card-row{display:flex;align-items:center;gap:2px;min-width:0}
+.queue-card-text{flex:1;min-width:0}
+.queue-card-handle{cursor:grab;touch-action:none}
+.queue-card-input{flex:1;min-width:0;padding:2px 6px;border:1px solid var(--border);border-radius:6px;background:transparent;font:inherit;color:var(--text)}
 .composer-strip{display:flex;align-items:center;gap:calc(var(--space-1) / 2);padding:calc(var(--space-1) / 2) calc(var(--space-1) * 1.5);border-top:0;border-radius:0 0 var(--r-lg) var(--r-lg);overflow-x:auto;scrollbar-width:none}
 .composer-strip::-webkit-scrollbar{display:none}
 @media (max-width:640px){.composer-tab,.composer-strip{width:calc(100% - var(--space-3) * 2)}}
