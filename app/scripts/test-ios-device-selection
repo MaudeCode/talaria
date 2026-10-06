@@ -17,6 +17,9 @@ import os, shutil, sys
 
 with open(os.environ['CALL_LOG'], 'a') as log:
     log.write('list\\n')
+if os.environ.get('DEVICECTL_FAILS'):
+    print('devicectl: CoreDevice service unavailable', file=sys.stderr)
+    sys.exit(1)
 index = sum(1 for _ in open(os.environ['CALL_LOG'])) - 1
 fixtures = os.environ['FIXTURE_DIR']
 while not os.path.exists(os.path.join(fixtures, f'{index}.json')):
@@ -44,7 +47,7 @@ def select(*records, expected=0, **environment):
         work = Path(directory)
         (work / 'bin').mkdir()
         for index, item in enumerate(records):
-            (work / f'{index}.json').write_text(json.dumps(item))
+            (work / f'{index}.json').write_text(item if isinstance(item, str) else json.dumps(item))
         fake = work / 'bin' / 'xcrun'
         fake.write_text(FAKE_XCRUN)
         fake.chmod(0o755)
@@ -100,5 +103,11 @@ invalid = select(record(phone()), expected=69, TALARIA_DEVICE_ID='not-a-device')
 assert invalid[2] == int(ATTEMPTS) and 'TALARIA_DEVICE_ID=not-a-device' in invalid[1], invalid
 
 assert len({missing[1], unavailable[1], ambiguous[1], invalid[1]}) == 4
+
+# A failing or malformed devicectl report never yields a build target.
+failed = select(record(phone()), expected=69, DEVICECTL_FAILS='1')
+assert failed[0] == '' and 'CoreDevice service unavailable' in failed[1], failed
+malformed = select('{"result": {"devices": [', expected=1)
+assert malformed[0] == '' and 'JSONDecodeError' in malformed[1], malformed
 
 print('ios device selection checks passed')

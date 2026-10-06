@@ -43,6 +43,7 @@ SCRIPTS = {
     "check-docker.py": {"docker", "tooling"},
     "check-relay-local.py": {"relay", "tooling"},
     "stamp-release.py": {"tooling"},
+    "test-stamp-release.py": {"tooling"},
     "check-agent-compatibility.py": {"web_server", "docker", "tooling"},
     "critical-markdown-check.py": {"tooling"},
     "test-critical-markdown-check.py": {"tooling"},
@@ -240,8 +241,8 @@ def classify_app_ui(paths, base, head):
                 before, after = [git("show", f"{ref}:{path}") for ref in (base, head)]
                 if same_plist_ui(before, after):
                     metadata_only_plists.append(path)
-            except (subprocess.CalledProcessError, ValueError, plistlib.InvalidFileException, AttributeError, TypeError):
-                pass
+            except Exception:
+                pass  # plistlib raises parser-specific errors (ExpatError, ...); unreadable plists require the UI suite.
     return not paths or app_ui_required(paths, scene_unchanged, metadata_only_plists)
 
 

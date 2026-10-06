@@ -59,6 +59,26 @@ fi
   validate_release_tag >/dev/null
 )
 
+# A tag that moved off the expected release commit, an unsigned lightweight tag and an unknown
+# component never verify, even when GitHub would vouch for the signature.
+git -C "$repo" tag app-v1.6.1
+for rejected in "app app-v1.6.0 0000000000000000000000000000000000000000 resolves to" \
+  "app app-v1.6.1 - must be an annotated signed tag" "desktop desktop-v1.6.0 - Unknown release component"; do
+  read -r component tag expected message <<< "$rejected"
+  if output="$(
+    cd "$repo"
+    source "$source_root/ci/validate_release_tag"
+    tag_signature_verified() { return 0; }
+    export RELEASE_COMPONENT="$component" RELEASE_TAG="$tag"
+    [[ "$expected" == - ]] || export EXPECTED_SHA="$expected"
+    validate_release_tag 2>&1
+  )"; then
+    echo "Expected ${tag} to fail: ${message}" >&2
+    exit 1
+  fi
+  [[ "$output" == *"$message"* ]] || { echo "Expected '${message}' for ${tag}, got: ${output}" >&2; exit 1; }
+done
+
 git -C "$repo" tag -a -m "Bad version" app-v1.6
 if (
   cd "$repo"
