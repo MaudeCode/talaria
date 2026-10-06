@@ -77,7 +77,8 @@ app_path="$build_dir/Build/Products/Debug-iphoneos/Talaria.app"
     exit 1
 }
 codesign --verify --deep --strict "$app_path"
-bundle_id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app_path/Info.plist")
+path+=(/usr/libexec)
+bundle_id=$(PlistBuddy -c 'Print :CFBundleIdentifier' "$app_path/Info.plist")
 [[ "$bundle_id" == "$dev_bundle_id" ]] || {
     print -u2 "Refusing to install $bundle_id; expected Talaria Dev ($dev_bundle_id)."
     exit 1

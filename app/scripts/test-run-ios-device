@@ -14,6 +14,10 @@ FAKE = '''#!/bin/sh
 printf '%s\\n' "$(basename "$0") $*" >> "$CALL_LOG"
 [ "$(basename "$0")" != xcodebuild ] || { echo "synthetic build output"; exit "${XCODEBUILD_STATUS:-0}"; }
 '''
+PLIST_BUDDY = '''#!/usr/bin/env python3
+import plistlib, sys
+print(plistlib.load(open(sys.argv[-1], 'rb'))['CFBundleIdentifier'])
+'''
 SELECTOR = '''#!/bin/sh
 [ -z "$SELECT_FAILS" ] || { echo "No paired physical iPhone found." >&2; exit 69; }
 echo "$SELECTED_UDID"
@@ -32,6 +36,8 @@ def run(*options, prepare=lambda repo: None, **environment):
     for tool in ('xcodebuild', 'xcrun', 'codesign'):
         (tools / tool).write_text(FAKE)
         (tools / tool).chmod(0o755)
+    (tools / 'PlistBuddy').write_text(PLIST_BUDDY)
+    (tools / 'PlistBuddy').chmod(0o755)
     prepare(repo)
     env = dict(os.environ, PATH=f'{tools}:{os.environ["PATH"]}', _TALARIA_ENV_LOADED='1',
                CALL_LOG=str(work / 'calls'), SELECTED_UDID=UDID)
