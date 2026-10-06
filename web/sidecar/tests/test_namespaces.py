@@ -247,9 +247,20 @@ def test_kanban_tasks_report_claim_liveness_and_completion_evidence(handshaken: 
                 conn.execute("UPDATE tasks SET worker_started_at = NULL WHERE id = ?", (task_id,))
         task = handshaken.result("kanban.task", {"profile_home": home, "task_id": task_id})["task"]
         assert task["claim_live"] is True and task["has_completion_evidence"] is True
+        # A client holding policy from before the claim still cannot release it.
+        for method, params in (
+            ("kanban.task_action", {"action": "block"}),
+            ("kanban.patch_task", {"patch": {"status": "todo"}}),
+            ("kanban.patch_task", {"patch": {"status": "done"}}),
+        ):
+            message, _ = handshaken.call(method, {"profile_home": home, "task_id": task_id, **params})
+            assert message.get("error", {}).get("data", {}).get("condition") == "conflict", (method, params, message)
+        assert handshaken.result("kanban.task", {"profile_home": home, "task_id": task_id})["task"]["status"] == "running"
     finally:
         worker.kill()
         worker.wait()
     board = handshaken.result("kanban.board", {"profile_home": home})
     running = next(t for c in board["columns"] for t in c["tasks"] if t["id"] == task_id)
     assert running["claim_live"] is False
+    # Once the worker is gone the claim no longer protects a run, and the release goes through.
+    assert handshaken.result("kanban.patch_task", {"profile_home": home, "task_id": task_id, "patch": {"status": "todo"}})["task"]["status"] == "todo"

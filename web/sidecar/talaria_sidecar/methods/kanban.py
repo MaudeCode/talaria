@@ -82,23 +82,33 @@ def _obj_dict(value):
     return dict(getattr(value, "__dict__", {}))
 
 
-def _claim_live(conn, task) -> bool:
-    """Whether a running task's worker process still holds its claim (the Agent's ``_claim_is_live``).
+LIVE_CLAIM_MESSAGE = "task has a live worker; archive it to stop the worker"
 
-    Releasing that claim (block, a direct status change) leaves the worker running, so the
-    server offers those writes only once the worker is gone. Unknown liveness counts as live.
+
+def _row_claim_live(row) -> bool:
+    """The Agent's ``_claim_is_live`` for a ``tasks`` row: a running task's worker process still holds its claim.
+
+    Releasing that claim (block, a direct status change) leaves the worker running, so the card
+    policy withholds those writes and the write paths refuse them (TAL-557). Unknown liveness counts as live.
     """
-    if getattr(task, "status", None) != "running":
+    if row is None or row["status"] != "running":
         return False
+    columns = row.keys()
+    claim = {k: row[k] if k in columns else None for k in ("status", "claim_lock", "worker_pid", "worker_started_at")}
     try:
-        row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task.id,)).fetchone()
-        if row is None:
-            return False
-        columns = row.keys()
-        claim = {k: row[k] if k in columns else None for k in ("status", "claim_lock", "worker_pid", "worker_started_at")}
         return bool(_kb()._claim_is_live(claim))
     except Exception:  # noqa: BLE001 - an older Agent without the helper
-        return bool(getattr(task, "claim_lock", None) and getattr(task, "worker_pid", None))
+        return bool(claim["claim_lock"] and claim["worker_pid"])
+
+
+def _claim_live(conn, task_id) -> bool:
+    return _row_claim_live(conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone())
+
+
+def _refuse_live_claim(conn, task_id) -> None:
+    """Point-of-use check: a client's card policy can predate a dispatcher claim."""
+    if _claim_live(conn, task_id):
+        raise Conflict(LIVE_CLAIM_MESSAGE)
 
 
 def _task_dict(task, conn):
@@ -107,7 +117,7 @@ def _task_dict(task, conn):
         return data
     # Facts the server's card policy needs (TAL-557): the Agent completes a non-review task only with
     # stored or supplied evidence, and refuses to release a live worker's claim.
-    data["claim_live"] = _claim_live(conn, task)
+    data["claim_live"] = data.get("status") == "running" and _claim_live(conn, data.get("id"))
     data["has_completion_evidence"] = bool(str(data.get("result") or "").strip())
     try:
         age = _kb().task_age(task)
@@ -157,9 +167,12 @@ def _validate_status(status: str) -> str:
 def _set_status_direct(conn, task_id: str, new_status: str) -> bool:
     kb = _kb()
     with kb.write_txn(conn):
-        prev = conn.execute("SELECT status, current_run_id FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        prev = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
         if prev is None:
             return False
+        # Checked inside the write transaction, so a claim taken since the client's read is never released.
+        if _row_claim_live(prev):
+            raise Conflict(LIVE_CLAIM_MESSAGE)
         was_running = prev["status"] == "running"
         cur = conn.execute(
             "UPDATE tasks SET status = ?, "
@@ -225,6 +238,9 @@ def _patch_task(conn, task_id: str, body: dict) -> None:
     if "status" not in body or body.get("status") in (None, ""):
         return
     status = _validate_status(body.get("status"))
+    if status in ("done", "blocked"):
+        # The Agent's block_task releases a live claim without stopping the worker.
+        _refuse_live_claim(conn, task_id)
     if status == "done":
         if not kb.complete_task(conn, task_id, result=body.get("result"), summary=body.get("summary")):
             raise NotFound("task not found")
@@ -601,6 +617,7 @@ def task_action_payload(params: dict) -> dict:
         if not kb.get_task(conn, task_id):
             raise NotFound("task not found")
         if action == "block":
+            _refuse_live_claim(conn, task_id)
             ok = kb.block_task(conn, task_id, reason=params.get("reason"))
         elif action == "unblock":
             if hasattr(kb, "unblock_task"):
