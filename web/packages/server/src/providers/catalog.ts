@@ -490,7 +490,8 @@ export class ProviderCatalog {
   /** `source`: the `sourceFingerprint` the ids were fetched under; another one makes them stale (TAL-542). */
   private readonly liveIds = new Map<string, { at: number; ids: string[]; source: string }>()
   private readonly liveInflight = new Map<string, Promise<string[]>>()
-  private readonly providersCache = new Map<string, { at: number; key: string; payload: { providers: Dict[]; active_provider: string | null } }>()
+  /** `pooled`: the fill's `poolProviders` answer, null when unknown (TAL-638). */
+  private readonly providersCache = new Map<string, { at: number; key: string; payload: { providers: Dict[]; active_provider: string | null }; pooled: string[] | null }>()
   /** TAL-301: the last catalog served per profile home, for the sync session payloads' `model_option_id`. */
   private readonly lastModels = new Map<string, ModelsCatalog>()
   /** TAL-542: per `lastModels` catalog, the `sourceFingerprint` it was built from, when, and the providers whose group came from a failed live lookup. */
@@ -580,7 +581,7 @@ export class ProviderCatalog {
     return this.deps.env[name]
   }
 
-  /** Python `_provider_has_key` minus the credential pool (the sidecar answers OAuth/pool state). */
+  /** Python `_provider_has_key` minus the credential pool, which `probeKey` reads from the sidecar. */
   providerHasKey(pid: string, config: Config, envValues: Record<string, string>, profileHome: string): boolean {
     const envVar = providerEnvVar(pid)
     if (envVar) {
@@ -611,7 +612,8 @@ export class ProviderCatalog {
     }
   }
 
-  private async probeKey(profileHome: string, pid: string, config: Config, envValues: Record<string, string>): Promise<KeyProbe> {
+  /** `pooled`: the providers whose persisted credential pool holds an added account (TAL-638). */
+  private async probeKey(profileHome: string, pid: string, config: Config, envValues: Record<string, string>, pooled: ReadonlySet<string>): Promise<KeyProbe> {
     let hasKey = this.providerHasKey(pid, config, envValues, profileHome)
     let isOauth = OAUTH_PROVIDERS.has(pid)
     let keySource = 'none'
@@ -642,6 +644,10 @@ export class ProviderCatalog {
           }
         }
       } else keySource = 'config_yaml'
+    } else if (pooled.has(pid)) {
+      // Python `_has_explicit_pool_credentials`: keys added with `hermes auth add` live only in the Agent's pool.
+      hasKey = true
+      keySource = 'credential_pool'
     } else if (!providerEnvVar(pid) && /^[a-z][a-z0-9_-]{0,63}$/.test(pid)) {
       const status = await this.authStatus(profileHome, pid)
       if (status?.logged_in) {
@@ -693,11 +699,18 @@ export class ProviderCatalog {
 
   /** Python `get_providers`. */
   async providers(profileHome: string): Promise<{ providers: Dict[]; active_provider: string | null }> {
+    return structuredClone((await this.providerRows(profileHome)).payload)
+  }
+
+  /** The cached `providers` answer, shared with `quotas`; callers never mutate it. */
+  private async providerRows(profileHome: string): Promise<{ payload: { providers: Dict[]; active_provider: string | null }; pooled: string[] | null }> {
     const config = await this.deps.config.read(profileHome)
     const envValues = loadEnvFile(join(profileHome, '.env'))
     const cacheKey = JSON.stringify([config, envValues])
     const hit = this.providersCache.get(profileHome)
-    if (hit?.key === cacheKey && this.deps.now() - hit.at < PROVIDERS_TTL_S) return structuredClone(hit.payload)
+    if (hit?.key === cacheKey && this.deps.now() - hit.at < PROVIDERS_TTL_S) return hit
+    const pooledIds = await this.poolProviders(profileHome)
+    const pooled = new Set(pooledIds ?? [])
     const active = activeProviderFromConfig(config)
     const known = new Set<string>([...Object.keys(PROVIDER_DISPLAY), ...Object.keys(PROVIDER_MODELS), ...OAUTH_PROVIDERS])
     // A plugin never stands in for a built-in provider, by id or alias (that would route to the built-in's billing); it
@@ -712,7 +725,7 @@ export class ProviderCatalog {
     }
     const rows: Dict[] = []
     for (const pid of [...known].sort()) {
-      const probe = await this.probeKey(profileHome, pid, config, envValues)
+      const probe = await this.probeKey(profileHome, pid, config, envValues, pooled)
       if (pid === 'openai' && !probe.hasKey && looksLikeCodexOauthToken(str(envValues[providerEnvVar('openai') ?? ''] ?? this.deps.env.OPENAI_API_KEY))) continue
       const configured = probe.hasKey || selfHostedEndpoint(pid, config)
       let models: ModelEntry[] = pid === 'openrouter' ? FALLBACK_MODELS.map((m) => ({ id: m.id, label: m.label })) : [...(PROVIDER_MODELS[pid] ?? [])]
@@ -783,9 +796,9 @@ export class ProviderCatalog {
     const rank = (p: Dict): number => (str(p.id) === active ? 0 : str(p.id).startsWith('custom:') ? 1 : p.has_key ? 2 : 3)
     rows.sort((a, b) => rank(a) - rank(b) || (str(a.id) < str(b.id) ? -1 : str(a.id) > str(b.id) ? 1 : 0))
     for (const row of rows) row.models = stampModelEntries(row.models as ModelEntry[], str(row.id))
-    const payload = { providers: rows, active_provider: active }
-    this.providersCache.set(profileHome, { at: this.deps.now(), key: cacheKey, payload })
-    return structuredClone(payload)
+    const entry = { at: this.deps.now(), key: cacheKey, payload: { providers: rows, active_provider: active }, pooled: pooledIds }
+    this.providersCache.set(profileHome, entry)
+    return entry
   }
 
   /** Python `get_available_models` (static catalog + live ids for keyed providers). */
@@ -824,11 +837,11 @@ export class ProviderCatalog {
       if (canonical && this.providerHasKey(canonical, config, envValues, profileHome)) detected.add(canonical)
     }
     // Python: OAuth providers the Agent reports as logged in join the picker with their live catalog (#1567, #2545); so do
-    // ready plugin providers (TAL-288), under their own name.
+    // ready plugin providers (TAL-288), under their own name, and providers keyed only through the credential pool (TAL-638).
     const signedIn = new Set<string>()
     const pluginNames = new Map<string, string>()
-    for (const row of (await this.providers(profileHome)).providers) {
-      if (row.has_key !== true || (row.is_oauth !== true && row.is_plugin_provider !== true)) continue
+    for (const row of (await this.providerRows(profileHome)).payload.providers) {
+      if (row.has_key !== true || (row.is_oauth !== true && row.is_plugin_provider !== true && row.key_source !== 'credential_pool')) continue
       signedIn.add(str(row.id))
       if (row.is_plugin_provider === true) pluginNames.set(str(row.id), str(row.display_name) || str(row.id))
     }
@@ -1202,16 +1215,15 @@ export class ProviderCatalog {
    */
   async quotas(profileHome: string, profile: string, opts: { sourceId?: string | null; refresh?: boolean } = {}): Promise<Dict> {
     const at = this.deps.now()
-    const status = await this.providers(profileHome)
+    const { payload: status, pooled: pooledIds } = await this.providerRows(profileHome)
     const active = status.active_provider
     const scopeId = this.quotaProfileScopeId(profile)
     // Python `_quota_source_id(profile, provider, credential_id)`: a pool account's id, or "provider" for the provider's own key.
     const sourceId = (pid: string, credential: string): string => `qsrc_${createHash('sha256').update(`${scopeId}\0${pid}\0${credential}`).digest('hex').slice(0, 32)}`
-    // A provider configured only through `hermes auth add` has no key in .env or config.yaml, yet its pool accounts are sources.
-    // An unknown pool (a failed lookup with no earlier answer) never reports a requested source as missing.
-    let poolUnknown = false
-    const pooledIds = await this.poolProviders(profileHome)
-    if (!pooledIds) poolUnknown = true
+    // A provider configured only through `hermes auth add` has no key in .env or config.yaml, yet its pool accounts are
+    // sources, including a signed-out OAuth provider's. An unknown pool (a failed lookup with no earlier answer) never
+    // reports a requested source as missing.
+    let poolUnknown = pooledIds === null
     const pooled = new Set(pooledIds ?? [])
     const config = await this.deps.config.read(profileHome)
     const perProvider = await Promise.all(status.providers.filter((p) => p.has_key || p.is_custom || pooled.has(str(p.id))).map(async (p) => {

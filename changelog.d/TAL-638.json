@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Providers added only to the Agent credential pool show as configured again and appear in the model picker.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

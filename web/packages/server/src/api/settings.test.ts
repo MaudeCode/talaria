@@ -495,6 +495,26 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     }
   })
 
+  it('a provider keyed only through the credential pool counts as configured in providers and models (TAL-638)', async () => {
+    const zai = async (): Promise<Json | undefined> => ((await json(await s.get('/api/providers'))).providers as Json[]).find((p) => p.id === 'zai')
+    const fail = (): never => { throw new SidecarError('usage.pool_providers timed out', { condition: 'timeout' }) }
+    try {
+      for (const answer of [() => ({ providers: [] }), fail]) {
+        sidecar.respond('usage.pool_providers', answer)
+        s.deps.catalog.invalidate()
+        expect(await zai()).toMatchObject({ has_key: false, key_source: 'none' })
+      }
+      sidecar.respond('usage.pool_providers', () => ({ providers: ['zai'] }))
+      s.deps.catalog.invalidate()
+      expect(await zai()).toMatchObject({ has_key: true, configured: true, key_source: 'credential_pool' })
+      const groups = (await json(await s.get('/api/models'))).groups as { provider_id: string }[]
+      expect(groups.map((g) => g.provider_id)).toContain('zai')
+    } finally {
+      sidecar.respond('usage.pool_providers', () => ({ providers: [] }))
+      s.deps.catalog.invalidate()
+    }
+  })
+
   it('a failed pool lookup never reports a pool account as removed (TAL-548)', async () => {
     const envFile = join(s.state, '.env')
     writeEnvFile(envFile, { GLM_API_KEY: 'sk-synthetic-zai' })
