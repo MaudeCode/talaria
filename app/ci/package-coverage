@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Usage: ci/package-coverage [output-dir]   (from app/, after `swift test --package-path TalariaKit --enable-code-coverage`)
+# Reports TalariaKit line and function coverage from that run (TAL-67). It merges the run's raw profiles itself, so a
+# failed run still reports, and counts TalariaKit/Sources only: package checkouts, generated resource accessors and
+# the tests stay out of the baseline. Writes coverage.txt (per file), coverage.json (per line, llvm-cov export) and
+# summary.md (totals and per-directory table, also printed) into output-dir (default: coverage).
+set -euo pipefail
+
+out=${1:-coverage}
+package=TalariaKit
+bin=$(swift build --package-path "${package}" --show-bin-path)
+shopt -s nullglob
+profiles=("${bin}"/codecov/*.profraw)
+binaries=("${bin}"/*.xctest/Contents/MacOS/*)
+(( ${#profiles[@]} )) || { echo "No coverage profiles in ${bin}/codecov: run swift test --enable-code-coverage first" >&2; exit 1; }
+(( ${#binaries[@]} == 1 )) || { echo "Expected one test bundle in ${bin}, found ${#binaries[@]}" >&2; exit 1; }
+
+mkdir -p "${out}"
+xcrun llvm-profdata merge -sparse -o "${out}/coverage.profdata" "${profiles[@]}"
+cov=("${binaries[0]}" -instr-profile "${out}/coverage.profdata" "${package}/Sources")
+xcrun llvm-cov report "${cov[@]}" > "${out}/coverage.txt"
+xcrun llvm-cov export "${cov[@]}" > "${out}/coverage.json"
+rm "${out}/coverage.profdata"
+
+jq -r '
+  def pct: if .count == 0 then "-" else "\(.covered * 10000 / .count | round / 100)%" end;
+  def cell: "\(pct) (\(.covered) of \(.count))";
+  def area: .filename | capture("/Sources/TalariaKit/(?<area>[^/]+)/").area // "(top level)";
+  def total(kind): {count: (map(.summary[kind].count) | add), covered: (map(.summary[kind].covered) | add)};
+  .data[0] as $data
+  | ($data.files | group_by(area) | map({area: (.[0] | area), lines: total("lines"), functions: total("functions")})) as $areas
+  | "### TalariaKit coverage",
+    "",
+    "Package tests, TalariaKit/Sources only (\($data.files | length) files). Visibility only; nothing gates on it.",
+    "",
+    "- Lines: \($data.totals.lines | cell)",
+    "- Functions: \($data.totals.functions | cell)",
+    "",
+    "| Directory | Lines | Functions |",
+    "| --- | --- | --- |",
+    ($areas[] | "| \(.area) | \(.lines | pct) | \(.functions | pct) |")
+' "${out}/coverage.json" | tee "${out}/summary.md"

@@ -14,6 +14,8 @@ Package.resolved
 # TalariaKit's pins match the App's, so `swift test` builds the same revisions (TAL-399).
 !TalariaKit/Package.resolved
 .swiftpm/
+# Package coverage report (ci/package-coverage)
+/coverage/
 
 # Per-machine signing overrides (see DEVELOPMENT.md)
 Config/Local.xcconfig

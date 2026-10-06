@@ -74,6 +74,30 @@ test doubles. Strings that TalariaKit localizes resolve in the host bundle, so
 add new ones to the App's `Localizable.xcstrings` by hand: Xcode does not extract
 package strings into it.
 
+### Package test coverage
+
+CI measures coverage on the same `swift test` run it gates on and reports it in
+the package tests job summary: line and function coverage of
+`TalariaKit/Sources` in total and per top-level directory. Package checkouts,
+generated resource accessors and the tests themselves are excluded. The
+`app-package-coverage` artifact (`ui-suite-package-coverage` from the full
+suite) keeps `coverage.txt`, the per-file table, and `coverage.json`, the
+per-line `llvm-cov export`; it is uploaded after failed runs too and kept for 14
+days. Simulator-hosted App target code (`Talaria/`, the extensions) runs only
+in the full suite and is not in the number.
+
+The baseline when coverage landed was 82.37% of lines (33,497 of 40,667) and
+76.86% of functions (5,056 of 6,578) across 225 files. Read it as visibility:
+nothing gates on a percentage, so compare a PR's summary with `main`'s and look
+at the directory table or `coverage.txt` for code a change added without tests.
+Function coverage counts closures, so it trails line coverage. Local runs stay
+uninstrumented; to reproduce the report:
+
+```zsh
+swift test --package-path TalariaKit --enable-code-coverage
+ci/package-coverage
+```
+
 ## Local Validation With XcodeBuildMCP
 
 XcodeBuildMCP is the preferred local validation path for feature and bug-fix slices. The config lives at the repository root in `../.xcodebuildmcp/config.yaml` and sets:
