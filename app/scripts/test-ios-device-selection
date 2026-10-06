@@ -55,7 +55,8 @@ def select(*records, expected=0, **environment):
                    FIXTURE_DIR=str(work), CALL_LOG=str(work / 'calls'),
                    TALARIA_DEVICE_DISCOVERY_ATTEMPTS=ATTEMPTS,
                    TALARIA_DEVICE_DISCOVERY_INTERVAL='0.01')
-        env.pop('TALARIA_DEVICE_ID', None)
+        for inherited in ('TALARIA_DEVICE_ID', 'DEVICECTL_FAILS'):
+            env.pop(inherited, None)
         env.update(environment)
         result = subprocess.run([sys.executable, str(selector)], env=env,
                                 capture_output=True, text=True, timeout=60)

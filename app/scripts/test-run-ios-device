@@ -33,8 +33,10 @@ def run(*options, prepare=lambda repo: None, **environment):
         (tools / tool).chmod(0o755)
     prepare(repo)
     env = dict(os.environ, PATH=f'{tools}:{os.environ["PATH"]}', _TALARIA_ENV_LOADED='1',
-               CALL_LOG=str(work / 'calls'), SELECTED_UDID=UDID, **environment)
-    env.pop('TALARIA_DEVICE_ID', None)
+               CALL_LOG=str(work / 'calls'), SELECTED_UDID=UDID)
+    for inherited in ('TALARIA_DEVICE_ID', 'SELECT_FAILS', 'XCODEBUILD_STATUS'):
+        env.pop(inherited, None)
+    env.update(environment)
     result = subprocess.run([str(repo / 'scripts' / 'run-ios-device'), *options], env=env,
                             capture_output=True, text=True, timeout=30)
     calls = (work / 'calls').read_text().splitlines() if (work / 'calls').exists() else []
