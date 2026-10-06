@@ -39615,6 +39615,10 @@
                           "enabled": {
                             "type": "boolean"
                           },
+                          "can_toggle": {
+                            "type": "boolean",
+                            "description": "Whether PATCH can enable or disable this server; false for invalid config."
+                          },
                           "active": {
                             "type": "boolean"
                           },
@@ -39677,8 +39681,20 @@
     "/api/mcp/tools": {
       "get": {
         "operationId": "mcp.tools",
+        "summary": "`q` keeps tools whose name, server, or description contains it (case-insensitive); `total` counts every known tool.",
         "tags": [
           "tools"
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
         ],
         "responses": {
           "200": {
@@ -39866,6 +39882,10 @@
                         },
                         "enabled": {
                           "type": "boolean"
+                        },
+                        "can_toggle": {
+                          "type": "boolean",
+                          "description": "Whether PATCH can enable or disable this server; false for invalid config."
                         },
                         "active": {
                           "type": "boolean"

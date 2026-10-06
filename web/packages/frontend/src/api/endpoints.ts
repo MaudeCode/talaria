@@ -235,4 +235,7 @@ export const clearUpdateNotifications = () => orpc().updateNotifications.clear({
 export const cancelUpdateNotification = (id: string) => orpc().updateNotifications.cancel({ id, cancel: true })
 export const performUpdateNotificationAction = (id: string, action_id: string) => orpc().updateNotifications.action({ id, action_id, perform: true, tab_id: tabId })
 export const fetchPlugins = () => orpc().plugins()
+export const fetchMcpServers = () => orpc().mcp.servers()
+export const fetchMcpTools = (q: string) => orpc().mcp.tools(q ? { q } : {})
+export const toggleMcpServer = (name: string, enabled: boolean) => orpc().mcp.toggle({ name, enabled })
 export const shutdownServer = () => orpc().ops.shutdown({})

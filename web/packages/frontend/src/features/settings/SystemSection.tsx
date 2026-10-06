@@ -18,6 +18,7 @@ import { loadBootstrap } from '../../app/bootstrap'
 import type { z } from 'zod'
 import type { UpdateApplySchema, UpdateTargetSchema } from '../../contracts'
 import { useUpdateProgress } from '../notifications/UpdateNotificationCenter'
+import { McpSection } from './McpSection'
 
 export function SystemSection() {
   const bootstrap = useBootstrap()
@@ -146,6 +147,7 @@ export function SystemSection() {
           <dd>{canManage && <Button onClick={() => restart.mutate()} disabled={restart.isPending}>{m.system_restart_agent()}</Button>}</dd>
         </dl>
       </section>
+      <McpSection heading={heading} />
       {(canManage || bootstrap.auth.passkey_feature_flag || bootstrap.auth.auth_enabled) && <section aria-labelledby="systemAccessHeading" className="flex flex-col gap-4">
         <h2 id="systemAccessHeading" className={heading}>{m.system_access()}</h2>
       {canManage && (
