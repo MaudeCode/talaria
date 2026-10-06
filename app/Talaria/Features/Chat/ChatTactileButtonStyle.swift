@@ -158,7 +158,21 @@ struct ChatUIKitMenuButton<Label: View>: View {
         self.verticalPadding = verticalPadding
     }
 
+    @ViewBuilder
     var body: some View {
+        if let primaryAction {
+            // The UIKit button is hidden from accessibility, so VoiceOver's double-tap runs the primary action
+            // here rather than reaching it (TAL-648). A menu-only button keeps its default activation.
+            button.accessibilityAction {
+                guard isEnabled else { return }
+                primaryAction()
+            }
+        } else {
+            button
+        }
+    }
+
+    private var button: some View {
         label
             .opacity(isEnabled ? 1 : 0.62)
             .overlay {
