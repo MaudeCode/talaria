@@ -384,7 +384,8 @@ final class SessionListBottomBarUITests: ChatUITestCase {
 /// TAL-443: archiving a chat offers Undo, which brings the chat back from the server.
 final class SessionArchiveUndoUITests: ChatUITestCase {
     func testUndoRestoresAnArchivedChat() throws {
-        launchFixture()
+        // A hosted runner can spend longer than the five-second offer snapshotting the list (TAL-650).
+        launchFixture(additionalArguments: ["--ui-test-hold-archive-undo"])
         let row = fixtureSessionButton
         XCTAssertTrue(row.awaitExistence(timeout: 15), "Missing deterministic session fixture")
 

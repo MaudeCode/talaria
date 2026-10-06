@@ -136,12 +136,14 @@ public final class SessionListViewModel {
     private let cacheGeneration: Int
     private let responseCache: ResponseCache?
     private let archiveUndoLifetime: Duration
+    /// How long a chat archive stays undoable.
+    public static let defaultArchiveUndoLifetime: Duration = .seconds(5)
 
     public init(
         server: URL,
         client: APIClient? = nil,
         responseCache: ResponseCache? = nil,
-        archiveUndoLifetime: Duration = .seconds(5)
+        archiveUndoLifetime: Duration = defaultArchiveUndoLifetime
     ) {
         self.server = server
         self.archiveUndoLifetime = archiveUndoLifetime

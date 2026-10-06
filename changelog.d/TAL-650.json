@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Undoing a chat archive is now checked reliably before each release.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

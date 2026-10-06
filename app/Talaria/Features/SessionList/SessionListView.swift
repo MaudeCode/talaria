@@ -107,7 +107,17 @@ struct SessionListView: View {
         _pendingQuotaSourceID = pendingQuotaSourceID
         _opensProviderQuotaWidgetSettings = opensProviderQuotaWidgetSettings
         _requestedNewChat = requestedNewChat
-        _viewModel = State(initialValue: SessionListViewModel(server: server, responseCache: .app(server: server)))
+        var archiveUndoLifetime = SessionListViewModel.defaultArchiveUndoLifetime
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.holdArchiveUndoArgument) {
+            archiveUndoLifetime = .seconds(24 * 60 * 60)
+        }
+        #endif
+        _viewModel = State(initialValue: SessionListViewModel(
+            server: server,
+            responseCache: .app(server: server),
+            archiveUndoLifetime: archiveUndoLifetime
+        ))
         _quotaViewModel = State(initialValue: ProvidersViewModel(server: server))
         _updateNotificationViewModel = State(initialValue: UpdateNotificationCenterViewModel(server: server))
         #if DEBUG

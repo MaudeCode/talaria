@@ -79,6 +79,10 @@ struct UITestFixtureEnvironment {
     /// Fails the first `/api/session/new` with a server error, so a UI test can see a new chat's
     /// composer report it and retry (TAL-636).
     nonisolated static let failFirstSessionCreationArgument = "--ui-test-fail-first-session-creation"
+    /// Keeps a chat archive's Undo offered for the whole test, so the five-second expiry cannot run
+    /// out while a slow runner snapshots the list before tapping Undo (TAL-650). TalariaKit's
+    /// `SessionListArchiveUndoTests` covers the expiry itself.
+    nonisolated static let holdArchiveUndoArgument = "--ui-test-hold-archive-undo"
 
     nonisolated static var keepsCachesAcrossLaunches: Bool {
         let arguments = ProcessInfo.processInfo.arguments
