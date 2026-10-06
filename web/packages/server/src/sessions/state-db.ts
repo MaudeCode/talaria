@@ -644,12 +644,17 @@ export function insightsSessionRows(dbPath: string, cutoff: number): Dict[] {
     if (!cols.has('id') || !cols.has('started_at')) return []
     const col = (name: string): string => (cols.has(name) ? `s.${name}` : 'NULL')
     const messageCols = tableColumns(db, 'messages')
-    const lastMessage = messageCols.has('session_id') && messageCols.has('timestamp') ? '(SELECT MAX(m.timestamp) FROM messages m WHERE m.session_id = s.id)' : 'NULL'
+    const hasMessages = messageCols.has('session_id') && messageCols.has('timestamp')
+    let indexed = false
+    try { indexed = hasMessages && (db.prepare('PRAGMA index_list(messages)').all() as { name: string }[]).some((r) => r.name === 'idx_messages_session') } catch { indexed = false }
+    // Without the index a per-session lookup scans messages once per session; one grouped scan replaces it.
+    const lastMessage = !hasMessages ? 'NULL' : indexed ? '(SELECT MAX(m.timestamp) FROM messages m WHERE m.session_id = s.id)' : 'lm.last_message_at'
+    const join = hasMessages && !indexed ? 'LEFT JOIN (SELECT session_id, MAX(timestamp) AS last_message_at FROM messages GROUP BY session_id) lm ON lm.session_id = s.id' : ''
     const source = cols.has('source') ? "LOWER(COALESCE(s.source, '')) != 'webui'" : '1'
     const rows = db.prepare(`SELECT * FROM (SELECT s.id AS id, ${col('model')} AS model, ${col('message_count')} AS message_count, ${col('input_tokens')} AS input_tokens,
       ${col('output_tokens')} AS output_tokens, ${col('cache_read_tokens')} AS cache_read_tokens, ${col('estimated_cost_usd')} AS estimated_cost_usd, s.started_at AS started_at,
       MAX(COALESCE(s.started_at, 0), COALESCE(${col('ended_at')}, 0), COALESCE(${lastMessage}, 0)) AS last_activity
-      FROM sessions s WHERE ${source}) WHERE last_activity >= ?`).all(cutoff) as Dict[]
+      FROM sessions s ${join} WHERE ${source}) WHERE last_activity >= ?`).all(cutoff) as Dict[]
     return rows.map((r) => ({
       session_id: str(r.id), model: r.model, message_count: r.message_count, input_tokens: r.input_tokens, output_tokens: r.output_tokens,
       cache_read_tokens: r.cache_read_tokens, estimated_cost: r.estimated_cost_usd, created_at: r.started_at, updated_at: r.last_activity,

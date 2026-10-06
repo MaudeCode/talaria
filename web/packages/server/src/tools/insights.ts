@@ -21,7 +21,8 @@ const USAGE_FIELDS = ['message_count', 'input_tokens', 'output_tokens', 'cache_r
 /**
  * `stateRows` reads the state.db sessions active since the window's cutoff. An id already in the index counts once with
  * each counter's larger value: a claimed CLI session's index entry starts at zero while its state.db row keeps the
- * usage from before the claim and the Agent's later turns. The later activity time places it in the window.
+ * usage from before the claim and the Agent's later turns. The later activity time places it in the window, and the
+ * snapshot with that activity names its model.
  */
 export function buildInsights(entries: Dict[], daysRaw: unknown, nowSeconds: number, stateRows: (cutoff: number) => Dict[] = () => []): Dict {
   const parsed = Number.parseInt(str(daysRaw ?? '30'), 10)
@@ -34,7 +35,8 @@ export function buildInsights(entries: Dict[], daysRaw: unknown, nowSeconds: num
     const row = state.get(str(e.session_id))
     if (!row) return e
     state.delete(str(e.session_id))
-    return { ...e, ...Object.fromEntries(USAGE_FIELDS.map((k) => [k, Math.max(num(e[k]), num(row[k]))])), estimated_cost: Math.max(cost(e.estimated_cost), cost(row.estimated_cost)), updated_at: Math.max(num(e.updated_at), num(row.updated_at)) }
+    const model = num(row.updated_at) > num(e.updated_at) ? str(row.model) || str(e.model) : str(e.model) || str(row.model)
+    return { ...e, ...Object.fromEntries(USAGE_FIELDS.map((k) => [k, Math.max(num(e[k]), num(row[k]))])), estimated_cost: Math.max(cost(e.estimated_cost), cost(row.estimated_cost)), updated_at: Math.max(num(e.updated_at), num(row.updated_at)), model }
   })
   const sessions = [...merged, ...state.values()].filter((e) => Math.max(num(e.created_at), num(e.updated_at)) >= cutoff)
   let totalMessages = 0

@@ -328,20 +328,25 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     db.exec('CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT, model TEXT, message_count INTEGER, input_tokens INTEGER, output_tokens INTEGER, cache_read_tokens INTEGER, estimated_cost_usd REAL, started_at REAL, ended_at REAL)')
     const insert = db.prepare('INSERT INTO sessions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
     insert.run('web', 'webui', 'm', 2, 10, 5, 0, 0.5, now - 100, null)
-    insert.run('imported', 'cli', 'm', 6, 30, 15, 5, 0.5, now - 100, null)
+    insert.run('imported', 'cli', 'm2', 6, 30, 15, 5, 0.5, now - 100, null)
     insert.run('cli', 'cli', 'c', 4, 100, 50, 25, 1.25, now - 300, now - 200)
     insert.run('tg', 'telegram', 'c', 3, 20, 10, 0, null, now - 400, null)
     insert.run('cron_j_1', 'cron', null, 2, 7, 3, 0, 0.25, now - 500, now - 450)
     insert.run('old', 'cli', 'c', 9, 900, 900, 0, 9, now - 40 * 86_400, now - 40 * 86_400)
     // A long-lived gateway session started before the window, still open, with a message inside it.
     insert.run('gateway', 'telegram', 'c', 5, 11, 4, 0, null, now - 40 * 86_400, null)
-    db.exec(`CREATE TABLE messages (id INTEGER PRIMARY KEY, session_id TEXT, timestamp REAL); INSERT INTO messages (session_id, timestamp) VALUES ('gateway', ${String(now - 40 * 86_400)}), ('gateway', ${String(now - 600)}), ('old', ${String(now - 40 * 86_400)})`)
+    db.exec(`CREATE TABLE messages (id INTEGER PRIMARY KEY, session_id TEXT, timestamp REAL); INSERT INTO messages (session_id, timestamp) VALUES ('gateway', ${String(now - 40 * 86_400)}), ('gateway', ${String(now - 600)}), ('old', ${String(now - 40 * 86_400)}), ('imported', ${String(now - 10)})`)
     db.close()
     try {
-      const body = await json(await s.get('/api/insights?days=7'))
-      expect(body).toMatchObject({ total_sessions: 6, total_messages: 22, total_input_tokens: 178, total_output_tokens: 87, total_cache_read_tokens: 30, total_cost: 2.5 })
-      expect((body.models as Json[]).map((m) => [m.model, m.sessions])).toEqual([['c', 3], ['m', 2], ['unknown', 1]])
-      expect((body.daily_tokens as Json[]).reduce((n, d) => n + Number(d.sessions), 0)).toBe(6)
+      // Both last-message strategies: one grouped scan without `idx_messages_session`, a per-session lookup with it.
+      for (const index of [false, true]) {
+        if (index) { const indexDb = new DatabaseSync(dbPath); indexDb.exec('CREATE INDEX idx_messages_session ON messages(session_id, timestamp)'); indexDb.close() }
+        const body = await json(await s.get('/api/insights?days=7'))
+        expect(body).toMatchObject({ total_sessions: 6, total_messages: 22, total_input_tokens: 178, total_output_tokens: 87, total_cache_read_tokens: 30, total_cost: 2.5 })
+        // The claimed session's later CLI turn on `m2` moves its usage to that model.
+        expect((body.models as Json[]).map((m) => [m.model, m.sessions])).toEqual([['c', 3], ['m', 1], ['m2', 1], ['unknown', 1]])
+        expect((body.daily_tokens as Json[]).reduce((n, d) => n + Number(d.sessions), 0)).toBe(6)
+      }
     } finally {
       index.mockRestore()
       rmSync(dbPath)
