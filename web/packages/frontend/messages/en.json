@@ -2112,6 +2112,8 @@
 	"quota_level_unavailable": "Unavailable",
 	"providers_default_model": "Default model",
 	"providers_set_default": "Set as default",
+	"providers_self_hosted_setup": "Set up",
+	"providers_self_hosted_saved": "{provider} configured",
 	"plugins_empty": "No plugins found.",
 	"plugins_read_only": "Plugin settings are read-only on this instance.",
 	"extensions_none": "No extensions installed.",

@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Talaria Web can set up Ollama and LM Studio providers again and refresh any provider's model list from Settings › Providers.",
+      "highlight": false
+    }
+  ]
+}

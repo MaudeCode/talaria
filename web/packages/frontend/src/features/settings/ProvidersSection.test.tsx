@@ -13,9 +13,11 @@ const quotas = JSON.parse(readFileSync(join(import.meta.dirname, '../../../../..
 const noPace = structuredClone(quotas)
 Object.assign(noPace.sources[0]!.windows[1]!, { pace: null, forecast: null })
 const quotaResponse = vi.hoisted((): { current: unknown } => ({ current: null }))
+const providersResponse = vi.hoisted((): { current: unknown } => ({ current: null }))
 vi.mock('../../api/endpoints', () => ({
   fetchOpenRouterCostHistory: vi.fn(() => Promise.resolve(costHistory)), saveSettings: vi.fn(), fetchSettings: vi.fn(() => Promise.resolve({})), setDefaultModel: vi.fn(),
-  fetchProviders: vi.fn(() => Promise.resolve({ active_provider: 'openrouter', providers: [{ id: 'openrouter', display_name: 'OpenRouter', has_key: true }, { id: 'zai', display_name: 'Z.AI', has_key: true }, { id: 'anthropic', display_name: 'Anthropic', has_key: true }] })),
+  saveSelfHostedProvider: vi.fn(), refreshModels: vi.fn(),
+  fetchProviders: vi.fn(() => Promise.resolve(providersResponse.current ?? { active_provider: 'openrouter', providers: [{ id: 'openrouter', display_name: 'OpenRouter', has_key: true }, { id: 'zai', display_name: 'Z.AI', has_key: true }, { id: 'anthropic', display_name: 'Anthropic', has_key: true }] })),
   fetchProviderQuotas: vi.fn(() => Promise.resolve(quotaResponse.current ?? { version: 1, computed_at: '2026-09-28T08:00:00Z', scope_id: 's', profile_id: 'default', active_provider: 'openrouter', requested_source_id: null, missing_source: false, sources: [] })),
 }))
 vi.mock('../toast/toast', () => ({ showToast: vi.fn() }))
@@ -30,7 +32,42 @@ const DEFAULTS = { warning_remaining_percent: 25, critical_remaining_percent: 10
 const quotasWith = (sources: Record<string, unknown>[]) => ProviderQuotasSchema.parse({ version: 1, computed_at: '2026-09-28T08:00:00Z', scope_id: 's', profile_id: 'default', active_provider: 'openrouter', requested_source_id: null, missing_source: false, sources })
 
 describe('ProvidersSection', () => {
-  afterEach(() => { quotaResponse.current = null; vi.useRealTimers() })
+  afterEach(() => { quotaResponse.current = null; providersResponse.current = null; vi.useRealTimers() })
+
+  it('sets up a self-hosted provider from its row and rereads the providers it activated (TAL-570)', async () => {
+    providersResponse.current = { active_provider: 'openrouter', providers: [{ id: 'openrouter', display_name: 'OpenRouter', has_key: true }, { id: 'ollama', display_name: 'Ollama', has_key: false, is_self_hosted: true, base_url: null, models: [], models_total: 0 }] }
+    vi.mocked(api.saveSelfHostedProvider).mockImplementation(() => {
+      providersResponse.current = { active_provider: 'ollama', providers: [{ id: 'ollama', display_name: 'Ollama', has_key: false, is_self_hosted: true, base_url: 'http://gpu-box:11434/v1', models: [{ id: 'qwen3:32b', label: 'Qwen3 32B' }], models_total: 1 }, { id: 'openrouter', display_name: 'OpenRouter', has_key: true }] }
+      return Promise.resolve({ ok: true, provider: 'ollama', base_url: 'http://gpu-box:11434/v1', model: 'qwen3:32b' })
+    })
+    renderSection()
+    const ollama = (await screen.findByText('Ollama')).closest<HTMLElement>('[data-provider="ollama"]')!
+    expect(within(ollama).queryByRole('button', { name: 'Set key' })).toBeNull()
+    await userEvent.click(within(ollama).getByRole('button', { name: 'Set up' }))
+    await userEvent.type(within(ollama).getByRole('textbox', { name: 'Base URL' }), 'http://gpu-box:11434/v1')
+    await userEvent.type(within(ollama).getByLabelText('API key (optional)'), 'local-key')
+    await userEvent.type(within(ollama).getByRole('textbox', { name: 'Default model' }), 'qwen3:32b')
+    await userEvent.click(within(ollama).getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.saveSelfHostedProvider).toHaveBeenCalledWith({ provider: 'ollama', base_url: 'http://gpu-box:11434/v1', model: 'qwen3:32b', api_key: 'local-key' }))
+    expect(await screen.findByText('ollama', { selector: 'strong' })).toBeInTheDocument()
+    const saved = screen.getByText('Ollama').closest<HTMLElement>('[data-provider="ollama"]')!
+    expect(within(saved).getByText('Not configured · http://gpu-box:11434/v1 · 1 models')).toBeInTheDocument()
+    expect(within(saved).queryByRole('textbox', { name: 'Base URL' })).toBeNull()
+  })
+
+  it("refreshes one provider's models and shows the server's new count (TAL-570)", async () => {
+    providersResponse.current = { active_provider: 'zai', providers: [{ id: 'zai', display_name: 'Z.AI', has_key: true, models: [], models_total: 3 }] }
+    vi.mocked(api.refreshModels).mockImplementation(() => {
+      providersResponse.current = { active_provider: 'zai', providers: [{ id: 'zai', display_name: 'Z.AI', has_key: true, models: [], models_total: 5 }] }
+      return Promise.resolve({ ok: true, provider: 'zai', models: { active_provider: 'zai', default_model: 'glm-5', groups: [] } } as never)
+    })
+    renderSection()
+    const zai = (await screen.findByText('Z.AI')).closest<HTMLElement>('[data-provider="zai"]')!
+    expect(within(zai).getByText('Configured · 3 models')).toBeInTheDocument()
+    await userEvent.click(within(zai).getByRole('button', { name: 'Refresh models' }))
+    expect(api.refreshModels).toHaveBeenCalledWith('zai')
+    expect(await within(zai).findByText('Configured · 5 models')).toBeInTheDocument()
+  })
 
   it("renders the server-selected pace window's remaining, reset, pace, burn, budget and forecast (TAL-410)", async () => {
     quotaResponse.current = quotas
