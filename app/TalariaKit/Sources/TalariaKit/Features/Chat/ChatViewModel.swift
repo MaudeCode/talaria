@@ -421,7 +421,7 @@ public final class ChatViewModel {
     private var queuedSlashMessages: [QueuedSlashMessage] = []
     /// What waits to send after the running response, in send order (TAL-630).
     public var queuedMessagePreviews: [QueuedMessagePreview] {
-        queuedSlashMessages.map { QueuedMessagePreview(text: $0.text, attachmentCount: $0.attachments.count) }
+        queuedSlashMessages.map { QueuedMessagePreview(id: $0.id, text: $0.text, attachmentCount: $0.attachments.count) }
     }
     /// The session's toolset override (TAL-631); nil until a session detail reports it.
     public private(set) var sessionToolsets: SessionToolsets?
@@ -5353,6 +5353,40 @@ public final class ChatViewModel {
             queuedSlashMessages.append(message)
         }
         return queuedSlashMessages.count
+    }
+
+    /// Remove: drops a queued message and its files' saved draft copies (TAL-630).
+    public func removeQueuedMessage(id: UUID) async {
+        guard let message = takeQueuedMessage(id: id) else { return }
+        for fileName in message.attachments.compactMap(\.draftFileName) {
+            await attachmentCoordinator.deleteDraftCopy(named: fileName)
+        }
+    }
+
+    /// Edit: takes a queued message out of the queue and puts it back in the composer with its files.
+    public func editQueuedMessage(id: UUID) {
+        guard let message = takeQueuedMessage(id: id) else { return }
+        attachmentCoordinator.restorePendingAttachments(message.attachments)
+        if !message.text.isEmpty { returnedComposerTexts.append(message.text) }
+    }
+
+    /// Send now: steers a queued text message into the running reply instead of waiting for it to end;
+    /// a steer the run cannot take queues it again, as `/steer` does.
+    public func sendQueuedMessageNow(id: UUID) async {
+        guard queuedMessagePreviews.first(where: { $0.id == id })?.canSendNow == true,
+              let message = takeQueuedMessage(id: id)
+        else { return }
+        switch await steerResponseFromSlashCommand(message.text) {
+        case .executed(let notice?), .unsupported(let notice):
+            pinLocalNoticeMessage(notice)
+        default:
+            break
+        }
+    }
+
+    private func takeQueuedMessage(id: UUID) -> QueuedSlashMessage? {
+        guard let index = queuedSlashMessages.firstIndex(where: { $0.id == id }) else { return nil }
+        return queuedSlashMessages.remove(at: index)
     }
 
     /// TAL-441: the server reported a steer whose request failed, so it owns the message; the queued copy goes.

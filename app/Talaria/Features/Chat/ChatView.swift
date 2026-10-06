@@ -1138,7 +1138,8 @@ struct ChatView: View {
         }
     }
 
-    /// What waits to send after this response (TAL-630); tapping lists it, read-only like Web's.
+    /// What waits to send after this response (TAL-630); tapping lists each message with Send now,
+    /// Edit and Remove, like a pending steer's actions.
     private func queuedMessagesChip(_ previews: [QueuedMessagePreview]) -> some View {
         StatusChip(label: String(localized: "\(previews.count) queued"), icon: .symbol("text.badge.plus"))
             .accessibilityHidden(true)
@@ -1147,18 +1148,24 @@ struct ChatView: View {
 
     private func queuedMessagesMenu(_ previews: [QueuedMessagePreview]) -> some View {
         Menu {
-            ForEach(Array(previews.enumerated()), id: \.offset) { _, preview in
-                Button {} label: {
-                    let text = preview.text.isEmpty ? String(localized: "Attachments only") : preview.text
-                    if preview.attachmentCount > 0 {
-                        Label {
-                            Text(text)
-                            Text("\(preview.attachmentCount) attached")
-                        } icon: {
-                            Image(systemName: "paperclip")
+            ForEach(previews) { preview in
+                Section(queuedMessageTitle(preview)) {
+                    if preview.canSendNow {
+                        Button {
+                            Task { await viewModel.sendQueuedMessageNow(id: preview.id) }
+                        } label: {
+                            Label(String(localized: "Send now"), systemImage: "arrow.up")
                         }
-                    } else {
-                        Text(text)
+                    }
+                    Button {
+                        viewModel.editQueuedMessage(id: preview.id)
+                    } label: {
+                        Label(String(localized: "Edit"), systemImage: "pencil")
+                    }
+                    Button(role: .destructive) {
+                        Task { await viewModel.removeQueuedMessage(id: preview.id) }
+                    } label: {
+                        Label(String(localized: "Remove"), systemImage: "trash")
                     }
                 }
             }
@@ -1172,6 +1179,13 @@ struct ChatView: View {
         .menuStyle(.button)
         .buttonStyle(.plain)
         .accessibilityLabel(String(localized: "\(previews.count) queued"))
+    }
+
+    /// A queued message's section title: its text, with its file count when it carries files.
+    private func queuedMessageTitle(_ preview: QueuedMessagePreview) -> String {
+        guard preview.attachmentCount > 0 else { return preview.text }
+        let files = String(localized: "\(preview.attachmentCount) attached")
+        return preview.text.isEmpty ? files : "\(preview.text) · \(files)"
     }
 
     /// The run status chip, joined by the scroll chip on the chosen side while it shows. A

@@ -3165,10 +3165,11 @@ final class KanbanCardActionsUITests: TalariaUITestCase {
     }
 }
 
-/// Messages queued during a run show as a floating chip above the composer that lists them (TAL-630).
+/// Messages queued during a run show as a floating chip above the composer; its menu sends each one
+/// now, edits it or removes it (TAL-630).
 final class QueuedMessagesChipUITests: ChatUITestCase {
-    func testQueuedMessagesShowAsAChipThatListsThemUntilTheyDrain() throws {
-        launchChatFixture(argument: "--ui-test-chat-controls", trace: "start -> token -> queue x2 -> cancel -> drain")
+    func testQueuedMessagesChipListsThemAndEditsAndRemovesThem() throws {
+        launchChatFixture(argument: "--ui-test-chat-controls", trace: "start -> token -> queue x2 -> edit -> remove")
         try sendFixtureMessage("Run the deterministic fixture")
         XCTAssertTrue(app.staticTexts["Waiting for control input."].awaitExistence(timeout: 5))
 
@@ -3184,17 +3185,24 @@ final class QueuedMessagesChipUITests: ChatUITestCase {
         XCTAssertGreaterThanOrEqual(chip.frame.height, 43, "The queue chip's hit area is under 44 pt")
         attachScreenshot(named: "queued-chip")
         tapCenter(of: chip)
-        XCTAssertTrue(app.buttons["First queued message"].awaitExistence(timeout: 5), "The menu does not list the first message")
-        XCTAssertTrue(app.buttons["Second queued message"].exists, "The menu does not list the second message")
+        XCTAssertTrue(element(label: "First queued message").awaitExistence(timeout: 5), "The menu does not list the first message")
+        XCTAssertTrue(element(label: "Second queued message").exists, "The menu does not list the second message")
+        XCTAssertEqual(app.buttons.matching(identifier: "Send now").count, 2)
+        XCTAssertEqual(app.buttons.matching(identifier: "Remove").count, 2)
         attachScreenshot(named: "queued-menu")
-        app.buttons["First queued message"].tap()
 
-        // Stopping the run drains the queue; the chip leaves with the last message.
-        let stop = app.buttons["Stop response"]
-        XCTAssertTrue(stop.awaitExistence(timeout: 5))
-        stop.tap()
-        XCTAssertTrue(chip.awaitNonExistence(timeout: 10), "The queue chip stayed after the queue drained")
-        XCTAssertFalse(app.buttons["1 queued"].exists)
+        // Edit takes the first message back into the composer and out of the queue.
+        app.buttons.matching(identifier: "Edit").firstMatch.tap()
+        let oneQueued = app.buttons["1 queued"]
+        XCTAssertTrue(oneQueued.awaitExistence(timeout: 5), "Edit left the message in the queue")
+        XCTAssertEqual(input.value as? String, "First queued message", "Edit did not put the message back in the composer")
+
+        // Remove drops the last one, and the chip leaves with it.
+        tapCenter(of: oneQueued)
+        let remove = app.buttons["Remove"]
+        XCTAssertTrue(remove.awaitExistence(timeout: 5))
+        remove.tap()
+        XCTAssertTrue(oneQueued.awaitNonExistence(timeout: 5), "The queue chip stayed after its last message was removed")
     }
 
     private func attachScreenshot(named name: String) {

@@ -2,7 +2,7 @@
   "entries": [
     {
       "category": "Added",
-      "summary": "Messages you queue while a response runs show as a chip above the composer; tap it to see what will send next.",
+      "summary": "Messages you queue while a response runs show as a chip above the composer; tap it to send one now, edit it or remove it.",
       "highlight": false,
       "components": ["app"]
     }
