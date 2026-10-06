@@ -148,7 +148,7 @@ public struct UpdatesApplyResponse: Decodable, Equatable {
     let stashConflict: Bool?
     let activeStreams: Int?
     let activeRuns: Int?
-    let notificationId: String?
+    public let notificationId: String?
 }
 
 public struct UpdateNotificationsResponse: Decodable, Equatable {
@@ -182,6 +182,7 @@ public struct UpdateNotificationRecord: Decodable, Equatable, Identifiable {
     let acknowledgedActionId: String?
     let verifiedRevision: String?
     let verifiedVersion: String?
+    let detail: String?
     public let unread: Bool
     public let active: Bool
     public let requiresInteraction: Bool

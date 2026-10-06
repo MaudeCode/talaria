@@ -283,7 +283,11 @@ private extension ServerUpdateSettingsSection {
         switch response.outcome {
         case .applying:
             updateApplyPhase = .recovering
-            await waitForServerToReturn(using: client, previousVersion: serverVersion)
+            if let notificationID = response.notificationId {
+                await finishServerUpdate(client.followUpdate(notificationID: notificationID))
+            } else {
+                await finishServerUpdate(.untracked)
+            }
         case .restartBlocked:
             updateApplyMessage = response.displayMessage(
                 default: String(localized: "The server is busy with active work. Wait for it to finish, then retry.")
@@ -296,34 +300,23 @@ private extension ServerUpdateSettingsSection {
     }
 
     @MainActor
-    private func waitForServerToReturn(using client: APIClient, previousVersion: String?) async {
-        for _ in 0..<30 {
-            guard !Task.isCancelled else { return }
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
-            guard !Task.isCancelled, let settings = try? await client.settings() else { continue }
-
-            let newVersion = settings.webuiVersion
-            let updateState = (try? await client.updatesCheck())?.webuiUpdateState ?? .unavailable
-            if (newVersion != nil && newVersion != previousVersion) || updateState == .upToDate {
-                serverVersion = newVersion
-                serverSettingsError = newVersion == nil ? String(localized: "Unknown") : nil
-                serverUpdateState = updateState
-                updateApplyPhase = .idle
-                updateApplyMessage = nil
-                return
-            }
-        }
-
+    private func finishServerUpdate(_ completion: ServerUpdateCompletion) async {
         await loadServerSettings()
-        if serverSettingsError != nil {
-            updateApplyMessage = String(localized: "The server didn't come back after the update. Check the server, then retry.")
-            updateApplyPhase = .failed
-        } else if case .updateAvailable = serverUpdateState {
-            updateApplyMessage = String(localized: "The update is taking longer than expected to finish. Try again in a moment.")
-            updateApplyPhase = .failed
-        } else {
-            updateApplyPhase = .idle
+        switch completion {
+        case .succeeded, .untracked:
             updateApplyMessage = nil
+            updateApplyPhase = .idle
+        case let .blocked(message):
+            updateApplyMessage = message
+            updateApplyPhase = .blocked
+        case let .failed(message):
+            updateApplyMessage = message
+            updateApplyPhase = .failed
+        case .timedOut:
+            updateApplyMessage = serverSettingsError != nil
+                ? String(localized: "The server didn't come back after the update. Check the server, then retry.")
+                : String(localized: "The update is taking longer than expected to finish. Try again in a moment.")
+            updateApplyPhase = .failed
         }
     }
 }
