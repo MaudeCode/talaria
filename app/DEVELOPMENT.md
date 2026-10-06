@@ -243,7 +243,7 @@ To keep that override local between shells, put
 
 ## Raw xcodebuild Fallback
 
-Use raw `xcodebuild` when XcodeBuildMCP is unavailable, when validating lower-level build failures, or when matching the GitHub Actions release/archive commands exactly. The release workflows use raw `xcodebuild`.
+Use raw `xcodebuild` when XcodeBuildMCP is unavailable or when validating lower-level build failures.
 
 List available simulators:
 
