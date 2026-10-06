@@ -50,7 +50,7 @@ export function csvRows(text: string, limit: number): { rows: string[][]; trunca
     field = ''
   }
   for (let i = 0; i < text.length && !truncated; i++) {
-    const c = text[i]
+    const c = text.charAt(i)
     if (quoted) {
       if (c !== '"') field += c
       else if (text[i + 1] === '"') { field += '"'; i++ }
