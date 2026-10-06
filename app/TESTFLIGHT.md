@@ -39,8 +39,9 @@ The Apple Developer portal needs the App IDs `dev.kil.talaria`,
 `dev.kil.talaria.shareextension` and `dev.kil.talaria.liveactivitywidget`, the
 App Group `group.dev.kil.talaria` on all three, and Sign in with
 Apple plus iCloud on the app ([iCloud sync setup](docs/icloud-sync-setup.md)).
-The account holder must accept each updated Apple Developer Program License
-Agreement in App Store Connect; uploads fail until it is accepted.
+The Account Holder must accept each updated Apple Developer Program License
+Agreement at <https://developer.apple.com/account>; TestFlight uploads and App
+Store Connect API access stop until it is accepted.
 
 ## After upload
 
