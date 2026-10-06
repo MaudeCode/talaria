@@ -116,16 +116,41 @@ def _guard_running_exit(row, confirm_running_exit: bool) -> None:
         raise Conflict(RUNNING_EXIT_MESSAGE)
 
 
+FENCE_PREFIX = "talaria-fence:"
+FENCE_SECONDS = 60
+
+
+def _clear_stale_fences(conn) -> None:
+    """Release fences whose write never finished (the sidecar died mid-write), so the dispatcher can claim again."""
+    now = int(time.time())
+    stale = []
+    for row in conn.execute("SELECT id, claim_lock FROM tasks WHERE claim_lock LIKE ?", (FENCE_PREFIX + "%",)).fetchall():
+        try:
+            expires = int(str(row["claim_lock"])[len(FENCE_PREFIX):].split(":", 1)[0])
+        except ValueError:
+            expires = 0
+        if expires < now:
+            stale.append((row["id"], row["claim_lock"]))
+    if not stale:
+        return
+    kb = _kb()
+    with kb.write_txn(conn):
+        for task_id, fence in stale:
+            conn.execute("UPDATE tasks SET claim_lock = NULL WHERE id = ? AND claim_lock = ?", (task_id, fence))
+
+
 def _fenced(conn, task_id: str, write, *, confirm_running_exit: bool, releases_claim: bool = True):
     """Run an Agent transition (block, complete, archive) with the dispatcher fenced out.
 
     The Agent's helpers open their own write transaction, which cannot nest, so the checks and a fence lock share
-    one transaction first: ``claim_task`` claims only while ``claim_lock IS NULL``, so the card cannot become a
-    live run before the helper runs. ``releases_claim`` writes (block, complete) refuse a live worker's claim;
-    archive keeps it, because ``archive_task`` terminates that worker.
+    one transaction first: ``claim_task`` claims only a ``ready`` task with ``claim_lock IS NULL``, so the card cannot
+    become a live run before the helper runs. ``releases_claim`` writes (block, complete) refuse a live worker's claim;
+    archive keeps it, because ``archive_task`` terminates that worker. The fence expires, so a write the sidecar never
+    finished stops holding the card once ``_clear_stale_fences`` next runs.
     """
     kb = _kb()
-    fence = f"talaria-fence:{secrets.token_hex(8)}"
+    _clear_stale_fences(conn)
+    fence = f"{FENCE_PREFIX}{int(time.time()) + FENCE_SECONDS}:{secrets.token_hex(8)}"
     with kb.write_txn(conn):
         row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
         if row is None:
@@ -134,15 +159,16 @@ def _fenced(conn, task_id: str, write, *, confirm_running_exit: bool, releases_c
         live = _row_claim_live(row)
         if live and releases_claim:
             raise Conflict(LIVE_CLAIM_MESSAGE)
-        previous = row["claim_lock"]
-        if not live:
+        # Only an unclaimed ready task is claimable; anything else needs no fence.
+        fenced = row["status"] == "ready" and row["claim_lock"] is None
+        if fenced:
             conn.execute("UPDATE tasks SET claim_lock = ? WHERE id = ?", (fence, task_id))
     try:
         return write()
     finally:
-        if not live:
+        if fenced:
             with kb.write_txn(conn):
-                conn.execute("UPDATE tasks SET claim_lock = ? WHERE id = ? AND claim_lock = ?", (previous, task_id, fence))
+                conn.execute("UPDATE tasks SET claim_lock = NULL WHERE id = ? AND claim_lock = ?", (task_id, fence))
 
 
 def _task_dict(task, conn):
@@ -392,6 +418,7 @@ def board_payload(params: dict) -> dict:
         profile = _str(params, "profile") or "default"
         assignee = profile
     with _conn(board=board) as conn:
+        _clear_stale_fences(conn)
         latest = _latest_event_id(conn)
         if since is not None and since >= latest:
             return {"changed": False, "latest_event_id": latest, "read_only": False}

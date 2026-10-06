@@ -269,8 +269,23 @@ def test_kanban_tasks_report_claim_liveness_and_completion_evidence(handshaken: 
     assert message.get("error", {}).get("data", {}).get("condition") == "conflict", message
     patch = {"status": "todo", "confirm_running_exit": True}
     assert handshaken.result("kanban.patch_task", {"profile_home": home, "task_id": task_id, "patch": patch})["task"]["status"] == "todo"
-    # A refused Agent write releases the dispatcher fence it held.
-    message, _ = handshaken.call("kanban.task_action", {"profile_home": home, "task_id": task_id, "action": "block"})
-    assert message.get("error", {}).get("data", {}).get("condition") == "conflict", message
-    with sqlite3.connect(db) as conn:
-        assert conn.execute("SELECT claim_lock FROM tasks WHERE id = ?", (task_id,)).fetchone()[0] is None
+    # A refused Agent write on a claimable (ready) card releases the dispatcher fence it held: completing
+    # without a stored result raises inside the Agent.
+    ready_id = handshaken.result("kanban.create_task", {"profile_home": home, "task": {"title": "fenced task", "status": "ready"}})["task"]["id"]
+    message, _ = handshaken.call("kanban.patch_task", {"profile_home": home, "task_id": ready_id, "patch": {"status": "done"}})
+    assert "error" in message, message
+
+    def claim_lock(tid):
+        with sqlite3.connect(db) as conn:
+            return conn.execute("SELECT claim_lock FROM tasks WHERE id = ?", (tid,)).fetchone()[0]
+
+    assert claim_lock(ready_id) is None
+    # A fence left by a write the sidecar never finished expires; a board read releases it, a live one stays.
+    import time as _time
+    live_fence = f"talaria-fence:{int(_time.time()) + 600}:live"
+    for tid, fence in ((ready_id, "talaria-fence:1:stale"), (task_id, live_fence)):
+        with sqlite3.connect(db) as conn:
+            conn.execute("UPDATE tasks SET claim_lock = ? WHERE id = ?", (fence, tid))
+    handshaken.result("kanban.board", {"profile_home": home})
+    assert claim_lock(ready_id) is None
+    assert claim_lock(task_id) == live_fence
