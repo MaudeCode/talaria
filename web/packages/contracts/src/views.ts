@@ -606,13 +606,14 @@ export const PromptsSchema = z.looseObject({ prompts: z.array(PromptSchema) })
  * first, then the Agent registry, in display order; each name appears once. `handler` says who runs it, `clients` which
  * clients can run it, and `unsupported_message` is the English text a client outside `clients` shows when it is typed.
  * Clients suggest the entries listing them whose name or any alias starts with the typed text (case-insensitive), and
- * resolve a typed alias to the entry's `name`.
+ * resolve a typed alias to the entry's `name`. `exec` marks an Agent entry `POST /api/commands/exec` runs: the client
+ * posts the typed text there and shows the returned output instead of starting a chat turn (TAL-561).
  */
 export const CommandClientSchema = z.enum(['web', 'ios'])
 export const CommandRowSchema = z.looseObject({
   name: z.string(), description: z.string().optional(), aliases: z.array(z.string()), args_hint: z.string().optional(), category: z.string().optional(),
   handler: z.enum(['client', 'agent']), clients: z.array(CommandClientSchema), unsupported_message: z.string().optional(),
-  cli_only: z.boolean().optional(), gateway_only: z.boolean().optional(), subcommands: z.array(Json).optional(),
+  cli_only: z.boolean().optional(), gateway_only: z.boolean().optional(), subcommands: z.array(Json).optional(), exec: z.boolean().optional(),
 })
 export const CommandsSchema = z.looseObject({ commands: z.array(CommandRowSchema) })
 export type Command = z.infer<typeof CommandRowSchema>

@@ -13,7 +13,7 @@ import type { QueuedTurn } from './Composer'
 import { endFirstSend, getFirstSend } from '../chat/firstSend'
 import { returnToComposer } from './composerReturn'
 
-vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await importOriginal()), saveDraft: vi.fn(), steerChat: vi.fn(), startChat: vi.fn(), startBackground: vi.fn(), fetchBackgroundTasks: vi.fn(), askBtw: vi.fn(), fetchCommands: vi.fn() }))
+vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await importOriginal()), saveDraft: vi.fn(), steerChat: vi.fn(), startChat: vi.fn(), startBackground: vi.fn(), fetchBackgroundTasks: vi.fn(), askBtw: vi.fn(), fetchCommands: vi.fn(), execCommand: vi.fn() }))
 // jsdom has no EventSource: a followed turn opens a stream handle that does nothing.
 vi.mock(import('../../api/sse'), async (importOriginal) => ({ ...(await importOriginal()), openChatStream: vi.fn(() => ({ close: () => undefined, readyState: () => 0 })) }))
 import { Composer } from './Composer'
@@ -97,6 +97,28 @@ describe('Composer', () => {
     await userEvent.type(box, '/history{Enter}')
     expect(box).toHaveValue('/history')
     expect(onLocalCommand).not.toHaveBeenCalled()
+    expect(api.startChat).not.toHaveBeenCalled()
+  })
+
+  // TAL-561: an entry the server marks `exec` runs through the exec route; its output shows above the composer.
+  it('runs a server command through exec and shows its output, never starting a turn', async () => {
+    vi.mocked(api.fetchCommands).mockResolvedValue({ commands: [{ name: 'reload-skills', aliases: ['reload_skills'], handler: 'agent', clients: ['web', 'ios'], exec: true }] })
+    vi.mocked(api.execCommand).mockReset().mockResolvedValue({ output: 'Reloaded skills from disk.\nTotal skills: 5' })
+    vi.mocked(api.startChat).mockClear()
+    const onLocalCommand = vi.fn(() => Promise.resolve(false))
+    renderComposer({ ...writable, is_streaming: false }, null, noop, undefined, undefined, onLocalCommand)
+    await waitFor(() => expect(api.fetchCommands).toHaveBeenCalled())
+    const box = screen.getByRole('textbox')
+    await userEvent.type(box, '/reload_skills {Enter}')
+    await waitFor(() => expect(api.execCommand).toHaveBeenCalledWith('/reload_skills', 's1'))
+    expect(await screen.findByRole('region', { name: 'Command output' })).toHaveTextContent('Total skills: 5')
+    expect(box).toHaveValue('')
+    expect(onLocalCommand).not.toHaveBeenCalled()
+    expect(api.startChat).not.toHaveBeenCalled()
+
+    vi.mocked(api.execCommand).mockRejectedValue(new Error('Hermes Agent sidecar is not running'))
+    await userEvent.type(box, '/reload-skills {Enter}')
+    await waitFor(() => expect(screen.getByRole('region', { name: 'Command output' })).toHaveTextContent('Command failed: Hermes Agent sidecar is not running'))
     expect(api.startChat).not.toHaveBeenCalled()
   })
 

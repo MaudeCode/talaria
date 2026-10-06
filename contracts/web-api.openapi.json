@@ -38637,6 +38637,9 @@
                                 }
                               ]
                             }
+                          },
+                          "exec": {
+                            "type": "boolean"
                           }
                         },
                         "required": [

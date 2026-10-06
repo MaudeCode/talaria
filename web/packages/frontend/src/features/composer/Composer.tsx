@@ -15,7 +15,7 @@ import { cn } from '../../ui/cn'
 import { showToast } from '../toast/toast'
 import { AttachmentTray, type PendingFile } from './Attachments'
 import { CommandPaletteList, useCommandPalette } from './CommandPalette'
-import { parseCommand, resolveCommand, type CommandSuggestion } from './commands'
+import { parseCommand, resolveCommand, runsOnServer, type CommandSuggestion } from './commands'
 import { ContextRing, ContextRow, type ContextFigures, ModelChip, ReasoningChip, ToolsetsChip, WorkspaceChip } from './chips'
 import { clearDraft, readLocalDraft, useDraftPersistence } from './useDraft'
 import { createRecognition, dictationSupported, classifyDictationError } from '../voice/dictation'
@@ -26,6 +26,7 @@ import type { Clarify } from '../chat/useClarify'
 import { LiveStatusPill } from '../chat/LiveTurnView'
 import { ComposerTab, type ComposerNotice } from './ComposerTab'
 import { useBtw } from './useBtw'
+import { useCommandOutput } from './useCommandOutput'
 import { BackgroundWorkCard, useBackgroundTasks } from '../background/BackgroundWork'
 import { beginFirstSend, endFirstSend, failFirstSend, getFirstSend, ownsFirstSend, useFirstSend } from '../chat/firstSend'
 import { REST_MS, onComposerRestRequest, requestScroll } from '../chat/sendMotion'
@@ -358,6 +359,7 @@ export function Composer(props: ComposerProps) {
   }, [sessionId])
 
   const { ask: askBtw, notice: btwNotice } = useBtw(sessionId)
+  const { run: runCommand, notice: commandNotice } = useCommandOutput(sessionId)
 
   const send = useCallback(async () => {
     if (locked) { showToast(m.live_compressing(), 1500); return }
@@ -369,6 +371,8 @@ export function Composer(props: ComposerProps) {
     // TAL-314: a typed alias resolves to its server catalog entry; one Web cannot run shows the server's message.
     const entry = parsed ? resolveCommand(parsed.name, catalog) : undefined
     if (entry && !entry.clients.includes('web')) { showToast(entry.unsupported_message ?? m.cmd_unsupported(), 3000); return }
+    // TAL-561: an entry the server runs shows its output in the composer tab; it never reaches the model.
+    if (entry && runsOnServer(entry)) { setText(''); void runCommand(value); return }
     const cmd = parsed && { ...parsed, name: entry?.name ?? parsed.name }
     if (cmd) {
       if (cmd.name === 'theme') { const v = ThemeSchema.safeParse(cmd.args); if (v.success) setTheme(v.data); setText(''); return }
@@ -443,7 +447,7 @@ export function Composer(props: ComposerProps) {
       setSending(false)
       textarea.current?.focus()
     }
-  }, [text, files, sending, session, onEnsureSession, busy, busyMode, sessionId, trySteer, locked, queueEntry, onQueue, onLocalCommand, bootstrap.profile, qc, askBtw, catalog])
+  }, [text, files, sending, session, onEnsureSession, busy, busyMode, sessionId, trySteer, locked, queueEntry, onQueue, onLocalCommand, bootstrap.profile, qc, askBtw, runCommand, catalog])
 
   const applySuggestion = (s: CommandSuggestion) => { setText(`/${s.name} `); textarea.current?.focus() }
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -545,6 +549,7 @@ export function Composer(props: ComposerProps) {
     ...(busy && live ? [{ id: 'live', content: <LiveStatusPill turn={live} background={session?.active_turn_origin === 'background' && session.active_stream_id === live.streamId} /> }] : []),
     ...notices,
     ...(btwNotice ? [btwNotice] : []),
+    ...(commandNotice ? [commandNotice] : []),
     ...(dictating ? [{ id: 'dictation', content: <span className="inline-flex items-center gap-1.5" role="status"><span className="mic-dot" aria-hidden="true" />{m.voice_listening()}</span> }] : []),
     ...(showYolo ? [{ id: 'yolo', tone: 'warning' as const, content: <><span aria-hidden="true">⚡</span><span className="truncate">{m.yolo_tab_active()}</span></>, action: { label: m.yolo_turn_off(), run: onToggleYolo } }] : []),
     ...(sessionId && backgroundTasks.some((t) => t.pinned) ? [{ id: 'background', content: <BackgroundWorkCard sessionId={sessionId} tasks={backgroundTasks} /> }] : []),

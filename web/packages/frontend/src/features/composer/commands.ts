@@ -32,3 +32,11 @@ export function suggestCommands(prefix: string, catalog: Command[]): CommandSugg
     .slice(0, 40)
     .map((c) => ({ name: c.name, desc: c.description ?? '', args: c.args_hint, category: c.category }))
 }
+
+/**
+ * Whether `POST /api/commands/exec` runs this entry (TAL-561). ponytail: old-server fallback — a server before TAL-561
+ * sends no `exec`; legacy Web's rule (plugin commands and the sidecar's runtime commands) stands in until every
+ * supported server sends it.
+ */
+const LEGACY_EXEC = new Set(['reload-mcp', 'reload-skills', 'codex-runtime', 'credits'])
+export const runsOnServer = (c: Command): boolean => c.exec ?? (c.handler === 'agent' && (c.category === 'Plugin' || LEGACY_EXEC.has(c.name)))

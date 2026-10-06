@@ -16,7 +16,8 @@
             "args_hint": "[name]",
             "subcommands": [],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "clear",
@@ -26,7 +27,8 @@
             "args_hint": "",
             "subcommands": [],
             "cli_only": true,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "redraw",
@@ -36,7 +38,8 @@
             "args_hint": "",
             "subcommands": [],
             "cli_only": true,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "history",
@@ -46,7 +49,8 @@
             "args_hint": "",
             "subcommands": [],
             "cli_only": true,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "save",
@@ -56,7 +60,8 @@
             "args_hint": "<json|md|html> [filename] [redact]",
             "subcommands": [],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "retry",
@@ -66,7 +71,8 @@
             "args_hint": "",
             "subcommands": [],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "prompt",
@@ -78,7 +84,8 @@
             "args_hint": "[initial text]",
             "subcommands": [],
             "cli_only": true,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "undo",
@@ -88,7 +95,8 @@
             "args_hint": "[N]",
             "subcommands": [],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "title",
@@ -98,7 +106,8 @@
             "args_hint": "[name]",
             "subcommands": [],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "handoff",
@@ -108,7 +117,8 @@
             "args_hint": "<platform>",
             "subcommands": [],
             "cli_only": true,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "branch",
@@ -120,7 +130,8 @@
             "args_hint": "[name]",
             "subcommands": [],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "worktree",
@@ -134,7 +145,8 @@
               "prune"
             ],
             "cli_only": true,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "compress",
@@ -146,7 +158,8 @@
             "args_hint": "[here [N] | focus topic | --preview|--dry-run]",
             "subcommands": [],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "rollback",
@@ -156,7 +169,8 @@
             "args_hint": "[number] [--all]",
             "subcommands": [],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "snapshot",
@@ -168,7 +182,8 @@
             "args_hint": "[create|restore <id>|prune]",
             "subcommands": [],
             "cli_only": true,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "export",
@@ -178,7 +193,8 @@
             "args_hint": "[profile] [-o output.tar.gz]",
             "subcommands": [],
             "cli_only": true,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "import",
@@ -188,7 +204,8 @@
             "args_hint": "<archive.tar.gz> [--name <name>]",
             "subcommands": [],
             "cli_only": true,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "stop",
@@ -198,7 +215,8 @@
             "args_hint": "",
             "subcommands": [],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "bg",
@@ -208,7 +226,8 @@
             "args_hint": "<prompt>",
             "subcommands": [],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "btw",
@@ -218,7 +237,8 @@
             "args_hint": "<question>",
             "subcommands": [],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "agents",
@@ -230,7 +250,8 @@
             "args_hint": "",
             "subcommands": [],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "journey",
@@ -247,7 +268,8 @@
               "edit"
             ],
             "cli_only": true,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "queue",
@@ -266,7 +288,8 @@
               "add"
             ],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "steer",
@@ -276,7 +299,8 @@
             "args_hint": "<prompt>",
             "subcommands": [],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "goal",
@@ -286,7 +310,8 @@
             "args_hint": "[text | draft <text> | show | gate add <cmd> | pause | resume | clear | status | wait <pid> | unwait]",
             "subcommands": [],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "heartbeat",
@@ -303,7 +328,8 @@
               "clear"
             ],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "refine",
@@ -313,7 +339,8 @@
             "args_hint": "[focus instructions]",
             "subcommands": [],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "review",
@@ -323,7 +350,8 @@
             "args_hint": "[review instructions]",
             "subcommands": [],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "loop",
@@ -335,7 +363,8 @@
             "args_hint": "[interval] <prompt> [--times N] [--until <condition>] | status | pause | resume | stop",
             "subcommands": [],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "plan",
@@ -345,7 +374,8 @@
             "args_hint": "[task]",
             "subcommands": [],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "moa",
@@ -355,7 +385,8 @@
             "args_hint": "<prompt>",
             "subcommands": [],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "subgoal",
@@ -365,7 +396,8 @@
             "args_hint": "[text | remove N | clear]",
             "subcommands": [],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "status",
@@ -375,7 +407,8 @@
             "args_hint": "",
             "subcommands": [],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "egress",
@@ -387,7 +420,8 @@
               "status"
             ],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "context",
@@ -401,7 +435,8 @@
               "all"
             ],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "whoami",
@@ -411,7 +446,8 @@
             "args_hint": "",
             "subcommands": [],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "profile",
@@ -421,7 +457,8 @@
             "args_hint": "",
             "subcommands": [],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "resume",
@@ -431,7 +468,8 @@
             "args_hint": "[name]",
             "subcommands": [],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "sessions",
@@ -441,7 +479,8 @@
             "args_hint": "",
             "subcommands": [],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "config",
@@ -451,7 +490,8 @@
             "args_hint": "",
             "subcommands": [],
             "cli_only": true,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "model",
@@ -461,7 +501,8 @@
             "args_hint": "[model] [--provider name] [--reasoning level] [--global|--session] [--refresh]",
             "subcommands": [],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "codex-runtime",
@@ -473,7 +514,8 @@
             "args_hint": "[auto|codex_app_server]",
             "subcommands": [],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": true
           },
           {
             "name": "personality",
@@ -483,7 +525,8 @@
             "args_hint": "[name]",
             "subcommands": [],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "statusbar",
@@ -495,7 +538,8 @@
             "args_hint": "",
             "subcommands": [],
             "cli_only": true,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "battery",
@@ -509,7 +553,8 @@
               "status"
             ],
             "cli_only": true,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "timestamps",
@@ -525,7 +570,8 @@
               "status"
             ],
             "cli_only": true,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "diff",
@@ -539,7 +585,8 @@
               "session"
             ],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "verbose",
@@ -549,7 +596,8 @@
             "args_hint": "",
             "subcommands": [],
             "cli_only": true,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "focus",
@@ -563,7 +611,8 @@
               "status"
             ],
             "cli_only": true,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "footer",
@@ -577,7 +626,8 @@
               "status"
             ],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "yolo",
@@ -587,7 +637,8 @@
             "args_hint": "",
             "subcommands": [],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "approvals",
@@ -601,7 +652,8 @@
               "off"
             ],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "reasoning",
@@ -627,7 +679,8 @@
               "--global"
             ],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "fast",
@@ -646,7 +699,8 @@
               "--global"
             ],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "skin",
@@ -656,7 +710,8 @@
             "args_hint": "[name]",
             "subcommands": [],
             "cli_only": true,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "indicator",
@@ -671,7 +726,8 @@
               "unicode"
             ],
             "cli_only": true,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "voice",
@@ -686,7 +742,8 @@
               "status"
             ],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "wake",
@@ -700,7 +757,8 @@
               "status"
             ],
             "cli_only": true,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "busy",
@@ -715,7 +773,8 @@
               "status"
             ],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "tools",
@@ -725,7 +784,8 @@
             "args_hint": "[list|disable|enable] [name...]",
             "subcommands": [],
             "cli_only": true,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "toolsets",
@@ -735,7 +795,8 @@
             "args_hint": "",
             "subcommands": [],
             "cli_only": true,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "skills",
@@ -756,7 +817,8 @@
               "approval"
             ],
             "cli_only": true,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "memory",
@@ -771,7 +833,8 @@
               "approval"
             ],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "bundles",
@@ -781,7 +844,8 @@
             "args_hint": "",
             "subcommands": [],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "pet",
@@ -796,7 +860,8 @@
               "off"
             ],
             "cli_only": true,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "hatch",
@@ -808,7 +873,8 @@
             "args_hint": "[description]",
             "subcommands": [],
             "cli_only": true,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "learn",
@@ -818,7 +884,8 @@
             "args_hint": "<what to learn from>",
             "subcommands": [],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "init",
@@ -828,7 +895,8 @@
             "args_hint": "[notes]",
             "subcommands": [],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "cron",
@@ -847,7 +915,8 @@
               "remove"
             ],
             "cli_only": true,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "suggestions",
@@ -864,7 +933,8 @@
               "clear"
             ],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "blueprint",
@@ -876,7 +946,8 @@
             "args_hint": "[name] [slot=value ...]",
             "subcommands": [],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "curator",
@@ -895,7 +966,8 @@
               "list-archived"
             ],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "kanban",
@@ -939,7 +1011,8 @@
               "gc"
             ],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "reload",
@@ -949,7 +1022,8 @@
             "args_hint": "",
             "subcommands": [],
             "cli_only": true,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "reload-mcp",
@@ -961,7 +1035,8 @@
             "args_hint": "",
             "subcommands": [],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": true
           },
           {
             "name": "reload-skills",
@@ -973,7 +1048,8 @@
             "args_hint": "",
             "subcommands": [],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": true
           },
           {
             "name": "browser",
@@ -988,7 +1064,8 @@
               "use"
             ],
             "cli_only": true,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "plugins",
@@ -998,7 +1075,8 @@
             "args_hint": "",
             "subcommands": [],
             "cli_only": true,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "help",
@@ -1008,7 +1086,8 @@
             "args_hint": "[skills|<filter>]",
             "subcommands": [],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "palette",
@@ -1018,7 +1097,8 @@
             "args_hint": "",
             "subcommands": [],
             "cli_only": true,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "usage",
@@ -1028,7 +1108,8 @@
             "args_hint": "[reset [--force]]",
             "subcommands": [],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "subscription",
@@ -1040,7 +1121,8 @@
             "args_hint": "",
             "subcommands": [],
             "cli_only": true,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "login",
@@ -1050,7 +1132,8 @@
             "args_hint": "",
             "subcommands": [],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "topup",
@@ -1060,7 +1143,8 @@
             "args_hint": "",
             "subcommands": [],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "insights",
@@ -1070,7 +1154,8 @@
             "args_hint": "[days]",
             "subcommands": [],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "platforms",
@@ -1082,7 +1167,8 @@
             "args_hint": "",
             "subcommands": [],
             "cli_only": true,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "copy",
@@ -1092,7 +1178,8 @@
             "args_hint": "[number]",
             "subcommands": [],
             "cli_only": true,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "paste",
@@ -1102,7 +1189,8 @@
             "args_hint": "",
             "subcommands": [],
             "cli_only": true,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "image",
@@ -1112,7 +1200,8 @@
             "args_hint": "<path>",
             "subcommands": [],
             "cli_only": true,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "version",
@@ -1124,7 +1213,8 @@
             "args_hint": "",
             "subcommands": [],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "debug",
@@ -1134,7 +1224,8 @@
             "args_hint": "[nous|local]",
             "subcommands": [],
             "cli_only": false,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
           },
           {
             "name": "quit",
@@ -1146,7 +1237,19 @@
             "args_hint": "[--delete]",
             "subcommands": [],
             "cli_only": true,
-            "gateway_only": false
+            "gateway_only": false,
+            "exec": false
+          },
+          {
+            "name": "credits",
+            "description": "Show your Nous credits",
+            "category": "Info",
+            "aliases": [],
+            "args_hint": "",
+            "subcommands": [],
+            "cli_only": false,
+            "gateway_only": false,
+            "exec": true
           }
         ]
       }

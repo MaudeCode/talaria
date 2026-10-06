@@ -34,6 +34,8 @@ export const GOALS_METHODS = {
 export const CommandSchema = z.object({
   name: z.string(), description: z.string(), category: z.string(), aliases: z.array(z.string()), args_hint: z.string(), subcommands: z.array(z.string()),
   cli_only: z.boolean(), gateway_only: z.boolean(),
+  /** `commands.exec` runs it: the sidecar's runtime commands and every plugin command (TAL-561). */
+  exec: z.boolean(),
 })
 /**
  * A model-provider plugin installed and enabled in the profile (TAL-288); bundled providers are built-ins. `setup` is the Agent's
