@@ -145,7 +145,7 @@ public final class ChatAttachmentPreviewViewModel {
             } else if item.isKnownUnsupportedBinary {
                 preview = .unavailable(String(localized: "Preview is not available for this file type."))
             } else {
-                preview = .text(try await apiClient.file(sessionID: sessionID, path: path))
+                preview = .serverFile(try await apiClient.file(sessionID: sessionID, path: path))
             }
         } catch {
             lastError = error

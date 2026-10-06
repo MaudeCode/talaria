@@ -315,6 +315,14 @@ export class RequestContext {
     }
   }
 
+  /** The report-only twin mirrors the default policy, so a response that pins its own CSP instead (a sandboxed,
+   * frameable preview) skips it; its `frame-ancestors 'none'` would report every framing of the preview. */
+  private reportOnlyPolicy(headers: HeaderMap, security: boolean): void {
+    if (!security && headers['Content-Security-Policy']) return
+    headers['Content-Security-Policy-Report-Only'] = buildCspReportOnlyPolicy(this.cspExtras)
+    headers['Report-To'] = CSP_REPORT_TO
+  }
+
   send(opts: SendOptions): void {
     if (this.finished) return
     this.finished = true
@@ -329,8 +337,7 @@ export class RequestContext {
       headers['Content-Encoding'] = 'gzip'
     }
     headers['Content-Length'] = String(body.length)
-    headers['Content-Security-Policy-Report-Only'] = buildCspReportOnlyPolicy(this.cspExtras)
-    headers['Report-To'] = CSP_REPORT_TO
+    this.reportOnlyPolicy(headers, opts.security ?? true)
     const cookies = [...(Array.isArray(headers['Set-Cookie']) ? headers['Set-Cookie'] : headers['Set-Cookie'] ? [headers['Set-Cookie']] : []), ...this.pendingCookies]
     this.pendingCookies = []
     if (cookies.length) headers['Set-Cookie'] = cookies
@@ -348,8 +355,7 @@ export class RequestContext {
     const headers: HeaderMap = {}
     if (opts.security ?? true) Object.assign(headers, this.securityHeaders())
     Object.assign(headers, opts.headers ?? {})
-    headers['Content-Security-Policy-Report-Only'] = buildCspReportOnlyPolicy(this.cspExtras)
-    headers['Report-To'] = CSP_REPORT_TO
+    this.reportOnlyPolicy(headers, opts.security ?? true)
     const cookies = [...(Array.isArray(headers['Set-Cookie']) ? headers['Set-Cookie'] : headers['Set-Cookie'] ? [headers['Set-Cookie']] : []), ...this.pendingCookies]
     this.pendingCookies = []
     if (cookies.length) headers['Set-Cookie'] = cookies

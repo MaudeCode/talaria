@@ -12,7 +12,8 @@ import type { AnyContractRouter } from '@orpc/contract'
 import { OpenAPIHandler } from '@orpc/openapi/node'
 import { sessionsRouter } from './api/sessions-router.js'
 import { gitRouter } from './api/git-router.js'
-import { RAW_GET_ROUTES, RAW_POST_ROUTES, runRaw } from './api/raw-routes.js'
+import { handleWorkspacePreview, RAW_GET_ROUTES, RAW_POST_ROUTES, runRaw } from './api/raw-routes.js'
+import { PREVIEW_PREFIX } from './workspace/preview.js'
 import { chatRouter } from './api/chat-router.js'
 import { settingsRouter } from './api/settings-router.js'
 import { toolsRouter } from './api/tools-router.js'
@@ -380,6 +381,10 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
         if (handleSpa(ctx)) return
         if (path.startsWith('/extensions/')) {
           handleExtensionStatic(ctx)
+          return
+        }
+        if (path.startsWith(PREVIEW_PREFIX)) {
+          await runRaw(ctx, handleWorkspacePreview)
           return
         }
         if (path === '/favicon.ico') {

@@ -85,8 +85,12 @@ function WorkspaceFiles({ workspace, sessionId, active, restored }: { workspace:
   })
   const entries = (listing.data?.entries ?? []).slice().sort((a, b) => Number(!!b.is_dir) - Number(!!a.is_dir) || a.name.localeCompare(b.name))
   const g = git.data?.git
-  const isMarkdown = !!file && /\.(md|markdown)$/i.test(file)
+  // An older server sends no `preview`: its replies are always text, Markdown by extension. Delete once Stable sends it.
+  const kind = content.data ? (content.data.preview ?? (/\.(md|markdown)$/i.test(file ?? '') ? 'markdown' : 'text')) : undefined
+  // Markdown, CSV and HTML show their rendered form until Edit opens the text.
+  const rendered = draft === null && (kind === 'markdown' || kind === 'csv' || kind === 'html')
   const text = draft ?? content.data?.content ?? ''
+  const rawUrl = (inline?: boolean) => appUrl(api.rawFileUrl(sessionId, file ?? '', inline)).href
   return (
     <>
       <div className="flex items-center gap-1 border-b border-border-subtle px-3 py-1" data-files-toolbar>
@@ -99,20 +103,32 @@ function WorkspaceFiles({ workspace, sessionId, active, restored }: { workspace:
           <div className="flex items-center gap-1 border-b border-border-subtle px-2 py-1 text-xs">
             <Button variant="ghost" onClick={() => { setFile(null); setDraft(null) }}><ArrowUp size={12} aria-hidden="true" /> {m.back()}</Button>
             <span className="min-w-0 flex-1 truncate font-mono text-muted">{file}</span>
-            <a className="text-muted hover:text-text" href={appUrl(api.rawFileUrl(sessionId, file)).href} download aria-label={m.download_folder()}><Download size={14} aria-hidden="true" /></a>
+            <a className="text-muted hover:text-text" href={rawUrl()} download aria-label={m.download_folder()}><Download size={14} aria-hidden="true" /></a>
           </div>
           {content.isPending && <LoadingState />}
           {content.isError && <ErrorState error={content.error} onRetry={() => { void content.refetch() }} />}
-          {content.data && content.data.binary && <div className="p-3 text-xs text-muted">{m.ws_panel_binary({ size: formatBytes(content.data.size) })}</div>}
-          {content.data && !content.data.binary && (
+          {kind === 'binary' && <div className="p-3 text-xs text-muted">{m.ws_panel_binary({ size: formatBytes(content.data?.size) })}</div>}
+          {/* Media and HTML frames mount only while the page is shown, so a hidden page stops playing; the selection stays. */}
+          {active && (kind === 'image' || kind === 'pdf' || kind === 'audio' || kind === 'video') && (
             <div className="flex min-h-0 flex-1 flex-col">
-              {isMarkdown && draft === null ? (
-                <div className="min-h-0 flex-1 overflow-auto p-3 text-[13px]"><Markdown text={text} /></div>
-              ) : (
+              <MediaPreview kind={kind} name={file} src={rawUrl(kind === 'pdf')} />
+              <div className="border-t border-border-subtle px-2 py-1.5 text-right text-[11px] text-muted">{formatBytes(content.data?.size)}</div>
+            </div>
+          )}
+          {content.data && (kind === 'text' || rendered || draft !== null) && (
+            <div className="flex min-h-0 flex-1 flex-col">
+              {rendered && kind === 'markdown' && <div className="min-h-0 flex-1 overflow-auto p-3 text-[13px]"><Markdown text={text} /></div>}
+              {rendered && kind === 'csv' && <CsvTable rows={content.data.table ?? []} truncated={!!content.data.table_truncated} />}
+              {rendered && kind === 'html' && active && (
+                // The server's preview URL serves the page and its relative assets with a sandbox CSP; the frame sandbox
+                // repeats it without same-origin. An older server's raw inline route serves the page alone.
+                <iframe src={content.data.preview_url ? appUrl(content.data.preview_url).href : rawUrl(true)} title={file} sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox" className="min-h-0 w-full flex-1 border-0 bg-white" />
+              )}
+              {!rendered && (
                 <textarea value={text} onChange={(e) => setDraft(e.target.value)} spellCheck={false} aria-label={m.ws_panel_preview()} className="min-h-0 flex-1 resize-none bg-code-bg p-3 font-mono text-[12px] text-pre-text outline-none" />
               )}
               <div className="flex items-center gap-2 border-t border-border-subtle px-2 py-1.5">
-                {isMarkdown && draft === null && <Button variant="ghost" onClick={() => setDraft(text)}>{m.edit()}</Button>}
+                {rendered && <Button variant="ghost" onClick={() => setDraft(text)}>{m.edit()}</Button>}
                 <Button variant="primary" disabled={draft === null || save.isPending} onClick={() => { if (draft !== null) save.mutate(draft) }}>{m.save()}</Button>
                 {draft !== null && <Button variant="ghost" onClick={() => setDraft(null)}>{m.cancel()}</Button>}
                 <span className="ml-auto text-[11px] text-muted">{content.data.truncated ? m.logs_truncated({ n: content.data.lines ?? 0 }) : formatBytes(content.data.size)}</span>
@@ -193,6 +209,32 @@ function WorkspaceFiles({ workspace, sessionId, active, restored }: { workspace:
         onConfirm={() => { if (pending?.kind === 'delete') { const { path, isDir } = pending.entry; op.mutate(() => api.deleteEntry(sessionId, path, isDir)) } }}
       />
     </>
+  )
+}
+
+/** A media file streamed from the raw route; a PDF uses the frameable inline response. */
+function MediaPreview({ kind, name, src }: { kind: 'image' | 'pdf' | 'audio' | 'video'; name: string; src: string }) {
+  if (kind === 'pdf') return <iframe src={src} title={name} className="min-h-0 w-full flex-1 border-0 bg-white" />
+  return (
+    <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-3">
+      {kind === 'image' && <img src={src} alt={name} className="max-h-full max-w-full object-contain" />}
+      {kind === 'audio' && <audio src={src} controls preload="metadata" aria-label={name} className="w-full" />}
+      {kind === 'video' && <video src={src} controls preload="metadata" aria-label={name} className="max-h-full max-w-full" />}
+    </div>
+  )
+}
+
+/** The server's parsed CSV rows; the first row is the header. */
+function CsvTable({ rows, truncated }: { rows: string[][]; truncated: boolean }) {
+  const [head = [], ...body] = rows
+  return (
+    <div className="min-h-0 flex-1 overflow-auto">
+      <table className="border-collapse font-mono text-[12px]">
+        <thead className="sticky top-0 bg-code-bg"><tr>{head.map((cell, i) => <th key={i} scope="col" className="border border-border-subtle px-2 py-1 text-left font-semibold whitespace-nowrap">{cell}</th>)}</tr></thead>
+        <tbody>{body.map((row, r) => <tr key={r}>{row.map((cell, i) => <td key={i} className="border border-border-subtle px-2 py-1 whitespace-pre">{cell}</td>)}</tr>)}</tbody>
+      </table>
+      {truncated && <div className="p-2 text-[11px] text-muted">{m.ws_panel_csv_truncated({ n: body.length })}</div>}
+    </div>
   )
 }
 

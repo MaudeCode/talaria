@@ -5,13 +5,14 @@
 import { gzipSync } from 'node:zlib'
 import { readFileSync, statSync } from 'node:fs'
 import { extname, relative, resolve, isAbsolute } from 'node:path'
+import { PREVIEW_PREFIX } from './workspace/preview.js'
 
 export const SPA_EXACT_PATHS = new Set([
   '/', '/index.html', '/sessions', '/tasks', '/kanban', '/skills', '/memory', '/workspaces', '/profiles', '/todos', '/insights', '/logs',
   '/settings', '/onboarding', '/login', '/share',
 ])
 export const SPA_PREFIX_PATHS = ['/session/', '/tasks/', '/kanban/', '/skills/', '/memory/', '/workspaces/', '/profiles/', '/settings/', '/ext/', '/share/']
-export const SERVER_OWNED_PREFIXES = ['/api/', '/assets/', '/static/', '/extensions/', '/plugins/', '/dashboard-plugins/', '/session/static/']
+export const SERVER_OWNED_PREFIXES = ['/api/', '/assets/', '/static/', '/extensions/', PREVIEW_PREFIX, '/plugins/', '/dashboard-plugins/', '/session/static/']
 export const SERVER_OWNED_EXACT = new Set(['/health', '/sw.js', '/manifest.json', '/manifest.webmanifest', '/favicon.ico', '/search', '/session/manifest.json', '/session/manifest.webmanifest'])
 export const SPA_PUBLIC_EXACT = new Set(['/login', '/share'])
 export const SPA_PUBLIC_PREFIXES = ['/share/']

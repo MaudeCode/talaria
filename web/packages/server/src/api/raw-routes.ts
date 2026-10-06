@@ -14,6 +14,7 @@ import { SessionNotFound } from '../sessions/store.js'
 import { openAnchoredFd, safeResolve } from '../workspace/fs.js'
 import { isWithin, resolvePathLikePython } from '../workspace/paths.js'
 import { AUDIO_VIDEO_PDF_TYPES, contentDispositionValue, INLINE_IMAGE_TYPES, isValidDigest, mediaAnchorRoot, mediaTarget, mimeFor, serveFileBytes, serveInlineHtmlPreview, snapshotPathForDigest, snapshotServableForPath } from '../workspace/media.js'
+import { PREVIEW_PREFIX, previewGrantRoot } from '../workspace/preview.js'
 import { REMOTE_WORKSPACE_UNSUPPORTED_CODE, REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE } from '../workspace/workspaces.js'
 import { ZipWriter } from '../workspace/zip.js'
 import { parseMultipart, UploadConflict, UploadRejected } from '../workspace/upload.js'
@@ -101,6 +102,32 @@ function handleFileRaw(ctx: RequestContext): void {
     return
   }
   serveFileBytes(ctx, target, { mime, disposition, cacheControl: 'no-store', csp, anchorRoot })
+}
+
+/**
+ * `/workspace-preview/<grant>/<path>` (TAL-566): the HTML preview frame and its relative assets, authorized by the
+ * signed grant rather than a cookie. Every response carries the sandbox CSP and no CORS header, so the page's scripts
+ * can run and load assets but cannot read workspace files.
+ */
+export function handleWorkspacePreview(ctx: RequestContext): void {
+  const rest = ctx.path.slice(PREVIEW_PREFIX.length)
+  const slash = rest.indexOf('/')
+  const root = slash > 0 ? previewGrantRoot(ctx.deps.auth.signingKey(), rest.slice(0, slash)) : null
+  let target: string | null = null
+  if (root) {
+    try {
+      const rel = decodeURIComponent(rest.slice(slash + 1))
+      const resolved = rel.includes('\0') ? null : safeResolve(root, rel)
+      if (resolved && existsSync(resolved) && statSync(resolved).isFile()) target = resolved
+    } catch { /* malformed escape or outside the root */ }
+  }
+  if (!root || !target) {
+    ctx.json({ error: 'not found' }, { status: 404 })
+    return
+  }
+  const mime = mimeFor(target)
+  if (mime === 'text/html') serveInlineHtmlPreview(ctx, target, 'no-store', SANDBOX_CSP, root)
+  else serveFileBytes(ctx, target, { mime, disposition: 'inline', cacheControl: 'no-store', csp: SANDBOX_CSP, anchorRoot: root })
 }
 
 function handleMedia(ctx: RequestContext): void {

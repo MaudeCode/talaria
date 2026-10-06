@@ -60,7 +60,7 @@ self.addEventListener('activate', (event) => {
 
 function isServerOwned(url: URL, scope: URL): boolean {
   const rel = url.pathname.startsWith(scope.pathname) ? url.pathname.slice(scope.pathname.length) : url.pathname
-  return rel.startsWith('api/') || rel === 'health' || rel.startsWith('extensions/') || rel.startsWith('plugins/') || rel.startsWith('dashboard-plugins/') || rel === 'sw.js' || (!rel.startsWith('static/') && rel.includes('/static/'))
+  return rel.startsWith('api/') || rel === 'health' || rel.startsWith('extensions/') || rel.startsWith('workspace-preview/') || rel.startsWith('plugins/') || rel.startsWith('dashboard-plugins/') || rel === 'sw.js' || (!rel.startsWith('static/') && rel.includes('/static/'))
 }
 
 self.addEventListener('fetch', (event) => {

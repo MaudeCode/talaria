@@ -858,6 +858,43 @@ describe('projects, workspaces, and files over HTTP', () => {
     expect((await s.get('/api/list?session_id=deadbeef0000')).status).toBe(404)
   })
 
+  it('file reads name the preview kind; media skips the text read and CSV ships parsed rows', async () => {
+    const ws = realpathSync(join(s.state, 'workspace'))
+    const sid = String((await newSession(s, { workspace: ws })).session_id)
+    const big = Buffer.alloc(500_000, 1)
+    writeFileSync(join(ws, 'p.PNG'), big)
+    writeFileSync(join(ws, 'd.pdf'), '%PDF-1.4')
+    writeFileSync(join(ws, 'a.mp3'), 'ID3')
+    writeFileSync(join(ws, 'v.webm'), 'x')
+    writeFileSync(join(ws, 'i.svg'), '<svg/>')
+    writeFileSync(join(ws, 'page.html'), '<p>hi</p>')
+    writeFileSync(join(ws, 'n.md'), '# hi')
+    writeFileSync(join(ws, 'blob.bin'), Buffer.from([0x68, 0, 0xff]))
+    writeFileSync(join(ws, 't.txt'), 'plain')
+    writeFileSync(join(ws, 'rows.csv'), `name,note\r\n"Ada","said ""hi"", twice"\r\n\r\n${Array.from({ length: 600 }, (_, i) => `r${String(i)},x`).join('\n')}\n`)
+    const read = async (path: string) => {
+      const res = await s.get(`/api/file?session_id=${sid}&path=${path}`)
+      expect(res.status).toBe(200)
+      return json(res)
+    }
+    expect(await read('p.PNG')).toEqual({ path: 'p.PNG', size: 500_000, preview: 'image', mime: 'image/png' })
+    expect(await read('d.pdf')).toMatchObject({ preview: 'pdf', mime: 'application/pdf' })
+    expect(await read('a.mp3')).toMatchObject({ preview: 'audio' })
+    expect(await read('v.webm')).toMatchObject({ preview: 'video' })
+    expect(await read('i.svg')).toMatchObject({ preview: 'image' })
+    expect(await read('page.html')).toMatchObject({ preview: 'html', content: '<p>hi</p>' })
+    expect(await read('n.md')).toMatchObject({ preview: 'markdown', content: '# hi' })
+    expect(await read('t.txt')).toMatchObject({ preview: 'text', content: 'plain' })
+    const blob = await read('blob.bin')
+    expect(blob).toMatchObject({ preview: 'binary', binary: true, size: 3 })
+    expect(blob.content).toBeUndefined()
+    const csv = await read('rows.csv')
+    expect(csv).toMatchObject({ preview: 'csv', table_truncated: true })
+    const rows = csv.table as string[][]
+    expect(rows.slice(0, 3)).toEqual([['name', 'note'], ['Ada', 'said "hi", twice'], ['r0', 'x']])
+    expect(rows).toHaveLength(500)
+  })
+
   it('file operations keep the Python validation contract: require(), Office guard, listing timestamps, launcher errors', async () => {
     const ws = realpathSync(join(s.state, 'workspace'))
     const sid = String((await newSession(s, { workspace: ws })).session_id)

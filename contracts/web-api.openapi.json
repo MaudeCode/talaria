@@ -23940,6 +23940,35 @@
                     },
                     "mime": {
                       "type": "string"
+                    },
+                    "preview": {
+                      "enum": [
+                        "text",
+                        "markdown",
+                        "csv",
+                        "html",
+                        "image",
+                        "pdf",
+                        "audio",
+                        "video",
+                        "binary"
+                      ],
+                      "type": "string"
+                    },
+                    "table": {
+                      "type": "array",
+                      "items": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "table_truncated": {
+                      "type": "boolean"
+                    },
+                    "preview_url": {
+                      "type": "string"
                     }
                   },
                   "additionalProperties": {}

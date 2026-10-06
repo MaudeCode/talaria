@@ -451,12 +451,13 @@ function sortKeysDeep(value: unknown): unknown {
   return value
 }
 
-export interface FileContent { path: string; content: string; size: number; lines: number }
+/** A text read carries `content`/`lines`; a stat-only read and a binary file carry only the size. */
+export interface FileContent { path: string; size: number; content?: string; lines?: number; binary?: true }
 
 export class FileTooLargeError extends Error {}
 
 /** Python `read_file_content` (office previews were dropped with TAL-245). */
-export function readFileContent(workspace: string, rel: string): FileContent {
+export function readFileContent(workspace: string, rel: string, opts: { statOnly?: boolean } = {}): FileContent {
   const target = safeResolveWs(workspace, rel)
   let st
   try {
@@ -469,6 +470,7 @@ export function readFileContent(workspace: string, rel: string): FileContent {
   try {
     const fst = fstatSync(fd)
     if (!fst.isFile()) throw new NotFoundError(`Not a file: ${rel}`)
+    if (opts.statOnly) return { path: rel, size: fst.size }
     if (fst.size > MAX_FILE_BYTES) throw new FileTooLargeError(`File too large (${fst.size} bytes, max ${MAX_FILE_BYTES})`)
     const buf = Buffer.alloc(MAX_FILE_BYTES + 1)
     let total = 0
@@ -479,6 +481,7 @@ export function readFileContent(workspace: string, rel: string): FileContent {
     }
     const raw = buf.subarray(0, total)
     const content = raw.toString('utf8')
+    if (raw.includes(0) || (content.includes('\uFFFD') && !raw.equals(Buffer.from(content, 'utf8')))) return { path: rel, size: raw.length, binary: true }
     return { path: rel, content, size: raw.length, lines: (content.match(/\n/g)?.length ?? 0) + 1 }
   } finally {
     closeSync(fd)

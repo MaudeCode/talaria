@@ -86,8 +86,8 @@ public final class FilePreviewViewModel {
             } else {
                 let file = try await apiClient.file(sessionID: sessionID, path: loadingPath)
                 guard !Task.isCancelled, loadGeneration == generation, path == loadingPath else { return }
-                exportData = Data((file.content ?? "").utf8)
-                preview = .text(file)
+                exportData = file.content.map { Data($0.utf8) }
+                preview = .serverFile(file)
             }
         } catch {
             guard !Task.isCancelled, loadGeneration == generation, path == loadingPath else { return }
@@ -181,6 +181,13 @@ public enum FilePreviewContent {
     case image(ImageFilePreview)
     case audio(Data)
     case unavailable(String)
+}
+
+extension FilePreviewContent {
+    /// The server omits `content` for media and binary files, so those have no text preview; export fetches raw bytes.
+    static func serverFile(_ file: FileResponse) -> FilePreviewContent {
+        file.content == nil ? .unavailable(String(localized: "Preview is not available for this file type.")) : .text(file)
+    }
 }
 
 public struct ImageFilePreview: @unchecked Sendable {
