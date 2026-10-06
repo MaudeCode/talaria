@@ -1,7 +1,7 @@
 # Relay HTTP API v1
 
 All bodies are JSON. User-authenticated routes use `Authorization: Bearer <relay session token>`.
-Failures return a non-2xx status with `{ "error": "<code>" }`.
+User-authenticated route failures return a non-2xx status with `{ "error": "<code>" }`. Signed publisher state routes answer conflicts with their `status` result instead (below).
 
 ## Health and release identity
 
