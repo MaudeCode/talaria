@@ -628,3 +628,32 @@ export function stateDbSessionRow(dbPath: string, sid: string): Dict | null {
     db.close()
   }
 }
+
+/**
+ * TAL-550 (Python `_handle_insights`): usage of the non-Web sessions active since `cutoff`, shaped like session index
+ * entries. `webui` rows mirror index sessions and are skipped; a missing column reads as empty and a missing or
+ * unreadable state.db answers no rows.
+ */
+export function insightsSessionRows(dbPath: string, cutoff: number): Dict[] {
+  if (!existsSync(dbPath)) return []
+  let db: DatabaseSync
+  try { db = openStateDbReadonly(dbPath) } catch { return [] }
+  try {
+    const cols = tableColumns(db, 'sessions')
+    if (!cols.has('id') || !cols.has('started_at')) return []
+    const col = (name: string): string => (cols.has(name) ? name : 'NULL')
+    const source = cols.has('source') ? "LOWER(COALESCE(source, '')) != 'webui'" : '1'
+    const ended = col('ended_at')
+    const rows = db.prepare(`SELECT id, ${col('model')} AS model, ${col('message_count')} AS message_count, ${col('input_tokens')} AS input_tokens, ${col('output_tokens')} AS output_tokens,
+      ${col('cache_read_tokens')} AS cache_read_tokens, ${col('estimated_cost_usd')} AS estimated_cost_usd, started_at, ${ended} AS ended_at
+      FROM sessions WHERE (started_at >= ? OR ${ended} >= ?) AND ${source}`).all(cutoff, cutoff) as Dict[]
+    return rows.map((r) => ({
+      session_id: str(r.id), model: r.model, message_count: r.message_count, input_tokens: r.input_tokens, output_tokens: r.output_tokens,
+      cache_read_tokens: r.cache_read_tokens, estimated_cost: r.estimated_cost_usd, created_at: r.started_at, updated_at: r.ended_at ?? r.started_at,
+    }))
+  } catch {
+    return []
+  } finally {
+    db.close()
+  }
+}

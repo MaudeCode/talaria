@@ -1,4 +1,4 @@
-/** Usage analytics from the session index (Python `_handle_insights`). ponytail: the state.db CLI-session merge is not ported. */
+/** Usage analytics from the session index plus the Agent's state.db sessions (Python `_handle_insights`). */
 import type { Dict } from '../config/agent-config.js'
 import { str } from '../util.js'
 
@@ -16,13 +16,15 @@ function cacheHitPercent(cacheRead: number, prompt: number): number | null {
   return Math.min(100, Math.round((cacheRead / prompt) * 100))
 }
 
-export function buildInsights(entries: Dict[], daysRaw: unknown, nowSeconds: number): Dict {
+/** `stateRows` reads the state.db sessions active since the window's cutoff; an id already in the index counts once. */
+export function buildInsights(entries: Dict[], daysRaw: unknown, nowSeconds: number, stateRows: (cutoff: number) => Dict[] = () => []): Dict {
   const parsed = Number.parseInt(str(daysRaw ?? '30'), 10)
   const days = Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), 365) : 30
   const today = new Date(nowSeconds * 1000)
   const midnight = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime() / 1000
   const cutoff = midnight - (days - 1) * 86_400
-  const sessions = entries.filter((e) => Math.max(num(e.created_at), num(e.updated_at)) >= cutoff)
+  const indexed = new Set(entries.map((e) => str(e.session_id)).filter(Boolean))
+  const sessions = [...entries, ...stateRows(cutoff).filter((r) => !indexed.has(str(r.session_id)))].filter((e) => Math.max(num(e.created_at), num(e.updated_at)) >= cutoff)
   let totalMessages = 0
   let totalInput = 0
   let totalOutput = 0

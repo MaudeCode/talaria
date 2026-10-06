@@ -1,6 +1,7 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { DatabaseSync } from 'node:sqlite'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { FakeSidecar, loadSidecarFixtures } from '../sidecar/fake.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { sanitizeClientEvent, updateNotificationOwner, WindowLimiter } from './tools-router.js'
@@ -313,6 +314,35 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     expect((await json(res)).channel).toBe('stable')
     res = await s.get('/api/transcribe/capability')
     expect(await json(res)).toEqual({ ok: true, available: false, provider: 'none' })
+  })
+
+  it('insights add CLI, messaging, and cron sessions from state.db, counting a Web session once (TAL-550)', async () => {
+    const now = s.deps.nowSeconds()
+    const index = vi.spyOn(s.deps.sessionStore, 'readIndexEntries').mockReturnValue([
+      { session_id: 'web', created_at: now - 100, updated_at: now - 50, input_tokens: 10, output_tokens: 5, estimated_cost: 0.5, message_count: 2, model: 'm' },
+      // A CLI session imported into the Web index keeps its state.db id.
+      { session_id: 'imported', created_at: now - 100, updated_at: now - 50, input_tokens: 1, output_tokens: 1, message_count: 1, model: 'm' },
+    ])
+    const dbPath = join(s.deps.profileHome('default'), 'state.db')
+    const db = new DatabaseSync(dbPath)
+    db.exec('CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT, model TEXT, message_count INTEGER, input_tokens INTEGER, output_tokens INTEGER, cache_read_tokens INTEGER, estimated_cost_usd REAL, started_at REAL, ended_at REAL)')
+    const insert = db.prepare('INSERT INTO sessions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    insert.run('web', 'webui', 'm', 2, 10, 5, 0, 0.5, now - 100, null)
+    insert.run('imported', 'cli', 'm', 1, 1, 1, 0, 0, now - 100, null)
+    insert.run('cli', 'cli', 'c', 4, 100, 50, 25, 1.25, now - 300, now - 200)
+    insert.run('tg', 'telegram', 'c', 3, 20, 10, 0, null, now - 400, null)
+    insert.run('cron_j_1', 'cron', null, 2, 7, 3, 0, 0.25, now - 500, now - 450)
+    insert.run('old', 'cli', 'c', 9, 900, 900, 0, 9, now - 40 * 86_400, now - 40 * 86_400)
+    db.close()
+    try {
+      const body = await json(await s.get('/api/insights?days=7'))
+      expect(body).toMatchObject({ total_sessions: 5, total_messages: 12, total_input_tokens: 138, total_output_tokens: 69, total_cache_read_tokens: 25, total_cost: 2 })
+      expect((body.models as Json[]).map((m) => [m.model, m.sessions])).toEqual([['c', 2], ['m', 2], ['unknown', 1]])
+      expect((body.daily_tokens as Json[]).reduce((n, d) => n + Number(d.sessions), 0)).toBe(5)
+    } finally {
+      index.mockRestore()
+      rmSync(dbPath)
+    }
   })
 
   it('shutdown and restart are operator-gated and restart maps sidecar outcomes', async () => {
