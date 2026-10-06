@@ -249,7 +249,7 @@ actor KanbanLabClient: KanbanDataClient {
         }
         let hasFixtureHistory = !isEmpty && isFixture
         let payload: [String: Any] = [
-            "task": task,
+            "task": Self.withPolicy(task),
             "comments": comments,
             "events": hasFixtureHistory ? [[
                 "id": 9, "task_id": request.cardID, "kind": "status",
@@ -343,7 +343,27 @@ actor KanbanLabClient: KanbanDataClient {
     }
 
     private func mutationEnvelope(for card: StoredCard) -> KanbanCardMutationEnvelope {
-        decode(["task": card.object, "read_only": false])
+        decode(["task": Self.withPolicy(card.object), "read_only": false])
+    }
+
+    /// The card policy the Web server adds to every task (TAL-557), so lab Cards offer the server's actions.
+    private static func withPolicy(_ task: [String: Any]) -> [String: Any] {
+        let status = task["status"] as? String ?? ""
+        let moves: [String: [String]] = [
+            "triage": ["todo", "ready"], "todo": ["triage", "ready"], "ready": ["triage", "todo"],
+            "running": ["triage", "todo", "ready"], "blocked": ["triage", "todo"],
+            "done": ["triage", "todo", "ready"], "archived": ["triage", "todo", "ready"]
+        ]
+        var task = task
+        task["available_actions"] = [
+            "block": ["ready", "running"].contains(status),
+            "unblock": status == "blocked",
+            "complete": ["ready", "running", "blocked"].contains(status),
+            "archive": moves[status] != nil && status != "archived",
+            "move_to": moves[status] ?? []
+        ]
+        task["requires_running_exit_confirmation"] = status == "running"
+        return task
     }
 
     private func snapshotObject(for request: KanbanBoardRequest) -> [String: Any] {
@@ -369,7 +389,12 @@ actor KanbanLabClient: KanbanDataClient {
             values.append(card.object)
             columns[index]["tasks"] = values
         }
-        snapshot["columns"] = columns
+        snapshot["columns"] = columns.map { column in
+            var column = column
+            column["tasks"] = (column["tasks"] as? [[String: Any]] ?? []).map(Self.withPolicy)
+            return column
+        }
+        snapshot["bulk_move_targets"] = ["triage", "todo", "ready", "blocked", "done"]
         return snapshot
     }
 

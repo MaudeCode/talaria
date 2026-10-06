@@ -125,11 +125,14 @@ public struct KanbanCardStatusRequest: Equatable, Sendable {
     let cardID: String
     let board: String
     let status: String
+    /// The user confirmed leaving Running; the server refuses that exit without it (TAL-557).
+    let confirmRunningExit: Bool
 
-    public init(cardID: String, board: String, status: String) {
+    public init(cardID: String, board: String, status: String, confirmRunningExit: Bool = false) {
         self.cardID = cardID
         self.board = board
         self.status = status
+        self.confirmRunningExit = confirmRunningExit
     }
 
     var queryItems: [URLQueryItem] {
@@ -141,11 +144,14 @@ public struct KanbanCardActionRequest: Equatable, Sendable {
     let cardID: String
     let board: String
     let reason: String?
+    /// The user confirmed leaving Running; the server refuses that exit without it (TAL-557).
+    let confirmRunningExit: Bool
 
-    public init(cardID: String, board: String, reason: String?) {
+    public init(cardID: String, board: String, reason: String?, confirmRunningExit: Bool = false) {
         self.cardID = cardID
         self.board = board
         self.reason = reason
+        self.confirmRunningExit = confirmRunningExit
     }
 
     var queryItems: [URLQueryItem] {

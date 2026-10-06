@@ -179,7 +179,7 @@ export const fetchCronStatus = () => orpc().crons.status({})
 export const fetchKanbanBoards = () => orpc().kanban.boards({})
 export const fetchKanbanBoard = (params: Record<string, string | boolean | undefined> = {}) => orpc().kanban.board(Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, typeof v === 'boolean' ? (v ? '1' : '0') : v])))
 export const switchKanbanBoard = (slug: string) => orpc().kanban.switchBoard({ slug })
-/** The real task action set: `patch`, `comments`, `block`, `unblock`, `dispatch` (archive is `patch {archived: true}`). */
+/** The real task action set: `patch`, `comments`, `block`, `unblock`, `dispatch` (archive is `patch {status: 'archived'}`). */
 export const kanbanTaskAction = (id: string | number, action: 'patch' | 'comments' | 'block' | 'unblock' | 'dispatch', body: Record<string, unknown>) => {
   const k = orpc().kanban
   const task_id = String(id)

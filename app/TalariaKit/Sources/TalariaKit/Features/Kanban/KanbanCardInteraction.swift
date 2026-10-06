@@ -6,6 +6,8 @@ public enum KanbanCardAction: Equatable {
     case unblock
     case complete
     case archive
+    /// Repeats the card's failed mutation.
+    case retry
 }
 
 public enum KanbanCardRowPrimaryAction: Equatable {

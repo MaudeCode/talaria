@@ -362,26 +362,8 @@ struct KanbanCardDetailContent: View {
 
     private func cardActionsMenu(_ card: KanbanCard) -> some View {
         Menu {
-            let destinations = featureModel.moveDestinations(for: card)
-            if !destinations.isEmpty {
-                Menu("Move") {
-                    ForEach(destinations, id: \.self) { destination in
-                        Button(KanbanStatusPresentation(destination).title) {
-                            request(.move(destination), for: card)
-                        }
-                    }
-                }
-            }
-            if card.status?.rawValue == "blocked" {
-                Button("Unblock") { request(.unblock, for: card) }
-            } else if card.status?.rawValue != "archived" {
-                Button("Block") { request(.block, for: card) }
-            }
-            if card.status?.rawValue != "done", card.status?.rawValue != "archived" {
-                Button("Complete") { request(.complete, for: card) }
-            }
-            if card.status?.rawValue != "archived" {
-                Button("Archive", role: .destructive) { request(.archive, for: card) }
+            KanbanCardActionItems(card: card, destinations: featureModel.moveDestinations(for: card)) {
+                request($0, for: card)
             }
         } label: {
             Image(systemName: "ellipsis.circle")
@@ -391,7 +373,7 @@ struct KanbanCardDetailContent: View {
     }
 
     private func request(_ action: KanbanCardAction, for card: KanbanCard) {
-        if card.status?.rawValue == "running" {
+        if card.requiresRunningExitConfirmation {
             pendingRunningAction = KanbanPendingCardAction(card: card, action: action)
         } else {
             perform(action, for: card)
@@ -414,22 +396,18 @@ struct KanbanCardDetailContent: View {
                 await featureModel.completeCard(card, confirmingRunningExit: confirmingRunningExit)
             case .archive:
                 await featureModel.archiveCard(card, confirmingRunningExit: confirmingRunningExit)
+            case .retry:
+                await featureModel.retryMutation(for: card, confirmingRunningExit: confirmingRunningExit)
             }
             await state.refresh()
         }
     }
 
     private func retryMutation(for card: KanbanCard) {
-        guard card.status?.rawValue == "running",
-              let mutation = featureModel.mutationState(for: card.cardID) else {
+        if featureModel.retryNeedsRunningExitConfirmation(for: card) {
+            pendingRunningAction = KanbanPendingCardAction(card: card, action: .retry)
+        } else {
             Task { await featureModel.retryMutation(for: card) }
-            return
-        }
-        switch mutation.kind {
-        case let .status(status): request(status == "done" ? .complete : .move(status), for: card)
-        case .block: request(.block, for: card)
-        case .archive: request(.archive, for: card)
-        default: Task { await featureModel.retryMutation(for: card) }
         }
     }
 
@@ -623,5 +601,28 @@ struct KanbanCardDetailContent: View {
     private func nonEmpty(_ value: String?) -> String? {
         let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed?.isEmpty == false ? trimmed : nil
+    }
+}
+
+/// The card actions the server offers (TAL-557), shared by the card detail and Status Focus menus.
+struct KanbanCardActionItems: View {
+    let card: KanbanCard
+    let destinations: [String]
+    let request: (KanbanCardAction) -> Void
+
+    var body: some View {
+        if !destinations.isEmpty {
+            Menu("Move") {
+                ForEach(destinations, id: \.self) { destination in
+                    Button(KanbanStatusPresentation(destination).title) { request(.move(destination)) }
+                }
+            }
+        }
+        if let actions = card.availableActions {
+            if actions.unblock { Button("Unblock") { request(.unblock) } }
+            if actions.block { Button("Block") { request(.block) } }
+            if actions.complete { Button("Complete") { request(.complete) } }
+            if actions.archive { Button("Archive", role: .destructive) { request(.archive) } }
+        }
     }
 }

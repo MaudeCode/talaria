@@ -79,9 +79,7 @@ struct KanbanBulkActionsView: View {
         }
     }
 
-    private var statusOptions: [String] {
-        (model.configuration?.columns ?? []).filter { $0 != "running" }
-    }
+    private var statusOptions: [String] { model.bulkMoveTargets }
 
     private func submit(_ action: KanbanBulkAction) {
         Task {

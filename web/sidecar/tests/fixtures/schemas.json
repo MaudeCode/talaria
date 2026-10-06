@@ -875,13 +875,21 @@
                         "type": "integer",
                         "minimum": -9007199254740991,
                         "maximum": 9007199254740991
+                      },
+                      "claim_live": {
+                        "type": "boolean"
+                      },
+                      "has_completion_evidence": {
+                        "type": "boolean"
                       }
                     },
                     "required": [
                       "id",
                       "title",
                       "status",
-                      "priority"
+                      "priority",
+                      "claim_live",
+                      "has_completion_evidence"
                     ],
                     "additionalProperties": {}
                   }
@@ -1159,13 +1167,21 @@
             "type": "integer",
             "minimum": -9007199254740991,
             "maximum": 9007199254740991
+          },
+          "claim_live": {
+            "type": "boolean"
+          },
+          "has_completion_evidence": {
+            "type": "boolean"
           }
         },
         "required": [
           "id",
           "title",
           "status",
-          "priority"
+          "priority",
+          "claim_live",
+          "has_completion_evidence"
         ],
         "additionalProperties": {}
       },
@@ -1255,13 +1271,21 @@
             "type": "integer",
             "minimum": -9007199254740991,
             "maximum": 9007199254740991
+          },
+          "claim_live": {
+            "type": "boolean"
+          },
+          "has_completion_evidence": {
+            "type": "boolean"
           }
         },
         "required": [
           "id",
           "title",
           "status",
-          "priority"
+          "priority",
+          "claim_live",
+          "has_completion_evidence"
         ],
         "additionalProperties": {}
       },
@@ -1295,13 +1319,21 @@
             "type": "integer",
             "minimum": -9007199254740991,
             "maximum": 9007199254740991
+          },
+          "claim_live": {
+            "type": "boolean"
+          },
+          "has_completion_evidence": {
+            "type": "boolean"
           }
         },
         "required": [
           "id",
           "title",
           "status",
-          "priority"
+          "priority",
+          "claim_live",
+          "has_completion_evidence"
         ],
         "additionalProperties": {}
       },
@@ -1335,13 +1367,21 @@
             "type": "integer",
             "minimum": -9007199254740991,
             "maximum": 9007199254740991
+          },
+          "claim_live": {
+            "type": "boolean"
+          },
+          "has_completion_evidence": {
+            "type": "boolean"
           }
         },
         "required": [
           "id",
           "title",
           "status",
-          "priority"
+          "priority",
+          "claim_live",
+          "has_completion_evidence"
         ],
         "additionalProperties": {}
       },

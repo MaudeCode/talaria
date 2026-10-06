@@ -53,7 +53,8 @@ export const COMMANDS_METHODS = {
 
 // ── kanban ─────────────────────────────────────────────────────────────
 const Board = ProfileHomeParams.extend({ board: z.string().nullable().optional() })
-export const KanbanTaskSchema = z.object({ id: z.string(), title: z.string(), status: z.string(), priority: z.number().int() }).catchall(Json)
+/** `claim_live`: a running task's worker still holds its claim. `has_completion_evidence`: the task stores a result, which the Agent requires to complete it (TAL-557). */
+export const KanbanTaskSchema = z.object({ id: z.string(), title: z.string(), status: z.string(), priority: z.number().int(), claim_live: z.boolean(), has_completion_evidence: z.boolean() }).catchall(Json)
 const TaskEnvelope = z.object({ task: KanbanTaskSchema, read_only: z.boolean() })
 export const KanbanBoardSchema = z.union([
   z.object({ changed: z.literal(false), latest_event_id: z.number().int(), read_only: z.boolean() }),
@@ -76,7 +77,7 @@ export const KANBAN_METHODS = {
   'kanban.task': { params: Board.extend({ task_id: z.string() }), result: z.object({ task: KanbanTaskSchema, comments: z.array(Loose), events: z.array(Loose), links: z.object({ parents: z.array(z.string()), children: z.array(z.string()) }), runs: z.array(Loose), read_only: z.boolean() }) },
   'kanban.create_task': { params: Board.extend({ task: Loose }), result: TaskEnvelope },
   'kanban.patch_task': { params: Board.extend({ task_id: z.string(), patch: Loose }), result: TaskEnvelope },
-  'kanban.task_action': { params: Board.extend({ task_id: z.string(), action: z.enum(['block', 'unblock']), reason: z.string().nullable().optional() }), result: TaskEnvelope },
+  'kanban.task_action': { params: Board.extend({ task_id: z.string(), action: z.enum(['block', 'unblock']), reason: z.string().nullable().optional(), confirm_running_exit: z.boolean().optional() }), result: TaskEnvelope },
   'kanban.comment': { params: Board.extend({ task_id: z.string(), body: z.string(), author: z.string().optional() }), result: z.object({ ok: z.literal(true), comment_id: z.union([z.number().int(), z.string()]), read_only: z.boolean() }) },
   'kanban.link': { params: Board.extend({ parent_id: z.string(), child_id: z.string() }), result: z.object({ ok: z.literal(true), parent_id: z.string(), child_id: z.string(), read_only: z.boolean() }) },
   'kanban.unlink': { params: Board.extend({ parent_id: z.string(), child_id: z.string() }), result: z.object({ ok: z.literal(true), changed: z.boolean(), parent_id: z.string(), child_id: z.string(), read_only: z.boolean() }) },

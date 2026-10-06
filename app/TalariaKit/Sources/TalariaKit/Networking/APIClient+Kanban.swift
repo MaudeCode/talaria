@@ -251,7 +251,7 @@ extension APIClient: KanbanDataClient {
         return try await kanbanJSON(
             endpoint: .kanbanCardStatus(request),
             method: "PATCH",
-            body: KanbanStatusBody(status: request.status)
+            body: KanbanStatusBody(status: request.status, confirmRunningExit: request.confirmRunningExit ? true : nil)
         )
     }
 
@@ -259,7 +259,7 @@ extension APIClient: KanbanDataClient {
         try await kanbanJSON(
             endpoint: .kanbanBlockCard(request),
             method: "POST",
-            body: KanbanActionBody(reason: request.reason)
+            body: KanbanActionBody(reason: request.reason, confirmRunningExit: request.confirmRunningExit ? true : nil)
         )
     }
 
@@ -267,7 +267,7 @@ extension APIClient: KanbanDataClient {
         try await kanbanJSON(
             endpoint: .kanbanUnblockCard(request),
             method: "POST",
-            body: KanbanActionBody(reason: nil)
+            body: KanbanActionBody(reason: nil, confirmRunningExit: nil)
         )
     }
 
@@ -398,18 +398,22 @@ public enum KanbanRequestError: Error, Equatable {
     case runningStatusRequiresDispatcher
 }
 
+/// `confirmRunningExit` is sent only when the user confirmed leaving Running.
 private struct KanbanStatusBody: Encodable {
     let status: String
+    let confirmRunningExit: Bool?
 }
 
 private struct KanbanActionBody: Encodable {
     let reason: String?
+    let confirmRunningExit: Bool?
 
-    enum CodingKeys: CodingKey { case reason }
+    enum CodingKeys: CodingKey { case reason, confirmRunningExit }
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encodeIfPresent(reason, forKey: .reason)
+        try container.encodeIfPresent(confirmRunningExit, forKey: .confirmRunningExit)
     }
 }
 

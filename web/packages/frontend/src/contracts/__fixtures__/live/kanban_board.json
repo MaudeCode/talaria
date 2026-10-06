@@ -1,6 +1,13 @@
 {
   "body": {
     "assignees": [],
+    "bulk_move_targets": [
+      "triage",
+      "todo",
+      "ready",
+      "blocked",
+      "done"
+    ],
     "changed": true,
     "columns": [
       {

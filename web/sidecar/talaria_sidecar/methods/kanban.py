@@ -8,6 +8,7 @@ server; the sidecar receives typed params.
 from __future__ import annotations
 
 import json
+import secrets
 import time
 from dataclasses import asdict, is_dataclass
 from typing import Any
@@ -82,10 +83,102 @@ def _obj_dict(value):
     return dict(getattr(value, "__dict__", {}))
 
 
-def _task_dict(task):
+LIVE_CLAIM_MESSAGE = "task has a live worker; archive it to stop the worker"
+
+
+def _row_claim_live(row) -> bool:
+    """The Agent's ``_claim_is_live`` for a ``tasks`` row: a running task's worker process still holds its claim.
+
+    Releasing that claim (block, a direct status change) leaves the worker running, so the card
+    policy withholds those writes and the write paths refuse them (TAL-557). Unknown liveness counts as live.
+    """
+    if row is None or row["status"] != "running":
+        return False
+    columns = row.keys()
+    claim = {k: row[k] if k in columns else None for k in ("status", "claim_lock", "worker_pid", "worker_started_at")}
+    try:
+        return bool(_kb()._claim_is_live(claim))
+    except Exception:  # noqa: BLE001 - an older Agent without the helper
+        return bool(claim["claim_lock"] and claim["worker_pid"])
+
+
+def _claim_live(conn, task_id) -> bool:
+    return _row_claim_live(conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone())
+
+
+RUNNING_EXIT_MESSAGE = "task is running; confirm leaving Running"
+
+
+def _guard_running_exit(row, confirm_running_exit: bool) -> None:
+    """A write that takes a task out of Running needs the client's explicit confirmation, judged on the row the
+    write sees: a client's card policy can predate a dispatcher claim (TAL-557)."""
+    if row["status"] == "running" and not confirm_running_exit:
+        raise Conflict(RUNNING_EXIT_MESSAGE)
+
+
+FENCE_PREFIX = "talaria-fence:"
+FENCE_SECONDS = 60
+
+
+def _clear_stale_fences(conn) -> None:
+    """Release fences whose write never finished (the sidecar died mid-write), so the dispatcher can claim again."""
+    now = int(time.time())
+    stale = []
+    for row in conn.execute("SELECT id, claim_lock FROM tasks WHERE claim_lock LIKE ?", (FENCE_PREFIX + "%",)).fetchall():
+        try:
+            expires = int(str(row["claim_lock"])[len(FENCE_PREFIX):].split(":", 1)[0])
+        except ValueError:
+            expires = 0
+        if expires < now:
+            stale.append((row["id"], row["claim_lock"]))
+    if not stale:
+        return
+    kb = _kb()
+    with kb.write_txn(conn):
+        for task_id, fence in stale:
+            conn.execute("UPDATE tasks SET claim_lock = NULL WHERE id = ? AND claim_lock = ?", (task_id, fence))
+
+
+def _fenced(conn, task_id: str, write, *, confirm_running_exit: bool, releases_claim: bool = True):
+    """Run an Agent transition (block, complete, archive) with the dispatcher fenced out.
+
+    The Agent's helpers open their own write transaction, which cannot nest, so the checks and a fence lock share
+    one transaction first: ``claim_task`` claims only a ``ready`` task with ``claim_lock IS NULL``, so the card cannot
+    become a live run before the helper runs. ``releases_claim`` writes (block, complete) refuse a live worker's claim;
+    archive keeps it, because ``archive_task`` terminates that worker. The fence expires, so a write the sidecar never
+    finished stops holding the card once ``_clear_stale_fences`` next runs.
+    """
+    kb = _kb()
+    _clear_stale_fences(conn)
+    fence = f"{FENCE_PREFIX}{int(time.time()) + FENCE_SECONDS}:{secrets.token_hex(8)}"
+    with kb.write_txn(conn):
+        row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        if row is None:
+            raise NotFound("task not found")
+        _guard_running_exit(row, confirm_running_exit)
+        live = _row_claim_live(row)
+        if live and releases_claim:
+            raise Conflict(LIVE_CLAIM_MESSAGE)
+        # Only an unclaimed ready task is claimable; anything else needs no fence.
+        fenced = row["status"] == "ready" and row["claim_lock"] is None
+        if fenced:
+            conn.execute("UPDATE tasks SET claim_lock = ? WHERE id = ?", (fence, task_id))
+    try:
+        return write()
+    finally:
+        if fenced:
+            with kb.write_txn(conn):
+                conn.execute("UPDATE tasks SET claim_lock = NULL WHERE id = ? AND claim_lock = ?", (task_id, fence))
+
+
+def _task_dict(task, conn):
     data = _obj_dict(task)
     if not data:
         return data
+    # Facts the server's card policy needs (TAL-557): the Agent completes a non-review task only with
+    # stored or supplied evidence, and refuses to release a live worker's claim.
+    data["claim_live"] = data.get("status") == "running" and _claim_live(conn, data.get("id"))
+    data["has_completion_evidence"] = bool(str(data.get("result") or "").strip())
     try:
         age = _kb().task_age(task)
     except Exception:  # noqa: BLE001
@@ -131,12 +224,16 @@ def _validate_status(status: str) -> str:
     return value
 
 
-def _set_status_direct(conn, task_id: str, new_status: str) -> bool:
+def _set_status_direct(conn, task_id: str, new_status: str, *, confirm_running_exit: bool = False) -> bool:
     kb = _kb()
     with kb.write_txn(conn):
-        prev = conn.execute("SELECT status, current_run_id FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        prev = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
         if prev is None:
             return False
+        # Checked inside the write transaction, so a claim taken since the client's read is never released.
+        _guard_running_exit(prev, confirm_running_exit)
+        if _row_claim_live(prev):
+            raise Conflict(LIVE_CLAIM_MESSAGE)
         was_running = prev["status"] == "running"
         cur = conn.execute(
             "UPDATE tasks SET status = ?, "
@@ -202,14 +299,15 @@ def _patch_task(conn, task_id: str, body: dict) -> None:
     if "status" not in body or body.get("status") in (None, ""):
         return
     status = _validate_status(body.get("status"))
+    confirm = bool(body.get("confirm_running_exit"))
     if status == "done":
-        if not kb.complete_task(conn, task_id, result=body.get("result"), summary=body.get("summary")):
+        if not _fenced(conn, task_id, lambda: kb.complete_task(conn, task_id, result=body.get("result"), summary=body.get("summary")), confirm_running_exit=confirm):
             raise NotFound("task not found")
     elif status == "blocked":
-        if not kb.block_task(conn, task_id, reason=body.get("block_reason") or body.get("reason")):
+        if not _fenced(conn, task_id, lambda: kb.block_task(conn, task_id, reason=body.get("block_reason") or body.get("reason")), confirm_running_exit=confirm):
             raise NotFound("task not found")
     elif status == "archived":
-        if not kb.archive_task(conn, task_id):
+        if not _fenced(conn, task_id, lambda: kb.archive_task(conn, task_id), confirm_running_exit=confirm, releases_claim=False):
             raise NotFound("task not found")
     elif status == "running":
         raise InvalidParams("Cannot set status to 'running' directly; use the dispatcher/claim path")
@@ -220,10 +318,10 @@ def _patch_task(conn, task_id: str, body: dict) -> None:
         if current.status == "blocked":
             if not kb.unblock_task(conn, task_id):
                 raise NotFound("task not found")
-        elif not _set_status_direct(conn, task_id, "ready"):
+        elif not _set_status_direct(conn, task_id, "ready", confirm_running_exit=confirm):
             raise NotFound("task not found")
     elif status in ("triage", "todo"):
-        if not _set_status_direct(conn, task_id, status):
+        if not _set_status_direct(conn, task_id, status, confirm_running_exit=confirm):
             raise NotFound("task not found")
 
 
@@ -320,6 +418,7 @@ def board_payload(params: dict) -> dict:
         profile = _str(params, "profile") or "default"
         assignee = profile
     with _conn(board=board) as conn:
+        _clear_stale_fences(conn)
         latest = _latest_event_id(conn)
         if since is not None and since >= latest:
             return {"changed": False, "latest_event_id": latest, "read_only": False}
@@ -327,7 +426,7 @@ def board_payload(params: dict) -> dict:
         link_counts, comment_counts = _link_counts(conn, tasks), _comment_counts(conn)
 
         def row(task):
-            data = _task_dict(task)
+            data = _task_dict(task, conn)
             data["link_counts"] = link_counts.get(task.id, {"parents": 0, "children": 0})
             data["comment_count"] = comment_counts.get(task.id, 0)
             return data
@@ -365,7 +464,7 @@ def create_task_payload(params: dict) -> dict:
         )
         if body.get("status"):
             _patch_task(conn, task_id, {"status": body.get("status")})
-        return {"task": _task_dict(kb.get_task(conn, task_id)), "read_only": False}
+        return {"task": _task_dict(kb.get_task(conn, task_id), conn), "read_only": False}
 
 
 def patch_task_payload(params: dict) -> dict:
@@ -375,7 +474,7 @@ def patch_task_payload(params: dict) -> dict:
     kb = _kb()
     with _conn(board=_board(params)) as conn:
         _patch_task(conn, task_id, params.get("patch") or {})
-        return {"task": _task_dict(kb.get_task(conn, task_id)), "read_only": False}
+        return {"task": _task_dict(kb.get_task(conn, task_id), conn), "read_only": False}
 
 
 def comment_payload(params: dict) -> dict:
@@ -418,7 +517,7 @@ def task_detail_payload(params: dict) -> dict:
         if not task:
             raise NotFound("task not found")
         return {
-            "task": _task_dict(task),
+            "task": _task_dict(task, conn),
             "comments": [_obj_dict(c) for c in kb.list_comments(conn, task_id)],
             "events": [_obj_dict(e) for e in kb.list_events(conn, task_id)],
             "links": {"parents": kb.parent_ids(conn, task_id), "children": kb.child_ids(conn, task_id)},
@@ -533,7 +632,8 @@ def bulk_payload(params: dict) -> dict:
                     results.append(entry)
                     continue
                 if body.get("archive"):
-                    if not kb.archive_task(conn, task_id):
+                    # Bulk carries no running-exit confirmation, so a running row is refused like a card write.
+                    if not _fenced(conn, task_id, lambda: kb.archive_task(conn, task_id), confirm_running_exit=False, releases_claim=False):
                         entry.update(ok=False, error="archive refused")
                 elif body.get("status") is not None:
                     _patch_task(conn, task_id, {"status": body.get("status")})
@@ -578,7 +678,7 @@ def task_action_payload(params: dict) -> dict:
         if not kb.get_task(conn, task_id):
             raise NotFound("task not found")
         if action == "block":
-            ok = kb.block_task(conn, task_id, reason=params.get("reason"))
+            ok = _fenced(conn, task_id, lambda: kb.block_task(conn, task_id, reason=params.get("reason")), confirm_running_exit=bool(params.get("confirm_running_exit")))
         elif action == "unblock":
             if hasattr(kb, "unblock_task"):
                 ok = kb.unblock_task(conn, task_id)
@@ -589,7 +689,7 @@ def task_action_payload(params: dict) -> dict:
             raise InvalidParams(f"invalid action: {action}")
         if not ok:
             raise Conflict(f"{action} refused")
-        return {"task": _task_dict(kb.get_task(conn, task_id)), "read_only": False}
+        return {"task": _task_dict(kb.get_task(conn, task_id), conn), "read_only": False}
 
 
 def list_boards_payload(params: dict) -> dict:

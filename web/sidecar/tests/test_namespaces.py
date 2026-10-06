@@ -226,3 +226,66 @@ def test_image_mode_reads_the_profile_config(handshaken: SidecarProcess, hermes_
     assert handshaken.result("text.image_mode", params) == {"mode": "native", "reason": "", "supports_vision": True}
     path.write_text("agent:\n  image_input_mode: text\nmodel:\n  supports_vision: true\n", encoding="utf-8")
     assert handshaken.result("text.image_mode", params)["mode"] == "text"
+
+
+@requires_agent
+def test_kanban_tasks_report_claim_liveness_and_completion_evidence(handshaken: SidecarProcess, hermes_home: pathlib.Path) -> None:
+    """The server's card policy (TAL-557) reads these: a live worker's claim and the stored result the Agent needs to complete."""
+    import sqlite3
+
+    home = str(hermes_home)
+    task_id = handshaken.result("kanban.create_task", {"profile_home": home, "task": {"title": "claimed task"}})["task"]["id"]
+    task = handshaken.result("kanban.task", {"profile_home": home, "task_id": task_id})["task"]
+    assert task["claim_live"] is False and task["has_completion_evidence"] is False
+    db = next(p for p in hermes_home.rglob("*.db") if sqlite3.connect(p).execute("SELECT name FROM sqlite_master WHERE name = 'tasks'").fetchone())
+    worker = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    try:
+        with sqlite3.connect(db) as conn:
+            conn.execute("UPDATE tasks SET status = 'running', claim_lock = 'test-claim', worker_pid = ?, result = 'shipped' WHERE id = ?", (worker.pid, task_id))
+            # No start fingerprint: liveness is the worker PID's existence.
+            if any(c[1] == "worker_started_at" for c in conn.execute("PRAGMA table_info(tasks)")):
+                conn.execute("UPDATE tasks SET worker_started_at = NULL WHERE id = ?", (task_id,))
+        task = handshaken.result("kanban.task", {"profile_home": home, "task_id": task_id})["task"]
+        assert task["claim_live"] is True and task["has_completion_evidence"] is True
+        # A client holding policy from before the claim still cannot release it, confirmed or not.
+        for method, params in (
+            ("kanban.task_action", {"action": "block"}),
+            ("kanban.task_action", {"action": "block", "confirm_running_exit": True}),
+            ("kanban.patch_task", {"patch": {"status": "todo", "confirm_running_exit": True}}),
+            ("kanban.patch_task", {"patch": {"status": "done", "confirm_running_exit": True}}),
+            ("kanban.patch_task", {"patch": {"status": "archived"}}),
+        ):
+            message, _ = handshaken.call(method, {"profile_home": home, "task_id": task_id, **params})
+            assert message.get("error", {}).get("data", {}).get("condition") == "conflict", (method, params, message)
+        assert handshaken.result("kanban.task", {"profile_home": home, "task_id": task_id})["task"]["status"] == "running"
+    finally:
+        worker.kill()
+        worker.wait()
+    board = handshaken.result("kanban.board", {"profile_home": home})
+    running = next(t for c in board["columns"] for t in c["tasks"] if t["id"] == task_id)
+    assert running["claim_live"] is False
+    # Once the worker is gone the claim no longer protects a run; leaving Running still needs confirmation.
+    message, _ = handshaken.call("kanban.patch_task", {"profile_home": home, "task_id": task_id, "patch": {"status": "todo"}})
+    assert message.get("error", {}).get("data", {}).get("condition") == "conflict", message
+    patch = {"status": "todo", "confirm_running_exit": True}
+    assert handshaken.result("kanban.patch_task", {"profile_home": home, "task_id": task_id, "patch": patch})["task"]["status"] == "todo"
+    # A refused Agent write on a claimable (ready) card releases the dispatcher fence it held: completing
+    # without a stored result raises inside the Agent.
+    ready_id = handshaken.result("kanban.create_task", {"profile_home": home, "task": {"title": "fenced task", "status": "ready"}})["task"]["id"]
+    message, _ = handshaken.call("kanban.patch_task", {"profile_home": home, "task_id": ready_id, "patch": {"status": "done"}})
+    assert "error" in message, message
+
+    def claim_lock(tid):
+        with sqlite3.connect(db) as conn:
+            return conn.execute("SELECT claim_lock FROM tasks WHERE id = ?", (tid,)).fetchone()[0]
+
+    assert claim_lock(ready_id) is None
+    # A fence left by a write the sidecar never finished expires; a board read releases it, a live one stays.
+    import time as _time
+    live_fence = f"talaria-fence:{int(_time.time()) + 600}:live"
+    for tid, fence in ((ready_id, "talaria-fence:1:stale"), (task_id, live_fence)):
+        with sqlite3.connect(db) as conn:
+            conn.execute("UPDATE tasks SET claim_lock = ? WHERE id = ?", (fence, tid))
+    handshaken.result("kanban.board", {"profile_home": home})
+    assert claim_lock(ready_id) is None
+    assert claim_lock(task_id) == live_fence

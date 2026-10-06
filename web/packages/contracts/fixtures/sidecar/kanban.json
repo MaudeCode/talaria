@@ -179,7 +179,9 @@
             "started_age_seconds": null,
             "time_to_complete_seconds": null
           },
-          "progress": null
+          "progress": null,
+          "claim_live": false,
+          "has_completion_evidence": false
         },
         "read_only": false
       }
@@ -241,7 +243,9 @@
             "started_age_seconds": null,
             "time_to_complete_seconds": null
           },
-          "progress": null
+          "progress": null,
+          "claim_live": false,
+          "has_completion_evidence": false
         },
         "read_only": false
       }
@@ -319,7 +323,9 @@
                   "parents": 0,
                   "children": 0
                 },
-                "comment_count": 0
+                "comment_count": 0,
+                "claim_live": false,
+                "has_completion_evidence": false
               },
               {
                 "id": "t_974ed3b5",
@@ -375,7 +381,9 @@
                   "parents": 0,
                   "children": 0
                 },
-                "comment_count": 0
+                "comment_count": 0,
+                "claim_live": false,
+                "has_completion_evidence": false
               }
             ]
           },
@@ -623,7 +631,9 @@
             "started_age_seconds": null,
             "time_to_complete_seconds": null
           },
-          "progress": null
+          "progress": null,
+          "claim_live": false,
+          "has_completion_evidence": false
         },
         "comments": [],
         "events": [
@@ -717,7 +727,9 @@
             "started_age_seconds": null,
             "time_to_complete_seconds": null
           },
-          "progress": null
+          "progress": null,
+          "claim_live": false,
+          "has_completion_evidence": false
         },
         "read_only": false
       }
@@ -778,7 +790,9 @@
             "started_age_seconds": null,
             "time_to_complete_seconds": null
           },
-          "progress": null
+          "progress": null,
+          "claim_live": false,
+          "has_completion_evidence": false
         },
         "read_only": false
       }
@@ -844,7 +858,9 @@
             "started_age_seconds": null,
             "time_to_complete_seconds": null
           },
-          "progress": null
+          "progress": null,
+          "claim_live": false,
+          "has_completion_evidence": false
         },
         "read_only": false
       }

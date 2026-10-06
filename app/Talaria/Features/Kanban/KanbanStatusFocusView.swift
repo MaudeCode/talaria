@@ -1053,26 +1053,8 @@ struct KanbanStatusFocusView: View {
 
     private func cardActionsMenu(_ card: KanbanCard) -> some View {
         Menu {
-            let destinations = model.moveDestinations(for: card)
-            if !destinations.isEmpty {
-                Menu("Move") {
-                    ForEach(destinations, id: \.self) { destination in
-                        Button(KanbanStatusPresentation(destination).title) {
-                            request(.move(destination), for: card)
-                        }
-                    }
-                }
-            }
-            if card.status?.rawValue == "blocked" {
-                Button("Unblock") { request(.unblock, for: card) }
-            } else if card.status?.rawValue != "archived" {
-                Button("Block") { request(.block, for: card) }
-            }
-            if card.status?.rawValue != "done", card.status?.rawValue != "archived" {
-                Button("Complete") { request(.complete, for: card) }
-            }
-            if card.status?.rawValue != "archived" {
-                Button("Archive", role: .destructive) { request(.archive, for: card) }
+            KanbanCardActionItems(card: card, destinations: model.moveDestinations(for: card)) {
+                request($0, for: card)
             }
         } label: {
             Image(systemName: "ellipsis.circle")
@@ -1116,7 +1098,7 @@ struct KanbanStatusFocusView: View {
     }
 
     private func request(_ action: KanbanCardAction, for card: KanbanCard) {
-        if card.status?.rawValue == "running" {
+        if card.requiresRunningExitConfirmation {
             pendingRunningAction = KanbanPendingCardAction(card: card, action: action)
         } else {
             perform(action, for: card)
@@ -1132,52 +1114,36 @@ struct KanbanStatusFocusView: View {
             switch action {
             case let .move(status):
                 await model.moveCard(card, to: status, confirmingRunningExit: confirmingRunningExit)
-                if model.mutationState(for: card.cardID)?.phase == .succeeded {
-                    model.selectedStatus = status
-                    await Task.yield()
-                    focusedCardID = card.cardID
-                }
             case .block:
                 await model.blockCard(card, reason: nil, confirmingRunningExit: confirmingRunningExit)
-                if model.mutationState(for: card.cardID)?.phase == .succeeded {
-                    model.selectedStatus = "blocked"
-                    await Task.yield()
-                    focusedCardID = card.cardID
-                }
             case .unblock:
                 await model.unblockCard(card)
-                if model.mutationState(for: card.cardID)?.phase == .succeeded {
-                    model.selectedStatus = "ready"
-                    await Task.yield()
-                    focusedCardID = card.cardID
-                }
             case .complete:
                 await model.completeCard(card, confirmingRunningExit: confirmingRunningExit)
-                if model.mutationState(for: card.cardID)?.phase == .succeeded {
-                    model.selectedStatus = "done"
-                    await Task.yield()
-                    focusedCardID = card.cardID
-                }
+            case .retry:
+                await model.retryMutation(for: card, confirmingRunningExit: confirmingRunningExit)
             case .archive:
                 await model.archiveCard(card, confirmingRunningExit: confirmingRunningExit)
                 if model.hasAvailableArchiveUndo {
                     archiveUndoIsFocused = true
                 }
+                return
+            }
+            // Follow the card to the status the server returned.
+            if model.mutationState(for: card.cardID)?.phase == .succeeded,
+               let status = model.displayedStatus(of: card.cardID) {
+                model.selectedStatus = status
+                await Task.yield()
+                focusedCardID = card.cardID
             }
         }
     }
 
     private func retryMutation(for card: KanbanCard) {
-        guard card.status?.rawValue == "running",
-              let mutation = model.mutationState(for: card.cardID) else {
+        if model.retryNeedsRunningExitConfirmation(for: card) {
+            pendingRunningAction = KanbanPendingCardAction(card: card, action: .retry)
+        } else {
             Task { await model.retryMutation(for: card) }
-            return
-        }
-        switch mutation.kind {
-        case let .status(status): request(status == "done" ? .complete : .move(status), for: card)
-        case .block: request(.block, for: card)
-        case .archive: request(.archive, for: card)
-        default: Task { await model.retryMutation(for: card) }
         }
     }
 

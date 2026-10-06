@@ -47255,10 +47255,45 @@
                                   "type": "boolean"
                                 },
                                 "created_at": {},
-                                "updated_at": {}
+                                "updated_at": {},
+                                "available_actions": {
+                                  "type": "object",
+                                  "properties": {
+                                    "block": {
+                                      "type": "boolean"
+                                    },
+                                    "unblock": {
+                                      "type": "boolean"
+                                    },
+                                    "complete": {
+                                      "type": "boolean"
+                                    },
+                                    "archive": {
+                                      "type": "boolean"
+                                    },
+                                    "move_to": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "block",
+                                    "unblock",
+                                    "complete",
+                                    "archive",
+                                    "move_to"
+                                  ]
+                                },
+                                "requires_running_exit_confirmation": {
+                                  "type": "boolean"
+                                }
                               },
                               "required": [
-                                "id"
+                                "id",
+                                "available_actions",
+                                "requires_running_exit_confirmation"
                               ],
                               "additionalProperties": {}
                             }
@@ -47302,8 +47337,17 @@
                     },
                     "changed": {
                       "type": "boolean"
+                    },
+                    "bulk_move_targets": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
                     }
                   },
+                  "required": [
+                    "bulk_move_targets"
+                  ],
                   "additionalProperties": {}
                 }
               }
@@ -47926,13 +47970,56 @@
                           "type": "integer",
                           "minimum": -9007199254740991,
                           "maximum": 9007199254740991
+                        },
+                        "claim_live": {
+                          "type": "boolean"
+                        },
+                        "has_completion_evidence": {
+                          "type": "boolean"
+                        },
+                        "available_actions": {
+                          "type": "object",
+                          "properties": {
+                            "block": {
+                              "type": "boolean"
+                            },
+                            "unblock": {
+                              "type": "boolean"
+                            },
+                            "complete": {
+                              "type": "boolean"
+                            },
+                            "archive": {
+                              "type": "boolean"
+                            },
+                            "move_to": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "block",
+                            "unblock",
+                            "complete",
+                            "archive",
+                            "move_to"
+                          ]
+                        },
+                        "requires_running_exit_confirmation": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
                         "id",
                         "title",
                         "status",
-                        "priority"
+                        "priority",
+                        "claim_live",
+                        "has_completion_evidence",
+                        "available_actions",
+                        "requires_running_exit_confirmation"
                       ],
                       "additionalProperties": {}
                     },
@@ -48095,9 +48182,109 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "propertyNames": {
-                    "type": "string"
+                  "properties": {
+                    "task": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string"
+                        },
+                        "priority": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "claim_live": {
+                          "type": "boolean"
+                        },
+                        "has_completion_evidence": {
+                          "type": "boolean"
+                        },
+                        "available_actions": {
+                          "type": "object",
+                          "properties": {
+                            "block": {
+                              "type": "boolean"
+                            },
+                            "unblock": {
+                              "type": "boolean"
+                            },
+                            "complete": {
+                              "type": "boolean"
+                            },
+                            "archive": {
+                              "type": "boolean"
+                            },
+                            "move_to": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "block",
+                            "unblock",
+                            "complete",
+                            "archive",
+                            "move_to"
+                          ]
+                        },
+                        "requires_running_exit_confirmation": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "title",
+                        "status",
+                        "priority",
+                        "claim_live",
+                        "has_completion_evidence",
+                        "available_actions",
+                        "requires_running_exit_confirmation"
+                      ],
+                      "additionalProperties": {}
+                    },
+                    "last_card_action": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "action": {
+                              "enum": [
+                                "block",
+                                "unblock"
+                              ],
+                              "type": "string"
+                            },
+                            "event_id": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "action",
+                            "event_id"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
                   },
+                  "required": [
+                    "task",
+                    "last_card_action"
+                  ],
                   "additionalProperties": {}
                 }
               }
@@ -48120,6 +48307,22 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "confirm_running_exit": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK",
@@ -48144,13 +48347,56 @@
                           "type": "integer",
                           "minimum": -9007199254740991,
                           "maximum": 9007199254740991
+                        },
+                        "claim_live": {
+                          "type": "boolean"
+                        },
+                        "has_completion_evidence": {
+                          "type": "boolean"
+                        },
+                        "available_actions": {
+                          "type": "object",
+                          "properties": {
+                            "block": {
+                              "type": "boolean"
+                            },
+                            "unblock": {
+                              "type": "boolean"
+                            },
+                            "complete": {
+                              "type": "boolean"
+                            },
+                            "archive": {
+                              "type": "boolean"
+                            },
+                            "move_to": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "block",
+                            "unblock",
+                            "complete",
+                            "archive",
+                            "move_to"
+                          ]
+                        },
+                        "requires_running_exit_confirmation": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
                         "id",
                         "title",
                         "status",
-                        "priority"
+                        "priority",
+                        "claim_live",
+                        "has_completion_evidence",
+                        "available_actions",
+                        "requires_running_exit_confirmation"
                       ],
                       "additionalProperties": {}
                     },
@@ -48292,6 +48538,22 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "confirm_running_exit": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK",
@@ -48316,13 +48578,56 @@
                           "type": "integer",
                           "minimum": -9007199254740991,
                           "maximum": 9007199254740991
+                        },
+                        "claim_live": {
+                          "type": "boolean"
+                        },
+                        "has_completion_evidence": {
+                          "type": "boolean"
+                        },
+                        "available_actions": {
+                          "type": "object",
+                          "properties": {
+                            "block": {
+                              "type": "boolean"
+                            },
+                            "unblock": {
+                              "type": "boolean"
+                            },
+                            "complete": {
+                              "type": "boolean"
+                            },
+                            "archive": {
+                              "type": "boolean"
+                            },
+                            "move_to": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "block",
+                            "unblock",
+                            "complete",
+                            "archive",
+                            "move_to"
+                          ]
+                        },
+                        "requires_running_exit_confirmation": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
                         "id",
                         "title",
                         "status",
-                        "priority"
+                        "priority",
+                        "claim_live",
+                        "has_completion_evidence",
+                        "available_actions",
+                        "requires_running_exit_confirmation"
                       ],
                       "additionalProperties": {}
                     },
@@ -48381,13 +48686,56 @@
                           "type": "integer",
                           "minimum": -9007199254740991,
                           "maximum": 9007199254740991
+                        },
+                        "claim_live": {
+                          "type": "boolean"
+                        },
+                        "has_completion_evidence": {
+                          "type": "boolean"
+                        },
+                        "available_actions": {
+                          "type": "object",
+                          "properties": {
+                            "block": {
+                              "type": "boolean"
+                            },
+                            "unblock": {
+                              "type": "boolean"
+                            },
+                            "complete": {
+                              "type": "boolean"
+                            },
+                            "archive": {
+                              "type": "boolean"
+                            },
+                            "move_to": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "block",
+                            "unblock",
+                            "complete",
+                            "archive",
+                            "move_to"
+                          ]
+                        },
+                        "requires_running_exit_confirmation": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
                         "id",
                         "title",
                         "status",
-                        "priority"
+                        "priority",
+                        "claim_live",
+                        "has_completion_evidence",
+                        "available_actions",
+                        "requires_running_exit_confirmation"
                       ],
                       "additionalProperties": {}
                     },
@@ -48422,6 +48770,22 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "confirm_running_exit": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK",
@@ -48446,13 +48810,56 @@
                           "type": "integer",
                           "minimum": -9007199254740991,
                           "maximum": 9007199254740991
+                        },
+                        "claim_live": {
+                          "type": "boolean"
+                        },
+                        "has_completion_evidence": {
+                          "type": "boolean"
+                        },
+                        "available_actions": {
+                          "type": "object",
+                          "properties": {
+                            "block": {
+                              "type": "boolean"
+                            },
+                            "unblock": {
+                              "type": "boolean"
+                            },
+                            "complete": {
+                              "type": "boolean"
+                            },
+                            "archive": {
+                              "type": "boolean"
+                            },
+                            "move_to": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "block",
+                            "unblock",
+                            "complete",
+                            "archive",
+                            "move_to"
+                          ]
+                        },
+                        "requires_running_exit_confirmation": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
                         "id",
                         "title",
                         "status",
-                        "priority"
+                        "priority",
+                        "claim_live",
+                        "has_completion_evidence",
+                        "available_actions",
+                        "requires_running_exit_confirmation"
                       ],
                       "additionalProperties": {}
                     },

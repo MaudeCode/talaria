@@ -12,7 +12,7 @@ import { PanelHeadButton } from '../../shell/Sidebar'
 import { Button, IconButton } from '../../ui/Button'
 import { Switch, FieldRow, TextInput } from '../../ui/Field'
 import { Select } from '../../ui/Select'
-import { Dialog } from '../../ui/Dialog'
+import { ConfirmDialog, Dialog } from '../../ui/Dialog'
 import { EmptyState, ErrorState, LoadingState, formatDate } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { cn } from '../../ui/cn'
@@ -22,7 +22,7 @@ type KanbanTask = z.infer<typeof KanbanTaskSchema>
 export function KanbanPage() {
   const qc = useQueryClient()
   const [includeArchived, setIncludeArchived] = useState(false)
-  const [openTask, setOpenTask] = useState<KanbanTask | null>(null)
+  const [openTaskId, setOpenTaskId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const boards = useQuery({ queryKey: keys.kanban.boards, queryFn: api.fetchKanbanBoards, staleTime: 30_000 })
   const board = useQuery({ queryKey: [...keys.kanban.board(boards.data?.current), includeArchived], queryFn: () => api.fetchKanbanBoard({ include_archived: includeArchived ? '1' : undefined }), staleTime: 10_000, enabled: boards.isSuccess })
@@ -31,6 +31,8 @@ export function KanbanPage() {
   const columns = useMemo(() => board.data?.columns ?? [], [board.data])
   const readOnly = !!board.data?.read_only
   const columnNames = useMemo(() => columns.map((c) => c.name), [columns])
+  // The dialog follows the board's current copy of the task, so its actions track every refetch.
+  const openTask = useMemo(() => columns.flatMap((c) => c.tasks).find((t) => String(t.id) === openTaskId) ?? null, [columns, openTaskId])
 
   return (
     <HubPage
@@ -70,7 +72,7 @@ export function KanbanPage() {
               <div className="flex flex-col gap-2 p-2">
                 {col.tasks.length === 0 && <div className="px-1 py-2 text-xs text-muted">{m.kanban_no_tasks()}</div>}
                 {col.tasks.map((task) => (
-                  <button key={String(task.id)} type="button" onClick={() => setOpenTask(task)} className={cn('kanban-card rounded-md border border-border-subtle bg-bg p-2.5 text-left text-sm text-text hover:border-accent-bg-strong')} data-task-id={String(task.id)}>
+                  <button key={String(task.id)} type="button" onClick={() => setOpenTaskId(String(task.id))} className={cn('kanban-card rounded-md border border-border-subtle bg-bg p-2.5 text-left text-sm text-text hover:border-accent-bg-strong')} data-task-id={String(task.id)}>
                     <div className="font-medium">{task.title ?? String(task.id)}</div>
                     <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-muted">
                       {task.assignee && <span>{task.assignee}</span>}
@@ -84,28 +86,35 @@ export function KanbanPage() {
           ))}
         </div>
       )}
-      {openTask && <TaskDialog task={openTask} columns={columnNames} readOnly={readOnly} onClose={() => setOpenTask(null)} onChanged={() => { void invalidate() }} />}
+      {openTask && <TaskDialog task={openTask} readOnly={readOnly} onClose={() => setOpenTaskId(null)} onChanged={() => { void invalidate() }} />}
       {creating && <CreateTaskDialog columns={columnNames} onClose={() => setCreating(false)} onCreated={() => { setCreating(false); void invalidate() }} />}
     </HubPage>
   )
 }
 
-function TaskDialog({ task, columns, readOnly, onClose, onChanged }: { task: KanbanTask; columns: string[]; readOnly: boolean; onClose: () => void; onChanged: () => void }) {
+function TaskDialog({ task, readOnly, onClose, onChanged }: { task: KanbanTask; readOnly: boolean; onClose: () => void; onChanged: () => void }) {
   const [comment, setComment] = useState('')
+  const [pendingRunningExit, setPendingRunningExit] = useState<(() => void) | null>(null)
   const log = useQuery({ queryKey: ['kanban', 'task-log', String(task.id)], queryFn: () => api.fetchKanbanTaskLog(task.id), staleTime: 10_000 })
   const act = useMutation({
     mutationFn: ({ action, body }: { action: Parameters<typeof api.kanbanTaskAction>[1]; body: Record<string, unknown> }) => api.kanbanTaskAction(task.id, action, body),
     onSuccess: () => { showToast(m.saved()); onChanged(); void log.refetch() },
-    onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error'),
+    // A refusal (the task changed since this board was read) refetches, so the dialog shows its current actions.
+    onError: (e) => { showToast(e instanceof Error ? e.message : String(e), 4000, 'error'); onChanged() },
   })
   const entries: unknown[] = log.data?.log ?? log.data?.entries ?? []
+  // The server owns which actions a card offers and whether leaving Running needs confirmation (TAL-557).
+  const actions = task.available_actions
+  // A confirmed write says so; the server refuses to take a task out of Running without it.
+  const request = (fn: (confirm: { confirm_running_exit: boolean }) => void) => { if (task.requires_running_exit_confirmation) setPendingRunningExit(() => () => fn({ confirm_running_exit: true })); else fn({ confirm_running_exit: false }) }
+  const setStatus = (status: string) => request((confirm) => act.mutate({ action: 'patch', body: { status, ...confirm } }))
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }} title={task.title ?? String(task.id)} description={task.description ?? undefined} className="w-[min(92vw,640px)]">
       <div className="flex flex-col gap-3 text-sm">
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
           <span>{m.kanban_column_label()}:</span>
-          <Select value={task.status ?? ''} disabled={readOnly} onValueChange={(v) => act.mutate({ action: 'patch', body: { status: v } })} aria-label={m.kanban_column_label()}>
-            {columns.map((c) => <option key={c} value={c}>{c}</option>)}
+          <Select value={task.status ?? ''} disabled={readOnly || actions.move_to.length === 0} onValueChange={setStatus} aria-label={m.kanban_column_label()}>
+            {[task.status ?? '', ...actions.move_to].map((c) => <option key={c} value={c}>{c}</option>)}
           </Select>
           {task.assignee && <span>{task.assignee}</span>}
           {task.session_id && <Link to="/session/$sessionId" params={{ sessionId: task.session_id }} className="text-accent-text underline">{m.kanban_open_session()}</Link>}
@@ -113,9 +122,13 @@ function TaskDialog({ task, columns, readOnly, onClose, onChanged }: { task: Kan
         {!readOnly && (
           <div className="flex flex-wrap gap-2">
             <Button onClick={() => act.mutate({ action: 'dispatch', body: {} })}>{m.kanban_dispatch()}</Button>
-            <Button onClick={() => act.mutate({ action: 'patch', body: { archived: true } })}>{m.kanban_archive()}</Button>
+            {actions.block && <Button onClick={() => request((confirm) => act.mutate({ action: 'block', body: confirm }))}>{m.kanban_block()}</Button>}
+            {actions.unblock && <Button onClick={() => request(() => act.mutate({ action: 'unblock', body: {} }))}>{m.kanban_unblock()}</Button>}
+            {actions.complete && <Button onClick={() => setStatus('done')}>{m.kanban_complete()}</Button>}
+            {actions.archive && <Button onClick={() => setStatus('archived')}>{m.kanban_archive()}</Button>}
           </div>
         )}
+        <ConfirmDialog open={pendingRunningExit !== null} onOpenChange={(o) => { if (!o) setPendingRunningExit(null) }} title={m.kanban_leave_running_title()} description={m.kanban_leave_running_body()} confirmLabel={m.kanban_continue()} cancelLabel={m.cancel()} danger onConfirm={() => pendingRunningExit?.()} />
         <div>
           <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted">{m.kanban_comments()}</div>
           {!readOnly && (
