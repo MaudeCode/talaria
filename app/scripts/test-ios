@@ -55,14 +55,17 @@ print -r -- $$ > "$owner_file"
 ios_pool_acquire
 destination="platform=iOS Simulator,id=$simulator_id"
 
-# UI tests pick from Photos; give them a photo they own (TAL-633). Only a disposable pool
-# device is seeded: it is erased on release, while a personal simulator would keep every photo.
-seed_ui_photo() {
+# Only a disposable pool device is prepared: it is erased on release, while a personal simulator
+# keeps its state. UI tests pick from Photos, so it gets a photo they own (TAL-633). The completion
+# alert test needs the notification service, which a fresh boot can leave hanging until its dasd
+# restarts (TAL-651); a personal simulator's processes are never restarted.
+prepare_ui_simulator() {
     if [[ "$simulator_disposable" == true ]]; then
-        # Explicit exit: zsh skips the EXIT trap, and the lease release, when errexit fires in a function.
+        # Explicit exits: zsh skips the EXIT trap, and the lease release, when errexit fires in a function.
+        scripts/ready-simulator-notifications "$simulator_id" || exit $?
         scripts/seed-simulator-photo "$simulator_id" || exit $?
     else
-        print -u2 "Not seeding a test photo into personal simulator $simulator_id; Photos picker tests use its library."
+        print -u2 "Not preparing personal simulator $simulator_id: Photos picker tests use its library, and its notification service is not restarted."
     fi
 }
 
@@ -188,7 +191,7 @@ run_tests() {
             ios_pool_release
             ios_pool_acquire || exit "$xcodebuild_status"
             destination="platform=iOS Simulator,id=$simulator_id"
-            [[ "$phase" == unit ]] || seed_ui_photo
+            [[ "$phase" == unit ]] || prepare_ui_simulator
             attempt=2
             continue
         fi
@@ -197,7 +200,7 @@ run_tests() {
 }
 
 (( ${#unit_filters} == 0 )) || run_tests unit NO "${unit_filters[@]}"
-(( ${#ui_filters} + ${#serial_ui_filters} == 0 )) || seed_ui_photo
+(( ${#ui_filters} + ${#serial_ui_filters} == 0 )) || prepare_ui_simulator
 if (( ${#ui_filters} )); then
     run_tests ui "$parallel_testing" "${ui_filters[@]}" "${extended_skips[@]}" "${serial_skips[@]}"
     scripts/assert-no-skipped-ui-tests "$result_bundle"
