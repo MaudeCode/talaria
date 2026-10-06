@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Choosing Queue, Steer or another option from the Send button's menu works while a reply is streaming.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}
