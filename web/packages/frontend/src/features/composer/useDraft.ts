@@ -6,22 +6,31 @@ import { LocalDraftSchema } from '../../contracts/persisted'
 
 const key = (sid: string) => `hermes-draft:${sid}`
 
+/** The draft the composer last loaded, from this browser or the server, until it is edited: only an edit is published. */
+let loaded: { sessionId: string; text: string } | null = null
+
 export function readLocalDraft(sessionId: string): string {
-  return readPersistedJson(key(sessionId), LocalDraftSchema)?.text ?? ''
+  const text = readPersistedJson(key(sessionId), LocalDraftSchema)?.text ?? ''
+  loaded = { sessionId, text }
+  return text
 }
 
 /**
  * The server orders draft writes by `draft_version`: this browser's wall time in microseconds, kept above every
  * revision seen so far, so a slow request never overwrites later text and a load can tell which copy is newer (TAL-564).
+ * Local copies are stamped the same way, so an edit outranks a server copy from a device whose clock runs ahead.
  */
 let revision = 0
 function observe(version: unknown): void {
   const n = Number(version)
   if (Number.isSafeInteger(n) && n > revision) revision = n
 }
-function saveServerDraft(sessionId: string, text: string): void {
+function stamp(): number {
   revision = Math.max(Date.now() * 1000, revision + 1)
-  void api.saveDraft({ session_id: sessionId, draft: { text }, draft_version: String(revision) }).then(
+  return revision
+}
+function saveServerDraft(sessionId: string, text: string): void {
+  void api.saveDraft({ session_id: sessionId, draft: { text }, draft_version: String(stamp()) }).then(
     (saved) => { observe(saved.draft_version) },
     // A 409 means another tab or device saved a later revision; this text stays local and the next edit outranks it.
     (e: unknown) => { if (isApiError(e) && e.status === 409) observe((e.body as { draft_version?: unknown } | null)?.draft_version) },
@@ -41,8 +50,12 @@ export function useServerDraft(sessionId: string | null, setText: Dispatch<SetSt
       observe(draft_version)
       if (!current) return
       if (local && (draft_version === null || Number(draft_version) <= local.updatedAt * 1000)) return
-      const loaded = local?.text ?? ''
-      setText((text) => (text === loaded ? draft.text : text))
+      const prior = local?.text ?? ''
+      setText((text) => {
+        if (text !== prior) return text
+        loaded = { sessionId, text: draft.text }
+        return draft.text
+      })
     }, () => undefined)
     return () => { current = false }
   }, [sessionId, setText])
@@ -52,7 +65,7 @@ interface Unsaved { sessionId: string; text: string }
 function flush(unsaved: RefObject<Unsaved | null>): void {
   const d = unsaved.current
   unsaved.current = null
-  if (d) writePersistedJson(key(d.sessionId), { text: d.text, updatedAt: Date.now() })
+  if (d) writePersistedJson(key(d.sessionId), { text: d.text, updatedAt: Math.ceil(stamp() / 1000) })
 }
 
 /**
@@ -81,6 +94,8 @@ export function useDraftPersistence(sessionId: string | null, text: string) {
     const switched = prev.sessionId !== null && prev.sessionId !== sessionId
     last.current = { sessionId, text: switched ? null : text }
     if (!sessionId || switched) return
+    if (loaded?.sessionId === sessionId && loaded.text === text) return
+    loaded = null
     if (text.trim() === '') {
       unsaved.current = null
       removePersisted(key(sessionId))

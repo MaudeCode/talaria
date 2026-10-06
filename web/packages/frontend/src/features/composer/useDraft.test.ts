@@ -136,3 +136,39 @@ describe('useDraftPersistence server clears (TAL-564)', () => {
     expect(readLocalDraft('s2')).toBe('kept')
   })
 })
+
+describe('loaded drafts and clock skew (TAL-564)', () => {
+  beforeEach(() => { vi.useFakeTimers(); localStorage.clear(); vi.mocked(api.saveDraft).mockReset().mockResolvedValue({ ok: true, draft: { text: '', files: [] }, draft_version: null }) })
+  afterEach(() => { vi.useRealTimers() })
+  const mount = () => renderHook(() => {
+    const [text, setText] = useState(() => readLocalDraft('s1'))
+    useDraftPersistence('s1', text)
+    useServerDraft('s1', setText)
+    return { text, setText }
+  })
+
+  it('never publishes a draft it only loaded, so a failed read cannot overwrite a newer server copy', async () => {
+    localStorage.setItem('hermes-draft:s1', JSON.stringify({ text: 'stale local', updatedAt: 1 }))
+    vi.mocked(api.fetchDraft).mockRejectedValue(new Error('offline'))
+    mount()
+    await act(async () => { await Promise.resolve() })
+    vi.advanceTimersByTime(2000)
+    expect(vi.mocked(api.saveDraft)).not.toHaveBeenCalled()
+  })
+
+  it('keeps an unsynced edit over a server copy stamped by a clock that runs ahead', async () => {
+    const ahead = String((Date.now() + 120_000) * 1000)
+    vi.mocked(api.fetchDraft).mockResolvedValue({ draft: { text: 'from a fast clock', files: [] }, draft_version: ahead })
+    const first = mount()
+    await act(async () => { await Promise.resolve() })
+    expect(first.result.current.text).toBe('from a fast clock')
+    vi.mocked(api.saveDraft).mockRejectedValue(new Error('offline'))
+    act(() => { first.result.current.setText('my later edit') })
+    vi.advanceTimersByTime(2000)
+    first.unmount()
+
+    const second = mount()
+    await act(async () => { await Promise.resolve() })
+    expect(second.result.current.text).toBe('my later edit')
+  })
+})
