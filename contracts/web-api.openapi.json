@@ -1546,6 +1546,16 @@
                               }
                             ]
                           },
+                          "share_url": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "worktree_branch": {
                             "anyOf": [
                               {
@@ -1862,6 +1872,16 @@
                             "description": "The live stream id; non-null only while `is_streaming` is true."
                           },
                           "share_token": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "share_url": {
                             "anyOf": [
                               {
                                 "type": "string"
@@ -2432,6 +2452,16 @@
                             "description": "The live stream id; non-null only while `is_streaming` is true."
                           },
                           "share_token": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "share_url": {
                             "anyOf": [
                               {
                                 "type": "string"
@@ -4403,6 +4433,16 @@
                           ]
                         },
                         "share_token": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "share_url": {
                           "anyOf": [
                             {
                               "type": "string"
@@ -6501,6 +6541,16 @@
                             }
                           ]
                         },
+                        "share_url": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "share_created_at": {
                           "anyOf": [
                             {
@@ -8336,6 +8386,16 @@
                             }
                           ]
                         },
+                        "share_url": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "share_created_at": {
                           "anyOf": [
                             {
@@ -8812,6 +8872,16 @@
                             }
                           ]
                         },
+                        "share_url": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "worktree_branch": {
                           "anyOf": [
                             {
@@ -9176,6 +9246,16 @@
                           "description": "The live stream id; non-null only while `is_streaming` is true."
                         },
                         "share_token": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "share_url": {
                           "anyOf": [
                             {
                               "type": "string"
@@ -9556,6 +9636,16 @@
                           "description": "The live stream id; non-null only while `is_streaming` is true."
                         },
                         "share_token": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "share_url": {
                           "anyOf": [
                             {
                               "type": "string"
@@ -11339,6 +11429,16 @@
                             }
                           ]
                         },
+                        "share_url": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "share_created_at": {
                           "anyOf": [
                             {
@@ -11840,6 +11940,16 @@
                             }
                           ]
                         },
+                        "share_url": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "worktree_branch": {
                           "anyOf": [
                             {
@@ -12201,6 +12311,16 @@
                           "description": "The live stream id; non-null only while `is_streaming` is true."
                         },
                         "share_token": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "share_url": {
                           "anyOf": [
                             {
                               "type": "string"
@@ -14186,6 +14306,16 @@
                             }
                           ]
                         },
+                        "share_url": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "share_created_at": {
                           "anyOf": [
                             {
@@ -14783,6 +14913,16 @@
                             }
                           ]
                         },
+                        "share_url": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "worktree_branch": {
                           "anyOf": [
                             {
@@ -15145,6 +15285,16 @@
                           "description": "The live stream id; non-null only while `is_streaming` is true."
                         },
                         "share_token": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "share_url": {
                           "anyOf": [
                             {
                               "type": "string"
@@ -16951,6 +17101,16 @@
                           ]
                         },
                         "share_token": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "share_url": {
                           "anyOf": [
                             {
                               "type": "string"
@@ -18882,6 +19042,16 @@
                             }
                           ]
                         },
+                        "share_url": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "share_created_at": {
                           "anyOf": [
                             {
@@ -20791,6 +20961,16 @@
                             }
                           ]
                         },
+                        "share_url": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "share_created_at": {
                           "anyOf": [
                             {
@@ -22385,6 +22565,16 @@
                             }
                           ]
                         },
+                        "share_url": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "worktree_branch": {
                           "anyOf": [
                             {
@@ -22746,6 +22936,16 @@
                           "description": "The live stream id; non-null only while `is_streaming` is true."
                         },
                         "share_token": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "share_url": {
                           "anyOf": [
                             {
                               "type": "string"
@@ -29646,6 +29846,16 @@
                             }
                           ]
                         },
+                        "share_url": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "share_created_at": {
                           "anyOf": [
                             {
@@ -31538,6 +31748,16 @@
                               ]
                             },
                             "share_token": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "share_url": {
                               "anyOf": [
                                 {
                                   "type": "string"

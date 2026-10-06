@@ -8,7 +8,7 @@
 import { str } from '../util.js'
 import { createHash } from 'node:crypto'
 import { redactText } from '../redact.js'
-import { CONTEXT_USAGE_FIELDS, Session, contextUsage, stripSidebarHeavyMetadata } from './session.js'
+import { CONTEXT_USAGE_FIELDS, Session, contextUsage, sharePath, stripSidebarHeavyMetadata } from './session.js'
 import type { SessionStore } from './store.js'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { isCliSessionRow as isStateDbCliRow, isCliSessionRowVisible, normalizeAgentSessionSource } from './state-db.js'
@@ -211,6 +211,8 @@ export function allSessions(store: SessionStore, opts: AllSessionsOptions = {}):
       // An index row written before TAL-299 lacks the ring's figures; its persisted inputs still give them.
       // ponytail: no model-catalog window fallback here (detail has one); a session gains `context_length` on its first turn.
       Object.assign(r, contextUsage(r))
+      // The sidebar drops the token; an index row written before TAL-563 lacks the URL it implies.
+      r.share_url ??= sharePath(r.share_token)
       if (opts.sidebarMetadataOnly) stripSidebarHeavyMetadata(r)
     }
     return rows.sort(compareSessionRows)
@@ -354,7 +356,7 @@ export const SIDEBAR_SESSION_RESPONSE_FIELDS = new Set([
   'is_cli_session', 'is_messaging_session', 'is_streaming', 'cron_running', 'active_stream_id', 'has_pending_user_message', 'pending_started_at', 'default_hidden',
   'worktree_path', 'worktree_branch', 'parent_session_id', 'parent_title', 'parent_source', 'relationship_type', 'pre_compression_snapshot', '_lineage_root_id',
   '_lineage_tip_id', '_compression_segment_count', '_lineage_collapsed_count', '_parent_lineage_root_id', '_parent_lineage_tip_id', '_cross_surface_child_session',
-  'match_type', 'match_preview', 'read_only', 'can_branch', 'can_pin', 'can_archive', 'can_delete', 'can_duplicate', 'gateway_routing',
+  'match_type', 'match_preview', 'read_only', 'can_branch', 'can_pin', 'can_archive', 'can_delete', 'can_duplicate', 'gateway_routing', 'share_url',
 ])
 
 export function isCliSessionRow(row: Row): boolean {

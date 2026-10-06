@@ -10,7 +10,8 @@ const SID = 'share-me'
 const row = (share_token: string | null) => ({
   session_id: SID, title: 'Shared conversation', is_streaming: false, attention: null, last_message_at: now - 600, updated_at: now - 600, pinned: false, archived: false, project_id: null,
   is_cli_session: false, source_kind: 'webui', is_messaging_session: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true,
-  share_token, share_created_at: share_token ? now - 300 : null,
+  // The sidebar list strips the token itself; the row carries the server's share URL.
+  share_url: share_token ? `/share/${share_token}` : null, share_created_at: share_token ? now - 300 : null,
 })
 
 async function openMenu(page: Page) {

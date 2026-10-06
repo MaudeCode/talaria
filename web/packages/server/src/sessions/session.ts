@@ -173,6 +173,9 @@ export function contextUsage(fields: { post_compression_context_tokens_estimate?
   return { context_used_tokens: used, context_window_tokens: window, context_usage_percent: percent(used), context_threshold_percent: percent(positive(fields.threshold_tokens)) }
 }
 
+/** A share's public app-relative URL (TAL-563); rows ship it so clients never rebuild it from the token. */
+export const sharePath = (token: unknown): string | null => (typeof token === 'string' && token.trim() ? `/share/${encodeURIComponent(token.trim())}` : null)
+
 export const SIDEBAR_HEAVY_METADATA_FIELDS = ['compression_anchor_summary', 'compression_anchor_details', 'context_engine_state', 'compression_recovery', 'gateway_routing_history', 'composer_draft', 'process_wakeup_pause', 'share_token'] as const
 
 export function stripSidebarHeavyMetadata(row: Record<string, unknown>): Record<string, unknown> {
@@ -508,6 +511,7 @@ export class Session {
       composer_draft: this.composer_draft,
       process_wakeup_pause: this.process_wakeup_pause ?? {},
       share_token: this.share_token,
+      share_url: sharePath(this.share_token),
       share_created_at: this.share_created_at,
       is_streaming: opts.includeRuntime ? Boolean(this.active_stream_id && activeStreamIds.has(this.active_stream_id)) : false,
       active_turn_origin: this.active_stream_id ? turnOrigin(this.pending_user_source) : null,
