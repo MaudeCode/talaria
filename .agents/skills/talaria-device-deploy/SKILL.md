@@ -25,7 +25,7 @@ scripts/publish-devapps --ticket TAL-<n> --ticket-title '<exact Kaneo title>' \
 
 The script archives Talaria Dev, exports a `release-testing` IPA, refuses any
 other bundle ID, and publishes it with the DEV-banner icon to the
-`talaria-branch` app on <https://devapps.thezoo.house/apps/talaria-branch/>.
+`talaria-dev` app on <https://devapps.thezoo.house/apps/talaria-dev/>.
 Arguments after the script go to the publisher; see `$devapps` for its fields and
 its delivery verification. Keep the same `--ticket` across revisions so each new
 build updates that ticket's row.

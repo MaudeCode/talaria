@@ -206,7 +206,7 @@ TestFlight app.
 
 - `scripts/publish-devapps --ticket TAL-<n> --ticket-title <title> --title <build title> --notes <notes>`
   archives Talaria Dev, exports a `release-testing` IPA and publishes it to
-  <https://devapps.thezoo.house/apps/talaria-branch/>. This is the normal way to
+  <https://devapps.thezoo.house/apps/talaria-dev/>. This is the normal way to
   deliver a build to the phone.
 - `scripts/run-ios-device` installs a Debug Talaria Dev build over USB or local
   Wi-Fi and refuses any other bundle ID.

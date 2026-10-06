@@ -10,7 +10,7 @@ usage() {
     print "Usage: scripts/publish-devapps --ticket TAL-<n> --ticket-title <title> --title <build title> [--notes <notes>]"
     print
     print "Archives Talaria Dev (Config/Dev.xcconfig), exports a release-testing IPA and"
-    print "publishes it to https://devapps.thezoo.house/apps/talaria-branch/."
+    print "publishes it to https://devapps.thezoo.house/apps/talaria-dev/."
     print "Arguments are passed to the devapps publisher; see the devapps skill."
 }
 
@@ -57,7 +57,7 @@ bundle_id=$(/usr/libexec/PlistBuddy -c 'Print :ApplicationProperties:CFBundleIde
 
 print "Publishing"
 python3 "$devapps" \
-    --app talaria-branch --name 'Talaria Dev' --platform ios \
+    --app talaria-dev --name 'Talaria Dev' --platform ios \
     --file "$work_dir/export/Talaria.ipa" \
     --icon "$work_dir/icon.png" \
     --commit "$(git rev-parse HEAD)" \
