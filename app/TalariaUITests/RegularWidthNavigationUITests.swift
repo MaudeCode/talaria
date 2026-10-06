@@ -31,7 +31,7 @@ final class RegularWidthNavigationUITests: TalariaUITestCase {
         XCTAssertNotNil(waitForComposer(timeout: 15), "The fixture session did not open")
         XCTAssertEqual(search.value as? String, String(fixtureSessionTitle.prefix(7)), "Opening a chat reset the list's search")
         XCTAssertTrue(session.isSelected, "The open chat's row is not marked selected")
-        attachScreenshot(named: "Chats beside the open chat")
+        attachScreen(named: "Chats beside the open chat")
     }
 
     func testSettingsListsItsCategoriesBesideTheSelectedPage() throws {
@@ -44,7 +44,7 @@ final class RegularWidthNavigationUITests: TalariaUITestCase {
             "Entering Settings must open its first category beside the list"
         )
         XCTAssertTrue(app.buttons["settings-category-appearance"].isSelected)
-        attachScreenshot(named: "Settings beside Appearance")
+        attachScreen(named: "Settings beside Appearance")
 
         tapCenter(of: app.buttons["settings-category-notificationsAndHaptics"])
         XCTAssertTrue(app.navigationBars["Notifications & Haptics"].awaitExistence(timeout: Self.navigationTimeout))
@@ -72,7 +72,7 @@ final class RegularWidthNavigationUITests: TalariaUITestCase {
         for title in ["My Notes", "User Profile", "Agent Soul"] {
             XCTAssertTrue(element(label: title).exists, "Missing the \(title) file row")
         }
-        attachScreenshot(named: "Memory beside My Notes")
+        attachScreen(named: "Memory beside My Notes")
 
         element(label: "User Profile").tap()
         XCTAssertTrue(element(label: "Fixture user profile.").awaitExistence(timeout: Self.navigationTimeout))
@@ -109,7 +109,7 @@ final class RegularWidthNavigationUITests: TalariaUITestCase {
         XCTAssertTrue(app.navigationBars["Fixture Weekly Sweep"].awaitExistence(timeout: Self.navigationTimeout))
         XCTAssertTrue(app.navigationBars["Tasks"].exists, "The job list must stay beside the job")
         XCTAssertTrue(job.isSelected)
-        attachScreenshot(named: "Tasks beside a job")
+        attachScreen(named: "Tasks beside a job")
     }
 
     func testKanbanAndInsightsFillTheWidth() throws {
@@ -120,7 +120,7 @@ final class RegularWidthNavigationUITests: TalariaUITestCase {
         XCTAssertFalse(app.navigationBars["Chats"].exists, "Kanban must hide the sidebar column")
         XCTAssertLessThan(kanban.settledFrame.minX, 1, "Kanban must start at the leading edge")
         XCTAssertEqual(app.buttons.matching(identifier: "sidebar.left").count, 1, "One drawer button, in Kanban's bar")
-        attachScreenshot(named: "Kanban at full width")
+        attachScreen(named: "Kanban at full width")
 
         let card = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "Shape the fixture slice")).firstMatch
         XCTAssertTrue(card.awaitExistence(timeout: Self.navigationTimeout), "Kanban Board did not load")
@@ -152,7 +152,7 @@ final class RegularWidthNavigationUITests: TalariaUITestCase {
         XCTAssertNotNil(waitForComposer(timeout: 15), "The scheduled chat did not open")
         XCTAssertTrue(scheduled.exists, "Opening a chat must keep the scheduled list beside it")
         XCTAssertTrue(row.isSelected)
-        attachScreenshot(named: "Scheduled list beside its chat")
+        attachScreen(named: "Scheduled list beside its chat")
 
         scheduled.buttons["Chats"].tap()
         XCTAssertTrue(app.navigationBars["Chats"].awaitExistence(timeout: Self.navigationTimeout))
@@ -200,7 +200,7 @@ final class RegularWidthNavigationUITests: TalariaUITestCase {
         )
         XCTAssertTrue(app.navigationBars["Archived Chats"].exists, "The archived list must stay beside its chat")
         XCTAssertTrue(app.buttons.containing(.staticText, identifier: "Fixture Archived Session").firstMatch.isSelected)
-        attachScreenshot(named: "Archived chat beside its list")
+        attachScreen(named: "Archived chat beside its list")
     }
 }
 
@@ -231,7 +231,7 @@ final class SizeClassRoundTripUITests: TalariaUITestCase {
         XCTAssertTrue(app.buttons["settings-category-appearance"].awaitExistence(timeout: Self.navigationTimeout))
         XCTAssertTrue(app.buttons["settings-category-appearance"].isSelected, "Regular width lost the pushed category")
         XCTAssertTrue(app.navigationBars["Appearance"].exists)
-        attachScreenshot(named: "Settings › Appearance in landscape")
+        attachScreen(named: "Settings › Appearance in landscape")
         rotate(to: .portrait)
         XCTAssertTrue(
             app.navigationBars["Appearance"].buttons["Settings"].awaitExistence(timeout: Self.navigationTimeout),
@@ -296,5 +296,16 @@ final class QuotaWidgetSettingsLinkUITests: TalariaUITestCase {
             app.navigationBars["Live Activities & Widgets"].awaitExistence(timeout: Self.navigationTimeout),
             "Back must lead to the widget's category"
         )
+    }
+}
+
+private extension TalariaUITestCase {
+    /// The screen in its current orientation; an app screenshot taken in landscape comes out
+    /// rotated and cropped.
+    func attachScreen(named name: String) {
+        let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        screenshot.name = name
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
     }
 }
