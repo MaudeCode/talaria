@@ -2130,7 +2130,7 @@
 	"session_export_markdown": "Export as Markdown",
 	"session_share": "Share publicly",
 	"session_share_revoke": "Revoke public link",
-	"session_share_copied": "Share link copied",
+	"session_share_copy_link": "Copy share link",
 	"session_unarchive": "Unarchive conversation",
 	"session_rename_placeholder": "Conversation title",
 	"back": "Back",

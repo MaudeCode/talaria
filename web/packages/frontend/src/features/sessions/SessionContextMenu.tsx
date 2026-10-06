@@ -15,7 +15,7 @@ import { Select } from '../../ui/Select'
 import { showToast } from '../toast/toast'
 import { useQuery } from '@tanstack/react-query'
 
-type PendingDialog = { kind: 'rename' } | { kind: 'delete' } | { kind: 'move' } | null
+type PendingDialog = { kind: 'rename' } | { kind: 'delete' } | { kind: 'move' } | { kind: 'revoke' } | null
 
 /** Per-row conversation actions (legacy long-press / kebab menu). Every mutation invalidates the session list family. */
 export function SessionContextMenu({ row, active }: { row: SessionRow; active: boolean }) {
@@ -35,20 +35,22 @@ export function SessionContextMenu({ row, active }: { row: SessionRow; active: b
   const del = useMutation({ mutationFn: () => api.deleteSession(sid), onSuccess: () => { showToast(m.session_deleted()); invalidate(); if (active) void navigate({ to: '/', search: { action: 'new-chat' } }) }, onError: fail })
   const move = useMutation({ mutationFn: () => api.moveSession(sid, projectId || null), onSuccess: () => { setDialog(null); invalidate() }, onError: fail })
   const regen = useMutation({ mutationFn: () => api.regenerateTitle(sid), onSuccess: (r) => { showToast(r.title ? m.session_title_regenerated({ title: r.title }) : m.session_title_regenerating()); invalidate() }, onError: (e) => showToast(m.session_title_regenerate_failed() + (e instanceof Error ? e.message : ''), 4000, 'error') })
+  const shareToken = row.share_token
+  /** Copy a share's public link; when the clipboard refuses, the toast carries the link instead. */
+  const copyShareLink = async (token: string) => {
+    const href = appUrl(`share/${encodeURIComponent(token)}`).href
+    try { await navigator.clipboard.writeText(href); showToast(m.share_session_link_copied()) } catch { showToast(`${m.share_session_status_active()} — ${href}`, 6000) }
+  }
+  // Creating a share again refreshes its snapshot from the latest visible messages and keeps the token.
   const share = useMutation({
-    mutationFn: () => (row.share_token ? api.revokeShare(sid) : api.createShare(sid)),
-    onSuccess: async (r) => {
-      if (row.share_token) showToast(m.share_session_revoked())
-      else {
-        const token = ('token' in r && typeof r.token === 'string' ? r.token : undefined) ?? ('share' in r && r.share && typeof r.share === 'object' && 'token' in r.share ? (r.share as { token?: string }).token : undefined)
-        if (token) {
-          await navigator.clipboard.writeText(appUrl(`share/${encodeURIComponent(token)}`).href).catch(() => undefined)
-          showToast(m.session_share_copied())
-        } else showToast(m.share_session_created())
-      }
-      invalidate()
-    },
-    onError: fail,
+    mutationFn: () => api.createShare(sid),
+    onSuccess: async (r) => { await copyShareLink(r.share.token); invalidate() },
+    onError: (e) => showToast(m.share_session_failed() + (e instanceof Error ? e.message : ''), 4000, 'error'),
+  })
+  const revoke = useMutation({
+    mutationFn: () => api.revokeShare(sid),
+    onSuccess: () => { showToast(m.share_session_revoked()); invalidate() },
+    onError: (e) => showToast(m.share_session_revoke_failed() + (e instanceof Error ? e.message : ''), 4000, 'error'),
   })
   const copyLink = () => {
     void navigator.clipboard.writeText(appUrl(`session/${encodeURIComponent(sid)}`).href).then(() => showToast(m.copied()), () => showToast(m.session_link_copy_failed(), 3000, 'error'))
@@ -77,7 +79,13 @@ export function SessionContextMenu({ row, active }: { row: SessionRow; active: b
         {!row.read_only && <MenuItem onClick={() => { setProjectId(row.project_id ?? ''); setDialog({ kind: 'move' }) }}>{m.session_move_project()}</MenuItem>}
         <MenuSeparator />
         <MenuItem onClick={copyLink}>{m.session_copy_link()}</MenuItem>
-        <MenuItem onClick={() => share.mutate()}>{row.share_token ? m.session_share_revoke() : m.session_share()}</MenuItem>
+        {shareToken
+          ? <>
+              <MenuItem onClick={() => { void copyShareLink(shareToken) }}>{m.session_share_copy_link()}</MenuItem>
+              <MenuItem onClick={() => share.mutate()}>{m.share_session_refresh_snapshot()}</MenuItem>
+              <MenuItem className="text-error" onClick={() => setDialog({ kind: 'revoke' })}>{m.session_share_revoke()}</MenuItem>
+            </>
+          : <MenuItem onClick={() => share.mutate()}>{m.session_share()}</MenuItem>}
         {row.can_duplicate && <MenuItem onClick={() => duplicate.mutate()}>{m.session_duplicate()}</MenuItem>}
         <MenuItem onClick={() => exportAs('json')}>{m.session_export_json()}</MenuItem>
         <MenuItem onClick={() => exportAs('html')}>{m.session_export_html()}</MenuItem>
@@ -104,6 +112,7 @@ export function SessionContextMenu({ row, active }: { row: SessionRow; active: b
           </form>
         </Dialog>
       )}
+      <ConfirmDialog open={dialog?.kind === 'revoke'} onOpenChange={(o) => { if (!o) setDialog(null) }} title={m.session_share_revoke()} description={m.stop_sharing_session_confirm()} confirmLabel={m.session_share_revoke()} cancelLabel={m.cancel()} danger onConfirm={() => revoke.mutate()} />
       <ConfirmDialog open={dialog?.kind === 'delete'} onOpenChange={(o) => { if (!o) setDialog(null) }} title={m.session_delete_confirm()} description={row.worktree_branch ? m.session_delete_worktree_desc() : m.session_delete_desc()} confirmLabel={m.delete()} cancelLabel={m.cancel()} danger onConfirm={() => del.mutate()} />
     </>
   )
