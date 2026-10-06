@@ -38317,6 +38317,9 @@
                                 }
                               ]
                             }
+                          },
+                          "exec": {
+                            "type": "boolean"
                           }
                         },
                         "required": [

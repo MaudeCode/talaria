@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Server and plugin slash commands such as /reload-skills now run when sent from the composer and show their output above it, instead of going to the model as a chat message.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

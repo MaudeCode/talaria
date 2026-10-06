@@ -128,6 +128,7 @@ export const createShare = (session_id: SessionId) => orpc().share.create({ sess
 export const revokeShare = (session_id: SessionId) => orpc().share.revoke({ session_id })
 export const fetchShare = (token: string) => orpc().share.read({ token })
 export const fetchCommands = () => orpc().commands.list()
+export const execCommand = (command: string, session_id?: SessionId) => orpc().commands.exec({ command, ...(session_id ? { session_id } : {}) })
 
 // Workspaces and files
 export const fetchWorkspaces = () => orpc().workspaces.list()

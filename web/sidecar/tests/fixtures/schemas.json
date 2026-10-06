@@ -643,6 +643,9 @@
             },
             "gateway_only": {
               "type": "boolean"
+            },
+            "exec": {
+              "type": "boolean"
             }
           },
           "required": [
@@ -653,7 +656,8 @@
             "args_hint",
             "subcommands",
             "cli_only",
-            "gateway_only"
+            "gateway_only",
+            "exec"
           ],
           "additionalProperties": false
         }

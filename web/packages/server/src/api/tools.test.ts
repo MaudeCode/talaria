@@ -176,11 +176,11 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
   })
 
   it('commands list merges the client-command table ahead of the Agent registry (TAL-314)', async () => {
-    const row = (name: string, extra: Json = {}) => ({ name, description: `agent ${name}`, category: 'Session', aliases: [], args_hint: '', subcommands: [], cli_only: false, gateway_only: false, ...extra })
+    const row = (name: string, extra: Json = {}) => ({ name, description: `agent ${name}`, category: 'Session', aliases: [], args_hint: '', subcommands: [], cli_only: false, gateway_only: false, exec: false, ...extra })
     sidecar.respond('commands.registry', () => ({
       commands: [
         row('stop'), row('bg'), row('compress', { aliases: ['compact', 'squash'] }),
-        row('reload-skills', { aliases: ['reload_skills'] }), row('history', { cli_only: true }), row('sethome', { gateway_only: true }),
+        row('reload-skills', { aliases: ['reload_skills'], exec: true }), row('history', { cli_only: true }), row('sethome', { gateway_only: true }),
       ],
     }))
     try {
@@ -200,8 +200,8 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
       expect(commands.find((c) => c.name === 'usage')?.clients).toEqual(['web'])
       // Agent rows follow, run on every client unless CLI-only, and never list gateway-only commands.
       expect(names.slice(-2)).toEqual(['reload-skills', 'history'])
-      expect(commands.find((c) => c.name === 'reload-skills')).toMatchObject({ handler: 'agent', clients: ['web', 'ios'], aliases: ['reload_skills'] })
-      expect(commands.find((c) => c.name === 'history')).toMatchObject({ handler: 'agent', clients: [], unsupported_message: '/history runs only in the Hermes CLI.' })
+      expect(commands.find((c) => c.name === 'reload-skills')).toMatchObject({ handler: 'agent', clients: ['web', 'ios'], aliases: ['reload_skills'], exec: true })
+      expect(commands.find((c) => c.name === 'history')).toMatchObject({ handler: 'agent', clients: [], unsupported_message: '/history runs only in the Hermes CLI.', exec: false })
       expect(names).not.toContain('sethome')
     } finally {
       const recorded = loadSidecarFixtures().get('commands.registry')?.[0]?.result

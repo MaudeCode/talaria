@@ -46,6 +46,7 @@ def list_commands() -> list[dict[str, Any]]:
         out.append({
             "name": cmd.name, "description": cmd.description, "category": cmd.category, "aliases": list(cmd.aliases),
             "args_hint": cmd.args_hint, "subcommands": list(cmd.subcommands), "cli_only": bool(cmd.cli_only), "gateway_only": bool(cmd.gateway_only),
+            "exec": cmd.name in _ALLOWED,
         })
     try:
         from hermes_cli.plugins import get_plugin_commands
@@ -55,7 +56,7 @@ def list_commands() -> list[dict[str, Any]]:
             if name in existing or name in _NEVER_EXPOSE:
                 continue
             out.append({"name": name, "description": str(info.get("description", "Plugin command")), "category": "Plugin", "aliases": [],
-                        "args_hint": str(info.get("args_hint", "")), "subcommands": [], "cli_only": False, "gateway_only": False})
+                        "args_hint": str(info.get("args_hint", "")), "subcommands": [], "cli_only": False, "gateway_only": False, "exec": True})
     except Exception:  # noqa: BLE001 - plugin registry is optional
         log.debug("plugin command listing failed", exc_info=True)
     return out
