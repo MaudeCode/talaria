@@ -34,11 +34,12 @@ async function runningSession(page: Page, sid: string) {
     state.running = false
     streams.get(`${sid}-run`)!.write(`id: ${sid}-run:2\nevent: done\ndata: ${JSON.stringify({ session: { session_id: sid, title: sid, messages: transcript(sid) }, terminal_state: 'completed' })}\n\n`)
   }
+  const stale: ServerResponse[] = []
   const close = async () => {
-    for (const response of streams.values()) response.end()
+    for (const response of [...streams.values(), ...stale]) response.end()
     await new Promise<void>((resolve) => server.close(() => { resolve() }))
   }
-  return { state, streams, starts, settle, close }
+  return { state, streams, stale, starts, settle, close }
 }
 
 async function queue(page: Page, text: string) {
@@ -74,8 +75,9 @@ test('queued messages can be edited, deleted and reordered, and drain in the sho
     await row(page, 'Third, edited').getByRole('button', { name: 'Reorder queued message' }).dragTo(row(page, 'First'))
     await expect(rows(page)).toHaveText(['Third, edited', 'First'])
 
-    // The reloaded tab reattaches on a new connection; the run settles on that one.
-    run.streams.get(`${sid}-run`)!.end()
+    // The reloaded tab reattaches on a new connection; the run settles on that one. Ending the old one here would
+    // settle the turn before the reload.
+    run.stale.push(run.streams.get(`${sid}-run`)!)
     run.streams.delete(`${sid}-run`)
     await page.reload()
     await expect.poll(() => run.streams.has(`${sid}-run`)).toBe(true)
