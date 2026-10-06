@@ -43,6 +43,9 @@ struct UITestFixtureEnvironment {
     /// under a project filter and find it there (TAL-455).
     nonisolated static let projectsArgument = "--ui-test-projects"
     nonisolated static let updateNotificationsArgument = "--ui-test-update-notifications"
+    /// Offers a server update that, once applied, restarts and then fails with the server's own
+    /// explanation, so Settings can be seen following the update's notification (TAL-558).
+    nonisolated static let serverUpdateArgument = "--ui-test-server-update"
     /// Answers the chat's first transcript load, so the cache exists, then holds every reopen
     /// until the test releases it, so "Syncing messages" stays over the cached rows (TAL-436).
     nonisolated static let holdTranscriptReloadsArgument = "--ui-test-hold-transcript-reloads"
@@ -435,6 +438,10 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) private static var urgentNotificationAcknowledged = false
     nonisolated(unsafe) private static var readUpdateNotificationIDs: Set<String> = ["ui-update-succeeded"]
     nonisolated(unsafe) private static var dismissedUpdateNotificationIDs: Set<String> = []
+    nonisolated(unsafe) private static var serverUpdateAppliedAt: Date?
+    private static var testsServerUpdate: Bool {
+        ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.serverUpdateArgument)
+    }
     nonisolated(unsafe) private static var archivedSessionIDs: Set<String> = []
     private static var testsReauthentication: Bool {
         ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.reauthenticationArgument)
@@ -749,6 +756,15 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             return json(["ok": !response.isEmpty, "response": response])
         case "/api/clarify/pending":
             return json(["pending_count": 0])
+        case "/api/settings" where testsServerUpdate:
+            return json(["webui_version": "web-v1.2.2"])
+        case "/api/updates/check" where testsServerUpdate:
+            return json(["webui": ["behind": 1]])
+        case "/api/updates/apply" where testsServerUpdate:
+            recoveryState.withLock { serverUpdateAppliedAt = Date() }
+            return json(["ok": true, "target": "webui", "restart_scheduled": true, "notification_id": serverUpdateNotificationID])
+        case "/api/update-notifications" where testsServerUpdate:
+            return json(serverUpdateNotificationsEnvelope())
         case "/api/update-notifications":
             guard ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.updateNotificationsArgument) else {
                 return json(["scope_id": "ui-fixture-scope", "notifications": [], "unread_count": 0, "clearable_count": 0, "can_clear": false])
@@ -1287,6 +1303,36 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             "unread_count": notifications.filter { ($0["read_at"] as? NSNull) != nil }.count,
             "clearable_count": clearableCount,
             "can_clear": clearableCount > 0
+        ]
+    }
+
+    private static let serverUpdateNotificationID = "ui-server-update"
+    static let serverUpdateFailureDetail = "The local webui repo has unresolved merge conflicts."
+
+    /// The applied update stays `restarting` for a few seconds, long enough to see Settings
+    /// follow it, then fails with the apply's own explanation in `detail` (TAL-558).
+    private static func serverUpdateNotificationsEnvelope() -> [String: Any] {
+        let appliedAt = recoveryState.withLock { serverUpdateAppliedAt }
+        var notifications: [[String: Any]] = []
+        if let appliedAt {
+            let failed = Date().timeIntervalSince(appliedAt) > 6
+            var record = updateNotification(
+                id: serverUpdateNotificationID, target: "webui", phase: failed ? "failed" : "restarting",
+                title: "Talaria Web update",
+                message: failed
+                    ? "The update could not be completed. Open System settings for details."
+                    : "The update is installed. Talaria Web is restarting.",
+                updatedAt: "2026-10-05T12:00:00Z", readAt: NSNull()
+            )
+            record["detail"] = failed ? serverUpdateFailureDetail : NSNull()
+            notifications.append(record)
+        }
+        return [
+            "scope_id": "ui-fixture-scope",
+            "notifications": notifications,
+            "unread_count": notifications.count,
+            "clearable_count": notifications.count,
+            "can_clear": !notifications.isEmpty
         ]
     }
 
