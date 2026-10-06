@@ -737,7 +737,6 @@ struct MessageComposerView: View {
             onTap: actionButtonTapped,
             onOption: { submitDraft(as: $0) }
         )
-        .equatable()
     }
 
     private var actionButtonGlyph: ComposerSendButton.Glyph {
@@ -1417,17 +1416,16 @@ struct MessageComposerView: View {
     }
 }
 
-/// The send button (TAL-630): a tap sends, a long press lists the other ways to send the draft. A menu, unlike
-/// `contextMenu`, leaves the keyboard up. SwiftUI rebuilds an open menu on every redraw, which cancels a tap on
-/// its items, and a streaming reply redraws the composer constantly; so this redraws only when its look or its
-/// options change.
-struct ComposerSendButton: View, Equatable {
-    enum Glyph: Equatable {
+/// The send button (TAL-630): a tap sends, a long press lists the other ways to send the draft. The menu is
+/// UIKit's, so it leaves the keyboard up (`contextMenu` took focus) and a streaming reply's constant redraws
+/// cannot rebuild it under a finger, which dropped the choice from a SwiftUI `Menu` (TAL-648).
+struct ComposerSendButton: View {
+    enum Glyph {
         case progress
         case symbol(String)
     }
 
-    struct Option: Equatable {
+    struct Option {
         let title: String
         let systemImage: String
         let command: String
@@ -1444,18 +1442,8 @@ struct ComposerSendButton: View, Equatable {
     let onTap: () -> Void
     let onOption: (String) -> Void
 
-    static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.glyph == rhs.glyph && lhs.background == rhs.background && lhs.foreground == rhs.foreground
-            && lhs.size == rhs.size && lhs.iconSize == rhs.iconSize && lhs.accessibilityLabel == rhs.accessibilityLabel
-            && lhs.options == rhs.options && lhs.isDisabled == rhs.isDisabled
-    }
-
     var body: some View {
-        Menu {
-            ForEach(options, id: \.command) { option in
-                Button(option.title, systemImage: option.systemImage) { onOption(option.command) }
-            }
-        } label: {
+        ChatUIKitMenuButton(horizontalPadding: 8, verticalPadding: 8, primaryAction: onTap, showsMenu: !options.isEmpty) {
             Group {
                 switch glyph {
                 case .progress:
@@ -1472,12 +1460,17 @@ struct ComposerSendButton: View, Equatable {
             .foregroundStyle(foreground)
             .clipShape(Circle())
             .chatMinimumHitTarget(in: Circle())
-        } primaryAction: {
-            onTap()
+        } menu: {
+            UIMenu(children: options.map { option in
+                UIAction(title: option.title, image: UIImage(systemName: option.systemImage)) { _ in onOption(option.command) }
+            })
         }
-        .menuStyle(.button)
-        .buttonStyle(.chatTactile(.icon))
         .disabled(isDisabled)
         .accessibilityLabel(accessibilityLabel)
+        .accessibilityActions {
+            ForEach(options, id: \.command) { option in
+                Button(option.title) { onOption(option.command) }
+            }
+        }
     }
 }

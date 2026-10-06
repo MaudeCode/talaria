@@ -128,10 +128,16 @@ extension ButtonStyle where Self == ChatTactileButtonStyle {
     }
 }
 
+/// A SwiftUI label over a UIKit menu button. UIKit owns the open menu and builds its items when it opens, so
+/// a SwiftUI redraw (a streaming reply redraws the composer constantly) cannot rebuild the menu under a finger
+/// and drop the choice. With a `primaryAction`, a tap runs it and a long press opens the menu, if `showsMenu`
+/// (TAL-648).
 struct ChatUIKitMenuButton<Label: View>: View {
     @Environment(\.isEnabled) private var isEnabled
 
     private let menu: () -> UIMenu
+    private let primaryAction: (() -> Void)?
+    private let showsMenu: Bool
     private let label: Label
     private let horizontalPadding: CGFloat
     private let verticalPadding: CGFloat
@@ -139,11 +145,15 @@ struct ChatUIKitMenuButton<Label: View>: View {
     init(
         horizontalPadding: CGFloat = 0,
         verticalPadding: CGFloat = 0,
+        primaryAction: (() -> Void)? = nil,
+        showsMenu: Bool = true,
         @ViewBuilder label: () -> Label,
         menu: @escaping () -> UIMenu
     ) {
         self.label = label()
         self.menu = menu
+        self.primaryAction = primaryAction
+        self.showsMenu = showsMenu
         self.horizontalPadding = horizontalPadding
         self.verticalPadding = verticalPadding
     }
@@ -155,7 +165,9 @@ struct ChatUIKitMenuButton<Label: View>: View {
                 ChatUIKitMenuButtonBacker(
                     horizontalPadding: horizontalPadding,
                     verticalPadding: verticalPadding,
-                    menu: menu
+                    menu: menu,
+                    primaryAction: primaryAction,
+                    showsMenu: showsMenu
                 )
             }
             .accessibilityElement(children: .combine)
@@ -169,9 +181,11 @@ private struct ChatUIKitMenuButtonBacker: UIViewControllerRepresentable {
     let horizontalPadding: CGFloat
     let verticalPadding: CGFloat
     let menu: () -> UIMenu
+    let primaryAction: (() -> Void)?
+    let showsMenu: Bool
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(menu: menu)
+        Coordinator(menu: menu, primaryAction: primaryAction)
     }
 
     func makeUIViewController(context: Context) -> ChatMenuButtonHostController {
@@ -184,6 +198,11 @@ private struct ChatUIKitMenuButtonBacker: UIViewControllerRepresentable {
                 completion(context.coordinator.menu().children)
             }
         ])
+        button.showsMenuAsPrimaryAction = primaryAction == nil
+        if primaryAction != nil {
+            button.addAction(UIAction { _ in context.coordinator.primaryAction?() }, for: .primaryActionTriggered)
+        }
+        button.isContextMenuInteractionEnabled = showsMenu
         button.isEnabled = isEnabled
         button.isAccessibilityElement = false
 
@@ -192,7 +211,12 @@ private struct ChatUIKitMenuButtonBacker: UIViewControllerRepresentable {
 
     func updateUIViewController(_ uiViewController: ChatMenuButtonHostController, context: Context) {
         context.coordinator.menu = menu
+        context.coordinator.primaryAction = primaryAction
         uiViewController.setHitPadding(horizontal: horizontalPadding, vertical: verticalPadding)
+        // Every composer redraw lands here; re-setting it unchanged hung UI queries as the photo picker closed.
+        if uiViewController.button.isContextMenuInteractionEnabled != showsMenu {
+            uiViewController.button.isContextMenuInteractionEnabled = showsMenu
+        }
         uiViewController.button.isEnabled = isEnabled
     }
 
@@ -209,9 +233,11 @@ private struct ChatUIKitMenuButtonBacker: UIViewControllerRepresentable {
 
     final class Coordinator {
         var menu: () -> UIMenu
+        var primaryAction: (() -> Void)?
 
-        init(menu: @escaping () -> UIMenu) {
+        init(menu: @escaping () -> UIMenu, primaryAction: (() -> Void)?) {
             self.menu = menu
+            self.primaryAction = primaryAction
         }
     }
 }
@@ -232,7 +258,6 @@ private final class ChatMenuButtonHostController: UIViewController {
         container.button = button
         view = container
 
-        button.showsMenuAsPrimaryAction = true
         button.backgroundColor = .clear
         button.setTitle(nil, for: .normal)
         button.setImage(nil, for: .normal)
