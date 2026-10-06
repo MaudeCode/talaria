@@ -95,6 +95,15 @@ final class BundleConfigurationContractTests: XCTestCase {
         assertOccurrences(of: "APP_IDENTIFIER_SUFFIX =", count: 0, in: project)
     }
 
+    func testAppMaySendTimeSensitiveNotifications() throws {
+        let entitlements = try propertyList("Talaria/Resources/Talaria.entitlements")
+        XCTAssertEqual(
+            entitlements["com.apple.developer.usernotifications.time-sensitive"] as? Bool,
+            true,
+            "The Time Sensitive quota alert setting needs this entitlement to break through Focus"
+        )
+    }
+
     func testPrivacyManifestsAndExtensionsRemainInBuildProducts() throws {
         let appManifest = try propertyList("Talaria/Resources/PrivacyInfo.xcprivacy")
         XCTAssertEqual(appManifest["NSPrivacyTracking"] as? Bool, false, "App privacy manifest must disable tracking")

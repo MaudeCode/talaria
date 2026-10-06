@@ -1,0 +1,14 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Turn provider quota warning and critical alerts on or off separately, and optionally send critical quota alerts as Time Sensitive.",
+      "highlight": false
+    },
+    {
+      "category": "Fixed",
+      "summary": "Quota alerts that arrive while Talaria is open now stay in Notification Center.",
+      "highlight": false
+    }
+  ]
+}

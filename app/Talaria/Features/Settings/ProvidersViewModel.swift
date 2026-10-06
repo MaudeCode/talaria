@@ -402,11 +402,35 @@ enum ProviderQuotaAlertService {
         var rank: Int { self == .critical ? 2 : 1 }
     }
 
+    struct Preferences: Equatable {
+        var warning = ProviderQuotaAlertSettings.defaultWarningEnabled
+        var critical = ProviderQuotaAlertSettings.defaultCriticalEnabled
+        var criticalTimeSensitive = ProviderQuotaAlertSettings.defaultCriticalTimeSensitive
+
+        static func stored(defaults: UserDefaults) -> Preferences {
+            func bool(_ key: String, _ fallback: Bool) -> Bool { defaults.object(forKey: key) as? Bool ?? fallback }
+            let critical = bool(ProviderQuotaAlertSettings.criticalEnabledKey, ProviderQuotaAlertSettings.defaultCriticalEnabled)
+            return Preferences(
+                warning: bool(ProviderQuotaAlertSettings.warningEnabledKey, ProviderQuotaAlertSettings.defaultWarningEnabled),
+                critical: critical,
+                criticalTimeSensitive: critical && bool(
+                    ProviderQuotaAlertSettings.criticalTimeSensitiveKey,
+                    ProviderQuotaAlertSettings.defaultCriticalTimeSensitive
+                )
+            )
+        }
+
+        func allows(_ level: Level) -> Bool {
+            level == .critical ? critical : warning
+        }
+    }
+
     /// The alerts server urgency raises: entering warning or critical, or escalating from warning to critical.
     /// `previous` holds each source's last alerted level; a source back below warning clears it.
     static func transitions(
         _ urgencies: [(sourceID: String, urgency: ProviderQuotaUrgency)],
-        previous: [String: String]
+        previous: [String: String],
+        preferences: Preferences
     ) -> (alerts: [String: Level], states: [String: String]) {
         var states = previous
         var alerts: [String: Level] = [:]
@@ -419,7 +443,7 @@ enum ProviderQuotaAlertService {
             let oldLevel = previous[sourceID].flatMap(Level.init(rawValue:))
             if let level {
                 states[sourceID] = level.rawValue
-                if level.rank > (oldLevel?.rank ?? 0) { alerts[sourceID] = level }
+                if level.rank > (oldLevel?.rank ?? 0), preferences.allows(level) { alerts[sourceID] = level }
             } else {
                 states.removeValue(forKey: sourceID)
             }
@@ -443,26 +467,35 @@ enum ProviderQuotaAlertService {
         let fresh = sources
             .filter { $0.status != "removed" && freshSourceIDs?.contains($0.sourceID) ?? true }
             .map { ($0, ProviderQuotaPresentation.state(for: $0, settings: settings, at: $0.freshnessDate)) }
-        let result = transitions(fresh.map { ($0.0.sourceID, $0.1.urgency) }, previous: previous)
+        let preferences = Preferences.stored(defaults: defaults)
+        let result = transitions(fresh.map { ($0.0.sourceID, $0.1.urgency) }, previous: previous, preferences: preferences)
         for (source, state) in fresh {
             guard let level = result.alerts[source.sourceID] else { continue }
-            await schedule(level, source: source, aliasesData: aliasesData, remaining: state.remainingPercent)
+            let name = ProviderQuotaDisplaySettings.displayName(
+                providerID: source.providerID,
+                fallback: source.providerLabel,
+                aliasesData: aliasesData
+            )
+            let request = Self.request(
+                level,
+                sourceID: source.sourceID,
+                name: name,
+                remaining: state.remainingPercent,
+                preferences: preferences
+            )
+            try? await UNUserNotificationCenter.current().add(request)
         }
 
         defaults.set(try? JSONEncoder().encode(result.states), forKey: ProviderQuotaAlertSettings.stateKey)
     }
 
-    private static func schedule(
+    static func request(
         _ level: Level,
-        source: ProviderQuotaWidgetSource,
-        aliasesData: Data,
-        remaining: Double?
-    ) async {
-        let name = ProviderQuotaDisplaySettings.displayName(
-            providerID: source.providerID,
-            fallback: source.providerLabel,
-            aliasesData: aliasesData
-        )
+        sourceID: String,
+        name: String,
+        remaining: Double?,
+        preferences: Preferences
+    ) -> UNNotificationRequest {
         let content = UNMutableNotificationContent()
         content.title = level == .critical
             ? String(localized: "\(name) quota critical")
@@ -471,13 +504,14 @@ enum ProviderQuotaAlertService {
             String(localized: "\($0.formatted(.number.precision(.fractionLength(0...1))))% remaining. Open Talaria for current pace and reset details.")
         } ?? String(localized: "Open Talaria for current quota details.")
         content.sound = .default
-        content.userInfo = ["quota_source_id": source.sourceID]
-        let request = UNNotificationRequest(
-            identifier: "provider-quota-\(source.sourceID)-\(level.rawValue)",
+        content.userInfo = ["quota_source_id": sourceID]
+        content.categoryIdentifier = ProviderQuotaAlertSettings.categoryIdentifier
+        content.interruptionLevel = level == .critical && preferences.criticalTimeSensitive ? .timeSensitive : .active
+        return UNNotificationRequest(
+            identifier: "provider-quota-\(sourceID)-\(level.rawValue)",
             content: content,
             trigger: nil
         )
-        try? await UNUserNotificationCenter.current().add(request)
     }
 
     private static func notificationsAreAllowed() async -> Bool {

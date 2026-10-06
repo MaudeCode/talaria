@@ -1071,7 +1071,13 @@ final class SettingsStructureUITests: SettingsUITestCase {
         tapSettingsCategory(id: "notificationsAndHaptics", title: "Notifications & Haptics")
         XCTAssertTrue(app.switches["Response Complete Alerts"].exists)
         XCTAssertTrue(app.switches["Approval Alerts"].exists)
-        XCTAssertTrue(app.switches["Quota Pace Alerts"].exists)
+        XCTAssertTrue(app.switches["Provider Quota Alerts"].exists)
+        for level in ["Warning Alerts", "Critical Alerts", "Time Sensitive"] {
+            let toggle = app.switches[level]
+            repeatStep(6, until: { toggle.exists }) { app.swipeUp() }
+            XCTAssertTrue(toggle.exists, "Missing \(level)")
+            XCTAssertFalse(toggle.isEnabled, "\(level) waits for Provider Quota Alerts")
+        }
         let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         screenshot.name = "Approval Alerts in notification settings"
         screenshot.lifetime = .keepAlways
@@ -1129,7 +1135,7 @@ final class SettingsStructureUITests: SettingsUITestCase {
         XCTAssertTrue(app.navigationBars["Settings"].awaitExistence(timeout: 3))
 
         for category in [
-            ("notificationsAndHaptics", "Notifications & Haptics", "Quota Pace Alerts"),
+            ("notificationsAndHaptics", "Notifications & Haptics", "Provider Quota Alerts"),
             ("notificationsAndHaptics", "Notifications & Haptics", "Approval & Input Alerts"),
             ("chats", "Chats", "Thinking & Tools"),
             ("liveActivitiesAndWidgets", "Live Activities & Widgets", "Live Activity Excerpts"),

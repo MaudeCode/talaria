@@ -250,5 +250,14 @@ public enum ProviderQuotaLockScreenSettings {
 
 public enum ProviderQuotaAlertSettings {
     public static let isEnabledKey = "providerQuota.alertsEnabled"
+    public static let warningEnabledKey = "providerQuota.warningAlertsEnabled"
+    public static let criticalEnabledKey = "providerQuota.criticalAlertsEnabled"
+    public static let criticalTimeSensitiveKey = "providerQuota.criticalAlertsTimeSensitive"
     public static let stateKey = "providerQuota.alertStates"
+    /// Every quota alert carries this category; foreground list presentation keys on it so other families keep theirs.
+    public static let categoryIdentifier = "provider-quota"
+
+    public static let defaultWarningEnabled = true
+    public static let defaultCriticalEnabled = true
+    public static let defaultCriticalTimeSensitive = false
 }
