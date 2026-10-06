@@ -1,7 +1,7 @@
 # Talaria Web instructions
 
-This file is the shared entry point for AI assistants working in this
-repository. Keep it project-specific and safe to publish. Do not put personal
+This file is the shared entry point for AI assistants working on the Talaria
+Web component of the Talaria monorepo. Keep it project-specific and safe to publish. Do not put personal
 machine setup, private network details, credentials, tokens, or local-only
 workflow notes here.
 

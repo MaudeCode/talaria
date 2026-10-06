@@ -1,15 +1,12 @@
-# Multi-server state isolation audit (I-039 / issue #18)
+# Multi-server state isolation
 
-This is the audit deliverable for issue #18 (I-039d). It documents which app
-state is **per-server** versus intentionally **global**, where each lives, and
-which tests guard the isolation. It reflects the state of the multi-server epic
-after #15 (server model), #16 (auth/cookie/header isolation), #17 (Settings
-list + switcher), and #18 (cache isolation validation + scoped clear-cache).
+This record documents which app state is **per-server** versus intentionally
+**global**, where each lives, and which tests guard the isolation.
 
-The short version: with the #15–#17 foundation in place, **almost all isolation
-already holds by construction**. Issue #18 added focused two-server tests and
-the one behavioral fix that was missing — scoping "Clear Offline Cache" to the
-active server.
+The short version: the server model, per-server auth/cookie/header isolation,
+and the Settings server list and switcher make **almost all isolation hold by
+construction**. The remaining behavior is guarded by focused two-server tests
+and by scoping "Clear Offline Cache" to the active server.
 
 ## How a server switch works (the mechanism most isolation relies on)
 
@@ -36,8 +33,8 @@ to `CacheStore`. Two consequences:
 
 | State | Where it lives | How it's scoped |
 | --- | --- | --- |
-| Auth cookies | `HTTPCookieStorage` (shared jar) | Cleared/queried per active server URL (#16). Same-host/different-port servers still share the jar — documented #16 limitation. |
-| Custom request headers | Keychain, per-server-scoped keys (#16) | `CustomHeaderStore` is hydrated for the active server; SSE + requests source headers from the active store. |
+| Auth cookies | `HTTPCookieStorage` (shared jar) | Cleared/queried per active server URL. Same-host/different-port servers still share the jar — a known limitation. |
+| Custom request headers | Keychain, per-server-scoped keys | `CustomHeaderStore` is hydrated for the active server; SSE + requests source headers from the active store. |
 | Retained sign-in password | Keychain, per-server-scoped `server_password` key (TAL-91) | Written after a successful password login (`AuthManager.noPasswordRequired` for servers that need none), deleted with the server. Leaves the device only as a CloudKit encrypted field; see `docs/icloud-sync-setup.md`. |
 | Display name / initials / **Header Logo Color** | `ServerAccount` in the Keychain registry blob (`Models/ServerAccount.swift`) | Per-server. The **active** server's identity is mirrored into the global `@AppStorage` keys (`SessionIdentitySettings.*`, `HeaderLogoColor.storageKey`) by `ServerRegistry.mirrorIdentityToDefaults`, on activate / set-active / identity-edit / remove — **never on first insert**, so first-run/single-server behavior is unchanged. Consumers (session-list avatar, header logo tint, New Chat / Send primary-action tint) read the mirrored global keys and therefore follow the active server automatically. |
 | Offline session/message cache | SwiftData (`CachedSession`, `CachedMessage`) | Keyed by `serverURLString` (the active server URL's `absoluteString`) on the unique `cacheKey` and on every read/write predicate. Purged by `AuthManager` when the server is signed out or removed (TAL-146). See below. |
@@ -45,7 +42,7 @@ to `CacheStore`. Two consequences:
 | Suspended-stream snapshot | `ActiveChatStreamSnapshotStore.shared`, in memory for the app run | Keyed by server URL + session ID + stream ID; restores a chat left mid-run. Dropped by `AuthManager.serverScopedStateReset`, and a chat closing after that reset (its `ServerCacheGeneration` is stale) saves none (TAL-183). |
 | Default model / profile | Server defaults are not persisted locally; unfinished new-chat choices can be | Settings re-fetches defaults from the **active** server. A non-empty new-chat draft may also retain that server's effective composer choices in `ChatDraftStore`, keyed by server URL plus `newChat`; `AuthManager` discards those records (and their attachment copies) when the server is signed out or removed (TAL-146). Without a saved draft, new sessions use the server's current defaults. |
 | Active project / session selection | View-local `@State` only | Not persisted. Destroyed and rebuilt on switch via `.id(server)`. |
-| "Show CLI sessions" toggle | UserDefaults, per-server key (`SessionRowDisplaySettings.showCliSessionsKey(for:)` = `sessionRow.showCliSessions|<server absoluteString>`) | Per-server since #19: the toggle mirrors the server's own `show_cli_sessions` setting (adopted on Settings load, written back via `POST /api/settings`), so an adopted value on one server cannot leak to another. Reads fall back to the pre-#19 global key as a migration seed, then to shown-by-default. Cleared with the Claude Code toggle by `AuthManager` on sign-out or removal (TAL-146). Tested in `CliSessionsSyncModelTests`. |
+| "Show CLI sessions" toggle | UserDefaults, per-server key (`SessionRowDisplaySettings.showCliSessionsKey(for:)` = `sessionRow.showCliSessions|<server absoluteString>`) | Per-server: the toggle mirrors the server's own `show_cli_sessions` setting (adopted on Settings load, written back via `POST /api/settings`), so an adopted value on one server cannot leak to another. Reads fall back to the earlier global key as a migration seed, then to shown-by-default. Cleared with the Claude Code toggle by `AuthManager` on sign-out or removal (TAL-146). Tested in `CliSessionsSyncModelTests`. |
 
 ### Offline cache keying (`Persistence/CacheStore.swift`)
 
@@ -73,7 +70,7 @@ per-server:
 - Haptics (`AppHaptics`)
 - Response-completion notifications + permission flag (`ResponseCompletionNotifications`)
 - Live Activity response-excerpt privacy (`AgentRunLiveActivityPrivacy`)
-- Session-row display toggles (`SessionRowDisplaySettings`: message count, workspace, cron — the CLI toggle moved to per-server storage in #19, see the per-server table above)
+- Session-row display toggles (`SessionRowDisplaySettings`: message count, workspace, cron — the CLI toggle is per-server, see the per-server table above)
 - Sidebar disclosure state (`sessionSidebar.profilesAreExpanded` / `projectsAreExpanded`)
 - Chat transcript display toggles (`ChatTranscriptDisplaySettings`: thinking/tool cards, attachment paths, timestamps, code-block wrap)
 - Streamed-text animation (`StreamedTextAnimationSettings`)
@@ -83,10 +80,10 @@ per-server:
   on/off behavior is global; only the *color* it applies (Header Logo Color) is
   per-server.
 
-"Which server am I on" is surfaced only by the avatar + Settings (+ the #283
+"Which server am I on" is surfaced only by the avatar + Settings (+ the
 long-press menu) — there is no separate on-screen server label.
 
-## Clear-cache behavior (issue #18 change)
+## Clear-cache behavior
 
 "Clear Offline Cache" (Settings → Offline Data) is **scoped to the active
 server**: `CacheStore.clearCache(for: server, in:)` deletes only that server's
@@ -96,8 +93,7 @@ explicitly, matching the implemented behavior.
 
 Additionally, signing out of or removing a server purges that server's cache,
 drafts, stored session selection, per-server session-row toggles, Insights
-response cache, last-response cache (`ResponseCache`), browsed Kanban Board, and suspended-stream snapshots, so a removed server leaves **no orphaned rows** (TAL-146;
-resolves the W2 follow-up deferred from PR #286). `AuthManager` owns the purge
+response cache, last-response cache (`ResponseCache`), browsed Kanban Board, and suspended-stream snapshots, so a removed server leaves **no orphaned rows** (TAL-146). `AuthManager` owns the purge
 through its injected `resetServerScopedState` closure
 (`AuthManager.serverScopedStateReset`, wired in `TalariaApp`), which runs only
 after the registry removal commits; the same closure backs the TAL-131 profile
@@ -121,4 +117,4 @@ utility but is no longer wired to any user action.
 | Per-server identity (no re-seed, mirror on activate/set-active/update/remove) | `ServerRegistryTests` (`testActivateDoesNotReseedIdentityWhenServerAlreadyExists`, `testSetActiveMirrorsTheNewActiveIdentityToDefaults`, `testUpdateMirrorsToDefaultsOnlyWhenServerIsActive`, `testReactivatingAnExistingServerMirrorsItsIdentityToDefaults`, `testActivatingANewServerDoesNotMirrorIntoEmptyDefaults`), `AuthManagerStateTests.testUpdateServerIdentityPersistsAndMirrorsTheActiveServer` |
 | Per-server custom headers | `CustomHeaderInjectionTests` (`testSSEStreamSourcesHeadersFromActiveServerStore`, `testLaunchMigratesLegacyGlobalHeadersToActiveServerScope`), `AuthManagerStateTests` (`testSignOutLeavesOtherServerHeadersAndRegistryIntact`, `testAddServerFailureKeepsActiveServerAndItsHeaders`) |
 | Per-server cookies | `AuthManagerStateTests` (`testSignOutClearsOnlyActiveServerCookies`, `testRemoveNonActiveServerClearsOnlyItsCookies`, `testUnauthorizedClearsOnlyActiveServerCookies`) |
-| Default model/profile | No persisted state to leak (server-fresh per active server); covered by the switch mechanism + `9.3` Settings tests. |
+| Default model/profile | No persisted state to leak (server-fresh per active server); covered by the switch mechanism. |

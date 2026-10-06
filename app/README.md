@@ -96,7 +96,7 @@ The app is built and tested against this monorepo's `web/` source. Shared synthe
 - [`DEVELOPMENT.md`](DEVELOPMENT.md): local development, testing, and signing.
 - [`TESTFLIGHT.md`](TESTFLIGHT.md): maintainer-only release and TestFlight operations.
 - [`CONTEXT.md`](CONTEXT.md): domain vocabulary.
-- [`docs/`](docs): release notes, iCloud setup, the simulator pool, performance budgets, and visual references.
+- [`docs/`](docs): release notes, iCloud setup, multi-server state isolation, the simulator pool, performance budgets, and visual references.
 - [`SECURITY.md`](../SECURITY.md): how to report a vulnerability.
 
 ## Contributing
