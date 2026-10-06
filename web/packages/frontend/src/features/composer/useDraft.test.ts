@@ -7,7 +7,7 @@ import * as api from '../../api/endpoints'
 import { readLocalDraft, useDraftPersistence, useServerDraft } from './useDraft'
 
 describe('useDraftPersistence', () => {
-  beforeEach(() => { vi.useFakeTimers(); localStorage.clear() })
+  beforeEach(() => { vi.useFakeTimers(); localStorage.clear(); vi.mocked(api.saveDraft).mockResolvedValue({ ok: true, draft: { text: '', files: [] }, draft_version: null }) })
   afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks() })
 
   it('keeps keystrokes out of browser storage until typing pauses (TAL-278)', () => {
@@ -108,5 +108,31 @@ describe('useServerDraft (TAL-564)', () => {
       expect(versions).toHaveLength(2)
       expect(versions[1]!).toBeGreaterThan(versions[0]!)
     } finally { vi.useRealTimers() }
+  })
+})
+
+describe('useDraftPersistence server clears (TAL-564)', () => {
+  beforeEach(() => { vi.useFakeTimers(); localStorage.clear(); vi.mocked(api.saveDraft).mockClear().mockResolvedValue({ ok: true, draft: { text: '', files: [] }, draft_version: null }) })
+  afterEach(() => { vi.useRealTimers() })
+  const serverWrites = () => vi.mocked(api.saveDraft).mock.calls.map(([body]) => [body.session_id, body.draft.text])
+
+  it('clears the server draft when the text is emptied by any path, not only a send', () => {
+    const { rerender } = renderHook(({ text }) => { useDraftPersistence('s1', text) }, { initialProps: { text: 'queued meanwhile' } })
+    rerender({ text: '' })
+    expect(serverWrites()).toEqual([['s1', '']])
+  })
+
+  it('never clears a server draft the box only loaded empty, on mount or on a session switch', () => {
+    localStorage.setItem('hermes-draft:s2', JSON.stringify({ text: 'kept', updatedAt: 1 }))
+    const { rerender } = renderHook(({ sid, text }) => { useDraftPersistence(sid, text) }, { initialProps: { sid: 's1', text: '' } })
+    // The switch renders once with the previous session's text before the composer loads this session's draft.
+    rerender({ sid: 's2', text: '' })
+    expect(readLocalDraft('s2')).toBe('kept')
+    rerender({ sid: 's2', text: 'kept' })
+    rerender({ sid: 's3', text: 'kept' })
+    rerender({ sid: 's3', text: '' })
+    vi.advanceTimersByTime(2000)
+    expect(serverWrites().filter(([, text]) => text === '')).toEqual([])
+    expect(readLocalDraft('s2')).toBe('kept')
   })
 })

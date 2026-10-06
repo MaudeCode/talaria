@@ -73,9 +73,21 @@ export function useDraftPersistence(sessionId: string | null, text: string) {
       flush(unsaved)
     }
   }, [sessionId])
+  // The text this hook last saw, or null when it is not known to belong to that session.
+  const last = useRef<{ sessionId: string | null; text: string | null }>({ sessionId, text })
   useEffect(() => {
-    if (!sessionId) return
-    if (text.trim() === '') { unsaved.current = null; removePersisted(key(sessionId)); return }
+    const prev = last.current
+    // A session switch renders once with the previous session's text before the composer loads this session's draft.
+    const switched = prev.sessionId !== null && prev.sessionId !== sessionId
+    last.current = { sessionId, text: switched ? null : text }
+    if (!sessionId || switched) return
+    if (text.trim() === '') {
+      unsaved.current = null
+      removePersisted(key(sessionId))
+      // Emptied by a send, queue, steer, command or by hand: the server copy goes too, or a later load restores it.
+      if (prev.text?.trim()) saveServerDraft(sessionId, '')
+      return
+    }
     unsaved.current = { sessionId, text }
     const local = window.setTimeout(() => flush(unsaved), 300)
     const server = window.setTimeout(() => { saveServerDraft(sessionId, text) }, 1200)
