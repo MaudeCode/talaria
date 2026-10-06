@@ -4,7 +4,7 @@ import { Mic, Paperclip, Square, ArrowUp, TerminalSquare, SlidersHorizontal } fr
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
-import type { UploadResponse, Session, Settings } from '../../contracts'
+import type { Session, Settings } from '../../contracts'
 import type { LiveTurn } from '../../stream/reducer'
 import { isTerminal } from '../../stream/reducer'
 import { adoptTurn, cancelTurn, startTurn } from '../../stream/connection'
@@ -31,10 +31,11 @@ import { BackgroundWorkCard, useBackgroundTasks } from '../background/Background
 import { beginFirstSend, endFirstSend, failFirstSend, getFirstSend, ownsFirstSend, useFirstSend } from '../chat/firstSend'
 import { REST_MS, onComposerRestRequest, requestScroll } from '../chat/sendMotion'
 import { MOTION_EASE, prefersReducedMotion } from '../../lib/motion'
+import { randomHex } from '../../lib/randomHex'
+import { QueueCard } from './QueueCard'
+import type { QueuedTurn } from './queue'
 
 export type BusyMode = 'steer' | 'queue' | 'interrupt'
-/** A message waiting for the live turn to settle: it owns its text, upload receipts and the request it was composed against. */
-export interface QueuedTurn { text: string; attachments: UploadResponse[]; request: { model?: string | undefined; model_provider?: string | null | undefined; workspace?: string | undefined; profile: string } }
 
 export interface ComposerProps {
   sessionId: string | null
@@ -60,6 +61,8 @@ export interface ComposerProps {
   onToggleYolo: () => void
   queued: QueuedTurn[]
   onQueue: (entry: QueuedTurn) => void
+  /** The queue after an edit, removal or move. */
+  onQueueChange: (queued: QueuedTurn[]) => void
   /** Sending is disabled (e.g. while a manual compression job runs). */
   locked?: boolean | undefined
   /** A pending clarification: the box becomes its answer input and the chat draft and attachments wait untouched. */
@@ -117,7 +120,7 @@ function fileKey(f: File): string {
 let handoff: { draft: { readonly current: string }; files: File[]; sessionId: string | null } | null = null
 
 export function Composer(props: ComposerProps) {
-  const { sessionId, session, live, settings, onEnsureSession, onLocalCommand, terminalOpen, onToggleTerminal, onModelChange, onWorkspaceChange, onToolsetsChange, onReasoningChange, reasoning, reasoningLevels, reasoningSupported = true, pendingChoices, locked = false, yolo, onToggleYolo, queued, onQueue, clarify, notices = [] } = props
+  const { sessionId, session, live, settings, onEnsureSession, onLocalCommand, terminalOpen, onToggleTerminal, onModelChange, onWorkspaceChange, onToolsetsChange, onReasoningChange, reasoning, reasoningLevels, reasoningSupported = true, pendingChoices, locked = false, yolo, onToggleYolo, queued, onQueue, onQueueChange, clarify, notices = [] } = props
   const bootstrap = useBootstrap()
   const qc = useQueryClient()
   const [text, setText] = useState(() => (sessionId ? readLocalDraft(sessionId) : ''))
@@ -325,8 +328,7 @@ export function Composer(props: ComposerProps) {
   // Steer: deliver mid-run, shown in the turn as a pending user message; if the server did not accept it, the draft stays in the box.
   const trySteer = useCallback(async (text: string): Promise<boolean> => {
     if (!sessionId) return false
-    // getRandomValues, unlike randomUUID, also works on plain-HTTP LAN installs.
-    const steerId = `steer-${Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, '0')).join('')}`
+    const steerId = `steer-${randomHex()}`
     // TAL-425: shown as sending until the server reports it; a Stop that withdraws it gives the text back to this tab.
     dispatch({ type: 'steer_sending', sessionId, steerId, text })
     rememberOwnSteer(steerId)
@@ -347,7 +349,7 @@ export function Composer(props: ComposerProps) {
   }, [sessionId])
 
   // Snapshot of what a send would post right now, for the queue.
-  const queueEntry = useCallback((text: string): QueuedTurn => ({ text, attachments: files.flatMap((f) => (f.status === 'done' && f.upload ? [f.upload] : [])), request: session ? turnRequest(session, bootstrap.profile?.name ?? 'default') : { profile: bootstrap.profile?.name ?? 'default' } }), [files, session, bootstrap.profile])
+  const queueEntry = useCallback((text: string): QueuedTurn => ({ id: randomHex(), text, attachments: files.flatMap((f) => (f.status === 'done' && f.upload ? [f.upload] : [])), request: session ? turnRequest(session, bootstrap.profile?.name ?? 'default') : { profile: bootstrap.profile?.name ?? 'default' } }), [files, session, bootstrap.profile])
 
   // TAL-425: a steer taken back (Edit, or a Stop of this tab's steer) returns after the draft, with a blank line between.
   useEffect(() => {
@@ -553,7 +555,7 @@ export function Composer(props: ComposerProps) {
     ...(dictating ? [{ id: 'dictation', content: <span className="inline-flex items-center gap-1.5" role="status"><span className="mic-dot" aria-hidden="true" />{m.voice_listening()}</span> }] : []),
     ...(showYolo ? [{ id: 'yolo', tone: 'warning' as const, content: <><span aria-hidden="true">⚡</span><span className="truncate">{m.yolo_tab_active()}</span></>, action: { label: m.yolo_turn_off(), run: onToggleYolo } }] : []),
     ...(sessionId && backgroundTasks.some((t) => t.pinned) ? [{ id: 'background', content: <BackgroundWorkCard sessionId={sessionId} tasks={backgroundTasks} /> }] : []),
-    ...(queued.length > 0 ? [{ id: 'queue', content: <span className="queue-card flex min-w-0 flex-col gap-0.5" role="region" aria-label={m.queued_count({ n: queued.length })} aria-live="polite"><span className="queue-card-title">{m.queued_count({ n: queued.length })}</span><span className="queue-card-list flex flex-col">{queued.map((q, i) => <span key={i} className="truncate">{q.text}{q.attachments.length ? ` (+${q.attachments.length})` : ''}</span>)}</span></span> }] : []),
+    ...(sessionId && queued.length > 0 ? [{ id: 'queue', content: <QueueCard sessionId={sessionId} queued={queued} onChange={onQueueChange} /> }] : []),
   ]
   // A `/btw` draft asks beside the turn instead of steering, queueing or interrupting it (TAL-518).
   const busyLabel = parseCommand(text)?.name === 'btw' ? m.composer_send() : busyMode === 'queue' ? m.composer_queue() : busyMode === 'interrupt' ? m.composer_interrupt() : m.composer_steer()

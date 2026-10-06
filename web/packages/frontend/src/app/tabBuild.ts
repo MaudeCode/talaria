@@ -1,3 +1,5 @@
+import { randomHex } from '../lib/randomHex'
+
 /**
  * This tab's identity and the frontend build it loaded, sent with notification
  * checks so the server can decide when this tab runs a stale bundle (TAL-363).
@@ -8,8 +10,7 @@
 const TAB_KEY = 'talaria-tab-id'
 
 function readTabId(): string {
-  // getRandomValues, unlike randomUUID, also works on plain-HTTP LAN installs.
-  const fresh = Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, '0')).join('')
+  const fresh = randomHex()
   try {
     // Duplicating a tab or a same-origin window.open copies sessionStorage, so only a reload of this tab may reuse the stored id.
     const navigation = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined

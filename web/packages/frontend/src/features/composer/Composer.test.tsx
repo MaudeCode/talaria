@@ -9,7 +9,7 @@ import type { Session, Settings } from '../../contracts'
 import * as api from '../../api/endpoints'
 import { dispatch, getStreamState, resetStreamStoreForTests } from '../../stream/store'
 import type { LiveTurn } from '../../stream/reducer'
-import type { QueuedTurn } from './Composer'
+import type { QueuedTurn } from './queue'
 import { endFirstSend, getFirstSend } from '../chat/firstSend'
 import { returnToComposer } from './composerReturn'
 
@@ -27,7 +27,7 @@ function renderComposer(session: Session | null, live: LiveTurn | null = null, o
         <Composer
           sessionId={session?.session_id ?? null} session={session} live={turn} settings={settings} onEnsureSession={onEnsureSession} onLocalCommand={onLocalCommand}
           terminalOpen={false} onToggleTerminal={noop} onModelChange={noop} onWorkspaceChange={noop} onToolsetsChange={noop} onReasoningChange={noop} reasoning={null}
-          yolo={false} onToggleYolo={noop} queued={[]} onQueue={onQueue}
+          yolo={false} onToggleYolo={noop} queued={[]} onQueue={onQueue} onQueueChange={noop}
         />
       </BootstrapContext.Provider>
     </QueryClientProvider>

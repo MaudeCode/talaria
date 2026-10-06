@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Edit, remove, and drag to reorder messages queued behind a running response; the queue now survives a page reload and sends in the order shown.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
