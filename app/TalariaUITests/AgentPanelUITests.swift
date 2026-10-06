@@ -264,7 +264,8 @@ final class AgentPanelContentUITests: AgentPanelUITestCase {
         // is pinned by the `skill-row-disabled` visual references, which XCUI cannot see.
         // List rows report `isHittable == false` to XCUI even when visible (see `tapCenter`),
         // so the tap flipping fixture state below is what proves the switch takes a touch.
-        let enable = disabledSkill.switches["Enable"].firstMatch
+        // The switch sits over the row's link, outside the row element (TAL-647).
+        let enable = app.switches["skill-toggle-fixture-archivist"].firstMatch
         XCTAssertTrue(enable.awaitExistence(timeout: 5), "The disabled skill row offered no Enable switch")
         XCTAssertTrue(enable.isEnabled, "The disabled skill's Enable switch is not interactive")
         tapCenter(of: enable)
@@ -272,6 +273,7 @@ final class AgentPanelContentUITests: AgentPanelUITestCase {
             disabledSkill.awaitNonExistence(timeout: 15),
             "Enabling a skill did not clear its Disabled badge"
         )
+        XCTAssertTrue(app.navigationBars["Skills"].exists, "Tapping the switch opened the skill instead")
 
         // The row above only proves the optimistic update, which the view model applies
         // before the request. Leaving and re-entering builds a fresh view model whose only

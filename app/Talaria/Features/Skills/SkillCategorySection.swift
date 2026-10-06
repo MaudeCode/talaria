@@ -19,6 +19,9 @@ struct SkillCategorySection: View {
 
             VStack(spacing: 0) {
                 ForEach(Array(skills.enumerated()), id: \.offset) { index, skill in
+                    let onToggle: ((Bool) -> Void)? = canToggle(skill) ? { enabled in
+                        Task { await onToggleSkill(skill, enabled) }
+                    } : nil
                     NavigationLink {
                         SkillDetailView(
                             skill: skill,
@@ -26,15 +29,21 @@ struct SkillCategorySection: View {
                             onAPIError: onAPIError
                         )
                     } label: {
-                        SkillRow(
-                            skill: skill,
-                            isToggling: isToggling(skill),
-                            onToggle: canToggle(skill) ? { enabled in
-                                Task { await onToggleSkill(skill, enabled) }
-                            } : nil
-                        )
+                        SkillRow(skill: skill, isToggling: isToggling(skill), onToggle: onToggle)
                     }
                     .buttonStyle(.plain)
+                    // The switch sits over the link, where it lines up with the slot SkillRow
+                    // keeps for it, rather than inside the link's label: there the link could
+                    // take a tap on the switch and open the skill instead (TAL-647).
+                    .overlay(alignment: .topTrailing) {
+                        if let onToggle {
+                            HStack(alignment: .top) {
+                                SkillToggle(skill: skill, isToggling: isToggling(skill), onToggle: onToggle)
+                                SkillRow.chevron.hidden()
+                            }
+                            .padding(.vertical, 10)
+                        }
+                    }
                     .contextMenu {
                         if canToggle(skill) {
                             let isDisabled = skill.disabled == true

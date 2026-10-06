@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Tapping a skill's Enable switch in Skills now always toggles the skill instead of sometimes opening it.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}

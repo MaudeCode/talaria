@@ -49,22 +49,14 @@ struct SkillRow: View {
 
             Spacer(minLength: 8)
 
+            // Holds the switch's place only. The live switch sits over the row's NavigationLink
+            // in `SkillCategorySection`; inside the link's label the link could take its taps.
             if let onToggle {
-                Toggle(skill.disabled == true ? "Enable" : "Disable", isOn: Binding(
-                    get: { skill.disabled != true },
-                    set: { onToggle($0) }
-                ))
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .scaleEffect(0.8, anchor: .trailing)
-                .disabled(isToggling)
-                .padding(.top, 6)
+                SkillToggle(skill: skill, isToggling: isToggling, onToggle: onToggle)
+                    .hidden()
             }
 
-            Image(systemName: "chevron.forward")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.tertiary)
-                .padding(.top, 12)
+            Self.chevron
         }
         .padding(.vertical, 10)
         .contentShape(Rectangle())
@@ -77,6 +69,13 @@ struct SkillRow: View {
                 }
             }
         }
+    }
+
+    static var chevron: some View {
+        Image(systemName: "chevron.forward")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.tertiary)
+            .padding(.top, 12)
     }
 
     private var displayName: String {
@@ -96,5 +95,26 @@ struct SkillRow: View {
         (skill.tags ?? [])
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
+    }
+}
+
+/// A skill row's Enable/Disable switch. `SkillCategorySection` draws it over the row, outside
+/// the row's NavigationLink, so a tap on the switch never opens the skill (TAL-647).
+struct SkillToggle: View {
+    let skill: SkillSummary
+    let isToggling: Bool
+    let onToggle: (Bool) -> Void
+
+    var body: some View {
+        Toggle(skill.disabled == true ? "Enable" : "Disable", isOn: Binding(
+            get: { skill.disabled != true },
+            set: { onToggle($0) }
+        ))
+        .labelsHidden()
+        .toggleStyle(.switch)
+        .scaleEffect(0.8, anchor: .trailing)
+        .disabled(isToggling)
+        .padding(.top, 6)
+        .accessibilityIdentifier("skill-toggle-\(skill.name ?? "")")
     }
 }
