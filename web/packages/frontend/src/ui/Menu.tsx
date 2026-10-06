@@ -1,4 +1,5 @@
 import { Menu as BaseMenu } from '@base-ui/react/menu'
+import { ContextMenu as BaseContextMenu } from '@base-ui/react/context-menu'
 import type { ComponentProps, ReactElement, ReactNode } from 'react'
 import { cn } from './cn'
 
@@ -13,6 +14,8 @@ export interface MenuProps {
   label?: string
 }
 
+const POPUP = 'min-w-44 max-w-[min(92vw,360px)] overflow-y-auto rounded-lg border border-border bg-surface p-1 text-sm text-text shadow-md outline-none'
+
 /** Base UI menu with token styling: keyboard navigation, typeahead, focus return, and escape are provided by Base UI. */
 export function Menu({ trigger, children, side = 'bottom', align = 'start', open, onOpenChange, className, label }: MenuProps) {
   return (
@@ -20,12 +23,28 @@ export function Menu({ trigger, children, side = 'bottom', align = 'start', open
       <BaseMenu.Trigger render={trigger} />
       <BaseMenu.Portal>
         <BaseMenu.Positioner side={side} align={align} sideOffset={6} className="z-[1200] outline-none">
-          <BaseMenu.Popup aria-label={label} className={cn('min-w-44 max-w-[min(92vw,360px)] overflow-y-auto rounded-lg border border-border bg-surface p-1 text-sm text-text shadow-md outline-none', className)}>
+          <BaseMenu.Popup aria-label={label} className={cn(POPUP, className)}>
             {children}
           </BaseMenu.Popup>
         </BaseMenu.Positioner>
       </BaseMenu.Portal>
     </BaseMenu.Root>
+  )
+}
+
+/** The same menu opened by right-click or long-press on `trigger`, which keeps its own click behaviour. */
+export function ContextMenu({ trigger, children, className, label }: Pick<MenuProps, 'trigger' | 'children' | 'className' | 'label'>) {
+  return (
+    <BaseContextMenu.Root>
+      <BaseContextMenu.Trigger render={trigger} />
+      <BaseContextMenu.Portal>
+        <BaseContextMenu.Positioner className="z-[1200] outline-none">
+          <BaseContextMenu.Popup aria-label={label} className={cn(POPUP, className)}>
+            {children}
+          </BaseContextMenu.Popup>
+        </BaseContextMenu.Positioner>
+      </BaseContextMenu.Portal>
+    </BaseContextMenu.Root>
   )
 }
 

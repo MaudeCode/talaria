@@ -98,6 +98,8 @@ export const saveDraft = (body: z.infer<typeof DraftRequestSchema>) => orpc().se
 
 export const fetchProjects = () => orpc().projects.list({})
 export const createProject = (name: string, color?: string) => orpc().projects.create({ name, color: color ?? null })
+export const renameProject = (project_id: string, name: string, color?: string) => orpc().projects.rename({ project_id, name, ...(color !== undefined ? { color } : {}) })
+export const deleteProject = (project_id: string) => orpc().projects.delete({ project_id })
 
 // Chat
 export const startChat = (body: ChatStartRequest) => orpc().chat.start(body, { signal: timeout(60_000) })
