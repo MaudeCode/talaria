@@ -278,6 +278,8 @@ export const settingsRouter = os.router({
       const provider = str(input.provider).trim().toLowerCase() || null
       ctx.deps.catalog.invalidate(home(ctx), provider ?? undefined)
       ctx.deps.agentConfig.invalidate(home(ctx))
+      // The Agent keeps its own catalog cache; a provider refresh reaches past it.
+      if (provider) await ctx.deps.catalog.liveModelIds(home(ctx), provider, { force: true })
       return { ok: true as const, provider, models: await ctx.deps.catalog.models(home(ctx)) }
     })),
     auxiliary: os.models.auxiliary.handler(({ context: { ctx } }) => run(() => auxiliaryState(ctx) as never)),

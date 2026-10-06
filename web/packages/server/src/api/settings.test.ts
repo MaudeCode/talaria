@@ -2,6 +2,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSy
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createServer } from 'node:net'
+import { createServer as createHttpServer } from 'node:http'
 import { createHash } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
@@ -192,6 +193,8 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     expect(body.ok).toBe(true)
     expect(body.provider).toBe('anthropic')
     expect(sidecar.calls.filter((c) => c.method === 'providers.model_ids').length).toBeGreaterThan(before)
+    // TAL-570: a refresh reaches past the Agent's own catalog cache.
+    expect(sidecar.calls.slice(before).some((c) => c.method === 'providers.model_ids' && (c.params as Json).provider === 'anthropic' && (c.params as Json).force_refresh === true)).toBe(true)
   })
 
   it('GET /api/providers reports key presence and sources; POST writes and removes keys in .env', async () => {
@@ -960,14 +963,29 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
   })
 
   it('providers/self-hosted writes the provider block and activates the model', async () => {
-    const res = await post(s, '/api/providers/self-hosted', { provider: 'lmstudio', model: 'qwen3', base_url: 'http://localhost:1234/v1/', api_key: 'lm-key-12345' })
-    expect(res.status).toBe(200)
-    expect(await json(res)).toEqual({ ok: true, provider: 'lmstudio', base_url: 'http://localhost:1234/v1', model: 'qwen3' })
-    expect((configs.get(s.state)?.providers as Json).lmstudio).toEqual({ base_url: 'http://localhost:1234/v1' })
-    expect(configs.get(s.state)?.model).toMatchObject({ provider: 'lmstudio', default: 'qwen3', base_url: 'http://localhost:1234/v1' })
-    expect(loadEnvFile(join(s.state, '.env')).LM_API_KEY).toBe('lm-key-12345')
+    const endpoint = createHttpServer((req, res) => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(req.url === '/v1/models' ? { data: [{ id: 'qwen3' }] } : {})) })
+    await new Promise<void>((resolve) => { endpoint.listen(0, '127.0.0.1', resolve) })
+    const url = `http://127.0.0.1:${String((endpoint.address() as { port: number }).port)}/v1`
+    try {
+      const res = await post(s, '/api/providers/self-hosted', { provider: 'lmstudio', model: 'qwen3', base_url: `${url}/`, api_key: 'lm-key-12345' })
+      expect(res.status).toBe(200)
+      expect(await json(res)).toEqual({ ok: true, provider: 'lmstudio', base_url: url, model: 'qwen3' })
+      expect((configs.get(s.state)?.providers as Json).lmstudio).toEqual({ base_url: url })
+      expect(configs.get(s.state)?.model).toMatchObject({ provider: 'lmstudio', default: 'qwen3', base_url: url })
+      expect(loadEnvFile(join(s.state, '.env')).LM_API_KEY).toBe('lm-key-12345')
+    } finally {
+      endpoint.close()
+    }
     const bad = await post(s, '/api/providers/self-hosted', { provider: 'openai', model: 'x' })
     expect(bad.status).toBe(400)
+  })
+
+  it('providers/self-hosted refuses an endpoint that does not answer and keeps the working default (TAL-570)', async () => {
+    const before = structuredClone(configs.get(s.state))
+    const res = await post(s, '/api/providers/self-hosted', { provider: 'ollama', model: 'llama3.2', base_url: `http://127.0.0.1:${String(await closedPort())}/v1` })
+    expect(res.status).toBe(400)
+    expect((await json(res)).error).toMatch(/connection refused/)
+    expect(configs.get(s.state)).toEqual(before)
   })
 })
 

@@ -280,6 +280,9 @@ export class Onboarding {
       if (!baseUrl) throw new OnboardingError('base_url is required for this provider')
       if (!/^https?:\/\//.test(baseUrl)) throw new OnboardingError('base_url must start with http:// or https://')
     }
+    // Like onboarding, an endpoint that does not answer never replaces a working default.
+    const probe = await this.probe(baseUrl, apiKey || null)
+    if (probe.ok !== true) throw new OnboardingError(str(probe.detail) || 'the endpoint did not answer')
     const home = this.deps.profileHome()
     let persisted = ''
     await this.deps.config.update(home, (c) => {

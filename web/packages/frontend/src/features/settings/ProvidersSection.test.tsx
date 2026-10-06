@@ -55,6 +55,13 @@ describe('ProvidersSection', () => {
     expect(within(saved).queryByRole('textbox', { name: 'Base URL' })).toBeNull()
   })
 
+  it('words setup status by the server field, and by the credential when an older server omits it (TAL-570)', async () => {
+    providersResponse.current = { active_provider: 'zai', providers: [{ id: 'zai', display_name: 'Z.AI', has_key: true }, { id: 'ollama', display_name: 'Ollama', has_key: true, configured: false }] }
+    renderSection()
+    expect(await screen.findByText('Configured')).toBeInTheDocument()
+    expect(within(screen.getByText('Ollama').closest<HTMLElement>('[data-provider="ollama"]')!).getByText('Not configured')).toBeInTheDocument()
+  })
+
   it("refreshes one provider's models and shows the server's new count (TAL-570)", async () => {
     providersResponse.current = { active_provider: 'zai', providers: [{ id: 'zai', display_name: 'Z.AI', has_key: true, configured: true, models: [], models_total: 3 }] }
     vi.mocked(api.refreshModels).mockImplementation(() => {
