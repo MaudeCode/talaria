@@ -932,6 +932,81 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
     }
 
     @MainActor
+    func testNativeOIDCRollsBackWhenTheProfileMarkerCannotBeWritten() async throws {
+        let server = try XCTUnwrap(URL(string: "https://example.test"))
+        let keychain = InMemoryKeychainStore()
+        try keychain.save("default", forKey: .authenticatedProfile, scope: server.absoluteString)
+        keychain.saveErrors[.authenticatedProfile] = URLError(.cannotWriteToFile)
+        let registry = ServerRegistry.inMemory(keychain: keychain)
+        let client = OIDCMockAuthAPIClient(profilesResult: .success(.synthetic(active: "member")))
+        let manager = AuthManager(
+            keychain: keychain,
+            clientFactory: { _ in client },
+            webAuthenticator: { _, scheme in
+                try XCTUnwrap(URL(
+                    string: "\(scheme)://oidc-callback?code=exchange-code&state=\(try XCTUnwrap(client.state))&flow_id=flow-1&server_id=server-1"
+                ))
+            },
+            cookieStore: ServerCookieStore(
+                keychain: keychain,
+                legacyStorage: ServerCookieStore.makeIsolatedStorage()
+            ),
+            profileEntityCache: ProfileEntityCache(defaults: nil),
+            resetServerScopedState: { _ in },
+            serverRegistry: registry
+        )
+
+        await manager.configureWithOIDC(serverURLString: server.absoluteString)
+
+        XCTAssertEqual(manager.state, .unconfigured)
+        XCTAssertNotNil(manager.lastErrorMessage)
+        XCTAssertTrue(registry.servers.isEmpty)
+        XCTAssertEqual(client.logoutCount, 1)
+        // The purge already ran for "member"; the stale "default" marker must not
+        // survive, or a later "default" sign-in would skip its purge.
+        XCTAssertNil(keychain.scopedValue(.authenticatedProfile, scope: server.absoluteString))
+    }
+
+    @MainActor
+    func testAddServerOIDCRollsBackWhenTheProfileMarkerCannotBeWritten() async throws {
+        let activeURL = try XCTUnwrap(URL(string: "https://active.test"))
+        let newURL = try XCTUnwrap(URL(string: "https://new.test"))
+        let keychain = InMemoryKeychainStore()
+        try keychain.save(activeURL.absoluteString, forKey: .serverURL)
+        try keychain.save("default", forKey: .authenticatedProfile, scope: newURL.absoluteString)
+        let registry = ServerRegistry.inMemory(keychain: keychain)
+        try registry.activate(url: activeURL)
+        keychain.saveErrors[.authenticatedProfile] = URLError(.cannotWriteToFile)
+        let client = OIDCMockAuthAPIClient(authorizationBaseURL: newURL)
+        let manager = AuthManager(
+            keychain: keychain,
+            clientFactory: { _ in client },
+            probeClientFactory: { _, _, _ in client },
+            webAuthenticator: { _, scheme in
+                try XCTUnwrap(URL(
+                    string: "\(scheme)://oidc-callback?code=exchange-code&state=\(try XCTUnwrap(client.state))&flow_id=flow-1&server_id=server-1"
+                ))
+            },
+            cookieStore: ServerCookieStore(
+                keychain: keychain,
+                legacyStorage: ServerCookieStore.makeIsolatedStorage()
+            ),
+            profileEntityCache: ProfileEntityCache(defaults: nil),
+            resetServerScopedState: { _ in },
+            serverRegistry: registry
+        )
+
+        let result = await manager.addServerWithOIDC(serverURLString: newURL.absoluteString)
+
+        XCTAssertEqual(result, .failed)
+        XCTAssertEqual(manager.state, .loggedIn(server: activeURL))
+        XCTAssertEqual(keychain.savedValues[.serverURL], activeURL.absoluteString)
+        XCTAssertEqual(registry.servers.map(\.id), [activeURL.absoluteString])
+        XCTAssertNil(keychain.scopedValue(.sessionCookies, scope: newURL.absoluteString))
+        XCTAssertNil(keychain.scopedValue(.authenticatedProfile, scope: newURL.absoluteString))
+    }
+
+    @MainActor
     func testOIDCRecoveryPreservesCookiesOnCancellationAndDismissesOnSuccess() async throws {
         let server = URL(string: "https://example.test")!
         let keychain = InMemoryKeychainStore()
