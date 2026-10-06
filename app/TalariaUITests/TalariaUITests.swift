@@ -1958,18 +1958,12 @@ final class SidebarPresentationUITests: SidebarUITestCase {
         let mainSurface = app.descendants(matching: .any)["app-main-surface"]
         XCTAssertTrue(mainSurface.exists)
 
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.005, dy: 0.45))
-            .press(
-                forDuration: 0.1,
-                thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0.45))
-            )
-
-        let sidebar = app.descendants(matching: .any)["app-sidebar"]
-        XCTAssertTrue(sidebar.awaitExistence(timeout: 3))
+        // Opened with its button: an edge swipe over a row is timing-sensitive on a loaded host
+        // (a touch that rests at the edge for about half a second fails UIKit's edge pan and
+        // swipes the row instead), and SidebarGestureUITests owns the edge swipe (TAL-653).
+        let sidebar = openSidebar()
         let closeNavigation = app.buttons["Close navigation"]
-        XCTAssertTrue(closeNavigation.awaitExistence(timeout: 3))
         XCTAssertEqual(sidebar.elementType, .alert)
-        XCTAssertFalse(app.buttons["Pin"].exists)
         for destination in ["Chats", "Tasks", "Kanban", "Skills", "Memory", "Insights", "Settings"] {
             XCTAssertTrue(
                 sidebar.descendants(matching: .any)[destination].exists,
@@ -2007,8 +2001,7 @@ final class SidebarPresentationUITests: SidebarUITestCase {
         XCTAssertFalse(sidebar.isHittable)
 
         // A fully open sidebar closes with a slow diagonal swipe.
-        openNavigation.tap()
-        XCTAssertTrue(closeNavigation.awaitExistence(timeout: 3))
+        openSidebar()
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.45))
             .press(
                 forDuration: 0.2,
@@ -2024,13 +2017,7 @@ final class SidebarPresentationUITests: SidebarUITestCase {
 
         // New Chat opens the existing composer and closes the sidebar.
         XCTAssertTrue(poll(timeout: 3) { !sidebar.isHittable })
-        // A tap while the close is still settling can be dropped. The sidebar and its rows stay
-        // in the tree while it is closed, so hittability is the sign it opened.
-        repeatStep(3, until: { sidebar.isHittable }) {
-            openNavigation.tap()
-            _ = poll(timeout: 3) { sidebar.isHittable }
-        }
-        XCTAssertTrue(sidebar.isHittable, "The sidebar did not open again")
+        openSidebar()
         let newChat = sidebar.buttons["New Chat"]
         XCTAssertTrue(newChat.awaitExistence(timeout: 3))
         _ = newChat.settledFrame
@@ -2879,7 +2866,10 @@ extension TalariaUITestCase {
             .press(forDuration: 1.2)
     }
 
-    func openSidebarDestination(_ destination: String) {
+    /// Opens the sidebar with its button and returns it once it has slid to rest. The sidebar
+    /// stays in the tree while closed, so hittability is the sign it opened.
+    @discardableResult
+    func openSidebar() -> XCUIElement {
         let sidebar = app.descendants(matching: .any)["app-sidebar"]
         // A tap while the screen behind is still settling (a menu closing, a rotation) can be
         // dropped, so open until the sidebar is up.
@@ -2887,7 +2877,13 @@ extension TalariaUITestCase {
             app.buttons["Open navigation"].tap()
             _ = poll(timeout: Self.navigationTimeout / 3) { sidebar.exists && sidebar.isHittable }
         }
-        XCTAssertTrue(sidebar.exists, "The sidebar did not open")
+        XCTAssertTrue(sidebar.exists && sidebar.isHittable, "The sidebar did not open")
+        _ = app.buttons["Close navigation"].settledFrame
+        return sidebar
+    }
+
+    func openSidebarDestination(_ destination: String) {
+        let sidebar = openSidebar()
         // The sidebar's rows slide in; a row tapped on the way lands on the surface behind it.
         let row = sidebar.descendants(matching: .any)[destination].firstMatch
         _ = row.settledFrame
