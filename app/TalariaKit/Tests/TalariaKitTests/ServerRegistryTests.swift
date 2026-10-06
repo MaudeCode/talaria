@@ -160,6 +160,8 @@ final class ServerRegistryTests: XCTestCase {
 
         XCTAssertEqual(reactivated.displayName, "Alice")
         XCTAssertEqual(registry.servers.count, 1)
+        // The saved identity wins over an unsaved preview left in the defaults.
+        XCTAssertEqual(defaults.string(forKey: SessionIdentitySettings.displayNameKey), "Alice")
     }
 
     // MARK: - forgetActiveServer

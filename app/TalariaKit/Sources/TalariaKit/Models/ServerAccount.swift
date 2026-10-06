@@ -178,7 +178,8 @@ public final class ServerRegistry: @unchecked Sendable {
         let id = url.absoluteString
         // When re-activating an already-registered server we mirror its (possibly
         // per-server-edited, #17) identity into the global identity defaults so the
-        // existing @AppStorage-backed consumers follow the switch. We never mirror
+        // existing @AppStorage-backed consumers follow the switch, and so a launch
+        // drops a preview whose save never landed (TAL-123). We never mirror
         // on first insert: a new entry is *seeded from* those defaults, so writing
         // back would change first-run identity for single-server users.
         var identityToMirror: ServerAccount?
@@ -193,8 +194,8 @@ public final class ServerRegistry: @unchecked Sendable {
                     updated.activeServerID = id
                     try persist(updated)
                     snapshot = updated
-                    identityToMirror = existing
                 }
+                identityToMirror = existing
                 return existing
             }
 
