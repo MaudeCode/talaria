@@ -3204,25 +3204,19 @@ final class QueuedMessagesChipUITests: ChatUITestCase {
         remove.tap()
         XCTAssertTrue(oneQueued.awaitNonExistence(timeout: 5), "The queue chip stayed after its last message was removed")
     }
-
-    private func attachScreenshot(named name: String) {
-        let screenshot = XCTAttachment(screenshot: app.screenshot())
-        screenshot.name = name
-        screenshot.lifetime = .keepAlways
-        add(screenshot)
-    }
 }
 
 /// The strip's toolsets control shows the session's toolsets and sets them in a sheet (TAL-631).
 final class ComposerToolsetsUITests: WorkspaceUITestCase {
     func testToolsetsControlSavesAListAndRestoresProfileDefaults() throws {
-        launchFixture()
+        // With workspace and branch hidden the control fits without scrolling the strip; a drag that
+        // low on the screen can turn into the system's app-switch swipe.
+        launchFixture(additionalArguments: ["-composerVisibility.workspace", "NO", "-composerVisibility.gitBranch", "NO"])
         openFixtureSessionChat()
 
         let control = app.buttons["Session toolsets"]
         XCTAssertTrue(control.awaitExistence(timeout: 15), "Missing the toolsets control")
         XCTAssertEqual(control.value as? String, "Profile defaults")
-        scrollStripControlIntoView(control)
         tapCenter(of: control)
 
         let field = app.textFields["Session toolsets"]
@@ -3235,34 +3229,10 @@ final class ComposerToolsetsUITests: WorkspaceUITestCase {
         XCTAssertTrue(control.awaitValue("web, terminal", timeout: 5), "The control does not show the saved toolsets")
         attachScreenshot(named: "toolsets-saved")
 
-        scrollStripControlIntoView(control)
         tapCenter(of: control)
         XCTAssertTrue(field.awaitExistence(timeout: 5), "The toolsets sheet did not reopen")
         XCTAssertEqual(field.value as? String, "web, terminal")
         app.buttons["Use profile defaults"].tap()
         XCTAssertTrue(control.awaitValue("Profile defaults", timeout: 5), "Profile defaults did not restore")
-    }
-
-    private func scrollStripControlIntoView(_ control: XCUIElement) {
-        var drags = 0
-        while !app.frame.contains(control.frame), drags < 4 {
-            let origin = app.coordinate(withNormalizedOffset: .zero)
-            let travel: CGFloat = control.frame.minX < app.frame.minX ? 100 : -100
-            origin.withOffset(CGVector(dx: app.frame.midX - travel / 2, dy: control.frame.midY))
-                .press(
-                    forDuration: 0.05,
-                    thenDragTo: origin.withOffset(CGVector(dx: app.frame.midX + travel / 2, dy: control.frame.midY)),
-                    withVelocity: .slow,
-                    thenHoldForDuration: 0.2
-                )
-            drags += 1
-        }
-    }
-
-    private func attachScreenshot(named name: String) {
-        let screenshot = XCTAttachment(screenshot: app.screenshot())
-        screenshot.name = name
-        screenshot.lifetime = .keepAlways
-        add(screenshot)
     }
 }
