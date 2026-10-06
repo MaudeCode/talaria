@@ -333,12 +333,15 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     insert.run('tg', 'telegram', 'c', 3, 20, 10, 0, null, now - 400, null)
     insert.run('cron_j_1', 'cron', null, 2, 7, 3, 0, 0.25, now - 500, now - 450)
     insert.run('old', 'cli', 'c', 9, 900, 900, 0, 9, now - 40 * 86_400, now - 40 * 86_400)
+    // A long-lived gateway session started before the window, still open, with a message inside it.
+    insert.run('gateway', 'telegram', 'c', 5, 11, 4, 0, null, now - 40 * 86_400, null)
+    db.exec(`CREATE TABLE messages (id INTEGER PRIMARY KEY, session_id TEXT, timestamp REAL); INSERT INTO messages (session_id, timestamp) VALUES ('gateway', ${String(now - 40 * 86_400)}), ('gateway', ${String(now - 600)}), ('old', ${String(now - 40 * 86_400)})`)
     db.close()
     try {
       const body = await json(await s.get('/api/insights?days=7'))
-      expect(body).toMatchObject({ total_sessions: 5, total_messages: 17, total_input_tokens: 167, total_output_tokens: 83, total_cache_read_tokens: 30, total_cost: 2.5 })
-      expect((body.models as Json[]).map((m) => [m.model, m.sessions])).toEqual([['c', 2], ['m', 2], ['unknown', 1]])
-      expect((body.daily_tokens as Json[]).reduce((n, d) => n + Number(d.sessions), 0)).toBe(5)
+      expect(body).toMatchObject({ total_sessions: 6, total_messages: 22, total_input_tokens: 178, total_output_tokens: 87, total_cache_read_tokens: 30, total_cost: 2.5 })
+      expect((body.models as Json[]).map((m) => [m.model, m.sessions])).toEqual([['c', 3], ['m', 2], ['unknown', 1]])
+      expect((body.daily_tokens as Json[]).reduce((n, d) => n + Number(d.sessions), 0)).toBe(6)
     } finally {
       index.mockRestore()
       rmSync(dbPath)
