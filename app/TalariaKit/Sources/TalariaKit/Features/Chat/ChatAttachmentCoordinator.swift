@@ -290,8 +290,9 @@ final class ChatAttachmentCoordinator {
         }
     }
 
-    func prepareForSend(localMessageID: String) -> ChatAttachmentSendPreparation {
-        let attachmentsForSend = pendingAttachments
+    /// Sends `queued` files when given (a queued message's own), leaving the composer's staged files alone.
+    func prepareForSend(_ queued: [PendingAttachment]? = nil, localMessageID: String) -> ChatAttachmentSendPreparation {
+        let attachmentsForSend = queued ?? pendingAttachments
         let messageAttachments = attachmentsForSend.map { pending in
             MessageAttachment(
                 name: pending.name,
@@ -312,7 +313,7 @@ final class ChatAttachmentCoordinator {
             localAttachmentPreviews[localMessageID] = previews
         }
 
-        pendingAttachments.removeAll()
+        if queued == nil { pendingAttachments.removeAll() }
         return ChatAttachmentSendPreparation(
             attachments: attachmentsForSend,
             messageAttachments: messageAttachments
@@ -328,10 +329,6 @@ final class ChatAttachmentCoordinator {
         let attachments = pendingAttachments
         pendingAttachments.removeAll()
         return attachments
-    }
-
-    func replacePendingAttachments(_ attachments: [PendingAttachment]) {
-        pendingAttachments = attachments
     }
 
     func removeLocalPreviews(messageID: String) {

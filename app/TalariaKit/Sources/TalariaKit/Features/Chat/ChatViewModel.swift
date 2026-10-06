@@ -2402,7 +2402,12 @@ public final class ChatViewModel {
         Set((message.attachments ?? []).compactMap(\.identityKey))
     }
 
-    public func sendMessage(_ draft: String, modelContext: ModelContext? = nil) async -> Bool {
+    /// `queuedAttachments` sends a queued message's own files; nil sends the composer's staged ones.
+    public func sendMessage(
+        _ draft: String,
+        queuedAttachments: [PendingAttachment]? = nil,
+        modelContext: ModelContext? = nil
+    ) async -> Bool {
         // Reentrancy guard, mirroring `sendVoiceNote`. It must run before
         // `prepareForSend` so a rejected send never consumes the composer's
         // staged attachments, and before `performChatSend` so a rejected caller
@@ -2418,7 +2423,7 @@ public final class ChatViewModel {
         // (TAL-635). An older server still gets the files named in the text. A textless send is
         // valid when it carries staged files: compose before `prepareForSend` consumes them.
         let draftText = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        let attachmentsToSend = attachmentCoordinator.pendingAttachments
+        let attachmentsToSend = queuedAttachments ?? attachmentCoordinator.pendingAttachments
         let message = PendingAttachment.chatMessageText(draft: draftText, attachments: attachmentsToSend)
         let hasSendableAttachments = attachmentsToSend.contains {
             !$0.path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -2431,7 +2436,7 @@ public final class ChatViewModel {
         }
 
         let localMessageID = "local-\(UUID().uuidString)"
-        let attachmentPreparation = attachmentCoordinator.prepareForSend(localMessageID: localMessageID)
+        let attachmentPreparation = attachmentCoordinator.prepareForSend(queuedAttachments, localMessageID: localMessageID)
 
         let didStart = await performChatSend(
             sessionID: sessionID,
@@ -2442,7 +2447,8 @@ public final class ChatViewModel {
             messageForAPI: message,
             messageAttachments: attachmentPreparation.messageAttachments,
             apiPayloads: attachmentPreparation.apiPayloads,
-            attachmentsToRestoreOnFailure: attachmentPreparation.attachments,
+            // A queued message keeps its files in the queue when its send fails, not in the composer.
+            attachmentsToRestoreOnFailure: queuedAttachments == nil ? attachmentPreparation.attachments : [],
             modelContext: modelContext
         )
         if didStart {
@@ -5438,13 +5444,10 @@ public final class ChatViewModel {
         isSendingQueuedMessage = true
 
         Task { @MainActor in
-            let savedAttachments = attachmentCoordinator.pendingAttachments
-            attachmentCoordinator.replacePendingAttachments(next.attachments)
-            let sent = await sendMessage(next.text)
+            let sent = await sendMessage(next.text, queuedAttachments: next.attachments)
             if !sent {
                 queuedSlashMessages.insert(next, at: 0)
             }
-            attachmentCoordinator.replacePendingAttachments(savedAttachments)
             isSendingQueuedMessage = false
             // Only chain-drain after a *successful* send. A failed send requeues the message and
             // waits for the next natural trigger (a queue append, stream completion, or an explicit
