@@ -716,7 +716,7 @@ struct ChatView: View {
                     onSendNow: { id in Task { await viewModel.sendQueuedMessageNow(id: id) } },
                     onEdit: { id in
                         showsQueuedMessagesSheet = false
-                        viewModel.editQueuedMessage(id: id)
+                        Task { await viewModel.editQueuedMessage(id: id) }
                     },
                     onRemove: { id in Task { await viewModel.removeQueuedMessage(id: id) } }
                 )
@@ -1759,7 +1759,9 @@ struct ChatView: View {
                 result,
                 parsedCommand: parsedCommand,
                 submittedDraft: submittedDraft,
-                submittedDraftRevision: submittedDraftRevision
+                submittedDraftRevision: submittedDraftRevision,
+                // A typed command leaves the composer either way; a menu send that fails keeps the draft to retry.
+                consumesDraft: command == nil || result.isSuccessfulSubmission
             )
 
             if result != .sendAsMessage {

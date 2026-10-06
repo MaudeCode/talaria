@@ -3189,6 +3189,7 @@ final class QueuedMessagesChipUITests: ChatUITestCase {
         XCTAssertTrue(queueOption.awaitExistence(timeout: 5), "Long-pressing Send did not open the send menu")
         XCTAssertTrue(app.buttons["Steer"].exists)
         XCTAssertTrue(app.buttons["Stop and send"].exists)
+        XCTAssertFalse(app.buttons["Side question"].exists, "A side question waits for the running reply")
         attachScreenshot(named: "send-menu")
         queueOption.tap()
 
@@ -3215,6 +3216,14 @@ final class QueuedMessagesChipUITests: ChatUITestCase {
         let composerInput = app.textViews.firstMatch
         XCTAssertTrue(composerInput.awaitExistence(timeout: 5))
         XCTAssertEqual(composerInput.value as? String, "First queued message", "Edit did not put the message back in the composer")
+
+        // The fixture starts no background task, so the menu send fails and the draft stays to retry.
+        app.buttons["Send"].press(forDuration: 1)
+        let backgroundOption = app.buttons["Run in background"]
+        XCTAssertTrue(backgroundOption.awaitExistence(timeout: 5), "Long-pressing Send did not open the send menu")
+        backgroundOption.tap()
+        XCTAssertTrue(element(labelContaining: "did not return a background task").awaitExistence(timeout: 5))
+        XCTAssertEqual(composerInput.value as? String, "First queued message", "A failed menu send cleared the draft")
     }
 }
 

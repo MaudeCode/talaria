@@ -1229,7 +1229,8 @@ struct MessageComposerView: View {
     }
 
     /// Long-pressing Send offers the other ways to send the draft, so no one types `/queue` (TAL-630).
-    /// Steer, side questions and background tasks cannot carry files, so staged files hide them.
+    /// Steer, side questions and background tasks cannot carry files, so staged files hide them; a side
+    /// question waits for the running reply, so it shows only between replies.
     @ViewBuilder
     private var sendOptionsMenu: some View {
         if !isAnsweringClarification, !showsStopButton, !isActionButtonDisabled {
@@ -1240,9 +1241,10 @@ struct MessageComposerView: View {
                     Button("Steer", systemImage: "arrow.turn.down.right") { submitDraft(as: "steer") }
                 }
                 Button("Stop and send", systemImage: "stop.circle") { submitDraft(as: "interrupt") }
+            } else if !carriesFiles {
+                Button("Side question", systemImage: "bubble.left.and.text.bubble.right") { submitDraft(as: "btw") }
             }
             if !carriesFiles {
-                Button("Side question", systemImage: "bubble.left.and.text.bubble.right") { submitDraft(as: "btw") }
                 Button("Run in background", systemImage: "square.stack.3d.down.right") { submitDraft(as: "background") }
             }
         }

@@ -421,7 +421,7 @@ public final class ChatViewModel {
     private var queuedSlashMessages: [QueuedSlashMessage] = []
     /// What waits to send after the running response, in send order (TAL-630).
     public var queuedMessagePreviews: [QueuedMessagePreview] {
-        queuedSlashMessages.map { QueuedMessagePreview(id: $0.id, text: $0.text, attachmentNames: $0.attachments.map(\.name)) }
+        queuedSlashMessages.map { QueuedMessagePreview(id: $0.id, text: $0.text, attachmentNames: $0.attachments.map(\.name), mayBeOnServer: $0.steerID != nil) }
     }
     /// The session's toolset override (TAL-631); nil until a session detail reports it.
     public private(set) var sessionToolsets: SessionToolsets?
@@ -5358,15 +5358,15 @@ public final class ChatViewModel {
 
     /// Remove: drops a queued message and its files' saved draft copies (TAL-630).
     public func removeQueuedMessage(id: UUID) async {
-        guard let message = takeQueuedMessage(id: id) else { return }
+        guard let message = await takeQueuedMessage(id: id, withdrawing: .cancel) else { return }
         for fileName in message.attachments.compactMap(\.draftFileName) {
             await attachmentCoordinator.deleteDraftCopy(named: fileName)
         }
     }
 
     /// Edit: takes a queued message out of the queue and puts it back in the composer with its files.
-    public func editQueuedMessage(id: UUID) {
-        guard let message = takeQueuedMessage(id: id) else { return }
+    public func editQueuedMessage(id: UUID) async {
+        guard let message = await takeQueuedMessage(id: id, withdrawing: .edit) else { return }
         attachmentCoordinator.restorePendingAttachments(message.attachments)
         if !message.text.isEmpty { returnedComposerTexts.append(message.text) }
     }
@@ -5375,9 +5375,10 @@ public final class ChatViewModel {
     /// a steer the run cannot take queues it again, as `/steer` does.
     public func sendQueuedMessageNow(id: UUID) async {
         guard queuedMessagePreviews.first(where: { $0.id == id })?.canSendNow == true,
-              let message = takeQueuedMessage(id: id)
+              let message = await takeQueuedMessage(id: id, withdrawing: .cancel)
         else { return }
-        switch await steerResponseFromSlashCommand(message.text) {
+        // A steer the run refuses queues again with the pending files, so the composer's own stay out of it.
+        switch await withPendingAttachments(message.attachments, { await steerResponseFromSlashCommand(message.text) }) {
         case .executed(let notice?), .unsupported(let notice):
             pinLocalNoticeMessage(notice)
         default:
@@ -5385,9 +5386,32 @@ public final class ChatViewModel {
         }
     }
 
-    private func takeQueuedMessage(id: UUID) -> QueuedSlashMessage? {
+    /// TAL-441: a queued copy of a failed steer may be on the server, so the server gives it up first; a withdraw that
+    /// cannot reach it puts the message back. It leaves the queue first, so the withdraw's own report cannot take it.
+    private func takeQueuedMessage(id: UUID, withdrawing reason: PendingSteerWithdrawReason) async -> QueuedSlashMessage? {
         guard let index = queuedSlashMessages.firstIndex(where: { $0.id == id }) else { return nil }
-        return queuedSlashMessages.remove(at: index)
+        let message = queuedSlashMessages.remove(at: index)
+        guard let steerID = message.steerID, let sessionID else { return message }
+        do {
+            _ = try await client.withdrawSteer(sessionID: sessionID, steerID: steerID, reason: reason)
+            return message
+        } catch {
+            lastError = error
+            sendErrorMessage = error.localizedDescription
+            // A steer the server reported meanwhile is its own now; only an unreported one waits again.
+            if !closedSteerIDs.contains(steerID), pendingSteerActions[steerID] == nil {
+                queuedSlashMessages.insert(message, at: min(index, queuedSlashMessages.count))
+            }
+            return nil
+        }
+    }
+
+    /// Runs `body` with `attachments` as the pending files, then gives the composer its own back.
+    private func withPendingAttachments<T>(_ attachments: [PendingAttachment], _ body: () async -> T) async -> T {
+        let composerAttachments = attachmentCoordinator.pendingAttachments
+        attachmentCoordinator.replacePendingAttachments(attachments)
+        defer { attachmentCoordinator.replacePendingAttachments(composerAttachments) }
+        return await body()
     }
 
     /// TAL-441: the server reported a steer whose request failed, so it owns the message; the queued copy goes.
@@ -5414,13 +5438,10 @@ public final class ChatViewModel {
         isDrainingQueuedSlashMessage = true
 
         Task { @MainActor in
-            let savedAttachments = attachmentCoordinator.pendingAttachments
-            attachmentCoordinator.replacePendingAttachments(next.attachments)
-            let sent = await sendMessage(next.text)
+            let sent = await withPendingAttachments(next.attachments) { await sendMessage(next.text) }
             if !sent {
                 queuedSlashMessages.insert(next, at: 0)
             }
-            attachmentCoordinator.replacePendingAttachments(savedAttachments)
             isDrainingQueuedSlashMessage = false
             // Only chain-drain after a *successful* send. A failed send requeues the message and
             // waits for the next natural trigger (a queue append, stream completion, or an explicit
