@@ -702,6 +702,191 @@ final class ChatRecoveryUITests: ChatUITestCase {
     }
 }
 
+/// TAL-80: a running chat through the app's real lifecycle, against a fixture server whose run
+/// outlives the app. The test drives the run: `drop` cuts the live stream, `finish` ends the run on
+/// the server whether or not the app is attached. Every journey ends with one prompt and one reply,
+/// so a resend or a replayed segment fails it. A real tunnel's long-lived behavior stays TAL-32's
+/// live smoke.
+class StreamLifecycleUITestCase: ChatUITestCase {
+    let lifecycle = "--ui-test-chat-lifecycle"
+    let prompt = "Run the lifecycle fixture"
+    let opening = "Lifecycle opening."
+    let reply = "Lifecycle opening. Lifecycle finished."
+
+    func startRun() throws {
+        try sendFixtureMessage(prompt)
+        XCTAssertTrue(element(labelContaining: opening).awaitExistence(timeout: 15), "The run never streamed its opening")
+        XCTAssertTrue(app.buttons["Stop response"].exists)
+    }
+
+    func signal(_ name: String) {
+        notify_post("dev.kil.talaria.ui-test.lifecycle-\(name)")
+    }
+
+    /// One prompt and one whole reply, and the run is over.
+    func assertSettledOnce() {
+        XCTAssertTrue(app.staticTexts[reply].awaitExistence(timeout: 30), "The run never settled to its whole reply")
+        XCTAssertTrue(app.buttons["Stop response"].awaitNonExistence(timeout: 10), "The settled run still offers Stop")
+        XCTAssertEqual(countElements(label: prompt), 1, "The prompt was sent again")
+        XCTAssertEqual(countElements(containing: opening), 1, "Part of the reply repeated")
+        attachScreenshot(named: "Settled once")
+    }
+}
+
+final class StreamLifecycleUITests: StreamLifecycleUITestCase {
+    /// Killed while away mid-run, the relaunched app paints the run it cached before the server
+    /// answers, then rejoins the same run by status and replay instead of sending again.
+    func testRelaunchAfterTheAppIsKilledPaintsTheCachedRunThenRejoinsIt() throws {
+        let cache = "--ui-test-persistent-cache"
+        launchFixture(additionalArguments: [lifecycle, cache, "--ui-test-reset-persistent-cache"])
+        try startRun()
+        sendToBackground()
+        app.terminate()
+
+        launchFixture(additionalArguments: [lifecycle, cache, "--ui-test-hold-first-transcript-load"])
+        let session = fixtureSessionButton
+        XCTAssertTrue(session.awaitExistence(timeout: 15), "Missing deterministic session fixture")
+        tapFixtureSession(session)
+        XCTAssertTrue(app.staticTexts[prompt].awaitExistence(timeout: 15), "The relaunch did not paint the cached prompt")
+        XCTAssertTrue(element(label: "Syncing messages with the server").exists, "The cached run was not shown before the server answered")
+        attachScreenshot(named: "Cached run before the server answers")
+
+        XCTAssertTrue(
+            releaseHeldLoads(timeout: 30) { element(labelContaining: opening).exists && !element(label: "Syncing messages with the server").exists },
+            "The relaunched chat did not rejoin the run and replay its reply so far"
+        )
+        XCTAssertTrue(app.buttons["Stop response"].exists, "The relaunched chat lost the running response")
+        signal("finish")
+        assertSettledOnce()
+    }
+
+    /// A refused connection, a timeout and a 503 while the run continues: the chat reconnects,
+    /// never asks to sign in, and finishes the same run on the rejoined stream.
+    func testUnreachableServerReconnectsWithoutSigningOutAndFinishesTheRun() throws {
+        launchFixture(additionalArguments: [lifecycle, "--ui-test-lifecycle-unreachable"])
+        try startRun()
+        signal("drop")
+
+        let reconnecting = element(label: "Hermes is reconnecting the response stream")
+        XCTAssertTrue(reconnecting.awaitExistence(timeout: 15), "A dropped stream did not show it was reconnecting")
+        attachScreenshot(named: "Reconnecting while unreachable")
+        XCTAssertTrue(reconnecting.awaitNonExistence(timeout: 40), "The chat never reconnected once the server was reachable")
+        XCTAssertFalse(app.secureTextFields["ReauthenticatePassword"].exists, "An unreachable server asked the user to sign in")
+        XCTAssertTrue(app.buttons["Stop response"].exists, "The reconnected chat lost the running response")
+
+        signal("finish")
+        assertSettledOnce()
+    }
+
+    /// The run finishes while the server is unreachable: once it answers, its status says the
+    /// run is over and the chat settles to the server's transcript.
+    func testRunThatFinishedWhileUnreachableSettlesToTheServerTranscript() throws {
+        launchFixture(additionalArguments: [lifecycle, "--ui-test-lifecycle-unreachable"])
+        try startRun()
+        signal("drop")
+        XCTAssertTrue(
+            element(label: "Hermes is reconnecting the response stream").awaitExistence(timeout: 15),
+            "A dropped stream did not show it was reconnecting"
+        )
+        signal("finish")
+
+        assertSettledOnce()
+    }
+
+    /// The sign-in session expires while the stream is down: unlike an unreachable server, the
+    /// chat asks to sign in, and once signed in rejoins and finishes the same run.
+    func testExpiredSessionWhileReconnectingAsksToSignInThenRejoinsTheRun() throws {
+        launchFixture(additionalArguments: [lifecycle, "--ui-test-lifecycle-session-expiry"])
+        try startRun()
+        signal("drop")
+
+        let password = app.secureTextFields["ReauthenticatePassword"]
+        XCTAssertTrue(password.awaitExistence(timeout: 20), "A 401 while reconnecting did not ask the user to sign in")
+        attachScreenshot(named: "Sign in while reconnecting")
+        _ = password.settledFrame
+        // A tap while the sheet still settles can leave the field without focus.
+        repeatStep(3, until: { app.keyboards.firstMatch.exists }) {
+            password.tap()
+            _ = app.keyboards.firstMatch.awaitExistence(timeout: 5)
+        }
+        password.typeText("fixture-password")
+        app.buttons["ReauthenticateSignIn"].tap()
+        XCTAssertTrue(password.awaitNonExistence(timeout: 15), "Signing in did not close the sign-in sheet")
+
+        XCTAssertTrue(
+            element(label: "Hermes is reconnecting the response stream").awaitNonExistence(timeout: 20),
+            "The chat did not reconnect after signing in"
+        )
+        XCTAssertTrue(app.buttons["Stop response"].awaitExistence(timeout: 10), "The chat lost the running response after signing in")
+        signal("finish")
+        assertSettledOnce()
+    }
+}
+
+/// Needs the simulator's notification service, which a parallel-testing clone does not answer:
+/// `scripts/test-ios` runs this class on the leased simulator itself, as CI runs every class.
+final class ResponseCompletionAlertUITests: StreamLifecycleUITestCase {
+    /// Away mid-run and back, the chat keeps the same run. When the run then finishes while the
+    /// app is away but still has runtime, the reply alerts, and tapping the alert opens the chat.
+    func testBackgroundedRunKeepsStreamingAndItsCompletionAlertOpensTheChat() throws {
+        launchFixture(additionalArguments: [lifecycle])
+        turnOnResponseCompleteAlerts()
+        try startRun()
+
+        sendToBackground()
+        app.activate()
+        XCTAssertTrue(app.buttons["Stop response"].awaitExistence(timeout: 10), "The run stopped when the app came back")
+        XCTAssertEqual(countElements(label: prompt), 1, "Returning to the app resent the prompt")
+        XCTAssertEqual(countElements(containing: opening), 1, "Returning to the app repeated the reply")
+
+        sendToBackground()
+        signal("finish")
+        let alert = XCUIApplication(bundleIdentifier: "com.apple.springboard").descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@", "Response complete")).firstMatch
+        XCTAssertTrue(alert.awaitExistence(timeout: 20), "The run finished in the background without an alert")
+        // The banner belongs to SpringBoard, so only a screen capture shows it.
+        let banner = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        banner.name = "Completion alert"
+        banner.lifetime = .keepAlways
+        add(banner)
+        alert.tap()
+
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 10), "Tapping the alert did not open the app")
+        XCTAssertTrue(app.navigationBars[fixtureSessionTitle].awaitExistence(timeout: 10), "Tapping the alert did not open its chat")
+        assertSettledOnce()
+    }
+
+    /// The user's own path: the switch in Settings, and the system's permission prompt when the
+    /// simulator has not answered it yet.
+    private func turnOnResponseCompleteAlerts() {
+        openSettings()
+        tapSettingsCategory(id: "notificationsAndHaptics", title: "Notifications & Haptics")
+        let alerts = app.switches["Response Complete Alerts"]
+        XCTAssertTrue(alerts.awaitExistence(timeout: 10), "Missing the Response Complete Alerts switch")
+        // The row's footnote appears once iOS reports the permission; a tap before then waits on the
+        // same request. A simulator whose notification service never answers fails here, not later.
+        let permissionKnown = app.staticTexts.matching(NSPredicate(
+            format: "label IN %@", ["iOS permission not requested.", "iOS notifications allowed."]
+        )).firstMatch
+        XCTAssertTrue(permissionKnown.awaitExistence(timeout: 60), "The simulator's notification service never reported the permission")
+        _ = alerts.settledFrame
+        let allow = XCUIApplication(bundleIdentifier: "com.apple.springboard").alerts.buttons["Allow"]
+        let isOn = { alerts.value as? String == "1" }
+        // The row's own switch takes the touch; a tap while the screen settles can be dropped.
+        repeatStep(3, until: { isOn() || allow.exists }) {
+            let knob = alerts.switches.firstMatch
+            tapCenter(of: knob.exists ? knob : alerts)
+            _ = poll(timeout: 10) { isOn() || allow.exists }
+        }
+        if allow.exists { allow.tap() }
+        XCTAssertTrue(poll(timeout: 10) { alerts.value as? String == "1" }, "Response Complete Alerts did not turn on")
+        app.navigationBars.buttons["BackButton"].firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["Settings"].awaitExistence(timeout: Self.navigationTimeout))
+        openSidebarDestination("Chats")
+        XCTAssertTrue(app.navigationBars["Chats"].awaitExistence(timeout: Self.navigationTimeout), "Settings did not return to the session list")
+    }
+}
+
 /// A steer sent from another device shows as a pending bubble with the server's actions; Send now says when it must
 /// wait, and Edit puts its text back in the composer (TAL-426).
 final class PendingSteerUITests: ChatUITestCase {
@@ -2668,7 +2853,12 @@ fileprivate extension ChatUITestCase {
         input.typeText(message)
         let send = app.buttons["Send"]
         XCTAssertTrue(send.awaitExistence(timeout: Self.navigationTimeout))
+        // A loaded runner can miss the tap, or read Send's frame while the keyboard still moves it.
+        // The message still in the composer says nothing was sent, so tapping again cannot send twice.
         tapCenter(of: send)
+        repeatStep(2, until: { poll(timeout: 5) { input.value as? String != message } }) {
+            tapCenter(of: send)
+        }
     }
 
     func countElements(label: String) -> Int {

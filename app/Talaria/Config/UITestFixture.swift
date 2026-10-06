@@ -54,6 +54,10 @@ struct UITestFixtureEnvironment {
     /// Answers the chat's first transcript load, so the cache exists, then holds every reopen
     /// until the test releases it, so "Syncing messages" stays over the cached rows (TAL-436).
     nonisolated static let holdTranscriptReloadsArgument = "--ui-test-hold-transcript-reloads"
+    /// Holds only the chat's first transcript load, so a relaunch shows the transcript it cached
+    /// before the server answers, and every later load (rejoining a run, settling it) goes through
+    /// (TAL-80).
+    nonisolated static let holdFirstTranscriptLoadArgument = "--ui-test-hold-first-transcript-load"
     /// Changes server data while the app is in the background, the way another client or a
     /// scheduled run would: the fixture chat gains a reply and Tasks gains a job, so UI tests can
     /// see open screens catch up on return (TAL-434, TAL-435).
@@ -72,7 +76,7 @@ struct UITestFixtureEnvironment {
     /// composer report it and retry (TAL-636).
     nonisolated static let failFirstSessionCreationArgument = "--ui-test-fail-first-session-creation"
 
-    private nonisolated static var keepsCachesAcrossLaunches: Bool {
+    nonisolated static var keepsCachesAcrossLaunches: Bool {
         let arguments = ProcessInfo.processInfo.arguments
         return arguments.contains(persistentCacheArgument) && !arguments.contains(resetPersistentCacheArgument)
     }
@@ -137,6 +141,7 @@ struct UITestFixtureEnvironment {
             initialDrafts[.session(server: serverURL, sessionID: UITestFixtureURLProtocol.sessionID)] = ChatDraft(text: "Ordinary fixture draft")
         }
         UITestFixtureHold.shared.listen()
+        if UITestLifecycleFixture.isEnabled { UITestLifecycleServer.shared.listen() }
         UITestFixtureURLProtocol.WorkspaceFixture.listenForGitWriteGrant()
         // Theme is a standard-defaults preference a test can change, so every fixture
         // launch starts from the same appearance even if a previous run left it switched.
@@ -158,7 +163,7 @@ struct UITestFixtureEnvironment {
             ComposerSTTProviderPreference.defaultValue.rawValue,
             forKey: ComposerSTTProviderPreference.storageKey
         )
-        UserDefaults.standard.set(chatScenario == nil, forKey: StreamedTextAnimationSettings.isEnabledKey)
+        UserDefaults.standard.set(chatScenario == nil && !UITestLifecycleFixture.isEnabled, forKey: StreamedTextAnimationSettings.isEnabledKey)
         UserDefaults.standard.set(true, forKey: ChatTranscriptDisplaySettings.showsThinkingAndToolCardsKey)
         UserDefaults.standard.set(
             chatScenario != nil,
@@ -176,6 +181,10 @@ struct UITestFixtureEnvironment {
             ProviderQuotaRefreshInterval.defaultValue.rawValue,
             forKey: ProviderQuotaRefreshInterval.storageKey
         )
+
+        // Response Complete Alerts start off and unasked, so a journey turns them on in Settings.
+        UserDefaults.standard.set(false, forKey: ResponseCompletionNotifications.isEnabledKey)
+        UserDefaults.standard.removeObject(forKey: ResponseCompletionNotifications.hasRequestedPermissionKey)
 
         prepareSharedImportInbox()
         UITestFixtureURLProtocol.prepareChangeWhileBackgrounded()
@@ -532,16 +541,19 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     private static func holdsTranscriptReload(for url: URL) -> Bool {
+        let arguments = ProcessInfo.processInfo.arguments
+        let holdsFirst = arguments.contains(UITestFixtureEnvironment.holdFirstTranscriptLoadArgument)
         guard url.path == "/api/session",
-              ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.holdTranscriptReloadsArgument)
+              holdsFirst || arguments.contains(UITestFixtureEnvironment.holdTranscriptReloadsArgument)
         else { return false }
         return recoveryState.withLock {
             transcriptReads += 1
-            return transcriptReads > 1
+            return holdsFirst ? transcriptReads == 1 : transcriptReads > 1
         }
     }
 
     private func sendResponse(for url: URL) {
+        if handleLifecycleRequest(url) { return }
         let isEventStream = url.path.hasSuffix("/stream")
         let contentType = Self.workspaceContentType(for: url)
             ?? (isEventStream ? "text/event-stream" : "application/json")
@@ -580,6 +592,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     override func stopLoading() {
         lifecycleLock.withLock { stopped = true }
         Self.chatState.wakeWaiters()
+        if UITestLifecycleFixture.isEnabled { UITestLifecycleServer.shared.wake() }
     }
 
     private static let sessionCreationFailureLock = NSLock()
@@ -1211,7 +1224,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         return json(["session": detail])
     }
 
-    private static func session(id: String, title: String) -> [String: Any] {
+    static func session(id: String, title: String) -> [String: Any] {
         [
             "session_id": id,
             "title": title,
@@ -1425,7 +1438,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         return ["main": ["provider": "fixture-provider", "model": "fixture-model"], "tasks": tasks]
     }
 
-    private static func json(_ object: Any) -> Data {
+    static func json(_ object: Any) -> Data {
         try! JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
     }
 
@@ -1607,7 +1620,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         Self.chatState.wait(until: predicate, stopped: { [weak self] in self?.isStopped != false })
     }
 
-    private var isStopped: Bool {
+    var isStopped: Bool {
         lifecycleLock.withLock { stopped }
     }
 

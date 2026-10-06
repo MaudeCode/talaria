@@ -313,6 +313,7 @@
 		C06900000000000000000001 /* UITestFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = C06900000000000000000002 /* UITestFixture.swift */; };
 		C06900000000000000000003 /* UITestFixture+Kanban.swift in Sources */ = {isa = PBXBuildFile; fileRef = C06900000000000000000004 /* UITestFixture+Kanban.swift */; };
 		C06900000000000000000005 /* UITestFixture+Panels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C06900000000000000000006 /* UITestFixture+Panels.swift */; };
+		C08000000000000000000001 /* UITestFixture+Lifecycle.swift in Sources */ = {isa = PBXBuildFile; fileRef = C08000000000000000000002 /* UITestFixture+Lifecycle.swift */; };
 		C06900000000000000000007 /* UITestFixture+Workspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = C06900000000000000000008 /* UITestFixture+Workspace.swift */; };
 		22AB000000000000000000B2 /* WorkspaceManagerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22AB000000000000000000F2 /* WorkspaceManagerView.swift */; };
 		C03120000000000000B004 /* GitWorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03120000000000000F004 /* GitWorkspaceView.swift */; };
@@ -737,6 +738,7 @@
 		C06900000000000000000002 /* UITestFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UITestFixture.swift; sourceTree = "<group>"; };
 		C06900000000000000000004 /* UITestFixture+Kanban.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UITestFixture+Kanban.swift"; sourceTree = "<group>"; };
 		C06900000000000000000006 /* UITestFixture+Panels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UITestFixture+Panels.swift"; sourceTree = "<group>"; };
+		C08000000000000000000002 /* UITestFixture+Lifecycle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UITestFixture+Lifecycle.swift"; sourceTree = "<group>"; };
 		C06900000000000000000008 /* UITestFixture+Workspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UITestFixture+Workspace.swift"; sourceTree = "<group>"; };
 		22AB000000000000000000F2 /* WorkspaceManagerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceManagerView.swift; sourceTree = "<group>"; };
 		C03120000000000000F004 /* GitWorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitWorkspaceView.swift; sourceTree = "<group>"; };
@@ -1308,6 +1310,7 @@
 				C06900000000000000000002 /* UITestFixture.swift */,
 				C06900000000000000000004 /* UITestFixture+Kanban.swift */,
 				C06900000000000000000006 /* UITestFixture+Panels.swift */,
+				C08000000000000000000002 /* UITestFixture+Lifecycle.swift */,
 				C06900000000000000000008 /* UITestFixture+Workspace.swift */,
 				4F9EB4168ADAD8328E21CCDF /* AppIconChoice+Current.swift */,
 			);
@@ -1860,6 +1863,7 @@
 				C06900000000000000000001 /* UITestFixture.swift in Sources */,
 				C06900000000000000000003 /* UITestFixture+Kanban.swift in Sources */,
 				C06900000000000000000005 /* UITestFixture+Panels.swift in Sources */,
+				C08000000000000000000001 /* UITestFixture+Lifecycle.swift in Sources */,
 				C06900000000000000000007 /* UITestFixture+Workspace.swift in Sources */,
 				C09300000000000000000001 /* HapticButton.swift in Sources */,
 				C43600000000000000000001 /* StatusChip.swift in Sources */,
