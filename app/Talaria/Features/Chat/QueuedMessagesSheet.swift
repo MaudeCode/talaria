@@ -2,7 +2,8 @@ import SwiftUI
 import TalariaKit
 
 /// The messages waiting to send after the running reply, in full (TAL-630): each one can be sent now,
-/// edited back in the composer, or removed. The sheet closes once the queue is empty.
+/// edited back in the composer, or removed, unless it is a steer the server may already hold. The sheet
+/// closes once the queue is empty.
 struct QueuedMessagesSheet: View {
     let previews: [QueuedMessagePreview]
     let onSendNow: (UUID) -> Void
@@ -17,8 +18,10 @@ struct QueuedMessagesSheet: View {
                 ForEach(Array(previews.enumerated()), id: \.element.id) { index, preview in
                     card(preview, position: index + 1)
                         .swipeActions(edge: .trailing) {
-                            Button(role: .destructive) { onRemove(preview.id) } label: {
-                                Label("Remove", systemImage: "trash")
+                            if preview.canChange {
+                                Button(role: .destructive) { onRemove(preview.id) } label: {
+                                    Label("Remove", systemImage: "trash")
+                                }
                             }
                         }
                 }
@@ -57,25 +60,31 @@ struct QueuedMessagesSheet: View {
                     .truncationMode(.middle)
             }
 
-            HStack(spacing: 20) {
-                if preview.canSendNow {
-                    Button { onSendNow(preview.id) } label: {
-                        Label("Send now", systemImage: "arrow.up")
+            if preview.canChange {
+                HStack(spacing: 20) {
+                    if preview.canSendNow {
+                        Button { onSendNow(preview.id) } label: {
+                            Label("Send now", systemImage: "arrow.up")
+                        }
+                    }
+                    Button { onEdit(preview.id) } label: {
+                        Label("Edit", systemImage: "pencil")
+                    }
+                    Spacer(minLength: 0)
+                    Button(role: .destructive) { onRemove(preview.id) } label: {
+                        Label("Remove", systemImage: "trash")
                     }
                 }
-                Button { onEdit(preview.id) } label: {
-                    Label("Edit", systemImage: "pencil")
-                }
-                Spacer(minLength: 0)
-                Button(role: .destructive) { onRemove(preview.id) } label: {
-                    Label("Remove", systemImage: "trash")
-                }
+                // Separate buttons in one row: a list row otherwise takes every tap as the row's.
+                .buttonStyle(.borderless)
+                .font(AppFont.subheadline(weight: .semibold))
+                .labelStyle(.titleAndIcon)
+                .frame(minHeight: 44)
+            } else {
+                Text("The server may already have this steer. If it doesn't, it sends after this reply.")
+                    .font(AppFont.footnote())
+                    .foregroundStyle(.secondary)
             }
-            // Separate buttons in one row: a list row otherwise takes every tap as the row's.
-            .buttonStyle(.borderless)
-            .font(AppFont.subheadline(weight: .semibold))
-            .labelStyle(.titleAndIcon)
-            .frame(minHeight: 44)
         }
         .padding(.vertical, 6)
     }

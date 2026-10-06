@@ -716,7 +716,7 @@ struct ChatView: View {
                     onSendNow: { id in Task { await viewModel.sendQueuedMessageNow(id: id) } },
                     onEdit: { id in
                         showsQueuedMessagesSheet = false
-                        Task { await viewModel.editQueuedMessage(id: id) }
+                        viewModel.editQueuedMessage(id: id)
                     },
                     onRemove: { id in Task { await viewModel.removeQueuedMessage(id: id) } }
                 )

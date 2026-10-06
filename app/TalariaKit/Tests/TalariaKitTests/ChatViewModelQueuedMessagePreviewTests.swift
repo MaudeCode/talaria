@@ -50,7 +50,7 @@ extension ChatViewModelSendTests {
         await viewModel.uploadAttachment(data: Data("notes".utf8), filename: "notes.txt")
         try await queue("fix the typo", on: viewModel)
 
-        await viewModel.editQueuedMessage(id: try XCTUnwrap(viewModel.queuedMessagePreviews.first).id)
+        viewModel.editQueuedMessage(id: try XCTUnwrap(viewModel.queuedMessagePreviews.first).id)
 
         XCTAssertTrue(viewModel.queuedMessagePreviews.isEmpty)
         XCTAssertEqual(viewModel.takeReturnedComposerTexts(), ["fix the typo"])
@@ -84,29 +84,47 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(viewModel.pendingAttachments.map(\.name), ["notes.txt"])
     }
 
-    /// TAL-441: a queued copy of a steer whose request failed may still be on the server, which has to give it up first.
-    func testAQueuedSteerTheServerMayHoldIsWithdrawnThereBeforeItIsRemoved() async throws {
-        var withdrawStatus = 503
-        var withdrawnIDs: [String] = []
-        let viewModel = try makeQueueViewModel(
-            steerStatus: { 503 },
-            onWithdraw: { withdrawnIDs.append($0); return withdrawStatus }
-        ) { 1 }
+    /// TAL-441: a queued copy of a steer whose request failed may be on the server, which cannot say whether it never
+    /// arrived or the Agent took it, so the copy cannot be sent now, edited or removed.
+    func testAQueuedSteerTheServerMayHoldCannotBeChanged() async throws {
+        var steerCount = 0
+        let viewModel = try makeQueueViewModel(onSteer: { _ in steerCount += 1 }, steerStatus: { 503 }) { 1 }
         _ = await viewModel.sendMessage("first message")
         let steer = try XCTUnwrap(SlashCommandCatalog.command(named: "steer"))
         _ = await viewModel.executeSlashCommand(steer, args: "maybe delivered")
         let queued = try XCTUnwrap(viewModel.queuedMessagePreviews.first)
         XCTAssertFalse(queued.canSendNow, "Steering it again could deliver it twice")
+        XCTAssertFalse(queued.canChange)
 
+        await viewModel.sendQueuedMessageNow(id: queued.id)
         await viewModel.removeQueuedMessage(id: queued.id)
-        XCTAssertEqual(queueSummary(viewModel), ["maybe delivered|0"], "A failed withdraw keeps it queued")
+        viewModel.editQueuedMessage(id: queued.id)
 
-        withdrawStatus = 200
-        await viewModel.editQueuedMessage(id: queued.id)
-        XCTAssertTrue(viewModel.queuedMessagePreviews.isEmpty)
-        XCTAssertEqual(withdrawnIDs.count, 2)
-        XCTAssertEqual(Set(withdrawnIDs).count, 1)
-        XCTAssertEqual(viewModel.takeReturnedComposerTexts(), ["maybe delivered"])
+        XCTAssertEqual(queueSummary(viewModel), ["maybe delivered|0"])
+        XCTAssertEqual(steerCount, 1, "Only the original steer reached the server")
+        XCTAssertTrue(viewModel.takeReturnedComposerTexts().isEmpty)
+    }
+
+    func testSendNowThatCannotStartPutsTheMessageBack() async throws {
+        let streamClient = SpySSEStreamingClient()
+        var chatStartCount = 0
+        let viewModel = try makeQueueViewModel(
+            streamClient: streamClient,
+            startStatus: { chatStartCount == 1 ? 200 : 503 },
+            onStart: { chatStartCount += 1 }
+        ) { 1 }
+        _ = await viewModel.sendMessage("first message")
+        try await queue("try again", on: viewModel)
+        try await queue("later", on: viewModel)
+        // The reply ends and the drain's start fails, so both wait with nothing running.
+        streamClient.emit(.streamEnd)
+        try await waitUntil { chatStartCount == 2 && viewModel.activeStreamID == nil }
+        try await waitUntil { viewModel.queuedMessagePreviews.count == 2 }
+
+        await viewModel.sendQueuedMessageNow(id: try XCTUnwrap(viewModel.queuedMessagePreviews.first).id)
+
+        XCTAssertEqual(chatStartCount, 3)
+        XCTAssertEqual(queueSummary(viewModel), ["try again|0", "later|0"], "A send that cannot start loses nothing")
     }
 
     private func queue(_ text: String, on viewModel: ChatViewModel) async throws {
@@ -123,7 +141,8 @@ extension ChatViewModelSendTests {
         draftAttachmentStore: RecordingSendDraftAttachmentStore = RecordingSendDraftAttachmentStore(),
         onSteer: @escaping (String) -> Void = { _ in },
         steerStatus: @escaping () -> Int = { 200 },
-        onWithdraw: @escaping (String) -> Int = { _ in 200 },
+        startStatus: @escaping () -> Int = { 200 },
+        onStart: @escaping () -> Void = {},
         nextStream: @escaping () -> Int
     ) throws -> ChatViewModel {
         try makeViewModel(streamClient: streamClient ?? SpySSEStreamingClient(), draftAttachmentStore: draftAttachmentStore) { request in
@@ -133,13 +152,11 @@ extension ChatViewModelSendTests {
                 {"filename": "notes.txt", "path": "/tmp/workspace/notes.txt", "size": 5, "mime": "text/plain", "is_image": false}
                 """, for: request)
             case "/api/chat/start":
-                return apiTestJSONResponse(#"{"session_id":"session-abc","stream_id":"stream-\#(nextStream())"}"#, for: request)
+                onStart()
+                return apiTestJSONResponse(#"{"session_id":"session-abc","stream_id":"stream-\#(nextStream())"}"#, statusCode: startStatus(), for: request)
             case "/api/chat/steer":
                 onSteer(try apiTestJSONBody(from: request)["text"] as? String ?? "")
                 return apiTestJSONResponse(#"{"accepted":true,"stream_id":"stream-1"}"#, statusCode: steerStatus(), for: request)
-            case "/api/chat/steer/withdraw":
-                let status = onWithdraw(try apiTestJSONBody(from: request)["steer_id"] as? String ?? "")
-                return apiTestJSONResponse(#"{"withdrawn":false}"#, statusCode: status, for: request)
             default:
                 XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
                 throw URLError(.badURL)

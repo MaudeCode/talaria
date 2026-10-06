@@ -5358,52 +5358,44 @@ public final class ChatViewModel {
 
     /// Remove: drops a queued message and its files' saved draft copies (TAL-630).
     public func removeQueuedMessage(id: UUID) async {
-        guard let message = await takeQueuedMessage(id: id, withdrawing: .cancel) else { return }
+        guard let message = takeQueuedMessage(id: id)?.message else { return }
         for fileName in message.attachments.compactMap(\.draftFileName) {
             await attachmentCoordinator.deleteDraftCopy(named: fileName)
         }
     }
 
     /// Edit: takes a queued message out of the queue and puts it back in the composer with its files.
-    public func editQueuedMessage(id: UUID) async {
-        guard let message = await takeQueuedMessage(id: id, withdrawing: .edit) else { return }
+    public func editQueuedMessage(id: UUID) {
+        guard let message = takeQueuedMessage(id: id)?.message else { return }
         attachmentCoordinator.restorePendingAttachments(message.attachments)
         if !message.text.isEmpty { returnedComposerTexts.append(message.text) }
     }
 
     /// Send now: steers a queued text message into the running reply instead of waiting for it to end;
-    /// a steer the run cannot take queues it again, as `/steer` does.
+    /// a steer the run cannot take queues it again, as `/steer` does, and a send that cannot start puts it back.
     public func sendQueuedMessageNow(id: UUID) async {
         guard queuedMessagePreviews.first(where: { $0.id == id })?.canSendNow == true,
-              let message = await takeQueuedMessage(id: id, withdrawing: .cancel)
+              let (message, index) = takeQueuedMessage(id: id)
         else { return }
         // A steer the run refuses queues again with the pending files, so the composer's own stay out of it.
         switch await withPendingAttachments(message.attachments, { await steerResponseFromSlashCommand(message.text) }) {
-        case .executed(let notice?), .unsupported(let notice):
+        case .executed(let notice?):
+            pinLocalNoticeMessage(notice)
+        case .unsupported(let notice):
+            queuedSlashMessages.insert(message, at: min(index, queuedSlashMessages.count))
             pinLocalNoticeMessage(notice)
         default:
             break
         }
     }
 
-    /// TAL-441: a queued copy of a failed steer may be on the server, so the server gives it up first; a withdraw that
-    /// cannot reach it puts the message back. It leaves the queue first, so the withdraw's own report cannot take it.
-    private func takeQueuedMessage(id: UUID, withdrawing reason: PendingSteerWithdrawReason) async -> QueuedSlashMessage? {
-        guard let index = queuedSlashMessages.firstIndex(where: { $0.id == id }) else { return nil }
-        let message = queuedSlashMessages.remove(at: index)
-        guard let steerID = message.steerID, let sessionID else { return message }
-        do {
-            _ = try await client.withdrawSteer(sessionID: sessionID, steerID: steerID, reason: reason)
-            return message
-        } catch {
-            lastError = error
-            sendErrorMessage = error.localizedDescription
-            // A steer the server reported meanwhile is its own now; only an unreported one waits again.
-            if !closedSteerIDs.contains(steerID), pendingSteerActions[steerID] == nil {
-                queuedSlashMessages.insert(message, at: min(index, queuedSlashMessages.count))
-            }
-            return nil
-        }
+    /// TAL-441: a queued copy of a failed steer may be on the server, which cannot say whether it never arrived or the
+    /// Agent took it, so it stays as it is until the server reports it or the run ends.
+    private func takeQueuedMessage(id: UUID) -> (message: QueuedSlashMessage, index: Int)? {
+        guard let index = queuedSlashMessages.firstIndex(where: { $0.id == id }),
+              queuedSlashMessages[index].steerID == nil
+        else { return nil }
+        return (queuedSlashMessages.remove(at: index), index)
     }
 
     /// Runs `body` with `attachments` as the pending files, then gives the composer its own back.
