@@ -3169,19 +3169,28 @@ final class KanbanCardActionsUITests: TalariaUITestCase {
 /// each one in full and sends it now, edits it or removes it (TAL-630).
 final class QueuedMessagesChipUITests: ChatUITestCase {
     func testQueuedMessagesSheetShowsThemInFullAndRemovesAndEditsThem() throws {
-        launchChatFixture(argument: "--ui-test-chat-controls", trace: "start -> token -> queue x2 -> remove -> edit")
+        launchChatFixture(argument: "--ui-test-chat-controls", trace: "start -> token -> /queue -> Send menu queue -> remove -> edit")
         try sendFixtureMessage("Run the deterministic fixture")
         XCTAssertTrue(app.staticTexts["Waiting for control input."].awaitExistence(timeout: 5))
 
+        // The first is queued with `/queue`; the chip replaces the old "Queued for next turn" notice.
         let input = app.textViews.firstMatch
-        // The second is a paragraph, so the sheet shows a long message in full.
+        input.typeText("/queue First queued message")
+        tapCenter(of: app.buttons["Send"])
+        XCTAssertTrue(app.buttons["1 queued"].awaitExistence(timeout: 5), "/queue did not queue the message")
+        XCTAssertFalse(element(labelContaining: "Queued for next turn").exists, "Queuing still shows a notice")
+
+        // The second, a paragraph so the sheet shows a long message in full, is queued from Send's long-press menu.
         let long = "Second queued message: once this finishes, rerun the full suite on the hosted runner, "
             + "compare the timings against yesterday's run, and write up anything that got slower than ten percent."
-        for message in ["First queued message", long] {
-            input.typeText("/queue \(message)")
-            tapCenter(of: app.buttons["Send"])
-            XCTAssertTrue(element(labelContaining: "Queued for next turn").awaitExistence(timeout: 5))
-        }
+        input.typeText(long)
+        app.buttons["Send"].press(forDuration: 1)
+        let queueOption = app.buttons["Queue"]
+        XCTAssertTrue(queueOption.awaitExistence(timeout: 5), "Long-pressing Send did not open the send menu")
+        XCTAssertTrue(app.buttons["Steer"].exists)
+        XCTAssertTrue(app.buttons["Stop and send"].exists)
+        attachScreenshot(named: "send-menu")
+        queueOption.tap()
 
         let chip = app.buttons["2 queued"]
         XCTAssertTrue(chip.awaitExistence(timeout: 5), "The queue chip is missing")

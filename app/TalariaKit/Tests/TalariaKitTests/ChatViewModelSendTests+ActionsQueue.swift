@@ -1524,7 +1524,7 @@ extension ChatViewModelSendTests {
         // 2. Queue one slash message behind the active stream.
         let queueCommand = try XCTUnwrap(SlashCommandCatalog.command(named: "queue"))
         let queued = await viewModel.executeSlashCommand(queueCommand, args: "retry-me")
-        XCTAssertEqual(queued, .executed(message: "Queued for next turn (#1)."))
+        XCTAssertEqual(queued, .executed(message: nil))
 
         let attemptsBeforeDrain = startChatAttempts // only the establishing send so far
 
@@ -1609,7 +1609,7 @@ extension ChatViewModelSendTests {
         await viewModel.uploadAttachment(data: Data("notes".utf8), filename: "notes.txt")
         let queueCommand = try XCTUnwrap(SlashCommandCatalog.command(named: "queue"))
         let queued = await viewModel.executeSlashCommand(queueCommand, args: "queued message")
-        XCTAssertEqual(queued, .executed(message: "Queued for next turn (#1)."))
+        XCTAssertEqual(queued, .executed(message: nil))
 
         streamClient.emit(.streamEnd)
         try await waitUntil { chatStartCount == 2 }
@@ -1659,7 +1659,7 @@ extension ChatViewModelSendTests {
 
         let queueCommand = try XCTUnwrap(SlashCommandCatalog.command(named: "queue"))
         let queued = await viewModel.executeSlashCommand(queueCommand, args: "queued message")
-        XCTAssertEqual(queued, .executed(message: "Queued for next turn (#1)."))
+        XCTAssertEqual(queued, .executed(message: nil))
 
         let voiceSend = Task { @MainActor in
             await viewModel.sendVoiceNote(audioData: Data("fake-m4a-bytes".utf8), filename: "voice-note.m4a")

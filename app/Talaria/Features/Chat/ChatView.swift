@@ -308,6 +308,9 @@ struct ChatView: View {
                     }
                 }
             },
+            onSendAs: { command in
+                Task { await sendDraftMessage(as: command) }
+            },
             onSendVoiceNote: { data, filename in
                 Task { await sendVoiceNote(audioData: data, filename: filename) }
             },
@@ -1741,15 +1744,17 @@ struct ChatView: View {
         }
     }
 
-    private func sendDraftMessage() async {
+    /// Sends the draft; `command` (the send button's long-press menu) sends it as that slash command.
+    private func sendDraftMessage(as command: String? = nil) async {
         guard viewModel.clarificationPrompt == nil else { return }
         let submittedDraft = draftMessage
         let submittedDraftRevision = draftRevision
         let shouldRestoreFocusAfterSend = composerIsFocused
+        let commandText = command.map { "/\($0) \(submittedDraft)" } ?? submittedDraft
 
-        if submittedDraft.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("/") {
-            let parsedCommand = SlashCommandExecutor.parse(submittedDraft, catalog: viewModel.agentCommands)?.command
-            let result = await SlashCommandExecutor.execute(text: submittedDraft, viewModel: viewModel)
+        if commandText.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("/") {
+            let parsedCommand = SlashCommandExecutor.parse(commandText, catalog: viewModel.agentCommands)?.command
+            let result = await SlashCommandExecutor.execute(text: commandText, viewModel: viewModel)
             handleSlashExecutionResult(
                 result,
                 parsedCommand: parsedCommand,

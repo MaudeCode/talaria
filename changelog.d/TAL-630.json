@@ -2,9 +2,19 @@
   "entries": [
     {
       "category": "Added",
-      "summary": "Messages you queue while a response runs show as a chip above the composer; tap it to send one now, edit it or remove it.",
+      "summary": "Messages you queue while a response runs show as a chip above the composer instead of a notice; tap it to see them in full and send one now, edit it or remove it.",
       "highlight": false,
-      "components": ["app"]
+      "components": [
+        "app"
+      ]
+    },
+    {
+      "category": "Added",
+      "summary": "Long-press Send to queue, steer, stop and send, ask a side question or run the message in the background, without typing a slash command.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
     }
   ]
 }

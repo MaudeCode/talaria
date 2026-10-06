@@ -74,6 +74,7 @@ struct MessageComposerView: View {
     let apiClient: APIClient?
     let uploadAttachmentErrorMessage: String?
     let onSend: () -> Void
+    let onSendAs: (String) -> Void
     let onSendVoiceNote: (Data, String) -> Void
     let onCancel: () -> Void
     let onSelectModel: (ModelCatalogOption) -> Void
@@ -733,6 +734,8 @@ struct MessageComposerView: View {
         }
         .buttonStyle(.chatTactile(.icon))
         .disabled(isActionButtonDisabled)
+        .contentShape(.contextMenuPreview, Circle())
+        .contextMenu { sendOptionsMenu }
         .accessibilityLabel(isAnsweringClarification
             ? (clarificationPrompt?.isLastQuestion == false ? "Next" : "Submit clarification")
             : (showsStopButton ? "Stop response" : "Send"))
@@ -1210,10 +1213,38 @@ struct MessageComposerView: View {
         if showsStopButton {
             onCancel()
         } else {
-            if voiceInput.isListening {
-                voiceInput.stopBeforeSubmittingDraft()
-            }
+            submitDraft(as: nil)
+        }
+    }
+
+    private func submitDraft(as command: String?) {
+        if voiceInput.isListening {
+            voiceInput.stopBeforeSubmittingDraft()
+        }
+        if let command {
+            onSendAs(command)
+        } else {
             onSend()
+        }
+    }
+
+    /// Long-pressing Send offers the other ways to send the draft, so no one types `/queue` (TAL-630).
+    /// Steer, side questions and background tasks cannot carry files, so staged files hide them.
+    @ViewBuilder
+    private var sendOptionsMenu: some View {
+        if !isAnsweringClarification, !showsStopButton, !isActionButtonDisabled {
+            let carriesFiles = !pendingAttachments.isEmpty
+            if isWaitingForStream {
+                Button("Queue", systemImage: "text.badge.plus") { submitDraft(as: "queue") }
+                if !carriesFiles {
+                    Button("Steer", systemImage: "arrow.turn.down.right") { submitDraft(as: "steer") }
+                }
+                Button("Stop and send", systemImage: "stop.circle") { submitDraft(as: "interrupt") }
+            }
+            if !carriesFiles {
+                Button("Side question", systemImage: "bubble.left.and.text.bubble.right") { submitDraft(as: "btw") }
+                Button("Run in background", systemImage: "square.stack.3d.down.right") { submitDraft(as: "background") }
+            }
         }
     }
 
