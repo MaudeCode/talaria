@@ -1,4 +1,4 @@
-/** Usage analytics from the session index (Python `_handle_insights`). ponytail: the state.db CLI-session merge is not ported. */
+/** Usage analytics from the session index plus the Agent's state.db sessions (Python `_handle_insights`). */
 import type { Dict } from '../config/agent-config.js'
 import { str } from '../util.js'
 
@@ -16,13 +16,29 @@ function cacheHitPercent(cacheRead: number, prompt: number): number | null {
   return Math.min(100, Math.round((cacheRead / prompt) * 100))
 }
 
-export function buildInsights(entries: Dict[], daysRaw: unknown, nowSeconds: number): Dict {
+const USAGE_FIELDS = ['message_count', 'input_tokens', 'output_tokens', 'cache_read_tokens'] as const
+
+/**
+ * `stateRows` reads the state.db sessions active since the window's cutoff. An id already in the index counts once with
+ * each counter's larger value: a claimed CLI session's index entry starts at zero while its state.db row keeps the
+ * usage from before the claim and the Agent's later turns. The later activity time places it in the window, and the
+ * snapshot with that activity names its model.
+ */
+export function buildInsights(entries: Dict[], daysRaw: unknown, nowSeconds: number, stateRows: (cutoff: number) => Dict[] = () => []): Dict {
   const parsed = Number.parseInt(str(daysRaw ?? '30'), 10)
   const days = Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), 365) : 30
   const today = new Date(nowSeconds * 1000)
   const midnight = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime() / 1000
   const cutoff = midnight - (days - 1) * 86_400
-  const sessions = entries.filter((e) => Math.max(num(e.created_at), num(e.updated_at)) >= cutoff)
+  const state = new Map(stateRows(cutoff).map((r) => [str(r.session_id), r]))
+  const merged = entries.map((e) => {
+    const row = state.get(str(e.session_id))
+    if (!row) return e
+    state.delete(str(e.session_id))
+    const model = num(row.updated_at) > num(e.updated_at) ? str(row.model) || str(e.model) : str(e.model) || str(row.model)
+    return { ...e, ...Object.fromEntries(USAGE_FIELDS.map((k) => [k, Math.max(num(e[k]), num(row[k]))])), estimated_cost: Math.max(cost(e.estimated_cost), cost(row.estimated_cost)), updated_at: Math.max(num(e.updated_at), num(row.updated_at)), model }
+  })
+  const sessions = [...merged, ...state.values()].filter((e) => Math.max(num(e.created_at), num(e.updated_at)) >= cutoff)
   let totalMessages = 0
   let totalInput = 0
   let totalOutput = 0
