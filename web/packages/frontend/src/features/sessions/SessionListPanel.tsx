@@ -11,6 +11,7 @@ import { PanelHead, PanelHeadButton } from '../../shell/Sidebar'
 import { cn } from '../../ui/cn'
 import { useNewChat } from './useNewChat'
 import { SessionContextMenu } from './SessionContextMenu'
+import { ProjectChip } from './ProjectChip'
 import { closeMobileSidebar } from '../../shell/useShellState'
 import { useLocale } from '../../i18n/useLocale'
 
@@ -195,12 +196,7 @@ export function SessionListPanel() {
           <div className="project-bar" role="group" aria-label={m.project_filter_label()}>
             <span role="button" tabIndex={0} className={cn('project-chip', !project && 'active')} onClick={() => setProject(null)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setProject(null) }}>{m.project_all()}</span>
             {hasUnprojected && <span role="button" tabIndex={0} className={cn('project-chip no-project', project === NO_PROJECT && 'active')} title={m.project_unassigned_hint()} onClick={() => setProject(NO_PROJECT)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setProject(NO_PROJECT) }}>{m.project_unassigned()}</span>}
-            {projectList.map((p) => (
-              <span key={p.project_id} role="button" tabIndex={0} className={cn('project-chip', project === p.project_id && 'active')} onClick={() => setProject(p.project_id)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setProject(p.project_id) }}>
-                {p.color && <span className="color-dot" style={{ background: p.color }} aria-hidden="true" />}
-                <span>{p.name}</span>
-              </span>
-            ))}
+            {projectList.map((p) => <ProjectChip key={p.project_id} project={p} active={project === p.project_id} onSelect={() => setProject(p.project_id)} onDeleted={() => setProject((cur) => (cur === p.project_id ? null : cur))} />)}
             <span role="button" tabIndex={0} className="project-chip project-chip-add" title={m.project_new()} aria-label={m.project_new()} onClick={() => { const name = window.prompt(m.project_new_prompt()); if (name?.trim()) createProject.mutate(name.trim()) }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { const name = window.prompt(m.project_new_prompt()); if (name?.trim()) createProject.mutate(name.trim()) } }}>+</span>
           </div>
         )}

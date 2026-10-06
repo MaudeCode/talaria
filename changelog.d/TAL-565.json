@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Right-click or long-press a project in the Web sidebar to rename it, change its color, or delete it.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
