@@ -5,9 +5,8 @@ import Foundation
 public enum ChatMarkerMessageKind: Equatable {
     case contextCompaction
     case preservedTaskList
-    /// Synthesized "Context compaction · Reference only" anchor card built from
-    /// session-level `compression_anchor_*` metadata — never sent as a
-    /// `_marker_kind`.
+    /// "Context compaction · Reference only" card from the session's
+    /// `compression_reference` (TAL-560) — never sent as a `_marker_kind`.
     case compressionReference
 
     /// The server's `_marker_kind`; an unknown kind renders as an ordinary message.

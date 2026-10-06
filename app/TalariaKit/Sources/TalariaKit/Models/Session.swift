@@ -860,9 +860,8 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
     public let toolCalls: [PersistedToolCall]?
     public let messagesTruncated: Bool?
     public let messagesOffset: Int?
-    public let compressionAnchorVisibleIdx: Int?
-    public let compressionAnchorMessageKey: CompressionAnchorMessageKey?
-    public let compressionAnchorSummary: String?
+    /// The server-placed "Context compaction · Reference only" card (TAL-560); nil shows none.
+    public let compressionReference: CompressionReference?
     /// Where `messages` end in the active run's journal (TAL-316); nil means attach live without replay.
     public let transcriptSeq: TranscriptSeq?
     /// False for a server that predates `transcript_seq` (the key is absent, not null).
@@ -924,12 +923,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
         case underscoredMessagesOffset = "_messages_offset"
         case transformedMessagesTruncated = "_messagesTruncated"
         case transformedMessagesOffset = "_messagesOffset"
-        case compressionAnchorVisibleIdx
-        case compressionAnchorMessageKey
-        case compressionAnchorSummary
-        case snakeCasedCompressionAnchorVisibleIdx = "compression_anchor_visible_idx"
-        case snakeCasedCompressionAnchorMessageKey = "compression_anchor_message_key"
-        case snakeCasedCompressionAnchorSummary = "compression_anchor_summary"
+        case compressionReference
         case transcriptSeq
     }
 
@@ -991,18 +985,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
         messagesOffset = container.decodeLossyIntIfPresent(forKey: .underscoredMessagesOffset)
             ?? container.decodeLossyIntIfPresent(forKey: .transformedMessagesOffset)
             ?? container.decodeLossyIntIfPresent(forKey: .messagesOffset)
-        compressionAnchorVisibleIdx = container.decodeLossyIntIfPresent(forKey: .compressionAnchorVisibleIdx)
-            ?? container.decodeLossyIntIfPresent(forKey: .snakeCasedCompressionAnchorVisibleIdx)
-        compressionAnchorMessageKey = ((try? container.decodeIfPresent(
-            CompressionAnchorMessageKey.self,
-            forKey: .compressionAnchorMessageKey
-        )) ?? nil)
-            ?? ((try? container.decodeIfPresent(
-                CompressionAnchorMessageKey.self,
-                forKey: .snakeCasedCompressionAnchorMessageKey
-            )) ?? nil)
-        compressionAnchorSummary = container.decodeLossyStringIfPresent(forKey: .compressionAnchorSummary)
-            ?? container.decodeLossyStringIfPresent(forKey: .snakeCasedCompressionAnchorSummary)
+        compressionReference = try? container.decodeIfPresent(CompressionReference.self, forKey: .compressionReference)
         transcriptSeq = try? container.decodeIfPresent(TranscriptSeq.self, forKey: .transcriptSeq)
         statesTranscriptSeq = container.contains(.transcriptSeq)
     }
@@ -1048,9 +1031,6 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
     }
 }
 
-/// Anchor key the server builds in `_anchor_message_key` (`api/routes.py`):
-/// role, optional timestamp, first 160 chars of whitespace-normalized text,
-/// and attachment count of the last visible message after compaction.
 /// The server's statement that a session detail's `messages` hold nothing the journal of `streamId` delivers after `seq`,
 /// so resuming that stream with `after_seq = seq` renders the replay as-is.
 public struct TranscriptSeq: Decodable, Equatable {
@@ -1058,31 +1038,14 @@ public struct TranscriptSeq: Decodable, Equatable {
     let seq: Int
 }
 
-public struct CompressionAnchorMessageKey: Decodable, Equatable {
-    public let role: String?
-    public let ts: Double?
-    public let text: String?
-    public let attachments: Int?
+/// The "Context compaction · Reference only" card the server places (TAL-560): its text, and the full-transcript index of
+/// the row it follows (the `_messages_offset` space); nil puts it above the transcript.
+public struct CompressionReference: Decodable, Equatable {
+    public let text: String
+    public let afterMessageIndex: Int?
 
-    init(role: String?, ts: Double?, text: String?, attachments: Int?) {
-        self.role = role
-        self.ts = ts
+    init(text: String, afterMessageIndex: Int?) {
         self.text = text
-        self.attachments = attachments
-    }
-
-    enum CodingKeys: String, CodingKey {
-        case role
-        case ts
-        case text
-        case attachments
-    }
-
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        role = container.decodeLossyStringIfPresent(forKey: .role)
-        ts = container.decodeLossyDoubleIfPresent(forKey: .ts)
-        text = container.decodeLossyStringIfPresent(forKey: .text)
-        attachments = container.decodeLossyIntIfPresent(forKey: .attachments)
+        self.afterMessageIndex = afterMessageIndex
     }
 }

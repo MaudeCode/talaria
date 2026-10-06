@@ -317,20 +317,13 @@ func testSessionToleratesNumericFieldsOutsideIntRange() async throws {
     XCTAssertEqual(session.messages?.first?.content, "Still standing")
 }
 
-func testSessionDecodesCompressionAnchorMetadata() async throws {
+func testSessionDecodesCompressionReference() async throws {
     let client = makeClient { request in
         apiTestJSONResponse("""
         {
           "session": {
             "session_id": "abc123",
-            "compression_anchor_visible_idx": 7,
-            "compression_anchor_message_key": {
-              "role": "user",
-              "ts": 1770000000.5,
-              "text": "What does the resolver do?",
-              "attachments": 1
-            },
-            "compression_anchor_summary": "Summary of the compacted conversation."
+            "compression_reference": {"text": "Summary of the compacted conversation.", "after_message_index": 7}
           }
         }
         """, for: request)
@@ -339,80 +332,31 @@ func testSessionDecodesCompressionAnchorMetadata() async throws {
     let response = try await client.session(id: "abc123")
     let session = try XCTUnwrap(response.session)
 
-    XCTAssertEqual(session.compressionAnchorVisibleIdx, 7)
-    XCTAssertEqual(session.compressionAnchorMessageKey?.role, "user")
-    XCTAssertEqual(session.compressionAnchorMessageKey?.ts, 1_770_000_000.5)
-    XCTAssertEqual(session.compressionAnchorMessageKey?.text, "What does the resolver do?")
-    XCTAssertEqual(session.compressionAnchorMessageKey?.attachments, 1)
-    XCTAssertEqual(session.compressionAnchorSummary, "Summary of the compacted conversation.")
+    XCTAssertEqual(session.compressionReference, CompressionReference(text: "Summary of the compacted conversation.", afterMessageIndex: 7))
 }
 
-func testSessionWithoutCompressionAnchorMetadataDecodesNil() async throws {
+func testSessionCompressionReferenceAboveTranscriptOrAbsent() async throws {
+    let bodies = [
+        "a": #"{"session": {"session_id": "a", "compression_reference": {"text": "Only a summary.", "after_message_index": null}}}"#,
+        "b": #"{"session": {"session_id": "b", "compression_reference": null}}"#,
+        "c": #"{"session": {"session_id": "c", "compression_reference": "unexpected-string"}}"#,
+        "d": #"{"session": {"session_id": "d"}}"#,
+    ]
     let client = makeClient { request in
-        apiTestJSONResponse("""
-        { "session": { "session_id": "abc123" } }
-        """, for: request)
+        let id = URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)?
+            .queryItems?.first { $0.name == "session_id" }?.value
+        return apiTestJSONResponse(try XCTUnwrap(bodies[id ?? ""]), for: request)
     }
 
-    let response = try await client.session(id: "abc123")
-    let session = try XCTUnwrap(response.session)
-
-    XCTAssertNil(session.compressionAnchorVisibleIdx)
-    XCTAssertNil(session.compressionAnchorMessageKey)
-    XCTAssertNil(session.compressionAnchorSummary)
-}
-
-func testSessionToleratesMalformedCompressionAnchorMetadata() async throws {
-    let client = makeClient { request in
-        apiTestJSONResponse("""
-        {
-          "session": {
-            "session_id": "abc123",
-            "compression_anchor_visible_idx": "not-a-number",
-            "compression_anchor_message_key": "unexpected-string",
-            "compression_anchor_summary": ["unexpected", "array"]
-          }
-        }
-        """, for: request)
+    let aboveResponse = try await client.session(id: "a")
+    let above = try XCTUnwrap(aboveResponse.session)
+    XCTAssertEqual(above.compressionReference, CompressionReference(text: "Only a summary.", afterMessageIndex: nil))
+    for id in ["b", "c", "d"] {
+        let response = try await client.session(id: id)
+        let session = try XCTUnwrap(response.session)
+        XCTAssertEqual(session.sessionId, id)
+        XCTAssertNil(session.compressionReference)
     }
-
-    let response = try await client.session(id: "abc123")
-    let session = try XCTUnwrap(response.session)
-
-    XCTAssertEqual(session.sessionId, "abc123")
-    XCTAssertNil(session.compressionAnchorVisibleIdx)
-    XCTAssertNil(session.compressionAnchorMessageKey)
-    XCTAssertNil(session.compressionAnchorSummary)
-}
-
-func testSessionDecodesPartialAndLossyCompressionAnchorKeyFields() async throws {
-    let client = makeClient { request in
-        apiTestJSONResponse("""
-        {
-          "session": {
-            "session_id": "abc123",
-            "compression_anchor_visible_idx": "12",
-            "compression_anchor_message_key": {
-              "role": "assistant",
-              "ts": null,
-              "text": "Partial key",
-              "attachments": "3",
-              "unexpected_extra": {"nested": true}
-            }
-          }
-        }
-        """, for: request)
-    }
-
-    let response = try await client.session(id: "abc123")
-    let session = try XCTUnwrap(response.session)
-
-    XCTAssertEqual(session.compressionAnchorVisibleIdx, 12)
-    XCTAssertEqual(session.compressionAnchorMessageKey?.role, "assistant")
-    XCTAssertNil(session.compressionAnchorMessageKey?.ts)
-    XCTAssertEqual(session.compressionAnchorMessageKey?.text, "Partial key")
-    XCTAssertEqual(session.compressionAnchorMessageKey?.attachments, 3)
-    XCTAssertNil(session.compressionAnchorSummary)
 }
 
 }

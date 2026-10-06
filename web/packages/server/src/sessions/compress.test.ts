@@ -91,13 +91,13 @@ describe('manual session compression', () => {
     const session = payload.session as Json
     // iOS replaces its transcript with `session.messages` (ChatViewModel), so the reply carries the display rows.
     expect((session.messages as Json[]).map((m) => m.content)).toEqual(['one', 'two', 'three', 'four'])
-    expect(session).toMatchObject({ session_id: sid, compression_anchor_visible_idx: 3, compression_anchor_message_key: { role: 'assistant', ts: 4, text: 'four', attachments: 0 }, compression_anchor_summary: 'Approx request size: ~400 → ~120 tokens', context_used_tokens: 120 })
+    expect(session).toMatchObject({ session_id: sid, compression_reference: { text: 'Approx request size: ~400 → ~120 tokens', after_message_index: 3 }, context_used_tokens: 120 })
     expect(seen).toMatchObject({ session_id: sid, focus_topic: 'database schema', conversation_history: ORIGINAL.map(({ role, content }) => ({ role, content })) })
     const stored = s.deps.sessionStore.get(sid)
     expect(stored.messages.map((m) => m.content)).toEqual(['one', 'two', 'three', 'four'])
     expect(stored.context_messages.map((m) => [m.role, m.content])).toEqual([['user', 'one'], ['assistant', 'four']])
     expect(stored.tool_calls).toEqual(TOOL_CALLS)
-    expect(stored).toMatchObject({ compression_anchor_mode: 'manual', last_prompt_tokens: 120, active_stream_id: null, pending_user_message: null })
+    expect(stored).toMatchObject({ compression_anchor_visible_idx: 3, compression_anchor_message_key: { role: 'assistant', ts: 4, text: 'four', attachments: 0 }, compression_anchor_mode: 'manual', last_prompt_tokens: 120, active_stream_id: null, pending_user_message: null })
     expect(typeof stored.truncation_watermark).toBe('number')
     expect(stored.truncation_boundary).toBe(stored.truncation_watermark)
     expect(existsSync(bak)).toBe(false)
@@ -128,7 +128,8 @@ describe('manual session compression', () => {
       sidecar.respond('chat.compress', (params) => { sent = params.conversation_history; return compressed(params) })
       const res = await json(await post(s, '/api/session/compress', { session_id: sid }))
       expect(sent.map((m) => m.content)).toEqual(['one', 'two', 'three', 'four', 'continued from the CLI', 'CLI answer'])
-      expect((res.session as Json).compression_anchor_message_key).toMatchObject({ text: 'CLI answer', ts: 4.6 })
+      expect(s.deps.sessionStore.get(sid).compression_anchor_message_key).toMatchObject({ text: 'CLI answer', ts: 4.6 })
+      expect((res.session as Json).compression_reference).toMatchObject({ after_message_index: 5 })
       const detail = ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages as Json[]
       expect(detail.map((m) => m.content)).toEqual(['one', 'two', 'three', 'four', 'continued from the CLI', 'CLI answer'])
     } finally { spy.mockRestore() }
@@ -372,6 +373,67 @@ describe('manual session compression', () => {
     sidecar.respond('chat.compress', (params) => { seen = params; return compressed(params) })
     await s.deps.sessions.startCompression(sid, null).then((job) => job.done)
     expect(seen).toMatchObject({ profile_home: s.deps.sessions.deps.profileHome('work'), model: 'openai/gpt-5.4-mini', model_provider: 'profile-provider' })
+  })
+
+  describe('compression reference card (TAL-560)', () => {
+    // A tool row before the anchor makes raw and visible indices differ: `four` is visible row 4 but transcript row 5.
+    const TRANSCRIPT: Json[] = [
+      { role: 'user', content: 'one', timestamp: 1 },
+      { role: 'assistant', content: '', tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'terminal', arguments: '{}' } }], timestamp: 2 },
+      { role: 'tool', tool_call_id: 'call_1', content: 'schema.sql', timestamp: 2.5 },
+      { role: 'assistant', content: 'two', timestamp: 3 },
+      { role: 'user', content: 'three', timestamp: 4 },
+      { role: 'assistant', content: 'four', timestamp: 5 },
+      { role: 'user', content: 'five', timestamp: 6 },
+      { role: 'assistant', content: 'six', timestamp: 7 },
+    ]
+    const anchored = (extra: Json = {}): Promise<string> => seeded({
+      messages: structuredClone(TRANSCRIPT), tool_calls: [],
+      compression_anchor_visible_idx: 4, compression_anchor_message_key: { role: 'assistant', ts: 5, text: 'four', attachments: 0 }, compression_anchor_summary: 'Earlier turns summarized.',
+      ...extra,
+    })
+    const detail = async (sid: string, query = ''): Promise<Json> => (await json(await s.get(`/api/session?session_id=${sid}${query}`))).session as Json
+
+    it('places the card after the anchor row of the full transcript', async () => {
+      const session = await detail(await anchored())
+      expect(session.compression_reference).toEqual({ text: 'Earlier turns summarized.', after_message_index: 5 })
+      expect(session).not.toHaveProperty('compression_anchor_visible_idx')
+      expect(session).not.toHaveProperty('compression_anchor_message_key')
+    })
+
+    it('names the same transcript row in every window', async () => {
+      const sid = await anchored()
+      const tail = await detail(sid, '&msg_limit=2')
+      expect(tail._messages_offset).toBe(6)
+      expect(tail.compression_reference).toEqual({ text: 'Earlier turns summarized.', after_message_index: 5 })
+      const older = await detail(sid, '&msg_limit=3&msg_before=6')
+      expect(older._messages_offset).toBe(3)
+      expect((older.messages as Json[])[5 - 3]).toMatchObject({ content: 'four' })
+      expect(older.compression_reference).toEqual({ text: 'Earlier turns summarized.', after_message_index: 5 })
+    })
+
+    it('falls back to the visible index when no row matches the key', async () => {
+      const sid = await anchored({ compression_anchor_message_key: { role: 'assistant', text: 'edited away', attachments: 0 } })
+      expect((await detail(sid)).compression_reference).toEqual({ text: 'Earlier turns summarized.', after_message_index: 5 })
+    })
+
+    it('shows a summary with no anchor above the transcript', async () => {
+      const sid = await anchored({ compression_anchor_visible_idx: null, compression_anchor_message_key: null })
+      expect((await detail(sid)).compression_reference).toEqual({ text: 'Earlier turns summarized.', after_message_index: null })
+    })
+
+    it('shows no card when a compaction marker row already carries the summary, or there is no summary', async () => {
+      const marker = { role: 'user', content: '[CONTEXT COMPACTION] Earlier   turns summarized.', timestamp: 8 }
+      expect((await detail(await anchored({ messages: [...structuredClone(TRANSCRIPT), marker] }))).compression_reference).toBeNull()
+      expect((await detail(await anchored({ compression_anchor_summary: null }))).compression_reference).toBeNull()
+      expect((await detail(await seeded())).compression_reference).toBeNull()
+    })
+
+    it('anchors the compress reply after the last visible row', async () => {
+      const sid = await seeded()
+      const session = (await json(await post(s, '/api/session/compress', { session_id: sid }))).session as Json
+      expect(session.compression_reference).toEqual({ text: 'Approx request size: ~400 → ~120 tokens', after_message_index: 3 })
+    })
   })
 })
 

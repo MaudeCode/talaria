@@ -36,6 +36,8 @@ struct UITestFixtureEnvironment {
     nonisolated static let transcriptMediaArgument = "--ui-test-transcript-media"
     /// Serves a transcript with automatic background wakeups in the server's `_background_update` shape (TAL-371).
     nonisolated static let backgroundUpdatesArgument = "--ui-test-background-updates"
+    /// Serves a compacted chat whose reference card the server placed after its second row (TAL-560).
+    nonisolated static let compressionReferenceArgument = "--ui-test-compression-reference"
     /// Adds a pinned long-titled chat and scheduled and webhook groups whose server counts say
     /// more exist than are listed, so the sidebar's row and group chrome can be inspected (TAL-482).
     nonisolated static let sidebarVarietyArgument = "--ui-test-sidebar-variety"
@@ -107,6 +109,9 @@ struct UITestFixtureEnvironment {
     }
     nonisolated static var hasBackgroundUpdates: Bool {
         ProcessInfo.processInfo.arguments.contains(backgroundUpdatesArgument)
+    }
+    nonisolated static var hasCompressionReference: Bool {
+        ProcessInfo.processInfo.arguments.contains(compressionReferenceArgument)
     }
     nonisolated static var hasSidebarVariety: Bool {
         ProcessInfo.processInfo.arguments.contains(sidebarVarietyArgument)
@@ -847,6 +852,17 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     private static func sessionResponse() -> Data {
+        if UITestFixtureEnvironment.hasCompressionReference {
+            var detail = session(id: sessionID, title: sessionTitle)
+            detail["messages"] = [
+                ["role": "user", "content": "Plan the migration.", "message_id": "reference-prompt", "_ts": 2_000_000_000, "_turn_id": "plan"],
+                ["role": "assistant", "content": "Here is the plan.", "message_id": "reference-plan", "_ts": 2_000_000_001, "_turn_id": "plan"],
+                ["role": "user", "content": "Start step one.", "message_id": "reference-step", "_ts": 2_000_000_002, "_turn_id": "step"],
+                ["role": "assistant", "content": "Step one done.", "message_id": "reference-done", "_ts": 2_000_000_003, "_turn_id": "step"]
+            ]
+            detail["compression_reference"] = ["text": "Earlier turns were summarised.", "after_message_index": 1]
+            return json(["session": detail])
+        }
         if UITestFixtureEnvironment.hasBackgroundUpdates {
             var detail = session(id: sessionID, title: sessionTitle)
             detail["messages"] = backgroundUpdateMessages

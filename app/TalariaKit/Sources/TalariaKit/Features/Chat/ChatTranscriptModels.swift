@@ -1055,29 +1055,19 @@ extension ChatViewModel {
         return transcriptMessages
     }
 
+    /// Places the server's reference card (TAL-560) after the transcript row holding its anchor's full-transcript index,
+    /// or above the loaded rows when the anchor is not among them.
     public nonisolated static func compressionReferenceCard(
-        messages: [ChatMessage],
+        reference: CompressionReference?,
         messagesOffset: Int,
-        transcriptMessages: [TranscriptMessage],
-        metadata: CompressionAnchorMetadata?
+        transcriptMessages: [TranscriptMessage]
     ) -> CompressionReferenceCard? {
-        guard let resolution = CompressionAnchorResolver.resolve(
-            messages: messages,
-            messagesOffset: messagesOffset,
-            metadata: metadata
-        ) else {
-            return nil
-        }
+        guard let reference else { return nil }
 
-        switch resolution.placement {
-        case .top:
-            return CompressionReferenceCard(referenceText: resolution.referenceText, afterRenderID: nil)
-        case .afterLoadedMessageIndex(let loadedIndex):
-            // The anchor message itself may be filtered out of the transcript
-            // (e.g. tool-result-only); attach to the closest preceding row.
-            let afterRenderID = transcriptMessages.last { $0.loadedIndex <= loadedIndex }?.renderID
-            return CompressionReferenceCard(referenceText: resolution.referenceText, afterRenderID: afterRenderID)
-        }
+        // A transcript row spans its assistant segments; the anchor attaches to the row ending at or before it.
+        let loadedIndex = reference.afterMessageIndex.map { $0 - max(0, messagesOffset) }
+        let afterRenderID = loadedIndex.flatMap { index in transcriptMessages.last { $0.loadedIndex <= index }?.renderID }
+        return CompressionReferenceCard(referenceText: reference.text, afterRenderID: afterRenderID)
     }
 
     nonisolated private static func appendReasoningCandidate(

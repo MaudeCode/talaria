@@ -3842,5 +3842,124 @@
         }
       ]
     }
+  },
+  "compression_reference_session": {
+    "stored": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "Plan the migration.",
+          "message_id": "reference-prompt",
+          "timestamp": 1770000400
+        },
+        {
+          "role": "assistant",
+          "content": "Here is the plan.",
+          "message_id": "reference-plan",
+          "timestamp": 1770000401
+        },
+        {
+          "role": "user",
+          "content": "Start step one.",
+          "message_id": "reference-step-one",
+          "timestamp": 1770000402
+        },
+        {
+          "role": "assistant",
+          "content": "Step one done.",
+          "message_id": "reference-anchor",
+          "timestamp": 1770000403
+        },
+        {
+          "role": "user",
+          "content": "Start step two.",
+          "message_id": "reference-step-two",
+          "timestamp": 1770000404
+        },
+        {
+          "role": "assistant",
+          "content": "Step two done.",
+          "message_id": "reference-last",
+          "timestamp": 1770000405
+        }
+      ],
+      "compression_anchor_visible_idx": 3,
+      "compression_anchor_message_key": {
+        "role": "assistant",
+        "ts": 1770000403,
+        "text": "Step one done.",
+        "attachments": 0
+      },
+      "compression_anchor_summary": "Earlier turns were summarised."
+    },
+    "query": "msg_limit=4",
+    "session": {
+      "session_id": "contract-compression-reference",
+      "_messages_offset": 2,
+      "messages": [
+        {
+          "role": "user",
+          "content": "Start step one.",
+          "message_id": "reference-step-one",
+          "timestamp": 1770000402,
+          "_turn_id": "legacy:2"
+        },
+        {
+          "role": "assistant",
+          "content": "Step one done.",
+          "message_id": "reference-anchor",
+          "timestamp": 1770000403,
+          "_anchor_activity_scene": {
+            "version": "activity_scene_v1",
+            "activity_rows": [],
+            "final_answer": "Step one done.",
+            "turn_duration": null,
+            "terminal_state": "completed",
+            "expanded_by_default": false,
+            "has_consumed_steering": false,
+            "file_changes": [],
+            "activity_rows_total": 0,
+            "activity_rows_offset": 0,
+            "activity_rows_complete": true,
+            "activity_rows_omitted": 0,
+            "activity_scene_ref": "3161398959e089c3f46f848bd0d02f61706f17e834ef508e0744b4043008d563"
+          },
+          "_turn_id": "legacy:2"
+        },
+        {
+          "role": "user",
+          "content": "Start step two.",
+          "message_id": "reference-step-two",
+          "timestamp": 1770000404,
+          "_turn_id": "legacy:4"
+        },
+        {
+          "role": "assistant",
+          "content": "Step two done.",
+          "message_id": "reference-last",
+          "timestamp": 1770000405,
+          "_anchor_activity_scene": {
+            "version": "activity_scene_v1",
+            "activity_rows": [],
+            "final_answer": "Step two done.",
+            "turn_duration": null,
+            "terminal_state": "completed",
+            "expanded_by_default": false,
+            "has_consumed_steering": false,
+            "file_changes": [],
+            "activity_rows_total": 0,
+            "activity_rows_offset": 0,
+            "activity_rows_complete": true,
+            "activity_rows_omitted": 0,
+            "activity_scene_ref": "1c4812a172d364e25bb516167cf271da2599fb33b7101cbacecd4861dd1edc16"
+          },
+          "_turn_id": "legacy:4"
+        }
+      ],
+      "compression_reference": {
+        "text": "Earlier turns were summarised.",
+        "after_message_index": 3
+      }
+    }
   }
 }

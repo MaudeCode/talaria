@@ -19,7 +19,7 @@ import { SessionBusy, SessionNotFound, statSignature, type SessionStore } from '
 import { UNSETTLED_TODO_KEY, attachTodoState } from './todo.js'
 import { isClaudeCodeSessionId, type ClaudeCodeSessionSource } from './claude-code.js'
 import { stateDbCompressionLineage, stateDbSessionMessages, stateDbSessionRead, stateDbSessionRow, stateDbSessionSources, type StateDbRead } from './state-db.js'
-import { anchorMessageKey, anchorSummary, CompressionJobs, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
+import { anchorMessageKey, anchorSummary, CompressionJobs, compressionReference, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { SidecarError, type SidecarLike } from '../sidecar/client.js'
 import { agentSteerText, attachedFilesPrompt, attachmentObjects, dedupeContext, isContextCompressionMarker, journalOutputRows, looksLikeCurrentUserTurn, stoppedTurnContext, workspaceContextPrefix, mergeSessionMessagesAppendOnly, messageIdentity, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, type ToolResultView } from './merge.js'
 import { withBackgroundUpdates } from './background-updates.js'
@@ -480,7 +480,10 @@ export class SessionService {
   publicSession(s: Session, withMessages = true): Record<string, unknown> {
     const payload = this.wireRow(s)
     // Mutation replies replace a client's transcript, so they carry the same server-built scenes as the detail.
-    if (withMessages) payload.messages = this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes(withBackgroundUpdates(withMarkerKinds(withTurnIds(s.messages)), s), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, runningScene: !this.journaledActiveTurn(s) }))
+    if (withMessages) {
+      payload.messages = this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes(withBackgroundUpdates(withMarkerKinds(withTurnIds(s.messages)), s), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, runningScene: !this.journaledActiveTurn(s) }))
+      payload.compression_reference = compressionReference(s, payload.messages as unknown[])
+    }
     return redactSessionData(payload, this.deps.redactEnabled())
   }
 
@@ -593,6 +596,7 @@ export class SessionService {
     }
     if (loadMessages) raw.transcript_seq = journaled ? { stream_id: journaled.turnId, seq: 0 } : null
     if (loadMessages) attachTodoState(raw, all, s.extra[UNSETTLED_TODO_KEY])
+    if (loadMessages) raw.compression_reference = compressionReference(s, all)
     if (mergedLast) {
       raw.last_message_at = Math.max(Number(raw.last_message_at ?? 0) || 0, mergedLast)
       raw.updated_at = Math.max(Number(raw.updated_at ?? 0) || 0, mergedLast)

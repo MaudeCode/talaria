@@ -20,7 +20,7 @@ import { ChatUsageSchema, type ClarifyAnswers, type PendingSteer, type SidecarRe
 import { PendingPrompts, clarifyReply } from './pending.js'
 import { RunJournal, type RunJournalWriter } from './journal.js'
 import { CONTEXT_USAGE_FIELDS, Session, contextUsage, titleFrom, type Message } from './session.js'
-import { anchorMessageKey, markerSummary, visibleMessagesForAnchor } from './compress.js'
+import { anchorMessageKey, compressionReference, markerSummary, visibleMessagesForAnchor } from './compress.js'
 import { buildActiveTurnToken, completedToolIndex, publicToolFrame, redactNestedMessageContainers, redactSessionData, redactString, withToolId } from '../redact.js'
 import { dict, type Config } from '../config/agent-config.js'
 import { ReasoningTitleTracker, reasoningEventPayload } from './reasoning-titles.js'
@@ -951,6 +951,7 @@ export class TurnRunner {
     payload._messages_truncated = offset > 0
     attachTodoState(payload, s.messages, s.extra[UNSETTLED_TODO_KEY])
     payload.tool_calls = toolCallsForMessageWindow(s.tool_calls, offset, limited.length)
+    payload.compression_reference = compressionReference(s, scened)
     return payload
   }
 

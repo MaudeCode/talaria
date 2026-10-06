@@ -192,13 +192,11 @@ public final class ChatViewModel {
         )
         recomputeCompressionReferenceCard()
     }
-    /// Synthesized "Context compaction · Reference only" card resolved from the
-    /// session's `compression_anchor_*` metadata; nil when the session has no
-    /// compaction metadata or the reference text is gated out.
+    /// The "Context compaction · Reference only" card the server placed (TAL-560); nil shows none.
     public private(set) var compressionReferenceCard: CompressionReferenceCard?
-    @ObservationIgnored private var compressionAnchorMetadata: CompressionAnchorMetadata?
-    private func applyCompressionAnchorMetadata(from session: SessionDetail?) {
-        compressionAnchorMetadata = CompressionAnchorMetadata(from: session)
+    @ObservationIgnored private var compressionReference: CompressionReference?
+    private func applyCompressionReference(from session: SessionDetail?) {
+        compressionReference = session?.compressionReference
         recomputeCompressionReferenceCard()
     }
     /// Mirrors the list-row merge rule: the server's `read_only` replaces the
@@ -212,20 +210,19 @@ public final class ChatViewModel {
             serverWorkspaceName = session?.workspaceName
         }
     }
-    private func clearCompressionAnchorMetadata() {
-        compressionAnchorMetadata = nil
+    private func clearCompressionReference() {
+        compressionReference = nil
         compressionReferenceCard = nil
     }
     private func recomputeCompressionReferenceCard() {
         // Not folded into the messages/messagesOffset observers alone:
-        // applyCompletedStreamSession can update the metadata without
-        // reassigning messages, so metadata changes recompute here too. The
+        // applyCompletedStreamSession can update the reference without
+        // reassigning messages, so reference changes recompute here too. The
         // equality guard keeps the overlapping triggers observer-silent.
         let card = Self.compressionReferenceCard(
-            messages: messages,
+            reference: compressionReference,
             messagesOffset: messagesOffset,
-            transcriptMessages: displayedTranscriptMessages,
-            metadata: compressionAnchorMetadata
+            transcriptMessages: displayedTranscriptMessages
         )
         guard compressionReferenceCard != card else { return }
 
@@ -1481,7 +1478,7 @@ public final class ChatViewModel {
             // After load arbitration only: a superseded response must not leave its
             // read-only flag behind once its transcript has been rejected.
             applyReadOnlyState(from: session)
-            applyCompressionAnchorMetadata(from: session)
+            applyCompressionReference(from: session)
             let newerSteerRows = pendingSteerRows(changedAfter: steerChangesAtFetch)
             applyReloadedMessages(
                 reloadedMessages,
@@ -1554,7 +1551,7 @@ public final class ChatViewModel {
                         limit: Self.messagePageLimit
                     )
                     if !cachedMessages.isEmpty {
-                        clearCompressionAnchorMetadata()
+                        clearCompressionReference()
                         messages = cachedMessages
                         latestServerLoadHadAssistantResponseAfterLatestUser = Self.hasAssistantResponseAfterLatestUser(
                             in: messages
@@ -1738,7 +1735,7 @@ public final class ChatViewModel {
             let olderMessages = session.messages ?? []
             let mergedMessages = Self.prependingOlderMessages(olderMessages, to: messages)
             let didAddMessages = mergedMessages.count > messages.count
-            applyCompressionAnchorMetadata(from: session)
+            applyCompressionReference(from: session)
             messages = mergedMessages
             latestServerLoadHadAssistantResponseAfterLatestUser = Self.hasAssistantResponseAfterLatestUser(
                 in: messages
@@ -2862,7 +2859,7 @@ public final class ChatViewModel {
     func clearTranscript() {
         cancelPendingStreamingScrollTrigger()
         resetPendingStreamingContentBuffers()
-        clearCompressionAnchorMetadata()
+        clearCompressionReference()
         messages = []
         messagesOffset = 0
         hasOlderMessages = false
@@ -3561,7 +3558,7 @@ public final class ChatViewModel {
             }
 
             applyReadOnlyState(from: session)
-            applyCompressionAnchorMetadata(from: session)
+            applyCompressionReference(from: session)
             messages = session.messages ?? []
             updateOlderMessagePagination(from: session, loadedMessageCount: messages.count)
             isViewingCachedData = false
@@ -4922,7 +4919,7 @@ public final class ChatViewModel {
         }
 
         applyReadOnlyState(from: completedSession)
-        applyCompressionAnchorMetadata(from: completedSession)
+        applyCompressionReference(from: completedSession)
 
         var didApplyCompletedTranscript = false
         if let completedMessages = completedSession.messages,

@@ -2327,6 +2327,9 @@ describe('chat turns through the sidecar', () => {
       expect(stored.compression_anchor_visible_idx).toBe(1)
       expect(stored.compression_anchor_message_key).toMatchObject({ role: 'assistant', text: 'Here is the plan.' })
       expect(stored.compression_anchor_summary).toBe('[CONTEXT COMPACTION] Earlier we made a plan.')
+      // The terminal session places the reference card after that answer.
+      const done = frames.find((f) => f.event === 'done')?.data as Json
+      expect((done.session as Json).compression_reference).toEqual({ text: '[CONTEXT COMPACTION] Earlier we made a plan.', after_message_index: 1 })
       // The frame carries the ring's post-compression figures, so the client updates it before `done`.
       expect(frames.find((f) => f.event === 'compressed')?.data).toMatchObject({ usage: { context_used_tokens: 1234, context_window_tokens: 200000, context_usage_percent: 1, context_threshold_percent: 50 } })
     } finally {

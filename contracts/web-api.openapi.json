@@ -4521,6 +4521,38 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "compression_reference": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "text": {
+                                  "type": "string"
+                                },
+                                "after_message_index": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "The full-transcript index of the row the card follows; null puts it above the transcript."
+                                }
+                              },
+                              "required": [
+                                "text",
+                                "after_message_index"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -6578,6 +6610,38 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "compression_reference": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "text": {
+                                  "type": "string"
+                                },
+                                "after_message_index": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "The full-transcript index of the row the card follows; null puts it above the transcript."
+                                }
+                              },
+                              "required": [
+                                "text",
+                                "after_message_index"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -8376,6 +8440,38 @@
                           "anyOf": [
                             {
                               "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "compression_reference": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "text": {
+                                  "type": "string"
+                                },
+                                "after_message_index": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "The full-transcript index of the row the card follows; null puts it above the transcript."
+                                }
+                              },
+                              "required": [
+                                "text",
+                                "after_message_index"
+                              ]
                             },
                             {
                               "type": "null"
@@ -11352,6 +11448,38 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "compression_reference": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "text": {
+                                  "type": "string"
+                                },
+                                "after_message_index": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "The full-transcript index of the row the card follows; null puts it above the transcript."
+                                }
+                              },
+                              "required": [
+                                "text",
+                                "after_message_index"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -14167,6 +14295,38 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "compression_reference": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "text": {
+                                  "type": "string"
+                                },
+                                "after_message_index": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "The full-transcript index of the row the card follows; null puts it above the transcript."
+                                }
+                              },
+                              "required": [
+                                "text",
+                                "after_message_index"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -16909,6 +17069,38 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "compression_reference": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "text": {
+                                  "type": "string"
+                                },
+                                "after_message_index": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "The full-transcript index of the row the card follows; null puts it above the transcript."
+                                }
+                              },
+                              "required": [
+                                "text",
+                                "after_message_index"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -18799,6 +18991,38 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "compression_reference": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "text": {
+                                  "type": "string"
+                                },
+                                "after_message_index": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "The full-transcript index of the row the card follows; null puts it above the transcript."
+                                }
+                              },
+                              "required": [
+                                "text",
+                                "after_message_index"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -20671,6 +20895,38 @@
                           "anyOf": [
                             {
                               "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "compression_reference": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "text": {
+                                  "type": "string"
+                                },
+                                "after_message_index": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "The full-transcript index of the row the card follows; null puts it above the transcript."
+                                }
+                              },
+                              "required": [
+                                "text",
+                                "after_message_index"
+                              ]
                             },
                             {
                               "type": "null"
@@ -29499,6 +29755,38 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "compression_reference": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "text": {
+                                  "type": "string"
+                                },
+                                "after_message_index": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "The full-transcript index of the row the card follows; null puts it above the transcript."
+                                }
+                              },
+                              "required": [
+                                "text",
+                                "after_message_index"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -31363,6 +31651,38 @@
                               "anyOf": [
                                 {
                                   "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "compression_reference": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "text": {
+                                      "type": "string"
+                                    },
+                                    "after_message_index": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ],
+                                      "description": "The full-transcript index of the row the card follows; null puts it above the transcript."
+                                    }
+                                  },
+                                  "required": [
+                                    "text",
+                                    "after_message_index"
+                                  ]
                                 },
                                 {
                                   "type": "null"

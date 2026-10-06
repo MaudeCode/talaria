@@ -240,6 +240,17 @@ const IsMessagingSessionSchema = z.boolean().describe('`source_kind` is `messagi
  */
 const WorkspaceNameSchema = NullableString.optional()
 
+/**
+ * TAL-560: the "Context compaction · Reference only" card, on payloads that carry `messages`. Clients render `text` after
+ * the row at full-transcript index `after_message_index` (row `after_message_index - _messages_offset` of `messages`), or
+ * above the loaded rows when it is null or before them. Null: no card.
+ */
+export const CompressionReferenceSchema = z.object({
+  text: z.string(),
+  after_message_index: z.number().int().nonnegative().nullable().describe('The full-transcript index of the row the card follows; null puts it above the transcript.'),
+})
+export type CompressionReference = z.infer<typeof CompressionReferenceSchema>
+
 /** Full session record from `GET /api/session` and mutations returning `session`. */
 export const SessionSchema = z.looseObject({
   session_id: SessionIdSchema, title: z.string(), workspace: z.string().optional(), created_workspace: z.string().nullable().optional(), model: NullableString.optional(), model_provider: NullableString.optional(),
@@ -264,6 +275,7 @@ export const SessionSchema = z.looseObject({
   /** The agent's display name: a named profile's own name, else the `bot_name` setting (TAL-458). */
   assistant_name: z.string().optional(),
   workspace_name: WorkspaceNameSchema,
+  compression_reference: CompressionReferenceSchema.nullable().optional(),
 })
 export type Session = z.infer<typeof SessionSchema>
 export const SessionEnvelopeSchema = z.looseObject({ session: SessionSchema })

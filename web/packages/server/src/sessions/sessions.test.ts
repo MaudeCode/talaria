@@ -1602,6 +1602,17 @@ describe('session detail stamps compaction markers (TAL-305)', () => {
     const served = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1&msg_limit=50`))).session as Json).messages
     expect(served).toEqual(fixture.messages)
   })
+
+  it('serves the shared compression reference example exactly as the contract fixture records it (TAL-560)', async () => {
+    const fixture = (JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as Json).compression_reference_session as Json
+    const sid = String((await newSession(s)).session_id)
+    const session = s.deps.sessionStore.get(sid)
+    Object.assign(session, structuredClone(fixture.stored))
+    s.deps.sessionStore.save(session)
+    const served = (await json(await s.get(`/api/session?session_id=${sid}&${String(fixture.query)}`))).session as Json
+    const expected = fixture.session as Json
+    for (const key of ['_messages_offset', 'messages', 'compression_reference']) expect(served[key]).toEqual(expected[key])
+  })
 })
 
 describe('session detail collapses very long message bodies (TAL-456)', () => {

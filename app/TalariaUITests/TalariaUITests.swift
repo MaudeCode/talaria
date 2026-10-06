@@ -46,6 +46,29 @@ final class BackgroundUpdateTranscriptUITests: ChatUITestCase {
     }
 }
 
+/// The compaction reference card renders after the row the server names (TAL-560).
+final class CompressionReferenceUITests: ChatUITestCase {
+    func testTheReferenceCardFollowsTheServersNamedRow() throws {
+        launchFixture(additionalArguments: ["--ui-test-compression-reference"])
+        let session = fixtureSessionButton
+        XCTAssertTrue(session.awaitExistence(timeout: 15), "Missing deterministic session fixture")
+        tapFixtureSession(session)
+        XCTAssertNotNil(waitForComposer(timeout: 30), "The compacted session never opened")
+
+        let card = element(labelContaining: "Reference only · Earlier turns were summarised.")
+        XCTAssertTrue(card.awaitExistence(timeout: 15), "The reference card is missing")
+        let anchor = app.staticTexts["Here is the plan."]
+        let next = app.staticTexts["Start step one."]
+        XCTAssertTrue(anchor.awaitExistence(timeout: 10) && next.exists, "The transcript rows are missing")
+        XCTAssertLessThan(anchor.frame.maxY, card.frame.minY, "The card is not after the named row")
+        XCTAssertLessThan(card.frame.maxY, next.frame.minY, "The card is not before the following row")
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "compression-reference"
+        shot.lifetime = .keepAlways
+        add(shot)
+    }
+}
+
 /// The session's background work is the server's record: the card above the composer shows what it pins with the full
 /// result on request and a shared Dismiss, and a delegation row shows its subagents' progress in place (TAL-372).
 final class BackgroundWorkUITests: ChatUITestCase {
