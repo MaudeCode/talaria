@@ -215,7 +215,8 @@ final class BundleConfigurationContractTests: XCTestCase {
             "APP_IDENTIFIER_SUFFIX = .branch\n",
             "APP_DISPLAY_NAME = Talaria Dev\n",
             "APP_URL_SCHEME_SUFFIX = -branch\n",
-            "APP_ICON_NAME = TalariaDev\n"
+            "APP_ICON_NAME = TalariaDev\n",
+            "ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES =\n"
         ] {
             assertOccurrences(of: setting, count: 1, in: dev)
         }

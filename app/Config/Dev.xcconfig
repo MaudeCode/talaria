@@ -15,3 +15,5 @@ APP_IDENTIFIER_SUFFIX = .branch
 APP_DISPLAY_NAME = Talaria Dev
 APP_URL_SCHEME_SUFFIX = -branch
 APP_ICON_NAME = TalariaDev
+// Alternate icons lack the DEV banner, so Talaria Dev ships none; Settings hides the picker.
+ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES =
