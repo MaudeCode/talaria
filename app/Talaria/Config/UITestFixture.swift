@@ -15,6 +15,9 @@ struct UITestFixtureEnvironment {
     nonisolated static let trustedReauthenticationArgument = "--ui-test-reauthentication-trusted"
     /// Launches with no saved server so the fixture lands on onboarding.
     nonisolated static let onboardingArgument = "--ui-test-onboarding"
+    /// Fails every server-list Keychain write after launch, so a UI test can see an
+    /// identity save fail and stay retryable (TAL-123).
+    nonisolated static let identitySaveFailsArgument = "--ui-test-identity-save-fails"
     /// Runs the "New Chat" App Intent at launch, so a UI test can exercise the real
     /// intent → `AppIntentRouter` → `ContentView` drain path (TAL-77). XCUITest has no
     /// supported way to run an App Intent through Shortcuts or Siri deterministically.
@@ -186,16 +189,18 @@ struct UITestFixtureEnvironment {
         defaults.removePersistentDomain(forName: defaultsName)
         CustomHeaderStore.shared.replace(with: [])
         let client = APIClient(baseURL: serverURL)
+        let authManager = AuthManager(
+            keychain: keychain,
+            clientFactory: { _ in client },
+            probeClientFactory: { _, _, _ in client },
+            headerStore: .shared,
+            cookieStorage: URLSessionConfiguration.ephemeral.httpCookieStorage!,
+            profileEntityCache: ProfileEntityCache(defaults: nil),
+            serverRegistry: ServerRegistry(keychain: keychain, identityDefaults: defaults)
+        )
+        keychain.failsServerListSaves = ProcessInfo.processInfo.arguments.contains(identitySaveFailsArgument)
         return UITestFixtureEnvironment(
-            authManager: AuthManager(
-                keychain: keychain,
-                clientFactory: { _ in client },
-                probeClientFactory: { _, _, _ in client },
-                headerStore: .shared,
-                cookieStorage: URLSessionConfiguration.ephemeral.httpCookieStorage!,
-                profileEntityCache: ProfileEntityCache(defaults: nil),
-                serverRegistry: ServerRegistry(keychain: keychain, identityDefaults: defaults)
-            ),
+            authManager: authManager,
             client: client,
             draftStore: ChatDraftStore(persistence: UITestFixtureDraftPersistence(drafts: initialDrafts))
         )
@@ -262,6 +267,11 @@ final class UITestFixtureHold: @unchecked Sendable {
 private final class UITestFixtureKeychainStore: KeychainStoring {
     private let lock = NSLock()
     private var values: [String: String]
+    private var failsServerListSavesValue = false
+    var failsServerListSaves: Bool {
+        get { lock.withLock { failsServerListSavesValue } }
+        set { lock.withLock { failsServerListSavesValue = newValue } }
+    }
 
     init(serverURL: URL) {
         values = ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.onboardingArgument)
@@ -270,6 +280,7 @@ private final class UITestFixtureKeychainStore: KeychainStoring {
     }
 
     func save(_ value: String, forKey key: KeychainStore.Key) throws {
+        if key == .servers, failsServerListSaves { throw CocoaError(.fileWriteUnknown) }
         lock.withLock { values[key.rawValue] = value }
     }
 
