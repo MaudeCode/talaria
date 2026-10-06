@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Tool output containing a very long number no longer stalls the chat while it is checked for secrets.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
