@@ -116,4 +116,36 @@ final class PanelResponseCacheTests: XCTestCase {
             ["alpha-job"]
         )
     }
+
+    // A profile list sent before a switch but answered after it reports the old profile; it must
+    // not move the cache back to that profile.
+    func testAProfileListAnsweredAfterASwitchKeepsTheSwitchedProfile() async throws {
+        let cache = makeCache()
+        let switcher = makeClient { request in apiTestJSONResponse(#"{"active": "beta"}"#, for: request) }
+        _ = try await makeClient { request in apiTestJSONResponse(#"{"active": "alpha"}"#, for: request) }.profiles()
+        cache.entry(ResponseCache.Kind.memory).save(Data(#"{"memory": "Alpha notes", "user": "", "soul": ""}"#.utf8))
+
+        let sent = expectation(description: "profile list sent")
+        let requests = DeferredRequests()
+        let host = try XCTUnwrap(server.host)
+        DeferredMockURLProtocol.setOnRequest({ request in
+            _ = requests.append(request)
+            sent.fulfill()
+        }, forHost: host)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [DeferredMockURLProtocol.self]
+        let staleList = APIClient(baseURL: server, session: URLSession(configuration: configuration))
+        let pendingList = Task { try await staleList.profiles() }
+        await fulfillment(of: [sent], timeout: 5)
+        _ = try await switcher.switchProfile(name: "beta")
+        requests.request(at: 0).complete(withJSON: #"{"active": "alpha"}"#)
+        _ = try await pendingList.value
+
+        XCTAssertEqual(
+            MemoryViewModel(server: server, client: offlineClient(), responseCache: cache).content(for: .memory),
+            "",
+            "A stale profile list must not bring back alpha's cached memory"
+        )
+    }
 }

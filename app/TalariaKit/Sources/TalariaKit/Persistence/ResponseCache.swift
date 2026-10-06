@@ -118,16 +118,38 @@ public enum ServerCacheGeneration {
 enum ActiveServerProfile {
     private static let storageKey = "responseCache.activeProfile.v1"
     private static let lock = NSLock()
+    nonisolated(unsafe) private static var switches: [String: Int] = [:]
 
     static func name(for server: URL) -> String? {
         UserDefaults.standard.dictionary(forKey: storageKey)?[server.absoluteString] as? String
     }
 
+    /// Counts the server's switches, so a profile list can tell whether one landed while it was
+    /// in flight.
+    static func switchCount(for server: URL) -> Int {
+        lock.withLock { switches[server.absoluteString, default: 0] }
+    }
+
+    /// Records a profile list's active profile, unless a switch landed after `switchCount` was
+    /// read: that list predates the switch and reports the old profile.
+    static func record(_ name: String?, for server: URL, ifNoSwitchSince switchCount: Int) {
+        lock.withLock {
+            guard switches[server.absoluteString, default: 0] == switchCount else { return }
+            store(name, for: server)
+        }
+    }
+
+    /// Records a completed switch, or forgets the server's profile when `name` is nil.
     static func record(_ name: String?, for server: URL) {
         lock.withLock {
-            var names = UserDefaults.standard.dictionary(forKey: storageKey) ?? [:]
-            names[server.absoluteString] = name
-            UserDefaults.standard.set(names, forKey: storageKey)
+            switches[server.absoluteString, default: 0] += 1
+            store(name, for: server)
         }
+    }
+
+    private static func store(_ name: String?, for server: URL) {
+        var names = UserDefaults.standard.dictionary(forKey: storageKey) ?? [:]
+        names[server.absoluteString] = name
+        UserDefaults.standard.set(names, forKey: storageKey)
     }
 }

@@ -95,8 +95,9 @@ extension APIClient {
     }
 
     public func profiles(caching cache: ResponseCache.Entry?) async throws -> ProfilesResponse {
+        let switchCount = ActiveServerProfile.switchCount(for: baseURL)
         let response: ProfilesResponse = try await send(endpoint: .profiles, caching: cache)
-        ActiveServerProfile.record(response.effectiveDefaultProfileName, for: baseURL)
+        ActiveServerProfile.record(response.effectiveDefaultProfileName, for: baseURL, ifNoSwitchSince: switchCount)
         return response
     }
 
