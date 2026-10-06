@@ -698,13 +698,16 @@ public enum Endpoint {
         default:
             url = baseURL.appending(path: path)
         }
-        guard !queryItems.isEmpty else {
+        guard !queryItems.isEmpty,
+              var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        else {
             return url
         }
 
-        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
-        components?.queryItems = queryItems
-        return components?.url ?? url
+        components.queryItems = queryItems
+        // The server's `URLSearchParams` decodes a bare `+` as a space, which `queryItems` leaves unescaped.
+        components.percentEncodedQuery = components.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
+        return components.url ?? url
     }
 
     private func kanbanTaskURL(relativeTo baseURL: URL, cardID: String, suffix: String = "") -> URL {
