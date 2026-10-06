@@ -2,7 +2,6 @@ import AVFoundation
 import AVKit
 import SwiftUI
 import UIKit
-import UniformTypeIdentifiers
 import TalariaKit
 
 struct TranscriptMediaAudioExportView: View {
@@ -10,10 +9,7 @@ struct TranscriptMediaAudioExportView: View {
     let loadMediaData: () async -> Data?
 
     @State private var cachedData: Data?
-    @State private var exportDocument = ExportedFileDocument(data: Data())
-    @State private var exportContentType = UTType.audio
-    @State private var exportFilename = String(localized: "Hermes Media")
-    @State private var isFileExporterPresented = false
+    @State private var exportPayload: FileExportPayload?
     @State private var isExporting = false
     @State private var errorMessage: String?
 
@@ -45,33 +41,7 @@ struct TranscriptMediaAudioExportView: View {
             .accessibilityLabel(String(localized: "Export audio \(reference.displayName)"))
         }
         .accessibilityElement(children: .contain)
-        .fileExporter(
-            isPresented: $isFileExporterPresented,
-            document: exportDocument,
-            contentType: exportContentType,
-            defaultFilename: exportFilename
-        ) { result in
-            if case let .failure(error) = result {
-                errorMessage = error.localizedDescription
-            }
-        }
-        .alert(
-            "Media Action Failed",
-            isPresented: Binding(
-                get: { errorMessage != nil },
-                set: { isPresented in
-                    if !isPresented {
-                        errorMessage = nil
-                    }
-                }
-            )
-        ) {
-            Button("OK") {
-                errorMessage = nil
-            }
-        } message: {
-            Text(errorMessage ?? "")
-        }
+        .fileExporter(payload: $exportPayload, errorTitle: "Media Action Failed", errorMessage: $errorMessage)
     }
 
     private func audioData() async -> Data? {
@@ -96,10 +66,6 @@ struct TranscriptMediaAudioExportView: View {
             return
         }
 
-        let payload = TranscriptMediaExportSupport.payload(for: reference, data: data, resolvedKind: .audio)
-        exportDocument = ExportedFileDocument(data: payload.data)
-        exportContentType = payload.contentType
-        exportFilename = payload.filename
-        isFileExporterPresented = true
+        exportPayload = TranscriptMediaExportSupport.payload(for: reference, data: data, resolvedKind: .audio)
     }
 }

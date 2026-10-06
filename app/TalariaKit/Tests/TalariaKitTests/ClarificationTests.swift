@@ -741,6 +741,37 @@ final class ClarificationTests: APIClientTestCase {
     }
 
     @MainActor
+    func testClarifyStreamTransportErrorFallsBackToPollingThePendingEndpoint() async throws {
+        let stream = ClarificationSpySSEStreamingClient()
+        let delegate = ClarificationTestDelegate()
+        let client = makeClient { request in
+            XCTAssertEqual(request.url?.path, "/api/clarify/pending")
+            return apiTestJSONResponse(#"{"pending":{"clarify_id":"polled","question":"Polled question?"},"pending_count":1}"#, for: request)
+        }
+        let coordinator = ChatPendingActionCoordinator(client: client,
+            approvalStreamClient: ClarificationSpySSEStreamingClient(), clarifyStreamClient: stream,
+            pollingIntervals: ChatPollingIntervals(
+                approvalNanoseconds: 10_000_000,
+                clarificationNanoseconds: 10_000_000,
+                backgroundNanoseconds: 10_000_000
+            ))
+        coordinator.delegate = delegate
+        defer { coordinator.stopMonitoring(clearPrompt: true) }
+        coordinator.startMonitoring()
+        let appeared = expectation(description: "Fallback polling renders the pending prompt")
+        withObservationTracking {
+            _ = coordinator.clarificationPrompt
+        } onChange: {
+            appeared.fulfill()
+        }
+        // No clarify tool is running, so only the fallback makes the loop poll.
+        stream.emit(.transportError("clarify stream failed"))
+        await fulfillment(of: [appeared], timeout: 10)
+        XCTAssertEqual(coordinator.clarificationPrompt?.question, "Polled question?")
+        XCTAssertEqual(stream.stopCount, 1, "The failed stream stops before polling takes over")
+    }
+
+    @MainActor
     func testLatePendingHTTPResultCannotEraseANewerStreamPrompt() async throws {
         let pendingRead = expectation(description: "Post-submit pending read started")
         let release = DispatchSemaphore(value: 0)
