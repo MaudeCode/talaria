@@ -421,12 +421,6 @@ struct InsightsView: View {
         }
     }
 
-    private func formatTokens(_ value: Int) -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        return formatter.string(from: NSNumber(value: value)) ?? "\(value)"
-    }
-
     private func formatHour(_ value: Int?) -> String {
         guard let value else { return String(localized: "Unknown") }
         return "\(String(format: "%02d", value)):00"
