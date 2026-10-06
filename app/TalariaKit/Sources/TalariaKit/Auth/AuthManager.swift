@@ -135,6 +135,13 @@ public final class AuthManager {
     private let resetServerScopedState: @MainActor (URL) async throws -> Void
     private let logoutTimeout: Duration
     private let serverRegistry: ServerRegistry
+    /// Identity edits not yet written to the registry, keyed by server id, so
+    /// typing in Settings costs no Keychain write per keystroke (TAL-123).
+    private var pendingIdentityEdits: [String: ServerAccount] = [:]
+    private var identitySaveTask: Task<Void, Never>?
+    private let identitySaveDelay: Duration
+    /// Why the last identity save failed; the edit stays pending for a retry.
+    public private(set) var identitySaveErrorMessage: String?
     private var isOIDCSignInActive = false
     /// Servers whose retained password already got its one automatic retry
     /// after a 401, so a stale password cannot loop.
@@ -169,6 +176,7 @@ public final class AuthManager {
         profileEntityCache: ProfileEntityCache = .shared,
         resetServerScopedState: @escaping @MainActor (URL) async throws -> Void = { _ in },
         logoutTimeout: Duration = .seconds(5),
+        identitySaveDelay: Duration = .milliseconds(750),
         serverRegistry: ServerRegistry = .shared
     ) {
         self.keychain = keychain
@@ -200,6 +208,7 @@ public final class AuthManager {
         self.profileEntityCache = profileEntityCache
         self.resetServerScopedState = resetServerScopedState
         self.logoutTimeout = logoutTimeout
+        self.identitySaveDelay = identitySaveDelay
         self.serverRegistry = serverRegistry
         restoreSavedServer()
         refreshServers()
@@ -244,6 +253,8 @@ public final class AuthManager {
     /// every registry mutation routed through this manager.
     private func refreshServers() {
         servers = serverRegistry.servers
+        // A removed server's unsaved edit must never land on a later entry.
+        pendingIdentityEdits = pendingIdentityEdits.filter { id, _ in servers.contains { $0.id == id } }
         notifyConfigurationChanged()
     }
 
@@ -874,26 +885,60 @@ public final class AuthManager {
         state = .loggedIn(server: serverURL)
     }
 
-    /// Updates a server's per-server identity (display name, initials, Header Logo
-    /// Color). When `account` is the active server the registry mirrors the new
-    /// identity into the global identity defaults, so the avatar / header tint
-    /// update live (#17).
+    /// Stages a server's per-server identity (display name, initials, Header
+    /// Logo Color) and saves it once edits pause for `identitySaveDelay`, or on
+    /// `flushServerIdentityEdits()`. The active server's identity is mirrored into
+    /// the global identity defaults right away, so the avatar / header tint
+    /// preview every keystroke without a Keychain write (#17, TAL-123).
     public func updateServerIdentity(
         _ account: ServerAccount,
         displayName: String,
         initials: String,
         headerLogoColorHex: String
     ) {
-        var updated = account
-        updated.displayName = displayName
-        updated.initials = initials
-        updated.headerLogoColorHex = headerLogoColorHex
-        do {
-            try serverRegistry.update(updated)
-            refreshServers()
-        } catch {
-            lastErrorMessage = error.localizedDescription
+        var edit = account
+        edit.displayName = displayName
+        edit.initials = initials
+        edit.headerLogoColorHex = headerLogoColorHex
+        pendingIdentityEdits[account.id] = edit
+        serverRegistry.mirrorIdentityIfActive(edit)
+        identitySaveTask?.cancel()
+        identitySaveTask = Task { [weak self, identitySaveDelay] in
+            try? await Task.sleep(for: identitySaveDelay)
+            guard !Task.isCancelled else { return }
+            self?.flushServerIdentityEdits()
         }
+    }
+
+    /// Writes every staged identity edit to the registry now. Returns false when
+    /// a write fails; that edit stays staged and `identitySaveErrorMessage`
+    /// explains the failure until a later flush succeeds.
+    @discardableResult
+    public func flushServerIdentityEdits() -> Bool {
+        identitySaveTask?.cancel()
+        identitySaveTask = nil
+        guard !pendingIdentityEdits.isEmpty else {
+            identitySaveErrorMessage = nil
+            return true
+        }
+        var failure: Error?
+        for (id, edit) in pendingIdentityEdits {
+            // Apply only the identity onto the current entry, so a sync that
+            // landed meanwhile keeps its other fields.
+            guard var updated = serverRegistry.servers.first(where: { $0.id == id }) else { continue }
+            updated.displayName = edit.displayName
+            updated.initials = edit.initials
+            updated.headerLogoColorHex = edit.headerLogoColorHex
+            do {
+                try serverRegistry.update(updated)
+                pendingIdentityEdits[id] = nil
+            } catch {
+                failure = error
+            }
+        }
+        identitySaveErrorMessage = failure?.localizedDescription
+        refreshServers()
+        return failure == nil
     }
 
     /// Drops the active server locally + from the registry, then auto-switches to
@@ -1377,6 +1422,7 @@ public final class AuthManager {
         if let active = serverRegistry.activeServer,
            let activeURL = URL(string: active.urlString) {
             savedURL = activeURL
+            serverRegistry.mirrorIdentityIfActive(active)
         } else {
             guard
                 let savedValue = try? keychain.load(.serverURL),

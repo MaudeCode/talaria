@@ -432,13 +432,6 @@ final class SelectChatsUITests: ChatUITestCase {
         XCTAssertTrue(app.staticTexts["2 selected"].awaitNonExistence(timeout: 10))
         XCTAssertTrue(app.buttons["Select Chats"].awaitExistence(timeout: 5), "Select Chats did not end once every chat was deleted")
     }
-
-    private func attachScreenshot(named name: String) {
-        let attachment = XCTAttachment(screenshot: app.screenshot())
-        attachment.name = name
-        attachment.lifetime = .keepAlways
-        add(attachment)
-    }
 }
 
 /// TAL-437: a relaunch shows the chats the app saw last time before `/api/sessions` answers.
@@ -670,13 +663,6 @@ final class ChatPrimaryStreamUITests: ChatUITestCase {
         tapCenter(of: editRow)
         XCTAssertTrue(addedLine.awaitNonExistence(timeout: 5))
         XCTAssertNotNil(waitForComposer(timeout: 5))
-    }
-
-    private func attachScreenshot(named name: String) {
-        let screenshot = XCTAttachment(screenshot: app.screenshot())
-        screenshot.name = name
-        screenshot.lifetime = .keepAlways
-        add(screenshot)
     }
 }
 
@@ -1166,6 +1152,59 @@ final class SettingsStructureUITests: SettingsUITestCase {
         }
 
         assertChatsAndProvidersShowTheirControlsAndServerContent()
+    }
+
+    /// A server's typed name saves once the editor closes, so the Servers list shows it (TAL-123).
+    func testServerIdentityEditSavesWhenTheEditorCloses() throws {
+        launchFixture()
+        renameFixtureServer(to: "Work Box")
+        attachScreenshot(named: "Server name typed in the editor")
+
+        app.navigationBars["Work Box"].buttons["Servers"].tap()
+        XCTAssertTrue(app.navigationBars["Servers"].awaitExistence(timeout: Self.navigationTimeout))
+        XCTAssertTrue(serverRow(named: "Work Box").awaitExistence(timeout: 5))
+        attachScreenshot(named: "Servers list after closing the editor")
+    }
+
+    /// A failed identity save stays visible with Retry, and the Servers list keeps the saved
+    /// name instead of the unsaved one (TAL-123).
+    func testFailedServerIdentitySaveShowsRetry() throws {
+        launchFixture(additionalArguments: ["--ui-test-identity-save-fails"])
+        renameFixtureServer(to: "Work Box")
+
+        let retry = app.buttons["Retry"]
+        XCTAssertTrue(retry.awaitExistence(timeout: 5))
+        let keyboard = app.keyboards.firstMatch
+        XCTAssertTrue(keyboard.exists, "Showing the failed save ended typing")
+        XCTAssertLessThanOrEqual(retry.frame.maxY, keyboard.frame.minY, "The keyboard covers the failed-save notice")
+        attachScreenshot(named: "Failed server identity save with Retry")
+        app.navigationBars["Work Box"].buttons["Servers"].tap()
+        XCTAssertTrue(app.navigationBars["Servers"].awaitExistence(timeout: Self.navigationTimeout))
+        XCTAssertTrue(app.buttons["Retry"].awaitExistence(timeout: 5))
+        XCTAssertTrue(serverRow(named: "ui-test.talaria.invalid").exists)
+        XCTAssertFalse(serverRow(named: "Work Box").exists)
+        attachScreenshot(named: "Servers list keeps the saved name")
+    }
+
+    /// Opens the fixture server's detail screen and replaces its Display Name with `name`.
+    private func renameFixtureServer(to name: String) {
+        openSettings()
+        tapSettingsCategory(id: "servers", title: "Servers")
+        let row = serverRow(named: "ui-test.talaria.invalid")
+        XCTAssertTrue(row.awaitExistence(timeout: Self.navigationTimeout))
+        row.tap()
+        // A Settings text field is labeled by its placeholder, the server's host here.
+        let field = app.textFields["ui-test.talaria.invalid"]
+        XCTAssertTrue(field.awaitExistence(timeout: Self.navigationTimeout))
+        // The value is trailing-aligned, so a tap at the trailing edge puts the caret after it.
+        field.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5)).tap()
+        let current = field.value as? String ?? ""
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count) + name)
+        XCTAssertTrue(app.navigationBars[name].awaitExistence(timeout: 5))
+    }
+
+    private func serverRow(named name: String) -> XCUIElement {
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "\(name), ")).firstMatch
     }
 
     /// Settings follows the applied update's server notification through the restart and shows
@@ -2495,6 +2534,13 @@ class TalariaUITestCase: XCTestCase {
 
     func launchFixture(additionalArguments: [String] = []) {
         launch(arguments: fixtureLaunchArguments + additionalArguments)
+    }
+
+    func attachScreenshot(named name: String) {
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = name
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
     }
 
     /// Taps `button`, expects the system file exporter, keeps a screenshot named `name`, and dismisses it.

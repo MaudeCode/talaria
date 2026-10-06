@@ -71,6 +71,8 @@ struct UserProfileSettingsView: View {
         .onChange(of: displayName) { syncActiveServerIdentity() }
         .onChange(of: initials) { syncActiveServerIdentity() }
         .onChange(of: headerLogoColorHex) { syncActiveServerIdentity() }
+        .onDisappear { authManager.flushServerIdentityEdits() }
+        .identitySaveErrorInset(authManager)
     }
 
     private var initialsBinding: Binding<String> {
@@ -236,6 +238,8 @@ struct ServersSettingsView: View {
             }
             .buttonStyle(.plain)
             .accessibilityHint("Adds another Hermes server.")
+
+            IdentitySaveErrorNotice(authManager: authManager)
         }
     }
 

@@ -294,6 +294,15 @@ public final class ServerRegistry: @unchecked Sendable {
         }
     }
 
+    /// Mirrors `account`'s identity into the global identity defaults when it is
+    /// the active server: an unsaved edit to preview before `update(_:)` writes
+    /// it through, or the saved entry at launch so a preview whose save never
+    /// landed does not outlive the process (TAL-123).
+    public func mirrorIdentityIfActive(_ account: ServerAccount) {
+        guard activeServerID == account.id else { return }
+        mirrorIdentityToDefaults(account)
+    }
+
     /// Inserts or replaces `account` exactly as given — timestamps included —
     /// without touching the active selection. Used to apply a setup another
     /// device synced (TAL-91); the active server's identity is mirrored so the

@@ -189,5 +189,6 @@ struct AddServerView: View {
             initials: finalInitials,
             headerLogoColorHex: colorHex
         )
+        authManager.flushServerIdentityEdits()
     }
 }

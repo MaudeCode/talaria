@@ -294,6 +294,7 @@ final class ConfigurationSyncTests: XCTestCase {
             initials: "AL",
             headerLogoColorHex: "#112233"
         )
+        deviceA.authManager.flushServerIdentityEdits()
         deviceA.coordinator.signInWithApple(userID: "apple-user-1")
         await deviceA.coordinator.enableSync()
 
@@ -369,6 +370,7 @@ final class ConfigurationSyncTests: XCTestCase {
             try XCTUnwrap(deviceA.authManager.servers.first { $0.id == serverA }),
             displayName: "Alpha Renamed", initials: "AR", headerLogoColorHex: "#445566"
         )
+        deviceA.authManager.flushServerIdentityEdits()
         let removed = try XCTUnwrap(deviceA.authManager.servers.first { $0.id == serverB })
         await deviceA.authManager.removeServer(removed)
         await deviceA.coordinator.sync()
@@ -432,6 +434,7 @@ final class ConfigurationSyncTests: XCTestCase {
             try XCTUnwrap(deviceA.authManager.servers.first),
             displayName: "Renamed", initials: "RN", headerLogoColorHex: "#778899"
         )
+        deviceA.authManager.flushServerIdentityEdits()
         await deviceA.coordinator.sync()
         deviceB.now.advance(by: 60)
         let account = try XCTUnwrap(deviceB.authManager.servers.first)
@@ -669,6 +672,7 @@ final class ConfigurationSyncTests: XCTestCase {
             try XCTUnwrap(deviceA.authManager.servers.first),
             displayName: "Renamed", initials: "RN", headerLogoColorHex: "#778899"
         )
+        deviceA.authManager.flushServerIdentityEdits()
         await deviceA.coordinator.sync()
         deviceB.now.advance(by: 60)
         let account = try XCTUnwrap(deviceB.authManager.servers.first)

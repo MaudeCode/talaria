@@ -45,6 +45,8 @@ struct AppearanceSettingsView: View {
                 SettingsDivider()
 
                 AppIconSettingsSection()
+
+                IdentitySaveErrorNotice(authManager: authManager)
             }
         }
         .onChange(of: headerLogoColorHex) {
@@ -56,6 +58,7 @@ struct AppearanceSettingsView: View {
                 headerLogoColorHex: headerLogoColorHex
             )
         }
+        .onDisappear { authManager.flushServerIdentityEdits() }
     }
 }
 
