@@ -425,7 +425,7 @@ public final class ChatViewModel {
     }
     /// The session's toolset override (TAL-631); nil until a session detail reports it.
     public private(set) var sessionToolsets: SessionToolsets?
-    /// One queued message sends at a time (the drain or Send now): each swaps the composer's pending files.
+    /// One queued message sends at a time, by the drain or by Send now.
     private var isSendingQueuedMessage = false
     private var activeBtwStreamID: String?
     private var activeBtwMessageID: String?
@@ -2984,7 +2984,11 @@ public final class ChatViewModel {
         return .executed(message: nil)
     }
 
-    private func steerResponseFromSlashCommand(_ args: String) async -> SlashCommandExecutionResult {
+    /// `requeuedAttachments` go with the message if the run cannot take it; by default the composer's pending files do.
+    private func steerResponseFromSlashCommand(
+        _ args: String,
+        requeuedAttachments: [PendingAttachment]? = nil
+    ) async -> SlashCommandExecutionResult {
         let message = args.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !message.isEmpty else {
             return .unsupported(friendlyMessage: String(localized: "Usage: /steer <message>"))
@@ -3039,7 +3043,7 @@ public final class ChatViewModel {
         // TAL-441: the run may still be alive, so the message waits for it rather than stopping it.
         _ = enqueueQueuedSlashMessage(
             message,
-            attachments: attachmentCoordinator.consumePendingAttachments(),
+            attachments: requeuedAttachments ?? attachmentCoordinator.consumePendingAttachments(),
             steerID: unconfirmedSteerID
         )
         return .executed(message: String(localized: "Steer was unavailable, so the message was queued for after this response."))
@@ -5379,9 +5383,15 @@ public final class ChatViewModel {
               queuedMessagePreviews.first(where: { $0.id == id })?.canSendNow == true,
               let (message, index) = takeQueuedMessage(id: id)
         else { return }
+        guard activeStreamID != nil else {
+            // Nothing running to steer into: it goes first, and the queue sends it.
+            queuedSlashMessages.insert(message, at: 0)
+            drainQueuedSlashMessageIfIdle()
+            return
+        }
         isSendingQueuedMessage = true
-        // A steer the run refuses queues again with the pending files, so the composer's own stay out of it.
-        let result = await withPendingAttachments(message.attachments) { await steerResponseFromSlashCommand(message.text) }
+        // A steer the run refuses queues again with the message's own files, never the composer's.
+        let result = await steerResponseFromSlashCommand(message.text, requeuedAttachments: message.attachments)
         isSendingQueuedMessage = false
         if case .unsupported(let notice) = result {
             // Back in place, with no drain: a send that keeps failing must not retry in a loop (issue #202).
@@ -5403,13 +5413,6 @@ public final class ChatViewModel {
         return (queuedSlashMessages.remove(at: index), index)
     }
 
-    /// Runs `body` with `attachments` as the pending files, then gives the composer its own back.
-    private func withPendingAttachments<T>(_ attachments: [PendingAttachment], _ body: () async -> T) async -> T {
-        let composerAttachments = attachmentCoordinator.pendingAttachments
-        attachmentCoordinator.replacePendingAttachments(attachments)
-        defer { attachmentCoordinator.replacePendingAttachments(composerAttachments) }
-        return await body()
-    }
 
     /// TAL-441: the server reported a steer whose request failed, so it owns the message; the queued copy goes.
     @discardableResult
@@ -5435,10 +5438,13 @@ public final class ChatViewModel {
         isSendingQueuedMessage = true
 
         Task { @MainActor in
-            let sent = await withPendingAttachments(next.attachments) { await sendMessage(next.text) }
+            let savedAttachments = attachmentCoordinator.pendingAttachments
+            attachmentCoordinator.replacePendingAttachments(next.attachments)
+            let sent = await sendMessage(next.text)
             if !sent {
                 queuedSlashMessages.insert(next, at: 0)
             }
+            attachmentCoordinator.replacePendingAttachments(savedAttachments)
             isSendingQueuedMessage = false
             // Only chain-drain after a *successful* send. A failed send requeues the message and
             // waits for the next natural trigger (a queue append, stream completion, or an explicit

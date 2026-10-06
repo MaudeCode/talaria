@@ -148,10 +148,12 @@ extension ChatViewModelSendTests {
         try await waitUntil { chatStartCount == 2 && viewModel.activeStreamID == nil }
         try await waitUntil { viewModel.queuedMessagePreviews.count == 2 }
 
-        await viewModel.sendQueuedMessageNow(id: try XCTUnwrap(viewModel.queuedMessagePreviews.first).id)
+        await viewModel.sendQueuedMessageNow(id: try XCTUnwrap(viewModel.queuedMessagePreviews.last).id)
 
-        XCTAssertEqual(chatStartCount, 3)
-        XCTAssertEqual(queueSummary(viewModel), ["try again|0", "later|0"], "A send that cannot start loses nothing")
+        // With nothing running it goes first and the queue sends it; that send fails and keeps it.
+        try await waitUntil { chatStartCount == 3 }
+        try await waitUntil { viewModel.queuedMessagePreviews.count == 2 }
+        XCTAssertEqual(queueSummary(viewModel), ["later|0", "try again|0"], "A send that cannot start loses nothing")
     }
 
     private func queue(_ text: String, on viewModel: ChatViewModel) async throws {
