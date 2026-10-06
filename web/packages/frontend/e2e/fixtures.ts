@@ -14,7 +14,7 @@ const BENIGN = [
   /503 GET .*\/api\/sessions\/events$/,
   // Kanban needs the Agent sidecar; without it the server answers 503 "kanban unavailable" by
   // design (server tools/kanban.ts) and the page shows its unavailable state.
-  /503 GET .*\/api\/kanban\/(boards?|tasks?)(\?|$)/,
+  /503 GET .*\/api\/kanban\/(boards?|tasks?(\/[^/?]+)?|stats)(\?|$)/,
 ]
 
 export const test = base.extend<{ errors: string[] }>({
@@ -25,6 +25,9 @@ export const test = base.extend<{ errors: string[] }>({
     }
     // TAL-372: specs that mock their session in the page have no server record of it, so the composer's background card
     // gets an empty list by default; a spec that tests background work routes its own (later routes win).
+    // TAL-567: the Kanban page holds an event stream; by default it says hello and reconnects each second, so the page
+    // still reaches network idle. A spec that tests live refresh routes its own.
+    await page.route('**/api/kanban/events/stream**', (route) => route.fulfill({ headers: { 'content-type': 'text/event-stream' }, body: 'retry: 1000\n\nevent: hello\ndata: {}\n\n' }))
     await page.route('**/api/background/tasks?**', (route) => route.fulfill({ json: { session_id: new URL(route.request().url()).searchParams.get('session_id') ?? '', agent_available: true, tasks: [] } }))
     page.on('console', onConsole)
     page.on('pageerror', (err) => errors.push(`pageerror: ${err.message}`))

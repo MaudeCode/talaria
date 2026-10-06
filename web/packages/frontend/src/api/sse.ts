@@ -76,3 +76,15 @@ export function openTerminalStream(sessionId: string, cb: TerminalStreamCallback
   source.addEventListener('terminal_error', (ev) => { const err = data(ev).error; source.close(); cb.onError(typeof err === 'string' ? err : null) })
   return { close: () => source.close(), readyState: () => source.readyState }
 }
+
+/** Kanban task events (`/api/kanban/events/stream`) after `since`, following the active board; `onEvents` fires once per non-empty batch. */
+export function openKanbanEventStream(since: number, onEvents: () => void): SseHandle {
+  const source = new EventSource(resolveApiUrl(`api/kanban/events/stream?since=${since}`).href, { withCredentials: true })
+  source.addEventListener('events', (ev) => {
+    try {
+      const data = JSON.parse((ev as MessageEvent<string>).data) as { events?: unknown }
+      if (Array.isArray(data.events) && data.events.length) onEvents()
+    } catch { /* a malformed frame is skipped; the next batch still refreshes */ }
+  })
+  return { close: () => source.close(), readyState: () => source.readyState }
+}

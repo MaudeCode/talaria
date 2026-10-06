@@ -10,7 +10,7 @@ import { SessionNotFound } from '../sessions/store.js'
 import { ConfigUnavailable, type Dict } from '../config/agent-config.js'
 import { SidecarError } from '../sidecar/client.js'
 import { ExtensionError } from '../tools/extensions.js'
-import { intQuery, kanbanFailure, truthyQuery, withKanbanPolicy } from '../tools/kanban.js'
+import { boardSlug, intQuery, kanbanFailure, truthyQuery, withKanbanPolicy, withStatsTotals } from '../tools/kanban.js'
 import { TerminalNotRunning } from '../tools/terminal.js'
 import { onboardingGateAllows } from './settings-router.js'
 import { sanitizeError } from '../workspace/media.js'
@@ -85,15 +85,17 @@ export const automationRouter = os.router({
     resume: os.crons.resume.handler(({ input, context: { ctx } }) => run(() => ctx.deps.crons.resume(home(ctx), str(input.job_id)) as Promise<never>)),
   },
   kanban: {
-    boards: os.kanban.boards.handler(({ input, context: { ctx } }) => run(() => kb(() => ctx.deps.kanban.sidecar().call('kanban.boards', { profile_home: home(ctx), include_archived: truthyQuery(input.include_archived) })))),
+    boards: os.kanban.boards.handler(({ input, context: { ctx } }) => run(() => kb(() => ctx.deps.kanban.sidecar().call('kanban.boards', { profile_home: home(ctx), include_archived: truthyQuery(input.include_archived) }).then((r) => ({ ...r, boards: r.boards.map((b) => ({ ...b, removable: b.slug !== 'default' })) }))))),
     board: os.kanban.board.handler(({ input, context: { ctx } }) => run(() => ctx.deps.kanban.board(home(ctx), input, activeProfileName(ctx)) as Promise<never>)),
     config: os.kanban.config.handler(({ input, context: { ctx } }) => run(() => kb(() => ctx.deps.kanban.sidecar().call('kanban.config', { profile_home: home(ctx), board: boardOf(input.board) })))),
     updateConfig: os.kanban.updateConfig.handler(({ input, context: { ctx } }) => run(() => ctx.deps.kanban.updateConfig(home(ctx), input))),
-    stats: os.kanban.stats.handler(({ input, context: { ctx } }) => run(() => kb(() => ctx.deps.kanban.sidecar().call('kanban.stats', { profile_home: home(ctx), board: boardOf(input.board) })))),
+    stats: os.kanban.stats.handler(({ input, context: { ctx } }) => run(() => kb(() => ctx.deps.kanban.sidecar().call('kanban.stats', { profile_home: home(ctx), board: boardOf(input.board) }).then(withStatsTotals)))),
     assignees: os.kanban.assignees.handler(({ input, context: { ctx } }) => run(() => kb(() => ctx.deps.kanban.sidecar().call('kanban.assignees', { profile_home: home(ctx), board: boardOf(input.board) })))),
     events: os.kanban.events.handler(({ input, context: { ctx } }) => run(() => ctx.deps.kanban.events(home(ctx), boardOf(input.board), input.since, input.limit) as Promise<never>)),
     createBoard: os.kanban.createBoard.handler(({ input, context: { ctx } }) => run(() => kb(async () => {
       const spec: Dict = { ...input }
+      // A board named without a slug gets one from its name.
+      if (!str(spec.slug).trim()) spec.slug = boardSlug(str(spec.name))
       if ('default_workdir' in spec) { const raw = str(spec.default_workdir).trim(); spec.default_workdir = raw ? ctx.deps.workspaces.resolveTrusted(raw, activeProfileName(ctx)) : '' }
       return ctx.deps.kanban.sidecar().call('kanban.create_board', { profile_home: home(ctx), board_spec: spec })
     }))),

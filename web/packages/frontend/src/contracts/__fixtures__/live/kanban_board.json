@@ -42,6 +42,8 @@
       "profile": null,
       "tenant": null
     },
+    "lane_by_profile": true,
+    "lanes": [],
     "latest_event_id": 0,
     "read_only": false,
     "tenants": []

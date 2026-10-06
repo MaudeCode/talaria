@@ -432,6 +432,60 @@ describe('crons, kanban, extensions, terminal', () => {
     expect((await json(await post(s, '/api/kanban/tasks', { title: 'N' }))).task).toMatchObject({ available_actions: { move_to: ['todo', 'ready'] } })
   })
 
+  it('kanban search, profile lanes, stats totals, removable boards and board slugs are server-owned (TAL-567)', async () => {
+    const methods = ['kanban.board', 'kanban.stats', 'kanban.boards', 'kanban.create_board', 'config.get', 'config.set'] as const
+    const saved = methods.map((m) => [m, sidecar.responderFor(m)] as const)
+    onTestFinished(() => { for (const [m, r] of saved) sidecar.respond(m, r) })
+    // The saved view lives in config.yaml; this config keeps what the PATCH writes.
+    let stored: Json = {}
+    sidecar.respond('config.get', (params) => ({ path: join(params.profile_home, 'config.yaml'), exists: true, config: stored }))
+    sidecar.respond('config.set', (params) => { stored = params.config; return { ok: true as const, path: join(params.profile_home, 'config.yaml') } })
+    const task = (id: string, status: string, extra: Json = {}) => ({ id, title: `Task ${id}`, status, priority: 0, claim_live: false, has_completion_evidence: false, ...extra })
+    const columns = [
+      { name: 'todo', tasks: [task('t_1', 'todo', { assignee: 'builder', body: 'Fix the Login flow' }), task('t_2', 'todo', { tenant: 'acme' })] },
+      { name: 'ready', tasks: [task('t_3', 'ready', { assignee: 'reviewer' }), task('t_4', 'ready', { assignee: 'builder' })] },
+    ]
+    sidecar.respond('kanban.board', () => ({ changed: true, columns, tenants: ['acme'], assignees: ['builder', 'reviewer'], latest_event_id: 4, read_only: false, filters: { tenant: null, assignee: null, include_archived: false, only_mine: false, profile: null } }))
+    const ids = (cols: Json[]) => cols.map((c) => [c.name, (c.tasks as Json[]).map((t) => t.id)])
+
+    // Search matches id, title, body, assignee and tenant, case-insensitively, and keeps every column.
+    await post(s, '/api/kanban/config', { lane_by_profile: false }, 'PATCH')
+    let board = await json(await s.get('/api/kanban/board?search=LOGIN'))
+    expect(ids(board.columns as Json[])).toEqual([['todo', ['t_1']], ['ready', []]])
+    expect(ids((await json(await s.get('/api/kanban/board?search=acme'))).columns as Json[])).toEqual([['todo', ['t_2']], ['ready', []]])
+    expect(ids((await json(await s.get('/api/kanban/board?search=%20t_3%20'))).columns as Json[])).toEqual([['todo', []], ['ready', ['t_3']]])
+    expect(board).toMatchObject({ lane_by_profile: false, tenants: ['acme'] })
+    expect(board.lanes).toBeUndefined()
+
+    // Lanes by profile: one lane per assignee in name order, unassigned last, each with every column and its own count.
+    await post(s, '/api/kanban/config', { lane_by_profile: true }, 'PATCH')
+    board = await json(await s.get('/api/kanban/board'))
+    expect(board.lane_by_profile).toBe(true)
+    expect((board.lanes as Json[]).map((l) => [l.assignee, l.count, ids(l.columns as Json[])])).toEqual([
+      ['builder', 2, [['todo', ['t_1']], ['ready', ['t_4']]]],
+      ['reviewer', 1, [['todo', []], ['ready', ['t_3']]]],
+      [null, 1, [['todo', ['t_2']], ['ready', []]]],
+    ])
+    expect(((board.lanes as Json[])[0]!.columns as Json[])[0]).toMatchObject({ tasks: [{ id: 't_1', available_actions: { archive: true } }] })
+    // Lanes follow the search too.
+    expect((await json(await s.get('/api/kanban/board?search=reviewer'))).lanes).toMatchObject([{ assignee: 'reviewer', count: 1 }])
+    sidecar.respond('kanban.board', () => ({ changed: false, latest_event_id: 4, read_only: false }))
+    expect(await json(await s.get('/api/kanban/board?since=4'))).toMatchObject({ changed: false, lane_by_profile: true })
+
+    // Stats carry the total and the counts in board-column order, unknown statuses after.
+    sidecar.respond('kanban.stats', () => ({ by_status: { done: 2, blocked: 1, triage: 3, zeta: 1 }, by_assignee: {} }))
+    expect(await json(await s.get('/api/kanban/stats'))).toMatchObject({ total: 7, status_counts: [{ status: 'triage', count: 3 }, { status: 'blocked', count: 1 }, { status: 'done', count: 2 }, { status: 'zeta', count: 1 }] })
+
+    // Every board says whether it can be removed; the default board cannot.
+    sidecar.respond('kanban.boards', () => ({ boards: [{ slug: 'default', name: 'Default', is_current: true, counts: {}, total: 0 }, { slug: 'ops', name: 'Ops', is_current: false, counts: {}, total: 0 }], current: 'default', read_only: false }))
+    expect(((await json(await s.get('/api/kanban/boards'))).boards as Json[]).map((b) => [b.slug, b.removable])).toEqual([['default', false], ['ops', true]])
+
+    // A board created with only a name gets its slug from the server.
+    sidecar.respond('kanban.create_board', (params) => ({ board: { slug: String((params.board_spec as Json).slug) }, current: 'x', read_only: false }))
+    expect((await json(await post(s, '/api/kanban/boards', { name: '  Q3 Launch: Ops!  ' }))).board).toEqual({ slug: 'q3-launch-ops' })
+    expect((await json(await post(s, '/api/kanban/boards', { name: 'Ignored', slug: 'kept' }))).board).toEqual({ slug: 'kept' })
+  })
+
   it('extension status, registry, install, static serving, consent, proxy, and uninstall', async () => {
     let res = await s.get('/api/extensions/status')
     let body = await json(res)

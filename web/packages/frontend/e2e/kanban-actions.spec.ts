@@ -31,6 +31,7 @@ test("kanban card dialog shows only the server's actions and confirms leaving Ru
   await page.route('**/api/kanban/board?**', (route) => route.fulfill({ json: board }))
   await page.route('**/api/kanban/board', (route) => route.fulfill({ json: board }))
   await page.route('**/api/kanban/tasks/*/log**', (route) => route.fulfill({ json: { log: [] } }))
+  await page.route(/\/api\/kanban\/tasks\/[^/?]+(\?.*)?$/, (route) => route.fulfill({ json: { task: task('T1', 'todo', actions(false, false, false, true, [])), last_card_action: null, links: { parents: [], children: [] } } }))
   await page.route(/\/api\/kanban\/tasks\/[^/]+\/(patch|block|unblock)$/, (route) => {
     const req = route.request()
     writes.push({ path: new URL(req.url()).pathname, body: req.postDataJSON() })

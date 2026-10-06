@@ -191,6 +191,15 @@ export const kanbanTaskAction = (id: string | number, action: 'patch' | 'comment
 }
 export const createKanbanTask = (body: Record<string, unknown>) => orpc().kanban.createTask(body)
 export const fetchKanbanTaskLog = (id: string | number) => orpc().kanban.taskLog({ task_id: String(id) })
+export const fetchKanbanTask = (id: string | number) => orpc().kanban.task({ task_id: String(id) })
+export const fetchKanbanStats = () => orpc().kanban.stats({})
+export const updateKanbanConfig = (lane_by_profile: boolean) => orpc().kanban.updateConfig({ lane_by_profile })
+export const bulkKanbanStatus = (ids: string[], status: string) => orpc().kanban.bulk({ ids, status })
+export const linkKanbanTasks = (parent_id: string, child_id: string) => orpc().kanban.link({ parent_id, child_id })
+export const unlinkKanbanTasks = (parent_id: string, child_id: string) => orpc().kanban.unlink({ parent_id, child_id })
+export const createKanbanBoard = (name: string) => orpc().kanban.createBoard({ name, switch: true })
+/** Archives the board (the server's default); `?delete=1` would remove it. */
+export const archiveKanbanBoard = (slug: string) => orpc().kanban.deleteBoard({ slug })
 export const fetchInsights = (days: number) => orpc().insights({ days: String(days) })
 export const fetchLogs = (file: string, tail: number) => orpc().logs({ file, tail: String(tail) })
 export const fetchOnboarding = () => orpc().onboarding.status(undefined, { signal: timeout(45_000) })
