@@ -258,3 +258,39 @@ describe('publishing after hydration, and reloads (TAL-564)', () => {
     expect(version).toBeGreaterThan(ahead * 1000)
   })
 })
+
+describe('unknown server order, and exact revisions (TAL-564)', () => {
+  beforeEach(() => { vi.useFakeTimers(); localStorage.clear(); vi.mocked(api.saveDraft).mockReset().mockResolvedValue({ ok: true, draft: { text: '', files: [] }, draft_version: null }) })
+  afterEach(() => { vi.useRealTimers() })
+  const mount = () => renderHook(() => {
+    const [text, setText] = useState(() => readLocalDraft('s1'))
+    useDraftPersistence('s1', text)
+    useServerDraft('s1', setText)
+    return { text, setText }
+  })
+
+  it('never publishes over an unversioned server draft, which gives no order', async () => {
+    localStorage.setItem('hermes-draft:s1', JSON.stringify({ text: 'this browser', updatedAt: Date.now() }))
+    vi.mocked(api.fetchDraft).mockResolvedValue({ draft: { text: 'an older client', files: [] }, draft_version: null })
+    const { result } = mount()
+    await act(async () => { await Promise.resolve() })
+    expect(result.current.text).toBe('this browser')
+    expect(vi.mocked(api.saveDraft)).not.toHaveBeenCalled()
+  })
+
+  it('ranks the local copy by its exact revision, so the next server revision still counts as newer', async () => {
+    vi.setSystemTime(Date.now() + 7_200_000)
+    const ahead = (Date.now() + 120_000) * 1000
+    vi.mocked(api.fetchDraft).mockResolvedValue({ draft: { text: 'from a fast clock', files: [] }, draft_version: String(ahead) })
+    const first = mount()
+    await act(async () => { await Promise.resolve() })
+    act(() => { first.result.current.setText('my edit') })
+    vi.advanceTimersByTime(300)
+    first.unmount()
+
+    vi.mocked(api.fetchDraft).mockResolvedValue({ draft: { text: 'newer elsewhere', files: [] }, draft_version: String(ahead + 2) })
+    const second = mount()
+    await act(async () => { await Promise.resolve() })
+    expect(second.result.current.text).toBe('newer elsewhere')
+  })
+})

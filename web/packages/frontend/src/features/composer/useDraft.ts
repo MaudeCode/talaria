@@ -29,16 +29,21 @@ function stamp(): number {
   revision = Math.max(Date.now() * 1000, revision + 1)
   return revision
 }
-/** This browser's copy of a draft; its stamp also carries the revision counter across a reload. */
+function writeLocal(sessionId: string, text: string, revision = stamp()): void {
+  writePersistedJson(key(sessionId), { text, updatedAt: Date.now(), revision })
+}
+/** This browser's copy of a draft and its revision, which also carries the revision counter across a reload. */
 function readLocal(sessionId: string) {
   const local = readPersistedJson(key(sessionId), LocalDraftSchema)
-  if (local) observe(Math.ceil(local.updatedAt) * 1000)
-  return local
+  if (!local) return null
+  const revision = local.revision ?? local.updatedAt * 1000
+  observe(revision)
+  return { text: local.text, revision }
 }
 /** Save to the server, stamping the local copy with the same revision: a copy the server truncated never outranks it. */
 function publish(sessionId: string, text: string): void {
   const version = stamp()
-  writePersistedJson(key(sessionId), { text, updatedAt: Math.ceil(version / 1000) })
+  writeLocal(sessionId, text, version)
   saveServerDraft(sessionId, text, version)
 }
 function saveServerDraft(sessionId: string, text: string, version = stamp()): void {
@@ -61,9 +66,10 @@ export function useServerDraft(sessionId: string | null, setText: Dispatch<SetSt
     void api.fetchDraft(sessionId).then(({ draft, draft_version }) => {
       observe(draft_version)
       if (!current) return
-      if (local && (draft_version === null || Number(draft_version) <= local.updatedAt * 1000)) {
+      if (local && (draft_version === null || Number(draft_version) <= local.revision)) {
         // This browser's copy is newer, e.g. an edit left before its server save ran: publish it unless edited since.
-        if (draft.text !== local.text && loaded?.sessionId === sessionId && loaded.text === local.text) publish(sessionId, local.text)
+        // An unversioned server draft gives no order, so this browser's copy only stays local.
+        if (draft_version !== null && draft.text !== local.text && loaded?.sessionId === sessionId && loaded.text === local.text) publish(sessionId, local.text)
         return
       }
       setText((text) => {
@@ -80,7 +86,7 @@ interface Unsaved { sessionId: string; text: string }
 function flush(unsaved: RefObject<Unsaved | null>): void {
   const d = unsaved.current
   unsaved.current = null
-  if (d) writePersistedJson(key(d.sessionId), { text: d.text, updatedAt: Math.ceil(stamp() / 1000) })
+  if (d) writeLocal(d.sessionId, d.text)
 }
 
 /**
