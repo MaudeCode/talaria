@@ -25,7 +25,7 @@ async function routeKanban(page: Page, boardFor: (q: URLSearchParams) => unknown
     record(route)
     return route.fulfill({ json: route.request().method() === 'POST' ? { board: { slug: 'q3-launch' }, current: 'q3-launch', read_only: false } : { result: {}, current: 'default', read_only: false } })
   })
-  await page.route(/\/api\/kanban\/board(\?|$)/, (route) => { const q = new URL(route.request().url()).searchParams; queries.push(q); return route.fulfill({ json: boardFor(q) }) })
+  await page.route(/\/api\/kanban\/board(\?|$)/, async (route) => { const q = new URL(route.request().url()).searchParams; queries.push(q); return route.fulfill({ json: await boardFor(q) }) })
   await page.route('**/api/kanban/stats**', (route) => route.fulfill({ json: stats }))
   await page.route('**/api/kanban/config', (route) => { record(route); return route.fulfill({ json: { lane_by_profile: false } }) })
   // Later routes win: the task detail pattern also matches `tasks/bulk`, so it goes first.
@@ -83,6 +83,8 @@ test('kanban filters, stats, profile lanes and live refresh render the server fi
   await expect.poll(() => queries.at(-1)?.get('tenant')).toBe('acme')
   await page.getByRole('switch', { name: 'Only mine' }).click()
   await expect.poll(() => queries.at(-1)?.get('only_mine')).toBe('1')
+  // Only mine replaces the assignee filter on the server, so its picker is disabled meanwhile.
+  await expect(page.getByRole('combobox', { name: 'Assignee' })).toBeDisabled()
   expect(queries.at(-1)?.get('search')).toBe('login')
   await page.screenshot({ path: testInfo.outputPath(`kanban-filters-${testInfo.project.name}.png`) })
 
@@ -96,7 +98,12 @@ test('kanban filters, stats, profile lanes and live refresh render the server fi
 })
 
 test('kanban bulk status, task links and board create and archive write through the server', async ({ page }, testInfo) => {
-  const { writes } = await routeKanban(page, (q) => board([column('todo', q.get('search') ? [task('T1', 'todo')] : [task('T1', 'todo'), task('T2', 'todo')]), column('ready', [task('T3', 'ready')])]))
+  // A `slow` search holds the server's answer until the test releases it.
+  const { promise: held, resolve: release } = Promise.withResolvers<undefined>()
+  const { writes } = await routeKanban(page, async (q) => {
+    if (q.get('search') === 'slow') await held
+    return board([column('todo', q.get('search') ? [task('T1', 'todo')] : [task('T1', 'todo'), task('T2', 'todo')]), column('ready', [task('T3', 'ready')])])
+  })
   await page.goto('/kanban')
   await settle(page)
 
@@ -111,6 +118,16 @@ test('kanban bulk status, task links and board create and archive write through 
   await expect(bulk).toContainText('1 selected')
   await page.getByRole('searchbox', { name: 'Search tasks' }).fill('')
   await expect(bulk).toContainText('2 selected')
+  // While the next filter's answer is pending, the cards on screen are stale, so writes wait for it.
+  await bulk.getByRole('combobox', { name: 'Status' }).click()
+  await page.getByRole('option', { name: 'done' }).click()
+  await page.getByRole('searchbox', { name: 'Search tasks' }).fill('slow')
+  await expect(bulk.getByRole('button', { name: 'Apply' })).toBeDisabled()
+  release(undefined)
+  await expect(bulk).toContainText('1 selected')
+  await page.getByRole('searchbox', { name: 'Search tasks' }).fill('')
+  await expect(bulk).toContainText('2 selected')
+  await expect(bulk.getByRole('button', { name: 'Apply' })).toBeEnabled()
   await bulk.getByRole('combobox', { name: 'Status' }).click()
   await expect(page.getByRole('option')).toHaveText(['triage', 'todo', 'ready', 'blocked', 'done'])
   await page.getByRole('option', { name: 'done' }).click()

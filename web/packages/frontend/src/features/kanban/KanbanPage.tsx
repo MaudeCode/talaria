@@ -91,7 +91,10 @@ export function KanbanPage() {
   })
   const archiveBoard = useMutation({ mutationFn: (slug: string) => api.archiveKanbanBoard(slug), onSuccess: () => { showToast(m.kanban_board_archived()); setSelected([]); void invalidate() }, onError: toastError })
   const columns = useMemo(() => board.data?.columns ?? [], [board.data])
-  const readOnly = !!board.data?.read_only
+  const serverReadOnly = !!board.data?.read_only
+  // Placeholder data is the previous board or filter's answer; writes wait until the shown cards are the current ones.
+  const stale = board.isPlaceholderData
+  const readOnly = serverReadOnly || stale
   const columnNames = useMemo(() => columns.map((c) => c.name), [columns])
   const currentBoard = boards.data?.boards.find((b) => b.slug === current)
   // The dialog follows the board's current copy of the task, so its actions track every refetch.
@@ -102,7 +105,7 @@ export function KanbanPage() {
   const toggleSelected = (id: string) => setSelected((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]))
   // A chosen filter value stays listed even when the server's option list no longer carries it.
   const options = (values: unknown[] | undefined, chosen: string) => [...new Set([...(chosen ? [chosen] : []), ...(values ?? []).map(String)])]
-  const renderColumns = (cols: KanbanColumn[]) => <KanbanColumns columns={cols} readOnly={readOnly} selected={selected} onToggle={toggleSelected} onOpen={setOpenTaskId} />
+  const renderColumns = (cols: KanbanColumn[]) => <KanbanColumns columns={cols} readOnly={serverReadOnly} stale={stale} selected={selected} onToggle={toggleSelected} onOpen={setOpenTaskId} />
 
   return (
     <HubPage
@@ -110,7 +113,7 @@ export function KanbanPage() {
       actions={
         <>
           <IconButton label={m.refresh()} onClick={() => { void invalidate() }}><RefreshCw size={16} aria-hidden="true" /></IconButton>
-          {!readOnly && <PanelHeadButton label={m.kanban_new_task()} className="primary" onClick={() => setCreating(true)}><Plus size={16} aria-hidden="true" /></PanelHeadButton>}
+          {!serverReadOnly && <PanelHeadButton label={m.kanban_new_task()} className="primary" onClick={() => setCreating(true)}><Plus size={16} aria-hidden="true" /></PanelHeadButton>}
         </>
       }
       toolbar={
@@ -123,14 +126,14 @@ export function KanbanPage() {
               </Select>
             </label>
           )}
-          {boards.isSuccess && !readOnly && (
+          {boards.isSuccess && !serverReadOnly && (
             <div className="flex items-center">
               <IconButton label={m.kanban_new_board()} onClick={() => setCreatingBoard(true)}><FolderPlus size={16} aria-hidden="true" /></IconButton>
               {currentBoard?.removable && <IconButton label={m.kanban_archive_board_title()} onClick={() => setArchivingBoard(true)}><Archive size={16} aria-hidden="true" /></IconButton>}
             </div>
           )}
           <TextInput type="search" value={searchText} onChange={(e) => setSearchText(e.target.value)} placeholder={m.kanban_search_tasks()} aria-label={m.kanban_search_tasks()} className="h-8 w-44" />
-          <Select value={assignee} onValueChange={setAssignee} aria-label={m.kanban_assignee()}>
+          <Select value={assignee} onValueChange={setAssignee} disabled={onlyMine} aria-label={m.kanban_assignee()}>
             <option value="">{m.kanban_all_assignees()}</option>
             {options(board.data?.assignees, assignee).map((a) => <option key={a} value={a}>{a}</option>)}
           </Select>
@@ -143,7 +146,7 @@ export function KanbanPage() {
           <label className="flex items-center gap-1.5 text-xs text-muted"><Switch checked={onlyMine} onCheckedChange={(checked) => setOnlyMine(checked)} aria-label={m.kanban_only_mine()} /> {m.kanban_only_mine()}</label>
           <label className="flex items-center gap-1.5 text-xs text-muted"><Switch checked={includeArchived} onCheckedChange={(checked) => setIncludeArchived(checked)} aria-label={m.kanban_include_archived()} /> {m.kanban_include_archived()}</label>
           {board.data && <label className="flex items-center gap-1.5 text-xs text-muted"><Switch checked={board.data.lane_by_profile} disabled={saveView.isPending} onCheckedChange={(checked) => saveView.mutate(checked)} aria-label={m.kanban_lanes_by_profile()} /> {m.kanban_lanes_by_profile()}</label>}
-          {readOnly && <span className="text-xs text-warning">{m.kanban_read_only()}</span>}
+          {serverReadOnly && <span className="text-xs text-warning">{m.kanban_read_only()}</span>}
         </>
       }
     >
@@ -157,13 +160,13 @@ export function KanbanPage() {
           {stats.data.status_counts.map((c) => <span key={c.status}><strong className="text-text">{c.count}</strong> {statusLabel(c.status)}</span>)}
         </div>
       )}
-      {shownSelected.length > 0 && !readOnly && board.data && (
+      {shownSelected.length > 0 && !serverReadOnly && board.data && (
         <div role="group" aria-label={m.kanban_bulk_action()} className="kanban-bulk-bar mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm">
           <span className="text-muted">{m.kanban_selected_count({ a0: shownSelected.length })}</span>
           <Select value={bulkStatus} onValueChange={setBulkStatus} aria-label={m.kanban_status()} placeholder={m.kanban_status()}>
             {board.data.bulk_move_targets.map((s) => <option key={s} value={s}>{s}</option>)}
           </Select>
-          <Button variant="primary" disabled={!bulkStatus || bulk.isPending} onClick={() => bulk.mutate()}>{m.kanban_apply()}</Button>
+          <Button variant="primary" disabled={!bulkStatus || bulk.isPending || stale} onClick={() => bulk.mutate()}>{m.kanban_apply()}</Button>
           <Button onClick={() => setSelected([])}>{m.kanban_clear_selection()}</Button>
         </div>
       )}
@@ -190,7 +193,7 @@ export function KanbanPage() {
   )
 }
 
-function KanbanColumns({ columns, readOnly, selected, onToggle, onOpen }: { columns: KanbanColumn[]; readOnly: boolean; selected: string[]; onToggle: (id: string) => void; onOpen: (id: string) => void }) {
+function KanbanColumns({ columns, readOnly, stale, selected, onToggle, onOpen }: { columns: KanbanColumn[]; readOnly: boolean; stale: boolean; selected: string[]; onToggle: (id: string) => void; onOpen: (id: string) => void }) {
   return (
     <div className="kanban-board grid gap-3 md:grid-cols-2 xl:grid-cols-3" id="kanbanList">
       {columns.map((col) => (
@@ -204,7 +207,7 @@ function KanbanColumns({ columns, readOnly, selected, onToggle, onOpen }: { colu
               const id = String(task.id)
               return (
                 <div key={id} className="flex items-start gap-2">
-                  {!readOnly && <input type="checkbox" className="mt-3 shrink-0" checked={selected.includes(id)} onChange={() => onToggle(id)} aria-label={m.kanban_select_task({ a0: task.title ?? id })} />}
+                  {!readOnly && <input type="checkbox" className="mt-3 shrink-0" checked={selected.includes(id)} disabled={stale} onChange={() => onToggle(id)} aria-label={m.kanban_select_task({ a0: task.title ?? id })} />}
                   <button type="button" onClick={() => onOpen(id)} className={cn('kanban-card min-w-0 flex-1 rounded-md border border-border-subtle bg-bg p-2.5 text-left text-sm text-text hover:border-accent-bg-strong', selected.includes(id) && 'selected')} data-task-id={id}>
                     <div className="font-medium">{task.title ?? id}</div>
                     <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-muted">

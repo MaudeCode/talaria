@@ -1,4 +1,5 @@
 /** Kanban HTTP shapes over the sidecar `kanban.*` namespace (Python `api/kanban_bridge.py`). */
+import { createHash } from 'node:crypto'
 import type { SidecarLike } from '../sidecar/client.js'
 import { SidecarError } from '../sidecar/client.js'
 import type { AgentConfig, Dict } from '../config/agent-config.js'
@@ -130,8 +131,13 @@ export function withStatsTotals(stats: Dict): Dict {
   return { ...stats, by_status: byStatus, total: status_counts.reduce((n, c) => n + c.count, 0), status_counts }
 }
 
-/** A board slug from a display name, within the Agent's `^[a-z0-9][a-z0-9\-_]{0,63}$`; empty when nothing survives. */
-export const boardSlug = (name: string): string => name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 64).replace(/-+$/, '')
+/** A board slug from a display name, within the Agent's `^[a-z0-9][a-z0-9\-_]{0,63}$`. A name with no ASCII letters or digits
+ * gets `board-` and a hash of the name, so it is valid and stable; an empty name stays empty for the Agent to refuse. */
+export function boardSlug(name: string): string {
+  const ascii = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 64).replace(/-+$/, '')
+  if (ascii || !name.trim()) return ascii
+  return `board-${createHash('sha256').update(name.trim()).digest('hex').slice(0, 8)}`
+}
 
 export class KanbanService {
   constructor(private readonly deps: { sidecar: () => SidecarLike | null; config: AgentConfig }) {}
@@ -144,7 +150,9 @@ export class KanbanService {
 
   async board(home: string, q: { board?: string | undefined; tenant?: string | undefined; assignee?: string | undefined; include_archived?: string | undefined; only_mine?: string | undefined; since?: string | undefined; search?: string | undefined }, activeProfile: string): Promise<Dict> {
     const since = intQuery(q.since, null, 0)
-    const board = await this.sidecar().call('kanban.board', { profile_home: home, board: str(q.board).trim() || null, tenant: str(q.tenant).trim() || null, assignee: str(q.assignee).trim() || null, include_archived: truthyQuery(q.include_archived), only_mine: truthyQuery(q.only_mine), since, profile: activeProfile || 'default' }).catch(kanbanFailure)
+    // Only mine filters by the active profile, so it replaces any chosen assignee.
+    const onlyMine = truthyQuery(q.only_mine)
+    const board = await this.sidecar().call('kanban.board', { profile_home: home, board: str(q.board).trim() || null, tenant: str(q.tenant).trim() || null, assignee: onlyMine ? null : str(q.assignee).trim() || null, include_archived: truthyQuery(q.include_archived), only_mine: onlyMine, since, profile: activeProfile || 'default' }).catch(kanbanFailure)
     const lane_by_profile = await this.laneByProfile(home)
     const out: Dict = { ...withKanbanPolicy(board), bulk_move_targets: [...KANBAN_BULK_MOVE_TARGETS], lane_by_profile }
     if (!Array.isArray(out.columns)) return out

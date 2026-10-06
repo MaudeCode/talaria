@@ -484,6 +484,17 @@ describe('crons, kanban, extensions, terminal', () => {
     sidecar.respond('kanban.create_board', (params) => ({ board: { slug: String((params.board_spec as Json).slug) }, current: 'x', read_only: false }))
     expect((await json(await post(s, '/api/kanban/boards', { name: '  Q3 Launch: Ops!  ' }))).board).toEqual({ slug: 'q3-launch-ops' })
     expect((await json(await post(s, '/api/kanban/boards', { name: 'Ignored', slug: 'kept' }))).board).toEqual({ slug: 'kept' })
+    // A name with no ASCII letters or digits still gets a valid, stable slug.
+    const tokyo = String(((await json(await post(s, '/api/kanban/boards', { name: '東京' }))).board as Json).slug)
+    expect(tokyo).toMatch(/^board-[0-9a-f]{8}$/)
+    expect(((await json(await post(s, '/api/kanban/boards', { name: '東京' }))).board as Json).slug).toBe(tokyo)
+
+    // Only mine wins over a chosen assignee: the sidecar filters by the active profile.
+    sidecar.respond('kanban.board', () => ({ changed: false, latest_event_id: 4, read_only: false }))
+    await s.get('/api/kanban/board?only_mine=1&assignee=reviewer')
+    expect(sidecar.calls.filter((c) => c.method === 'kanban.board').at(-1)?.params).toMatchObject({ only_mine: true, assignee: null })
+    await s.get('/api/kanban/board?assignee=reviewer')
+    expect(sidecar.calls.filter((c) => c.method === 'kanban.board').at(-1)?.params).toMatchObject({ only_mine: false, assignee: 'reviewer' })
   })
 
   it('extension status, registry, install, static serving, consent, proxy, and uninstall', async () => {
