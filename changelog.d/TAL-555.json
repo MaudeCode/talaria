@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Closing the Web terminal while it is still starting no longer leaves a hidden connection open in the background.",
+      "highlight": false
+    }
+  ]
+}

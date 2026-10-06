@@ -38,7 +38,10 @@ export function TerminalPanel({ sessionId, workspace, onClose }: { sessionId: st
     f.fit()
     term.current = t
     fit.current = f
+    // Start and restart resolve after awaits; once cleanup runs, a late connect would leak an EventSource.
+    let cancelled = false
     const connect = () => {
+      if (cancelled) return
       stream.current?.close()
       stream.current = openTerminalStream(sessionId, {
         onOutput: (text) => t.write(text),
@@ -63,6 +66,7 @@ export function TerminalPanel({ sessionId, workspace, onClose }: { sessionId: st
     const ro = new ResizeObserver(() => { try { f.fit() } catch { /* not attached */ } })
     ro.observe(el)
     return () => {
+      cancelled = true
       stream.current?.close(); stream.current = null
       data.dispose(); resize.dispose(); ro.disconnect(); t.dispose()
       term.current = null
