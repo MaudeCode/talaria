@@ -3265,6 +3265,19 @@ final class ComposerToolsetsUITests: WorkspaceUITestCase {
 
         tapCenter(of: app.buttons["Show composer controls"])
         XCTAssertTrue(toolsets.awaitExistence(timeout: 5), "The chevron did not show the strip again")
+
+        // With the keyboard up, the chevron leaves it up both ways.
+        tapCenter(of: app.buttons["Message"])
+        let keyboard = app.keyboards.firstMatch
+        XCTAssertTrue(keyboard.awaitExistence(timeout: 5), "The composer has no keyboard")
+        let swipeTypingTip = app.staticTexts["Speed up your typing by sliding your finger across the letters to compose a word."]
+        if swipeTypingTip.exists { app.buttons["Continue"].firstMatch.tap() }
+        let keyboardTop = keyboard.settledFrame.minY
+        for label in ["Hide composer controls", "Show composer controls"] {
+            tapCenter(of: app.buttons[label])
+            Thread.sleep(forTimeInterval: 0.6) // a dismissal would be under way by now
+            XCTAssertTrue(keyboard.exists && abs(keyboard.frame.minY - keyboardTop) < 2, "\(label) dropped the keyboard")
+        }
     }
 
     func testToolsetsControlSavesAListAndRestoresProfileDefaults() throws {

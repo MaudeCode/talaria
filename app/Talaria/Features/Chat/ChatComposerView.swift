@@ -833,7 +833,7 @@ struct MessageComposerView: View {
         if showsControlStrip, let sessionStart {
             ComposerSessionStartStrip(state: sessionStart, onRetry: onRetrySessionStart)
                 .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
-        } else if showsControlStrip, isControlStripExpanded {
+        } else if showsControlStrip {
             ComposerSecondaryControlsView(
                 state: secondaryControlsState,
                 onChooseWorkspace: {
@@ -854,6 +854,13 @@ struct MessageComposerView: View {
                     reasoningMenu
                 }
             }
+            // The chevron folds it away in place: taking it out of the layout re-hosts the card's text
+            // view, which drops the keyboard.
+            .frame(height: isControlStripExpanded ? nil : 0, alignment: .top)
+            .clipped()
+            .opacity(isControlStripExpanded ? 1 : 0)
+            .allowsHitTesting(isControlStripExpanded)
+            .accessibilityHidden(!isControlStripExpanded)
             .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
         }
     }
