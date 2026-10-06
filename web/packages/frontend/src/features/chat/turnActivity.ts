@@ -124,6 +124,11 @@ export function persistedActivity(row: VisibleMessage): TurnActivity {
   }
 }
 
+/** The text a turn copies and reads aloud: its final answer, or its text items when it has none. */
+export function activityText(activity: TurnActivity): string {
+  return activity.finalAnswer || activity.items.flatMap((item) => item.kind === 'text' ? [item.text] : []).join('\n\n')
+}
+
 /** `omitToolIds`: tools a running scene already shows (TAL-374); their live state updates that card (`continuedActivity`). */
 export function liveActivity(turn: LiveTurn, omitToolIds?: ReadonlySet<string>): TurnActivity {
   const items: ActivityItem[] = []

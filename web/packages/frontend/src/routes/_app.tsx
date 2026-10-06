@@ -5,6 +5,7 @@ import { isAuthenticated } from '../contracts/bootstrap'
 import { legacyHashRoute } from '../contracts/url'
 import { checkExternalLink } from '../api/endpoints'
 import { LinkCheckContext } from '../features/chat/render/Markdown'
+import { ExtensionTtsHosts } from '../features/extensions/ExtensionRoute'
 
 /**
  * Authenticated application layout. Authorization is server-owned (the shell
@@ -28,5 +29,6 @@ function AppLayout() {
   // One presence lease per tab for the whole authenticated session, not per page.
   useEffect(() => startPresence(), [])
   // Signed-in chat Markdown asks the server whether a link skips the warning.
-  return <LinkCheckContext value={checkExternalLink}><Outlet /></LinkCheckContext>
+  // Extension TTS engines stay registered on every page, not only while their panel is open.
+  return <LinkCheckContext value={checkExternalLink}><Outlet /><ExtensionTtsHosts /></LinkCheckContext>
 }

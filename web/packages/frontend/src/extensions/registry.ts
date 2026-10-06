@@ -47,21 +47,32 @@ export function applyExtensionSkin(decl: ThemeDeclaration | null, root: HTMLElem
 
 // ── TTS engines ──────────────────────────────────────────────────────────────
 export interface TtsEngine { id: string; label: string; extensionId: string; synthesize: (text: string, opts: { voice: string | null; rate: number | null; pitch: number | null }) => Promise<ArrayBuffer> }
-const engines = new Map<string, TtsEngine>()
+/** Per engine id, every live registration: an extension's background host and its open panel both register, and the newest answers. */
+const engines = new Map<string, TtsEngine[]>()
 const engineListeners = new Set<() => void>()
 let engineVersion = 0
-export function registerTtsEngine(engine: TtsEngine): () => void {
-  engines.set(engine.id, engine)
+function enginesChanged(): void {
   engineVersion += 1
   for (const l of engineListeners) l()
-  return () => { if (engines.get(engine.id) === engine) { engines.delete(engine.id); engineVersion += 1; for (const l of engineListeners) l() } }
+}
+export function registerTtsEngine(engine: TtsEngine): () => void {
+  engines.set(engine.id, [...(engines.get(engine.id) ?? []), engine])
+  enginesChanged()
+  return () => {
+    const list = engines.get(engine.id) ?? []
+    if (!list.includes(engine)) return
+    const rest = list.filter((e) => e !== engine)
+    if (rest.length) engines.set(engine.id, rest)
+    else engines.delete(engine.id)
+    enginesChanged()
+  }
 }
 export function ttsEngine(id: string): TtsEngine | undefined {
-  return engines.get(id)
+  return engines.get(id)?.at(-1)
 }
 export function useTtsEngines(): TtsEngine[] {
   useSyncExternalStore((l) => { engineListeners.add(l); return () => engineListeners.delete(l) }, () => engineVersion, () => engineVersion)
-  return [...engines.values()]
+  return [...engines.values()].flatMap((list) => list.slice(-1))
 }
 
 // ── Lifecycle bridge ─────────────────────────────────────────────────────────

@@ -34,6 +34,7 @@ import { MOTION_EASE, prefersReducedMotion } from '../../lib/motion'
 import { randomHex } from '../../lib/randomHex'
 import { QueueCard } from './QueueCard'
 import type { QueuedTurn } from './queue'
+import { stopSpeaking } from '../voice/tts'
 
 export type BusyMode = 'steer' | 'queue' | 'interrupt'
 
@@ -586,7 +587,8 @@ export function Composer(props: ComposerProps) {
           id="msg"
           rows={1}
           value={value}
-          onChange={(e) => setValue(e.target.value)}
+          // Typing silences a reply being read aloud (Settings > Speech).
+          onChange={(e) => { stopSpeaking(); setValue(e.target.value) }}
           onKeyDown={onKeyDown}
           onPaste={onPaste}
           placeholder={placeholder}
