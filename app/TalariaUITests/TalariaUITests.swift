@@ -2840,10 +2840,14 @@ fileprivate extension ChatUITestCase {
         input.typeText(message)
         let send = app.buttons["Send"]
         XCTAssertTrue(send.awaitExistence(timeout: Self.navigationTimeout))
+        // A freshly booted simulator can raise its keyboard seconds after the text is typed, and
+        // Send moves up with it; a tap at Send's old spot lands on the keyboard's return key (TAL-652).
+        XCTAssertTrue(app.keyboards.firstMatch.awaitExistence(timeout: 10), "The composer has no keyboard")
         // A loaded runner can miss the tap, or read Send's frame while the keyboard still moves it.
-        // The message still in the composer says nothing was sent, so tapping again cannot send twice.
+        // The message still in the composer says nothing was sent, so tapping again cannot send twice;
+        // a stray return key only adds a newline after it, which sending trims.
         tapCenter(of: send)
-        repeatStep(2, until: { poll(timeout: 5) { input.value as? String != message } }) {
+        repeatStep(2, until: { poll(timeout: 5) { (input.value as? String)?.contains(message) != true } }) {
             tapCenter(of: send)
         }
     }
