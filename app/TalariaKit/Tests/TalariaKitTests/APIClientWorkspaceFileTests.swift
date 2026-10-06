@@ -795,6 +795,44 @@ final class APIClientWorkspaceFileTests: APIClientTestCase {
     }
 
     @MainActor
+    func testFilePreviewWithoutServerTextExportsRawBytes() async throws {
+        // TAL-566: the server omits `content` for media and binary files; the export must fetch the raw bytes.
+        let rawData = Data([0x1A, 0x45, 0xDF, 0xA3])
+        var requestedPaths: [String] = []
+        let client = makeClient { request in
+            requestedPaths.append(request.url?.path ?? "nil")
+            if request.url?.path == "/api/file" {
+                return apiTestJSONResponse("""
+                {
+                  "path": "Media/clip.webm",
+                  "size": 4,
+                  "preview": "video",
+                  "mime": "video/webm"
+                }
+                """, for: request)
+            }
+            XCTAssertEqual(request.url?.path, "/api/file/raw")
+            let response = HTTPURLResponse(url: try XCTUnwrap(request.url), statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "video/webm"])
+            return (try XCTUnwrap(response), rawData)
+        }
+        let viewModel = try FilePreviewViewModel(
+            session: makeFilePreviewSession(),
+            server: XCTUnwrap(URL(string: "https://example.test")),
+            path: "Media/clip.webm",
+            apiClient: client
+        )
+
+        await viewModel.load()
+        let payload = try await viewModel.exportPayload()
+
+        guard case .unavailable = viewModel.preview else {
+            return XCTFail("A file without server text should not show an empty text preview.")
+        }
+        XCTAssertEqual(payload.data, rawData)
+        XCTAssertEqual(requestedPaths, ["/api/file", "/api/file/raw"])
+    }
+
+    @MainActor
     func testFilePreviewExportPayloadFetchesRawDataForUnsupportedPreview() async throws {
         let rawData = Data([0x50, 0x4B, 0x03, 0x04])
         var requestedPaths: [String] = []

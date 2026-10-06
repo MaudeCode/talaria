@@ -76,7 +76,8 @@ function WorkspaceFiles({ workspace, sessionId, active }: { workspace: string; s
   })
   const entries = (listing.data?.entries ?? []).slice().sort((a, b) => Number(!!b.is_dir) - Number(!!a.is_dir) || a.name.localeCompare(b.name))
   const g = git.data?.git
-  const kind = content.data?.preview
+  // An older server sends no `preview`: its replies are always text, Markdown by extension. Delete once Stable sends it.
+  const kind = content.data ? (content.data.preview ?? (/\.(md|markdown)$/i.test(file ?? '') ? 'markdown' : 'text')) : undefined
   // Markdown, CSV and HTML show their rendered form until Edit opens the text.
   const rendered = draft === null && (kind === 'markdown' || kind === 'csv' || kind === 'html')
   const text = draft ?? content.data?.content ?? ''

@@ -23968,9 +23968,6 @@
                       "type": "boolean"
                     }
                   },
-                  "required": [
-                    "preview"
-                  ],
                   "additionalProperties": {}
                 }
               }

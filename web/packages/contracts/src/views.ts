@@ -590,7 +590,7 @@ export type FilePreviewKind = z.infer<typeof FilePreviewKindSchema>
 /** `table` is a `csv` preview's leading rows (header first); `table_truncated` says the file has more. */
 export const FileContentSchema = z.looseObject({
   path: z.string().optional(), content: z.string().optional(), lines: z.number().optional(), size: z.number().optional(), truncated: z.boolean().optional(), binary: z.boolean().optional(), mime: z.string().optional(),
-  preview: FilePreviewKindSchema, table: z.array(z.array(z.string())).optional(), table_truncated: z.boolean().optional(),
+  preview: FilePreviewKindSchema.optional(), table: z.array(z.array(z.string())).optional(), table_truncated: z.boolean().optional(),
 })
 export const GitInfoSchema = z.looseObject({ git: z.looseObject({ is_git: z.boolean().optional(), branch: NullableString.optional(), dirty: z.number().optional(), modified: z.number().optional(), untracked: z.number().optional(), ahead: z.number().optional(), behind: z.number().optional() }).nullable().optional() })
 
