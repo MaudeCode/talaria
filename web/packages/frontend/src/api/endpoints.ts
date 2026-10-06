@@ -153,10 +153,10 @@ export const revealEntry = (session_id: string, path: string) => orpc().files.re
 export const openInVsCode = (session_id: string, path: string) => orpc().files.openVsCode({ session_id, path })
 export const folderDownloadUrl = (session_id: string, path: string) => `api/folder/download${qs({ session_id, path })}`
 export const fetchGitInfo = (sessionId: string) => orpc().gitInfo({ session_id: sessionId })
-// TAL-571: the Agent's file checkpoints for a configured workspace.
-export const fetchCheckpoints = (workspace: string) => orpc().rollback.list({ workspace })
-export const fetchCheckpointDiff = (workspace: string, checkpoint: string) => orpc().rollback.diff({ workspace, checkpoint })
-export const restoreCheckpoint = (workspace: string, checkpoint: string) => orpc().rollback.restore({ workspace, checkpoint })
+// TAL-571: the Agent's file checkpoints for the session's own workspace (a worktree chat's included).
+export const fetchCheckpoints = (session_id: string) => orpc().rollback.list({ session_id })
+export const fetchCheckpointDiff = (session_id: string, checkpoint: string) => orpc().rollback.diff({ session_id, checkpoint })
+export const restoreCheckpoint = (session_id: string, checkpoint: string) => orpc().rollback.restore({ session_id, checkpoint })
 
 // Panels
 export const fetchSkills = (category?: string) => orpc().skills.list(category ? { category } : {})

@@ -376,6 +376,33 @@ describe('raw byte routes', () => {
     expect((await s.get('/api/rollback/list')).status).toBe(400)
   })
 
+  it('serves checkpoints for a session whose workspace is not a configured one (TAL-571)', async () => {
+    // A worktree-backed chat works in a generated directory that is not in the configured workspace list.
+    const wt = join(s.state, 'tal571-worktree')
+    mkdirSync(wt, { recursive: true })
+    writeFileSync(join(wt, 'notes.txt'), 'edited\n')
+    const wsid = await newSession(s, ws)
+    const session = s.deps.sessionStore.get(wsid)
+    session.workspace = wt
+    s.deps.sessionStore.save(session)
+    const ckpt = join(s.state, 'checkpoints', workspaceHash(wt), 'wt1')
+    mkdirSync(ckpt, { recursive: true })
+    writeFileSync(join(ckpt, 'notes.txt'), 'saved\n')
+    const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.com', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.com', GIT_CONFIG_GLOBAL: '/dev/null' }
+    for (const args of [['init', '-q'], ['add', '-A'], ['commit', '-q', '-m', 'worktree checkpoint']]) expect(spawnSync('git', args, { cwd: ckpt, env }).status).toBe(0)
+    // By path alone the worktree is still refused; the session vouches for its own workspace and nothing else.
+    expect((await s.get(`/api/rollback/list?workspace=${encodeURIComponent(wt)}`)).status).toBe(400)
+    let res = await s.get(`/api/rollback/list?session_id=${wsid}`)
+    expect(res.status).toBe(200)
+    expect(((await json(res)).checkpoints as Json[]).map((c) => c.id)).toEqual(['wt1'])
+    res = await s.get(`/api/rollback/diff?session_id=${wsid}&checkpoint=wt1`)
+    expect((await json(res)).files_changed).toEqual([{ file: 'notes.txt', status: 'modified' }])
+    res = await post(s, '/api/rollback/restore', { session_id: wsid, checkpoint: 'wt1' })
+    expect(res.status).toBe(200)
+    expect(readFileSync(join(wt, 'notes.txt'), 'utf8')).toBe('saved\n')
+    expect((await s.get('/api/rollback/list?session_id=missing-session')).status).toBe(404)
+  })
+
   it('reports worktree status for a worktree-backed session', async () => {
     const res = await s.get(`/api/session/worktree/status?session_id=${sid}`)
     expect(res.status).toBe(400)

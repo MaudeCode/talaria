@@ -27659,6 +27659,15 @@
             },
             "allowEmptyValue": true,
             "allowReserved": true
+          },
+          {
+            "name": "session_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
           }
         ],
         "responses": {
@@ -27737,6 +27746,15 @@
         "parameters": [
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "session_id",
             "in": "query",
             "schema": {
               "type": "string"
@@ -27832,6 +27850,9 @@
                 "type": "object",
                 "properties": {
                   "workspace": {
+                    "type": "string"
+                  },
+                  "session_id": {
                     "type": "string"
                   },
                   "checkpoint": {

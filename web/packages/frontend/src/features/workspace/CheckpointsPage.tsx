@@ -16,21 +16,24 @@ import { showToast } from '../toast/toast'
 
 interface Picked { id: string; message: string }
 
-export function CheckpointsPage({ workspace, sessionId, active }: { workspace: string | null | undefined; sessionId: string; active: boolean }) {
+/** `onRestored` gets the files a restore rewrote, so another page can drop its unsaved edits of them. */
+export function CheckpointsPage({ workspace, sessionId, active, onRestored }: { workspace: string | null | undefined; sessionId: string; active: boolean; onRestored: (paths: string[]) => void }) {
   if (!workspace) return <div className="p-3 text-xs text-muted" role="status">{m.panel_files_unavailable()}</div>
-  return <WorkspaceCheckpoints key={workspace} workspace={workspace} sessionId={sessionId} active={active} />
+  return <WorkspaceCheckpoints key={workspace} workspace={workspace} sessionId={sessionId} active={active} onRestored={onRestored} />
 }
 
-function WorkspaceCheckpoints({ workspace, sessionId, active }: { workspace: string; sessionId: string; active: boolean }) {
+function WorkspaceCheckpoints({ workspace, sessionId, active, onRestored }: { workspace: string; sessionId: string; active: boolean; onRestored: (paths: string[]) => void }) {
   const qc = useQueryClient()
   const [viewing, setViewing] = useState<Picked | null>(null)
   const [restoring, setRestoring] = useState<Picked | null>(null)
-  const list = useQuery({ queryKey: keys.checkpoints.list(workspace), queryFn: () => api.fetchCheckpoints(workspace), enabled: active, staleTime: 0 })
+  const list = useQuery({ queryKey: keys.checkpoints.list(workspace), queryFn: () => api.fetchCheckpoints(sessionId), enabled: active, staleTime: 0 })
   const restore = useMutation({
-    mutationFn: (id: string) => api.restoreCheckpoint(workspace, id),
+    mutationFn: (id: string) => api.restoreCheckpoint(sessionId, id),
     onSuccess: (res) => {
-      showToast(m.checkpoint_restored())
+      // The server answers 200 with per-file errors; any error makes this a failed restore, never a restored one.
       if (res.errors.length) showToast(`${m.checkpoint_restore()}: ${res.errors.map((e) => `${e.file}: ${e.error}`).join('; ')}`, 6000, 'error')
+      else showToast(m.checkpoint_restored())
+      onRestored(res.files_restored)
       // The restore rewrote workspace files: drop every view of them.
       void Promise.all([
         qc.invalidateQueries({ queryKey: keys.checkpoints.all(workspace) }),
@@ -66,7 +69,7 @@ function WorkspaceCheckpoints({ workspace, sessionId, active }: { workspace: str
           ))}
         </ul>
       )}
-      {viewing && <CheckpointDiff workspace={workspace} checkpoint={viewing} onClose={() => setViewing(null)} />}
+      {viewing && <CheckpointDiff workspace={workspace} sessionId={sessionId} checkpoint={viewing} onClose={() => setViewing(null)} />}
       <ConfirmDialog
         open={restoring !== null}
         onOpenChange={(o) => { if (!o) setRestoring(null) }}
@@ -81,8 +84,8 @@ function WorkspaceCheckpoints({ workspace, sessionId, active }: { workspace: str
   )
 }
 
-function CheckpointDiff({ workspace, checkpoint, onClose }: { workspace: string; checkpoint: Picked; onClose: () => void }) {
-  const diff = useQuery({ queryKey: keys.checkpoints.diff(workspace, checkpoint.id), queryFn: () => api.fetchCheckpointDiff(workspace, checkpoint.id), staleTime: 0, gcTime: 0 })
+function CheckpointDiff({ workspace, sessionId, checkpoint, onClose }: { workspace: string; sessionId: string; checkpoint: Picked; onClose: () => void }) {
+  const diff = useQuery({ queryKey: keys.checkpoints.diff(workspace, checkpoint.id), queryFn: () => api.fetchCheckpointDiff(sessionId, checkpoint.id), staleTime: 0, gcTime: 0 })
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }} title={m.checkpoint_diff_title()} description={checkpoint.message} className="flex max-h-[80vh] w-[min(92vw,800px)] flex-col">
       {diff.isPending && <LoadingState label={m.checkpoint_loading()} />}

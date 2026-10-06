@@ -13,11 +13,16 @@ vi.mock('../../api/endpoints', () => ({
   saveFile: vi.fn(),
   rawFileUrl: (sid: string, path: string) => `api/file/raw?session_id=${sid}&path=${path}`,
   folderDownloadUrl: (sid: string, path: string) => `api/folder?session_id=${sid}&path=${path}`,
+  fetchCheckpoints: vi.fn(),
+  fetchCheckpointDiff: vi.fn(),
+  restoreCheckpoint: vi.fn(),
 }))
+vi.mock('../toast/toast', () => ({ showToast: vi.fn() }))
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children, params, className }: { children: ReactNode; params: { sessionId: string }; className?: string }) => <a href={`/session/${params.sessionId}`} className={className}>{children}</a>,
 }))
 import * as api from '../../api/endpoints'
+import { showToast } from '../toast/toast'
 import { ChatSidePanel } from './ChatSidePanel'
 
 const agent = (overrides: Partial<BackgroundTask>): BackgroundTask => ({
@@ -133,5 +138,44 @@ describe('chat side panel (TAL-373)', () => {
     await userEvent.click(screen.getByRole('tab', { name: 'Files' }))
     expect(screen.getByText('src', { selector: 'span.font-mono' })).toBeInTheDocument()
     expect(vi.mocked(api.listDir).mock.calls.slice(calls).every(([, dir]) => dir === 'src')).toBe(true)
+  })
+})
+
+describe('chat side panel Checkpoints (TAL-571)', () => {
+  const checkpoints = { checkpoints: [{ id: 'c1', commit: 'abc', message: 'before edit', date: '', date_display: '', files: 1, path: '/ck/c1' }], workspace: '/repo', checkpoint_dir: '/ck' }
+  const restored = (errors: { file: string; error: string }[] = []) => ({ ok: true as const, checkpoint: 'c1', workspace: '/repo', files_restored: errors.length ? [] : ['notes.txt'], files_restored_count: errors.length ? 0 : 1, errors })
+  beforeEach(() => {
+    vi.mocked(showToast).mockReset()
+    vi.mocked(api.fetchCheckpoints).mockReset().mockResolvedValue(checkpoints)
+    vi.mocked(api.listDir).mockResolvedValue({ entries: [{ name: 'notes.txt', size: 10 }] })
+  })
+  const restore = async () => {
+    await userEvent.click(screen.getByRole('tab', { name: 'Checkpoints' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Restore' }))
+    await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Restore' }))
+    await waitFor(() => { expect(api.restoreCheckpoint).toHaveBeenCalledWith('s1', 'c1') })
+  }
+
+  it('drops an unsaved Files draft of a file the restore rewrote', async () => {
+    vi.mocked(api.readFile).mockReset().mockResolvedValue({ content: 'agent text', binary: false, size: 10 })
+    vi.mocked(api.restoreCheckpoint).mockReset().mockResolvedValue(restored())
+    render(<Panel />)
+    await userEvent.click(await screen.findByRole('treeitem', { name: 'notes.txt' }))
+    await userEvent.type(await screen.findByRole('textbox', { name: 'Preview' }), ' plus my edit')
+    expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
+    vi.mocked(api.readFile).mockResolvedValue({ content: 'saved text', binary: false, size: 10 })
+    await restore()
+    await userEvent.click(screen.getByRole('tab', { name: 'Files' }))
+    await waitFor(() => { expect(screen.getByRole('textbox', { name: 'Preview' })).toHaveValue('saved text') })
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+  })
+
+  it('reports a restore with per-file errors as a failure, never as restored', async () => {
+    vi.mocked(api.restoreCheckpoint).mockReset().mockResolvedValue(restored([{ file: 'notes.txt', error: 'Permission denied' }]))
+    render(<Panel />)
+    await screen.findByRole('tab', { name: 'Checkpoints' })
+    await restore()
+    await waitFor(() => { expect(showToast).toHaveBeenCalledWith('Restore: notes.txt: Permission denied', 6000, 'error') })
+    expect(showToast).not.toHaveBeenCalledWith('Checkpoint restored')
   })
 })

@@ -55,7 +55,8 @@ export class RollbackStore {
     return join(this.deps.hermesHome(), 'checkpoints')
   }
 
-  resolveWorkspace(workspace: unknown): string {
+  /** `allowed` adds paths the caller already vouches for (a session's own workspace) to the configured list. */
+  resolveWorkspace(workspace: unknown, allowed: string[] = []): string {
     if (!workspace || typeof workspace !== 'string') throw new Error('workspace is required')
     let resolved: string
     try {
@@ -67,7 +68,7 @@ export class RollbackStore {
     try { isDir = statSync(resolved).isDirectory() } catch { isDir = false }
     if (!isDir) throw new Error(`Workspace does not exist: ${workspace}`)
     const known = new Set<string>()
-    for (const p of this.deps.knownWorkspaces()) {
+    for (const p of [...this.deps.knownWorkspaces(), ...allowed]) {
       try { known.add(realpathSync(p)) } catch { known.add(p) }
     }
     if (!known.has(resolved)) throw new Error(`Workspace not in configured list: ${workspace}`)
@@ -133,8 +134,8 @@ export class RollbackStore {
     }
   }
 
-  list(workspace: unknown): Record<string, unknown> {
-    const resolved = this.resolveWorkspace(workspace)
+  list(workspace: unknown, allowed: string[] = []): Record<string, unknown> {
+    const resolved = this.resolveWorkspace(workspace, allowed)
     const ckptDir = join(this.root(), workspaceHash(resolved))
     const checkpoints: Record<string, unknown>[] = []
     let isDir = false
@@ -182,8 +183,8 @@ export class RollbackStore {
     return { id: name, commit: commitHash.slice(0, 12), message, date: dateStr, date_display: dateDisplay, files: files ? files.split('\n').length : 0, path: ckptPath }
   }
 
-  diff(workspace: unknown, checkpoint: unknown): Record<string, unknown> {
-    const resolved = this.resolveWorkspace(workspace)
+  diff(workspace: unknown, checkpoint: unknown, allowed: string[] = []): Record<string, unknown> {
+    const resolved = this.resolveWorkspace(workspace, allowed)
     const cid = validateCheckpointId(checkpoint)
     const ckptDir = join(this.root(), workspaceHash(resolved), cid)
     let isDir = false
@@ -215,8 +216,8 @@ export class RollbackStore {
     return { checkpoint: cid, workspace: resolved, diff: diffLines.length ? diffLines.join('\n') : '', files_changed: filesChanged, total_changes: filesChanged.length }
   }
 
-  restore(workspace: unknown, checkpoint: unknown): Record<string, unknown> {
-    const resolved = this.resolveWorkspace(workspace)
+  restore(workspace: unknown, checkpoint: unknown, allowed: string[] = []): Record<string, unknown> {
+    const resolved = this.resolveWorkspace(workspace, allowed)
     const cid = validateCheckpointId(checkpoint)
     const ckptDir = join(this.root(), workspaceHash(resolved), cid)
     let isDir = false
