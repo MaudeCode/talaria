@@ -134,8 +134,7 @@ jobs:
         SOURCE: ${{ needs.prepare.outputs.source }}
       run: |
         set -euo pipefail
-        # TAL-654: the owner waived the UI suite gate for v1.17.2; this run stands in for a reused suite.
-        url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+        url=$(app/ci/find-ui-suite-run "$SOURCE")
         if [[ -n "$url" ]]; then
           printf 'reused=true\nrun_url=%s\n' "$url" >> "$GITHUB_OUTPUT"
           printf '### UI suite\n\nReused the successful run on %s: %s\n' "$SOURCE" "$url" | tee -a "$GITHUB_STEP_SUMMARY"
