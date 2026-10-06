@@ -212,8 +212,11 @@ const USER_FLAG_RE = /(?<![A-Za-z0-9-])(?:-[uU][ \t]*|--(?:user|proxy-u(?:s(?:e(
 /** The prefilter's view of `USER_FLAG_RE`. */
 const USER_FLAG_TEST_RE = new RegExp(USER_FLAG_RE.source)
 const QUERY_KEY_RE = /([?&]key=)([^\s"'&#]+)/gi
-/** A Telegram bot token (`bot<id>:<secret>`): the id stays. */
-const TELEGRAM_TOKEN_RE = /(bot)?(\d{8,}):([-A-Za-z0-9_]{30,})/g
+/**
+ * A Telegram bot token (`bot<id>:<secret>`): the id stays. The id starts a digit run, so a long number is scanned once
+ * rather than from every digit (a match from mid-run would end at the same `:`).
+ */
+const TELEGRAM_TOKEN_RE = /(bot)?(?<!\d)(\d{8,}):([-A-Za-z0-9_]{30,})/g
 /** An E.164 phone number, masked to its first and last digits; never inside a word or encoded data (`ab+1234567`). */
 const PHONE_RE = /(?<![A-Za-z0-9])\+[1-9]\d{6,14}(?![A-Za-z0-9])/g
 /**
