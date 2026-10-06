@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { MoreHorizontal } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import type { z } from 'zod'
 import type { ProjectSchema } from '../../contracts'
-import { ContextMenu, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator } from '../../ui/Menu'
+import { ContextMenu, Menu, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator } from '../../ui/Menu'
 import { ConfirmDialog, Dialog } from '../../ui/Dialog'
 import { Button } from '../../ui/Button'
 import { TextInput } from '../../ui/Field'
@@ -24,7 +25,7 @@ const PROJECT_COLORS: { hex: string; name: () => string }[] = [
   { hex: '#f472b6', name: m.project_color_pink },
 ]
 
-/** A sidebar project filter chip; right-click or long-press opens rename, recolor and delete (TAL-565). */
+/** A sidebar project filter chip; right-click, long-press or the selected chip's actions button opens rename, recolor and delete (TAL-565). */
 export function ProjectChip({ project, active, onSelect, onDeleted }: { project: z.infer<typeof ProjectSchema>; active: boolean; onSelect: () => void; onDeleted: () => void }) {
   const qc = useQueryClient()
   const [dialog, setDialog] = useState<'rename' | 'delete' | null>(null)
@@ -36,6 +37,21 @@ export function ProjectChip({ project, active, onSelect, onDeleted }: { project:
   const recolor = useMutation({ mutationFn: (color: string) => api.renameProject(id, project.name, color), onSuccess: refresh, onError: fail })
   // Deleting unassigns the project's conversations, so the session rows change too.
   const del = useMutation({ mutationFn: () => api.deleteProject(id), onSuccess: () => { onDeleted(); refresh(); void qc.invalidateQueries({ queryKey: keys.sessions.all }) }, onError: fail })
+  const items = (
+    <>
+      <MenuItem onClick={() => { setName(project.name); setDialog('rename') }}>{m.rename()}</MenuItem>
+      <MenuRadioGroup value={project.color ?? ''} onValueChange={(hex: string) => recolor.mutate(hex)} aria-label={m.project_color()} className="flex px-1">
+        {PROJECT_COLORS.map((c) => (
+          // A 32px target around a 16px dot keeps touch picks off the neighbouring color.
+          <MenuRadioItem key={c.hex} value={c.hex} closeOnClick aria-label={c.name()} title={c.name()} className="group flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md outline-none data-[highlighted]:bg-hover">
+            <span className="h-4 w-4 rounded-full group-data-[checked]:ring-2 group-data-[checked]:ring-text" style={{ background: c.hex }} aria-hidden="true" />
+          </MenuRadioItem>
+        ))}
+      </MenuRadioGroup>
+      <MenuSeparator />
+      <MenuItem className="text-error" onClick={() => setDialog('delete')}>{m.delete()}</MenuItem>
+    </>
+  )
   return (
     <>
       <ContextMenu
@@ -47,15 +63,14 @@ export function ProjectChip({ project, active, onSelect, onDeleted }: { project:
           </span>
         }
       >
-        <MenuItem onClick={() => { setName(project.name); setDialog('rename') }}>{m.rename()}</MenuItem>
-        <MenuRadioGroup value={project.color ?? ''} onValueChange={(hex: string) => recolor.mutate(hex)} aria-label={m.project_color()} className="flex gap-1.5 px-2.5 py-1.5">
-          {PROJECT_COLORS.map((c) => (
-            <MenuRadioItem key={c.hex} value={c.hex} closeOnClick aria-label={c.name()} title={c.name()} className="h-4 w-4 shrink-0 cursor-pointer rounded-full outline-none data-[checked]:ring-2 data-[checked]:ring-text data-[highlighted]:ring-2 data-[highlighted]:ring-muted" style={{ background: c.hex }} />
-          ))}
-        </MenuRadioGroup>
-        <MenuSeparator />
-        <MenuItem className="text-error" onClick={() => setDialog('delete')}>{m.delete()}</MenuItem>
+        {items}
       </ContextMenu>
+      {/* The selected chip also gets a visible trigger, for keyboard, touch and assistive-technology users who never right-click. */}
+      {active && (
+        <Menu label={m.project_menu()} trigger={<button type="button" className="project-chip" aria-label={m.project_menu()} title={m.project_menu()}><MoreHorizontal size={12} aria-hidden="true" /></button>}>
+          {items}
+        </Menu>
+      )}
       {dialog === 'rename' && (
         <Dialog open onOpenChange={(o) => { if (!o) setDialog(null) }} title={m.project_rename()}>
           <form onSubmit={(e) => { e.preventDefault(); if (name.trim()) rename.mutate() }} className="flex flex-col gap-3">

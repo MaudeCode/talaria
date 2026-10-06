@@ -45,6 +45,8 @@ test('a project chip renames, recolors and deletes its project', async ({ page }
   expect((await serverProject(page, id))?.color).toBe('#50c878')
   const green = (await openMenu(`${name} renamed`)).getByRole('menuitemradio', { name: 'Green' })
   await expect(green).toHaveAttribute('aria-checked', 'true')
+  // Swatches are touch targets, not just their 16px dots.
+  expect((await green.boundingBox())?.width).toBeGreaterThanOrEqual(32)
   await shot(page, `recolored-${testInfo.project.name}`)
   await green.click()
   await expect(page.getByRole('menu')).toHaveCount(0)
@@ -52,13 +54,18 @@ test('a project chip renames, recolors and deletes its project', async ({ page }
   // Delete: only after confirmation; a deleted filter falls back to All.
   await chip(`${name} renamed`).click()
   await expect(chip(`${name} renamed`)).toHaveClass(/active/)
-  await (await openMenu(`${name} renamed`)).getByRole('menuitem', { name: 'Delete' }).click()
+  await shot(page, `selected-${testInfo.project.name}`)
+  // The selected chip shows a visible actions button with the same menu, so delete goes through it.
+  await expect(bar.getByRole('button', { name: 'Project actions' })).toHaveCount(1)
+  await bar.getByRole('button', { name: 'Project actions' }).click()
+  await page.getByRole('menu', { name: 'Project actions' }).getByRole('menuitem', { name: 'Delete' }).click()
   const confirm = page.getByRole('alertdialog')
   await expect(confirm).toContainText(`Delete project "${name} renamed"?`)
   await shot(page, `delete-confirm-${testInfo.project.name}`)
   await confirm.getByRole('button', { name: 'Delete project' }).click()
   await expect(chip(`${name} renamed`)).toHaveCount(0)
   await expect(chip('All')).toHaveClass(/active/)
+  await expect(bar.getByRole('button', { name: 'Project actions' })).toHaveCount(0)
   expect(await serverProject(page, id)).toBeUndefined()
   await page.request.post('/api/projects/delete', { data: { project_id: keeper } })
 })
