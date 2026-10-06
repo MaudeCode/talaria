@@ -10,7 +10,7 @@ const key = (sid: string) => `hermes-draft:${sid}`
 let loaded: { sessionId: string; text: string } | null = null
 
 export function readLocalDraft(sessionId: string): string {
-  const text = readPersistedJson(key(sessionId), LocalDraftSchema)?.text ?? ''
+  const text = readLocal(sessionId)?.text ?? ''
   loaded = { sessionId, text }
   return text
 }
@@ -29,6 +29,18 @@ function stamp(): number {
   revision = Math.max(Date.now() * 1000, revision + 1)
   return revision
 }
+/** This browser's copy of a draft; its stamp also carries the revision counter across a reload. */
+function readLocal(sessionId: string) {
+  const local = readPersistedJson(key(sessionId), LocalDraftSchema)
+  if (local) observe(Math.ceil(local.updatedAt) * 1000)
+  return local
+}
+/** Save to the server, stamping the local copy with the same revision: a copy the server truncated never outranks it. */
+function publish(sessionId: string, text: string): void {
+  const version = stamp()
+  writePersistedJson(key(sessionId), { text, updatedAt: Math.ceil(version / 1000) })
+  saveServerDraft(sessionId, text, version)
+}
 function saveServerDraft(sessionId: string, text: string, version = stamp()): void {
   void api.saveDraft({ session_id: sessionId, draft: { text }, draft_version: String(version) }).then(
     (saved) => { observe(saved.draft_version) },
@@ -44,12 +56,16 @@ function saveServerDraft(sessionId: string, text: string, version = stamp()): vo
 export function useServerDraft(sessionId: string | null, setText: Dispatch<SetStateAction<string>>) {
   useEffect(() => {
     if (!sessionId) return
-    const local = readPersistedJson(key(sessionId), LocalDraftSchema)
+    const local = readLocal(sessionId)
     let current = true
     void api.fetchDraft(sessionId).then(({ draft, draft_version }) => {
       observe(draft_version)
       if (!current) return
-      if (local && (draft_version === null || Number(draft_version) <= local.updatedAt * 1000)) return
+      if (local && (draft_version === null || Number(draft_version) <= local.updatedAt * 1000)) {
+        // This browser's copy is newer, e.g. an edit left before its server save ran: publish it unless edited since.
+        if (draft.text !== local.text && loaded?.sessionId === sessionId && loaded.text === local.text) publish(sessionId, local.text)
+        return
+      }
       setText((text) => {
         if (loaded?.sessionId !== sessionId || loaded.text !== text) return text
         loaded = { sessionId, text: draft.text }
@@ -104,12 +120,7 @@ export function useDraftPersistence(sessionId: string | null, text: string) {
     }
     unsaved.current = { sessionId, text }
     const local = window.setTimeout(() => flush(unsaved), 300)
-    const server = window.setTimeout(() => {
-      // The server may truncate what it stores; the full local copy carries the same revision, so it is never ranked older.
-      const version = stamp()
-      writePersistedJson(key(sessionId), { text, updatedAt: Math.ceil(version / 1000) })
-      saveServerDraft(sessionId, text, version)
-    }, 1200)
+    const server = window.setTimeout(() => { publish(sessionId, text) }, 1200)
     return () => { window.clearTimeout(local); window.clearTimeout(server) }
   }, [sessionId, text])
 }

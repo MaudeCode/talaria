@@ -211,3 +211,50 @@ describe('restores that race an edit, and server truncation (TAL-564)', () => {
     expect(second.result.current.text).toBe(long)
   })
 })
+
+describe('publishing after hydration, and reloads (TAL-564)', () => {
+  beforeEach(() => { vi.useFakeTimers(); localStorage.clear(); vi.mocked(api.saveDraft).mockReset().mockResolvedValue({ ok: true, draft: { text: '', files: [] }, draft_version: null }) })
+  afterEach(() => { vi.useRealTimers() })
+  const mount = () => renderHook(() => {
+    const [text, setText] = useState(() => readLocalDraft('s1'))
+    useDraftPersistence('s1', text)
+    useServerDraft('s1', setText)
+    return { text, setText }
+  })
+
+  it('publishes a local edit the server never got once a read shows the server copy is older', async () => {
+    vi.mocked(api.fetchDraft).mockResolvedValue({ draft: { text: '', files: [] }, draft_version: null })
+    const first = mount()
+    await act(async () => { await Promise.resolve() })
+    act(() => { first.result.current.setText('left before the server save') })
+    first.unmount()
+    expect(vi.mocked(api.saveDraft)).not.toHaveBeenCalled()
+
+    vi.mocked(api.fetchDraft).mockResolvedValue({ draft: { text: 'older', files: [] }, draft_version: '1000' })
+    const second = mount()
+    await act(async () => { await Promise.resolve() })
+    expect(second.result.current.text).toBe('left before the server save')
+    expect(vi.mocked(api.saveDraft).mock.calls.map(([body]) => body.draft.text)).toEqual(['left before the server save'])
+  })
+
+  it('stamps an edit after a reload above the revision the stored draft already carries', async () => {
+    const ahead = Date.now() + 120_000
+    localStorage.setItem('hermes-draft:s1', JSON.stringify({ text: 'stamped by a fast clock', updatedAt: ahead }))
+    // A reload: a fresh module instance whose revision counter starts over.
+    vi.resetModules()
+    const fresh = await import('./useDraft')
+    const freshApi = await import('../../api/endpoints')
+    vi.mocked(freshApi.fetchDraft).mockImplementation(() => new Promise(() => undefined))
+    vi.mocked(freshApi.saveDraft).mockResolvedValue({ ok: true, draft: { text: '', files: [] }, draft_version: null })
+    const { result } = renderHook(() => {
+      const [text, setText] = useState(() => fresh.readLocalDraft('s1'))
+      fresh.useDraftPersistence('s1', text)
+      fresh.useServerDraft('s1', setText)
+      return { text, setText }
+    })
+    act(() => { result.current.setText('edited after reload') })
+    vi.advanceTimersByTime(2000)
+    const version = Number(vi.mocked(freshApi.saveDraft).mock.calls.at(-1)![0].draft_version)
+    expect(version).toBeGreaterThan(ahead * 1000)
+  })
+})
