@@ -425,7 +425,8 @@ public final class ChatViewModel {
     }
     /// The session's toolset override (TAL-631); nil until a session detail reports it.
     public private(set) var sessionToolsets: SessionToolsets?
-    private var isDrainingQueuedSlashMessage = false
+    /// One queued message sends at a time (the drain or Send now): each swaps the composer's pending files.
+    private var isSendingQueuedMessage = false
     private var activeBtwStreamID: String?
     private var activeBtwMessageID: String?
     private var activeBtwQuestion: String?
@@ -5374,19 +5375,23 @@ public final class ChatViewModel {
     /// Send now: steers a queued text message into the running reply instead of waiting for it to end;
     /// a steer the run cannot take queues it again, as `/steer` does, and a send that cannot start puts it back.
     public func sendQueuedMessageNow(id: UUID) async {
-        guard queuedMessagePreviews.first(where: { $0.id == id })?.canSendNow == true,
+        guard !isSendingQueuedMessage,
+              queuedMessagePreviews.first(where: { $0.id == id })?.canSendNow == true,
               let (message, index) = takeQueuedMessage(id: id)
         else { return }
+        isSendingQueuedMessage = true
         // A steer the run refuses queues again with the pending files, so the composer's own stay out of it.
-        switch await withPendingAttachments(message.attachments, { await steerResponseFromSlashCommand(message.text) }) {
-        case .executed(let notice?):
-            pinLocalNoticeMessage(notice)
-        case .unsupported(let notice):
+        let result = await withPendingAttachments(message.attachments) { await steerResponseFromSlashCommand(message.text) }
+        isSendingQueuedMessage = false
+        if case .unsupported(let notice) = result {
+            // Back in place, with no drain: a send that keeps failing must not retry in a loop (issue #202).
             queuedSlashMessages.insert(message, at: min(index, queuedSlashMessages.count))
             pinLocalNoticeMessage(notice)
-        default:
-            break
+            return
         }
+        if case .executed(let notice?) = result { pinLocalNoticeMessage(notice) }
+        // A reply that ended meanwhile skipped its drain while this one held the queue.
+        drainQueuedSlashMessageIfIdle()
     }
 
     /// TAL-441: a queued copy of a failed steer may be on the server, which cannot say whether it never arrived or the
@@ -5422,19 +5427,19 @@ public final class ChatViewModel {
         guard activeStreamID == nil,
               !isStartingChat,
               !isSendingVoiceNote,
-              !isDrainingQueuedSlashMessage,
+              !isSendingQueuedMessage,
               !queuedSlashMessages.isEmpty
         else { return }
 
         let next = queuedSlashMessages.removeFirst()
-        isDrainingQueuedSlashMessage = true
+        isSendingQueuedMessage = true
 
         Task { @MainActor in
             let sent = await withPendingAttachments(next.attachments) { await sendMessage(next.text) }
             if !sent {
                 queuedSlashMessages.insert(next, at: 0)
             }
-            isDrainingQueuedSlashMessage = false
+            isSendingQueuedMessage = false
             // Only chain-drain after a *successful* send. A failed send requeues the message and
             // waits for the next natural trigger (a queue append, stream completion, or an explicit
             // user send) instead of immediately re-firing the drain — which, with a persistently

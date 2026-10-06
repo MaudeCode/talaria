@@ -52,7 +52,8 @@ struct QueuedMessagesSheet: View {
                     .textSelection(.enabled)
             }
 
-            ForEach(preview.attachmentNames, id: \.self) { name in
+            // Two files can share a name, so the row's position is its identity.
+            ForEach(Array(preview.attachmentNames.enumerated()), id: \.offset) { _, name in
                 Label(name, systemImage: "paperclip")
                     .font(AppFont.footnote())
                     .foregroundStyle(.secondary)

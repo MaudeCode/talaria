@@ -84,6 +84,33 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(viewModel.pendingAttachments.map(\.name), ["notes.txt"])
     }
 
+    func testASecondSendNowWaitsForTheFirstSoTheComposersFilesSurvive() async throws {
+        let firstSteerArrived = expectation(description: "the first Send now reached the server")
+        let releaseFirstSteer = DispatchSemaphore(value: 0)
+        var steeredTexts: [String] = []
+        let viewModel = try makeQueueViewModel(onSteer: { text in
+            steeredTexts.append(text)
+            guard text == "first" else { return }
+            firstSteerArrived.fulfill()
+            releaseFirstSteer.wait()
+        }) { 1 }
+        _ = await viewModel.sendMessage("first message")
+        try await queue("first", on: viewModel)
+        try await queue("second", on: viewModel)
+        await viewModel.uploadAttachment(data: Data("notes".utf8), filename: "notes.txt")
+        let ids = viewModel.queuedMessagePreviews.map(\.id)
+
+        let first = Task { await viewModel.sendQueuedMessageNow(id: ids[0]) }
+        await fulfillment(of: [firstSteerArrived], timeout: 5)
+        await viewModel.sendQueuedMessageNow(id: ids[1])
+        releaseFirstSteer.signal()
+        await first.value
+
+        XCTAssertEqual(steeredTexts, ["first"], "The second Send now waits for the first")
+        XCTAssertEqual(queueSummary(viewModel), ["second|0"])
+        XCTAssertEqual(viewModel.pendingAttachments.map(\.name), ["notes.txt"])
+    }
+
     /// TAL-441: a queued copy of a steer whose request failed may be on the server, which cannot say whether it never
     /// arrived or the Agent took it, so the copy cannot be sent now, edited or removed.
     func testAQueuedSteerTheServerMayHoldCannotBeChanged() async throws {
