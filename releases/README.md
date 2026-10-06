@@ -82,15 +82,19 @@ A release that ships the App first looks for a UI suite to reuse (TAL-408):
 `ui-suite-lookup` reads, with `actions: read` only, the completed, successful
 `ui-suite.yml` runs (nightly schedule or dispatch) whose head is exactly the
 release source and whose run name, `UI suite on <that commit>`, shows an
-unscoped suite of that commit (`app/ci/find-ui-suite-run`). A match skips the
-`ui-suite` call and its URL goes to the step summary; no match calls the suite
+unscoped suite of that commit (`app/ci/find-ui-suite-run`). Without one, a
+successful unscoped `main` run on an earlier commit counts when nothing since
+selects the App suite (`scripts/changed-components.py`), so it tested the
+release's App (TAL-655). A match skips the `ui-suite` call and its URL goes to the step summary; no match calls the suite
 as before. `build-gate` accepts only a successful lookup with a reused run URL
 and a skipped call, or a successful lookup without one and a successful call; a
 lookup error fails the lookup, skips the call and fails `build-gate`. A
 release runs the suite by calling `app-tests.yml` directly (TAL-417), which
 leaves no `ui-suite.yml` run, so it is never reused. To
 reuse one, let a suite finish on the source before pushing the release tag:
-the nightly run counts when the source is its `main` head, or dispatch
+the nightly run, or the run CI starts on `main` after every fifth App-changing
+merge (`ci.yml`'s `ui-suite-cadence`), counts when the source is that commit or
+only non-App commits follow it, or dispatch
 `gh workflow run ui-suite.yml --repo MaudeCode/talaria --ref main` while `main`
 is still at that commit (a dispatch with a `ref` input other than that full
 commit, or with `only_testing`, never counts).

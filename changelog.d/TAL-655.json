@@ -1,0 +1,1 @@
+{"skip": "CI tooling only: runs the UI suite every fifth App-changing main merge, reuses it across App-free commits at release, and reports failures to the fix agent."}

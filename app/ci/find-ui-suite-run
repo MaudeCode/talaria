@@ -4,8 +4,11 @@
 # none (TAL-408). Only ui-suite.yml's own runs count: the nightly schedule or a dispatch whose head is SHA, so the
 # workflow file is SHA's own, and whose run name ("UI suite on <commit>", see ui-suite.yml) records that it tested
 # SHA with no only_testing scope. A release's workflow_call leaves no ui-suite.yml run and never counts.
-# Read-only; ci/gh-api-poll retries transient API errors, and any lookup failure exits non-zero rather than
-# reporting "none". Needs GH_TOKEN with actions: read and GITHUB_REPOSITORY.
+# Without one, a successful unscoped run on main whose commit is in SHA's history counts when nothing since then
+# selects the App suite (scripts/changed-components.py), so it tested SHA's App (TAL-655). That needs the history:
+# without it nothing qualifies and the release runs the suite. Read-only; ci/gh-api-poll retries transient API errors,
+# and any lookup failure exits non-zero rather than reporting "none". Needs GH_TOKEN with actions: read and
+# GITHUB_REPOSITORY.
 set -euo pipefail
 
 sha=${1:?usage: ci/find-ui-suite-run SHA}
@@ -17,4 +20,19 @@ runs=$(UI_SUITE_SHA="${sha}" "$(dirname "$0")/gh-api-poll" --paginate -H "Cache-
   --jq '.workflow_runs[] | select(.head_sha == $ENV.UI_SUITE_SHA and .status == "completed" and .conclusion == "success"
       and (.event == "schedule" or .event == "workflow_dispatch") and .display_title == "UI suite on " + $ENV.UI_SUITE_SHA)
     | .html_url')
-[[ -z "${runs}" ]] || head -n 1 <<< "${runs}"
+[[ -z "${runs}" ]] || { head -n 1 <<< "${runs}"; exit 0; }
+
+root="$(cd "$(dirname "$0")/../.." && pwd)"
+candidates=$("$(dirname "$0")/gh-api-poll" -H "Cache-Control: no-cache" \
+  "repos/${GITHUB_REPOSITORY}/actions/workflows/ui-suite.yml/runs?branch=main&status=success&per_page=20" \
+  --jq '.workflow_runs[] | select(.status == "completed" and .conclusion == "success"
+      and (.event == "schedule" or .event == "workflow_dispatch") and .display_title == "UI suite on " + .head_sha)
+    | "\(.head_sha) \(.html_url)"')
+while read -r tested url; do
+  [[ -n "${tested}" ]] && git -C "${root}" merge-base --is-ancestor "${tested}" "${sha}" 2>/dev/null || continue
+  if (cd "${root}" && python3 scripts/changed-components.py --base="${tested}" --head="${sha}") |
+      grep -x 'app=false' >/dev/null; then
+    echo "${url}"
+    exit 0
+  fi
+done <<< "${candidates}"
