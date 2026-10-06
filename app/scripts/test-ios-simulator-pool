@@ -38,6 +38,8 @@ elif [[ "$1 $2" == "simctl delete" ]]; then
 elif [[ "$1 $2" == "simctl create" ]]; then
     print -r -- "$3|$4|$5" >> "$POOL_CREATIONS"
     print 00000000-0000-0000-0000-00000000c0de
+elif [[ "$1 $2" == "simctl bootstatus" ]]; then
+    [[ ! -e "$POOL_BOOT_FAIL" ]] || exit 1
 elif [[ "$1 $2" == "simctl erase" ]]; then
     print "$3" >> "$POOL_ERASURES"
     [[ ! -e "$POOL_ERASE_FAIL" ]] || exit 1
@@ -52,7 +54,7 @@ fi
                IOS_SIMULATOR_POOL_DIR=str(work / 'leases'), POOL_FIXTURE=str(fixture),
                POOL_RUNTIMES=str(runtimes),
                POOL_DELETIONS=str(work / 'deletions'), POOL_CREATIONS=str(work / 'creations'), POOL_ERASURES=str(work / 'erasures'),
-               POOL_ERASE_FAIL=str(work / 'erase-fail'))
+               POOL_ERASE_FAIL=str(work / 'erase-fail'), POOL_BOOT_FAIL=str(work / 'boot-fail'))
     for key in ('IOS_SIMULATOR_ID', 'IOS_SIMULATOR_RUNTIME', 'IOS_SIMULATOR_DEVICE_TYPE'):
         env.pop(key, None)
     processes = []
@@ -133,6 +135,7 @@ fi
         assert erasures() == [devices[1]['udid']]  # Release wipes the device it leased.
         invoke(expected=75, IOS_SIMULATOR_ID=devices[0]['udid'])
         assert erasures() == [devices[1]['udid']]  # A failed acquisition erases nothing.
+        assert not (work / 'leases' / 'pool.lock').exists()  # nor holds the pool against the next caller.
         assert invoke(IOS_SIMULATOR_ID=personal['udid']) == personal['udid']
         assert erasures() == [devices[1]['udid']]  # An explicitly selected non-pool device is never erased.
         assert invoke(IOS_SIMULATOR_ID=devices[1]['udid']) == devices[1]['udid']
@@ -163,6 +166,7 @@ fi
         os.kill(orphan, signal.SIGTERM)
         devices[0]['state'] = devices[1]['state'] = 'Shutdown'
         save()
+        time.sleep(1.1)  # macOS shlock reclaims a dead owner's lock only once it is a second old.
         assert invoke() == devices[0]['udid']  # shlock recovers the dead PID.
         result = subprocess.run([str(work / 'two' / 'pool'), '/bin/zsh', '-c', 'exit 42'], env=env)
         assert result.returncode == 42
@@ -206,9 +210,34 @@ fi
             assert blocker.poll() is None
             blocker.terminate()
             assert blocker.wait(timeout=10) == 130
+        # A failing or malformed simctl report runs nothing, erases nothing and leaves the pool usable.
+        before = erasures()
+        for report in ('{"devices": {', None):
+            if report is None:
+                fixture.unlink()
+            else:
+                fixture.write_text(report)
+            result = subprocess.run([str(work / 'two' / 'pool'), '/bin/zsh', '-c', 'print ran'], env=env,
+                                    capture_output=True, text=True, timeout=10)
+            assert result.returncode != 0 and result.stdout == '', (report, result)
+            assert erasures() == before
+            assert not list((work / 'leases' / 'leases').glob('*.lock')), report
+            assert not (work / 'leases' / 'pool.lock').exists(), report
+        save()
+        # A lease whose boot fails is shut down, erased and returned before the command could run.
+        (work / 'boot-fail').touch()
+        before = erasures()
+        result = subprocess.run([str(work / 'two' / 'pool'), '/bin/zsh', '-c', 'print ran'], env=env,
+                                capture_output=True, text=True, timeout=10)
+        assert result.returncode != 0 and result.stdout == '', result
+        assert erasures() == before + [devices[0]['udid']]
+        assert not list((work / 'leases' / 'leases').glob('*.lock'))
+        assert not (work / 'leases' / 'pool.lock').exists()
+        (work / 'boot-fail').unlink()
+        assert invoke() == devices[0]['udid']
     finally:
         for process in processes:
             if process.poll() is None:
                 process.terminate()
                 process.wait(timeout=10)
-print('Shared pool checks passed: released-runtime selection, creation on fresh images, independent callers, explicit IDs, exhaustion, runtime, refresh, erase on release, cancellation, crash, repeated acquire/release and exit status.')
+print('Shared pool checks passed: released-runtime selection, creation on fresh images, independent callers, explicit IDs, exhaustion, runtime, refresh, erase on release, cancellation, crash, repeated acquire/release, exit status and cleanup after failed, malformed or unbootable acquisitions.')

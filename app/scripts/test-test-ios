@@ -41,7 +41,8 @@ exit 0
 EOF
 cat > "$repo/scripts/seed-simulator-photo" <<'EOF'
 #!/bin/zsh
-exit 0
+[[ ! -e "$TALARIA_TEST_STATE/seed-fail" ]] || exit 3
+print -r -- "$1" >> "$TALARIA_TEST_STATE/seeded"
 EOF
 cat > "$repo/.xcodebuildmcp/config.yaml" <<'EOF'
 defaults:
@@ -99,6 +100,7 @@ for (( index = 1; index <= ${#args}; index++ )); do
 done
 
 print -rl -- "$@" > "$state/last-args"
+[[ ! -e TalariaTests/VisualReferences/.record ]] || print -r -- "${selectors[1]:-}" >> "$state/recorded"
 lock="$state/counter.lock"
 while ! mkdir "$lock" 2>/dev/null; do sleep 0.01; done
 read -r active < "$state/active"
@@ -303,4 +305,39 @@ expected=$'-only-testing:TalariaTests/Unit|NO\n-only-testing:TalariaUITests/Firs
     exit 1
 }
 
-print "test-ios worktree admission, selection and runner-hang retry checks passed ($rounds concurrent rounds)."
+# Only a disposable pool device is seeded with a photo; a personal simulator keeps its library.
+: > "$state/seeded"
+"$repo/scripts/test-ios" TalariaUITests/PoolSeed > "$state/pool-seed.log" 2>&1
+[[ "$(<"$state/seeded")" == (AAAAAAAA|BBBBBBBB)-* ]]
+TALARIA_DEVICE_FIXTURE="$state/fallback-devices" IOS_SIMULATOR_ID=DDDDDDDD-DDDD-DDDD-DDDD-DDDDDDDDDDDD \
+    "$repo/scripts/test-ios" TalariaUITests/PersonalSeed > "$state/personal-seed.log" 2>&1
+grep -q "Not seeding a test photo into personal simulator DDDDDDDD" "$state/personal-seed.log"
+[[ $(wc -l < "$state/seeded" | tr -d ' ') == 1 ]]
+
+# A failed seed stops before testing and still returns its lease.
+touch "$state/seed-fail"
+if "$repo/scripts/test-ios" TalariaUITests/SeedFails > "$state/seed-fails.log" 2>&1; then
+    print -u2 "Expected a failed photo seed to fail the run."
+    exit 1
+fi
+rm "$state/seed-fail"
+[[ $(runs_for TalariaUITests/SeedFails) == 0 ]]
+leases=("$state"/pool/leases/*.lock(N))
+(( ${#leases} == 0 )) || {
+    print -u2 "A failed photo seed left pool leases behind: ${leases[*]}"
+    exit 1
+}
+
+# The visual-reference record marker exists only during a recording run, even one that fails,
+# and a stale marker never turns an ordinary run into a re-record.
+marker="$repo/TalariaTests/VisualReferences/.record"
+mkdir -p "${marker:h}"
+: > "$marker"
+: > "$state/recorded"
+"$repo/scripts/test-ios" TalariaTests/Ordinary > "$state/ordinary.log" 2>&1
+TALARIA_RECORD_VISUAL_REFERENCES=1 "$repo/scripts/test-ios" TalariaTests/Record > "$state/record.log" 2>&1
+TALARIA_RECORD_VISUAL_REFERENCES=1 "$repo/scripts/test-ios" TalariaTests/RecordFailure > "$state/record-failure.log" 2>&1 || true
+[[ "$(<"$state/recorded")" == $'-only-testing:TalariaTests/Record\n-only-testing:TalariaTests/RecordFailure' ]]
+[[ ! -e "$marker" ]]
+
+print "test-ios worktree admission, selection, runner-hang retry, photo seeding and cleanup checks passed ($rounds concurrent rounds)."
