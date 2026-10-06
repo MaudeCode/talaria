@@ -39,8 +39,9 @@ export function kanbanFailure(error: unknown): never {
 }
 
 /** Where a Move may take a task, by its current status (TAL-557). Block, Unblock, Complete, and Archive are separate actions;
- * the gates mirror the Agent's `kanban_db` transitions (`block_task` takes running/ready, `complete_task` running/ready/blocked,
- * `unblock_task` blocked), so a client never offers a write the Agent refuses. `running` is reachable only through the dispatcher. */
+ * the gates mirror the Agent's `kanban_db` transitions (`block_task` takes running/ready, `complete_task` running/ready/blocked
+ * with stored evidence, `unblock_task` blocked), so a client never offers a write the Agent refuses. `running` is reachable only
+ * through the dispatcher. */
 const MOVE_TARGETS: Record<string, string[]> = {
   triage: ['todo', 'ready'], todo: ['triage', 'ready'], ready: ['triage', 'todo'], running: ['triage', 'todo', 'ready'],
   // Ready from blocked is Unblock, which re-gates on parents.
@@ -51,16 +52,18 @@ export const KANBAN_BULK_MOVE_TARGETS = ['triage', 'todo', 'ready', 'blocked', '
 
 export interface KanbanTaskActions { block: boolean; unblock: boolean; complete: boolean; archive: boolean; move_to: string[] }
 
-/** The card actions offered for `status`; an unknown status offers none. */
-export function kanbanTaskActions(status: unknown): KanbanTaskActions {
-  const s = str(status)
-  const known = s in MOVE_TARGETS
+/** The card actions offered for a sidecar task; an unknown status offers none. */
+export function kanbanTaskActions(task: Dict): KanbanTaskActions {
+  const s = str(task.status)
+  // Block and a direct status change release a live worker's claim without stopping it, and the Agent refuses to complete
+  // under a live claim, so such a card offers only Archive, which terminates the worker. Unknown liveness counts as live.
+  const live = s === 'running' && task.claim_live !== false
   return {
-    block: s === 'ready' || s === 'running',
+    block: !live && (s === 'ready' || s === 'running'),
     unblock: s === 'blocked',
-    complete: s === 'ready' || s === 'running' || s === 'blocked',
-    archive: known && s !== 'archived',
-    move_to: [...(MOVE_TARGETS[s] ?? [])],
+    complete: !live && task.has_completion_evidence === true && (s === 'ready' || s === 'running' || s === 'blocked'),
+    archive: s in MOVE_TARGETS && s !== 'archived',
+    move_to: live ? [] : [...(MOVE_TARGETS[s] ?? [])],
   }
 }
 
@@ -68,7 +71,7 @@ export function kanbanTaskActions(status: unknown): KanbanTaskActions {
 export function withTaskPolicy(task: unknown): unknown {
   if (!task || typeof task !== 'object' || Array.isArray(task)) return task
   const t = task as Dict
-  return { ...t, available_actions: kanbanTaskActions(t.status), requires_running_exit_confirmation: str(t.status) === 'running' }
+  return { ...t, available_actions: kanbanTaskActions(t), requires_running_exit_confirmation: str(t.status) === 'running' }
 }
 
 /** Adds the card policy to a payload's `task` and `columns[].tasks`; anything else passes through. */

@@ -82,10 +82,33 @@ def _obj_dict(value):
     return dict(getattr(value, "__dict__", {}))
 
 
-def _task_dict(task):
+def _claim_live(conn, task) -> bool:
+    """Whether a running task's worker process still holds its claim (the Agent's ``_claim_is_live``).
+
+    Releasing that claim (block, a direct status change) leaves the worker running, so the
+    server offers those writes only once the worker is gone. Unknown liveness counts as live.
+    """
+    if getattr(task, "status", None) != "running":
+        return False
+    try:
+        row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task.id,)).fetchone()
+        if row is None:
+            return False
+        columns = row.keys()
+        claim = {k: row[k] if k in columns else None for k in ("status", "claim_lock", "worker_pid", "worker_started_at")}
+        return bool(_kb()._claim_is_live(claim))
+    except Exception:  # noqa: BLE001 - an older Agent without the helper
+        return bool(getattr(task, "claim_lock", None) and getattr(task, "worker_pid", None))
+
+
+def _task_dict(task, conn):
     data = _obj_dict(task)
     if not data:
         return data
+    # Facts the server's card policy needs (TAL-557): the Agent completes a non-review task only with
+    # stored or supplied evidence, and refuses to release a live worker's claim.
+    data["claim_live"] = _claim_live(conn, task)
+    data["has_completion_evidence"] = bool(str(data.get("result") or "").strip())
     try:
         age = _kb().task_age(task)
     except Exception:  # noqa: BLE001
@@ -327,7 +350,7 @@ def board_payload(params: dict) -> dict:
         link_counts, comment_counts = _link_counts(conn, tasks), _comment_counts(conn)
 
         def row(task):
-            data = _task_dict(task)
+            data = _task_dict(task, conn)
             data["link_counts"] = link_counts.get(task.id, {"parents": 0, "children": 0})
             data["comment_count"] = comment_counts.get(task.id, 0)
             return data
@@ -365,7 +388,7 @@ def create_task_payload(params: dict) -> dict:
         )
         if body.get("status"):
             _patch_task(conn, task_id, {"status": body.get("status")})
-        return {"task": _task_dict(kb.get_task(conn, task_id)), "read_only": False}
+        return {"task": _task_dict(kb.get_task(conn, task_id), conn), "read_only": False}
 
 
 def patch_task_payload(params: dict) -> dict:
@@ -375,7 +398,7 @@ def patch_task_payload(params: dict) -> dict:
     kb = _kb()
     with _conn(board=_board(params)) as conn:
         _patch_task(conn, task_id, params.get("patch") or {})
-        return {"task": _task_dict(kb.get_task(conn, task_id)), "read_only": False}
+        return {"task": _task_dict(kb.get_task(conn, task_id), conn), "read_only": False}
 
 
 def comment_payload(params: dict) -> dict:
@@ -418,7 +441,7 @@ def task_detail_payload(params: dict) -> dict:
         if not task:
             raise NotFound("task not found")
         return {
-            "task": _task_dict(task),
+            "task": _task_dict(task, conn),
             "comments": [_obj_dict(c) for c in kb.list_comments(conn, task_id)],
             "events": [_obj_dict(e) for e in kb.list_events(conn, task_id)],
             "links": {"parents": kb.parent_ids(conn, task_id), "children": kb.child_ids(conn, task_id)},
@@ -589,7 +612,7 @@ def task_action_payload(params: dict) -> dict:
             raise InvalidParams(f"invalid action: {action}")
         if not ok:
             raise Conflict(f"{action} refused")
-        return {"task": _task_dict(kb.get_task(conn, task_id)), "read_only": False}
+        return {"task": _task_dict(kb.get_task(conn, task_id), conn), "read_only": False}
 
 
 def list_boards_payload(params: dict) -> dict:

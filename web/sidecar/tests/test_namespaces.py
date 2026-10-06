@@ -226,3 +226,30 @@ def test_image_mode_reads_the_profile_config(handshaken: SidecarProcess, hermes_
     assert handshaken.result("text.image_mode", params) == {"mode": "native", "reason": "", "supports_vision": True}
     path.write_text("agent:\n  image_input_mode: text\nmodel:\n  supports_vision: true\n", encoding="utf-8")
     assert handshaken.result("text.image_mode", params)["mode"] == "text"
+
+
+@requires_agent
+def test_kanban_tasks_report_claim_liveness_and_completion_evidence(handshaken: SidecarProcess, hermes_home: pathlib.Path) -> None:
+    """The server's card policy (TAL-557) reads these: a live worker's claim and the stored result the Agent needs to complete."""
+    import sqlite3
+
+    home = str(hermes_home)
+    task_id = handshaken.result("kanban.create_task", {"profile_home": home, "task": {"title": "claimed task"}})["task"]["id"]
+    task = handshaken.result("kanban.task", {"profile_home": home, "task_id": task_id})["task"]
+    assert task["claim_live"] is False and task["has_completion_evidence"] is False
+    db = next(p for p in hermes_home.rglob("*.db") if sqlite3.connect(p).execute("SELECT name FROM sqlite_master WHERE name = 'tasks'").fetchone())
+    worker = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    try:
+        with sqlite3.connect(db) as conn:
+            conn.execute("UPDATE tasks SET status = 'running', claim_lock = 'test-claim', worker_pid = ?, result = 'shipped' WHERE id = ?", (worker.pid, task_id))
+            # No start fingerprint: liveness is the worker PID's existence.
+            if any(c[1] == "worker_started_at" for c in conn.execute("PRAGMA table_info(tasks)")):
+                conn.execute("UPDATE tasks SET worker_started_at = NULL WHERE id = ?", (task_id,))
+        task = handshaken.result("kanban.task", {"profile_home": home, "task_id": task_id})["task"]
+        assert task["claim_live"] is True and task["has_completion_evidence"] is True
+    finally:
+        worker.kill()
+        worker.wait()
+    board = handshaken.result("kanban.board", {"profile_home": home})
+    running = next(t for c in board["columns"] for t in c["tasks"] if t["id"] == task_id)
+    assert running["claim_live"] is False

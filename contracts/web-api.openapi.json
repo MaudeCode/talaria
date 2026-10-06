@@ -47568,6 +47568,12 @@
                           "minimum": -9007199254740991,
                           "maximum": 9007199254740991
                         },
+                        "claim_live": {
+                          "type": "boolean"
+                        },
+                        "has_completion_evidence": {
+                          "type": "boolean"
+                        },
                         "available_actions": {
                           "type": "object",
                           "properties": {
@@ -47607,6 +47613,8 @@
                         "title",
                         "status",
                         "priority",
+                        "claim_live",
+                        "has_completion_evidence",
                         "available_actions",
                         "requires_running_exit_confirmation"
                       ],
@@ -47789,6 +47797,12 @@
                           "minimum": -9007199254740991,
                           "maximum": 9007199254740991
                         },
+                        "claim_live": {
+                          "type": "boolean"
+                        },
+                        "has_completion_evidence": {
+                          "type": "boolean"
+                        },
                         "available_actions": {
                           "type": "object",
                           "properties": {
@@ -47828,6 +47842,8 @@
                         "title",
                         "status",
                         "priority",
+                        "claim_live",
+                        "has_completion_evidence",
                         "available_actions",
                         "requires_running_exit_confirmation"
                       ],
@@ -47884,6 +47900,12 @@
                           "minimum": -9007199254740991,
                           "maximum": 9007199254740991
                         },
+                        "claim_live": {
+                          "type": "boolean"
+                        },
+                        "has_completion_evidence": {
+                          "type": "boolean"
+                        },
                         "available_actions": {
                           "type": "object",
                           "properties": {
@@ -47923,6 +47945,8 @@
                         "title",
                         "status",
                         "priority",
+                        "claim_live",
+                        "has_completion_evidence",
                         "available_actions",
                         "requires_running_exit_confirmation"
                       ],
@@ -48091,6 +48115,12 @@
                           "minimum": -9007199254740991,
                           "maximum": 9007199254740991
                         },
+                        "claim_live": {
+                          "type": "boolean"
+                        },
+                        "has_completion_evidence": {
+                          "type": "boolean"
+                        },
                         "available_actions": {
                           "type": "object",
                           "properties": {
@@ -48130,6 +48160,8 @@
                         "title",
                         "status",
                         "priority",
+                        "claim_live",
+                        "has_completion_evidence",
                         "available_actions",
                         "requires_running_exit_confirmation"
                       ],
@@ -48191,6 +48223,12 @@
                           "minimum": -9007199254740991,
                           "maximum": 9007199254740991
                         },
+                        "claim_live": {
+                          "type": "boolean"
+                        },
+                        "has_completion_evidence": {
+                          "type": "boolean"
+                        },
                         "available_actions": {
                           "type": "object",
                           "properties": {
@@ -48230,6 +48268,8 @@
                         "title",
                         "status",
                         "priority",
+                        "claim_live",
+                        "has_completion_evidence",
                         "available_actions",
                         "requires_running_exit_confirmation"
                       ],
@@ -48291,6 +48331,12 @@
                           "minimum": -9007199254740991,
                           "maximum": 9007199254740991
                         },
+                        "claim_live": {
+                          "type": "boolean"
+                        },
+                        "has_completion_evidence": {
+                          "type": "boolean"
+                        },
                         "available_actions": {
                           "type": "object",
                           "properties": {
@@ -48330,6 +48376,8 @@
                         "title",
                         "status",
                         "priority",
+                        "claim_live",
+                        "has_completion_evidence",
                         "available_actions",
                         "requires_running_exit_confirmation"
                       ],

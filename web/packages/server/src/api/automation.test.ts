@@ -329,7 +329,7 @@ describe('crons, kanban, extensions, terminal', () => {
     const body = await json(res)
     expect(body.changed).toBe(true)
     expect(sidecar.calls.find((c) => c.method === 'kanban.board')?.params).toMatchObject({ only_mine: true, since: 0, profile: 'default' })
-    sidecar.respond('kanban.task', (params) => { if (params.task_id !== 't_1') throw new SidecarError('task not found', { condition: 'not_found' }); return { task: { id: 't_1', title: 'T', status: 'ready', priority: 1 }, comments: [], events: [], links: { parents: [], children: [] }, runs: [], read_only: false } })
+    sidecar.respond('kanban.task', (params) => { if (params.task_id !== 't_1') throw new SidecarError('task not found', { condition: 'not_found' }); return { task: { id: 't_1', title: 'T', status: 'ready', priority: 1, claim_live: false, has_completion_evidence: false }, comments: [], events: [], links: { parents: [], children: [] }, runs: [], read_only: false } })
     res = await s.get('/api/kanban/tasks/t_1')
     expect((await json(res)).task).toMatchObject({ id: 't_1' })
     res = await s.get('/api/kanban/tasks/missing')
@@ -337,12 +337,12 @@ describe('crons, kanban, extensions, terminal', () => {
     res = await post(s, '/api/kanban/tasks', { title: 'new', priority: 2 })
     expect(res.status).toBe(200)
     expect(sidecar.calls.some((c) => c.method === 'kanban.create_task' && (c.params as Json).task && ((c.params as Json).task as Json).title === 'new')).toBe(true)
-    sidecar.respond('kanban.patch_task', (params) => { const status = (params.patch as Json).status; return { task: { id: params.task_id, title: 'patched', status: typeof status === 'string' ? status : 'ready', priority: 1 }, read_only: false } })
+    sidecar.respond('kanban.patch_task', (params) => { const status = (params.patch as Json).status; return { task: { id: params.task_id, title: 'patched', status: typeof status === 'string' ? status : 'ready', priority: 1, claim_live: false, has_completion_evidence: false }, read_only: false } })
     res = await post(s, '/api/kanban/tasks/t_1/patch', { status: 'todo' })
     expect((await json(res)).task).toMatchObject({ id: 't_1', status: 'todo' })
     res = await post(s, '/api/kanban/tasks/t_1', { title: 'x' }, 'PATCH')
     expect(res.status).toBe(200)
-    sidecar.respond('kanban.task_action', (params) => ({ task: { id: params.task_id, title: 'T', status: params.action === 'block' ? 'blocked' : 'ready', priority: 1 }, read_only: false }))
+    sidecar.respond('kanban.task_action', (params) => ({ task: { id: params.task_id, title: 'T', status: params.action === 'block' ? 'blocked' : 'ready', priority: 1, claim_live: false, has_completion_evidence: false }, read_only: false }))
     res = await post(s, '/api/kanban/tasks/t_1/block', { reason: 'waiting' })
     expect((await json(res)).task).toMatchObject({ status: 'blocked' })
     res = await post(s, '/api/kanban/tasks/t_1/comments', { body: '' })
@@ -371,7 +371,7 @@ describe('crons, kanban, extensions, terminal', () => {
     const normalised = await s.sse('/api/kanban/events/stream?board=Default', (f: SseFrame) => f.event === 'hello', { timeoutMs: 5_000 })
     expect(normalised[0]).toMatchObject({ event: 'hello', data: { board: 'default' } })
     // Path parameters win over same-named body keys; `reason` falls back to `block_reason` when empty.
-    sidecar.respond('kanban.task_action', (params) => ({ task: { id: params.task_id, title: 'T', status: 'blocked', priority: 1, block_reason: params.reason }, read_only: false }))
+    sidecar.respond('kanban.task_action', (params) => ({ task: { id: params.task_id, title: 'T', status: 'blocked', priority: 1, block_reason: params.reason, claim_live: false, has_completion_evidence: false }, read_only: false }))
     const blocked = await json(await post(s, '/api/kanban/tasks/t_1/block', { task_id: 't_other', reason: '', block_reason: 'x' }))
     expect(blocked.task).toMatchObject({ id: 't_1', block_reason: 'x' })
     expect((await json(await s.get('/api/kanban/nope'))).error).toContain('unknown Kanban endpoint: GET /api/kanban/nope')
@@ -389,7 +389,10 @@ describe('crons, kanban, extensions, terminal', () => {
     const saved = methods.map((m) => [m, sidecar.responderFor(m)] as const)
     onTestFinished(() => { for (const [m, r] of saved) sidecar.respond(m, r) })
     const statuses = ['triage', 'todo', 'ready', 'running', 'blocked', 'done', 'archived', 'future']
-    sidecar.respond('kanban.board', () => ({ changed: true, columns: statuses.map((st) => ({ name: st, tasks: [{ id: `t_${st}`, title: st, status: st, priority: 0 }] })), tenants: [], assignees: [], latest_event_id: 1, read_only: false, filters: { tenant: null, assignee: null, include_archived: true, only_mine: false, profile: null } }))
+    const task = (id: string, status: string, facts: { claim_live?: boolean; has_completion_evidence?: boolean } = {}) => ({ id, title: id, status, priority: 0, claim_live: false, has_completion_evidence: true, ...facts })
+    // Each column holds the plain case; extra columns cover a running card whose worker still holds the claim and a card with no stored result.
+    const columns = [...statuses.map((st) => ({ name: st, tasks: [task(st, st)] })), { name: 'running-live', tasks: [task('running-live', 'running', { claim_live: true })] }, { name: 'ready-no-result', tasks: [task('ready-no-result', 'ready', { has_completion_evidence: false })] }]
+    sidecar.respond('kanban.board', () => ({ changed: true, columns, tenants: [], assignees: [], latest_event_id: 1, read_only: false, filters: { tenant: null, assignee: null, include_archived: true, only_mine: false, profile: null } }))
     const board = await json(await s.get('/api/kanban/board?include_archived=1'))
     const policy = Object.fromEntries((board.columns as Json[]).map((c) => { const t = (c.tasks as Json[])[0]!; return [String(c.name), { actions: t.available_actions, confirm: t.requires_running_exit_confirmation }] }))
     const a = (block: boolean, unblock: boolean, complete: boolean, archive: boolean, move_to: string[]) => ({ block, unblock, complete, archive, move_to })
@@ -402,21 +405,23 @@ describe('crons, kanban, extensions, terminal', () => {
       done: { actions: a(false, false, false, true, ['triage', 'todo', 'ready']), confirm: false },
       archived: { actions: a(false, false, false, false, ['triage', 'todo', 'ready']), confirm: false },
       future: { actions: a(false, false, false, false, []), confirm: false },
+      'running-live': { actions: a(false, false, false, true, []), confirm: true },
+      'ready-no-result': { actions: a(true, false, false, true, ['triage', 'todo']), confirm: false },
     })
     expect(board.bulk_move_targets).toEqual(['triage', 'todo', 'ready', 'blocked', 'done'])
     sidecar.respond('kanban.board', () => ({ changed: false, latest_event_id: 1, read_only: false }))
     expect((await json(await s.get('/api/kanban/board?since=1'))).bulk_move_targets).toEqual(['triage', 'todo', 'ready', 'blocked', 'done'])
     // Detail and every mutation envelope carry the policy of the status the server returned.
-    sidecar.respond('kanban.task', () => ({ task: { id: 't_1', title: 'T', status: 'running', priority: 0 }, comments: [], events: [], links: { parents: [], children: [] }, runs: [], read_only: false }))
+    sidecar.respond('kanban.task', () => ({ task: { id: 't_1', title: 'T', status: 'running', priority: 0, claim_live: false, has_completion_evidence: false }, comments: [], events: [], links: { parents: [], children: [] }, runs: [], read_only: false }))
     expect((await json(await s.get('/api/kanban/tasks/t_1'))).task).toMatchObject({ requires_running_exit_confirmation: true, available_actions: { block: true, move_to: ['triage', 'todo', 'ready'] } })
     // Unblock lands where the Agent re-gates it (here `todo`), and the actions follow that status.
-    sidecar.respond('kanban.task_action', (params) => ({ task: { id: params.task_id, title: 'T', status: params.action === 'block' ? 'blocked' : 'todo', priority: 0 }, read_only: false }))
+    sidecar.respond('kanban.task_action', (params) => ({ task: { id: params.task_id, title: 'T', status: params.action === 'block' ? 'blocked' : 'todo', priority: 0, claim_live: false, has_completion_evidence: false }, read_only: false }))
     expect((await json(await post(s, '/api/kanban/tasks/t_1/unblock', {}))).task).toMatchObject({ status: 'todo', available_actions: a(false, false, false, true, ['triage', 'ready']) })
     expect((await json(await post(s, '/api/kanban/tasks/t_1/block', {}))).task).toMatchObject({ available_actions: { unblock: true } })
-    sidecar.respond('kanban.patch_task', (params) => ({ task: { id: params.task_id, title: 'T', status: String((params.patch as Json).status), priority: 0 }, read_only: false }))
+    sidecar.respond('kanban.patch_task', (params) => ({ task: { id: params.task_id, title: 'T', status: String((params.patch as Json).status), priority: 0, claim_live: false, has_completion_evidence: false }, read_only: false }))
     expect((await json(await post(s, '/api/kanban/tasks/t_1/patch', { status: 'done' }))).task).toMatchObject({ available_actions: { complete: false, archive: true } })
     expect((await json(await post(s, '/api/kanban/tasks/t_1', { status: 'archived' }, 'PATCH'))).task).toMatchObject({ available_actions: { archive: false } })
-    sidecar.respond('kanban.create_task', () => ({ task: { id: 't_new', title: 'N', status: 'triage', priority: 0 }, read_only: false }))
+    sidecar.respond('kanban.create_task', () => ({ task: { id: 't_new', title: 'N', status: 'triage', priority: 0, claim_live: false, has_completion_evidence: false }, read_only: false }))
     expect((await json(await post(s, '/api/kanban/tasks', { title: 'N' }))).task).toMatchObject({ available_actions: { move_to: ['todo', 'ready'] } })
   })
 
@@ -770,7 +775,7 @@ describe('query parameters on non-GET routes (parity)', () => {
     let res = await s.get('/api/kanban/dispatch?board=exp&dry_run=true&max=8', { method: 'POST' })
     expect(res.status).toBe(200)
     expect(sidecar.calls.filter((c) => c.method === 'kanban.dispatch').at(-1)?.params).toMatchObject({ board: 'exp', dry_run: true, max: 8 })
-    sidecar.respond('kanban.create_task', (params) => ({ task: { id: 't_9', title: String((params.task as Json).title), status: 'ready', priority: 1 }, board: params.board, read_only: false }))
+    sidecar.respond('kanban.create_task', (params) => ({ task: { id: 't_9', title: String((params.task as Json).title), status: 'ready', priority: 1, claim_live: false, has_completion_evidence: false }, board: params.board, read_only: false }))
     res = await post(s, '/api/kanban/tasks?board=exp', { title: 'scoped' })
     expect(res.status).toBe(200)
     expect(sidecar.calls.filter((c) => c.method === 'kanban.create_task').at(-1)?.params).toMatchObject({ board: 'exp', task: { title: 'scoped' } })

@@ -51,7 +51,8 @@ export const COMMANDS_METHODS = {
 
 // ── kanban ─────────────────────────────────────────────────────────────
 const Board = ProfileHomeParams.extend({ board: z.string().nullable().optional() })
-export const KanbanTaskSchema = z.object({ id: z.string(), title: z.string(), status: z.string(), priority: z.number().int() }).catchall(Json)
+/** `claim_live`: a running task's worker still holds its claim. `has_completion_evidence`: the task stores a result, which the Agent requires to complete it (TAL-557). */
+export const KanbanTaskSchema = z.object({ id: z.string(), title: z.string(), status: z.string(), priority: z.number().int(), claim_live: z.boolean(), has_completion_evidence: z.boolean() }).catchall(Json)
 const TaskEnvelope = z.object({ task: KanbanTaskSchema, read_only: z.boolean() })
 export const KanbanBoardSchema = z.union([
   z.object({ changed: z.literal(false), latest_event_id: z.number().int(), read_only: z.boolean() }),
