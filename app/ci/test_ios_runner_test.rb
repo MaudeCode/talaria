@@ -93,11 +93,12 @@ class TestIOSRunnerTest < Minitest::Test
     assert_equal(["inputs.mode == 'full'", "ubuntu-latest"], started.values_at("if", "runs-on"))
     assert_equal(['ci/wait-for-job "${BUILD_JOB}" 20700 "Set up job"'], started["steps"].filter_map { |step| step["run"] })
     # The boot finishes before the build wait and download, so it competes with neither (TAL-380). The photo the
-    # Photos picker test picks is seeded while the build still runs (TAL-633).
+    # Photos picker test picks is seeded, and the notification service readied (TAL-651), while the build still runs
+    # (TAL-633).
     boot = shard["steps"].index { |step| step["name"] == "Boot the simulator" }
-    assert_equal(["Seed a test photo", "Wait for the build", "Download the test build", "Select this shard's tests",
-                  "Test without building"],
-                 shard["steps"][boot + 1, 5].map { |step| step["name"] })
+    assert_equal(["Seed a test photo", "Ready the simulator's notifications", "Wait for the build",
+                  "Download the test build", "Select this shard's tests", "Test without building"],
+                 shard["steps"][boot + 1, 6].map { |step| step["name"] })
     assert_equal("true", shard["steps"][boot]["with"]["wait_for_boot"].to_s)
     refute(shard["steps"].any? { |step| step["name"] == "Build for testing" }, "test jobs never build")
     steps = shard["steps"].map { |step| [step["name"] || step["uses"], step] }.to_h
