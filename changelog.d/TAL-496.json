@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Notifications open as a standard sheet that you can swipe down to close, and on iPad it stays centered instead of filling the screen.",
+      "highlight": false
+    }
+  ]
+}

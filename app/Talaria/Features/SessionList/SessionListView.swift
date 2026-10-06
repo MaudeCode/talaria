@@ -167,12 +167,15 @@ struct SessionListView: View {
         .safeAreaInset(edge: .top, spacing: 0) {
             if hasWaitingSharedImport { waitingSharedImportBanner }
         }
-            .fullScreenCover(isPresented: $isPresentingUpdateNotifications) {
-                UpdateNotificationsPresentation(
+            .sheet(isPresented: $isPresentingUpdateNotifications) {
+                UpdateNotificationsSheet(
                     viewModel: updateNotificationViewModel,
                     onAPIError: { authManager.handleAPIError($0, server: server) },
                     openDestination: openNotificationDestination
                 )
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+                .adaptiveFormPresentation()
             }
             .sheet(item: $sessionExportShareItem) { item in
                 SessionExportShareSheet(fileURL: item.fileURL)
