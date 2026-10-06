@@ -362,6 +362,23 @@ final class ContractReadinessTests: APIClientTestCase {
         Dictionary(uniqueKeysWithValues: (components.queryItems ?? []).map { ($0.name, $0.value ?? "") })
     }
 
+    /// The server parses queries with `URLSearchParams`, which decodes a bare `+` as a space.
+    func testQueryValuesPercentEncodePlusSigns() throws {
+        let base = try XCTUnwrap(URL(string: "https://example.test"))
+        let file = Endpoint.file(sessionID: "s", path: "notes/a+b.md").url(relativeTo: base)
+        let search = Endpoint.sessionsSearch(query: "c++", content: false, depth: 1).url(relativeTo: base)
+
+        XCTAssertEqual(file.query(percentEncoded: true), "session_id=s&path=notes/a%2Bb.md")
+        XCTAssertEqual(search.query(percentEncoded: true), "q=c%2B%2B&content=0&depth=1")
+    }
+
+    func testChatStreamReplayKeepsPlusSignsEncoded() throws {
+        let client = APIClient(baseURL: try XCTUnwrap(URL(string: "https://example.test")))
+        let url = client.chatStreamURL(streamID: "a+b", replayAfterSeq: 3)
+
+        XCTAssertEqual(url.query(percentEncoded: true), "stream_id=a%2Bb&replay=1&after_seq=3")
+    }
+
     func testUpdateNotificationPathSegmentsCannotReshapeTheRoute() throws {
         let base = try XCTUnwrap(URL(string: "https://webui.example.test"))
         let url = Endpoint.updateNotificationAction(id: "../private", actionID: "../../ack").url(relativeTo: base)

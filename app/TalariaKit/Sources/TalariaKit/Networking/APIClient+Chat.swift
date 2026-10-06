@@ -35,10 +35,11 @@ extension APIClient {
             return url
         }
 
-        var queryItems = components.queryItems ?? []
+        // Percent-encoded items keep the endpoint's `%2B` escapes intact.
+        var queryItems = components.percentEncodedQueryItems ?? []
         queryItems.append(URLQueryItem(name: "replay", value: "1"))
         queryItems.append(URLQueryItem(name: "after_seq", value: "\(max(0, replayAfterSeq))"))
-        components.queryItems = queryItems
+        components.percentEncodedQueryItems = queryItems
         return components.url ?? url
     }
 

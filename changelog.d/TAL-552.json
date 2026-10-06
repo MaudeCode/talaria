@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Files, searches, skills, and cron jobs whose names contain a plus sign now open and match correctly.",
+      "highlight": false
+    }
+  ]
+}
