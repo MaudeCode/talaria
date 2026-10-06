@@ -4,6 +4,8 @@
 #     mode: pull-request | contracts | full
 #       Every mode runs the TalariaKit package tests with `swift test` on macOS, without a simulator: about
 #       94% of the unit tests, including every native contract class (TAL-399).
+#       That run measures TalariaKit/Sources coverage: the job summary shows it and the app-package-coverage
+#       artifact (ui-suite-package-coverage in full mode) keeps the per-file and per-line report (TAL-67).
 #       pull-request: plus the App build for testing (App, extensions and both test bundles); nothing runs in a
 #       simulator (TAL-405).
 #       contracts: the package tests alone; a contract-only change leaves the App sources alone.
@@ -139,9 +141,10 @@ jobs:
         with:
           xcode-version: ${{ env.XCODE_VERSION }}
 
-      # The committed Package.resolved pins the App's revisions; resolution never drifts from it.
+      # The committed Package.resolved pins the App's revisions; resolution never drifts from it. Coverage is measured
+      # on this run, the one CI Gate counts (TAL-67).
       - name: Build the package tests
-        run: swift build --package-path TalariaKit --build-tests --only-use-versions-from-resolved-file
+        run: swift build --package-path TalariaKit --build-tests --enable-code-coverage --only-use-versions-from-resolved-file
 
       - name: Wait for the Web contract probe
         if: env.CONTRACTS_SELECTED == 'true'
@@ -165,7 +168,8 @@ jobs:
             export TALARIA_LIVE_CONTRACT_RESPONSES="${fixture}"
           fi
           start_seconds=${SECONDS}
-          swift test --package-path TalariaKit --skip-build --skip UntrustedInputFuzzSoakTests 2>&1 | tee package-tests.log
+          swift test --package-path TalariaKit --skip-build --enable-code-coverage --skip UntrustedInputFuzzSoakTests 2>&1 |
+            tee package-tests.log
           if [[ "${CONTRACTS_SELECTED}" == "true" ]]; then
             # A missing fixture makes the live test skip, so require an explicit pass.
             grep -qF -- "Test Case '-[${LIVE_CONTRACT_TEST}]' passed" package-tests.log ||
@@ -175,6 +179,21 @@ jobs:
             echo "### Package tests"
             echo "- swift test: $((SECONDS - start_seconds))s, $(grep -oE 'Executed [0-9]+ tests' package-tests.log | tail -1)"
           } >> "${GITHUB_STEP_SUMMARY}"
+
+      # After a failure too: the report merges whatever profiles the run wrote. The numbers gate nothing.
+      - name: Report coverage
+        if: ${{ !cancelled() }}
+        run: ci/package-coverage coverage >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload coverage
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.mode == 'full' && 'ui-suite' || 'app' }}-package-coverage
+          path: app/coverage/
+          retention-days: 14
+          overwrite: true
+          if-no-files-found: ignore
 
   build-started:
     # Two suites queued together once filled all five hosted macOS slots with shards waiting for builds that never got

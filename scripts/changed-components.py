@@ -143,7 +143,7 @@ def path_suites(path):
         return SCRIPTS.get(local, SUITES)
     if component == "app":
         if local in ("ci/test_shards.py", "ci/test-shard-weights.json", "ci/build-for-testing", "ci/wait-for-job",
-                     "ci/gh-api-poll"):
+                     "ci/gh-api-poll", "ci/package-coverage"):
             return {"app", "tooling"}  # They build, select and sequence the App CI jobs.
         if local.startswith("ci/"):
             return {"tooling"}
