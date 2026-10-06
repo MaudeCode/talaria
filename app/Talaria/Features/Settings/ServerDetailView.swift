@@ -45,6 +45,8 @@ struct ServerDetailView: View {
                         colorHex: $colorHex,
                         fallbackName: hostFallback
                     )
+
+                    IdentitySaveErrorNotice(authManager: authManager)
                 }
 
                 if !isActive {
@@ -80,12 +82,13 @@ struct ServerDetailView: View {
         .background(Color(.systemGroupedBackground))
         .navigationTitle(displayName.isEmpty ? hostFallback : displayName)
         .navigationBarTitleDisplayMode(.inline)
-        // Persist identity edits to this server's registry entry. When it's the
-        // active server, the registry mirrors them into the global @AppStorage so
-        // the avatar / header tint update live (#17).
+        // Stage identity edits for this server's registry entry; the manager
+        // previews the active server's avatar / header tint live (#17) and
+        // saves once typing pauses or this view goes away (TAL-123).
         .onChange(of: displayName) { persistIdentity() }
         .onChange(of: initials) { persistIdentity() }
         .onChange(of: colorHex) { persistIdentity() }
+        .onDisappear { authManager.flushServerIdentityEdits() }
         .alert(removeAlertTitle, isPresented: $isConfirmingRemove) {
             Button("Cancel", role: .cancel) {}
             Button(removeButtonTitle, role: .destructive) {

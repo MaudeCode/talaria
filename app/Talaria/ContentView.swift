@@ -50,6 +50,10 @@ struct ContentView: View {
                 await reconcileOrphanedLiveActivities(notifiesOnCompletion: true)
             }
             .onChange(of: scenePhase) {
+                if scenePhase != .active {
+                    // Save identity edits still waiting on their typing pause (TAL-123).
+                    authManager.flushServerIdentityEdits()
+                }
                 if foregroundReturn.didReturnToForeground(on: scenePhase) {
                     // Every server-backed screen refreshes through `refreshesLive` (TAL-435).
                     NotificationCenter.default.post(name: .talariaReturnedToForeground, object: nil)

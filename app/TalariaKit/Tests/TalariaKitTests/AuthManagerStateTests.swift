@@ -777,6 +777,7 @@ final class AuthManagerStateTests: XCTestCase {
             initials: "WK",
             headerLogoColorHex: "#5B7CFF"
         )
+        XCTAssertTrue(manager.flushServerIdentityEdits())
 
         let updated = try XCTUnwrap(manager.servers.first { $0.id == "https://a.test" })
         XCTAssertEqual(updated.displayName, "Work")
@@ -785,6 +786,114 @@ final class AuthManagerStateTests: XCTestCase {
         // The active server's identity is mirrored into the global defaults.
         XCTAssertEqual(defaults.string(forKey: SessionIdentitySettings.displayNameKey), "Work")
         XCTAssertEqual(defaults.string(forKey: HeaderLogoColor.storageKey), "#5B7CFF")
+    }
+
+    func testTypingAServerIdentityDoesNotWriteTheKeychainPerKeystroke() async throws {
+        let keychain = InMemoryKeychainStore()
+        let defaults = UserDefaults.ephemeral()
+        let registry = ServerRegistry(keychain: keychain, identityDefaults: defaults)
+        let manager = AuthManager(
+            keychain: keychain,
+            clientFactory: { _ in MockAuthAPIClient(authStatus: AuthStatusResponse(authEnabled: false)) },
+            cookieStorage: cookieStorage,
+            serverRegistry: registry
+        )
+        await manager.configure(serverURLString: "https://a.test", password: "")
+        let aAccount = try XCTUnwrap(registry.servers.first { $0.id == "https://a.test" })
+        let savesBeforeTyping = keychain.saveCounts[.servers]
+
+        for prefix in ["W", "Wo", "Wor", "Work"] {
+            manager.updateServerIdentity(aAccount, displayName: prefix, initials: "WK", headerLogoColorHex: "#5B7CFF")
+        }
+
+        XCTAssertEqual(keychain.saveCounts[.servers], savesBeforeTyping)
+        // The active server's avatar and tint still preview every keystroke.
+        XCTAssertEqual(defaults.string(forKey: SessionIdentitySettings.displayNameKey), "Work")
+    }
+
+    func testFlushingTypedIdentitySavesOnceAndSurvivesRelaunch() async throws {
+        let keychain = InMemoryKeychainStore()
+        let registry = ServerRegistry(keychain: keychain, identityDefaults: UserDefaults.ephemeral())
+        let (manager, aAccount, _) = try await makeTwoServerManager(keychain: keychain, registry: registry)
+        let savesBeforeTyping = keychain.saveCounts[.servers, default: 0]
+
+        for prefix in ["W", "Wo", "Wor", "Work"] {
+            manager.updateServerIdentity(aAccount, displayName: prefix, initials: "WK", headerLogoColorHex: "#5B7CFF")
+        }
+        XCTAssertTrue(manager.flushServerIdentityEdits())
+        XCTAssertTrue(manager.flushServerIdentityEdits())
+
+        XCTAssertEqual(keychain.saveCounts[.servers], savesBeforeTyping + 1)
+        let relaunched = ServerRegistry(keychain: keychain, identityDefaults: UserDefaults.ephemeral())
+        let saved = try XCTUnwrap(relaunched.servers.first { $0.id == aAccount.id })
+        XCTAssertEqual(saved.displayName, "Work")
+        XCTAssertEqual(saved.initials, "WK")
+        XCTAssertEqual(saved.headerLogoColorHex, "#5B7CFF")
+    }
+
+    func testIdentitySavesOnceTypingPauses() async throws {
+        let keychain = InMemoryKeychainStore()
+        let registry = ServerRegistry(keychain: keychain, identityDefaults: UserDefaults.ephemeral())
+        let manager = AuthManager(
+            keychain: keychain,
+            clientFactory: { _ in MockAuthAPIClient(authStatus: AuthStatusResponse(authEnabled: false)) },
+            cookieStorage: cookieStorage,
+            identitySaveDelay: .milliseconds(10),
+            serverRegistry: registry
+        )
+        await manager.configure(serverURLString: "https://a.test", password: "")
+        let aAccount = try XCTUnwrap(registry.servers.first)
+
+        manager.updateServerIdentity(aAccount, displayName: "Work", initials: "WK", headerLogoColorHex: "#5B7CFF")
+        for _ in 0..<200 where registry.servers.first?.displayName != "Work" {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+
+        XCTAssertEqual(manager.servers.first?.displayName, "Work")
+    }
+
+    func testFailedIdentitySaveStaysVisibleAndRetryable() async throws {
+        let keychain = InMemoryKeychainStore()
+        let registry = ServerRegistry(keychain: keychain, identityDefaults: UserDefaults.ephemeral())
+        let (manager, aAccount, _) = try await makeTwoServerManager(keychain: keychain, registry: registry)
+        keychain.saveErrors[.servers] = PreconditionFailure()
+
+        manager.updateServerIdentity(aAccount, displayName: "Work", initials: "WK", headerLogoColorHex: "#5B7CFF")
+
+        XCTAssertFalse(manager.flushServerIdentityEdits())
+        XCTAssertNotNil(manager.identitySaveErrorMessage)
+        // No false success: the saved entry keeps its old name.
+        XCTAssertEqual(manager.servers.first { $0.id == aAccount.id }?.displayName, aAccount.displayName)
+
+        keychain.saveErrors[.servers] = nil
+        XCTAssertTrue(manager.flushServerIdentityEdits())
+        XCTAssertNil(manager.identitySaveErrorMessage)
+        XCTAssertEqual(registry.servers.first { $0.id == aAccount.id }?.displayName, "Work")
+    }
+
+    func testIdentityEditsOnlyLandOnTheirOwnServer() async throws {
+        let keychain = InMemoryKeychainStore()
+        let defaults = UserDefaults.ephemeral()
+        let registry = ServerRegistry(keychain: keychain, identityDefaults: defaults)
+        let (manager, aAccount, bAccount) = try await makeTwoServerManager(keychain: keychain, registry: registry)
+        let activeName = defaults.string(forKey: SessionIdentitySettings.displayNameKey)
+
+        // An inactive server's edit neither previews nor saves onto the active one.
+        manager.updateServerIdentity(bAccount, displayName: "Bee", initials: "BE", headerLogoColorHex: "#112233")
+        XCTAssertEqual(defaults.string(forKey: SessionIdentitySettings.displayNameKey), activeName)
+        manager.switchActiveServer(to: bAccount)
+        manager.switchActiveServer(to: aAccount)
+        XCTAssertTrue(manager.flushServerIdentityEdits())
+        XCTAssertEqual(registry.servers.first { $0.id == bAccount.id }?.displayName, "Bee")
+        XCTAssertEqual(registry.servers.first { $0.id == aAccount.id }?.displayName, aAccount.displayName)
+
+        // A removed server's unsaved edit is dropped, even if the URL comes back.
+        manager.updateServerIdentity(bAccount, displayName: "Gone", initials: "GO", headerLogoColorHex: "#445566")
+        let removed = await manager.removeServer(bAccount)
+        XCTAssertTrue(removed)
+        try registry.activate(url: try XCTUnwrap(URL(string: bAccount.id)))
+        XCTAssertTrue(manager.flushServerIdentityEdits())
+        XCTAssertNotEqual(registry.servers.first { $0.id == bAccount.id }?.displayName, "Gone")
     }
 
     /// Builds a manager with two registered servers: `a.test` signed in + active,

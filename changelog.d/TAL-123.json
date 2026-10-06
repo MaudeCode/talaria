@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Typing a server name, initials, or color in Settings stays smooth, and failed saves show a Retry button.",
+      "highlight": false
+    }
+  ]
+}

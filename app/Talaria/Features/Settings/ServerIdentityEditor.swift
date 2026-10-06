@@ -58,3 +58,22 @@ struct ServerIdentityEditor: View {
         }
     }
 }
+
+/// Why the last identity save failed, with a retry; the edit stays staged until
+/// a save lands (TAL-123).
+struct IdentitySaveErrorNotice: View {
+    let authManager: AuthManager
+
+    var body: some View {
+        if let message = authManager.identitySaveErrorMessage {
+            Label(message, systemImage: "exclamationmark.triangle.fill")
+                .font(AppFont.footnote())
+                .foregroundStyle(.orange)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            SettingsButton(String(localized: "Retry")) {
+                authManager.flushServerIdentityEdits()
+            }
+        }
+    }
+}
