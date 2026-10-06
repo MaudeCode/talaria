@@ -17,6 +17,7 @@ import { anchorSceneIntOrNull, fullToolResult, hydrateAnchorActivityScenes, norm
 import { isSafeSessionId, lastMessageTimestamp, Session, stripAttachedFilesMarker, titleFrom, type Message } from './session.js'
 import { SessionBusy, SessionNotFound, statSignature, type SessionStore } from './store.js'
 import { UNSETTLED_TODO_KEY, attachTodoState } from './todo.js'
+import { isClaudeCodeSessionId, type ClaudeCodeSessionSource } from './claude-code.js'
 import { stateDbCompressionLineage, stateDbSessionMessages, stateDbSessionRead, stateDbSessionRow, stateDbSessionSources, type StateDbRead } from './state-db.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { SidecarError, type SidecarLike } from '../sidecar/client.js'
@@ -121,6 +122,8 @@ export interface SessionServiceDeps {
   /** state.db sidebar rows for a profile (Python `get_cli_sessions`); null when the projection is unavailable. */
   /** `truncated`: source kinds whose rows stopped at the per-kind window on this read (TAL-482). */
   cliSessions: (profile: string, opts: { sourceFilter: string | null }) => { rows: Row[]; truncated: ReadonlySet<string> }
+  /** TAL-551: read-only Claude Code transcripts, listed with the CLI rows when both toggles are on. */
+  claudeCode?: ClaudeCodeSessionSource
   profileHome: (profile: string) => string
   /** Python `commit_session_memory` (fire-and-forget): the cached Agent flushes memory for a session the user left. */
   commitSessionMemory?: (sid: string) => void
@@ -379,10 +382,15 @@ export class SessionService {
   /** Python `_lookup_cli_session_metadata`: the sidebar row for a state.db session in the active profile. */
   private lookupCliMeta(sid: string): Row | null {
     try {
+      if (isClaudeCodeSessionId(sid)) return this.claudeCodeRows().find((r) => str(r.session_id) === sid) ?? null
       return this.deps.cliSessions(this.deps.activeProfile(), { sourceFilter: null }).rows.find((r) => str(r.session_id) === sid) ?? null
     } catch {
       return null
     }
+  }
+
+  private claudeCodeRows(): Row[] {
+    return this.deps.claudeCode?.rows(this.deps.workspaces.lastWorkspace(this.deps.activeProfile())) ?? []
   }
 
   /** Python `_session_index_marks_was_webui`: an index row that once owned a WebUI sidecar (self-heal 404). */
@@ -412,7 +420,7 @@ export class SessionService {
     const stateDbSource = str(row?.source).trim().toLowerCase()
     const subagentChild = stateDbSource === 'subagent'
     if ((this.indexMarksWasWebui(sid) || (this.store.wasDeleted(sid) && ['', 'webui', 'fork'].includes(stateDbSource))) && !subagentChild) return { session: null, reason: 'was_webui' }
-    const msgs = stateDbSessionMessages(dbPath, sid, { stitch: true })
+    const msgs = isClaudeCodeSessionId(sid) ? this.deps.claudeCode?.messages(sid) ?? [] : stateDbSessionMessages(dbPath, sid, { stitch: true })
     if (!msgs.length) return { session: null, reason: 'no_foreign_state' }
     const meta: Row = { ...(metaIn ?? this.lookupCliMeta(sid) ?? {}) }
     if (row) {
@@ -450,7 +458,16 @@ export class SessionService {
     }
   }
 
+  /**
+   * TAL-551: a Claude Code import is a live view of a transcript Claude Code keeps writing. Web never stores a copy,
+   * which would freeze its messages and pin it to one profile.
+   */
+  private rejectClaudeCode(sid: string, verb: string): void {
+    if (isClaudeCodeSessionId(sid)) throw new HttpFailure(400, `Claude Code sessions are view-only and cannot be ${verb} from WebUI`)
+  }
+
   private rejectSubagent(sid: string, verb: string): void {
+    this.rejectClaudeCode(sid, verb)
     if (this.isSubagentViewOnly(sid)) throw new HttpFailure(400, `Subagent sessions are view-only and cannot be ${verb} from WebUI`)
   }
 
@@ -729,7 +746,8 @@ export class SessionService {
     const wantState = params.showCliSessions || params.showCronSessions || params.showWebhookSessions || params.showKanbanSessions
     // Python reads every profile's state.db under all_profiles; this port projects the active profile only.
     const cliRead = wantState ? this.deps.cliSessions(activeProfile, { sourceFilter: params.sourceFilter ?? null }) : undefined
-    const cliRows = cliRead?.rows
+    const claudeCodeRows = params.showCliSessions && params.showClaudeCodeSessions ? this.claudeCodeRows() : []
+    const cliRows = cliRead ? [...cliRead.rows, ...claudeCodeRows] : undefined
     const gatewayIdentity = loadGatewaySessionIdentityMap(join(this.deps.profileHome(activeProfile), 'sessions', 'sessions.json'))
     const truncatedSources = cliRead?.truncated
     const payload = buildSessionListPayload(this.store, { ...params, ...(cliRows ? { cliRows } : {}), ...(truncatedSources ? { truncatedSources } : {}), gatewayIdentity, stateDbSources: this.stateDbSources, activeProfile, isolatedProfileMode: this.deps.isolatedProfileMode(), profilesMatch: this.deps.profilesMatch })
@@ -1583,6 +1601,7 @@ export class SessionService {
   // ── shares ───────────────────────────────────────────────────────────────
 
   createShare(sid: string): Record<string, unknown> {
+    this.rejectClaudeCode(sid, 'shared')
     let s = this.get404(sid)
     if (!this.visibleToActiveProfile(s.profile)) throw new HttpFailure(404, 'Session not found')
     s = this.store.ensureFull(sid, s)

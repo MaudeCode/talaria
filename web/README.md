@@ -112,6 +112,7 @@ commented template.
 | `HERMES_CONFIG_PATH` | `$HERMES_HOME/config.yaml` | Hermes config file; the sidecar reads and writes this exact path (a symlink is updated through its target) |
 | `HERMES_WEBUI_STATE_DIR` | `$HERMES_HOME/webui` | Sessions, settings, auth records, journals, shares |
 | `HERMES_WEBUI_DEFAULT_WORKSPACE` | `~/workspace` | Default workspace |
+| `HERMES_WEBUI_CLAUDE_PROJECTS_DIR` | `~/.claude/projects` | Claude Code transcripts listed read-only when **Show Claude Code sessions** is on |
 | `HERMES_WEBUI_DEFAULT_MODEL` | provider default | Optional model override |
 | `HERMES_WEBUI_PASSWORD` | unset | Enables password authentication (required when binding beyond loopback) |
 | `HERMES_WEBUI_PASSKEY` | unset | Passkey availability flag |

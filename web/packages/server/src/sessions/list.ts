@@ -521,8 +521,10 @@ export function withSessionWireFlags<T extends Row>(row: T, activeStreamIds: Rea
   r.can_branch = !subagent && (!r.read_only || str(r.source_tag || r.raw_source).trim().toLowerCase() === 'cron')
   // Pin and archive refuse only subagent children; duplicate also needs the WebUI sidecar it copies, so a sidecar-less
   // foreign row arrives with `can_duplicate: false`. Rename, move and delete follow `read_only` (the mutation gate).
-  r.can_pin = !subagent
-  r.can_archive = !subagent
+  // A Claude Code import is a live view Web never stores (TAL-551), so it cannot be pinned or archived either.
+  const stored = !subagent && kind !== 'claude_code'
+  r.can_pin = stored
+  r.can_archive = stored
   r.can_delete = !r.read_only
   r.can_duplicate = !subagent && r.can_duplicate !== false
   r.sort_ts = sessionSortTimestamp(r)
@@ -719,7 +721,8 @@ export function buildSessionListPayload(store: SessionStore, params: ListParams)
   let otherProfileCount = 0
   if (params.allProfiles) scoped = merged
   else {
-    scoped = merged.filter((r) => params.profilesMatch(str(r.profile) || null, params.activeProfile))
+    // Claude Code transcripts belong to no Hermes profile, so every profile lists them (TAL-551).
+    scoped = merged.filter((r) => sourceKind(r) === 'claude_code' || params.profilesMatch(str(r.profile) || null, params.activeProfile))
     otherProfileCount = params.isolatedProfileMode ? 0 : merged.length - scoped.length
   }
   const identity = params.gatewayIdentity ?? new Map<string, GatewayIdentity>()

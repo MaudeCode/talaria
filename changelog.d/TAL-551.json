@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Show Claude Code sessions lists your Claude Code conversations again, and you can open each one read-only.",
+      "highlight": false
+    }
+  ]
+}
