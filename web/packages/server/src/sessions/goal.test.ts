@@ -152,6 +152,49 @@ describe('/goal continuation after a goal turn settles (TAL-396)', () => {
     expect(calls('chat.start').map((p) => str(p.user_message).split('\n').pop())).toEqual(['continue', 'Continue toward the goal.'])
   })
 
+  // TAL-622: a client that waits for the drain signal before deleting learns which run still holds the session.
+  const status = async (streamId: string): Promise<Json> => json(await s.get(`/api/chat/stream/status?stream_id=${streamId}`))
+  const remove = async (sid: string): Promise<number> => (await post(s, '/api/session/delete', { session_id: sid })).status
+
+  it('stream status names the goal continuation that took the session, and the delete waits for it', async () => {
+    const sid = await newSession()
+    let releaseContinuation: () => void = () => undefined
+    sidecar.respond('chat.start', (params) => {
+      if (!str(params.user_message).endsWith('Continue toward the goal.')) return answer(params, 'first answer')
+      return new Promise((resolve) => { releaseContinuation = () => { resolve(answer(params, 'second answer')) } })
+    })
+    const decisions = [continueWith('Continue toward the goal.'), achieved]
+    sidecar.respond('goals.evaluate', () => decisions.shift() ?? inactive)
+    const first = str((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'talaria contract fixture' }))).stream_id)
+    await vi.waitFor(async () => { expect((await status(first)).active).toBe(false) })
+    const continuation = s.deps.sessionStore.get(sid).active_stream_id
+    expect(continuation).not.toBe(first)
+    expect((await status(first)).blocking_stream_id).toBe(continuation)
+    expect(await remove(sid)).toBe(409)
+    releaseContinuation()
+    await vi.waitFor(async () => { expect((await status(first)).blocking_stream_id).toBeNull() })
+    expect(await remove(sid)).toBe(200)
+  })
+
+  it('stream status names a stopped run that is still unwinding, and the delete waits for it', async () => {
+    const sid = await newSession()
+    sidecar.respond('chat.interrupt', () => ({ ok: true }))
+    let unwind: () => void = () => undefined
+    // The Agent ignores the interrupt until released, like a tool call that has not returned yet.
+    sidecar.respond('chat.start', (params, emit) => new Promise((resolve) => {
+      emit({ event: 'token', data: { text: 'working' } })
+      unwind = () => { resolve({ ...answer(params, ''), status: 'cancelled' }) }
+    }))
+    const streamId = str((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'long task' }))).stream_id)
+    await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'token')
+    expect(await json(await s.get(`/api/chat/cancel?stream_id=${streamId}`))).toMatchObject({ cancelled: true })
+    expect(await status(streamId)).toMatchObject({ active: false, blocking_stream_id: streamId })
+    expect(await remove(sid)).toBe(409)
+    unwind()
+    await vi.waitFor(async () => { expect((await status(streamId)).blocking_stream_id).toBeNull() })
+    expect(await remove(sid)).toBe(200)
+  })
+
   it('a user message sent while the goal is judged runs first and is evaluated as the goal turn', async () => {
     const sid = await newSession()
     sidecar.respond('chat.start', (params) => answer(params, `re: ${str(params.user_message).split('\n').pop() ?? ''}`))

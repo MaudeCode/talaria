@@ -4,7 +4,7 @@ import { implement } from '@orpc/server'
 import { chatContract, MAX_CHAT_ATTACHMENTS } from '@maudecode/talaria-web-contracts'
 import { randomUUID } from 'node:crypto'
 import { HttpError, type ApiContext } from './router.js'
-import { requestSessionIdGuard, streamVisibleToRequest } from './session-visibility.js'
+import { requestSessionIdGuard, streamOwnerSessionId, streamVisibleToRequest } from './session-visibility.js'
 import type { RequestContext } from '../http/context.js'
 import { ensureAgentRuntimeCurrent, HttpFailure } from '../sessions/service.js'
 import { SessionNotFound } from '../sessions/store.js'
@@ -203,7 +203,8 @@ export const chatRouter = os.router({
       const streamId = str(input.stream_id)
       if (!streamVisibleToRequest(ctx, streamId)) throw new HttpError(404, 'Session not found')
       const active = ctx.deps.registry.liveIds.has(streamId)
-      const payload: { active: boolean; stream_id: string; replay_available: boolean; journal?: Record<string, unknown> } = { active, stream_id: streamId, replay_available: false }
+      const owner = streamOwnerSessionId(ctx, streamId)
+      const payload: { active: boolean; stream_id: string; replay_available: boolean; journal?: Record<string, unknown>; blocking_stream_id: string | null } = { active, stream_id: streamId, replay_available: false, blocking_stream_id: owner ? ctx.deps.sessions.activeRunBlocking(owner) : null }
       const summary = streamId ? ctx.deps.journal.findRunSummary(streamId) : null
       if (summary) {
         payload.replay_available = true

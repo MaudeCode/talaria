@@ -129,7 +129,7 @@ describe('chat turns through the sidecar', () => {
     expect(rows[rows.length - 1]).toMatchObject({ event: 'stream_end', terminal: true, terminal_state: 'completed', version: 1, run_id: streamId, session_id: sid })
 
     res = await s.get(`/api/chat/stream/status?stream_id=${streamId}`)
-    expect(await json(res)).toEqual({ active: false, stream_id: streamId, replay_available: true, journal: { session_id: sid, run_id: streamId, last_seq: rows.length, last_event_id: `${streamId}:${String(rows.length)}`, last_event: 'stream_end', terminal: true, terminal_state: 'completed' } })
+    expect(await json(res)).toEqual({ active: false, stream_id: streamId, replay_available: true, blocking_stream_id: null, journal: { session_id: sid, run_id: streamId, last_seq: rows.length, last_event_id: `${streamId}:${String(rows.length)}`, last_event: 'stream_end', terminal: true, terminal_state: 'completed' } })
     // A late reconnect replays the journal from the cursor and closes at the terminal fence.
     const replay = await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:5`, (f) => f.event === 'stream_end')
     expect(replay.map((f) => Number(f.id?.split(':')[1]))[0]).toBe(6)

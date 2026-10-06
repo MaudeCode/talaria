@@ -32177,11 +32177,22 @@
                     "replay_available": {
                       "type": "boolean"
                     },
-                    "journal": {}
+                    "journal": {},
+                    "blocking_stream_id": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
                   },
                   "required": [
                     "active",
-                    "stream_id"
+                    "stream_id",
+                    "blocking_stream_id"
                   ],
                   "additionalProperties": {}
                 }
