@@ -33,7 +33,8 @@ labels separate. Web uses one scope label rather than frontend/backend labels.
 Work only on the selected ticket and its required dependencies. Move it to In
 Progress before edits, In Review after verified commits, and Done only after its
 commit is verified on `main`.
-Use `<type>/TAL-<number>-<slug>` branches and `TAL-<number>:` commit/PR subjects.
+Use `<type>/TAL-<number>-<slug>` branches and `TAL-<number>:` commit/PR subjects;
+an approved ticket batch may share one branch named for its lead ticket.
 Keep coherent verified slices separate. Add `changelog.d/TAL-<number>.json`
 following `app/docs/release-notes.md` for every tracked change.
 Screenshots and other validation evidence go in the PR description as uploaded
