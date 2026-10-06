@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Provider quotas again list one source per credential-pool account, and DeepSeek balances and OpenCode Go usage limits load again.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

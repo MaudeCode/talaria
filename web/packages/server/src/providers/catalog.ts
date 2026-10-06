@@ -8,14 +8,13 @@
  * here. ponytail: one live-id cache with a 24h TTL replaces the Python
  * publisher/provenance machinery; `refresh()` evicts it.
  */
-import { readCapped } from '../http/capped.js'
 import { homeDotenvKeys } from '../cli/dotenv.js'
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { atomicWriteText } from '../fs/atomic.js'
 import type { SidecarLike } from '../sidecar/client.js'
-import type { SidecarResult } from '@maudecode/talaria-web-contracts'
+import type { SidecarParams, SidecarResult } from '@maudecode/talaria-web-contracts'
 import { str } from '../util.js'
 import { QUOTA_THRESHOLD_DEFAULTS, type QuotaThresholds } from '../settings.js'
 import { loadEnvFile } from './env-file.js'
@@ -156,7 +155,6 @@ export interface CatalogDeps {
   log: (line: string) => void
   /** Settings `provider_cost_budget` (monthly). */
   costBudget: () => number | null
-  fetch?: typeof fetch
   /** Whether `profileHome` is the default profile's home (`$HERMES_HOME`). */
   isRootProfileHome: (profileHome: string) => boolean
   /** WebUI state directory; holds `.quota_scope_id`, the stable public identity namespace for quota sources. */
@@ -175,8 +173,8 @@ const MODEL_PICKER_VISIBLE_TARGET = 15
 const ACCOUNT_USAGE_CACHE_TTL_S = 45
 const LIVE_TTL_S = 86_400
 const PROVIDERS_TTL_S = 30
-const QUOTA_TIMEOUT_MS = 15_000
-const OPENROUTER_KEY_URL = 'https://openrouter.ai/api/v1/key'
+/** The sidecar reads a balance endpoint with a 15 s timeout of its own. */
+const BALANCE_TIMEOUT_MS = 20_000
 const PLUGIN_LIST_TIMEOUT_MS = 15_000
 /** TAL-288: the card text for a plugin provider the Agent does not report ready. */
 const PLUGIN_SETUP_ERRORS: Record<Exclude<PluginProvider['setup'], 'ready'>, string> = {
@@ -444,6 +442,31 @@ export function deduplicateModelIds(groups: ModelGroup[]): void {
   }
 }
 
+/** TAL-548: one credential-pool account's local state, as the sidecar reads it without probing. */
+type PoolEntry = SidecarResult<'usage.pool'>['entries'][number]
+
+/** OpenCode Go's usage windows: their label and length (Python `_sanitize_opencode_go_account_limits`). */
+const OPENCODE_GO_WINDOWS = { rolling: ['5-hour', FIVE_HOUR_WINDOW_S], weekly: ['Weekly', WEEK_WINDOW_S], monthly: ['Monthly', null] } as const
+
+/** One pool account's local state as account limits; `status` is the account's, which its quota source shows. */
+function poolEntryLimits(entry: PoolEntry, at: number): Dict {
+  return {
+    source: 'local_pool', title: 'Credential pool', status: entry.status, available: entry.status === 'available', plan: null, details: [],
+    unavailable_reason: entry.unavailable_reason, retry_after: entry.retry_after, fetched_at: null, ...normalizeQuotaWindows([], at),
+  }
+}
+
+/** Python `_local_pool_snapshot`: a provider's pool accounts summarised as account limits. */
+function poolLimits(entries: PoolEntry[], at: number): Dict {
+  const count = (status: PoolEntry['status']): number => entries.filter((e) => e.status === status).length
+  const [available, exhausted, dead] = [count('available'), count('exhausted'), count('dead')]
+  const details = [`${String(available)}/${String(entries.length)} credentials available`, ...(exhausted ? [`${String(exhausted)} exhausted`] : []), ...(dead ? [`${String(dead)} dead`] : [])]
+  return {
+    source: 'local_pool', title: 'Credential pool', available: available > 0, plan: null, details, unavailable_reason: available ? null : 'All pool credentials are unavailable.', fetched_at: null,
+    ...normalizeQuotaWindows([], at),
+  }
+}
+
 /** Quota sources keep the first row per source id, ordered by provider id, account label, then source id (TAL-272). */
 export function uniqueQuotaSources<T extends { source_id: string; provider_id: string; account_label: string }>(sources: T[]): T[] {
   const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0)
@@ -482,6 +505,8 @@ export class ProviderCatalog {
       this.liveIds.delete(key)
     }
     this.providersCache.clear()
+    // Credentials changed: the last pool answers no longer stand in for a failed lookup.
+    for (const key of [...this.lastPoolAnswers.keys()]) if (!profileHome || key.startsWith(`${profileHome}\0`)) this.lastPoolAnswers.delete(key)
     // The picker catalog changed: option ids rebuild on the next read rather than pairing against the old one.
     if (profileHome) { this.lastModels.delete(profileHome); this.lastModelsMeta.delete(profileHome) } else { this.lastModels.clear(); this.lastModelsMeta.clear() }
   }
@@ -1005,26 +1030,36 @@ export class ProviderCatalog {
     return null
   }
 
-  /** Python `get_provider_quota`. */
+  /** Account-usage snapshots by profile home, provider, and pool account. */
   private readonly accountUsageCache = new Map<string, { at: number; limits: Dict | null }>()
 
-  async quota(profileHome: string, providerRaw: string | null, opts: { refresh?: boolean; at?: number } = {}): Promise<Dict> {
+  /**
+   * Python `get_provider_quota`. `credential` scopes the read to one credential-pool account (TAL-548): a benched account
+   * answers with its local pool state, and every other read uses that account's key.
+   */
+  async quota(profileHome: string, providerRaw: string | null, opts: { refresh?: boolean; at?: number; credential?: PoolEntry | null } = {}): Promise<Dict> {
     const at = opts.at ?? this.deps.now()
     const computed_at = isoAt(at)
     const config = await this.deps.config.read(profileHome)
     const provider = (providerRaw ?? activeProviderFromConfig(config) ?? '').trim().toLowerCase()
     if (!provider) return { computed_at, ok: false, provider: null, display_name: null, supported: false, status: 'unavailable', quota: null, message: 'No active provider is configured.' }
     const name = displayName(provider)
+    const credential = opts.credential ?? null
+    const answer = (ok: boolean, status: string, message: string, extra: Dict = {}): Dict => ({ computed_at, ok, provider, display_name: name, supported: true, status, quota: null, ...extra, message })
+    if (credential && credential.status !== 'available') {
+      return answer(false, 'unavailable', `${name} credential is unavailable. ${str(credential.unavailable_reason)}`.trim(), { account_limits: poolEntryLimits(credential, at) })
+    }
     if (ACCOUNT_USAGE_PROVIDERS.has(provider)) {
       const sidecar = this.deps.sidecar()
       let limits: Dict | null = null
       // Python `_ACCOUNT_USAGE_CACHE_TTL_SECONDS`: a snapshot answers repeat polls for 45 s unless `refresh` is set.
-      const cacheKey = `${profileHome}\0${provider}`
+      const cacheKey = `${profileHome}\0${provider}\0${credential?.credential_id ?? ''}`
       const cached = this.accountUsageCache.get(cacheKey)
       if (cached && !opts.refresh && this.deps.now() - cached.at <= ACCOUNT_USAGE_CACHE_TTL_S) limits = cached.limits
       else if (sidecar) {
         try {
-          const snapshot = (await sidecar.call('usage.account', { profile_home: profileHome, provider, ...(opts.refresh ? { refresh: true } : {}) }, { timeoutMs: 35_000 })).snapshot
+          const params = { profile_home: profileHome, provider, ...(opts.refresh ? { refresh: true } : {}), ...(credential ? { credential_id: credential.credential_id } : {}) }
+          const snapshot = (await sidecar.call('usage.account', params, { timeoutMs: 35_000 })).snapshot
           if (snapshot) limits = { ...snapshot, title: str(snapshot.title) || 'Account limits', available: snapshot.available && !str(snapshot.unavailable_reason) }
         } catch (error) {
           limits = { available: false, unavailable_reason: str((error as Error).message), windows: [], details: [] }
@@ -1033,38 +1068,94 @@ export class ProviderCatalog {
       }
       // The cache keeps the Agent's raw windows; pace is recomputed as of every response.
       if (limits) limits = { ...limits, ...normalizeQuotaWindows(limits.windows, at), fetched_at: isoUtc(limits.fetched_at) }
-      if (limits?.available) return { computed_at, ok: true, provider, display_name: name, supported: true, status: limits.stale ? 'stale' : 'available', label: limits.title, quota: null, account_limits: limits, message: limits.stale ? `${name} refresh failed; showing last-known account limits.` : `${name} account limits loaded.` }
+      if (limits?.available) return answer(true, limits.stale ? 'stale' : 'available', limits.stale ? `${name} refresh failed; showing last-known account limits.` : `${name} account limits loaded.`, { label: limits.title, account_limits: limits })
       const reason = str(limits?.unavailable_reason).trim()
-      return { computed_at, ok: false, provider, display_name: name, supported: true, status: 'unavailable', quota: null, account_limits: limits, message: reason ? `${name} account limits are unavailable. ${reason}` : `${name} account limits are unavailable. Confirm provider authentication and try again.` }
+      return answer(false, 'unavailable', reason ? `${name} account limits are unavailable. ${reason}` : `${name} account limits are unavailable. Confirm provider authentication and try again.`, { account_limits: limits })
     }
-    if (provider === 'openrouter') {
-      const apiKey = this.apiKeyFor('openrouter', profileHome, config)
-      if (!apiKey) return { computed_at, ok: false, provider, display_name: name, supported: true, status: 'no_key', quota: null, message: 'OpenRouter quota status needs an OPENROUTER_API_KEY configured on the server.' }
-      const info = await this.fetchOpenRouterKey(apiKey)
-      if (info.kind === 'ok') {
-        this.recordCostSnapshot(profileHome, info.quota, at)
-        return { computed_at, ok: true, provider, display_name: name, supported: true, status: 'available', label: 'OpenRouter credits', quota: info.quota, message: 'OpenRouter quota status loaded.' }
+    if (provider === 'openrouter' || provider === 'deepseek' || provider === 'opencode-go') {
+      const apiKey = this.apiKeyFor(provider, profileHome, config)
+      const key = credential ? { credential_id: credential.credential_id } : apiKey ? { api_key: apiKey } : null
+      const read = key ? await this.balance(profileHome, provider, key) : null
+      const status = !key || read?.status === 'no_key' ? 'no_key' : read?.status === 'ok' ? 'ok' : read?.status === 'http_error' ? read.http_status : null
+      if (provider === 'openrouter') {
+        if (status === 'no_key') return answer(false, 'no_key', 'OpenRouter quota status needs an OPENROUTER_API_KEY configured on the server.')
+        if (status === 'ok' && read?.quota) {
+          // The cost chart follows the configured key, so another pool account's spend never lands in it.
+          if (!credential || credential.matches_api_key) this.recordCostSnapshot(profileHome, read.quota, at)
+          return answer(true, 'available', 'OpenRouter quota status loaded.', { label: 'OpenRouter credits', quota: read.quota })
+        }
+        return status === 401 || status === 403 ? answer(false, 'invalid_key', 'OpenRouter rejected the configured API key.') : answer(false, 'unavailable', 'OpenRouter quota status is temporarily unavailable.')
       }
-      const status = info.kind === 'invalid_key' ? 'invalid_key' : 'unavailable'
-      return { computed_at, ok: false, provider, display_name: name, supported: true, status, quota: null, message: status === 'invalid_key' ? 'OpenRouter rejected the configured API key.' : 'OpenRouter quota status is temporarily unavailable.' }
+      if (provider === 'deepseek') {
+        if (status === 'no_key') return answer(false, 'no_key', 'DeepSeek balance needs a DEEPSEEK_API_KEY configured on the server.', { balances: [] })
+        if (status === 'ok' && read) {
+          const available = read.is_available === true
+          return answer(available, available ? 'available' : 'exhausted', available ? 'DeepSeek balance loaded.' : 'DeepSeek balance is exhausted.', { label: 'DeepSeek balance', balances: read.balances })
+        }
+        return status === 401 || status === 403 ? answer(false, 'invalid_key', 'DeepSeek rejected the configured API key.', { balances: [] }) : answer(false, 'unavailable', 'DeepSeek balance is temporarily unavailable.', { balances: [] })
+      }
+      if (status === 'no_key') return answer(false, 'no_key', 'OpenCode Go account limits need an API key configured on the server.', { account_limits: null })
+      if (status === 'ok' && read) {
+        // Python `_sanitize_opencode_go_account_limits`: the rolling, weekly and monthly windows of the Go plan.
+        const windows = read.windows.map((w) => ({ label: OPENCODE_GO_WINDOWS[w.key][0], window_seconds: OPENCODE_GO_WINDOWS[w.key][1], used_percent: w.used_percent, reset_at: w.reset_at, detail: w.rate_limited ? 'Rate limited' : null }))
+        const limits = { provider, source: 'usage_api', title: 'Account limits', plan: 'Go', details: [], available: true, unavailable_reason: null, fetched_at: isoAt(at), ...normalizeQuotaWindows(windows, at) }
+        return answer(true, 'available', 'OpenCode Go account limits loaded.', { label: 'OpenCode Go usage', account_limits: limits })
+      }
+      if (status === 401) return answer(false, 'invalid_key', 'OpenCode Go rejected the configured API key.', { account_limits: null })
+      return answer(false, 'unavailable', status === 403 ? 'OpenCode Go account limits require an active subscription.' : 'OpenCode Go account limits are temporarily unavailable.', { account_limits: null })
+    }
+    // Python `_local_pool_snapshot`: any other provider with a credential pool shows its accounts' local state.
+    const entries = credential ? [credential] : (await this.poolEntries(profileHome, provider, null)) ?? []
+    if (entries.length) {
+      const limits = credential ? poolEntryLimits(credential, at) : poolLimits(entries, at)
+      return limits.available ? answer(true, 'available', `${name} credential pool status loaded.`, { label: 'Credential pool', account_limits: limits }) : answer(false, 'unavailable', `${name} credential pool: all credentials are unavailable.`, { account_limits: limits })
     }
     return { computed_at, ok: false, provider, display_name: name, supported: false, status: 'unsupported', quota: null, message: `No verified server-side quota or balance endpoint is available for ${name}.` }
   }
 
-  private async fetchOpenRouterKey(apiKey: string): Promise<{ kind: 'ok'; quota: Dict; label: string | null } | { kind: 'invalid_key' | 'unavailable' }> {
-    const f = this.deps.fetch ?? fetch
+  /**
+   * TAL-548: the provider's credential-pool accounts as the sidecar reads them locally. Each says whether it holds
+   * `apiKey`, the provider's configured key. Null when the pool is unknown (see `poolLookup`).
+   */
+  private poolEntries(profileHome: string, pid: string, apiKey: string | null): Promise<PoolEntry[] | null> {
+    return this.poolLookup(profileHome, `pool\0${pid}`, async (sidecar) => (await sidecar.call('usage.pool', { profile_home: profileHome, provider: pid, ...(apiKey ? { api_key: apiKey } : {}) })).entries)
+  }
+
+  /** The last answer of each credential-pool lookup, by profile home and lookup. */
+  private readonly lastPoolAnswers = new Map<string, unknown>()
+
+  /**
+   * TAL-548: one credential-pool lookup through the sidecar. A failed lookup answers with the last answer to the same
+   * lookup, else null: an unknown pool, never an empty one, so no pool account is ever reported as removed.
+   */
+  private async poolLookup<T>(profileHome: string, lookup: string, call: (sidecar: SidecarLike) => Promise<T>): Promise<T | null> {
+    const key = `${profileHome}\0${lookup}`
     try {
-      const res = await f(OPENROUTER_KEY_URL, { headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' }, signal: AbortSignal.timeout(QUOTA_TIMEOUT_MS) })
-      if (!res.ok) return { kind: res.status === 401 || res.status === 403 ? 'invalid_key' : 'unavailable' }
-      const raw = await readCapped(res, 256 * 1024)
-      if (!raw) return { kind: 'unavailable' }
-      let payload: unknown = JSON.parse(raw.toString('utf8'))
-      if (isDict(payload) && isDict(payload.data)) payload = payload.data
-      const d = dict(payload)
-      const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
-      return { kind: 'ok', quota: { limit_remaining: num(d.limit_remaining), usage: num(d.usage), limit: num(d.limit) }, label: str(d.label).trim() || null }
-    } catch {
-      return { kind: 'unavailable' }
+      const sidecar = this.deps.sidecar()
+      if (!sidecar) throw new Error('the sidecar is not running')
+      const answer = await call(sidecar)
+      this.lastPoolAnswers.set(key, answer)
+      return answer
+    } catch (error) {
+      this.deps.log(`[catalog] credential pool lookup ${lookup.replace('\0', ' ')} failed: ${str((error as Error).message)}`)
+      return (this.lastPoolAnswers.get(key) as T | undefined) ?? null
+    }
+  }
+
+  /** TAL-548: the providers whose persisted credential pool holds an added account; none when the sidecar cannot say. */
+  private poolProviders(profileHome: string): Promise<string[] | null> {
+    return this.poolLookup(profileHome, 'providers', async (sidecar) => (await sidecar.call('usage.pool_providers', { profile_home: profileHome })).providers)
+  }
+
+  /** TAL-548: one key-based balance read through the sidecar, which resolves a pool account's key itself; null when it fails. */
+  private async balance(profileHome: string, provider: SidecarParams<'usage.balance'>['provider'], key: { credential_id?: string; api_key?: string }): Promise<SidecarResult<'usage.balance'> | null> {
+    const sidecar = this.deps.sidecar()
+    if (!sidecar) return null
+    try {
+      return await sidecar.call('usage.balance', { profile_home: profileHome, provider, ...key }, { timeoutMs: BALANCE_TIMEOUT_MS })
+    } catch (error) {
+      this.deps.log(`[catalog] ${provider} balance failed: ${str((error as Error).message)}`)
+      return null
     }
   }
 
@@ -1095,22 +1186,42 @@ export class ProviderCatalog {
   }
 
   /**
-   * Python `get_provider_quotas`: one source per keyed provider, in the stable-identity envelope the iOS widget persists.
-   * Each source id appears once (two custom providers can share a slug), ordered by provider, account label, then source id.
+   * Python `get_provider_quotas`: the stable-identity envelope the iOS widget persists. A keyed provider is one source per
+   * credential-pool account, else one for its own key (Python `_quota_source_descriptors`, TAL-548). Each source id appears
+   * once (two custom providers can share a slug), ordered by provider, account label, then source id.
    */
   async quotas(profileHome: string, profile: string, opts: { sourceId?: string | null; refresh?: boolean } = {}): Promise<Dict> {
     const at = this.deps.now()
     const status = await this.providers(profileHome)
     const active = status.active_provider
     const scopeId = this.quotaProfileScopeId(profile)
-    // Python `_quota_source_id(profile, provider, "provider")`: the single-credential descriptor per provider.
-    const sourceId = (pid: string): string => `qsrc_${createHash('sha256').update(`${scopeId}\0${pid}\0provider`).digest('hex').slice(0, 32)}`
-    let descriptors = uniqueQuotaSources(status.providers.filter((p) => p.has_key || p.is_custom).map((p) => ({ source_id: sourceId(str(p.id)), provider_id: str(p.id), provider_label: str(p.display_name) || str(p.id), account_label: str(p.display_name) || str(p.id) })))
+    // Python `_quota_source_id(profile, provider, credential_id)`: a pool account's id, or "provider" for the provider's own key.
+    const sourceId = (pid: string, credential: string): string => `qsrc_${createHash('sha256').update(`${scopeId}\0${pid}\0${credential}`).digest('hex').slice(0, 32)}`
+    // A provider configured only through `hermes auth add` has no key in .env or config.yaml, yet its pool accounts are sources.
+    // An unknown pool (a failed lookup with no earlier answer) never reports a requested source as missing.
+    let poolUnknown = false
+    const pooledIds = await this.poolProviders(profileHome)
+    if (!pooledIds) poolUnknown = true
+    const pooled = new Set(pooledIds ?? [])
+    const config = await this.deps.config.read(profileHome)
+    const perProvider = await Promise.all(status.providers.filter((p) => p.has_key || p.is_custom || pooled.has(str(p.id))).map(async (p) => {
+      const pid = str(p.id)
+      const label = str(p.display_name) || pid
+      const apiKey = this.apiKeyFor(pid, profileHome, config)
+      const found = await this.poolEntries(profileHome, pid, apiKey)
+      if (!found) poolUnknown = true
+      const entries = found ?? []
+      const accounts = entries.map((e) => ({ source_id: sourceId(pid, e.credential_id), provider_id: pid, provider_label: label, account_label: e.label, credential: e }))
+      // The provider's own key is a source unless a pool account already holds it.
+      const ownKey = !entries.length || (apiKey !== null && !entries.some((e) => e.matches_api_key))
+      return ownKey ? [{ source_id: sourceId(pid, 'provider'), provider_id: pid, provider_label: label, account_label: label, credential: null }, ...accounts] : accounts
+    }))
+    let descriptors = uniqueQuotaSources(perProvider.flat())
     const requested = str(opts.sourceId).trim() || null
     if (requested) descriptors = descriptors.filter((d) => d.source_id === requested)
     const thresholds = this.deps.quotaThresholds?.(profile) ?? QUOTA_THRESHOLD_DEFAULTS
     const sources = await Promise.all(descriptors.map(async (d) => {
-      const q = await this.quota(profileHome, d.provider_id, { refresh: opts.refresh ?? false, at })
+      const q = await this.quota(profileHome, d.provider_id, { refresh: opts.refresh ?? false, at, credential: d.credential })
       const limits = dict(q.account_limits)
       return classifyQuotaSource({
         source_id: d.source_id, provider_id: d.provider_id, provider_label: d.provider_label, account_label: d.account_label,
@@ -1119,7 +1230,7 @@ export class ProviderCatalog {
         unavailable_reason: limits.unavailable_reason ?? null, retry_after: limits.retry_after ?? null, fetched_at: limits.fetched_at ?? null, message: q.message ?? null,
       }, thresholds)
     }))
-    return { version: 1, computed_at: isoAt(at), scope_id: scopeId, profile_id: profile, active_provider: active, requested_source_id: requested, missing_source: Boolean(requested && !descriptors.length), sources }
+    return { version: 1, computed_at: isoAt(at), scope_id: scopeId, profile_id: profile, active_provider: active, requested_source_id: requested, missing_source: Boolean(requested && !descriptors.length && !poolUnknown), sources }
   }
 
   /** Python `get_provider_cost_history` (OpenRouter only; daily snapshots under `<home>/cost-snapshots`). */
@@ -1132,8 +1243,8 @@ export class ProviderCatalog {
     const config = await this.deps.config.read(profileHome)
     const apiKey = this.apiKeyFor('openrouter', profileHome, config)
     if (!apiKey) return { ok: false, provider, display_name: name, supported: true, status: 'no_key', monthly_budget: budget, message: 'OpenRouter cost history needs an OPENROUTER_API_KEY configured on the server.' }
-    const info = await this.fetchOpenRouterKey(apiKey)
-    if (info.kind !== 'ok') {
+    const info = await this.balance(profileHome, 'openrouter', { api_key: apiKey })
+    if (info?.status !== 'ok' || !info.quota) {
       return { ok: false, provider, display_name: name, supported: true, status: 'unavailable', window_days: days, ...costHistoryView(this.readCostSnapshots(profileHome), days, budget), limit: null, label: null, monthly_budget: budget, message: 'OpenRouter cost history is temporarily unavailable. Showing last known data.' }
     }
     const snapshots = this.recordCostSnapshot(profileHome, info.quota, this.deps.now())

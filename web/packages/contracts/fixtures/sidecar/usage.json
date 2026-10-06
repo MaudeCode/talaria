@@ -9,5 +9,43 @@
         "snapshot": null
       }
     }
+  ],
+  "usage.pool": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "provider": "deepseek"
+      },
+      "result": {
+        "entries": []
+      }
+    }
+  ],
+  "usage.balance": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "provider": "deepseek"
+      },
+      "result": {
+        "status": "no_key",
+        "http_status": null,
+        "quota": null,
+        "label": null,
+        "is_available": null,
+        "balances": [],
+        "windows": []
+      }
+    }
+  ],
+  "usage.pool_providers": [
+    {
+      "params": {
+        "profile_home": "<home>"
+      },
+      "result": {
+        "providers": []
+      }
+    }
   ]
 }
