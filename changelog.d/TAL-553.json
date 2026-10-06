@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "After switching profiles, Memory, Tasks, and other screens no longer show the previous profile's saved copy, and switching back shows that profile's copy right away.",
+      "highlight": false
+    }
+  ]
+}

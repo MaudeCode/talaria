@@ -91,11 +91,14 @@ extension APIClient {
     }
 
     public func profiles() async throws -> ProfilesResponse {
-        try await send(endpoint: .profiles, method: "GET")
+        try await profiles(caching: nil)
     }
 
     public func profiles(caching cache: ResponseCache.Entry?) async throws -> ProfilesResponse {
-        try await send(endpoint: .profiles, caching: cache)
+        let switchCount = ActiveServerProfile.switchCount(for: baseURL)
+        let response: ProfilesResponse = try await send(endpoint: .profiles, caching: cache)
+        ActiveServerProfile.record(response.effectiveDefaultProfileName, for: baseURL, ifNoSwitchSince: switchCount)
+        return response
     }
 
     public func switchProfile(name: String) async throws -> ProfileSwitchResponse {
@@ -105,6 +108,10 @@ extension APIClient {
             body: ProfileSwitchRequest(name: name)
         )
         if response.error == nil {
+            ActiveServerProfile.record(
+                ProfilesResponse(profiles: nil, active: response.active).effectiveDefaultProfileName ?? name,
+                for: baseURL
+            )
             try persistCookies()
             try forgetProfileOwner()
             if ProviderQuotaWidgetSnapshotStore().clear() {
