@@ -116,9 +116,11 @@ public struct KanbanBoardSnapshot: Decodable, Equatable, Sendable {
     public let changed: Bool?
     public let latestEventID: Int?
     public let readOnly: Bool?
+    /// Statuses the server lets a bulk status change target (TAL-557).
+    public let bulkMoveTargets: [String]?
 
     enum CodingKeys: String, CodingKey {
-        case columns, tenants, assignees, filters, changed, readOnly
+        case columns, tenants, assignees, filters, changed, readOnly, bulkMoveTargets
         case latestEventID = "latestEventId"
     }
 
@@ -129,7 +131,8 @@ public struct KanbanBoardSnapshot: Decodable, Equatable, Sendable {
         filters: KanbanAppliedFilters?,
         changed: Bool?,
         latestEventID: Int?,
-        readOnly: Bool?
+        readOnly: Bool?,
+        bulkMoveTargets: [String]?
     ) {
         self.columns = columns
         self.tenants = tenants
@@ -138,6 +141,7 @@ public struct KanbanBoardSnapshot: Decodable, Equatable, Sendable {
         self.changed = changed
         self.latestEventID = latestEventID
         self.readOnly = readOnly
+        self.bulkMoveTargets = bulkMoveTargets
     }
 
     public init(from decoder: Decoder) throws {
@@ -149,6 +153,38 @@ public struct KanbanBoardSnapshot: Decodable, Equatable, Sendable {
         changed = container.decodeLossyBoolIfPresent(forKey: .changed)
         latestEventID = container.decodeLossyIntIfPresent(forKey: .latestEventID)
         readOnly = container.decodeLossyBoolIfPresent(forKey: .readOnly)
+        bulkMoveTargets = try? container.decodeIfPresent([String].self, forKey: .bulkMoveTargets)
+    }
+}
+
+/// The card actions the server offers for a card's current status (TAL-557).
+public struct KanbanCardActions: Decodable, Equatable, Sendable {
+    public let block: Bool
+    public let unblock: Bool
+    public let complete: Bool
+    public let archive: Bool
+    /// Statuses a Move may target, in display order.
+    public let moveTo: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case block, unblock, complete, archive, moveTo
+    }
+
+    public init(block: Bool, unblock: Bool, complete: Bool, archive: Bool, moveTo: [String]) {
+        self.block = block
+        self.unblock = unblock
+        self.complete = complete
+        self.archive = archive
+        self.moveTo = moveTo
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        block = container.decodeLossyBoolIfPresent(forKey: .block) ?? false
+        unblock = container.decodeLossyBoolIfPresent(forKey: .unblock) ?? false
+        complete = container.decodeLossyBoolIfPresent(forKey: .complete) ?? false
+        archive = container.decodeLossyBoolIfPresent(forKey: .archive) ?? false
+        moveTo = (try? container.decodeIfPresent([String].self, forKey: .moveTo)) ?? []
     }
 }
 
@@ -194,6 +230,9 @@ public struct KanbanCard: Decodable, Equatable, Sendable {
     public let claimLock: String?
     public let claimExpires: String?
     public let workerID: String?
+    /// Nil when the server sent no policy; the card then offers no actions.
+    public let availableActions: KanbanCardActions?
+    public let requiresRunningExitConfirmation: Bool
 
     enum CodingKeys: String, CodingKey {
         case cardID = "id"
@@ -204,6 +243,7 @@ public struct KanbanCard: Decodable, Equatable, Sendable {
         case currentRunID = "currentRunId"
         case claimLock, claimExpires
         case workerID = "workerPid"
+        case availableActions, requiresRunningExitConfirmation
     }
 
     public init(
@@ -226,7 +266,9 @@ public struct KanbanCard: Decodable, Equatable, Sendable {
         currentRunID: String?,
         claimLock: String?,
         claimExpires: String?,
-        workerID: String?
+        workerID: String?,
+        availableActions: KanbanCardActions? = nil,
+        requiresRunningExitConfirmation: Bool = false
     ) {
         self.cardID = cardID
         self.title = title
@@ -248,6 +290,8 @@ public struct KanbanCard: Decodable, Equatable, Sendable {
         self.claimLock = claimLock
         self.claimExpires = claimExpires
         self.workerID = workerID
+        self.availableActions = availableActions
+        self.requiresRunningExitConfirmation = requiresRunningExitConfirmation
     }
 
     public init(from decoder: Decoder) throws {
@@ -272,6 +316,8 @@ public struct KanbanCard: Decodable, Equatable, Sendable {
         claimLock = container.decodeLossyStringIfPresent(forKey: .claimLock)
         claimExpires = container.decodeLossyStringIfPresent(forKey: .claimExpires)
         workerID = container.decodeLossyStringIfPresent(forKey: .workerID)
+        availableActions = try? container.decodeIfPresent(KanbanCardActions.self, forKey: .availableActions)
+        requiresRunningExitConfirmation = container.decodeLossyBoolIfPresent(forKey: .requiresRunningExitConfirmation) ?? false
     }
 
     public var staleness: KanbanStaleness {
@@ -288,8 +334,11 @@ public struct KanbanCard: Decodable, Equatable, Sendable {
         }
     }
 
+    /// The card shown under a status the server has not confirmed yet. Its server policy belongs to the
+    /// old status, so it offers no actions until the server's copy of the card arrives.
     public func replacingStatus(_ status: String) -> KanbanCard {
-        KanbanCard(
+        let unchanged = status == self.status?.rawValue
+        return KanbanCard(
             cardID: cardID,
             title: title,
             status: KanbanStatus(rawValue: status),
@@ -309,7 +358,9 @@ public struct KanbanCard: Decodable, Equatable, Sendable {
             currentRunID: status == "running" ? currentRunID : nil,
             claimLock: status == "running" ? claimLock : nil,
             claimExpires: status == "running" ? claimExpires : nil,
-            workerID: status == "running" ? workerID : nil
+            workerID: status == "running" ? workerID : nil,
+            availableActions: unchanged ? availableActions : nil,
+            requiresRunningExitConfirmation: unchanged && requiresRunningExitConfirmation
         )
     }
 }

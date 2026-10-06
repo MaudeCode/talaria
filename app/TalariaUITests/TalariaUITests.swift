@@ -3053,3 +3053,40 @@ fileprivate extension WorkspaceUITestCase {
         element(labelBeginningWith: name)
     }
 }
+
+/// Card menus offer exactly the actions the server sent for each Card (TAL-557).
+final class KanbanCardActionsUITests: TalariaUITestCase {
+    func testCardMenuOffersOnlyTheServerActions() throws {
+        launchFixture()
+        openSidebarDestination("Kanban")
+        let selector = app.descendants(matching: .any)["KanbanStatusSelector"]
+        XCTAssertTrue(selector.awaitExistence(timeout: Self.navigationTimeout), "Kanban Board did not load")
+
+        // Triage: Move and Archive only.
+        assertCardMenu(offers: ["Move", "Archive"], omits: ["Block", "Unblock", "Complete"], screenshot: "Triage card actions")
+
+        let ready = selector.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Ready")).firstMatch
+        XCTAssertTrue(ready.awaitExistence(timeout: 5), "Ready status missing")
+        ready.tap()
+        assertCardMenu(offers: ["Move", "Block", "Complete", "Archive"], omits: ["Unblock"], screenshot: "Ready card actions")
+    }
+
+    private func assertCardMenu(offers: [String], omits: [String], screenshot: String) {
+        let menu = app.buttons["Card Actions"].firstMatch
+        XCTAssertTrue(menu.awaitExistence(timeout: 5), "Card Actions missing")
+        menu.tap()
+        for label in offers {
+            XCTAssertTrue(app.buttons[label].firstMatch.awaitExistence(timeout: 3), "\(label) missing [\(screenshot)]")
+        }
+        for label in omits {
+            XCTAssertFalse(app.buttons[label].exists, "\(label) offered [\(screenshot)]")
+        }
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = screenshot
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        // Close the menu by tapping clear of it.
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap()
+        XCTAssertTrue(app.buttons[offers.last ?? "Archive"].awaitNonExistence(timeout: 3), "Card menu did not close [\(screenshot)]")
+    }
+}

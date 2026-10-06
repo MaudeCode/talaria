@@ -143,14 +143,24 @@ actor DeferredBoardCollectionClient: KanbanDataClient {
     }
 }
 
-func mutationSnapshot(status: String = "todo") -> KanbanBoardSnapshot {
+/// Server card policy offering every action, so a test exercises the App's mutation mechanics rather than the
+/// server's per-status rules (TAL-557, covered by the Web server tests).
+let allCardActions = #""available_actions":{"block":true,"unblock":true,"complete":true,"archive":true,"move_to":["triage","todo","ready"]}"#
+let bulkMoveTargets = #""bulk_move_targets":["triage","todo","ready","blocked","done"]"#
+
+/// The server's policy for a status it does not know: no actions.
+let noCardActions = #""available_actions":{"block":false,"unblock":false,"complete":false,"archive":false,"move_to":[]}"#
+
+func mutationSnapshot(status: String = "todo", actions: String = allCardActions) -> KanbanBoardSnapshot {
+    let confirm = status == "running" ? #","requires_running_exit_confirmation":true"# : ""
     return mutationDecode("""
     {
       "changed":true,
       "read_only":false,
+      \(bulkMoveTargets),
       "columns":[
-        {"name":"triage","tasks":[{"id":"CARD-2","title":"Second","status":"triage"}]},
-        {"name":"\(status)","tasks":[{"id":"CARD-1","title":"First","status":"\(status)"}]},
+        {"name":"triage","tasks":[{"id":"CARD-2","title":"Second","status":"triage",\(allCardActions)}]},
+        {"name":"\(status)","tasks":[{"id":"CARD-1","title":"First","status":"\(status)",\(actions)\(confirm)}]},
         {"name":"ready","tasks":[]},
         {"name":"done","tasks":[]}
       ]
@@ -165,16 +175,17 @@ func bulkSnapshot(firstStatus: String, secondStatus: String) -> KanbanBoardSnaps
     ]
     let todoCards = cards
         .filter { $0.2 == "todo" }
-        .map { #"{"id":"\#($0.0)","title":"\#($0.1)","status":"todo"}"# }
+        .map { #"{"id":"\#($0.0)","title":"\#($0.1)","status":"todo",\#(allCardActions)}"# }
         .joined(separator: ",")
     let doneCards = cards
         .filter { $0.2 == "done" }
-        .map { #"{"id":"\#($0.0)","title":"\#($0.1)","status":"done"}"# }
+        .map { #"{"id":"\#($0.0)","title":"\#($0.1)","status":"done",\#(allCardActions)}"# }
         .joined(separator: ",")
     return mutationDecode("""
     {
       "changed": true,
       "read_only": false,
+      \(bulkMoveTargets),
       "columns": [
         {"name":"triage","tasks":[]},
         {"name":"todo","tasks":[\(todoCards)]},

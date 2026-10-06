@@ -321,11 +321,9 @@ public final class KanbanFeatureState {
         searchMatchedCards.count { $0.status?.rawValue == status }
     }
 
+    /// A card is writable only when the server sent its card policy (TAL-557).
     public func canMutateCard(_ card: KanbanCard) -> Bool {
-        guard canUseCardWorkflow,
-              normalizedOptional(card.cardID) != nil,
-              let status = card.status?.rawValue else { return false }
-        return Self.liveStatuses.contains(status) || status == "archived"
+        canUseCardWorkflow && normalizedOptional(card.cardID) != nil && card.availableActions != nil
     }
 
     public func isMutatingCard(_ cardID: String?) -> Bool {
@@ -340,9 +338,16 @@ public final class KanbanFeatureState {
 
     public func moveDestinations(for card: KanbanCard) -> [String] {
         guard canMutateCard(card) else { return [] }
-        let ordinaryDestinations = Set(["triage", "todo", "ready"])
-        return (configuration?.columns ?? [])
-            .filter { ordinaryDestinations.contains($0) && $0 != card.status?.rawValue }
+        return card.availableActions?.moveTo ?? []
+    }
+
+    /// Statuses the server lets a bulk status change target.
+    public var bulkMoveTargets: [String] { snapshot?.bulkMoveTargets ?? [] }
+
+    /// The status the board currently shows for a card, e.g. where an action left it.
+    public func displayedStatus(of cardID: String?) -> String? {
+        guard let cardID = normalizedOptional(cardID) else { return nil }
+        return cardInSnapshot(cardID)?.status?.rawValue
     }
 
     public func displayedPrerequisites(for cardID: String, canonical: [String]) -> [String] {
@@ -373,7 +378,7 @@ public final class KanbanFeatureState {
         to status: String,
         confirmingRunningExit: Bool = false
     ) async {
-        guard status != "running", moveDestinations(for: card).contains(status) else { return }
+        guard moveDestinations(for: card).contains(status) else { return }
         await performStatusMutation(
             card,
             status: status,
@@ -383,7 +388,7 @@ public final class KanbanFeatureState {
     }
 
     public func completeCard(_ card: KanbanCard, confirmingRunningExit: Bool = false) async {
-        guard card.status?.rawValue != "done", card.status?.rawValue != "archived" else { return }
+        guard card.availableActions?.complete == true else { return }
         await performStatusMutation(
             card,
             status: "done",
@@ -393,7 +398,7 @@ public final class KanbanFeatureState {
     }
 
     public func archiveCard(_ card: KanbanCard, confirmingRunningExit: Bool = false) async {
-        guard let previousStatus = card.status?.rawValue, previousStatus != "archived" else { return }
+        guard card.availableActions?.archive == true, let previousStatus = card.status?.rawValue else { return }
         await performStatusMutation(
             card,
             status: "archived",
@@ -407,11 +412,12 @@ public final class KanbanFeatureState {
         reason: String?,
         confirmingRunningExit: Bool = false
     ) async {
-        guard canMutateCard(card), card.status?.rawValue != "blocked", card.status?.rawValue != "archived" else { return }
+        guard canMutateCard(card), card.availableActions?.block == true else { return }
         let reason = normalizedOptional(reason)
+        // A repeated block can land in Triage, so the server's answer decides where the card goes.
         await performStatusMutation(
             card,
-            status: "blocked",
+            status: nil,
             kind: .block(reason),
             confirmingRunningExit: confirmingRunningExit
         ) { [client, selectedBoardSlug] cardID in
@@ -423,8 +429,9 @@ public final class KanbanFeatureState {
     }
 
     public func unblockCard(_ card: KanbanCard) async {
-        guard canMutateCard(card), card.status?.rawValue == "blocked" else { return }
-        await performStatusMutation(card, status: "ready", kind: .unblock) { [client, selectedBoardSlug] cardID in
+        guard canMutateCard(card), card.availableActions?.unblock == true else { return }
+        // The Agent re-gates an unblocked card on its parents, so the server's answer decides where it lands too.
+        await performStatusMutation(card, status: nil, kind: .unblock) { [client, selectedBoardSlug] cardID in
             guard let board = selectedBoardSlug else { throw CancellationError() }
             return try await client.unblockKanbanCard(
                 KanbanCardActionRequest(cardID: cardID, board: board, reason: nil)
@@ -491,15 +498,24 @@ public final class KanbanFeatureState {
         }
     }
 
-    public func retryMutation(for card: KanbanCard) async {
+    /// Whether retrying the card's failed mutation would take it out of Running, which the server says needs confirmation.
+    public func retryNeedsRunningExitConfirmation(for card: KanbanCard) -> Bool {
+        guard card.requiresRunningExitConfirmation, let mutation = mutationState(for: card.cardID) else { return false }
+        switch mutation.kind {
+        case .addPrerequisite, .removePrerequisite: return false
+        default: return true
+        }
+    }
+
+    public func retryMutation(for card: KanbanCard, confirmingRunningExit: Bool = false) async {
         guard let cardID = normalizedOptional(card.cardID),
               let mutation = cardMutationStates[cardID],
               mutation.phase == .failed else { return }
         switch mutation.kind {
         case let .status(status):
-            await performStatusMutation(card, status: status, kind: mutation.kind)
+            await performStatusMutation(card, status: status, kind: mutation.kind, confirmingRunningExit: confirmingRunningExit)
         case let .block(reason):
-            await blockCard(card, reason: reason)
+            await blockCard(card, reason: reason, confirmingRunningExit: confirmingRunningExit)
         case .unblock:
             await unblockCard(card)
         case let .addPrerequisite(prerequisiteID):
@@ -507,9 +523,9 @@ public final class KanbanFeatureState {
         case let .removePrerequisite(prerequisiteID):
             await removePrerequisite(prerequisiteID, from: card)
         case .archive:
-            await archiveCard(card)
+            await archiveCard(card, confirmingRunningExit: confirmingRunningExit)
         case let .undoArchive(status):
-            await performStatusMutation(card, status: status, kind: mutation.kind)
+            await performStatusMutation(card, status: status, kind: mutation.kind, confirmingRunningExit: confirmingRunningExit)
         }
     }
 
@@ -536,9 +552,9 @@ public final class KanbanFeatureState {
             case let .status(status), let .undoArchive(status):
                 succeeded = authoritative.status?.rawValue == status
             case .block:
-                succeeded = authoritative.status?.rawValue == "blocked"
+                succeeded = authoritative.availableActions.map { !$0.block } ?? false
             case .unblock:
-                succeeded = authoritative.status?.rawValue == "ready"
+                succeeded = authoritative.availableActions.map { !$0.unblock } ?? false
             case .archive:
                 succeeded = authoritative.status?.rawValue == "archived"
             case let .addPrerequisite(prerequisiteID):
@@ -1420,8 +1436,7 @@ public final class KanbanFeatureState {
         switch action {
         case let .changeStatus(status):
             guard let normalizedStatus = normalized(status) else { return false }
-            return normalizedStatus != "running"
-                && (configuration?.columns ?? []).contains(normalizedStatus)
+            return bulkMoveTargets.contains(normalizedStatus)
         case let .assignProfile(profile):
             guard let profile = normalizedOptional(profile) else { return profile == nil }
             return profileOptions.contains(profile)
@@ -1457,15 +1472,15 @@ public final class KanbanFeatureState {
         )
     }
 
+    /// `status` nil: the server decides where the card lands, so nothing moves until it answers.
     private func performStatusMutation(
         _ card: KanbanCard,
-        status: String,
+        status: String?,
         kind: KanbanCardMutationKind,
         confirmingRunningExit: Bool = false,
         write: ((String) async throws -> KanbanCardMutationEnvelope)? = nil
     ) async {
-        guard status != "running",
-              card.status?.rawValue != "running" || confirmingRunningExit,
+        guard !card.requiresRunningExitConfirmation || confirmingRunningExit,
               canMutateCard(card),
               let cardID = normalizedOptional(card.cardID),
               activeCardMutationIDs[cardID] == nil,
@@ -1476,22 +1491,26 @@ public final class KanbanFeatureState {
         settledDetailStatuses[cardID] = nil
         let mutationID = UUID()
         activeCardMutationIDs[cardID] = mutationID
-        pendingOptimisticStatuses[cardID] = status
         cardMutationStates[cardID] = KanbanCardMutationState(kind: kind, phase: .updating)
-        replaceCardInSnapshot(baseline.replacingStatus(status))
+        if let status {
+            pendingOptimisticStatuses[cardID] = status
+            replaceCardInSnapshot(baseline.replacingStatus(status))
+        }
 
         do {
             let response: KanbanCardMutationEnvelope
             if let write {
                 response = try await write(cardID)
-            } else {
+            } else if let status {
                 response = try await client.setKanbanCardStatus(
                     KanbanCardStatusRequest(cardID: cardID, board: board, status: status)
                 )
+            } else {
+                throw KanbanMutationSettlementError.unexpectedStatus
             }
             guard activeCardMutationIDs[cardID] == mutationID else { return }
             let authoritative = try KanbanCardMutationValidator.validate(response, expectedCardID: cardID)
-            guard authoritative.status?.rawValue == status else {
+            guard Self.landed(authoritative, expectedStatus: status, from: baseline) else {
                 throw KanbanMutationSettlementError.unexpectedStatus
             }
             settleSuccessfulStatusMutation(
@@ -1523,9 +1542,16 @@ public final class KanbanFeatureState {
         }
     }
 
+    /// Whether the server's card shows the write took effect: the requested status, or for a
+    /// server-decided write (`expectedStatus` nil) any status other than the one it left.
+    private static func landed(_ authoritative: KanbanCard, expectedStatus: String?, from baseline: KanbanCard) -> Bool {
+        guard let expectedStatus else { return authoritative.status != baseline.status }
+        return authoritative.status?.rawValue == expectedStatus
+    }
+
     private func reconcileStatusMutation(
         cardID: String,
-        expectedStatus: String,
+        expectedStatus: String?,
         baseline: KanbanCard,
         kind: KanbanCardMutationKind,
         mutationID: UUID
@@ -1537,7 +1563,7 @@ public final class KanbanFeatureState {
             )
             try KanbanCardDetailValidator.validate(detail, requestedCardID: cardID)
             guard activeCardMutationIDs[cardID] == mutationID, let authoritative = detail.card else { return }
-            if authoritative.status?.rawValue == expectedStatus {
+            if Self.landed(authoritative, expectedStatus: expectedStatus, from: baseline) {
                 settleSuccessfulStatusMutation(
                     authoritative,
                     baseline: baseline,
@@ -1677,7 +1703,8 @@ public final class KanbanFeatureState {
     }
 
     private func offerArchiveUndo(card: KanbanCard, title: String?, previousStatus: String) {
-        guard let cardID = normalizedOptional(card.cardID) else { return }
+        guard let cardID = normalizedOptional(card.cardID),
+              card.availableActions?.moveTo.contains(previousStatus) == true else { return }
         archiveUndoTask?.cancel()
         let undo = KanbanArchiveUndo(
             cardID: cardID,
@@ -1816,7 +1843,8 @@ public final class KanbanFeatureState {
             filters: snapshot.filters,
             changed: snapshot.changed,
             latestEventID: snapshot.latestEventID,
-            readOnly: snapshot.readOnly
+            readOnly: snapshot.readOnly,
+            bulkMoveTargets: snapshot.bulkMoveTargets
         )
     }
 

@@ -18,13 +18,13 @@ extension UITestFixtureURLProtocol {
             body = #"{"changed":false,"latest_event_id":1,"read_only":false}"#
         case "/api/kanban/board":
             body = """
-            {"changed":true,"latest_event_id":1,"read_only":false,"tenants":["fixture"],"assignees":["fixture-builder","fixture-reviewer"],"columns":[
-              {"name":"triage","tasks":[{"id":"FIXTURE-1","title":"Shape the fixture slice","status":"triage","assignee":null,"tenant":"fixture","priority":2,"comment_count":1,"link_counts":{"parents":0,"children":1},"age_seconds":300}]},
+            {"changed":true,"latest_event_id":1,"read_only":false,"bulk_move_targets":["triage","todo","ready","blocked","done"],"tenants":["fixture"],"assignees":["fixture-builder","fixture-reviewer"],"columns":[
+              {"name":"triage","tasks":[{"id":"FIXTURE-1","title":"Shape the fixture slice","status":"triage","assignee":null,"tenant":"fixture","priority":2,"comment_count":1,"link_counts":{"parents":0,"children":1},"age_seconds":300,"available_actions":{"block":false,"unblock":false,"complete":false,"archive":true,"move_to":["todo","ready"]},"requires_running_exit_confirmation":false}]},
               {"name":"todo","tasks":[]},
-              {"name":"ready","tasks":[{"id":"FIXTURE-2","title":"Audit localized fixture copy","status":"ready","assignee":"fixture-reviewer","tenant":"fixture","priority":1,"comment_count":0,"link_counts":{"parents":1,"children":0},"age_seconds":1800},{"id":"FIXTURE-3","title":"Implement the fixture Status Focus","status":"ready","assignee":"fixture-builder","tenant":"fixture","priority":0,"comment_count":2,"link_counts":{"parents":0,"children":0},"age_seconds":7200}]},
+              {"name":"ready","tasks":[{"id":"FIXTURE-2","title":"Audit localized fixture copy","status":"ready","assignee":"fixture-reviewer","tenant":"fixture","priority":1,"comment_count":0,"link_counts":{"parents":1,"children":0},"age_seconds":1800,"available_actions":{"block":true,"unblock":false,"complete":true,"archive":true,"move_to":["triage","todo"]},"requires_running_exit_confirmation":false},{"id":"FIXTURE-3","title":"Implement the fixture Status Focus","status":"ready","assignee":"fixture-builder","tenant":"fixture","priority":0,"comment_count":2,"link_counts":{"parents":0,"children":0},"age_seconds":7200,"available_actions":{"block":true,"unblock":false,"complete":true,"archive":true,"move_to":["triage","todo"]},"requires_running_exit_confirmation":false}]},
               {"name":"running","tasks":[]},
               {"name":"blocked","tasks":[]},
-              {"name":"done","tasks":[{"id":"FIXTURE-4","title":"Verify fixture read contracts","status":"done","assignee":"fixture-builder","tenant":"fixture","priority":0,"comment_count":0,"link_counts":{"parents":0,"children":0},"age_seconds":3600}]}
+              {"name":"done","tasks":[{"id":"FIXTURE-4","title":"Verify fixture read contracts","status":"done","assignee":"fixture-builder","tenant":"fixture","priority":0,"comment_count":0,"link_counts":{"parents":0,"children":0},"age_seconds":3600,"available_actions":{"block":false,"unblock":false,"complete":false,"archive":true,"move_to":["triage","todo","ready"]},"requires_running_exit_confirmation":false}]}
             ]}
             """
         case "/api/kanban/stats":
@@ -42,7 +42,8 @@ extension UITestFixtureURLProtocol {
             {"read_only":false,"comments":[],"events":[],"runs":[],"links":{"parents":[],"children":[]},
              "task":{"id":"\(cardID)","title":"Fixture Card \(cardID)","status":"ready","assignee":"fixture-builder",
              "tenant":"fixture","priority":0,"description":"Deterministic fixture Card detail.",
-             "comment_count":0,"link_counts":{"parents":0,"children":0},"age_seconds":7200}}
+             "comment_count":0,"link_counts":{"parents":0,"children":0},"age_seconds":7200,
+             "available_actions":{"block":true,"unblock":false,"complete":true,"archive":true,"move_to":["triage","todo"]},"requires_running_exit_confirmation":false}}
             """
         default:
             body = "{}"
