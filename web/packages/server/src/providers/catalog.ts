@@ -505,6 +505,8 @@ export class ProviderCatalog {
       this.liveIds.delete(key)
     }
     this.providersCache.clear()
+    // Credentials changed: the last pool answers no longer stand in for a failed lookup.
+    for (const key of [...this.lastPoolAnswers.keys()]) if (!profileHome || key.startsWith(`${profileHome}\0`)) this.lastPoolAnswers.delete(key)
     // The picker catalog changed: option ids rebuild on the next read rather than pairing against the old one.
     if (profileHome) { this.lastModels.delete(profileHome); this.lastModelsMeta.delete(profileHome) } else { this.lastModels.clear(); this.lastModelsMeta.clear() }
   }
@@ -1103,7 +1105,7 @@ export class ProviderCatalog {
       return answer(false, 'unavailable', status === 403 ? 'OpenCode Go account limits require an active subscription.' : 'OpenCode Go account limits are temporarily unavailable.', { account_limits: null })
     }
     // Python `_local_pool_snapshot`: any other provider with a credential pool shows its accounts' local state.
-    const entries = credential ? [credential] : await this.poolEntries(profileHome, provider, null)
+    const entries = credential ? [credential] : (await this.poolEntries(profileHome, provider, null)) ?? []
     if (entries.length) {
       const limits = credential ? poolEntryLimits(credential, at) : poolLimits(entries, at)
       return limits.available ? answer(true, 'available', `${name} credential pool status loaded.`, { label: 'Credential pool', account_limits: limits }) : answer(false, 'unavailable', `${name} credential pool: all credentials are unavailable.`, { account_limits: limits })
@@ -1112,30 +1114,37 @@ export class ProviderCatalog {
   }
 
   /**
-   * TAL-548: the provider's credential-pool accounts as the sidecar reads them locally; none when it cannot. Each says
-   * whether it holds `apiKey`, the provider's configured key.
+   * TAL-548: the provider's credential-pool accounts as the sidecar reads them locally. Each says whether it holds
+   * `apiKey`, the provider's configured key. Null when the pool is unknown (see `poolLookup`).
    */
-  private async poolEntries(profileHome: string, pid: string, apiKey: string | null): Promise<PoolEntry[]> {
-    const sidecar = this.deps.sidecar()
-    if (!sidecar) return []
+  private poolEntries(profileHome: string, pid: string, apiKey: string | null): Promise<PoolEntry[] | null> {
+    return this.poolLookup(profileHome, `pool\0${pid}`, async (sidecar) => (await sidecar.call('usage.pool', { profile_home: profileHome, provider: pid, ...(apiKey ? { api_key: apiKey } : {}) })).entries)
+  }
+
+  /** The last answer of each credential-pool lookup, by profile home and lookup. */
+  private readonly lastPoolAnswers = new Map<string, unknown>()
+
+  /**
+   * TAL-548: one credential-pool lookup through the sidecar. A failed lookup answers with the last answer to the same
+   * lookup, else null: an unknown pool, never an empty one, so no pool account is ever reported as removed.
+   */
+  private async poolLookup<T>(profileHome: string, lookup: string, call: (sidecar: SidecarLike) => Promise<T>): Promise<T | null> {
+    const key = `${profileHome}\0${lookup}`
     try {
-      return (await sidecar.call('usage.pool', { profile_home: profileHome, provider: pid, ...(apiKey ? { api_key: apiKey } : {}) })).entries
+      const sidecar = this.deps.sidecar()
+      if (!sidecar) throw new Error('the sidecar is not running')
+      const answer = await call(sidecar)
+      this.lastPoolAnswers.set(key, answer)
+      return answer
     } catch (error) {
-      this.deps.log(`[catalog] credential pool for ${pid} failed: ${str((error as Error).message)}`)
-      return []
+      this.deps.log(`[catalog] credential pool lookup ${lookup.replace('\0', ' ')} failed: ${str((error as Error).message)}`)
+      return (this.lastPoolAnswers.get(key) as T | undefined) ?? null
     }
   }
 
   /** TAL-548: the providers whose persisted credential pool holds an added account; none when the sidecar cannot say. */
-  private async poolProviders(profileHome: string): Promise<string[]> {
-    const sidecar = this.deps.sidecar()
-    if (!sidecar) return []
-    try {
-      return (await sidecar.call('usage.pool_providers', { profile_home: profileHome })).providers
-    } catch (error) {
-      this.deps.log(`[catalog] credential pool providers failed: ${str((error as Error).message)}`)
-      return []
-    }
+  private poolProviders(profileHome: string): Promise<string[] | null> {
+    return this.poolLookup(profileHome, 'providers', async (sidecar) => (await sidecar.call('usage.pool_providers', { profile_home: profileHome })).providers)
   }
 
   /** TAL-548: one key-based balance read through the sidecar, which resolves a pool account's key itself; null when it fails. */
@@ -1189,13 +1198,19 @@ export class ProviderCatalog {
     // Python `_quota_source_id(profile, provider, credential_id)`: a pool account's id, or "provider" for the provider's own key.
     const sourceId = (pid: string, credential: string): string => `qsrc_${createHash('sha256').update(`${scopeId}\0${pid}\0${credential}`).digest('hex').slice(0, 32)}`
     // A provider configured only through `hermes auth add` has no key in .env or config.yaml, yet its pool accounts are sources.
-    const pooled = new Set(await this.poolProviders(profileHome))
+    // An unknown pool (a failed lookup with no earlier answer) never reports a requested source as missing.
+    let poolUnknown = false
+    const pooledIds = await this.poolProviders(profileHome)
+    if (!pooledIds) poolUnknown = true
+    const pooled = new Set(pooledIds ?? [])
     const config = await this.deps.config.read(profileHome)
     const perProvider = await Promise.all(status.providers.filter((p) => p.has_key || p.is_custom || pooled.has(str(p.id))).map(async (p) => {
       const pid = str(p.id)
       const label = str(p.display_name) || pid
       const apiKey = this.apiKeyFor(pid, profileHome, config)
-      const entries = await this.poolEntries(profileHome, pid, apiKey)
+      const found = await this.poolEntries(profileHome, pid, apiKey)
+      if (!found) poolUnknown = true
+      const entries = found ?? []
       const accounts = entries.map((e) => ({ source_id: sourceId(pid, e.credential_id), provider_id: pid, provider_label: label, account_label: e.label, credential: e }))
       // The provider's own key is a source unless a pool account already holds it.
       const ownKey = !entries.length || (apiKey !== null && !entries.some((e) => e.matches_api_key))
@@ -1215,7 +1230,7 @@ export class ProviderCatalog {
         unavailable_reason: limits.unavailable_reason ?? null, retry_after: limits.retry_after ?? null, fetched_at: limits.fetched_at ?? null, message: q.message ?? null,
       }, thresholds)
     }))
-    return { version: 1, computed_at: isoAt(at), scope_id: scopeId, profile_id: profile, active_provider: active, requested_source_id: requested, missing_source: Boolean(requested && !descriptors.length), sources }
+    return { version: 1, computed_at: isoAt(at), scope_id: scopeId, profile_id: profile, active_provider: active, requested_source_id: requested, missing_source: Boolean(requested && !descriptors.length && !poolUnknown), sources }
   }
 
   /** Python `get_provider_cost_history` (OpenRouter only; daily snapshots under `<home>/cost-snapshots`). */

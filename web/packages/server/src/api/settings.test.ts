@@ -492,6 +492,34 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     }
   })
 
+  it('a failed pool lookup never reports a pool account as removed (TAL-548)', async () => {
+    const envFile = join(s.state, '.env')
+    writeEnvFile(envFile, { GLM_API_KEY: 'sk-synthetic-zai' })
+    let failing = false
+    const fail = (): never => { throw new SidecarError('usage.pool timed out', { condition: 'timeout' }) }
+    sidecar.respond('usage.pool', (params) => (failing ? fail() : { entries: params.provider === 'zai' ? [{ credential_id: 'zai-work', label: 'Work', status: 'available', unavailable_reason: null, retry_after: null, matches_api_key: true }] : [] }))
+    sidecar.respond('usage.pool_providers', () => (failing ? fail() : { providers: ['zai'] }))
+    s.deps.catalog.invalidate()
+    try {
+      const first = await json(await s.get('/api/provider/quotas'))
+      const work = (first.sources as Json[]).find((q) => q.provider_id === 'zai' && q.account_label === 'Work')
+      expect(work).toBeDefined()
+      // A transient failure keeps the accounts the last lookup found, so a widget's account id still resolves.
+      failing = true
+      const again = await json(await s.get(`/api/provider/quotas?source=${String(work?.source_id)}`))
+      expect(again).toMatchObject({ missing_source: false, sources: [{ account_label: 'Work' }] })
+      // Once a credential change drops that answer, a pool nobody can read is never reported as a removed account.
+      s.deps.catalog.invalidate()
+      const other = await json(await s.get('/api/provider/quotas?source=qsrc_unconfirmed'))
+      expect(other).toMatchObject({ missing_source: false, sources: [] })
+    } finally {
+      sidecar.respond('usage.pool', () => ({ entries: [] }))
+      sidecar.respond('usage.pool_providers', () => ({ providers: [] }))
+      writeEnvFile(envFile, { GLM_API_KEY: null })
+      s.deps.catalog.invalidate()
+    }
+  })
+
   it('a configured key that no pool account holds keeps its own source beside the pool accounts (TAL-548)', async () => {
     const envFile = join(s.state, '.env')
     writeEnvFile(envFile, { DEEPSEEK_API_KEY: 'sk-synthetic-deepseek' })
