@@ -64,7 +64,6 @@ if ! xcodebuild build -quiet \
     -destination "platform=iOS,id=$device_id" \
     -derivedDataPath "$build_dir" \
     -xcconfig Config/Dev.xcconfig \
-    -allowProvisioningUpdates \
     COMPILER_INDEX_STORE_ENABLE=NO >"$build_log" 2>&1; then
     cat "$build_log" >&2
     exit 1
