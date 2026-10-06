@@ -5,6 +5,12 @@
       "summary": "The Files panel previews images, PDFs, audio, video, HTML pages, and CSV tables again instead of showing their raw bytes.",
       "highlight": false,
       "components": ["web"]
+    },
+    {
+      "category": "Fixed",
+      "summary": "Exporting a video, audio, or other non-text workspace file saves the original file instead of a damaged copy.",
+      "highlight": false,
+      "components": ["app"]
     }
   ]
 }
