@@ -458,7 +458,16 @@ export class SessionService {
     }
   }
 
+  /**
+   * TAL-551: a Claude Code import is a live view of a transcript Claude Code keeps writing. Web never stores a copy,
+   * which would freeze its messages and pin it to one profile.
+   */
+  private rejectClaudeCode(sid: string, verb: string): void {
+    if (isClaudeCodeSessionId(sid)) throw new HttpFailure(400, `Claude Code sessions are view-only and cannot be ${verb} from WebUI`)
+  }
+
   private rejectSubagent(sid: string, verb: string): void {
+    this.rejectClaudeCode(sid, verb)
     if (this.isSubagentViewOnly(sid)) throw new HttpFailure(400, `Subagent sessions are view-only and cannot be ${verb} from WebUI`)
   }
 
@@ -1592,6 +1601,7 @@ export class SessionService {
   // ── shares ───────────────────────────────────────────────────────────────
 
   createShare(sid: string): Record<string, unknown> {
+    this.rejectClaudeCode(sid, 'shared')
     let s = this.get404(sid)
     if (!this.visibleToActiveProfile(s.profile)) throw new HttpFailure(404, 'Session not found')
     s = this.store.ensureFull(sid, s)

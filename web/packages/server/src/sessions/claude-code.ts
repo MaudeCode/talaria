@@ -5,7 +5,7 @@
  * signature, so a sidebar refresh re-reads only transcripts that changed.
  */
 import { createHash } from 'node:crypto'
-import { closeSync, constants, fstatSync, lstatSync, openSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs'
+import { closeSync, constants, fstatSync, lstatSync, openSync, readdirSync, readSync, realpathSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Message } from './session.js'
 import { str } from '../util.js'
@@ -74,12 +74,17 @@ function parse(path: string): Parsed {
   let firstTs: number | null = null
   let lastTs: number | null = null
   let body: string
-  // Read through the handle that was checked: a transcript swapped for a symlink or grown past the cap is skipped.
+  // One bounded read without following links: a transcript swapped for a symlink, or grown past the cap since the scan,
+  // is skipped rather than read in full.
   let fd: number | null = null
   try {
     fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW)
-    if (fstatSync(fd).size > MAX_FILE_BYTES) return { messages, summaryTitle, firstTs, lastTs }
-    body = readFileSync(fd, 'utf8')
+    // One byte past the size it has now (at most the cap) shows whether it has outgrown the cap since.
+    const buf = Buffer.alloc(Math.min(fstatSync(fd).size, MAX_FILE_BYTES) + 1)
+    let n = 0
+    for (let got = -1; got !== 0 && n < buf.length;) { got = readSync(fd, buf, n, buf.length - n, n); n += got }
+    if (n > MAX_FILE_BYTES) return { messages, summaryTitle, firstTs, lastTs }
+    body = buf.toString('utf8', 0, n)
   } catch {
     return { messages, summaryTitle, firstTs, lastTs }
   } finally {
@@ -131,7 +136,7 @@ export class ClaudeCodeSessionSource {
   private cache = new Map<string, { stamp: string; parsed: Parsed }>()
   constructor(private readonly dir: () => string) {}
 
-  /** Python `_iter_claude_code_jsonl_files`: at most 200 regular `*.jsonl` files, sorted by project then file name. */
+  /** Python `_iter_claude_code_jsonl_files`: the 200 most recently modified regular `*.jsonl` files. */
   private files(): { path: string; stamp: string; mtime: number }[] {
     const out: { path: string; stamp: string; mtime: number }[] = []
     let root: string
@@ -150,7 +155,6 @@ export class ClaudeCodeSessionSource {
         names = readdirSync(projectDir).sort()
       } catch { continue }
       for (const name of names) {
-        if (out.length >= MAX_FILES) return out
         if (!name.toLowerCase().endsWith('.jsonl')) continue
         const path = join(projectDir, name)
         try {
@@ -160,7 +164,8 @@ export class ClaudeCodeSessionSource {
         } catch { continue }
       }
     }
-    return out
+    // The cap keeps the newest transcripts, so a new conversation is never crowded out by older ones.
+    return out.sort((a, b) => b.mtime - a.mtime).slice(0, MAX_FILES)
   }
 
   private parsed(file: { path: string; stamp: string }): Parsed {

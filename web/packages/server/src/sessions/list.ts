@@ -521,8 +521,10 @@ export function withSessionWireFlags<T extends Row>(row: T, activeStreamIds: Rea
   r.can_branch = !subagent && (!r.read_only || str(r.source_tag || r.raw_source).trim().toLowerCase() === 'cron')
   // Pin and archive refuse only subagent children; duplicate also needs the WebUI sidecar it copies, so a sidecar-less
   // foreign row arrives with `can_duplicate: false`. Rename, move and delete follow `read_only` (the mutation gate).
-  r.can_pin = !subagent
-  r.can_archive = !subagent
+  // A Claude Code import is a live view Web never stores (TAL-551), so it cannot be pinned or archived either.
+  const stored = !subagent && kind !== 'claude_code'
+  r.can_pin = stored
+  r.can_archive = stored
   r.can_delete = !r.read_only
   r.can_duplicate = !subagent && r.can_duplicate !== false
   r.sort_ts = sessionSortTimestamp(r)

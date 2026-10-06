@@ -1,7 +1,9 @@
-import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
+import { ClaudeCodeSessionSource } from './claude-code.js'
 
 type Json = Record<string, unknown>
 const json = async (res: Response): Promise<Json> => (await res.json()) as Json
@@ -36,7 +38,7 @@ describe('Claude Code sessions (TAL-551)', () => {
     expect(rows[1]).toMatchObject({
       session_id: expect.stringMatching(/^claude_code_[0-9a-f]{24}$/) as unknown, source_kind: 'claude_code', source_label: 'Claude Code', model: 'claude-code',
       message_count: 2, created_at: Date.parse('2026-10-01T10:00:00Z') / 1000, last_message_at: Date.parse('2026-10-01T10:01:00Z') / 1000,
-      is_cli_session: true, read_only: true, can_delete: false,
+      is_cli_session: true, read_only: true, can_delete: false, can_pin: false, can_archive: false,
     })
     await s.deps.settings.save({ show_claude_code_sessions: false })
     expect(await listed()).toEqual([])
@@ -55,5 +57,28 @@ describe('Claude Code sessions (TAL-551)', () => {
     expect(session).toMatchObject({ session_id: sid, read_only: true, source_kind: 'claude_code' })
     expect((session.messages as Json[]).map((m) => [m.role, m.content])).toEqual([['user', 'Why does login fail?'], ['assistant', 'The token expired.']])
     expect((await post(s, '/api/session/rename', { session_id: sid, title: 'x' })).status).toBe(403)
+    // Web never stores a copy: it would stop following the transcript and fall out of other profiles.
+    expect((await post(s, '/api/session/pin', { session_id: sid, pinned: true })).status).toBe(400)
+    expect((await post(s, '/api/session/archive', { session_id: sid, archived: true })).status).toBe(400)
+    expect((await post(s, '/api/share/create', { session_id: sid })).status).toBe(400)
+    expect(() => s.deps.sessionStore.get(sid)).toThrow()
+  })
+
+  it('keeps the newest transcripts when more than 200 exist', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'claude-projects-'))
+    try {
+      mkdirSync(join(dir, 'p'))
+      for (let i = 0; i < 201; i++) {
+        const path = join(dir, 'p', `${String(i).padStart(3, '0')}.jsonl`)
+        writeFileSync(path, line({ type: 'user', message: { role: 'user', content: `t${String(i)}` } }))
+        // The lexically first file is the newest.
+        const at = i === 0 ? 2_000_000_000 : 1_000_000_000 + i
+        utimesSync(path, at, at)
+      }
+      const titles = new ClaudeCodeSessionSource(() => dir).rows('/ws').map((r) => r.title)
+      expect(titles).toHaveLength(200)
+      expect(titles[0]).toBe('t0')
+      expect(titles).not.toContain('t1')
+    } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 })
