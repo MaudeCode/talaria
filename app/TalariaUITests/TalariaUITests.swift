@@ -1166,7 +1166,11 @@ final class SettingsStructureUITests: SettingsUITestCase {
         launchFixture(additionalArguments: ["--ui-test-identity-save-fails"])
         renameFixtureServer(to: "Work Box")
 
-        XCTAssertTrue(app.buttons["Retry"].awaitExistence(timeout: 5))
+        let retry = app.buttons["Retry"]
+        XCTAssertTrue(retry.awaitExistence(timeout: 5))
+        let keyboard = app.keyboards.firstMatch
+        XCTAssertTrue(keyboard.exists, "Showing the failed save ended typing")
+        XCTAssertLessThanOrEqual(retry.frame.maxY, keyboard.frame.minY, "The keyboard covers the failed-save notice")
         attachScreenshot(named: "Failed server identity save with Retry")
         app.navigationBars["Work Box"].buttons["Servers"].tap()
         XCTAssertTrue(app.navigationBars["Servers"].awaitExistence(timeout: Self.navigationTimeout))
@@ -1183,7 +1187,8 @@ final class SettingsStructureUITests: SettingsUITestCase {
         let row = serverRow(named: "ui-test.talaria.invalid")
         XCTAssertTrue(row.awaitExistence(timeout: Self.navigationTimeout))
         row.tap()
-        let field = app.textFields["Display Name"]
+        // A Settings text field is labeled by its placeholder, the server's host here.
+        let field = app.textFields["ui-test.talaria.invalid"]
         XCTAssertTrue(field.awaitExistence(timeout: Self.navigationTimeout))
         // The value is trailing-aligned, so a tap at the trailing edge puts the caret after it.
         field.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5)).tap()

@@ -77,3 +77,19 @@ struct IdentitySaveErrorNotice: View {
         }
     }
 }
+
+extension View {
+    /// Pins the failed-save notice above the keyboard on an identity editor, where
+    /// it neither hides under the keyboard nor moves the field being typed in.
+    func identitySaveErrorInset(_ authManager: AuthManager) -> some View {
+        safeAreaInset(edge: .bottom) {
+            if authManager.identitySaveErrorMessage != nil {
+                VStack(spacing: 8) {
+                    IdentitySaveErrorNotice(authManager: authManager)
+                }
+                .padding(16)
+                .background(.bar)
+            }
+        }
+    }
+}

@@ -45,8 +45,6 @@ struct ServerDetailView: View {
                         colorHex: $colorHex,
                         fallbackName: hostFallback
                     )
-
-                    IdentitySaveErrorNotice(authManager: authManager)
                 }
 
                 if !isActive {
@@ -89,6 +87,7 @@ struct ServerDetailView: View {
         .onChange(of: initials) { persistIdentity() }
         .onChange(of: colorHex) { persistIdentity() }
         .onDisappear { authManager.flushServerIdentityEdits() }
+        .identitySaveErrorInset(authManager)
         .alert(removeAlertTitle, isPresented: $isConfirmingRemove) {
             Button("Cancel", role: .cancel) {}
             Button(removeButtonTitle, role: .destructive) {
