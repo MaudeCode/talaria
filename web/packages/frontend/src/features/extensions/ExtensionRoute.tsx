@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type RefObject } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { m } from '../../paraglide/messages.js'
 import { AppShell, HubPage } from '../../shell/AppShell'
@@ -18,9 +18,8 @@ import { Link } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { keys } from '../../api/queryKeys'
 
-/** Sandboxed iframe host for one extension panel. */
-export function ExtensionPanel({ manifest }: { manifest: ExtensionManifest }) {
-  const iframe = useRef<HTMLIFrameElement>(null)
+/** Connects one sandboxed extension iframe to the host services once its document loads; closes it on unmount. */
+function useExtensionHost(manifest: ExtensionManifest, iframe: RefObject<HTMLIFrameElement | null>): { status: HostStatus; detail: string | undefined } {
   const navigate = useNavigate()
   const qc = useQueryClient()
   const [status, setStatus] = useState<HostStatus>('loading')
@@ -44,21 +43,34 @@ export function ExtensionPanel({ manifest }: { manifest: ExtensionManifest }) {
     const onLoad = () => host.start()
     el.addEventListener('load', onLoad)
     return () => { el.removeEventListener('load', onLoad); unsub(); host.close(); void qc.invalidateQueries({ queryKey: keys.extensions.manifests }) }
-  }, [manifest, navigate, qc])
+  }, [manifest, iframe, navigate, qc])
+  return { status, detail }
+}
+
+function ExtensionFrame({ manifest, iframe, className }: { manifest: ExtensionManifest; iframe: RefObject<HTMLIFrameElement | null>; className: string }) {
+  return (
+    <iframe
+      ref={iframe}
+      title={manifest.name}
+      src={appUrl(manifest.panel ?? '').href}
+      sandbox="allow-scripts allow-forms allow-popups allow-downloads allow-modals"
+      referrerPolicy="no-referrer"
+      allow=""
+      className={className}
+    />
+  )
+}
+
+/** Sandboxed iframe host for one extension panel. */
+export function ExtensionPanel({ manifest }: { manifest: ExtensionManifest }) {
+  const iframe = useRef<HTMLIFrameElement>(null)
+  const { status, detail } = useExtensionHost(manifest, iframe)
   if (!manifest.panel) return <ErrorState error={new Error(m.extensions_no_panel())} />
   return (
     <div className="extension-panel flex min-h-0 flex-1 flex-col" data-extension-id={manifest.id} data-status={status}>
       {status === 'loading' && <LoadingState label={m.extensions_connecting()} />}
       {status === 'error' && <div className="p-2"><ErrorState error={new Error(m.extensions_handshake_failed({ detail: detail ?? '' }))} /></div>}
-      <iframe
-        ref={iframe}
-        title={manifest.name}
-        src={appUrl(manifest.panel).href}
-        sandbox="allow-scripts allow-forms allow-popups allow-downloads allow-modals"
-        referrerPolicy="no-referrer"
-        allow=""
-        className="min-h-0 w-full flex-1 border-0 bg-bg"
-      />
+      <ExtensionFrame manifest={manifest} iframe={iframe} className="min-h-0 w-full flex-1 border-0 bg-bg" />
     </div>
   )
 }
@@ -77,6 +89,19 @@ export function sidecarProxyPath(raw: string): string {
 
 function decodeSegment(seg: string): string {
   try { return decodeURIComponent(seg) } catch { return seg }
+}
+
+/** An enabled extension that declares a TTS engine runs hidden for the whole session, so its engine is in Settings > Speech and reads replies with its panel closed. */
+function BackgroundExtensionHost({ manifest }: { manifest: ExtensionManifest }) {
+  const iframe = useRef<HTMLIFrameElement>(null)
+  useExtensionHost(manifest, iframe)
+  return <ExtensionFrame manifest={manifest} iframe={iframe} className="hidden" />
+}
+
+export function ExtensionTtsHosts() {
+  const manifests = useExtensionManifests()
+  // A changed manifest remounts its frame: the host only starts on the iframe's load.
+  return manifests.data?.manifests.filter((mf) => mf.enabled && mf.panel && mf.tts).map((mf) => <BackgroundExtensionHost key={JSON.stringify(mf)} manifest={mf} />)
 }
 
 export function ExtensionRoute({ extensionId }: { extensionId: string }) {

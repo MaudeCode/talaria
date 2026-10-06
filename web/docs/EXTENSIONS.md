@@ -425,9 +425,11 @@ Hermes.connect().then((hermes) => {
 ```
 
 The engine appears in Settings, Speech. When selected, the host sends
-`tts:synthesize` events to the panel and plays the returned audio buffer through
-the same path as the OpenAI and ElevenLabs engines. The engine is only available while its panel is
-open; the host falls back to the browser voice otherwise.
+`tts:synthesize` events to the panel and plays the returned audio buffer.
+An enabled extension that declares `tts` runs its panel document hidden on
+every page, so the engine stays available with the panel closed. Opening the
+panel starts a second instance; the newest registration answers until it
+closes. If no instance has registered, speech falls back to the browser voice.
 
 ## Extension authoring guidance
 
