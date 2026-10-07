@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Scheduled and webhook chat groups are now checked reliably before each release.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

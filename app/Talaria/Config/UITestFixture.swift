@@ -197,6 +197,10 @@ struct UITestFixtureEnvironment {
         // Response Complete Alerts start off and unasked, so a journey turns them on in Settings.
         UserDefaults.standard.set(false, forKey: ResponseCompletionNotifications.isEnabledKey)
         UserDefaults.standard.removeObject(forKey: ResponseCompletionNotifications.hasRequestedPermissionKey)
+        // The scheduled and webhook groups start collapsed, as on a fresh install, rather than as an earlier test left
+        // them on this simulator.
+        UserDefaults.standard.removeObject(forKey: SessionSidebarDisclosureSettings.scheduledSessionsAreExpandedKey)
+        UserDefaults.standard.removeObject(forKey: SessionSidebarDisclosureSettings.webhookSessionsAreExpandedKey)
 
         prepareSharedImportInbox()
         UITestFixtureURLProtocol.prepareChangeWhileBackgrounded()
