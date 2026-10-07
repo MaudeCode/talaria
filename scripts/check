@@ -49,6 +49,8 @@ case "$component" in
     app/ci/memory_sampler_test.sh
     app/ci/find_ui_suite_run_test.sh
     app/ci/ui_suite_failed_jobs_test.sh
+    app/ci/report_test_failures_test.sh
+    app/ci/watch_ui_suite_test.sh
     app/ci/validate_release_tag_test.sh
     actionlint
     git diff --check

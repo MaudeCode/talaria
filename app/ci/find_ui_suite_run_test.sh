@@ -142,12 +142,18 @@ merge=$(git -C "$repo" rev-parse HEAD)
 [[ "$(is_due "$merge" 3)" == due=false ]] || exit 1
 [[ "$(is_due "$web" 1)" == due=false ]] || exit 1
 # A queued, running or failed run resets the count; a cancelled or scoped one does not.
-for state in 'queued null' 'in_progress null' 'completed "failure"'; do
+for state in 'queued null' 'in_progress null'; do
   read -r status conclusion <<< "$state"
   main_runs "$(run 32 "$app" "$status" "$conclusion" workflow_dispatch "UI suite on $app")" \
             "$(run 31 "$base" completed '"success"' schedule "UI suite on $base")"
   [[ "$(is_due "$merge" 1)" == due=true && "$(is_due "$merge" 2)" == due=false ]] || exit 1
 done
+# While the newest run failed, main is red: one App-changing commit since it is due whatever the threshold, and the
+# failed commit itself is not run again (TAL-673).
+main_runs "$(run 32 "$app" completed '"failure"' workflow_dispatch "UI suite on $app")" \
+          "$(run 31 "$base" completed '"success"' schedule "UI suite on $base")"
+[[ "$(is_due "$merge" 5)" == due=true ]] || exit 1
+[[ "$(is_due "$app" 5)" == due=false ]] || exit 1
 main_runs "$(run 33 "$app" completed '"cancelled"' workflow_dispatch "UI suite on $app")" \
           "$(run 34 "$app" completed '"success"' workflow_dispatch "UI suite (scoped) on $app")" \
           "$(run 31 "$base" completed '"success"' schedule "UI suite on $base")"

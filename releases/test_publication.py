@@ -293,6 +293,7 @@ class PublicationTests(unittest.TestCase):
         cutover = workflow("production-cutover.yml")
         self.assertEqual(cutover["jobs"]["release"]["secrets"], "inherit")
         self.assertEqual(cutover["jobs"]["release"]["permissions"]["id-token"], "write")
+        self.assertEqual(cutover["jobs"]["release"]["permissions"]["statuses"], "write")
         self.assertNotIn("environment", cutover["jobs"]["release"])
         self.assertEqual(cutover["jobs"]["release"]["needs"], "authorization")
         self.assertIs(cutover["jobs"]["release"]["with"]["dry_run"], False)
@@ -443,7 +444,8 @@ class PublicationTests(unittest.TestCase):
         self.assertIn('*(["--package-suite"] if index == 0 and plan["changed"]["app"] else [])', check)
         self.assertEqual(jobs["ui-suite"]["if"],
                          "needs.prepare.outputs.app_changed == 'true' && needs.ui-suite-lookup.outputs.reused == 'false'")
-        self.assertEqual(jobs["ui-suite"]["permissions"], {"contents": "read", "actions": "read"})
+        # The suite's test shards post failing tests as commit statuses while they run (TAL-673).
+        self.assertEqual(jobs["ui-suite"]["permissions"], {"contents": "read", "actions": "read", "statuses": "write"})
         # Nightly and dispatched suites queue one at a time (TAL-413); nothing calls ui-suite.yml (TAL-417).
         suite = json.loads(subprocess.check_output([
             "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))",

@@ -1,0 +1,1 @@
+{"skip": "CI tooling only: UI suite failures are posted as they happen, and main re-runs the suite after each App merge while it is red."}

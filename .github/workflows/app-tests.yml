@@ -232,6 +232,8 @@ jobs:
       contents: read
       # Reads this run's job list to wait for the build.
       actions: read
+      # ci/report-test-failures posts each failing test as a commit status while the job runs (TAL-673).
+      statuses: write
     strategy:
       fail-fast: false
       matrix:
@@ -361,10 +363,16 @@ jobs:
         timeout-minutes: ${{ fromJSON(inputs.test_iterations) > 1 && 330 || 45 }}
         env:
           SIMULATOR_ID: ${{ steps.sim.outputs.udid }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           nohup ci/memory-sampler watch "${MEMORY_LOG}" "${XCODEBUILD_LOG}" > /dev/null 2>&1 < /dev/null &
           echo $! > "${RUNNER_TEMP}/memory-sampler.pid"
+          # A job's log is unreadable until the job ends, so each failing test also goes out as a commit status the
+          # moment it fails, for ci/watch-ui-suite and the fixer (TAL-673).
+          ci/report-test-failures "${XCODEBUILD_LOG}" "$(git rev-parse HEAD)" "UI suite failures (shard ${SHARD})" < /dev/null &
+          reporter=$!
+          trap 'kill "${reporter}" 2>/dev/null || true' EXIT
           start_seconds=${SECONDS}
           selection=()
           while IFS= read -r option; do selection+=("${option}"); done < selection.txt
@@ -414,6 +422,8 @@ jobs:
           duration_seconds=$((SECONDS - start_seconds))
           echo "### App shard ${SHARD} of ${SHARD_COUNT}" >> "${GITHUB_STEP_SUMMARY}"
           echo "- Test without building: ${duration_seconds}s" >> "${GITHUB_STEP_SUMMARY}"
+          # A passing shard replaces an earlier run's failure status on this commit with success.
+          [[ "${status}" != 0 ]] || ci/report-test-failures --passed "$(git rev-parse HEAD)" "UI suite failures (shard ${SHARD})"
           exit "${status}"
 
       - name: Reject skipped UI tests

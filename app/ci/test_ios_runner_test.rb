@@ -28,6 +28,16 @@ class TestIOSRunnerTest < Minitest::Test
     # cancelled with neither (TAL-670); XCTest's per-test limit names a hung test inside it. The steps after it have
     # short limits of their own, and the failure's result bundles upload ahead of the reports.
     assert_includes(test["run"], "-test-timeouts-enabled YES")
+    # Each failing test goes out as a commit status while the job runs, since its log is unreadable until it ends
+    # (TAL-673); every caller grants the permission.
+    assert_includes(test["run"], 'ci/report-test-failures "${XCODEBUILD_LOG}" "$(git rev-parse HEAD)" "UI suite failures (shard ${SHARD})"')
+    assert_includes(test["run"], %q(trap 'kill "${reporter}" 2>/dev/null || true' EXIT))
+    assert_includes(test["run"], '[[ "${status}" != 0 ]] || ci/report-test-failures --passed "$(git rev-parse HEAD)" "UI suite failures (shard ${SHARD})"')
+    assert_equal("${{ github.token }}", test["env"]["GH_TOKEN"])
+    assert_equal("write", shard["permissions"]["statuses"])
+    { "ci.yml" => "app", "ui-suite.yml" => "suite", "release-set.yml" => "ui-suite" }.each do |file, job|
+      assert_equal("write", workflow_jobs(file).fetch(job)["permissions"]["statuses"], "#{file} #{job}")
+    end
     assert_equal("${{ fromJSON(inputs.test_iterations) > 1 && 330 || 45 }}", test["timeout-minutes"])
     assert_equal("${{ fromJSON(inputs.test_iterations) > 1 && 360 || 75 }}", shard["timeout-minutes"])
     after = shard["steps"][(shard["steps"].index(test) + 1)..].take_while { |step| step["name"] }
