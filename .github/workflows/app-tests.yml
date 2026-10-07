@@ -422,6 +422,8 @@ jobs:
           duration_seconds=$((SECONDS - start_seconds))
           echo "### App shard ${SHARD} of ${SHARD_COUNT}" >> "${GITHUB_STEP_SUMMARY}"
           echo "- Test without building: ${duration_seconds}s" >> "${GITHUB_STEP_SUMMARY}"
+          # A passing shard replaces an earlier run's failure status on this commit with success.
+          [[ "${status}" != 0 ]] || ci/report-test-failures --passed "$(git rev-parse HEAD)" "UI suite failures (shard ${SHARD})"
           exit "${status}"
 
       - name: Reject skipped UI tests

@@ -32,6 +32,7 @@ class TestIOSRunnerTest < Minitest::Test
     # (TAL-673); every caller grants the permission.
     assert_includes(test["run"], 'ci/report-test-failures "${XCODEBUILD_LOG}" "$(git rev-parse HEAD)" "UI suite failures (shard ${SHARD})"')
     assert_includes(test["run"], %q(trap 'kill "${reporter}" 2>/dev/null || true' EXIT))
+    assert_includes(test["run"], '[[ "${status}" != 0 ]] || ci/report-test-failures --passed "$(git rev-parse HEAD)" "UI suite failures (shard ${SHARD})"')
     assert_equal("${{ github.token }}", test["env"]["GH_TOKEN"])
     assert_equal("write", shard["permissions"]["statuses"])
     { "ci.yml" => "app", "ui-suite.yml" => "suite", "release-set.yml" => "ui-suite" }.each do |file, job|

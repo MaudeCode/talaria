@@ -25,7 +25,7 @@ export PATH="$work/bin:$PATH" WATCH_TEST_DIR="$work" GITHUB_REPOSITORY=MaudeCode
 
 # state RUN-STATUS RUN-CONCLUSION JOBS-JSON STATUSES-JSON ARTIFACTS-JSON
 state() {
-  printf '{"head_sha":"abc","run_started_at":"2026-10-07T21:49:00Z","status":"%s","conclusion":%s}' "$1" "$2" > "$work/run.json"
+  printf '{"head_sha":"abc","status":"%s","conclusion":%s}' "$1" "$2" > "$work/run.json"
   printf '{"jobs":%s}' "$3" > "$work/jobs.json"
   printf '%s' "$4" > "$work/statuses.json"
   printf '{"artifacts":%s}' "$5" > "$work/artifacts.json"
@@ -38,10 +38,15 @@ expect() { # expect EXIT OUTPUT CAP
 running='[{"name":"UI suite / UI suite tests (shard 0)","status":"in_progress","conclusion":null,"steps":[{"name":"Test without building","status":"in_progress","conclusion":null}]}]'
 failed_step='[{"name":"UI suite / UI suite tests (shard 2)","status":"in_progress","conclusion":null,"steps":[{"name":"Test without building","status":"completed","conclusion":"failure"}]}]'
 
-# A shard's failure status from this run returns at once, while the job still runs; an older run's is ignored.
-state in_progress null "$running" '[{"state":"failure","context":"UI suite failures (shard 0)","description":"1 failed, latest ChatUITests.testSend","created_at":"2026-10-07T22:00:00Z"}]' '[]'
+# A shard's failure status from this run returns at once, while the job still runs. Another run's on the same commit,
+# such as a release suite's, is ignored, and a newer success under the context replaces its failure.
+this='"target_url":"https://github.com/MaudeCode/talaria/actions/runs/42"'
+other='"target_url":"https://github.com/MaudeCode/talaria/actions/runs/7"'
+state in_progress null "$running" "[{\"state\":\"failure\",\"context\":\"UI suite failures (shard 0)\",\"description\":\"1 failed, latest ChatUITests.testSend\",$this}]" '[]'
 expect 1 "FAILED TEST UI suite failures (shard 0): 1 failed, latest ChatUITests.testSend"
-state in_progress null "$running" '[{"state":"failure","context":"UI suite failures (shard 0)","description":"old","created_at":"2026-10-07T20:00:00Z"}]' '[]'
+state in_progress null "$running" "[{\"state\":\"failure\",\"context\":\"UI suite failures (shard 0)\",\"description\":\"other run\",$other}]" '[]'
+expect 3 "CAP" 1
+state in_progress null "$running" "[{\"state\":\"success\",\"context\":\"UI suite failures (shard 0)\",\"description\":\"No failing tests\",$this},{\"state\":\"failure\",\"context\":\"UI suite failures (shard 0)\",\"description\":\"older\",$this}]" '[]'
 expect 3 "CAP" 1
 
 # A failed test step returns once its shard's result artifact exists.

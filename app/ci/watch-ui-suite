@@ -6,7 +6,8 @@
 #   exit 1  "FAILED JOB <job>"                        a test job that failed or was cancelled elsewhere
 #   exit 0  "PASSED"                                  the run succeeded
 #   exit 3  "CAP"                                     CAP_SECONDS (default 4500) passed first
-# A job's log is unreadable until the job ends, so the statuses and the step results are the earliest signals.
+# A job's log is unreadable until the job ends, so the statuses and the step results are the earliest signals. Only this
+# run's statuses count: another run on the same commit, such as a release's suite, posts the same contexts.
 # Read-only; needs GH_TOKEN with actions: read and statuses: read, and GITHUB_REPOSITORY.
 set -uo pipefail
 
@@ -14,13 +15,13 @@ run=${1:?usage: ci/watch-ui-suite RUN_ID [CAP_SECONDS]}
 cap=${2:-4500}
 poll=${WATCH_UI_SUITE_POLL_SECONDS:-30}
 start=${SECONDS}
-read -r sha started < <(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run}" --jq '"\(.head_sha) \(.run_started_at)"') ||
+sha=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run}" --jq '.head_sha') && [[ -n "${sha}" ]] ||
   { echo "Cannot read run ${run}" >&2; exit 2; }
 
 while (( SECONDS - start < cap )); do
   failed=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${sha}/statuses?per_page=100" --jq "[.[] |
-      select(.state == \"failure\" and (.context | startswith(\"UI suite failures\")) and .created_at >= \"${started}\")]
-    | first // empty | \"\(.context): \(.description)\"" 2>/dev/null)
+      select(.context | startswith(\"UI suite failures\")) | select(.target_url | endswith(\"/actions/runs/${run}\"))]
+    | first // empty | select(.state == \"failure\") | \"\(.context): \(.description)\"" 2>/dev/null)
   [[ -z "${failed}" ]] || { echo "FAILED TEST ${failed}"; exit 1; }
 
   jobs=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run}/jobs?per_page=100" 2>/dev/null) || { sleep "${poll}"; continue; }

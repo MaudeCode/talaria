@@ -44,6 +44,13 @@ first=$(sed -n 1p "$work/posts")
 [[ "$first" == *"description=1 failed, latest WorkspaceLoadingUITests.testChangesSheetAndFileBrowserLoadThenNavigate"* ]] || { echo "Bad post: $first" >&2; exit 1; }
 [[ "$(sed -n 2p "$work/posts")" == *"description=2 failed, latest QueuedMessagesChipUITests.testSheet"* ]] || { echo "Bad second post" >&2; exit 1; }
 
+# Once a shard's tests passed, --passed replaces any earlier failure under the same context with success.
+: > "$work/posts"
+"$script" --passed "$sha" "UI suite failures (shard 2)"
+post=$(cat "$work/posts")
+[[ "$post" == *"statuses/$sha"* && "$post" == *"state=success"* && "$post" == *"context=UI suite failures (shard 2)"* ]] ||
+  { echo "Bad passed post: $post" >&2; exit 1; }
+
 # Stopping it leaves nothing following the log.
 if pgrep -f "tail -n \+1 -F $work/log" > /dev/null; then echo "report-test-failures left its log follower running" >&2; exit 1; fi
 
