@@ -137,6 +137,17 @@ final class ProviderQuotaWidgetTests: XCTestCase {
         )
     }
 
+    func testSidebarQuotaPruneKeepsOnlyVisiblePinsInFirstSlot() {
+        let prune = { (first: String, second: String, visible: Set<String>) -> [String] in
+            let kept = ProviderQuotaSidebarSettings.pruned(first: first, second: second, keeping: visible)
+            return [kept.first, kept.second]
+        }
+        XCTAssertEqual(prune("qsrc_a", "qsrc_b", ["qsrc_a", "qsrc_b"]), ["qsrc_a", "qsrc_b"])
+        XCTAssertEqual(prune("qsrc_stale", "qsrc_b", ["qsrc_b"]), ["qsrc_b", ""])
+        XCTAssertEqual(prune("qsrc_hidden", "qsrc_stale", ["qsrc_c"]), ["", ""])
+        XCTAssertEqual(prune(" qsrc_a ", "qsrc_a", ["qsrc_a"]), ["qsrc_a", ""])
+    }
+
     func testQuotaRefreshIntervalDefaultsToFiveMinutesAndRejectsUnknownValues() {
         XCTAssertEqual(ProviderQuotaRefreshInterval.defaultValue, .fiveMinutes)
         XCTAssertEqual(ProviderQuotaRefreshInterval.defaultValue.rawValue, 300)

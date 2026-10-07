@@ -213,6 +213,17 @@ public enum ProviderQuotaSidebarSettings {
             return id
         }
     }
+
+    /// The pins among `visible` source IDs, compacted into the first slot. A pin on a hidden
+    /// or vanished source would hold a slot Insights cannot show or release.
+    public static func pruned(
+        first: String,
+        second: String,
+        keeping visible: Set<String>
+    ) -> (first: String, second: String) {
+        let kept = sourceIDs(first: first, second: second).filter(visible.contains)
+        return (kept.first ?? "", kept.dropFirst().first ?? "")
+    }
 }
 
 public enum ProviderQuotaVisibilitySettings {
