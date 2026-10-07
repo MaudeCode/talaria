@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import plistlib
 import subprocess
+import sys
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
@@ -434,10 +435,14 @@ class PublicationTests(unittest.TestCase):
         for trigger in ("workflow_call", "workflow_dispatch"):
             self.assertEqual({key: document["on"][trigger]["inputs"]["ui_shards"][key] for key in ("type", "default")},
                              {"type": "number", "default": 3})
-        # app-tests.yml turns a shard count from 1 to 6 into that many matrix entries.
-        matrix = app_tests["jobs"]["app-test"]["strategy"]["matrix"]["shard"]
-        table = json.loads(re.search(r"fromJSON\('(\[null,.*?\])'\)\[inputs\.shards\]", matrix)[1])
-        self.assertEqual(table, [None, *([*range(count)] for count in range(1, 7))])
+        # app-tests.yml takes its test jobs from app/ci/test_shards.py: a shard count from 1 to 6 becomes that many
+        # iPhone shards, followed by one job per device that some classes need (TAL-661).
+        self.assertEqual(app_tests["jobs"]["app-test"]["strategy"]["matrix"]["include"],
+                         "${{ fromJSON(needs.build-started.outputs.matrix) }}")
+        for count in range(1, 7):
+            jobs_json = json.loads(subprocess.check_output([
+                sys.executable, str(root / "app/ci/test_shards.py"), "--shards", str(count), "--matrix"], text=True))
+            self.assertEqual([job.get("shard") for job in jobs_json if job["device"] == "iPhone 17"], [*range(count)])
         self.assertEqual(app_tests["jobs"]["package-test"]["if"], "inputs.package_tests")
         check = (root / "scripts/check-release-contracts.py").read_text()
         self.assertIn('*(["--package-suite"] if index == 0 and plan["changed"]["app"] else [])', check)
