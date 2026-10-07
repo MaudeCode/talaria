@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Usage: ci/report-test-failures LOG SHA CONTEXT
+# Follows an xcodebuild log and, for each failing test, posts a failure commit status on SHA under CONTEXT naming it, so
+# a watcher (ci/watch-ui-suite) sees the failure while the job still runs: GitHub serves a job's log only once the job
+# ends, which kept failures from their fixer for 10 to 25 minutes a run (TAL-673). Runs until it gets SIGTERM. Needs
+# GH_TOKEN with statuses: write, GITHUB_REPOSITORY, GITHUB_SERVER_URL and GITHUB_RUN_ID. A failed post is skipped: the
+# job's own result still reports the failure.
+set -uo pipefail
+
+log=${1:?usage: ci/report-test-failures LOG SHA CONTEXT}
+sha=${2:?usage: ci/report-test-failures LOG SHA CONTEXT}
+context=${3:?usage: ci/report-test-failures LOG SHA CONTEXT}
+url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+exec 3< <(exec tail -n +1 -F "${log}" 2>/dev/null)
+follower=$!
+trap 'kill "${follower}" 2>/dev/null; exit 0' TERM INT
+
+pattern="Test Case '-\[([A-Za-z0-9_.]+) ([A-Za-z0-9_]+)\]' failed"
+failures=0
+while IFS= read -r line <&3; do
+  [[ "${line}" =~ ${pattern} ]] || continue
+  failures=$((failures + 1))
+  description="${failures} failed, latest ${BASH_REMATCH[1]##*.}.${BASH_REMATCH[2]}"
+  gh api -X POST "repos/${GITHUB_REPOSITORY}/statuses/${sha}" -f state=failure -f context="${context}" \
+    -f description="${description:0:140}" -f target_url="${url}" > /dev/null 2>&1 || true
+done

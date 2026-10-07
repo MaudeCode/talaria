@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# Usage: ci/watch-ui-suite RUN_ID [CAP_SECONDS]
+# Watches a ui-suite.yml run and returns at the first thing a fixer can act on, instead of at the run's end (TAL-673):
+#   exit 1  "FAILED TEST <context>: <description>"  a shard's ci/report-test-failures status, posted as the test fails
+#   exit 1  "FAILED STEP <job> artifact=<name>"       a failed "Test without building" step, once its results uploaded
+#   exit 1  "FAILED JOB <job>"                        a test job that failed or was cancelled elsewhere
+#   exit 0  "PASSED"                                  the run succeeded
+#   exit 3  "CAP"                                     CAP_SECONDS (default 4500) passed first
+# A job's log is unreadable until the job ends, so the statuses and the step results are the earliest signals.
+# Read-only; needs GH_TOKEN with actions: read and statuses: read, and GITHUB_REPOSITORY.
+set -uo pipefail
+
+run=${1:?usage: ci/watch-ui-suite RUN_ID [CAP_SECONDS]}
+cap=${2:-4500}
+poll=${WATCH_UI_SUITE_POLL_SECONDS:-30}
+start=${SECONDS}
+read -r sha started < <(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run}" --jq '"\(.head_sha) \(.run_started_at)"') ||
+  { echo "Cannot read run ${run}" >&2; exit 2; }
+
+while (( SECONDS - start < cap )); do
+  failed=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${sha}/statuses?per_page=100" --jq "[.[] |
+      select(.state == \"failure\" and (.context | startswith(\"UI suite failures\")) and .created_at >= \"${started}\")]
+    | first // empty | \"\(.context): \(.description)\"" 2>/dev/null)
+  [[ -z "${failed}" ]] || { echo "FAILED TEST ${failed}"; exit 1; }
+
+  jobs=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run}/jobs?per_page=100" 2>/dev/null) || { sleep "${poll}"; continue; }
+  step=$(jq -r '.jobs[] | select(.name | test("UI suite tests"))
+      | select(any(.steps[]?; .name == "Test without building" and .conclusion == "failure")) | .name' <<< "${jobs}" | head -n 1)
+  if [[ -n "${step}" ]]; then
+    shard=$(sed -nE 's/.*\(shard ([0-9]+)\).*/\1/p' <<< "${step}")
+    artifact="ui-suite-build-test-results-shard-${shard}"
+    if gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run}/artifacts?name=${artifact}" --jq '.artifacts[0].id // empty' 2>/dev/null |
+        grep -q .; then
+      echo "FAILED STEP ${step} artifact=${artifact}"; exit 1
+    fi
+  fi
+  job=$(jq -r '.jobs[] | select(.name | test("UI suite tests")) | select(.conclusion == "failure" or .conclusion == "cancelled")
+      | .name' <<< "${jobs}" | head -n 1)
+  [[ -z "${job}" ]] || { echo "FAILED JOB ${job}"; exit 1; }
+
+  state=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run}" --jq '"\(.status) \(.conclusion // "")"' 2>/dev/null)
+  [[ "${state}" != "completed success" ]] || { echo "PASSED"; exit 0; }
+  [[ "${state}" != completed* ]] || { echo "FAILED RUN ${state#completed }"; exit 1; }
+  sleep "${poll}"
+done
+echo "CAP"
+exit 3

@@ -3,7 +3,8 @@
 # Print due=true when THRESHOLD or more first-parent commits up to HEAD select the App suite
 # (scripts/changed-components.py) since the commit of the newest unscoped ui-suite.yml run on main that was not
 # cancelled, queued and running ones included (TAL-655); due=false otherwise. With no such run, or one whose commit is
-# not in HEAD's history, it is due. CI's main pushes call it to run the suite between nightlies. Needs the full
+# not in HEAD's history, it is due. While that run failed, main is red, so one App-changing commit since it is enough:
+# a merged fix is checked at once instead of after four more merges or the nightly (TAL-673). CI's main pushes call it to run the suite between nightlies. Needs the full
 # history, GH_TOKEN with actions: read and GITHUB_REPOSITORY; a lookup failure exits non-zero.
 set -euo pipefail
 
@@ -11,10 +12,13 @@ head=${1:?usage: ci/ui-suite-due HEAD THRESHOLD}
 threshold=${2:?usage: ci/ui-suite-due HEAD THRESHOLD}
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 # Newest first. Only ui-suite.yml's own runs exist here; a release's suite call leaves none.
-last=$("$(dirname "$0")/gh-api-poll" -H "Cache-Control: no-cache" \
+newest=$("$(dirname "$0")/gh-api-poll" -H "Cache-Control: no-cache" \
   "repos/${GITHUB_REPOSITORY}/actions/workflows/ui-suite.yml/runs?branch=main&per_page=50" \
   --jq '[.workflow_runs[] | select((.event == "schedule" or .event == "workflow_dispatch")
-      and .conclusion != "cancelled" and .display_title == "UI suite on " + .head_sha)][0].head_sha // empty')
+      and .conclusion != "cancelled" and .display_title == "UI suite on " + .head_sha)][0]
+    | if . == null then empty else "\(.head_sha) \(.conclusion // "pending")" end')
+last=${newest%% *}
+[[ "${newest#* }" != failure ]] || threshold=1
 
 count=0
 if [[ -n "${last}" ]] && git -C "${root}" merge-base --is-ancestor "${last}" "${head}" 2>/dev/null; then

@@ -53,6 +53,8 @@ jobs:
     permissions:
       contents: read
       actions: read
+      # app-tests.yml's test shards post failing tests as commit statuses (TAL-673).
+      statuses: write
     uses: ./.github/workflows/app-tests.yml
     with:
       mode: full
