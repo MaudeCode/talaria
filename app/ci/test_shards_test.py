@@ -48,7 +48,9 @@ class ShardTests(unittest.TestCase):
             "final class ChatUITests: TalariaUITestCase {}\n"
             "final class ShareUITests: TalariaUITestCase {}\n"
             "final class BrandNewUITests: TalariaUITestCase {}\n"
-            "final class SidebarPerformanceUITests: TalariaUITestCase {}\n")
+            "final class SidebarPerformanceUITests: TalariaUITestCase {}\n"
+            "final class RegularWidthNavigationUITests: TalariaUITestCase {}\n"
+            "final class SizeClassRoundTripUITests: TalariaUITestCase {}\n")
 
     def plan(self, count, targets=shards.TARGETS):
         return shards.plan(count, targets, WEIGHTS, self.app)
@@ -58,8 +60,8 @@ class ShardTests(unittest.TestCase):
         self.assertEqual(shards.discover(self.app, measured=WEIGHTS["classes"]), [
             "TalariaTests/HeavyTests", "TalariaTests/LightTests", "TalariaTests/NewUnmeasuredTests",
             "TalariaTests/SupportedTests", "TalariaTests/UntrustedInputFuzzSoakTests", "TalariaTests/UntrustedInputFuzzTests",
-            "TalariaUITests/BrandNewUITests", "TalariaUITests/ChatUITests", "TalariaUITests/ShareUITests",
-            "TalariaUITests/SidebarPerformanceUITests"])
+            "TalariaUITests/BrandNewUITests", "TalariaUITests/ChatUITests", "TalariaUITests/RegularWidthNavigationUITests",
+            "TalariaUITests/ShareUITests", "TalariaUITests/SidebarPerformanceUITests", "TalariaUITests/SizeClassRoundTripUITests"])
 
     def test_every_class_lands_in_exactly_one_shard(self):
         expected = {"TalariaTests/HeavyTests", "TalariaTests/LightTests", "TalariaTests/NewUnmeasuredTests",
@@ -107,6 +109,53 @@ class ShardTests(unittest.TestCase):
             self.assertIn(f"-skip-testing:{item}", last)
         first = shards.selection(0, buckets, shards.TARGETS)
         self.assertFalse(any(option in ("-only-testing:TalariaTests", "-only-testing:TalariaUITests") for option in first))
+
+    def test_device_classes_run_only_on_their_device(self):
+        # The iPhone 17 shards skipped these, failing the no-skip gate on main (TAL-661).
+        owned = {"TalariaUITests/RegularWidthNavigationUITests": "iPad Pro 11-inch (M5)",
+                 "TalariaUITests/SizeClassRoundTripUITests": "iPhone 17 Pro Max"}
+        for count in range(1, 5):
+            buckets, _ = self.plan(count)
+            for index in range(count):
+                options = shards.selection(index, buckets, shards.TARGETS)
+                for item in owned:
+                    with self.subTest(count=count, shard=index, item=item):
+                        self.assertNotIn(f"-only-testing:{item}", options)
+                        if index == count - 1:
+                            self.assertIn(f"-skip-testing:{item}", options)
+        for item, device in owned.items():
+            self.assertEqual(shards.device_selection(device), [f"-only-testing:{item}"])
+
+    def test_matrix_lists_the_shards_then_one_job_per_device(self):
+        self.assertEqual(shards.matrix(2, ""), [
+            {"shard": 0, "device": "iPhone 17", "name": "shard 0", "artifact": "shard-0"},
+            {"shard": 1, "device": "iPhone 17", "name": "shard 1", "artifact": "shard-1"},
+            {"device": "iPad Pro 11-inch (M5)", "name": "iPad Pro 11-inch (M5)", "artifact": "ipad-pro-11-inch-m5"},
+            {"device": "iPhone 17 Pro Max", "name": "iPhone 17 Pro Max", "artifact": "iphone-17-pro-max"}])
+        # Another shard count runs one shard, and that shard selects every class.
+        self.assertEqual([job.get("shard") for job in shards.matrix(9, "")], [0, None, None])
+        command = [sys.executable, str(SCRIPT), "--shards", "9", "--shard", "0"]
+        self.assertIn("-only-testing:TalariaUITests", subprocess.check_output(command, text=True).split())
+
+    def test_scoped_selection_goes_to_the_owning_device(self):
+        ids = "TalariaUITests/ChatUITests/testSend TalariaUITests/RegularWidthNavigationUITests/testKanbanAndInsightsFillTheWidth"
+        self.assertEqual([job["name"] for job in shards.matrix(4, ids)], ["shard 0", "iPad Pro 11-inch (M5)"])
+        self.assertEqual([job["name"] for job in shards.matrix(4, "TalariaUITests/SizeClassRoundTripUITests")],
+                         ["iPhone 17 Pro Max"])
+        self.assertEqual(shards.scoped_selection(ids, None),
+                         ["-only-testing:TalariaUITests/ChatUITests/testSend"])
+        self.assertEqual(shards.scoped_selection(ids, "iPad Pro 11-inch (M5)"),
+                         ["-only-testing:TalariaUITests/RegularWidthNavigationUITests/testKanbanAndInsightsFillTheWidth"])
+        # A whole target runs on the iPhone without the device classes, and they run on their devices.
+        self.assertEqual(shards.scoped_selection("TalariaUITests", None), [
+            "-only-testing:TalariaUITests", "-skip-testing:TalariaUITests/RegularWidthNavigationUITests",
+            "-skip-testing:TalariaUITests/SizeClassRoundTripUITests"])
+        self.assertEqual(shards.scoped_selection("TalariaUITests", "iPhone 17 Pro Max"),
+                         ["-only-testing:TalariaUITests/SizeClassRoundTripUITests"])
+        self.assertEqual(shards.scoped_selection("TalariaUITests TalariaUITests/SizeClassRoundTripUITests", "iPhone 17 Pro Max"),
+                         ["-only-testing:TalariaUITests/SizeClassRoundTripUITests"])
+        self.assertEqual([job["name"] for job in shards.matrix(4, "TalariaUITests")],
+                         ["shard 0", "iPad Pro 11-inch (M5)", "iPhone 17 Pro Max"])
 
     def test_committed_weights_are_valid(self):
         weights = json.loads(shards.WEIGHTS.read_text())

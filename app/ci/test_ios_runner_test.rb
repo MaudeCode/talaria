@@ -36,12 +36,13 @@ class TestIOSRunnerTest < Minitest::Test
   def test_pr_ci_uses_a_unique_simulator_destination
     workflow = workflow_text("app-tests.yml")
 
-    # CI boots the image's iPhone 17 with the pinned simulator action and builds for it by name; the local
-    # pool, leases and XCTest admission only run in App tooling's own tests.
+    # CI boots the image's simulator of each job's model (iPhone 17 for the shards, TAL-661) with the pinned simulator
+    # action and builds for iPhone 17 by name; the local pool, leases and XCTest admission only run in App tooling's
+    # own tests.
     jobs = workflow_jobs("app-tests.yml")
     boot = jobs.fetch("app-test")["steps"].find { |step| step["name"] == "Boot the simulator" }
     assert_match(%r{\Afutureware-tech/simulator-action@[0-9a-f]{40}\z}, boot["uses"])
-    assert_equal(["iPhone 17", "iOS", "~${{ env.XCODE_VERSION }}", false, true, 600],
+    assert_equal(["${{ matrix.device }}", "iOS", "~${{ env.XCODE_VERSION }}", false, true, 600],
                  boot["with"].values_at("model", "os", "os_version", "erase_before_boot", "wait_for_boot", "boot_timeout_seconds"))
     assert_includes(workflow, "SIMULATOR_ID: ${{ steps.sim.outputs.udid }}")
     assert_includes(workflow, "BUILD_DESTINATION: platform=iOS Simulator,name=iPhone 17,OS=${{ env.XCODE_VERSION }}")
@@ -91,7 +92,8 @@ class TestIOSRunnerTest < Minitest::Test
     assert_equal("build-started", shard["needs"])
     started = jobs.fetch("build-started")
     assert_equal(["inputs.mode == 'full'", "ubuntu-latest"], started.values_at("if", "runs-on"))
-    assert_equal(['ci/wait-for-job "${BUILD_JOB}" 20700 "Set up job"'], started["steps"].filter_map { |step| step["run"] })
+    assert_equal(["Plan the test jobs", "Wait until the build holds a macOS runner"], started["steps"].filter_map { |step| step["name"] })
+    assert_equal('ci/wait-for-job "${BUILD_JOB}" 20700 "Set up job"', started["steps"].last["run"])
     # The boot finishes before the build wait and download, so it competes with neither (TAL-380). The photo the
     # Photos picker test picks is seeded, and the notification service readied (TAL-651), while the build still runs
     # (TAL-633).
@@ -194,9 +196,11 @@ class TestIOSRunnerTest < Minitest::Test
     assert_includes(workflow, 'if (( TEST_ITERATIONS > 1 )); then selection+=(-test-iterations "${TEST_ITERATIONS}" -run-tests-until-failure); fi')
     jobs = workflow_jobs("app-tests.yml")
     shard = jobs.fetch("app-test")
-    # inputs.shards shards (default four; a release passes its own count, TAL-414), or one for a scoped dispatch.
-    assert_equal("${{ inputs.only_testing == '' && fromJSON('[null,[0],[0,1],[0,1,2],[0,1,2,3],[0,1,2,3,4],[0,1,2,3,4,5]]')[inputs.shards] || fromJSON('[0]') }}",
-                 shard["strategy"]["matrix"]["shard"])
+    # inputs.shards shards (default four; a release passes its own count, TAL-414), or one for a scoped dispatch, plus
+    # a job per device: the shard script plans them all (TAL-661).
+    assert_equal("${{ fromJSON(needs.build-started.outputs.matrix) }}", shard["strategy"]["matrix"]["include"])
+    assert_equal("${{ matrix.device }}", shard["steps"].find { |step| step["name"] == "Boot the simulator" }["with"]["model"])
+    assert_includes(workflow, 'python3 ci/test_shards.py --shards "${SHARDS}" --only-testing "${ONLY_TESTING}" --matrix')
     assert_equal({"type" => "number", "default" => 4}, app_tests[true]["workflow_call"]["inputs"]["shards"])
     # A pull request builds without a test shard; a contract-only change has no App build either, and the package
     # job runs its contract classes in every mode.
@@ -225,7 +229,7 @@ class TestIOSRunnerTest < Minitest::Test
     assert_equal("string", suite[true]["workflow_dispatch"]["inputs"]["test_iterations"]["type"])
     # A release calls app-tests.yml directly: a called ui-suite.yml's concurrency left its jobs pending (TAL-417).
     assert_equal(%w[schedule workflow_dispatch], suite[true].keys)
-    assert_includes(workflow, 'python3 ci/test_shards.py --shards "${SHARD_COUNT}" --shard "${SHARD}" > selection.txt')
+    assert_includes(workflow, 'python3 ci/test_shards.py --shards "${SHARDS}" --only-testing "${ONLY_TESTING}" "${job[@]}" > selection.txt')
     # CI skips the measurement-only UI classes and the scheduled UI Performance
     # workflow runs them (TAL-75, TAL-287); the shard script owns the skip list.
     %w[

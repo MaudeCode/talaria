@@ -1,0 +1,1 @@
+{"skip": "CI tooling only: the UI suite runs its iPad and size-class UI tests on an iPad and an iPhone 17 Pro Max instead of skipping them on iPhone 17."}

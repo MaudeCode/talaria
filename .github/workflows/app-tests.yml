@@ -209,10 +209,21 @@ jobs:
       contents: read
       # Reads this run's job list to see the build start.
       actions: read
+    # The test jobs: iPhone 17 shards plus one job per device for classes that need another destination (TAL-661).
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ inputs.ref || github.sha }}
           sparse-checkout: app/ci
+
+      - name: Plan the test jobs
+        id: matrix
+        env:
+          SHARDS: ${{ inputs.shards }}
+          ONLY_TESTING: ${{ inputs.only_testing }}
+        run: echo "matrix=$(python3 ci/test_shards.py --shards "${SHARDS}" --only-testing "${ONLY_TESTING}" --matrix)" >> "${GITHUB_OUTPUT}"
 
       - name: Wait until the build holds a macOS runner
         env:
@@ -225,7 +236,7 @@ jobs:
     # Each shard boots its simulator to completion while the build runs on another runner and a background poll
     # watches for the build's upload, then downloads the build. Only the full suite runs them: the hosted unit
     # tests, the launch smoke and the UI tests (TAL-399); pull requests stop at the build (TAL-405).
-    name: UI suite tests (shard ${{ matrix.shard }})
+    name: UI suite tests (${{ matrix.name }})
     needs: build-started
     if: inputs.mode == 'full'
     runs-on: xcode-27
@@ -238,11 +249,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # inputs.shards UI suite shards (1 to 6; another count runs one); one for a scoped UI suite dispatch (TAL-401).
-        shard: ${{ inputs.only_testing == '' && fromJSON('[null,[0],[0,1],[0,1,2],[0,1,2,3],[0,1,2,3,4],[0,1,2,3,4,5]]')[inputs.shards] || fromJSON('[0]') }}
+        # inputs.shards UI suite shards (1 to 6; another count runs one), one for a scoped UI suite dispatch (TAL-401),
+        # and a job per device the selection needs (ci/test_shards.py --matrix).
+        include: ${{ fromJSON(needs.build-started.outputs.matrix) }}
     env:
       SHARD: ${{ matrix.shard }}
-      SHARD_COUNT: ${{ strategy.job-total }}
+      DEVICE: ${{ matrix.device }}
+      JOB_NAME: ${{ matrix.name }}
+      SHARDS: ${{ inputs.shards }}
       ONLY_TESTING: ${{ inputs.only_testing }}
       TEST_ITERATIONS: ${{ inputs.test_iterations }}
       RESULT_BUNDLE_PATH: TestResults.xcresult
@@ -270,13 +284,13 @@ jobs:
         with:
           xcode-version: ${{ env.XCODE_VERSION }}
 
-      # The image's own iPhone 17 on the runtime matching the SDK, booted to completion before the wait and the
-      # download so nothing competes with its first boot; App build runs meanwhile on another runner.
+      # The image's own simulator of this job's model on the runtime matching the SDK, booted to completion before the
+      # wait and the download so nothing competes with its first boot; App build runs meanwhile on another runner.
       - name: Boot the simulator
         id: sim
         uses: futureware-tech/simulator-action@e89aa8f93d3aec35083ff49d2854d07f7186f7f5 # v5
         with:
-          model: iPhone 17
+          model: ${{ matrix.device }}
           os: iOS
           os_version: ~${{ env.XCODE_VERSION }}
           erase_before_boot: false
@@ -344,12 +358,9 @@ jobs:
           set -euo pipefail
           mkdir -p Build
           tar -C Build -xf "${RUNNER_TEMP}/app-build.tar"
-          if [[ -n "${ONLY_TESTING}" ]]; then
-            for test_identifier in ${ONLY_TESTING}; do echo "-only-testing:${test_identifier}"; done > selection.txt
-          else
-            python3 ci/test_shards.py --shards "${SHARD_COUNT}" --shard "${SHARD}" > selection.txt
-          fi
-          echo "Shard ${SHARD} of ${SHARD_COUNT}: $(grep -c -- '-only-testing:' selection.txt) selected, $(grep -c -- '-skip-testing:' selection.txt) skipped entries"
+          if [[ -n "${SHARD}" ]]; then job=(--shard "${SHARD}"); else job=(--device "${DEVICE}"); fi
+          python3 ci/test_shards.py --shards "${SHARDS}" --only-testing "${ONLY_TESTING}" "${job[@]}" > selection.txt
+          echo "${JOB_NAME} on ${DEVICE}: $(grep -c -- '-only-testing:' selection.txt) selected, $(grep -c -- '-skip-testing:' selection.txt) skipped entries"
 
       # The memory sampler runs for the whole step; "Report memory" stops it, summarizes it and uploads its log.
       # A failure keeps the device's diagnostics in the result bundle: hosted flakes rarely reproduce locally (TAL-490).
@@ -376,7 +387,7 @@ jobs:
             -parallel-testing-enabled NO \
             "${selection[@]}" 2>&1 | tee "${XCODEBUILD_LOG}"
           duration_seconds=$((SECONDS - start_seconds))
-          echo "### App shard ${SHARD} of ${SHARD_COUNT}" >> "${GITHUB_STEP_SUMMARY}"
+          echo "### App ${JOB_NAME} on ${DEVICE}" >> "${GITHUB_STEP_SUMMARY}"
           echo "- Test without building: ${duration_seconds}s" >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Report memory
@@ -393,7 +404,7 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ env.BUILD_ARTIFACT }}-memory-shard-${{ matrix.shard }}
+          name: ${{ env.BUILD_ARTIFACT }}-memory-${{ matrix.artifact }}
           path: app/${{ env.MEMORY_LOG }}
           retention-days: 30
           overwrite: true
@@ -462,7 +473,7 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ env.BUILD_ARTIFACT }}-performance-metrics-shard-${{ matrix.shard }}
+          name: ${{ env.BUILD_ARTIFACT }}-performance-metrics-${{ matrix.artifact }}
           path: |
             app/performance-metrics.json
             app/performance-metrics.txt
@@ -475,7 +486,7 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ env.BUILD_ARTIFACT }}-test-results-shard-${{ matrix.shard }}
+          name: ${{ env.BUILD_ARTIFACT }}-test-results-${{ matrix.artifact }}
           path: app/TestResults.xcresult
           retention-days: 14
           overwrite: true
