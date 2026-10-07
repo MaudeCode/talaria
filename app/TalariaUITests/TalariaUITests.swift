@@ -703,12 +703,7 @@ final class ChatRecoveryUITests: ChatUITestCase {
         try sendFixtureMessage("Run the deterministic fixture")
 
         XCTAssertTrue(app.staticTexts["Waiting for control input."].awaitExistence(timeout: 5))
-        let composer = try XCTUnwrap(waitForComposer(timeout: 5))
-        let input = app.textViews.firstMatch
-        if !input.awaitExistence(timeout: 2) {
-            composer.tap()
-            XCTAssertTrue(input.awaitExistence(timeout: 5))
-        }
+        let input = readyComposerInput(try XCTUnwrap(waitForComposer(timeout: 5)))
         input.typeText("Keep the fixture concise")
         tapCenter(of: app.buttons["Send"])
 
@@ -1094,10 +1089,7 @@ final class NewChatComposerUITests: ChatUITestCase {
         // The chat screen's identifier reaches the strip, so it is found by its words.
         let starting = app.staticTexts["Starting chat…"]
         XCTAssertTrue(starting.awaitExistence(timeout: 10), "The strip does not show the session starting")
-        let composer = try XCTUnwrap(waitForComposer(timeout: 5), "The new chat has no real composer")
-        composer.tap()
-        let input = app.textViews.firstMatch
-        XCTAssertTrue(input.awaitExistence(timeout: 5))
+        let input = readyComposerInput(try XCTUnwrap(waitForComposer(timeout: 5), "The new chat has no real composer"))
         XCTAssertTrue(app.keyboards.firstMatch.awaitExistence(timeout: 5))
         Thread.sleep(forTimeInterval: 1)
         input.typeText("Typed before the session")
@@ -2869,13 +2861,23 @@ fileprivate extension ChatUITestCase {
         launchFixture(additionalArguments: [argument])
     }
 
-    func sendFixtureMessage(_ message: String) throws {
-        let composer = try openFixtureSession()
+    /// The composer's text view, ready for typing. An empty chat focuses its composer once its first load lands
+    /// (`ChatView.applyInitialComposerFocusPolicyIfNeeded`), swapping the "Message" shell for the text view at any
+    /// moment, so a shell found earlier may be gone by the time it is tapped (TAL-667). Each pass reads the shell
+    /// again, by a snapshot that fails quietly once it is gone, and taps where it is.
+    func readyComposerInput(_ composer: XCUIElement) -> XCUIElement {
         let input = app.textViews.firstMatch
-        if !input.awaitExistence(timeout: 2) {
-            composer.tap()
-            XCTAssertTrue(input.awaitExistence(timeout: 5))
-        }
+        XCTAssertTrue(poll(timeout: 10) {
+            if input.exists { return true }
+            guard let frame = try? composer.snapshot().frame else { return input.exists }
+            tap(at: CGPoint(x: frame.midX, y: frame.midY))
+            return input.awaitExistence(timeout: 2)
+        }, "The composer never took input")
+        return input
+    }
+
+    func sendFixtureMessage(_ message: String) throws {
+        let input = readyComposerInput(try openFixtureSession())
         // A chat can focus its composer as it opens. Typing, or querying the app, while the
         // keyboard is still sliding in can leave XCTest waiting a minute for the app to go idle
         // before every later step, so let it land first, as XCTest's one-second first check did.
