@@ -129,6 +129,14 @@ class ShardTests(unittest.TestCase):
                 self.assertFalse(any(item in destinations for bucket in buckets[:-1] for item in bucket))
                 self.assertEqual([shards.shard_devices(index, buckets) for index in range(count)],
                                  [*([[]] * (count - 1)), destinations])
+                # The catch-all's load counts the destination classes and each simulator's setup before any other
+                # class is placed, so the other shards take the rest.
+                _, loads = self.plan(count)
+                charged = 2 * WEIGHTS["default"]["TalariaUITests"] + 2 * shards.DESTINATION_SETUP_SECONDS
+                own = sum(shards.weight_of(item, WEIGHTS) for item in buckets[-1] if item not in destinations)
+                self.assertAlmostEqual(loads[-1], charged + own)
+                if count > 1:
+                    self.assertEqual(own, 0)
 
     def test_destination_classes_find_a_matching_simulator(self):
         ipad, pro_max, booted = "IPAD", "PROMAX", "BOOTED"

@@ -1,5 +1,5 @@
 {
-  "source": "TalariaTests: per-class test-case seconds on GitHub-hosted xcode-27 runners from dispatch run 36426416274 (shards 0-2); classes it did not measure are main run 36347638335's seconds scaled by the median hosted/self-hosted ratio (1.56). TalariaUITests: the mean of UI suite runs 36605979543, 36610754926, 36616705266, 36621649816 and 36621673345 (a class that failed early in a run is left out of that run's mean). Unlisted classes use their target's default.",
+  "source": "TalariaTests: per-class test-case seconds on GitHub-hosted xcode-27 runners from dispatch run 36426416274 (shards 0-2); classes it did not measure are main run 36347638335's seconds scaled by the median hosted/self-hosted ratio (1.56). TalariaUITests: the mean of UI suite runs 36605979543, 36610754926, 36616705266, 36621649816 and 36621673345 (a class that failed early in a run is left out of that run's mean). RegularWidthNavigationUITests and SizeClassRoundTripUITests run on their own simulators in the catch-all shard (TAL-471): the iPad class is its 441 s in UI suite run 37608067616; the Pro Max class has no hosted measurement yet and uses about twice its local 27 s. Unlisted classes use their target's default.",
   "default": {
     "TalariaTests": 1.0,
     "TalariaUITests": 40.0
@@ -37,12 +37,14 @@
     "TalariaUITests/NewChatDeepLinkUITests": 57.0,
     "TalariaUITests/QuotaInsightsUITests": 22.0,
     "TalariaUITests/ReauthenticationUITests": 64.0,
+    "TalariaUITests/RegularWidthNavigationUITests": 441.0,
     "TalariaUITests/RelaySettingsUITests": 23.0,
     "TalariaUITests/SessionAndShareDeepLinkUITests": 35.0,
     "TalariaUITests/SettingsStructureUITests": 80.0,
     "TalariaUITests/ShareExtensionRefusalUITests": 72.0,
     "TalariaUITests/ShareExtensionUITests": 89.0,
     "TalariaUITests/SidebarPresentationUITests": 30.0,
+    "TalariaUITests/SizeClassRoundTripUITests": 60.0,
     "TalariaUITests/UITestWaitingTests": 3.0,
     "TalariaUITests/WorkspaceFilePreviewUITests": 60.0,
     "TalariaUITests/WorkspaceLoadingUITests": 38.0

@@ -38,6 +38,9 @@ DEVICE_CLASSES = {
     "TalariaUITests/RegularWidthNavigationUITests": "^iPad",
     "TalariaUITests/SizeClassRoundTripUITests": "Pro Max",
 }
+# Each destination simulator costs the catch-all this long before its first test: boot, install and launch (about
+# 250 s for the iPad in UI suite run 37608067616). The plan charges it up front so the other shards take more classes.
+DESTINATION_SETUP_SECONDS = 250.0
 DECLARATION = re.compile(
     r"^[ \t]*(?:@\w+(?:\([^)\n]*\))?\s+)*(?:(?:final|public|internal|private|fileprivate|open|nonisolated)\s+)*"
     r"class\s+(\w+)\s*:\s*(?:\w+\.)?(\w+)", re.MULTILINE)
@@ -68,10 +71,10 @@ def weight_of(identifier, weights):
     return float(weights["classes"].get(identifier, weights["default"][identifier.split("/", 1)[0]]))
 
 
-def assign(items, shards, weights):
-    """Greedy longest-first assignment. Ties break by name and index."""
+def assign(items, shards, weights, loads=None):
+    """Greedy longest-first assignment onto the given starting loads. Ties break by name and index."""
     buckets = [[] for _ in range(shards)]
-    loads = [0.0] * shards
+    loads = list(loads or [0.0] * shards)
     for item in sorted(set(items), key=lambda item: (-weight_of(item, weights), item)):
         index = min(range(shards), key=lambda index: (loads[index], index))
         buckets[index].append(item)
@@ -133,10 +136,12 @@ def plan(shards, targets, weights=None, app=APP):
     skipped_classes = {item for item in SKIPPED if item.count("/") == 1}
     items = [item for item in discover(app, targets, weights["classes"]) if item not in skipped_classes]
     destinations = [item for item in DEVICE_CLASSES if item in items]
-    buckets, loads = assign([item for item in items if item not in destinations], shards, weights)
     # The catch-all always selects tests of its own, so a shard never runs destination classes alone.
+    start = [0.0] * shards
+    start[-1] = sum(weight_of(item, weights) for item in destinations) + \
+        DESTINATION_SETUP_SECONDS * len({DEVICE_CLASSES[item] for item in destinations})
+    buckets, loads = assign([item for item in items if item not in destinations], shards, weights, start)
     buckets[-1] = sorted(buckets[-1] + destinations)
-    loads[-1] += sum(weight_of(item, weights) for item in destinations)
     return buckets, loads
 
 

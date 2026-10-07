@@ -372,10 +372,10 @@ jobs:
           while IFS= read -r option; do selection+=("${option}"); done < selection.txt
           [[ "${TEST_ITERATIONS}" =~ ^[1-9][0-9]*$ ]] || { echo "test_iterations must be a positive integer, got '${TEST_ITERATIONS}'" >&2; exit 1; }
           xctestrun=(Build/Products/*.xctestrun)
-          # Usage: run_tests simulator result-bundle option...
+          # Usage: run_tests simulator result-bundle diagnostics option...
           run_tests() {
-            local simulator=$1 bundle=$2
-            shift 2
+            local simulator=$1 bundle=$2 diagnostics=$3
+            shift 3
             if (( TEST_ITERATIONS > 1 )); then set -- "$@" -test-iterations "${TEST_ITERATIONS}" -run-tests-until-failure; fi
             xcodebuild test-without-building \
               -xctestrun "${xctestrun[0]}" \
@@ -383,20 +383,24 @@ jobs:
               -testLanguage en \
               -testRegion US \
               -resultBundlePath "${bundle}" \
-              -collect-test-diagnostics on-failure \
+              -collect-test-diagnostics "${diagnostics}" \
               -parallel-testing-enabled NO \
               "$@" 2>&1 | tee -a "${XCODEBUILD_LOG}"
           }
           # A scoped run of destination classes alone selects nothing for this simulator. Every run goes ahead after
-          # an earlier one fails, so each run reports its own result; the step fails if any did.
+          # an earlier one fails, so each run reports its own result; the step fails if any did. Collecting a hosted
+          # simulator's diagnostics times out after 600 s even when every test passed, so only the shard's own run pays
+          # that (TAL-490); the destination runs skip it rather than push the catch-all past its timeout (TAL-471).
           status=0
-          if [[ -s selection.txt ]]; then run_tests "${SIMULATOR_ID}" "${RESULT_BUNDLE_PATH}" "${selection[@]}" || status=$?; fi
+          if [[ -s selection.txt ]]; then
+            run_tests "${SIMULATOR_ID}" "${RESULT_BUNDLE_PATH}" on-failure "${selection[@]}" || status=$?
+          fi
           index=0
           while IFS=$'\t' read -r device identifiers; do
             index=$((index + 1))
             options=()
             for identifier in ${identifiers}; do options+=("-only-testing:${identifier}"); done
-            run_tests "${device}" "DestinationResults-${index}.xcresult" "${options[@]}" < /dev/null || status=$?
+            run_tests "${device}" "DestinationResults-${index}.xcresult" never "${options[@]}" < /dev/null || status=$?
           done < devices.txt
           duration_seconds=$((SECONDS - start_seconds))
           echo "### App shard ${SHARD} of ${SHARD_COUNT}" >> "${GITHUB_STEP_SUMMARY}"
