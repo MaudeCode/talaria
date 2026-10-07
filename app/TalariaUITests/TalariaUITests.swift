@@ -3127,9 +3127,14 @@ extension TalariaUITestCase {
     func tapFixtureSession(_ session: XCUIElement) {
         let sessionList = app.collectionViews.firstMatch
         let viewportTop = app.navigationBars["Chats"].frame.maxY
-        let searchControl = waitForSessionSearchControl(timeout: 5)
-        XCTAssertNotNil(searchControl, "Missing the session search control")
-        let viewportBottom = searchControl?.frame.minY ?? 0
+        // iOS 27 swaps the minimized search between its field and its toolbar button at any moment, so its frame is
+        // read by a snapshot of whichever is there rather than from an element found a moment earlier (TAL-667).
+        var searchFrame: CGRect?
+        XCTAssertTrue(poll(timeout: 5) {
+            searchFrame = [sessionSearchField, app.buttons["Search"]].lazy.compactMap { try? $0.snapshot().frame }.first
+            return searchFrame != nil
+        }, "Missing the session search control")
+        let viewportBottom = searchFrame?.minY ?? 0
 
         func rowFrame() -> CGRect? {
             let read = { (try? session.snapshot())?.frame }
