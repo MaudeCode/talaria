@@ -1,0 +1,23 @@
+#!/bin/zsh
+# Prepares a booted simulator for UI tests: the keyboard's one-time slide-to-type introduction is marked as shown,
+# the notification service answers (scripts/ready-simulator-notifications, TAL-651) and the Photos library holds a
+# photo the tests own (scripts/seed-simulator-photo, TAL-633). The introduction takes the first software keyboard
+# down, and the composer collapses with it, on every freshly booted simulator (TAL-668); iOS 27 records it under
+# TextInput's DidShowContinuousPathIntroduction preference. --keyboard-only does just that, for a simulator whose
+# tests need neither notifications nor photos.
+# Usage: scripts/prepare-ui-simulator [--keyboard-only] <simulator-udid>
+
+set -euo pipefail
+keyboard_only=false
+if [[ "${1:-}" == --keyboard-only ]]; then
+    keyboard_only=true
+    shift
+fi
+(( $# == 1 )) || { print -u2 "Usage: scripts/prepare-ui-simulator [--keyboard-only] <simulator-udid>"; exit 64; }
+simulator_id=$1
+scripts=${0:A:h}
+
+xcrun simctl spawn "$simulator_id" defaults write com.apple.keyboard.preferences DidShowContinuousPathIntroduction -bool true
+[[ "$keyboard_only" == true ]] && exit 0
+"$scripts/ready-simulator-notifications" "$simulator_id"
+"$scripts/seed-simulator-photo" "$simulator_id"

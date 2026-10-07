@@ -695,6 +695,19 @@ final class ChatPrimaryStreamUITests: ChatUITestCase {
 /// reconnect and reopening a running chat are ChatViewModel and session-list tests in
 /// TalariaKit (TAL-402).
 final class ChatRecoveryUITests: ChatUITestCase {
+    /// A run waiting on the test heartbeats like the server's stream, so the stall watchdog never shows
+    /// Checking stream (after 12 s) or reconnects and replays the run (at 18 s) while a test works (TAL-666).
+    func testWaitingRunKeepsItsStreamAlive() throws {
+        launchFixture(additionalArguments: ["--ui-test-chat-controls"])
+        try sendFixtureMessage("Run the deterministic fixture")
+        let waiting = app.staticTexts["Waiting for control input."]
+        XCTAssertTrue(waiting.awaitExistence(timeout: 5))
+
+        let checking = element(label: "Hermes is checking the response stream")
+        XCTAssertFalse(poll(timeout: 22) { checking.exists }, "A waiting run's stream looked stalled")
+        XCTAssertTrue(waiting.exists, "The run was replayed by a reconnect")
+    }
+
     func testChatStreamSupportsSteeringAndCancellation() throws {
         launchChatFixture(
             argument: "--ui-test-chat-controls",
@@ -703,12 +716,7 @@ final class ChatRecoveryUITests: ChatUITestCase {
         try sendFixtureMessage("Run the deterministic fixture")
 
         XCTAssertTrue(app.staticTexts["Waiting for control input."].awaitExistence(timeout: 5))
-        let composer = try XCTUnwrap(waitForComposer(timeout: 5))
-        let input = app.textViews.firstMatch
-        if !input.awaitExistence(timeout: 2) {
-            composer.tap()
-            XCTAssertTrue(input.awaitExistence(timeout: 5))
-        }
+        let input = readyComposerInput(try XCTUnwrap(waitForComposer(timeout: 5)))
         input.typeText("Keep the fixture concise")
         tapCenter(of: app.buttons["Send"])
 
@@ -1094,10 +1102,7 @@ final class NewChatComposerUITests: ChatUITestCase {
         // The chat screen's identifier reaches the strip, so it is found by its words.
         let starting = app.staticTexts["Starting chat…"]
         XCTAssertTrue(starting.awaitExistence(timeout: 10), "The strip does not show the session starting")
-        let composer = try XCTUnwrap(waitForComposer(timeout: 5), "The new chat has no real composer")
-        composer.tap()
-        let input = app.textViews.firstMatch
-        XCTAssertTrue(input.awaitExistence(timeout: 5))
+        let input = readyComposerInput(try XCTUnwrap(waitForComposer(timeout: 5), "The new chat has no real composer"))
         XCTAssertTrue(app.keyboards.firstMatch.awaitExistence(timeout: 5))
         Thread.sleep(forTimeInterval: 1)
         input.typeText("Typed before the session")
@@ -2603,12 +2608,14 @@ final class AdaptiveLayoutOnboardingUITests: AdaptiveLayoutUITestCase {
 /// then every second until `timeout`. XCTest's own waits (`waitForExistence`,
 /// `XCTNSPredicateExpectation`) first check after a full second, so every wait cost at least a
 /// second: about a quarter of the hosted UI suite (TAL-402). The back-off keeps a long wait from
-/// snapshotting the app several times a second on a 3-core hosted runner.
+/// snapshotting the app several times a second on a 3-core hosted runner. A check that ends past
+/// `timeout` may have started before what it waits for happened, so the wait looks once more
+/// before it gives up (TAL-665).
 func poll(timeout: TimeInterval, until condition: () -> Bool) -> Bool {
     let deadline = Date().addingTimeInterval(timeout)
     var interval: TimeInterval = 0.1
     while !condition() {
-        guard Date() < deadline else { return false }
+        guard Date() < deadline else { return condition() }
         Thread.sleep(forTimeInterval: min(interval, max(deadline.timeIntervalSinceNow, 0)))
         interval = min(interval * 2, 1)
     }
@@ -2700,6 +2707,21 @@ final class UITestWaitingTests: XCTestCase {
         XCTAssertFalse(poll(timeout: 1) { checks += 1; return false })
         XCTAssertLessThan(Date().timeIntervalSince(start), 1.5)
         XCTAssertGreaterThanOrEqual(checks, 4)
+    }
+
+    /// One check can outlast the whole wait on a loaded hosted runner: the file exporter appeared inside its 20 s
+    /// while the snapshot that started before then returned after it (TAL-665). Such a check never ends a wait.
+    func testPollLooksAgainWhenACheckEndsPastTheTimeout() {
+        var checks = 0
+        XCTAssertTrue(poll(timeout: 0.2) {
+            checks += 1
+            if checks == 1 {
+                Thread.sleep(forTimeInterval: 0.4)
+                return false
+            }
+            return true
+        })
+        XCTAssertEqual(checks, 2)
     }
 }
 
@@ -2852,13 +2874,23 @@ fileprivate extension ChatUITestCase {
         launchFixture(additionalArguments: [argument])
     }
 
-    func sendFixtureMessage(_ message: String) throws {
-        let composer = try openFixtureSession()
+    /// The composer's text view, ready for typing. An empty chat focuses its composer once its first load lands
+    /// (`ChatView.applyInitialComposerFocusPolicyIfNeeded`), swapping the "Message" shell for the text view at any
+    /// moment, so a shell found earlier may be gone by the time it is tapped (TAL-667). Each pass reads the shell
+    /// again, by a snapshot that fails quietly once it is gone, and taps where it is.
+    func readyComposerInput(_ composer: XCUIElement) -> XCUIElement {
         let input = app.textViews.firstMatch
-        if !input.awaitExistence(timeout: 2) {
-            composer.tap()
-            XCTAssertTrue(input.awaitExistence(timeout: 5))
-        }
+        XCTAssertTrue(poll(timeout: 10) {
+            if input.exists { return true }
+            guard let frame = try? composer.snapshot().frame else { return input.exists }
+            tap(at: CGPoint(x: frame.midX, y: frame.midY))
+            return input.awaitExistence(timeout: 2)
+        }, "The composer never took input")
+        return input
+    }
+
+    func sendFixtureMessage(_ message: String) throws {
+        let input = readyComposerInput(try openFixtureSession())
         // A chat can focus its composer as it opens. Typing, or querying the app, while the
         // keyboard is still sliding in can leave XCTest waiting a minute for the app to go idle
         // before every later step, so let it land first, as XCTest's one-second first check did.
@@ -3095,9 +3127,14 @@ extension TalariaUITestCase {
     func tapFixtureSession(_ session: XCUIElement) {
         let sessionList = app.collectionViews.firstMatch
         let viewportTop = app.navigationBars["Chats"].frame.maxY
-        let searchControl = waitForSessionSearchControl(timeout: 5)
-        XCTAssertNotNil(searchControl, "Missing the session search control")
-        let viewportBottom = searchControl?.frame.minY ?? 0
+        // iOS 27 swaps the minimized search between its field and its toolbar button at any moment, so its frame is
+        // read by a snapshot of whichever is there rather than from an element found a moment earlier (TAL-667).
+        var searchFrame: CGRect?
+        XCTAssertTrue(poll(timeout: 5) {
+            searchFrame = [sessionSearchField, app.buttons["Search"]].lazy.compactMap { try? $0.snapshot().frame }.first
+            return searchFrame != nil
+        }, "Missing the session search control")
+        let viewportBottom = searchFrame?.minY ?? 0
 
         func rowFrame() -> CGRect? {
             let read = { (try? session.snapshot())?.frame }

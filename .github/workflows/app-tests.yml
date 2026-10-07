@@ -224,8 +224,10 @@ jobs:
     needs: build-started
     if: inputs.mode == 'full'
     runs-on: xcode-27
-    # An iterated dispatch repeats minutes-long UI tests, so it gets the hosted job maximum.
-    timeout-minutes: ${{ fromJSON(inputs.test_iterations) > 1 && 360 || 60 }}
+    # An iterated dispatch repeats minutes-long UI tests, so it gets the hosted job maximum. Otherwise the test step's
+    # own limit ends the tests, and this one only backs it up: setup takes up to about 15 minutes before that step,
+    # and a loaded runner took 9 minutes over a single report after it (TAL-670).
+    timeout-minutes: ${{ fromJSON(inputs.test_iterations) > 1 && 360 || 75 }}
     permissions:
       contents: read
       # Reads this run's job list to wait for the build.
@@ -276,15 +278,13 @@ jobs:
           erase_before_boot: false
           wait_for_boot: true
           boot_timeout_seconds: 600
+          # A shard with destination runs shuts this one down first (TAL-669); the hosted runner is discarded anyway.
+          shutdown_after_job: false
 
-      # UI tests pick from Photos; give them a photo they own (TAL-633).
-      - name: Seed a test photo
-        run: scripts/seed-simulator-photo "${{ steps.sim.outputs.udid }}"
-
-      # A fresh boot can leave the notification service hanging for minutes, failing the completion alert test
-      # (TAL-651).
-      - name: Ready the simulator's notifications
-        run: scripts/ready-simulator-notifications "${{ steps.sim.outputs.udid }}"
+      # The keyboard's slide-to-type introduction marked as shown (TAL-668), the notification service answering
+      # (TAL-651) and a photo the tests own (TAL-633).
+      - name: Prepare the simulator
+        run: scripts/prepare-ui-simulator "${{ steps.sim.outputs.udid }}"
 
       # Returns once the background poll has seen the build's upload step succeed; fails once it sees the build fail
       # or get cancelled, or if the poll stopped without a result.
@@ -340,7 +340,6 @@ jobs:
           tar -C Build -xf "${RUNNER_TEMP}/app-build.tar"
           # Classes that need an iPad or a Pro Max skip on this iPhone, so they run after this shard's own tests on the
           # image's matching simulator instead (TAL-471): devices.txt holds one simulator and its identifiers per line.
-          # Each boots once here, so its first boot is over before any test runs, and waits shut down.
           runtime="com.apple.CoreSimulator.SimRuntime.iOS-${IOS_SIMULATOR_OS//./-}"
           if [[ -n "${ONLY_TESTING}" ]]; then
             # shellcheck disable=SC2086 # One identifier per word.
@@ -351,16 +350,15 @@ jobs:
             python3 ci/test_shards.py --shards "${SHARD_COUNT}" --shard "${SHARD}" > selection.txt
             python3 ci/test_shards.py --shards "${SHARD_COUNT}" --shard "${SHARD}" --devices --runtime "${runtime}" > devices.txt
           fi
-          while IFS=$'\t' read -r device _; do
-            xcrun simctl boot "${device}"
-            xcrun simctl bootstatus "${device}" -b > /dev/null
-            xcrun simctl shutdown "${device}"
-          done < devices.txt
           echo "Shard ${SHARD} of ${SHARD_COUNT}: $(grep -c -- '-only-testing:' selection.txt) selected, $(grep -c -- '-skip-testing:' selection.txt) skipped entries, $(wc -l < devices.txt | tr -d ' ') other simulator(s)"
 
       # The memory sampler runs for the whole step; "Report memory" stops it, summarizes it and uploads its log.
-      # A failure keeps the device's diagnostics in the result bundle: hosted flakes rarely reproduce locally (TAL-490).
+      # The step's own limit ends a stuck run inside the job's, so the steps after it still upload the result bundle
+      # and the memory log and the job fails rather than being cancelled, which the failure alert sees (TAL-670).
+      # Within it, XCTest's per-test limit (10 minutes by default) fails a hung test by name, with a spindump, and the
+      # run goes on.
       - name: Test without building
+        timeout-minutes: ${{ fromJSON(inputs.test_iterations) > 1 && 330 || 45 }}
         env:
           SIMULATOR_ID: ${{ steps.sim.outputs.udid }}
         run: |
@@ -372,10 +370,10 @@ jobs:
           while IFS= read -r option; do selection+=("${option}"); done < selection.txt
           [[ "${TEST_ITERATIONS}" =~ ^[1-9][0-9]*$ ]] || { echo "test_iterations must be a positive integer, got '${TEST_ITERATIONS}'" >&2; exit 1; }
           xctestrun=(Build/Products/*.xctestrun)
-          # Usage: run_tests simulator result-bundle diagnostics option...
+          # Usage: run_tests simulator result-bundle option...
           run_tests() {
-            local simulator=$1 bundle=$2 diagnostics=$3
-            shift 3
+            local simulator=$1 bundle=$2
+            shift 2
             if (( TEST_ITERATIONS > 1 )); then set -- "$@" -test-iterations "${TEST_ITERATIONS}" -run-tests-until-failure; fi
             xcodebuild test-without-building \
               -xctestrun "${xctestrun[0]}" \
@@ -383,31 +381,66 @@ jobs:
               -testLanguage en \
               -testRegion US \
               -resultBundlePath "${bundle}" \
-              -collect-test-diagnostics "${diagnostics}" \
+              -collect-test-diagnostics never \
+              -test-timeouts-enabled YES \
               -parallel-testing-enabled NO \
               "$@" 2>&1 | tee -a "${XCODEBUILD_LOG}"
           }
           # A scoped run of destination classes alone selects nothing for this simulator. Every run goes ahead after
-          # an earlier one fails, so each run reports its own result; the step fails if any did. Collecting a hosted
-          # simulator's diagnostics times out after 600 s even when every test passed, so only the shard's own run pays
-          # that (TAL-490); the destination runs skip it rather than push the catch-all past its timeout (TAL-471).
+          # an earlier one fails, so each run reports its own result; the step fails if any did. No run collects the
+          # simulator's diagnostics: on a hosted runner that waited 600 s on every shard, passing or failing, and never
+          # returned any (TAL-669). The result bundle keeps each failure's screenshots, recording and logs.
           status=0
           if [[ -s selection.txt ]]; then
-            run_tests "${SIMULATOR_ID}" "${RESULT_BUNDLE_PATH}" on-failure "${selection[@]}" || status=$?
+            run_tests "${SIMULATOR_ID}" "${RESULT_BUNDLE_PATH}" "${selection[@]}" || status=$?
           fi
+          # One simulator at a time, booted once: the iPad's boot took its render server to 5.8 GB beside the shard's
+          # still-booted iPhone, swapping out the simulators' daemons until XCTest's queries timed out, and booting each
+          # destination ahead of the build as well only doubled that and kept the catch-all's tests waiting 12 minutes
+          # (UI suite run 37655746691). Each destination finishes its first boot, and has its keyboard introduction
+          # marked as shown (TAL-668), before its tests start, and shuts down after them (TAL-669).
+          [[ ! -s devices.txt ]] || xcrun simctl shutdown "${SIMULATOR_ID}"
           index=0
           while IFS=$'\t' read -r device identifiers; do
             index=$((index + 1))
             options=()
             for identifier in ${identifiers}; do options+=("-only-testing:${identifier}"); done
-            run_tests "${device}" "DestinationResults-${index}.xcresult" never "${options[@]}" < /dev/null || status=$?
+            xcrun simctl boot "${device}" < /dev/null
+            xcrun simctl bootstatus "${device}" -b > /dev/null < /dev/null
+            scripts/prepare-ui-simulator --keyboard-only "${device}" < /dev/null
+            run_tests "${device}" "DestinationResults-${index}.xcresult" "${options[@]}" < /dev/null || status=$?
+            xcrun simctl shutdown "${device}" < /dev/null
           done < devices.txt
           duration_seconds=$((SECONDS - start_seconds))
           echo "### App shard ${SHARD} of ${SHARD_COUNT}" >> "${GITHUB_STEP_SUMMARY}"
           echo "- Test without building: ${duration_seconds}s" >> "${GITHUB_STEP_SUMMARY}"
           exit "${status}"
 
+      - name: Reject skipped UI tests
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          for bundle in "${RESULT_BUNDLE_PATH}" DestinationResults-*.xcresult; do
+            [[ ! -e "${bundle}" ]] || scripts/assert-no-skipped-ui-tests "${bundle}"
+          done
+
+      # Ahead of the reports, so a slow report never costs the evidence its time (TAL-670).
+      - name: Upload test results on failure
+        timeout-minutes: 10
+        if: failure()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.BUILD_ARTIFACT }}-test-results-shard-${{ matrix.shard }}
+          path: |
+            app/TestResults.xcresult
+            app/DestinationResults-*.xcresult
+          retention-days: 14
+          overwrite: true
+          if-no-files-found: ignore
+
       - name: Report memory
+        timeout-minutes: 3
         if: always()
         continue-on-error: true
         run: |
@@ -417,6 +450,7 @@ jobs:
           ci/memory-sampler summary "${MEMORY_LOG}" | tee -a "${GITHUB_STEP_SUMMARY}"
 
       - name: Upload memory samples
+        timeout-minutes: 5
         if: always()
         continue-on-error: true
         uses: actions/upload-artifact@v7
@@ -428,6 +462,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Report slowest tests
+        timeout-minutes: 3
         if: always()
         continue-on-error: true
         run: |
@@ -475,21 +510,16 @@ jobs:
             echo '```'
           } >> "${GITHUB_STEP_SUMMARY}"
 
-      - name: Reject skipped UI tests
-        run: |
-          set -euo pipefail
-          for bundle in "${RESULT_BUNDLE_PATH}" DestinationResults-*.xcresult; do
-            [[ ! -e "${bundle}" ]] || scripts/assert-no-skipped-ui-tests "${bundle}"
-          done
-
       # Performance budgets are only useful against previous runs, so every run
       # keeps its measurements as an artifact and prints them into the summary.
       - name: Record performance metrics
+        timeout-minutes: 3
         if: always()
         continue-on-error: true
         run: scripts/report-performance-metrics "${RESULT_BUNDLE_PATH}"
 
       - name: Upload performance metrics
+        timeout-minutes: 5
         if: always()
         continue-on-error: true
         uses: actions/upload-artifact@v7
@@ -499,18 +529,5 @@ jobs:
             app/performance-metrics.json
             app/performance-metrics.txt
           retention-days: 30
-          overwrite: true
-          if-no-files-found: ignore
-
-      - name: Upload test results on failure
-        if: failure()
-        continue-on-error: true
-        uses: actions/upload-artifact@v7
-        with:
-          name: ${{ env.BUILD_ARTIFACT }}-test-results-shard-${{ matrix.shard }}
-          path: |
-            app/TestResults.xcresult
-            app/DestinationResults-*.xcresult
-          retention-days: 14
           overwrite: true
           if-no-files-found: ignore

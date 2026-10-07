@@ -1,0 +1,1 @@
+{"skip": "CI tooling only: UI suite shards stop waiting 600 s for simulator diagnostics and boot destination simulators during the build."}

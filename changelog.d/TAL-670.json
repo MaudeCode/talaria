@@ -1,0 +1,1 @@
+{"skip": "CI tooling only: a UI suite shard that runs out of time keeps its evidence and still reaches the fix agent."}

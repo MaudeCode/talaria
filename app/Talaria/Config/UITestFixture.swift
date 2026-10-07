@@ -197,6 +197,10 @@ struct UITestFixtureEnvironment {
         // Response Complete Alerts start off and unasked, so a journey turns them on in Settings.
         UserDefaults.standard.set(false, forKey: ResponseCompletionNotifications.isEnabledKey)
         UserDefaults.standard.removeObject(forKey: ResponseCompletionNotifications.hasRequestedPermissionKey)
+        // The scheduled and webhook groups start collapsed, as on a fresh install, rather than as an earlier test left
+        // them on this simulator.
+        UserDefaults.standard.removeObject(forKey: SessionSidebarDisclosureSettings.scheduledSessionsAreExpandedKey)
+        UserDefaults.standard.removeObject(forKey: SessionSidebarDisclosureSettings.webhookSessionsAreExpandedKey)
 
         prepareSharedImportInbox()
         UITestFixtureURLProtocol.prepareChangeWhileBackgrounded()
@@ -459,10 +463,17 @@ private final class UITestChatFixtureState: @unchecked Sendable {
         return (started, settled, approvalAnswered, clarificationAnswered, steerID, cancelled)
     }
 
-    func wait(until predicate: @escaping (UITestChatFixtureState) -> Bool, stopped: () -> Bool) {
+    /// Waits for `predicate`, calling `heartbeat` every few seconds meanwhile. The server's stream heartbeats while
+    /// a run waits; without one the App's stall watchdog shows "Checking stream" after 12 s and reconnects at 18 s,
+    /// moving the controls a test is about to tap (TAL-666).
+    func wait(until predicate: @escaping (UITestChatFixtureState) -> Bool, stopped: () -> Bool, heartbeat: () -> Void) {
         condition.lock()
         while !predicate(self), !stopped() {
-            condition.wait()
+            if !condition.wait(until: Date().addingTimeInterval(3)) {
+                condition.unlock()
+                heartbeat()
+                condition.lock()
+            }
         }
         condition.unlock()
     }
@@ -523,6 +534,9 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         guard ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.launchArgument) else { return }
         configuration.protocolClasses = [Self.self]
             + (configuration.protocolClasses ?? []).filter { $0 != Self.self }
+        // A held load waits for the test's release, not for URLSession's 60 s default: XCTest's own wait for the App to
+        // go idle blocked a hosted test for 58 s, and the held Git status read failed before its release (TAL-672).
+        configuration.timeoutIntervalForRequest = .infinity
     }
 
     override class func canInit(with request: URLRequest) -> Bool {
@@ -1664,7 +1678,10 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     private func wait(until predicate: @escaping (UITestChatFixtureState) -> Bool) {
-        Self.chatState.wait(until: predicate, stopped: { [weak self] in self?.isStopped != false })
+        Self.chatState.wait(until: predicate, stopped: { [weak self] in self?.isStopped != false }) { [weak self] in
+            guard let self, !self.isStopped else { return }
+            self.client?.urlProtocol(self, didLoad: Data(": fixture heartbeat\n\n".utf8))
+        }
     }
 
     var isStopped: Bool {

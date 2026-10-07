@@ -1,0 +1,1 @@
+{"skip": "UI test tooling only: a wait whose last check ends past its timeout looks once more before failing."}
