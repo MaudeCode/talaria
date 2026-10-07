@@ -2603,12 +2603,14 @@ final class AdaptiveLayoutOnboardingUITests: AdaptiveLayoutUITestCase {
 /// then every second until `timeout`. XCTest's own waits (`waitForExistence`,
 /// `XCTNSPredicateExpectation`) first check after a full second, so every wait cost at least a
 /// second: about a quarter of the hosted UI suite (TAL-402). The back-off keeps a long wait from
-/// snapshotting the app several times a second on a 3-core hosted runner.
+/// snapshotting the app several times a second on a 3-core hosted runner. A check that ends past
+/// `timeout` may have started before what it waits for happened, so the wait looks once more
+/// before it gives up (TAL-665).
 func poll(timeout: TimeInterval, until condition: () -> Bool) -> Bool {
     let deadline = Date().addingTimeInterval(timeout)
     var interval: TimeInterval = 0.1
     while !condition() {
-        guard Date() < deadline else { return false }
+        guard Date() < deadline else { return condition() }
         Thread.sleep(forTimeInterval: min(interval, max(deadline.timeIntervalSinceNow, 0)))
         interval = min(interval * 2, 1)
     }
@@ -2700,6 +2702,21 @@ final class UITestWaitingTests: XCTestCase {
         XCTAssertFalse(poll(timeout: 1) { checks += 1; return false })
         XCTAssertLessThan(Date().timeIntervalSince(start), 1.5)
         XCTAssertGreaterThanOrEqual(checks, 4)
+    }
+
+    /// One check can outlast the whole wait on a loaded hosted runner: the file exporter appeared inside its 20 s
+    /// while the snapshot that started before then returned after it (TAL-665). Such a check never ends a wait.
+    func testPollLooksAgainWhenACheckEndsPastTheTimeout() {
+        var checks = 0
+        XCTAssertTrue(poll(timeout: 0.2) {
+            checks += 1
+            if checks == 1 {
+                Thread.sleep(forTimeInterval: 0.4)
+                return false
+            }
+            return true
+        })
+        XCTAssertEqual(checks, 2)
     }
 }
 
