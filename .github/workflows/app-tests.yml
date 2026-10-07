@@ -387,18 +387,21 @@ jobs:
               -parallel-testing-enabled NO \
               "$@" 2>&1 | tee -a "${XCODEBUILD_LOG}"
           }
-          # A scoped run of destination classes alone selects nothing for this simulator.
-          if [[ -s selection.txt ]]; then run_tests "${SIMULATOR_ID}" "${RESULT_BUNDLE_PATH}" "${selection[@]}"; fi
+          # A scoped run of destination classes alone selects nothing for this simulator. Every run goes ahead after
+          # an earlier one fails, so each run reports its own result; the step fails if any did.
+          status=0
+          if [[ -s selection.txt ]]; then run_tests "${SIMULATOR_ID}" "${RESULT_BUNDLE_PATH}" "${selection[@]}" || status=$?; fi
           index=0
           while IFS=$'\t' read -r device identifiers; do
             index=$((index + 1))
             options=()
             for identifier in ${identifiers}; do options+=("-only-testing:${identifier}"); done
-            run_tests "${device}" "DestinationResults-${index}.xcresult" "${options[@]}" < /dev/null
+            run_tests "${device}" "DestinationResults-${index}.xcresult" "${options[@]}" < /dev/null || status=$?
           done < devices.txt
           duration_seconds=$((SECONDS - start_seconds))
           echo "### App shard ${SHARD} of ${SHARD_COUNT}" >> "${GITHUB_STEP_SUMMARY}"
           echo "- Test without building: ${duration_seconds}s" >> "${GITHUB_STEP_SUMMARY}"
+          exit "${status}"
 
       - name: Report memory
         if: always()

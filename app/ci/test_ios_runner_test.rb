@@ -231,7 +231,10 @@ class TestIOSRunnerTest < Minitest::Test
     assert_includes(select, 'python3 ci/test_shards.py --shards "${SHARD_COUNT}" --shard "${SHARD}" --devices --runtime "${runtime}" > devices.txt')
     assert_includes(select, 'python3 ci/test_shards.py --devices --runtime "${runtime}" --only-testing ${ONLY_TESTING} > devices.txt')
     test = shard["steps"].find { |step| step["name"] == "Test without building" }["run"]
-    assert_includes(test, 'run_tests "${device}" "DestinationResults-${index}.xcresult" "${options[@]}" < /dev/null')
+    assert_includes(test, 'run_tests "${device}" "DestinationResults-${index}.xcresult" "${options[@]}" < /dev/null || status=$?')
+    # A failing shard still runs its destination classes, and the step still fails.
+    assert_includes(test, 'run_tests "${SIMULATOR_ID}" "${RESULT_BUNDLE_PATH}" "${selection[@]}" || status=$?')
+    assert_match(/exit "\$\{status\}"\n\z/, test)
     # Pull requests and main pushes run the same App jobs; the full UI suite, launch smoke included, is nightly and
     # a release gate.
     app = workflow_jobs("ci.yml").fetch("app")
