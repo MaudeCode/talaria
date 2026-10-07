@@ -147,9 +147,11 @@ class ShardTests(unittest.TestCase):
         self.assertEqual(shards.device_runs([f"{regular}/testOne", f"{regular}/testTwo"], devices),
                          [(ipad, [f"{regular}/testOne", f"{regular}/testTwo"])])
         self.assertEqual(shards.device_runs(["TalariaTests", "TalariaUITests/ChatUITests"], devices), [])
-        # A booted simulator is taken only when nothing else matches; a missing model fails clearly.
-        self.assertEqual(shards.simulator("^iPad", {"devices": {"com.apple.CoreSimulator.SimRuntime.iOS-27-0": [
-            dict(name="iPad Air 13-inch (M4)", udid=booted, state="Booted")]}}), booted)
+        # A booted simulator belongs to another run and the pool would refuse it, so it never matches; neither does
+        # a missing model. Both fail before any test runs.
+        with self.assertRaisesRegex(LookupError, "shut-down .*iPad"):
+            shards.simulator("^iPad", {"devices": {"com.apple.CoreSimulator.SimRuntime.iOS-27-0": [
+                dict(name="iPad Air 13-inch (M4)", udid=booted, state="Booted")]}})
         with self.assertRaisesRegex(LookupError, "Pro Max"):
             shards.device_runs([rotating], {"devices": {"com.apple.CoreSimulator.SimRuntime.iOS-27-1": []}})
         with self.assertRaisesRegex(LookupError, "iPad"):

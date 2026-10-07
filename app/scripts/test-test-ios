@@ -336,7 +336,7 @@ if TALARIA_DEVICE_FIXTURE="$state/no-ipad-devices" "$repo/scripts/test-ios" Tala
     print -u2 "Expected a run without a matching simulator to fail."
     exit 1
 fi
-grep -q "No available iOS simulator's name matches '\^iPad'" "$state/no-ipad.log"
+grep -q "No shut-down iOS simulator's name matches '\^iPad'" "$state/no-ipad.log"
 [[ $(wc -l < "$state/runs") == "$before" ]]  # It fails before testing anything.
 expected=$'-only-testing:TalariaUITests/ResponseCompletionAlertUITests/testAlert|NO'
 [[ "$(phases_for TalariaUITests/ResponseCompletionAlertUITests/testAlert)" == "$expected" ]] || {

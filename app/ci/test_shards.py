@@ -104,15 +104,17 @@ def scoped(identifiers):
 
 
 def simulator(pattern, devices, runtime=""):
-    """The first available iOS simulator whose name matches, newest runtime first, shut down before booted."""
+    """The first shut-down iOS simulator whose name matches, newest runtime first. A booted one belongs to another
+    run, and the pool never leases a booted device."""
     runtimes = [key for key in devices["devices"]
                 if key.startswith("com.apple.CoreSimulator.SimRuntime.iOS-") and runtime in ("", key)]
     for key in sorted(runtimes, key=lambda key: [int(part) for part in key.rsplit("iOS-", 1)[1].split("-")], reverse=True):
-        matches = [device for device in devices["devices"][key] if re.search(pattern, device["name"])]
-        for device in sorted(matches, key=lambda device: (device.get("state") != "Shutdown", device["name"])):
+        matches = [device for device in devices["devices"][key]
+                   if re.search(pattern, device["name"]) and device.get("state") == "Shutdown"]
+        for device in sorted(matches, key=lambda device: device["name"]):
             return device["udid"]
-    raise LookupError(f"No available iOS simulator's name matches {pattern!r}"
-                      f"{' on ' + runtime if runtime else ''}; create one with `xcrun simctl create`.")
+    raise LookupError(f"No shut-down iOS simulator's name matches {pattern!r}"
+                      f"{' on ' + runtime if runtime else ''}; shut down a booted one or create one with `xcrun simctl create`.")
 
 
 def device_runs(identifiers, devices, runtime=""):
