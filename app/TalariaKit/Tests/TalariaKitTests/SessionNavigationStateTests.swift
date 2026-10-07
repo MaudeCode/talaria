@@ -496,3 +496,157 @@ private actor SessionInitialLoadEventRecorder {
         events
     }
 }
+
+/// TAL-643: the section and its selected item decide both split-view columns at regular width,
+/// and they live outside the width branches so a size-class change keeps them.
+final class AppSectionLayoutTests: XCTestCase {
+    func testEachSectionNamesItsSidebarWidthAndDefaultItem() {
+        let expectations: [(SessionListUtilityDestination, AppSection, Bool, SectionItem?)] = [
+            (.settings(nil), .settings, false, .settings(.category(.appearance))),
+            (.providerQuotaWidgetSettings, .settings, false, .settings(.category(.appearance))),
+            (.memory, .memory, false, .memory(.section(.memory))),
+            (.skills, .skills, false, nil),
+            (.tasks, .tasks, false, nil),
+            (.kanban, .kanban, true, nil),
+            (.insights, .insights, true, nil),
+            (.providers("source"), .insights, true, nil),
+            (.archived, .archived, false, nil),
+            (.scheduled, .scheduled, false, nil),
+            (.webhook, .webhook, false, nil),
+        ]
+        for (utility, section, isFullWidth, defaultItem) in expectations {
+            var state = SessionNavigationState()
+            state.select(utility)
+            XCTAssertEqual(state.section, section, "\(utility)")
+            XCTAssertEqual(state.section.isFullWidth, isFullWidth, "\(utility)")
+            XCTAssertEqual(state.section.defaultItem, defaultItem, "\(utility)")
+        }
+        XCTAssertEqual(SessionNavigationState().section, .chats)
+        XCTAssertFalse(AppSection.chats.isFullWidth)
+    }
+
+    func testSettingsAnchorsSelectTheirCategory() {
+        let anchors: [(SettingsScrollAnchor, SettingsCategory)] = [
+            (.servers, .servers), (.system, .servers), (.providerQuotas, .providers),
+        ]
+        for (anchor, category) in anchors {
+            var state = SessionNavigationState()
+            state.select(.settings(anchor))
+            XCTAssertEqual(state.selectedItem, .settings(.category(category)), "\(anchor)")
+            XCTAssertFalse(state.pushesProviderQuotaWidget)
+        }
+
+        var state = SessionNavigationState()
+        state.select(.providerQuotaWidgetSettings)
+        XCTAssertEqual(state.selectedItem, .settings(.category(.liveActivitiesAndWidgets)))
+        XCTAssertTrue(state.pushesProviderQuotaWidget)
+        state.selectedItem = .settings(.category(.about))
+        XCTAssertFalse(state.pushesProviderQuotaWidget, "Another category closes the widget page")
+    }
+
+    func testEnteringASectionStartsFromItsDefault() {
+        var state = SessionNavigationState()
+        state.select(.memory)
+        state.selectedItem = .memory(.section(.user))
+        state.select(.settings(nil))
+        XCTAssertNil(state.selectedItem)
+        XCTAssertEqual(state.displayedItem, .settings(.category(.appearance)))
+        state.select(.memory)
+        XCTAssertEqual(state.displayedItem, .memory(.section(.memory)))
+    }
+
+    /// Regular → compact pushes the page the detail column showed; compact → regular shows the
+    /// pushed page beside the list.
+    func testSizeClassRoundTripKeepsSectionAndItem() {
+        var settings = SessionNavigationState()
+        settings.select(.settings(nil))
+        settings.pinDisplayedItem()
+        XCTAssertEqual(settings.selectedItem, .settings(.category(.appearance)))
+        XCTAssertEqual(settings.displayedItem, .settings(.category(.appearance)))
+        XCTAssertEqual(settings.section, .settings)
+
+        var memory = SessionNavigationState()
+        memory.select(.memory)
+        memory.selectedItem = .memory(.section(.user))
+        memory.pinDisplayedItem()
+        XCTAssertEqual(memory.selectedItem, .memory(.section(.user)))
+        XCTAssertEqual(memory.displayedItem, .memory(.section(.user)))
+
+        var tasks = SessionNavigationState()
+        tasks.select(.tasks)
+        tasks.pinDisplayedItem()
+        XCTAssertNil(tasks.selectedItem, "Tasks has no default, so compact width shows the list")
+
+        let session = SessionSummary(sessionId: "chat")
+        var chat = SessionNavigationState()
+        chat.select(session)
+        chat.pinDisplayedItem()
+        XCTAssertEqual(chat.destination, .session(session))
+        XCTAssertEqual(chat.section, .chats)
+        XCTAssertNil(chat.selectedItem)
+    }
+
+    func testChatOpenedFromAListKeepsTheListAndReturnsToChats() {
+        let session = SessionSummary(sessionId: "scheduled-chat")
+        var state = SessionNavigationState()
+        state.select(.scheduled)
+        state.select(session, in: .scheduled)
+        XCTAssertEqual(state.section, .scheduled)
+        XCTAssertEqual(state.selectedSessionID, "scheduled-chat")
+        XCTAssertEqual(state.lastSelectedSessionID, "scheduled-chat")
+
+        state.returnToChats()
+        XCTAssertEqual(state.section, .chats)
+        XCTAssertEqual(state.destination, .session(session), "Back to Chats keeps the open chat")
+
+        state.select(.archived)
+        let revision = state.rootRevision
+        state.returnToChats()
+        XCTAssertEqual(state.section, .chats)
+        XCTAssertNil(state.destination)
+        XCTAssertGreaterThan(state.rootRevision, revision)
+    }
+
+    func testRemovingTheOpenChatKeepsItsListInTheSidebar() {
+        let session = SessionSummary(sessionId: "webhook-chat")
+        var state = SessionNavigationState()
+        state.select(session, in: .webhook)
+        state.remove(sessionID: "webhook-chat")
+        XCTAssertEqual(state.section, .webhook)
+        XCTAssertEqual(state.destination, .utility(.webhook))
+
+        var chats = SessionNavigationState()
+        chats.select(session)
+        chats.remove(sessionID: "webhook-chat")
+        XCTAssertEqual(chats.section, .chats)
+        XCTAssertNil(chats.destination)
+    }
+
+    /// A section's item never outlives the section, so Chats shows the chat again.
+    func testLeavingASectionDropsItsSelectedItem() {
+        let session = SessionSummary(sessionId: "chat")
+        for leave: (inout SessionNavigationState) -> Void in [
+            { $0.clearDestination() },
+            { $0.select(session) },
+            { $0.select(PendingNewChatRoute()) },
+            { $0.select(.kanban) },
+        ] {
+            var state = SessionNavigationState()
+            state.select(.settings(nil))
+            state.selectedItem = .settings(.category(.about))
+            leave(&state)
+            XCTAssertNil(state.selectedItem)
+            XCTAssertNil(state.displayedItem)
+        }
+    }
+
+    func testNewChatAndClearingReturnToChats() {
+        var state = SessionNavigationState()
+        state.select(.memory)
+        state.select(PendingNewChatRoute())
+        XCTAssertEqual(state.section, .chats)
+        state.select(.kanban)
+        state.clearDestination()
+        XCTAssertEqual(state.section, .chats)
+    }
+}

@@ -4,6 +4,7 @@ import Observation
 @MainActor
 @Observable
 public final class MemoryViewModel {
+    private var loadGeneration = 0
     private(set) var memoryText: String?
     private(set) var userText: String?
     private(set) var soulText: String?
@@ -26,6 +27,9 @@ public final class MemoryViewModel {
     /// True while the screen shows the last saved memory rather than the server's (TAL-437).
     /// Saves carry no version check, so editing waits for the live content.
     public private(set) var isShowingCachedContent = false
+    /// The section open in the editor. The file page presents it and the list's live refresh
+    /// waits for it, so both columns read one value (TAL-643).
+    public var editingSection: MemorySection?
 
     private let client: APIClient
     private let responseCache: ResponseCache?
@@ -40,16 +44,24 @@ public final class MemoryViewModel {
     }
 
     public func load() async {
+        // The view model outlives its screen (TAL-643): a rebuilt screen starts a new load while
+        // the old one may still be in flight, so only the latest load updates the model.
+        loadGeneration += 1
+        let generation = loadGeneration
         isLoading = true
         errorMessage = nil
         lastError = nil
-        defer { isLoading = false }
+        defer {
+            if generation == loadGeneration { isLoading = false }
+        }
 
         do {
             let response = try await client.memory(caching: responseCache?.entry(ResponseCache.Kind.memory))
+            guard generation == loadGeneration else { return }
             apply(response)
             isShowingCachedContent = false
         } catch {
+            guard generation == loadGeneration, !APIError.isCancellation(error) else { return }
             lastError = error
             errorMessage = error.localizedDescription
         }

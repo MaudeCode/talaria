@@ -4,6 +4,7 @@ import Observation
 @MainActor
 @Observable
 public final class SkillsViewModel {
+    private var loadGeneration = 0
     public private(set) var skills: [SkillSummary] = []
     public private(set) var isLoading = false
     public private(set) var errorMessage: String?
@@ -25,15 +26,23 @@ public final class SkillsViewModel {
     }
 
     public func load() async {
+        // The view model outlives its screen (TAL-643): a rebuilt screen starts a new load while
+        // the old one may still be in flight, so only the latest load updates the model.
+        loadGeneration += 1
+        let generation = loadGeneration
         isLoading = true
         errorMessage = nil
         lastError = nil
-        defer { isLoading = false }
+        defer {
+            if generation == loadGeneration { isLoading = false }
+        }
 
         do {
             let response = try await client.skills(caching: responseCache?.entry(ResponseCache.Kind.skills))
+            guard generation == loadGeneration else { return }
             skills = response.skills ?? []
         } catch {
+            guard generation == loadGeneration, !APIError.isCancellation(error) else { return }
             lastError = error
             errorMessage = error.localizedDescription
         }

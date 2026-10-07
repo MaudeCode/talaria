@@ -1,39 +1,36 @@
 import SwiftUI
 import TalariaKit
 
+/// The Settings root list. A row selects its page, which the section shows beside the list at
+/// regular width and pushes at compact width (TAL-643).
 struct SettingsView: View {
-    @Bindable var authManager: AuthManager
     let server: URL
-    let initialScrollTarget: SettingsScrollAnchor?
-
-    @State private var isPresentingInitialDestination: Bool
-
-    init(authManager: AuthManager, server: URL, initialScrollTarget: SettingsScrollAnchor? = nil) {
-        self.authManager = authManager
-        self.server = server
-        self.initialScrollTarget = initialScrollTarget
-        _isPresentingInitialDestination = State(initialValue: initialScrollTarget != nil)
-    }
+    @Binding var selection: SectionItem?
 
     var body: some View {
         List {
             Section {
-                NavigationLink {
-                    UserProfileSettingsView(authManager: authManager)
-                } label: {
+                SectionSelectionRow(item: .settings(.userProfile), selection: $selection) {
                     UserProfileSettingsRow(server: server)
                 }
                 .accessibilityIdentifier("settings-user-profile")
 
-                AppleAccountSettingsRow(authManager: authManager, server: server)
+                SectionSelectionRow(item: .settings(.appleAccount), selection: $selection) {
+                    AppleAccountSettingsRow()
+                }
+                .accessibilityHint("Opens Apple account, iCloud sync, and Talaria Relay settings.")
+                .accessibilityIdentifier("settings-apple-account")
             }
 
             Section {
                 ForEach(SettingsCategory.rootCategories) { category in
-                    NavigationLink {
-                        categoryDestination(category)
-                    } label: {
-                        Label(category.title, systemImage: category.systemImage)
+                    SectionSelectionRow(item: .settings(.category(category)), selection: $selection) {
+                        Label {
+                            Text(category.title)
+                        } icon: {
+                            Image(systemName: category.systemImage)
+                                .foregroundStyle(.tint)
+                        }
                     }
                     .accessibilityIdentifier("settings-category-\(category.id)")
                 }
@@ -41,15 +38,28 @@ struct SettingsView: View {
         }
         .listStyle(.insetGrouped)
         .navigationTitle("Settings")
-        .navigationDestination(isPresented: $isPresentingInitialDestination) {
-            if let initialScrollTarget {
-                directDestination(initialScrollTarget.destination)
-            }
+    }
+}
+
+/// The page a Settings row opens.
+struct SettingsPaneView: View {
+    @Bindable var authManager: AuthManager
+    let server: URL
+    let pane: SettingsPane
+
+    var body: some View {
+        switch pane {
+        case .userProfile:
+            UserProfileSettingsView(authManager: authManager)
+        case .appleAccount:
+            AppleAccountSettingsView(authManager: authManager, server: server)
+        case .category(let category):
+            categoryPage(category)
         }
     }
 
     @ViewBuilder
-    private func categoryDestination(_ category: SettingsCategory) -> some View {
+    private func categoryPage(_ category: SettingsCategory) -> some View {
         switch category {
         case .appearance:
             AppearanceSettingsView(authManager: authManager)
@@ -77,20 +87,10 @@ struct SettingsView: View {
             #endif
         }
     }
-
-    @ViewBuilder
-    private func directDestination(_ destination: SettingsDestination) -> some View {
-        switch destination {
-        case .servers:
-            ServersSettingsView(authManager: authManager, server: server)
-        case .providerQuotas:
-            ProvidersSettingsView(server: server)
-        }
-    }
 }
 
 #Preview {
     NavigationStack {
-        SettingsView(authManager: AuthManager(), server: URL(string: "https://webui.example.test")!)
+        SettingsView(server: URL(string: "https://webui.example.test")!, selection: .constant(nil))
     }
 }

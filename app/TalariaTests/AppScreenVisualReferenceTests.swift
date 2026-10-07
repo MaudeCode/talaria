@@ -149,10 +149,9 @@ final class AppScreenVisualReferenceTests: XCTestCase {
                 SkillCategorySection(
                     category: "Fixture",
                     skills: [skill],
-                    server: URL(string: "https://talaria.invalid")!,
+                    selection: .constant(nil),
                     togglingSkillNames: [],
-                    onToggleSkill: { _, _ in },
-                    onAPIError: { _ in }
+                    onToggleSkill: { _, _ in }
                 )
                 .padding(.horizontal, 16),
                 named: "skill-row-disabled-\(name(for: scheme))",

@@ -1,24 +1,6 @@
 import SwiftUI
 import TalariaKit
 
-struct MemorySectionHeader: View {
-    let section: MemorySection
-    let modifiedAt: Date?
-    let isEditingDisabled: Bool
-    let onEdit: () -> Void
-
-    var body: some View {
-        MemoryHeaderRow(title: section.title, systemImage: section.systemImage, modifiedAt: modifiedAt) {
-            Button(action: onEdit) {
-                Label("Edit \(section.title)", systemImage: "pencil")
-                    .labelStyle(.iconOnly)
-            }
-            .disabled(isEditingDisabled)
-            .buttonStyle(.borderless)
-        }
-    }
-}
-
 /// Title, modified caption and trailing control on one row. When they cannot share it, as at
 /// accessibility text sizes, the caption drops below so the title keeps whole words (TAL-466).
 struct MemoryHeaderRow<Trailing: View>: View {

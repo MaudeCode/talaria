@@ -1,19 +1,14 @@
 import SwiftUI
 import TalariaKit
 
+/// The skill list. A row selects its skill, which `SkillDetailView` shows beside the list or
+/// pushed over it (TAL-643).
 struct SkillsView: View {
-    let server: URL
+    let viewModel: SkillsViewModel
+    @Binding var selection: SectionItem?
     let onAPIError: (Error) -> Void
 
-    @State private var viewModel: SkillsViewModel
-    @State private var selectedSkill: SkillSummary?
     @State private var searchText = ""
-
-    init(server: URL, onAPIError: @escaping (Error) -> Void) {
-        self.server = server
-        self.onAPIError = onAPIError
-        _viewModel = State(initialValue: SkillsViewModel(server: server, responseCache: .app(server: server)))
-    }
 
     var body: some View {
         content
@@ -79,12 +74,11 @@ struct SkillsView: View {
                         SkillCategorySection(
                             category: group.category,
                             skills: group.skills,
-                            server: server,
+                            selection: $selection,
                             togglingSkillNames: viewModel.togglingSkillNames,
                             onToggleSkill: { skill, enabled in
                                 await toggle(skill: skill, enabled: enabled)
-                            },
-                            onAPIError: onAPIError
+                            }
                         )
                     }
                 }

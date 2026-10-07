@@ -109,8 +109,9 @@ final class SettingsNavigationTests: XCTestCase {
     }
 
     func testExternalSettingsDestinationsOpenTheirOwningCategory() {
-        XCTAssertEqual(SettingsScrollAnchor.servers.destination, .servers)
-        XCTAssertEqual(SettingsScrollAnchor.providerQuotas.destination, .providerQuotas)
+        XCTAssertEqual(SettingsScrollAnchor.servers.category, .servers)
+        XCTAssertEqual(SettingsScrollAnchor.providerQuotas.category, .providers)
+        XCTAssertEqual(SettingsScrollAnchor.system.category, .servers)
     }
 }
 

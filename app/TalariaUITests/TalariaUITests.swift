@@ -3069,7 +3069,7 @@ extension TalariaUITestCase {
     }
 }
 
-fileprivate extension TalariaUITestCase {
+extension TalariaUITestCase {
     var fixtureSessionTitle: String { "UI Fixture Session" }
 
     var fixtureSessionButton: XCUIElement {

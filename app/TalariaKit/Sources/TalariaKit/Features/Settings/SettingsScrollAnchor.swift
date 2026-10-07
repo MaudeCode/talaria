@@ -4,11 +4,11 @@ public enum SettingsScrollAnchor: Hashable {
     case providerQuotas
     case system
 
-    public var destination: SettingsDestination {
+    /// The category the anchor opens; server updates live on the Servers page.
+    public var category: SettingsCategory {
         switch self {
-        case .servers: .servers
-        case .providerQuotas: .providerQuotas
-        case .system: .servers
+        case .servers, .system: .servers
+        case .providerQuotas: .providers
         }
     }
 }

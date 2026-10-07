@@ -6,16 +6,22 @@ struct ArchivedSessionsView: View {
     /// Forwarded to `ChatView` and used for load/unarchive failures so a 401
     /// here triggers the same re-login flow as everywhere else.
     let onAPIError: (Error) -> Void
+    /// The archived chat open beside the list at regular width.
+    var selectedSessionID: String?
 
+    /// Set at regular width, where an archived chat opens in the Archived section beside its
+    /// list instead of being pushed over it (TAL-643).
+    @Environment(\.openArchivedSession) private var openArchivedSession
     @State private var viewModel: ArchivedSessionsViewModel
     @State private var openedSession: SessionSummary?
     @AppStorage(SessionRowDisplaySettings.showMessageCountKey) private var showsSessionMessageCount = true
     @AppStorage(SessionRowDisplaySettings.showWorkspaceKey) private var showsSessionWorkspace = true
     @AppStorage(AppHaptics.isEnabledKey) private var isHapticsEnabled = true
 
-    init(server: URL, onAPIError: @escaping (Error) -> Void) {
+    init(server: URL, onAPIError: @escaping (Error) -> Void, selectedSessionID: String? = nil) {
         self.server = server
         self.onAPIError = onAPIError
+        self.selectedSessionID = selectedSessionID
         _viewModel = State(initialValue: ArchivedSessionsViewModel(server: server))
     }
 
@@ -99,7 +105,11 @@ struct ArchivedSessionsView: View {
     private func archivedSessionRow(for session: SessionSummary) -> some View {
         HStack(spacing: 0) {
             Button {
-                openedSession = session
+                if let openArchivedSession {
+                    openArchivedSession(session)
+                } else {
+                    openedSession = session
+                }
             } label: {
                 SessionRowView(
                     session: session,
@@ -111,6 +121,7 @@ struct ArchivedSessionsView: View {
 
             unarchiveButton(for: session)
         }
+        .selectedRowBackground(session.sessionId == selectedSessionID)
         .contextMenu {
             Button {
                 unarchive(session)
@@ -164,5 +175,16 @@ struct ArchivedSessionsView: View {
         if let lastError = viewModel.lastError {
             onAPIError(lastError)
         }
+    }
+}
+
+private struct OpenArchivedSessionKey: EnvironmentKey {
+    static let defaultValue: (@MainActor (SessionSummary) -> Void)? = nil
+}
+
+extension EnvironmentValues {
+    var openArchivedSession: (@MainActor (SessionSummary) -> Void)? {
+        get { self[OpenArchivedSessionKey.self] }
+        set { self[OpenArchivedSessionKey.self] = newValue }
     }
 }

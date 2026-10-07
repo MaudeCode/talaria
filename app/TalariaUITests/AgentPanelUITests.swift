@@ -318,12 +318,17 @@ final class AgentPanelContentUITests: AgentPanelUITestCase {
         openPanel("Memory")
         recoverFromFailedLoad("Memory", error: "Could Not Load Memory", loading: "Loading memory...")
 
+        // Memory lists its files; each opens on its own page (TAL-643).
+        let notes = app.buttons.containing(.staticText, identifier: "My Notes").firstMatch
+        XCTAssertTrue(notes.awaitExistence(timeout: 10), "Memory did not list its files")
+        XCTAssertTrue(element(labelContaining: "User Profile").exists)
+        XCTAssertTrue(element(labelContaining: "Agent Soul").exists)
+        tapCenter(of: notes)
         XCTAssertTrue(
             element(labelContaining: "Fixture notes body").awaitExistence(timeout: 10),
-            "Memory did not render its sections"
+            "My Notes did not open its content"
         )
-        XCTAssertTrue(element(labelContaining: "Fixture user profile").exists)
-        XCTAssertTrue(element(labelContaining: "Fixture agent soul").exists)
+        XCTAssertFalse(element(labelContaining: "Fixture user profile").exists, "The page must show one file")
 
         tapCenter(of: app.buttons["Edit My Notes"].firstMatch)
         let editor = app.navigationBars["Edit My Notes"]
@@ -339,6 +344,8 @@ final class AgentPanelContentUITests: AgentPanelUITestCase {
             element(labelContaining: "Edited by fixture").awaitExistence(timeout: 15),
             "The saved memory text did not return with the reload"
         )
+        app.buttons["BackButton"].tap()
+        XCTAssertTrue(app.navigationBars["Memory"].awaitExistence(timeout: Self.navigationTimeout))
     }
 
     private func assertInsightsPanelShowsQuotasAnalyticsAndSwitchesTimeframe() throws {

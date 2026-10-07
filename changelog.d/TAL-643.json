@@ -1,0 +1,22 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "On iPad and the unfolded iPhone Duo, Settings, Memory, Skills, Tasks and the archived, scheduled and webhook chat lists show their own list in the sidebar with the selected page beside it, and Kanban and Insights use the full width.",
+      "highlight": true,
+      "components": ["app"]
+    },
+    {
+      "category": "Changed",
+      "summary": "Memory lists My Notes, User Profile, Agent Soul and Project Context as separate files, each opening on its own page.",
+      "highlight": false,
+      "components": ["app"]
+    },
+    {
+      "category": "Fixed",
+      "summary": "Rotating, resizing or folding the device keeps the open section and page instead of returning to the chat list.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

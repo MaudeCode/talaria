@@ -9,6 +9,7 @@ public enum CronJobListMutation: Equatable {
 @MainActor
 @Observable
 public final class TasksViewModel {
+    private var loadGeneration = 0
     public private(set) var jobs: [CronJob] = []
     private(set) var runningJobs: [String: Double] = [:]
     /// Server-provided deliver targets; `nil` while unknown or when the
@@ -40,10 +41,16 @@ public final class TasksViewModel {
     }
 
     public func load() async {
+        // The view model outlives its screen (TAL-643): a rebuilt screen starts a new load while
+        // the old one may still be in flight, so only the latest load updates the model.
+        loadGeneration += 1
+        let generation = loadGeneration
         isLoading = true
         errorMessage = nil
         lastError = nil
-        defer { isLoading = false }
+        defer {
+            if generation == loadGeneration { isLoading = false }
+        }
 
         do {
             async let jobsResponse = client.crons(caching: responseCache?.entry(ResponseCache.Kind.crons))
@@ -53,10 +60,13 @@ public final class TasksViewModel {
             async let deliveryOptionsResponse = try? client.cronDeliveryOptions()
 
             let (jobsResult, statusResult) = try await (jobsResponse, statusResponse)
+            let deliveryOptions = await deliveryOptionsResponse?.platforms
+            guard generation == loadGeneration else { return }
             runningJobs = statusResult.runningJobs ?? [:]
             jobs = (jobsResult.jobs ?? []).sorted(by: sortJobs)
-            deliveryOptions = await deliveryOptionsResponse?.platforms
+            self.deliveryOptions = deliveryOptions
         } catch {
+            guard generation == loadGeneration, !APIError.isCancellation(error) else { return }
             lastError = error
             errorMessage = error.localizedDescription
         }
