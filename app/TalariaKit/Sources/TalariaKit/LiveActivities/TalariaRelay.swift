@@ -1,6 +1,9 @@
 public import AuthenticationServices
 import CryptoKit
 import Foundation
+#if canImport(UIKit)
+import UIKit
+#endif
 
 public struct TalariaRelayCredentials: Codable, Equatable {
     public var baseURL: URL
@@ -352,7 +355,7 @@ public final class TalariaRelayClient {
             "notifyOnFailure": completionAlertsEnabled
         ]
         var body: [String: Any] = [
-            "label": "Talaria iPhone",
+            "label": await Self.deviceLabel,
             "bundleId": Bundle.main.bundleIdentifier ?? "dev.kil.talaria",
             "apsEnvironment": Self.apsEnvironment,
             "preferences": preferences
@@ -540,6 +543,15 @@ public final class TalariaRelayClient {
             delegate: TalariaRelayRedirectGuard(baseURL: baseURL),
             delegateQueue: nil
         )
+    }
+
+    /// The device model, never the user-assigned device name: "Talaria iPhone" or "Talaria iPad".
+    @MainActor static var deviceLabel: String {
+        #if canImport(UIKit)
+        "Talaria \(UIDevice.current.model)"
+        #else
+        "Talaria Mac"
+        #endif
     }
 
     private static var apsEnvironment: String {
