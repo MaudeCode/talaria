@@ -65,7 +65,6 @@ defaults:
     working-directory: app
 
 env:
-  XCODE_VERSION: "27.0"
   # Only the full suite hands its build to test shards.
   BUILD_JOB: UI suite build
   BUILD_ARTIFACT: ui-suite-build
@@ -84,13 +83,11 @@ jobs:
           ref: ${{ inputs.ref || github.sha }}
 
       - uses: ./.github/actions/setup-xcode
-        with:
-          xcode-version: ${{ env.XCODE_VERSION }}
 
       - name: Build for testing
         env:
           # A build destination only; nothing boots on this runner.
-          BUILD_DESTINATION: platform=iOS Simulator,name=iPhone 17,OS=${{ env.XCODE_VERSION }}
+          BUILD_DESTINATION: platform=iOS Simulator,name=iPhone 17,OS=${{ env.IOS_SIMULATOR_OS }}
         run: ci/build-for-testing "${BUILD_DESTINATION}"
 
       - name: Package the test build
@@ -138,8 +135,6 @@ jobs:
           ref: ${{ inputs.ref || github.sha }}
 
       - uses: ./.github/actions/setup-xcode
-        with:
-          xcode-version: ${{ env.XCODE_VERSION }}
 
       # The committed Package.resolved pins the App's revisions; resolution never drifts from it. Coverage is measured
       # on this run, the one CI Gate counts (TAL-67).
@@ -267,18 +262,17 @@ jobs:
           echo $! > "${RUNNER_TEMP}/build-wait.pid"
 
       - uses: ./.github/actions/setup-xcode
-        with:
-          xcode-version: ${{ env.XCODE_VERSION }}
 
-      # The image's own iPhone 17 on the runtime matching the SDK, booted to completion before the wait and the
-      # download so nothing competes with its first boot; App build runs meanwhile on another runner.
+      # The image's own iPhone 17 on the newest runtime the SDK runs (setup-xcode's IOS_SIMULATOR_OS), booted to
+      # completion before the wait and the download so nothing competes with its first boot; App build runs meanwhile
+      # on another runner.
       - name: Boot the simulator
         id: sim
         uses: futureware-tech/simulator-action@e89aa8f93d3aec35083ff49d2854d07f7186f7f5 # v5
         with:
           model: iPhone 17
           os: iOS
-          os_version: ~${{ env.XCODE_VERSION }}
+          os_version: ~${{ env.IOS_SIMULATOR_OS }}
           erase_before_boot: false
           wait_for_boot: true
           boot_timeout_seconds: 600

@@ -31,7 +31,6 @@ jobs:
     timeout-minutes: 60
 
     env:
-      XCODE_VERSION: "27.0"
       PROJECT_PATH: Talaria.xcodeproj
       SCHEME: Talaria
       DERIVED_DATA_PATH: DerivedData
@@ -42,17 +41,15 @@ jobs:
         uses: actions/checkout@v7
 
       - uses: ./.github/actions/setup-xcode
-        with:
-          xcode-version: ${{ env.XCODE_VERSION }}
 
-      # As CI: the image's own iPhone 17 on the runtime matching the SDK, booted to completion before the test.
+      # As CI: the image's own iPhone 17 on setup-xcode's IOS_SIMULATOR_OS runtime, booted to completion before the test.
       - name: Boot the simulator
         id: sim
         uses: futureware-tech/simulator-action@e89aa8f93d3aec35083ff49d2854d07f7186f7f5 # v5
         with:
           model: iPhone 17
           os: iOS
-          os_version: ~${{ env.XCODE_VERSION }}
+          os_version: ~${{ env.IOS_SIMULATOR_OS }}
           erase_before_boot: false
           wait_for_boot: true
           boot_timeout_seconds: 600

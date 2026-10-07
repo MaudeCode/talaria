@@ -9,14 +9,16 @@ runtimes_json=$(xcrun simctl list runtimes --json)
 requested_runtime=${IOS_SIMULATOR_RUNTIME:-}
 requested_type=${IOS_SIMULATOR_DEVICE_TYPE:-}
 
-# Apple numbers seed builds from 5000 in the field after the letter
-# (27.0 beta is 24A5408d); released builds stay far below it (23E254a).
+# Apple numbers seed builds from 5000 in the field after the letter and
+# ends them with a letter (27.0 beta is 24A5408d). Released builds stay
+# below it (23E254a), or keep a high number without the trailing letter
+# when they ship for new hardware (27.1 is 24A94401).
 # Betas are skipped so an installed prerelease SDK does not silently
 # become the default test runtime. Request one explicitly with
 # IOS_SIMULATOR_RUNTIME.
 # ponytail: build-number heuristic, revisit if Apple renumbers builds.
 prerelease=$(print -r -- "$runtimes_json" | /usr/bin/jq -c '
-    [.runtimes[] | select(.buildversion | test("^[0-9]+[A-Z][5-9][0-9]{3}")) | .identifier]')
+    [.runtimes[] | select(.buildversion | test("^[0-9]+[A-Z][5-9][0-9]{3}[a-z]$")) | .identifier]')
 eligible='select(if $requested == "" then ([.] | inside($prerelease) | not) else . == $requested end)'
 newest_first='sort_by(split("iOS-")[1] | split("-") | map(tonumber)) | reverse'
 

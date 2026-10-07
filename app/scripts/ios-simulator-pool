@@ -63,11 +63,15 @@ ios_pool_try_acquire() {
     local devices_json candidates candidate_id candidate_state candidate_disposable candidate_lease candidate
     devices_json=$(xcrun simctl list devices available --json) || return $?
     candidates=$(print -r -- "$devices_json" | /usr/bin/jq -r \
-        --arg id "${IOS_SIMULATOR_ID:-}" --arg runtime "${IOS_SIMULATOR_RUNTIME:-}" '
+        --arg id "${IOS_SIMULATOR_ID:-}" --arg runtime "${IOS_SIMULATOR_RUNTIME:-}" \
+        --arg type "${IOS_SIMULATOR_DEVICE_TYPE:-}" '
         [.devices | to_entries[] |
          select(.key | startswith("com.apple.CoreSimulator.SimRuntime.iOS-")) |
          select($runtime == "" or .key == $runtime) | .value[] |
-         select(if $id != "" then .udid == $id else (.name | test("^iOS Test [1-9][0-9]*$")) end)] |
+         # A device type (an iPhone Duo for layout tests) may name a model outside the pool.
+         select(if $id != "" then .udid == $id
+                elif $type != "" then .deviceTypeIdentifier == $type
+                else (.name | test("^iOS Test [1-9][0-9]*$")) end)] |
         sort_by(.name) | .[] | [.udid, .state, (.name | test("^iOS Test [1-9][0-9]*$"))] | @tsv
     ') || return $?
     if [[ -z "$candidates" ]]; then

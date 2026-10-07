@@ -41,10 +41,10 @@ class TestIOSRunnerTest < Minitest::Test
     jobs = workflow_jobs("app-tests.yml")
     boot = jobs.fetch("app-test")["steps"].find { |step| step["name"] == "Boot the simulator" }
     assert_match(%r{\Afutureware-tech/simulator-action@[0-9a-f]{40}\z}, boot["uses"])
-    assert_equal(["iPhone 17", "iOS", "~${{ env.XCODE_VERSION }}", false, true, 600],
+    assert_equal(["iPhone 17", "iOS", "~${{ env.IOS_SIMULATOR_OS }}", false, true, 600],
                  boot["with"].values_at("model", "os", "os_version", "erase_before_boot", "wait_for_boot", "boot_timeout_seconds"))
     assert_includes(workflow, "SIMULATOR_ID: ${{ steps.sim.outputs.udid }}")
-    assert_includes(workflow, "BUILD_DESTINATION: platform=iOS Simulator,name=iPhone 17,OS=${{ env.XCODE_VERSION }}")
+    assert_includes(workflow, "BUILD_DESTINATION: platform=iOS Simulator,name=iPhone 17,OS=${{ env.IOS_SIMULATOR_OS }}")
     %w[scripts/select-ios-simulator scripts/test-ios(?![-\w]) scripts/setup-ios-test-pool scripts/ios-simulator-pool(?![-\w])].each do |local|
       refute_match(Regexp.new(local), workflow)
     end
@@ -53,6 +53,17 @@ class TestIOSRunnerTest < Minitest::Test
     build = File.read(File.expand_path("build-for-testing", __dir__), encoding: "UTF-8")
     assert_includes(build, '-destination "${destination}"')
     refute_includes(workflow, "platform=iOS Simulator,name=${SIMULATOR_NAME}")
+  end
+
+  def test_every_workflow_selects_xcode_through_setup_xcode
+    # One pin: setup-xcode selects Xcode 27.1 (the iOS 27.1 SDK iPhone Duo layouts need) and exports the newest
+    # installed runtime that SDK runs as IOS_SIMULATOR_OS; the hosted image has no iOS 27.1 runtime (TAL-471).
+    action = YAML.safe_load_file(File.expand_path("../../.github/actions/setup-xcode/action.yml", __dir__))
+    assert_equal("27.1", action["inputs"]["xcode-version"]["default"])
+    assert_includes(action["runs"]["steps"].last["run"], 'echo "IOS_SIMULATOR_OS=${simulator_os}" >> "$GITHUB_ENV"')
+    Dir[File.join(WORKFLOWS, "*.yml")].each do |path|
+      refute_match(/xcode-version|XCODE_VERSION|show-sdk-version/, File.read(path, encoding: "UTF-8"), File.basename(path))
+    end
   end
 
   def test_unit_tests_never_request_real_live_activities
