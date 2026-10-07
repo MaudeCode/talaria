@@ -40,7 +40,7 @@ exists:
 ```sh
 export IOS_SIMULATOR_DEVICE_TYPE=com.apple.CoreSimulator.SimDeviceType.iPhone-Duo
 scripts/select-ios-simulator   # finds an iPhone Duo, or creates one on the newest runtime that supports it
-scripts/test-ios TalariaUITests/RegularWidthNavigationUITests
+scripts/test-ios TalariaUITests/ComposerChipUITests
 ```
 
 Every consumer uses `/tmp/ios-simulator-pool-$EUID/pool.lock` for setup/admission
