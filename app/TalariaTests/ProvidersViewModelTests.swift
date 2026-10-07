@@ -65,6 +65,7 @@ final class ProvidersViewModelTests: APIClientTestCase {
         XCTAssertEqual(model.quotaSources.map(\.id), ["qsrc_work", "qsrc_personal", "qsrc_openrouter"])
         XCTAssertEqual(model.quotaSources.map(\.accountLabel), ["Work", "Personal", "OpenRouter"])
         XCTAssertTrue(model.hasStableQuotaSources)
+        XCTAssertTrue(model.hasServerQuotaSources)
         XCTAssertNil(model.quotaErrorMessage)
     }
 
@@ -574,6 +575,8 @@ final class ProvidersViewModelTests: APIClientTestCase {
 
         let relaunched = ProvidersViewModel(server: Self.serverURL, client: client, quotaSnapshotStore: store, reloadQuotaWidgets: {})
         let seeded = try XCTUnwrap(relaunched.quotaSources.first)
+        XCTAssertTrue(relaunched.hasStableQuotaSources)
+        XCTAssertFalse(relaunched.hasServerQuotaSources, "a cached snapshot is not a server list")
         XCTAssertEqual(seeded.windows, loaded.windows)
         XCTAssertEqual(seeded.paceWindowIndex, 0)
         XCTAssertEqual(seeded.computedAt, "2026-09-28T08:00:00Z")
