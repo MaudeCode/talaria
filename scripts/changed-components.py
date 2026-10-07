@@ -21,6 +21,7 @@ WORKFLOWS = {
     "ci.yml": {"app", "contracts", "tooling"},
     "app-tests.yml": {"app", "contracts", "tooling"},
     "ui-suite.yml": {"tooling"},  # Nightly and release gate only; PR CI runs its shared app-tests.yml.
+    # Deleted (TAL-659); kept so a diff that removes it stays tooling-only instead of an unknown path's every suite.
     "ui-suite-failed.yml": {"tooling"},
     "web-verify.yml": {"web_server", "web_frontend", "tooling"},
     "web-docker-smoke.yml": {"docker", "tooling"},

@@ -1,0 +1,1 @@
+{"skip": "CI tooling only: the UI suite failure alert runs inside the suite workflow so suite runs CI starts reach the fix agent."}
