@@ -534,6 +534,9 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         guard ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.launchArgument) else { return }
         configuration.protocolClasses = [Self.self]
             + (configuration.protocolClasses ?? []).filter { $0 != Self.self }
+        // A held load waits for the test's release, not for URLSession's 60 s default: XCTest's own wait for the App to
+        // go idle blocked a hosted test for 58 s, and the held Git status read failed before its release (TAL-672).
+        configuration.timeoutIntervalForRequest = .infinity
     }
 
     override class func canInit(with request: URLRequest) -> Bool {
