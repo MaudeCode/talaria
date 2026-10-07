@@ -21,7 +21,6 @@ WORKFLOWS = {
     "ci.yml": {"app", "contracts", "tooling"},
     "app-tests.yml": {"app", "contracts", "tooling"},
     "ui-suite.yml": {"tooling"},  # Nightly and release gate only; PR CI runs its shared app-tests.yml.
-    "ui-suite-failed.yml": {"tooling"},
     "web-verify.yml": {"web_server", "web_frontend", "tooling"},
     "web-docker-smoke.yml": {"docker", "tooling"},
     "relay-verify.yml": {"relay", "tooling"},

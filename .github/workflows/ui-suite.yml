@@ -1,7 +1,7 @@
 # The full iOS unit and UI suite on GitHub-hosted runners: App build plus four simulator shards (the hosted unit
 # tests, the launch smoke and every UI test) and the TalariaKit package tests (app-tests.yml, full mode). It is too
 # long for every main push, so it runs nightly, on demand, and on main after every fifth App-changing merge since its
-# last run (ci.yml's ui-suite-cadence, TAL-655). A failed run on main goes to the fix agent (ui-suite-failed.yml). A
+# last run (ci.yml's ui-suite-cadence, TAL-655). A failed run on main goes to the fix agent (the alert job). A
 # release calls app-tests.yml directly instead (TAL-417), so this workflow's concurrency never holds a release's suite.
 #
 # A manual run can scope and repeat the suite instead (TAL-401), for example 10 runs in a row of one flaky test:
@@ -60,3 +60,40 @@ jobs:
       only_testing: ${{ inputs.only_testing }}
       # Strings end to end: schedule runs have no such input, so they pass "1".
       test_iterations: ${{ inputs.test_iterations || '1' }}
+
+  alert:
+    # Hands a failed, unscoped suite of main's head to the fix agent: one signed POST, which files or updates a ticket
+    # and starts the fix (TAL-655). A job here, not a workflow_run workflow: CI dispatches this workflow with
+    # GITHUB_TOKEN, and GitHub starts no workflow from that token's events (TAL-659). The receiver's URL and signing
+    # secret are the UI_SUITE_WEBHOOK_URL and UI_SUITE_WEBHOOK_SECRET Actions secrets, which only this job reads. The
+    # body is JSON with run_id, run_url, head_sha, display_title and failed_jobs, signed like a GitHub webhook
+    # (x-hub-signature-256: sha256=<HMAC-SHA256 hex of the body>).
+    name: Send the failure to the fix agent
+    needs: suite
+    if: failure() && github.ref == 'refs/heads/main' && !inputs.only_testing && (!inputs.ref || inputs.ref == github.sha)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+    steps:
+      - name: Post the signed failure report
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WEBHOOK_URL: ${{ secrets.UI_SUITE_WEBHOOK_URL }}
+          WEBHOOK_SECRET: ${{ secrets.UI_SUITE_WEBHOOK_SECRET }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$WEBHOOK_URL" || -z "$WEBHOOK_SECRET" ]]; then
+            echo "::error::Set the UI_SUITE_WEBHOOK_URL and UI_SUITE_WEBHOOK_SECRET Actions secrets."
+            exit 1
+          fi
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          failed_jobs=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" \
+            --jq '[.jobs[] | select(.conclusion == "failure") | .name]' | jq -sc 'add // []')
+          body=$(jq -nc --arg run_id "$GITHUB_RUN_ID" --arg run_url "$run_url" --arg head_sha "$GITHUB_SHA" \
+            --arg display_title "UI suite on $GITHUB_SHA" --argjson failed_jobs "$failed_jobs" \
+            '{run_id: $run_id, run_url: $run_url, head_sha: $head_sha, display_title: $display_title, failed_jobs: $failed_jobs}')
+          signature=$(printf '%s' "$body" | openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" -hex | awk '{print $NF}')
+          curl -fsS --retry 3 -o /dev/null -X POST "$WEBHOOK_URL" -H "content-type: application/json" \
+            -H "x-hub-signature-256: sha256=$signature" --data-binary "$body"
+          printf 'Sent %s to the fix agent.\n' "$run_url" | tee -a "$GITHUB_STEP_SUMMARY"
