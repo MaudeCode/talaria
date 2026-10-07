@@ -34,6 +34,7 @@ cp "$source_root/scripts/test-ios" "$repo/scripts/test-ios"
 cp "$source_root/ci/test_shards.py" "$repo/ci/test_shards.py"
 cp "$source_root/scripts/load-env" "$repo/scripts/load-env"
 cp "$source_root/scripts/ios-simulator-pool" "$repo/scripts/ios-simulator-pool"
+cp "$source_root/scripts/prepare-ui-simulator" "$repo/scripts/prepare-ui-simulator"
 chmod +x "$repo/scripts/test-ios" "$repo/scripts/load-env"
 
 cat > "$repo/scripts/assert-no-skipped-ui-tests" <<'EOF'
@@ -57,6 +58,8 @@ cat > "$fake_bin/xcrun" <<'EOF'
 #!/bin/zsh
 if [[ "$*" == "simctl list devices available --json" ]]; then
     <"${TALARIA_DEVICE_FIXTURE:?}"
+elif [[ "$1 $2" == "simctl spawn" ]]; then
+    print -r -- "${@:3}" >> "$TALARIA_TEST_STATE/spawned"
 elif [[ "$1 $2 $3 $4" == "xcresulttool get test-results summary" ]]; then
     bundle=""
     for (( index = 1; index <= $#; index++ )); do
@@ -358,8 +361,11 @@ expected=$'-only-testing:TalariaTests/Unit|NO\n-only-testing:TalariaUITests/Firs
 # (TAL-651); a personal simulator keeps its library and its processes.
 : > "$state/seeded"
 : > "$state/notifications-readied"
+: > "$state/spawned"
 "$repo/scripts/test-ios" TalariaUITests/PoolSeed > "$state/pool-seed.log" 2>&1
 [[ "$(<"$state/seeded")" == (AAAAAAAA|BBBBBBBB)-* ]]
+# ...and has the keyboard's slide-to-type introduction marked as shown (TAL-668).
+[[ "$(<"$state/spawned")" == (AAAAAAAA|BBBBBBBB)-*" defaults write com.apple.keyboard.preferences DidShowContinuousPathIntroduction -bool true" ]]
 TALARIA_DEVICE_FIXTURE="$state/fallback-devices" IOS_SIMULATOR_ID=DDDDDDDD-DDDD-DDDD-DDDD-DDDDDDDDDDDD \
     "$repo/scripts/test-ios" TalariaUITests/PersonalSeed > "$state/personal-seed.log" 2>&1
 grep -q "Not preparing personal simulator DDDDDDDD" "$state/personal-seed.log"

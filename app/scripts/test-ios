@@ -62,8 +62,7 @@ destination="platform=iOS Simulator,id=$simulator_id"
 prepare_ui_simulator() {
     if [[ "$simulator_disposable" == true ]]; then
         # Explicit exits: zsh skips the EXIT trap, and the lease release, when errexit fires in a function.
-        scripts/ready-simulator-notifications "$simulator_id" || exit $?
-        scripts/seed-simulator-photo "$simulator_id" || exit $?
+        scripts/prepare-ui-simulator "$simulator_id" || exit $?
     else
         print -u2 "Not preparing personal simulator $simulator_id: Photos picker tests use its library, and its notification service is not restarted."
     fi
