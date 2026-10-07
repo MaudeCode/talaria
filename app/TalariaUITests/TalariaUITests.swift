@@ -381,6 +381,30 @@ final class SessionListBottomBarUITests: ChatUITestCase {
     }
 }
 
+/// TAL-496: update notifications are a system sheet, so they swipe down to dismiss and center
+/// at form width in regular width instead of spanning the screen.
+final class UpdateNotificationsSheetUITests: ChatUITestCase {
+    func testTheNotificationsSheetSwipesDownToDismiss() throws {
+        launchFixture(additionalArguments: ["--ui-test-update-notifications"])
+        let sheetBar = app.navigationBars["Notifications"]
+        XCTAssertTrue(sheetBar.awaitExistence(timeout: 20), "The notifications sheet did not open")
+        attachScreenshot(named: "Notifications sheet")
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            XCTAssertLessThan(sheetBar.settledFrame.width, app.windows.firstMatch.frame.width, "The sheet spans the full window width")
+        }
+
+        // A swipe inside the short navigation bar is too short to dismiss; drag the sheet to the bottom edge.
+        sheetBar.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(
+            forDuration: 0.05,
+            thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.98)),
+            withVelocity: .fast,
+            thenHoldForDuration: 0
+        )
+        XCTAssertTrue(sheetBar.awaitNonExistence(timeout: 5), "Swiping down did not dismiss the notifications sheet")
+        XCTAssertTrue(app.buttons["Notifications"].awaitExistence(timeout: 5), "The bell is missing after dismissing")
+    }
+}
+
 /// TAL-443: archiving a chat offers Undo, which brings the chat back from the server.
 final class SessionArchiveUndoUITests: ChatUITestCase {
     func testUndoRestoresAnArchivedChat() throws {

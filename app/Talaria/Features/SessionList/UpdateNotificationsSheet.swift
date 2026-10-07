@@ -3,47 +3,6 @@ import Observation
 import SwiftUI
 import TalariaKit
 
-struct UpdateNotificationsPresentation: View {
-    @Bindable var viewModel: UpdateNotificationCenterViewModel
-    let onAPIError: (Error) -> Void
-    let openDestination: (UpdateNotificationDestination) -> Void
-
-    var body: some View {
-        GeometryReader { proxy in
-            ZStack(alignment: .bottom) {
-                Color.black.opacity(0.22)
-                    .ignoresSafeArea()
-
-                UpdateNotificationsSheet(
-                    viewModel: viewModel,
-                    onAPIError: onAPIError,
-                    openDestination: openDestination
-                )
-                .frame(height: proxy.size.height * 0.9)
-                .background(Color(.systemBackground))
-                .clipShape(
-                    UnevenRoundedRectangle(
-                        topLeadingRadius: 32,
-                        bottomLeadingRadius: 0,
-                        bottomTrailingRadius: 0,
-                        topTrailingRadius: 32,
-                        style: .continuous
-                    )
-                )
-                .overlay(alignment: .top) {
-                    Capsule()
-                        .fill(.secondary.opacity(0.45))
-                        .frame(width: 38, height: 5)
-                        .padding(.top, 8)
-                        .accessibilityHidden(true)
-                }
-                .ignoresSafeArea(edges: .bottom)
-            }
-        }
-        .presentationBackground(.clear)
-    }
-}
-
 struct UpdateNotificationsSheet: View {
     @Bindable var viewModel: UpdateNotificationCenterViewModel
     let onAPIError: (Error) -> Void
