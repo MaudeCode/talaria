@@ -65,7 +65,6 @@ defaults:
     working-directory: app
 
 env:
-  XCODE_VERSION: "27.0"
   # Only the full suite hands its build to test shards.
   BUILD_JOB: UI suite build
   BUILD_ARTIFACT: ui-suite-build
@@ -84,13 +83,11 @@ jobs:
           ref: ${{ inputs.ref || github.sha }}
 
       - uses: ./.github/actions/setup-xcode
-        with:
-          xcode-version: ${{ env.XCODE_VERSION }}
 
       - name: Build for testing
         env:
           # A build destination only; nothing boots on this runner.
-          BUILD_DESTINATION: platform=iOS Simulator,name=iPhone 17,OS=${{ env.XCODE_VERSION }}
+          BUILD_DESTINATION: platform=iOS Simulator,name=iPhone 17,OS=${{ env.IOS_SIMULATOR_OS }}
         run: ci/build-for-testing "${BUILD_DESTINATION}"
 
       - name: Package the test build
@@ -138,8 +135,6 @@ jobs:
           ref: ${{ inputs.ref || github.sha }}
 
       - uses: ./.github/actions/setup-xcode
-        with:
-          xcode-version: ${{ env.XCODE_VERSION }}
 
       # The committed Package.resolved pins the App's revisions; resolution never drifts from it. Coverage is measured
       # on this run, the one CI Gate counts (TAL-67).
@@ -267,18 +262,17 @@ jobs:
           echo $! > "${RUNNER_TEMP}/build-wait.pid"
 
       - uses: ./.github/actions/setup-xcode
-        with:
-          xcode-version: ${{ env.XCODE_VERSION }}
 
-      # The image's own iPhone 17 on the runtime matching the SDK, booted to completion before the wait and the
-      # download so nothing competes with its first boot; App build runs meanwhile on another runner.
+      # The image's own iPhone 17 on the newest runtime the SDK runs (setup-xcode's IOS_SIMULATOR_OS), booted to
+      # completion before the wait and the download so nothing competes with its first boot; App build runs meanwhile
+      # on another runner.
       - name: Boot the simulator
         id: sim
         uses: futureware-tech/simulator-action@e89aa8f93d3aec35083ff49d2854d07f7186f7f5 # v5
         with:
           model: iPhone 17
           os: iOS
-          os_version: ~${{ env.XCODE_VERSION }}
+          os_version: ~${{ env.IOS_SIMULATOR_OS }}
           erase_before_boot: false
           wait_for_boot: true
           boot_timeout_seconds: 600
@@ -344,12 +338,25 @@ jobs:
           set -euo pipefail
           mkdir -p Build
           tar -C Build -xf "${RUNNER_TEMP}/app-build.tar"
+          # Classes that need an iPad or a Pro Max skip on this iPhone, so they run after this shard's own tests on the
+          # image's matching simulator instead (TAL-471): devices.txt holds one simulator and its identifiers per line.
+          # Each boots once here, so its first boot is over before any test runs, and waits shut down.
+          runtime="com.apple.CoreSimulator.SimRuntime.iOS-${IOS_SIMULATOR_OS//./-}"
           if [[ -n "${ONLY_TESTING}" ]]; then
-            for test_identifier in ${ONLY_TESTING}; do echo "-only-testing:${test_identifier}"; done > selection.txt
+            # shellcheck disable=SC2086 # One identifier per word.
+            python3 ci/test_shards.py --only-testing ${ONLY_TESTING} > selection.txt
+            # shellcheck disable=SC2086
+            python3 ci/test_shards.py --devices --runtime "${runtime}" --only-testing ${ONLY_TESTING} > devices.txt
           else
             python3 ci/test_shards.py --shards "${SHARD_COUNT}" --shard "${SHARD}" > selection.txt
+            python3 ci/test_shards.py --shards "${SHARD_COUNT}" --shard "${SHARD}" --devices --runtime "${runtime}" > devices.txt
           fi
-          echo "Shard ${SHARD} of ${SHARD_COUNT}: $(grep -c -- '-only-testing:' selection.txt) selected, $(grep -c -- '-skip-testing:' selection.txt) skipped entries"
+          while IFS=$'\t' read -r device _; do
+            xcrun simctl boot "${device}"
+            xcrun simctl bootstatus "${device}" -b > /dev/null
+            xcrun simctl shutdown "${device}"
+          done < devices.txt
+          echo "Shard ${SHARD} of ${SHARD_COUNT}: $(grep -c -- '-only-testing:' selection.txt) selected, $(grep -c -- '-skip-testing:' selection.txt) skipped entries, $(wc -l < devices.txt | tr -d ' ') other simulator(s)"
 
       # The memory sampler runs for the whole step; "Report memory" stops it, summarizes it and uploads its log.
       # A failure keeps the device's diagnostics in the result bundle: hosted flakes rarely reproduce locally (TAL-490).
@@ -364,20 +371,41 @@ jobs:
           selection=()
           while IFS= read -r option; do selection+=("${option}"); done < selection.txt
           [[ "${TEST_ITERATIONS}" =~ ^[1-9][0-9]*$ ]] || { echo "test_iterations must be a positive integer, got '${TEST_ITERATIONS}'" >&2; exit 1; }
-          if (( TEST_ITERATIONS > 1 )); then selection+=(-test-iterations "${TEST_ITERATIONS}" -run-tests-until-failure); fi
           xctestrun=(Build/Products/*.xctestrun)
-          xcodebuild test-without-building \
-            -xctestrun "${xctestrun[0]}" \
-            -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" \
-            -testLanguage en \
-            -testRegion US \
-            -resultBundlePath "${RESULT_BUNDLE_PATH}" \
-            -collect-test-diagnostics on-failure \
-            -parallel-testing-enabled NO \
-            "${selection[@]}" 2>&1 | tee "${XCODEBUILD_LOG}"
+          # Usage: run_tests simulator result-bundle diagnostics option...
+          run_tests() {
+            local simulator=$1 bundle=$2 diagnostics=$3
+            shift 3
+            if (( TEST_ITERATIONS > 1 )); then set -- "$@" -test-iterations "${TEST_ITERATIONS}" -run-tests-until-failure; fi
+            xcodebuild test-without-building \
+              -xctestrun "${xctestrun[0]}" \
+              -destination "platform=iOS Simulator,id=${simulator}" \
+              -testLanguage en \
+              -testRegion US \
+              -resultBundlePath "${bundle}" \
+              -collect-test-diagnostics "${diagnostics}" \
+              -parallel-testing-enabled NO \
+              "$@" 2>&1 | tee -a "${XCODEBUILD_LOG}"
+          }
+          # A scoped run of destination classes alone selects nothing for this simulator. Every run goes ahead after
+          # an earlier one fails, so each run reports its own result; the step fails if any did. Collecting a hosted
+          # simulator's diagnostics times out after 600 s even when every test passed, so only the shard's own run pays
+          # that (TAL-490); the destination runs skip it rather than push the catch-all past its timeout (TAL-471).
+          status=0
+          if [[ -s selection.txt ]]; then
+            run_tests "${SIMULATOR_ID}" "${RESULT_BUNDLE_PATH}" on-failure "${selection[@]}" || status=$?
+          fi
+          index=0
+          while IFS=$'\t' read -r device identifiers; do
+            index=$((index + 1))
+            options=()
+            for identifier in ${identifiers}; do options+=("-only-testing:${identifier}"); done
+            run_tests "${device}" "DestinationResults-${index}.xcresult" never "${options[@]}" < /dev/null || status=$?
+          done < devices.txt
           duration_seconds=$((SECONDS - start_seconds))
           echo "### App shard ${SHARD} of ${SHARD_COUNT}" >> "${GITHUB_STEP_SUMMARY}"
           echo "- Test without building: ${duration_seconds}s" >> "${GITHUB_STEP_SUMMARY}"
+          exit "${status}"
 
       - name: Report memory
         if: always()
@@ -448,7 +476,11 @@ jobs:
           } >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Reject skipped UI tests
-        run: scripts/assert-no-skipped-ui-tests "${RESULT_BUNDLE_PATH}"
+        run: |
+          set -euo pipefail
+          for bundle in "${RESULT_BUNDLE_PATH}" DestinationResults-*.xcresult; do
+            [[ ! -e "${bundle}" ]] || scripts/assert-no-skipped-ui-tests "${bundle}"
+          done
 
       # Performance budgets are only useful against previous runs, so every run
       # keeps its measurements as an artifact and prints them into the summary.
@@ -476,7 +508,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: ${{ env.BUILD_ARTIFACT }}-test-results-shard-${{ matrix.shard }}
-          path: app/TestResults.xcresult
+          path: |
+            app/TestResults.xcresult
+            app/DestinationResults-*.xcresult
           retention-days: 14
           overwrite: true
           if-no-files-found: ignore

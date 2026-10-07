@@ -96,6 +96,18 @@ for selector in "$@"; do
         ui_filters+=("-only-testing:$selector")
     fi
 done
+# Classes that need an iPad or a Pro Max skip on the pool's iPhone (ci/test_shards.py's DEVICE_CLASSES), so the
+# other phases skip them and they run last, each on a matching local simulator (TAL-471). A missing match fails
+# before any test runs.
+typeset -a device_skips device_runs
+if (( ${#ui_filters} )); then
+    ui_selectors=("${ui_filters[@]#-only-testing:}")
+    device_selection=$(python3 "$repo_root/ci/test_shards.py" --only-testing "${ui_selectors[@]}") || exit $?
+    device_list=$(python3 "$repo_root/ci/test_shards.py" --devices --only-testing "${ui_selectors[@]}") || exit $?
+    ui_filters=(${(M)${(f)device_selection}:#-only-testing:*})
+    device_skips=(${(M)${(f)device_selection}:#-skip-testing:*})
+    device_runs=(${(f)device_list})
+fi
 # The measuring performance UI classes add minutes of scrolling and relaunching;
 # the scheduled UI Performance workflow records them. Selecting an entire target
 # must not enable these extended checks; name their class or method explicitly
@@ -202,10 +214,24 @@ run_tests() {
 (( ${#unit_filters} == 0 )) || run_tests unit NO "${unit_filters[@]}"
 (( ${#ui_filters} + ${#serial_ui_filters} == 0 )) || prepare_ui_simulator
 if (( ${#ui_filters} )); then
-    run_tests ui "$parallel_testing" "${ui_filters[@]}" "${extended_skips[@]}" "${serial_skips[@]}"
+    run_tests ui "$parallel_testing" "${ui_filters[@]}" "${extended_skips[@]}" "${serial_skips[@]}" "${device_skips[@]}"
     scripts/assert-no-skipped-ui-tests "$result_bundle"
 fi
 if (( ${#serial_ui_filters} )); then
     run_tests ui-serial NO "${serial_ui_filters[@]}"
     scripts/assert-no-skipped-ui-tests "$result_bundle"
 fi
+for device_run in "${device_runs[@]}"; do
+    ios_pool_release
+    # Leased by ID, like a personal simulator, whatever runtime or model the run selected.
+    IOS_SIMULATOR_ID=${device_run%%$'\t'*} IOS_SIMULATOR_RUNTIME="" IOS_SIMULATOR_DEVICE_TYPE=""
+    ios_pool_acquire
+    destination="platform=iOS Simulator,id=$simulator_id"
+    prepare_ui_simulator
+    typeset -a device_filters=()
+    for identifier in ${(z)device_run#*$'\t'}; do
+        device_filters+=("-only-testing:$identifier")
+    done
+    run_tests destination NO "${device_filters[@]}"
+    scripts/assert-no-skipped-ui-tests "$result_bundle"
+done

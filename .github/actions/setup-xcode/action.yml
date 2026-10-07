@@ -1,16 +1,19 @@
 # Interface (stable; ci.yml and the release workflows share it):
 #   uses: ./.github/actions/setup-xcode
 #   with:
-#     xcode-version: "27.0"   # major.minor; optional, defaults to 27.0
+#     xcode-version: "27.1"   # major.minor; optional, defaults to 27.1
 # Selects that Xcode with maxim-lobanov/setup-xcode, then fails unless xcodebuild reports the same major.minor;
-# there is no fallback to another version. It prints `xcodebuild -version` and the simulator runtimes.
+# there is no fallback to another version. It prints `xcodebuild -version`, the iOS SDK and the simulator runtimes,
+# and exports IOS_SIMULATOR_OS: the newest installed iOS simulator runtime the SDK can run (major.minor). The image
+# can ship an SDK without its own runtime (Xcode 27.1's iOS 27.1 SDK beside only the iOS 27.0 runtime), so
+# simulator jobs boot and build for that runtime instead of the SDK version.
 name: Set up Xcode
 description: Select an exact Xcode major.minor on a hosted macOS runner and fail if the image lacks it.
 inputs:
   xcode-version:
-    description: Xcode major.minor to select, for example 27.0.
+    description: Xcode major.minor to select, for example 27.1.
     required: false
-    default: "27.0"
+    default: "27.1"
 runs:
   using: composite
   steps:
@@ -29,4 +32,13 @@ runs:
           || { echo "::error::Requested Xcode ${XCODE_VERSION} but xcodebuild reports '${actual}'"; exit 1; }
         echo "DEVELOPER_DIR=$(xcode-select -p)" >> "$GITHUB_ENV"
         xcodebuild -version
+        sdk=$(xcrun --sdk iphoneos --show-sdk-version)
+        echo "iOS SDK ${sdk}"
         xcrun simctl list runtimes
+        simulator_os=$(xcrun simctl list runtimes --json | jq -er --arg sdk "$sdk" '
+          def version: split(".") | map(tonumber) | .[:2];
+          [.runtimes[] | select(.isAvailable and (.identifier | startswith("com.apple.CoreSimulator.SimRuntime.iOS-")))
+           | .version | select(version <= ($sdk | version))] | max_by(version) | version | map(tostring) | join(".")') \
+          || { echo "::error::No installed iOS simulator runtime can run the iOS ${sdk} SDK"; exit 1; }
+        echo "iOS simulator runtime ${simulator_os}"
+        echo "IOS_SIMULATOR_OS=${simulator_os}" >> "$GITHUB_ENV"

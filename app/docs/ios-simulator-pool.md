@@ -3,9 +3,11 @@
 Oar, Talaria and future iOS projects share `iOS Test 1` through `iOS Test 6`.
 These are disposable synthetic-test devices, not signed-in development phones.
 The current local pool uses iPhone 17 Pro on iOS 27.0. CI does not use the pool:
-its disposable GitHub-hosted runners boot the image's own `iPhone 17` for the
-selected Xcode's runtime with `futureware-tech/simulator-action` (see
-`.github/workflows/ci.yml`).
+its disposable GitHub-hosted runners select Xcode 27.1 through
+`.github/actions/setup-xcode` and boot the image's own `iPhone 17` on the newest
+installed runtime that SDK runs (`IOS_SIMULATOR_OS`; the image has no iOS 27.1
+runtime yet) with `futureware-tech/simulator-action` (see
+`.github/workflows/app-tests.yml`).
 
 ```sh
 scripts/setup-ios-test-pool
@@ -15,8 +17,11 @@ scripts/test-ios
 Setup fills missing slots and reuses the existing pool's runtime and model.
 On a new machine it selects the newest available *released* iPhone runtime.
 Prerelease runtimes are skipped, identified by Apple's seed build numbering
-(`24A5408d` for the iOS 27 beta against `23E254a` for 26.4), so installing a
-beta SDK never silently changes what local runs and CI test against. Select any
+(`24A5408d` for the iOS 27 beta against `23E254a` for 26.4 and `24A94401` for the
+released 27.1), so installing a beta SDK never silently changes what local runs
+and CI test against. To move an existing pool to a newer runtime, run
+`IOS_SIMULATOR_RUNTIME=com.apple.CoreSimulator.SimRuntime.iOS-27-1
+scripts/setup-ios-test-pool --refresh`. Select any
 runtime explicitly, including a beta, with
 `IOS_SIMULATOR_RUNTIME=com.apple.CoreSimulator.SimRuntime.iOS-26-4`, and a model
 with `IOS_SIMULATOR_DEVICE_TYPE`. When no available iPhone matches, selection
@@ -25,6 +30,18 @@ model is requested) instead of failing.
 `IOS_SIMULATOR_POOL_SIZE` defaults to six. `--refresh` recreates the entire shared
 pool and refuses to run while any pool device is leased or booted. Refresh affects
 all adopting projects. It does not copy accounts or app data.
+
+Layout tests on another model, such as iPhone Duo (iOS 27.1 or later), set
+`IOS_SIMULATOR_DEVICE_TYPE` for the run. The pool then leases any available
+simulator of that model, under the same lease, instead of an `iOS Test N` slot;
+like an explicit ID, a non-pool device is never erased. Create one first if none
+exists:
+
+```sh
+export IOS_SIMULATOR_DEVICE_TYPE=com.apple.CoreSimulator.SimDeviceType.iPhone-Duo
+scripts/select-ios-simulator   # finds an iPhone Duo, or creates one on the newest runtime that supports it
+scripts/test-ios TalariaUITests/ComposerChipUITests
+```
 
 Every consumer uses `/tmp/ios-simulator-pool-$EUID/pool.lock` for setup/admission
 and `leases/<UDID>.lock` for the duration of a device session. Locks use macOS

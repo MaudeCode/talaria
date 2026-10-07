@@ -229,9 +229,8 @@ jobs:
           exit 0
         fi
         # The App's own scripts/test-ios leases, boots and shuts down exactly this simulator (IOS_SIMULATOR_ID; it
-        # never erases a named device), so no pool is set up. The runtime matches the selected Xcode's SDK, as in CI.
-        sdk_version=$(xcrun --sdk iphonesimulator --show-sdk-version)
-        runtime="com.apple.CoreSimulator.SimRuntime.iOS-${sdk_version//./-}"
+        # never erases a named device), so no pool is set up. The runtime is setup-xcode's IOS_SIMULATOR_OS, as in CI.
+        runtime="com.apple.CoreSimulator.SimRuntime.iOS-${IOS_SIMULATOR_OS//./-}"
         udid=$(xcrun simctl list devices available --json |
           jq -er --arg runtime "$runtime" 'first(.devices[$runtime][]? | select(.name == "iPhone 17") | .udid)')
         echo "Using iPhone 17 ${udid} on ${runtime} for ${hosted} App revision(s) from before TAL-399"

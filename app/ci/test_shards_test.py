@@ -108,6 +108,68 @@ class ShardTests(unittest.TestCase):
         first = shards.selection(0, buckets, shards.TARGETS)
         self.assertFalse(any(option in ("-only-testing:TalariaTests", "-only-testing:TalariaUITests") for option in first))
 
+    def test_destination_classes_run_only_on_their_simulator(self):
+        # RegularWidthNavigationUITests needs an iPad and SizeClassRoundTripUITests a Pro Max; on the shards' iPhone
+        # they skip, which fails the suite (TAL-471). The catch-all shard owns them and every selection skips them.
+        (self.app / "TalariaUITests" / "Destinations.swift").write_text(
+            "final class RegularWidthNavigationUITests: TalariaUITestCase {}\n"
+            "final class SizeClassRoundTripUITests: TalariaUITestCase {}\n")
+        destinations = ["TalariaUITests/RegularWidthNavigationUITests", "TalariaUITests/SizeClassRoundTripUITests"]
+        for count in range(1, 5):
+            with self.subTest(count=count):
+                buckets, _ = self.plan(count)
+                for index in range(count):
+                    options = shards.selection(index, buckets, shards.TARGETS)
+                    self.assertTrue(any(option.startswith("-only-testing:") for option in options))
+                    for item in destinations:
+                        self.assertIn(f"-skip-testing:{item}", options)
+                        self.assertNotIn(f"-only-testing:{item}", options)
+                self.assertEqual(list(shards.DEVICE_CLASSES), destinations)
+                self.assertEqual([item for item in buckets[-1] if item in destinations], destinations)
+                self.assertFalse(any(item in destinations for bucket in buckets[:-1] for item in bucket))
+                self.assertEqual([shards.shard_devices(index, buckets) for index in range(count)],
+                                 [*([[]] * (count - 1)), destinations])
+                # The catch-all's load counts the destination classes and each simulator's setup before any other
+                # class is placed, so the other shards take the rest.
+                _, loads = self.plan(count)
+                charged = 2 * WEIGHTS["default"]["TalariaUITests"] + 2 * shards.DESTINATION_SETUP_SECONDS
+                own = sum(shards.weight_of(item, WEIGHTS) for item in buckets[-1] if item not in destinations)
+                self.assertAlmostEqual(loads[-1], charged + own)
+                if count > 1:
+                    self.assertEqual(own, 0)
+
+    def test_destination_classes_find_a_matching_simulator(self):
+        ipad, pro_max, booted = "IPAD", "PROMAX", "BOOTED"
+        devices = {"devices": {
+            "com.apple.CoreSimulator.SimRuntime.iOS-27-1": [dict(name="iPhone Duo", udid="DUO", state="Shutdown")],
+            "com.apple.CoreSimulator.SimRuntime.iOS-27-0": [
+                dict(name="iPhone 17", udid="PHONE", state="Shutdown"),
+                dict(name="iPad Air 13-inch (M4)", udid=booted, state="Booted"),
+                dict(name="iPad Pro 11-inch (M5)", udid=ipad, state="Shutdown"),
+                dict(name="iPhone 18 Pro Max", udid=pro_max, state="Shutdown")],
+            "com.apple.CoreSimulator.SimRuntime.tvOS-27-0": [dict(name="iPad TV", udid="TV", state="Shutdown")]}}
+        regular, rotating = shards.DEVICE_CLASSES
+        # A whole target selects both classes; a method selects itself; other selections select none.
+        self.assertEqual(shards.device_runs(["TalariaUITests", "TalariaTests/Unit"], devices),
+                         [(ipad, [regular]), (pro_max, [rotating])])
+        self.assertEqual(shards.device_runs([f"{regular}/testOne", f"{regular}/testTwo"], devices),
+                         [(ipad, [f"{regular}/testOne", f"{regular}/testTwo"])])
+        self.assertEqual(shards.device_runs(["TalariaTests", "TalariaUITests/ChatUITests"], devices), [])
+        # A booted simulator belongs to another run and the pool would refuse it, so it never matches; neither does
+        # a missing model. Both fail before any test runs.
+        with self.assertRaisesRegex(LookupError, "shut-down .*iPad"):
+            shards.simulator("^iPad", {"devices": {"com.apple.CoreSimulator.SimRuntime.iOS-27-0": [
+                dict(name="iPad Air 13-inch (M4)", udid=booted, state="Booted")]}})
+        with self.assertRaisesRegex(LookupError, "Pro Max"):
+            shards.device_runs([rotating], {"devices": {"com.apple.CoreSimulator.SimRuntime.iOS-27-1": []}})
+        with self.assertRaisesRegex(LookupError, "iPad"):
+            shards.device_runs([regular], devices, runtime="com.apple.CoreSimulator.SimRuntime.iOS-27-1")
+        # A scoped selection runs the rest on the shard's simulator and skips what a target would pull in.
+        self.assertEqual(shards.scoped(["TalariaUITests", f"{regular}/testOne", "TalariaTests/Unit"]),
+                         ["-only-testing:TalariaUITests", "-only-testing:TalariaTests/Unit",
+                          f"-skip-testing:{regular}", f"-skip-testing:{rotating}"])
+        self.assertEqual(shards.scoped([f"{regular}/testOne"]), [])
+
     def test_committed_weights_are_valid(self):
         weights = json.loads(shards.WEIGHTS.read_text())
         self.assertEqual(set(weights["default"]), set(shards.TARGETS))

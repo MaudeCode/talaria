@@ -24,8 +24,10 @@ with tempfile.TemporaryDirectory(prefix='ios-pool-check-') as directory:
                for n in (1, 2)]
     personal = dict(name='Personal iPhone', udid='00000000-0000-0000-0000-000000000099', state='Shutdown',
                     deviceTypeIdentifier='com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro')
+    duo = dict(personal, name='iPhone Duo', udid='00000000-0000-0000-0000-0000000000d0',
+               deviceTypeIdentifier='com.apple.CoreSimulator.SimDeviceType.iPhone-Duo')
     def save():
-        fixture.write_text(json.dumps({'devices': {'com.apple.CoreSimulator.SimRuntime.iOS-27-0': devices + [personal]}}))
+        fixture.write_text(json.dumps({'devices': {'com.apple.CoreSimulator.SimRuntime.iOS-27-0': devices + [personal, duo]}}))
     save()
     fake = tools / 'xcrun'
     fake.write_text('''#!/bin/zsh
@@ -98,6 +100,18 @@ fi
         assert select() == [released['udid'], 'com.apple.CoreSimulator.SimRuntime.iOS-26-4',
                             personal['deviceTypeIdentifier']]
         assert select(IOS_SIMULATOR_RUNTIME='com.apple.CoreSimulator.SimRuntime.iOS-27-0')[0] == beta['udid']
+        # Only seeds end in a letter after their high build number; a released point update for new hardware keeps
+        # the high number without it (iOS 27.1 is 24A94401) and is selected as the newest released runtime.
+        released_runtimes = runtimes.read_text()
+        point = dict(personal, udid='00000000-0000-0000-0000-000000000271')
+        runtimes.write_text(json.dumps({'runtimes': json.loads(released_runtimes)['runtimes'] + [
+            dict(identifier='com.apple.CoreSimulator.SimRuntime.iOS-27-1', buildversion='24A94401')]}))
+        fixture.write_text(json.dumps({'devices': {
+            'com.apple.CoreSimulator.SimRuntime.iOS-26-4': [released],
+            'com.apple.CoreSimulator.SimRuntime.iOS-27-0': [beta],
+            'com.apple.CoreSimulator.SimRuntime.iOS-27-1': [point]}}))
+        assert select()[0] == point['udid']
+        runtimes.write_text(released_runtimes)
         ipad = dict(released, deviceTypeIdentifier='com.apple.CoreSimulator.SimDeviceType.iPad-Pro-11-inch-M4')
         selector_fixture(ipad, beta)
         assert select(expected=69) == 'No available iPhone simulator was found.'
@@ -138,6 +152,11 @@ fi
         assert not (work / 'leases' / 'pool.lock').exists()  # nor holds the pool against the next caller.
         assert invoke(IOS_SIMULATOR_ID=personal['udid']) == personal['udid']
         assert erasures() == [devices[1]['udid']]  # An explicitly selected non-pool device is never erased.
+        # A device type leases any available simulator of that model, such as an iPhone Duo for layout tests,
+        # and never erases a non-pool device either.
+        assert invoke(IOS_SIMULATOR_DEVICE_TYPE=duo['deviceTypeIdentifier']) == duo['udid']
+        assert erasures() == [devices[1]['udid']]
+        invoke(expected=69, IOS_SIMULATOR_DEVICE_TYPE='com.apple.CoreSimulator.SimDeviceType.iPad-Air')
         assert invoke(IOS_SIMULATOR_ID=devices[1]['udid']) == devices[1]['udid']
         invoke(expected=69, IOS_SIMULATOR_ID='missing')
         invoke(expected=69, IOS_SIMULATOR_RUNTIME='com.apple.CoreSimulator.SimRuntime.iOS-18-0')

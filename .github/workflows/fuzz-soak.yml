@@ -33,16 +33,11 @@ jobs:
     runs-on: xcode-27
     timeout-minutes: 60
 
-    env:
-      XCODE_VERSION: "27.0"
-
     steps:
       - name: Check out
         uses: actions/checkout@v7
 
       - uses: ./.github/actions/setup-xcode
-        with:
-          xcode-version: ${{ env.XCODE_VERSION }}
 
       - name: Run the fuzz soak
         run: |

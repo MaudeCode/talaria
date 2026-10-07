@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Talaria is built for iOS 27.1, so it can use the full screen on iPhone Duo.",
+      "highlight": false
+    }
+  ]
+}

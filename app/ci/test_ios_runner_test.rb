@@ -21,8 +21,10 @@ class TestIOSRunnerTest < Minitest::Test
     # (TAL-490): one flake relaunched the app without its fixture, another lost keyboard focus.
     test = workflow_jobs("app-tests.yml").fetch("app-test")["steps"].find { |step| step["name"] == "Test without building" }
 
-    assert_includes(test["run"], "-collect-test-diagnostics on-failure")
-    refute_includes(test["run"], "-collect-test-diagnostics never")
+    assert_includes(test["run"], '-collect-test-diagnostics "${diagnostics}"')
+    assert_includes(test["run"], 'run_tests "${SIMULATOR_ID}" "${RESULT_BUNDLE_PATH}" on-failure "${selection[@]}"')
+    # Destination runs skip the collection, which times out after 600 s on hosted simulators (TAL-471).
+    assert_includes(test["run"], 'run_tests "${device}" "DestinationResults-${index}.xcresult" never "${options[@]}"')
   end
 
   def test_single_worker_runs_on_the_leased_simulator_without_cloning
@@ -41,18 +43,30 @@ class TestIOSRunnerTest < Minitest::Test
     jobs = workflow_jobs("app-tests.yml")
     boot = jobs.fetch("app-test")["steps"].find { |step| step["name"] == "Boot the simulator" }
     assert_match(%r{\Afutureware-tech/simulator-action@[0-9a-f]{40}\z}, boot["uses"])
-    assert_equal(["iPhone 17", "iOS", "~${{ env.XCODE_VERSION }}", false, true, 600],
+    assert_equal(["iPhone 17", "iOS", "~${{ env.IOS_SIMULATOR_OS }}", false, true, 600],
                  boot["with"].values_at("model", "os", "os_version", "erase_before_boot", "wait_for_boot", "boot_timeout_seconds"))
     assert_includes(workflow, "SIMULATOR_ID: ${{ steps.sim.outputs.udid }}")
-    assert_includes(workflow, "BUILD_DESTINATION: platform=iOS Simulator,name=iPhone 17,OS=${{ env.XCODE_VERSION }}")
+    assert_includes(workflow, "BUILD_DESTINATION: platform=iOS Simulator,name=iPhone 17,OS=${{ env.IOS_SIMULATOR_OS }}")
     %w[scripts/select-ios-simulator scripts/test-ios(?![-\w]) scripts/setup-ios-test-pool scripts/ios-simulator-pool(?![-\w])].each do |local|
       refute_match(Regexp.new(local), workflow)
     end
-    assert_equal(1, workflow.scan('platform=iOS Simulator,id=${SIMULATOR_ID}').length)
+    assert_equal(1, workflow.scan('platform=iOS Simulator,id=${simulator}').length)
+    assert_includes(workflow, 'run_tests "${SIMULATOR_ID}" "${RESULT_BUNDLE_PATH}" on-failure "${selection[@]}"')
     assert_equal(1, workflow.scan('ci/build-for-testing "${BUILD_DESTINATION}"').length)
     build = File.read(File.expand_path("build-for-testing", __dir__), encoding: "UTF-8")
     assert_includes(build, '-destination "${destination}"')
     refute_includes(workflow, "platform=iOS Simulator,name=${SIMULATOR_NAME}")
+  end
+
+  def test_every_workflow_selects_xcode_through_setup_xcode
+    # One pin: setup-xcode selects Xcode 27.1 (the iOS 27.1 SDK iPhone Duo layouts need) and exports the newest
+    # installed runtime that SDK runs as IOS_SIMULATOR_OS; the hosted image has no iOS 27.1 runtime (TAL-471).
+    action = YAML.safe_load_file(File.expand_path("../../.github/actions/setup-xcode/action.yml", __dir__))
+    assert_equal("27.1", action["inputs"]["xcode-version"]["default"])
+    assert_includes(action["runs"]["steps"].last["run"], 'echo "IOS_SIMULATOR_OS=${simulator_os}" >> "$GITHUB_ENV"')
+    Dir[File.join(WORKFLOWS, "*.yml")].each do |path|
+      refute_match(/xcode-version|XCODE_VERSION|show-sdk-version/, File.read(path, encoding: "UTF-8"), File.basename(path))
+    end
   end
 
   def test_unit_tests_never_request_real_live_activities
@@ -121,7 +135,7 @@ class TestIOSRunnerTest < Minitest::Test
     suite = steps.fetch("Test without building")["run"]
     assert_includes(suite, 'nohup ci/memory-sampler watch "${MEMORY_LOG}" "${XCODEBUILD_LOG}"')
     assert_includes(suite, "set -euo pipefail")
-    assert_includes(suite, '"${selection[@]}" 2>&1 | tee "${XCODEBUILD_LOG}"')
+    assert_includes(suite, '"$@" 2>&1 | tee -a "${XCODEBUILD_LOG}"')
     report, upload = steps.values_at("Report memory", "Upload memory samples")
     assert_equal(["always()"] * 2, [report, upload].map { |step| step["if"] })
     assert_includes(report["run"], 'ci/memory-sampler summary "${MEMORY_LOG}" | tee -a "${GITHUB_STEP_SUMMARY}"')
@@ -191,7 +205,7 @@ class TestIOSRunnerTest < Minitest::Test
     # Dispatch inputs arrive as strings, so the reusable workflow's input is a string too.
     app_tests = YAML.safe_load_file(File.join(WORKFLOWS, "app-tests.yml"), aliases: true)
     assert_equal({"type" => "string", "default" => "1"}, app_tests[true]["workflow_call"]["inputs"]["test_iterations"])
-    assert_includes(workflow, 'if (( TEST_ITERATIONS > 1 )); then selection+=(-test-iterations "${TEST_ITERATIONS}" -run-tests-until-failure); fi')
+    assert_includes(workflow, 'if (( TEST_ITERATIONS > 1 )); then set -- "$@" -test-iterations "${TEST_ITERATIONS}" -run-tests-until-failure; fi')
     jobs = workflow_jobs("app-tests.yml")
     shard = jobs.fetch("app-test")
     # inputs.shards shards (default four; a release passes its own count, TAL-414), or one for a scoped dispatch.
@@ -211,7 +225,18 @@ class TestIOSRunnerTest < Minitest::Test
     # The launch smoke runs as one of the full suite's UI tests, and no UI test may skip.
     refute_match(/LAUNCH_SMOKE|require-launch-smoke|MODE/, shard.to_yaml)
     reject = shard["steps"].find { |step| step["name"] == "Reject skipped UI tests" }["run"]
-    assert_equal('scripts/assert-no-skipped-ui-tests "${RESULT_BUNDLE_PATH}"', reject)
+    # Classes that need an iPad or a Pro Max run on one after the shard's own tests (test_shards.py's DEVICE_CLASSES,
+    # TAL-471), and must not skip there either.
+    assert_includes(reject, 'for bundle in "${RESULT_BUNDLE_PATH}" DestinationResults-*.xcresult; do')
+    assert_includes(reject, '[[ ! -e "${bundle}" ]] || scripts/assert-no-skipped-ui-tests "${bundle}"')
+    select = shard["steps"].find { |step| step["name"] == "Select this shard's tests" }["run"]
+    assert_includes(select, 'python3 ci/test_shards.py --shards "${SHARD_COUNT}" --shard "${SHARD}" --devices --runtime "${runtime}" > devices.txt')
+    assert_includes(select, 'python3 ci/test_shards.py --devices --runtime "${runtime}" --only-testing ${ONLY_TESTING} > devices.txt')
+    test = shard["steps"].find { |step| step["name"] == "Test without building" }["run"]
+    assert_includes(test, 'run_tests "${device}" "DestinationResults-${index}.xcresult" never "${options[@]}" < /dev/null || status=$?')
+    # A failing shard still runs its destination classes, and the step still fails.
+    assert_includes(test, 'run_tests "${SIMULATOR_ID}" "${RESULT_BUNDLE_PATH}" on-failure "${selection[@]}" || status=$?')
+    assert_match(/exit "\$\{status\}"\n\z/, test)
     # Pull requests and main pushes run the same App jobs; the full UI suite, launch smoke included, is nightly and
     # a release gate.
     app = workflow_jobs("ci.yml").fetch("app")
