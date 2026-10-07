@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "iPad registers with Relay as an iPad instead of an iPhone.",
+      "highlight": false
+    }
+  ]
+}
