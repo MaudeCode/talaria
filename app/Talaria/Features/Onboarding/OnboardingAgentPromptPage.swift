@@ -22,6 +22,7 @@ struct OnboardingAgentPromptPage: View {
             .padding(.horizontal, 28)
             .padding(.top, 24)
             .padding(.bottom, 16)
+            .onboardingReadableWidth()
         }
         .scrollBounceBehavior(.basedOnSize)
     }

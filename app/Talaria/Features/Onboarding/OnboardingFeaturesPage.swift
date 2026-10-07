@@ -40,6 +40,7 @@ struct OnboardingFeaturesPage: View {
             }
             .padding(.horizontal, 28)
             .padding(.bottom, 24)
+            .onboardingReadableWidth()
         }
         .scrollBounceBehavior(.basedOnSize)
     }

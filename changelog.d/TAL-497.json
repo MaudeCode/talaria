@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Onboarding on iPad keeps its text and buttons in a centered column instead of stretching across the screen.",
+      "highlight": false
+    }
+  ]
+}

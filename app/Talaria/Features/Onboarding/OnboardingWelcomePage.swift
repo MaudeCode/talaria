@@ -18,6 +18,7 @@ struct OnboardingWelcomePage: View {
             GeometryReader { proxy in
                 ScrollView(.vertical, showsIndicators: false) {
                     content
+                        .onboardingReadableWidth()
                         // The spacers keep the default layout; the page scrolls only once
                         // the content outgrows it at accessibility text sizes.
                         .frame(minHeight: proxy.size.height)
