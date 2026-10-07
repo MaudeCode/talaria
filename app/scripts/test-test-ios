@@ -29,8 +29,9 @@ repo="$test_root/repo"
 peer="$test_root/peer"
 fake_bin="$test_root/bin"
 state="$test_root/state"
-mkdir -p "$repo/scripts" "$repo/.xcodebuildmcp" "$fake_bin" "$state"
+mkdir -p "$repo/scripts" "$repo/ci" "$repo/.xcodebuildmcp" "$fake_bin" "$state"
 cp "$source_root/scripts/test-ios" "$repo/scripts/test-ios"
+cp "$source_root/ci/test_shards.py" "$repo/ci/test_shards.py"
 cp "$source_root/scripts/load-env" "$repo/scripts/load-env"
 cp "$source_root/scripts/ios-simulator-pool" "$repo/scripts/ios-simulator-pool"
 chmod +x "$repo/scripts/test-ios" "$repo/scripts/load-env"
@@ -137,7 +138,10 @@ EOF
 chmod +x "$repo/scripts/assert-no-skipped-ui-tests" "$repo/scripts/seed-simulator-photo" "$repo/scripts/ready-simulator-notifications" "$fake_bin/xcrun" "$fake_bin/xcodebuild"
 
 cat > "$state/pool-devices" <<'EOF'
-{"devices":{"com.apple.CoreSimulator.SimRuntime.iOS-27-0":[{"name":"iOS Test 1","udid":"AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA","state":"Shutdown"},{"name":"iOS Test 2","udid":"BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB","state":"Shutdown"}]}}
+{"devices":{"com.apple.CoreSimulator.SimRuntime.iOS-27-0":[{"name":"iOS Test 1","udid":"AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA","state":"Shutdown"},{"name":"iOS Test 2","udid":"BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB","state":"Shutdown"},{"name":"iPad (A16)","udid":"EEEEEEEE-EEEE-EEEE-EEEE-EEEEEEEEEEEE","state":"Shutdown"},{"name":"iPhone 17 Pro Max","udid":"FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF","state":"Shutdown"}]}}
+EOF
+cat > "$state/no-ipad-devices" <<'EOF'
+{"devices":{"com.apple.CoreSimulator.SimRuntime.iOS-27-0":[{"name":"iOS Test 1","udid":"AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA","state":"Shutdown"},{"name":"iPhone 17 Pro Max","udid":"FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF","state":"Shutdown"}]}}
 EOF
 cat > "$state/fallback-devices" <<'EOF'
 {"devices":{"com.apple.CoreSimulator.SimRuntime.iOS-27-0":[{"name":"iPhone 16","udid":"DDDDDDDD-DDDD-DDDD-DDDD-DDDDDDDDDDDD","state":"Shutdown"}]}}
@@ -304,12 +308,36 @@ phases_for() {
 }
 # A clone's notification service does not answer, so the notification journey runs last on the
 # leased device (TAL-80).
+# Classes that need an iPad or a Pro Max skip on the pool's iPhone, so they run last, each on a matching
+# simulator (TAL-471).
+regular=TalariaUITests/RegularWidthNavigationUITests
+rotating=TalariaUITests/SizeClassRoundTripUITests
 expected=$'-only-testing:TalariaTests|NO\n-only-testing:TalariaUITests|YES\n-only-testing:TalariaUITests/ResponseCompletionAlertUITests|NO'
+expected+=$'\n'"-only-testing:$regular|NO"$'\n'"-only-testing:$rotating|NO"
 [[ "$(phases_for)" == "$expected" ]] || {
-    print -u2 "Expected a full run to test TalariaTests without clones, TalariaUITests on clones, then the notification journey without clones:"
-    phases_for >&2
+    print -u2 "Expected a full run to test TalariaTests without clones, TalariaUITests on clones, the notification journey without clones, then each destination class on its simulator:"
+    tail -n 5 "$state/runs" | cut -d'|' -f3- >&2
     exit 1
 }
+[[ "$(tail -n 2 "$state/runs" | cut -d'|' -f1)" == $'platform=iOS Simulator,id=EEEEEEEE-EEEE-EEEE-EEEE-EEEEEEEEEEEE\nplatform=iOS Simulator,id=FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF' ]]
+grep -q "Not preparing personal simulator EEEEEEEE" "$state/phases.log"
+: > "$state/all-args"
+"$repo/scripts/test-ios" TalariaUITests > "$state/destination-skips.log" 2>&1
+grep -Fqx -- "-skip-testing:$regular" "$state/all-args"
+grep -Fqx -- "-skip-testing:$rotating" "$state/all-args"
+expected="-only-testing:$regular/testOne|NO"
+[[ "$(phases_for "$regular/testOne")" == "$expected" ]] || {
+    print -u2 "Expected a selected destination test to run alone on its simulator."
+    exit 1
+}
+[[ "$(tail -n 1 "$state/runs" | cut -d'|' -f1)" == 'platform=iOS Simulator,id=EEEEEEEE-EEEE-EEEE-EEEE-EEEEEEEEEEEE' ]]
+before=$(wc -l < "$state/runs")
+if TALARIA_DEVICE_FIXTURE="$state/no-ipad-devices" "$repo/scripts/test-ios" TalariaUITests > "$state/no-ipad.log" 2>&1; then
+    print -u2 "Expected a run without a matching simulator to fail."
+    exit 1
+fi
+grep -q "No available iOS simulator's name matches '\^iPad'" "$state/no-ipad.log"
+[[ $(wc -l < "$state/runs") == "$before" ]]  # It fails before testing anything.
 expected=$'-only-testing:TalariaUITests/ResponseCompletionAlertUITests/testAlert|NO'
 [[ "$(phases_for TalariaUITests/ResponseCompletionAlertUITests/testAlert)" == "$expected" ]] || {
     print -u2 "Expected a selected notification journey to run alone without clones."

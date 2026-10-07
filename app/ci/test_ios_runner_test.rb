@@ -48,7 +48,8 @@ class TestIOSRunnerTest < Minitest::Test
     %w[scripts/select-ios-simulator scripts/test-ios(?![-\w]) scripts/setup-ios-test-pool scripts/ios-simulator-pool(?![-\w])].each do |local|
       refute_match(Regexp.new(local), workflow)
     end
-    assert_equal(1, workflow.scan('platform=iOS Simulator,id=${SIMULATOR_ID}').length)
+    assert_equal(1, workflow.scan('platform=iOS Simulator,id=${simulator}').length)
+    assert_includes(workflow, 'run_tests "${SIMULATOR_ID}" "${RESULT_BUNDLE_PATH}" "${selection[@]}"')
     assert_equal(1, workflow.scan('ci/build-for-testing "${BUILD_DESTINATION}"').length)
     build = File.read(File.expand_path("build-for-testing", __dir__), encoding: "UTF-8")
     assert_includes(build, '-destination "${destination}"')
@@ -132,7 +133,7 @@ class TestIOSRunnerTest < Minitest::Test
     suite = steps.fetch("Test without building")["run"]
     assert_includes(suite, 'nohup ci/memory-sampler watch "${MEMORY_LOG}" "${XCODEBUILD_LOG}"')
     assert_includes(suite, "set -euo pipefail")
-    assert_includes(suite, '"${selection[@]}" 2>&1 | tee "${XCODEBUILD_LOG}"')
+    assert_includes(suite, '"$@" 2>&1 | tee -a "${XCODEBUILD_LOG}"')
     report, upload = steps.values_at("Report memory", "Upload memory samples")
     assert_equal(["always()"] * 2, [report, upload].map { |step| step["if"] })
     assert_includes(report["run"], 'ci/memory-sampler summary "${MEMORY_LOG}" | tee -a "${GITHUB_STEP_SUMMARY}"')
@@ -202,7 +203,7 @@ class TestIOSRunnerTest < Minitest::Test
     # Dispatch inputs arrive as strings, so the reusable workflow's input is a string too.
     app_tests = YAML.safe_load_file(File.join(WORKFLOWS, "app-tests.yml"), aliases: true)
     assert_equal({"type" => "string", "default" => "1"}, app_tests[true]["workflow_call"]["inputs"]["test_iterations"])
-    assert_includes(workflow, 'if (( TEST_ITERATIONS > 1 )); then selection+=(-test-iterations "${TEST_ITERATIONS}" -run-tests-until-failure); fi')
+    assert_includes(workflow, 'if (( TEST_ITERATIONS > 1 )); then set -- "$@" -test-iterations "${TEST_ITERATIONS}" -run-tests-until-failure; fi')
     jobs = workflow_jobs("app-tests.yml")
     shard = jobs.fetch("app-test")
     # inputs.shards shards (default four; a release passes its own count, TAL-414), or one for a scoped dispatch.
@@ -222,7 +223,15 @@ class TestIOSRunnerTest < Minitest::Test
     # The launch smoke runs as one of the full suite's UI tests, and no UI test may skip.
     refute_match(/LAUNCH_SMOKE|require-launch-smoke|MODE/, shard.to_yaml)
     reject = shard["steps"].find { |step| step["name"] == "Reject skipped UI tests" }["run"]
-    assert_equal('scripts/assert-no-skipped-ui-tests "${RESULT_BUNDLE_PATH}"', reject)
+    # Classes that need an iPad or a Pro Max run on one after the shard's own tests (test_shards.py's DEVICE_CLASSES,
+    # TAL-471), and must not skip there either.
+    assert_includes(reject, 'for bundle in "${RESULT_BUNDLE_PATH}" DestinationResults-*.xcresult; do')
+    assert_includes(reject, '[[ ! -e "${bundle}" ]] || scripts/assert-no-skipped-ui-tests "${bundle}"')
+    select = shard["steps"].find { |step| step["name"] == "Select this shard's tests" }["run"]
+    assert_includes(select, 'python3 ci/test_shards.py --shards "${SHARD_COUNT}" --shard "${SHARD}" --devices --runtime "${runtime}" > devices.txt')
+    assert_includes(select, 'python3 ci/test_shards.py --devices --runtime "${runtime}" --only-testing ${ONLY_TESTING} > devices.txt')
+    test = shard["steps"].find { |step| step["name"] == "Test without building" }["run"]
+    assert_includes(test, 'run_tests "${device}" "DestinationResults-${index}.xcresult" "${options[@]}" < /dev/null')
     # Pull requests and main pushes run the same App jobs; the full UI suite, launch smoke included, is nightly and
     # a release gate.
     app = workflow_jobs("ci.yml").fetch("app")

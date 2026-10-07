@@ -338,12 +338,25 @@ jobs:
           set -euo pipefail
           mkdir -p Build
           tar -C Build -xf "${RUNNER_TEMP}/app-build.tar"
+          # Classes that need an iPad or a Pro Max skip on this iPhone, so they run after this shard's own tests on the
+          # image's matching simulator instead (TAL-471): devices.txt holds one simulator and its identifiers per line.
+          # Each boots once here, so its first boot is over before any test runs, and waits shut down.
+          runtime="com.apple.CoreSimulator.SimRuntime.iOS-${IOS_SIMULATOR_OS//./-}"
           if [[ -n "${ONLY_TESTING}" ]]; then
-            for test_identifier in ${ONLY_TESTING}; do echo "-only-testing:${test_identifier}"; done > selection.txt
+            # shellcheck disable=SC2086 # One identifier per word.
+            python3 ci/test_shards.py --only-testing ${ONLY_TESTING} > selection.txt
+            # shellcheck disable=SC2086
+            python3 ci/test_shards.py --devices --runtime "${runtime}" --only-testing ${ONLY_TESTING} > devices.txt
           else
             python3 ci/test_shards.py --shards "${SHARD_COUNT}" --shard "${SHARD}" > selection.txt
+            python3 ci/test_shards.py --shards "${SHARD_COUNT}" --shard "${SHARD}" --devices --runtime "${runtime}" > devices.txt
           fi
-          echo "Shard ${SHARD} of ${SHARD_COUNT}: $(grep -c -- '-only-testing:' selection.txt) selected, $(grep -c -- '-skip-testing:' selection.txt) skipped entries"
+          while IFS=$'\t' read -r device _; do
+            xcrun simctl boot "${device}"
+            xcrun simctl bootstatus "${device}" -b > /dev/null
+            xcrun simctl shutdown "${device}"
+          done < devices.txt
+          echo "Shard ${SHARD} of ${SHARD_COUNT}: $(grep -c -- '-only-testing:' selection.txt) selected, $(grep -c -- '-skip-testing:' selection.txt) skipped entries, $(wc -l < devices.txt | tr -d ' ') other simulator(s)"
 
       # The memory sampler runs for the whole step; "Report memory" stops it, summarizes it and uploads its log.
       # A failure keeps the device's diagnostics in the result bundle: hosted flakes rarely reproduce locally (TAL-490).
@@ -358,17 +371,31 @@ jobs:
           selection=()
           while IFS= read -r option; do selection+=("${option}"); done < selection.txt
           [[ "${TEST_ITERATIONS}" =~ ^[1-9][0-9]*$ ]] || { echo "test_iterations must be a positive integer, got '${TEST_ITERATIONS}'" >&2; exit 1; }
-          if (( TEST_ITERATIONS > 1 )); then selection+=(-test-iterations "${TEST_ITERATIONS}" -run-tests-until-failure); fi
           xctestrun=(Build/Products/*.xctestrun)
-          xcodebuild test-without-building \
-            -xctestrun "${xctestrun[0]}" \
-            -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" \
-            -testLanguage en \
-            -testRegion US \
-            -resultBundlePath "${RESULT_BUNDLE_PATH}" \
-            -collect-test-diagnostics on-failure \
-            -parallel-testing-enabled NO \
-            "${selection[@]}" 2>&1 | tee "${XCODEBUILD_LOG}"
+          # Usage: run_tests simulator result-bundle option...
+          run_tests() {
+            local simulator=$1 bundle=$2
+            shift 2
+            if (( TEST_ITERATIONS > 1 )); then set -- "$@" -test-iterations "${TEST_ITERATIONS}" -run-tests-until-failure; fi
+            xcodebuild test-without-building \
+              -xctestrun "${xctestrun[0]}" \
+              -destination "platform=iOS Simulator,id=${simulator}" \
+              -testLanguage en \
+              -testRegion US \
+              -resultBundlePath "${bundle}" \
+              -collect-test-diagnostics on-failure \
+              -parallel-testing-enabled NO \
+              "$@" 2>&1 | tee -a "${XCODEBUILD_LOG}"
+          }
+          # A scoped run of destination classes alone selects nothing for this simulator.
+          if [[ -s selection.txt ]]; then run_tests "${SIMULATOR_ID}" "${RESULT_BUNDLE_PATH}" "${selection[@]}"; fi
+          index=0
+          while IFS=$'\t' read -r device identifiers; do
+            index=$((index + 1))
+            options=()
+            for identifier in ${identifiers}; do options+=("-only-testing:${identifier}"); done
+            run_tests "${device}" "DestinationResults-${index}.xcresult" "${options[@]}" < /dev/null
+          done < devices.txt
           duration_seconds=$((SECONDS - start_seconds))
           echo "### App shard ${SHARD} of ${SHARD_COUNT}" >> "${GITHUB_STEP_SUMMARY}"
           echo "- Test without building: ${duration_seconds}s" >> "${GITHUB_STEP_SUMMARY}"
@@ -442,7 +469,11 @@ jobs:
           } >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Reject skipped UI tests
-        run: scripts/assert-no-skipped-ui-tests "${RESULT_BUNDLE_PATH}"
+        run: |
+          set -euo pipefail
+          for bundle in "${RESULT_BUNDLE_PATH}" DestinationResults-*.xcresult; do
+            [[ ! -e "${bundle}" ]] || scripts/assert-no-skipped-ui-tests "${bundle}"
+          done
 
       # Performance budgets are only useful against previous runs, so every run
       # keeps its measurements as an artifact and prints them into the summary.
@@ -470,7 +501,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: ${{ env.BUILD_ARTIFACT }}-test-results-shard-${{ matrix.shard }}
-          path: app/TestResults.xcresult
+          path: |
+            app/TestResults.xcresult
+            app/DestinationResults-*.xcresult
           retention-days: 14
           overwrite: true
           if-no-files-found: ignore
