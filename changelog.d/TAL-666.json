@@ -1,0 +1,1 @@
+{"skip": "UI-test fixture only: a scripted run waiting on the test heartbeats like the server, so the stall watchdog stays quiet."}

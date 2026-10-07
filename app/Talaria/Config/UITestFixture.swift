@@ -459,10 +459,17 @@ private final class UITestChatFixtureState: @unchecked Sendable {
         return (started, settled, approvalAnswered, clarificationAnswered, steerID, cancelled)
     }
 
-    func wait(until predicate: @escaping (UITestChatFixtureState) -> Bool, stopped: () -> Bool) {
+    /// Waits for `predicate`, calling `heartbeat` every few seconds meanwhile. The server's stream heartbeats while
+    /// a run waits; without one the App's stall watchdog shows "Checking stream" after 12 s and reconnects at 18 s,
+    /// moving the controls a test is about to tap (TAL-666).
+    func wait(until predicate: @escaping (UITestChatFixtureState) -> Bool, stopped: () -> Bool, heartbeat: () -> Void) {
         condition.lock()
         while !predicate(self), !stopped() {
-            condition.wait()
+            if !condition.wait(until: Date().addingTimeInterval(3)) {
+                condition.unlock()
+                heartbeat()
+                condition.lock()
+            }
         }
         condition.unlock()
     }
@@ -1664,7 +1671,10 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     private func wait(until predicate: @escaping (UITestChatFixtureState) -> Bool) {
-        Self.chatState.wait(until: predicate, stopped: { [weak self] in self?.isStopped != false })
+        Self.chatState.wait(until: predicate, stopped: { [weak self] in self?.isStopped != false }) { [weak self] in
+            guard let self, !self.isStopped else { return }
+            self.client?.urlProtocol(self, didLoad: Data(": fixture heartbeat\n\n".utf8))
+        }
     }
 
     var isStopped: Bool {

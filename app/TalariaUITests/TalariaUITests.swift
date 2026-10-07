@@ -695,6 +695,19 @@ final class ChatPrimaryStreamUITests: ChatUITestCase {
 /// reconnect and reopening a running chat are ChatViewModel and session-list tests in
 /// TalariaKit (TAL-402).
 final class ChatRecoveryUITests: ChatUITestCase {
+    /// A run waiting on the test heartbeats like the server's stream, so the stall watchdog never shows
+    /// Checking stream (after 12 s) or reconnects and replays the run (at 18 s) while a test works (TAL-666).
+    func testWaitingRunKeepsItsStreamAlive() throws {
+        launchFixture(additionalArguments: ["--ui-test-chat-controls"])
+        try sendFixtureMessage("Run the deterministic fixture")
+        let waiting = app.staticTexts["Waiting for control input."]
+        XCTAssertTrue(waiting.awaitExistence(timeout: 5))
+
+        let checking = element(label: "Hermes is checking the response stream")
+        XCTAssertFalse(poll(timeout: 22) { checking.exists }, "A waiting run's stream looked stalled")
+        XCTAssertTrue(waiting.exists, "The run was replayed by a reconnect")
+    }
+
     func testChatStreamSupportsSteeringAndCancellation() throws {
         launchChatFixture(
             argument: "--ui-test-chat-controls",
