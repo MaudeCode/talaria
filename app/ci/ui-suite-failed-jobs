@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Usage: ci/ui-suite-failed-jobs RUN_ID
+# Prints a JSON array of the run's failed job names: the jobs that failed, and the jobs GitHub cancelled for exceeding
+# their maximum execution time, which leaves the suite cancelled rather than failed (TAL-670). A job a person cancelled
+# carries no such annotation and never counts, so a run nobody needs to fix prints []. Read-only; needs GH_TOKEN with
+# actions: read and checks: read, and GITHUB_REPOSITORY.
+set -euo pipefail
+
+run=${1:?usage: ci/ui-suite-failed-jobs RUN_ID}
+jobs=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs/${run}/jobs?per_page=100" \
+  --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "cancelled") | [.id, .conclusion, .name] | @tsv')
+names=()
+while IFS=$'\t' read -r id conclusion name; do
+  [[ -n "${id}" ]] || continue
+  if [[ "${conclusion}" == cancelled ]]; then
+    annotations=$(gh api "repos/${GITHUB_REPOSITORY}/check-runs/${id}/annotations" --jq '.[].message')
+    grep -q "exceeded the maximum execution time" <<< "${annotations}" || continue
+  fi
+  names+=("${name}")
+done <<< "${jobs}"
+jq -nc '$ARGS.positional' --args ${names[@]+"${names[@]}"}

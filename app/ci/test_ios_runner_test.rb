@@ -16,15 +16,32 @@ class TestIOSRunnerTest < Minitest::Test
     assert_includes(script, "-collect-test-diagnostics never")
   end
 
-  def test_hosted_shards_keep_failure_diagnostics
-    # A hosted failure is not reproducible locally, so its result bundle carries the device's logs
-    # (TAL-490): one flake relaunched the app without its fixture, another lost keyboard focus.
-    test = workflow_jobs("app-tests.yml").fetch("app-test")["steps"].find { |step| step["name"] == "Test without building" }
+  def test_hosted_shards_skip_simulator_diagnostics_and_end_inside_their_job
+    shard = workflow_jobs("app-tests.yml").fetch("app-test")
+    test = shard["steps"].find { |step| step["name"] == "Test without building" }
 
-    assert_includes(test["run"], '-collect-test-diagnostics "${diagnostics}"')
-    assert_includes(test["run"], 'run_tests "${SIMULATOR_ID}" "${RESULT_BUNDLE_PATH}" on-failure "${selection[@]}"')
-    # Destination runs skip the collection, which times out after 600 s on hosted simulators (TAL-471).
-    assert_includes(test["run"], 'run_tests "${device}" "DestinationResults-${index}.xcresult" never "${options[@]}"')
+    # Collecting a hosted simulator's diagnostics waited 600 s on every shard and returned none (TAL-669); the
+    # result bundle still keeps each failure's screenshots, recording and logs.
+    assert_includes(test["run"], "-collect-test-diagnostics never")
+    refute_match(/on-failure|\$\{diagnostics\}/, test["run"])
+    # The step's own limit ends a stuck run while the job can still upload its evidence and fail, rather than be
+    # cancelled with neither (TAL-670): about 10 minutes before the step and 3 after it fit inside the job's limit.
+    assert_equal("${{ fromJSON(inputs.test_iterations) > 1 && 330 || 45 }}", test["timeout-minutes"])
+    assert_equal("${{ fromJSON(inputs.test_iterations) > 1 && 360 || 60 }}", shard["timeout-minutes"])
+  end
+
+  def test_failure_alert_covers_a_suite_cancelled_by_a_shard_timeout
+    alert = YAML.safe_load_file(File.join(WORKFLOWS, "ui-suite.yml"), aliases: true)["jobs"].fetch("alert")
+
+    # A shard GitHub cancels at its timeout leaves the suite cancelled, not failed, and failure() never ran the alert
+    # (TAL-670); ci/ui-suite-failed-jobs keeps a person's cancel from sending anything.
+    assert_equal("always() && (needs.suite.result == 'failure' || needs.suite.result == 'cancelled') " \
+                 "&& github.ref == 'refs/heads/main' && !inputs.only_testing && (!inputs.ref || inputs.ref == github.sha)",
+                 alert["if"])
+    assert_equal({"contents" => "read", "actions" => "read", "checks" => "read"}, alert["permissions"])
+    post = alert["steps"].find { |step| step["name"] == "Post the signed failure report" }["run"]
+    assert_includes(post, 'failed_jobs=$(app/ci/ui-suite-failed-jobs "$GITHUB_RUN_ID")')
+    assert_includes(post, 'if [[ "$failed_jobs" == "[]" ]]; then')
   end
 
   def test_single_worker_runs_on_the_leased_simulator_without_cloning
@@ -51,7 +68,7 @@ class TestIOSRunnerTest < Minitest::Test
       refute_match(Regexp.new(local), workflow)
     end
     assert_equal(1, workflow.scan('platform=iOS Simulator,id=${simulator}').length)
-    assert_includes(workflow, 'run_tests "${SIMULATOR_ID}" "${RESULT_BUNDLE_PATH}" on-failure "${selection[@]}"')
+    assert_includes(workflow, 'run_tests "${SIMULATOR_ID}" "${RESULT_BUNDLE_PATH}" "${selection[@]}"')
     assert_equal(1, workflow.scan('ci/build-for-testing "${BUILD_DESTINATION}"').length)
     build = File.read(File.expand_path("build-for-testing", __dir__), encoding: "UTF-8")
     assert_includes(build, '-destination "${destination}"')
@@ -106,11 +123,14 @@ class TestIOSRunnerTest < Minitest::Test
     started = jobs.fetch("build-started")
     assert_equal(["inputs.mode == 'full'", "ubuntu-latest"], started.values_at("if", "runs-on"))
     assert_equal(['ci/wait-for-job "${BUILD_JOB}" 20700 "Set up job"'], started["steps"].filter_map { |step| step["run"] })
-    # The boot finishes before the build wait and download, so it competes with neither (TAL-380). The photo the
-    # Photos picker test picks is seeded, and the notification service readied (TAL-651), while the build still runs
-    # (TAL-633).
+    # The boot finishes before the build wait and download, so it competes with neither (TAL-380). The simulator is
+    # prepared (scripts/prepare-ui-simulator: the keyboard introduction, TAL-668; notifications, TAL-651; a photo,
+    # TAL-633), and the destination simulators boot and are prepared, while the build still runs (TAL-669).
     boot = shard["steps"].index { |step| step["name"] == "Boot the simulator" }
-    assert_equal(["Seed a test photo", "Ready the simulator's notifications", "Wait for the build",
+    assert_equal('scripts/prepare-ui-simulator "${{ steps.sim.outputs.udid }}"', shard["steps"][boot + 1]["run"])
+    destinations = shard["steps"][boot + 2]["run"]
+    assert_includes(destinations, 'scripts/prepare-ui-simulator --keyboard-only "${device}"')
+    assert_equal(["Prepare the simulator", "Boot the destination simulators", "Wait for the build",
                   "Download the test build", "Select this shard's tests", "Test without building"],
                  shard["steps"][boot + 1, 6].map { |step| step["name"] })
     assert_equal("true", shard["steps"][boot]["with"]["wait_for_boot"].to_s)
@@ -229,13 +249,13 @@ class TestIOSRunnerTest < Minitest::Test
     # TAL-471), and must not skip there either.
     assert_includes(reject, 'for bundle in "${RESULT_BUNDLE_PATH}" DestinationResults-*.xcresult; do')
     assert_includes(reject, '[[ ! -e "${bundle}" ]] || scripts/assert-no-skipped-ui-tests "${bundle}"')
-    select = shard["steps"].find { |step| step["name"] == "Select this shard's tests" }["run"]
-    assert_includes(select, 'python3 ci/test_shards.py --shards "${SHARD_COUNT}" --shard "${SHARD}" --devices --runtime "${runtime}" > devices.txt')
-    assert_includes(select, 'python3 ci/test_shards.py --devices --runtime "${runtime}" --only-testing ${ONLY_TESTING} > devices.txt')
+    destinations = shard["steps"].find { |step| step["name"] == "Boot the destination simulators" }["run"]
+    assert_includes(destinations, 'python3 ci/test_shards.py --shards "${SHARD_COUNT}" --shard "${SHARD}" --devices --runtime "${runtime}" > devices.txt')
+    assert_includes(destinations, 'python3 ci/test_shards.py --devices --runtime "${runtime}" --only-testing ${ONLY_TESTING} > devices.txt')
     test = shard["steps"].find { |step| step["name"] == "Test without building" }["run"]
-    assert_includes(test, 'run_tests "${device}" "DestinationResults-${index}.xcresult" never "${options[@]}" < /dev/null || status=$?')
+    assert_includes(test, 'run_tests "${device}" "DestinationResults-${index}.xcresult" "${options[@]}" < /dev/null || status=$?')
     # A failing shard still runs its destination classes, and the step still fails.
-    assert_includes(test, 'run_tests "${SIMULATOR_ID}" "${RESULT_BUNDLE_PATH}" on-failure "${selection[@]}" || status=$?')
+    assert_includes(test, 'run_tests "${SIMULATOR_ID}" "${RESULT_BUNDLE_PATH}" "${selection[@]}" || status=$?')
     assert_match(/exit "\$\{status\}"\n\z/, test)
     # Pull requests and main pushes run the same App jobs; the full UI suite, launch smoke included, is nightly and
     # a release gate.

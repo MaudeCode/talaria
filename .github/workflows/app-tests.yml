@@ -277,14 +277,31 @@ jobs:
           wait_for_boot: true
           boot_timeout_seconds: 600
 
-      # UI tests pick from Photos; give them a photo they own (TAL-633).
-      - name: Seed a test photo
-        run: scripts/seed-simulator-photo "${{ steps.sim.outputs.udid }}"
+      # The keyboard's slide-to-type introduction marked as shown (TAL-668), the notification service answering
+      # (TAL-651) and a photo the tests own (TAL-633).
+      - name: Prepare the simulator
+        run: scripts/prepare-ui-simulator "${{ steps.sim.outputs.udid }}"
 
-      # A fresh boot can leave the notification service hanging for minutes, failing the completion alert test
-      # (TAL-651).
-      - name: Ready the simulator's notifications
-        run: scripts/ready-simulator-notifications "${{ steps.sim.outputs.udid }}"
+      # Classes that need an iPad or a Pro Max skip on this iPhone, so they run after this shard's own tests on the
+      # image's matching simulator instead (TAL-471): devices.txt holds one simulator and its identifiers per line.
+      # Each boots once here, while the build still runs, so its first boot is over before any test runs (TAL-669),
+      # has its keyboard introduction marked as shown, and waits shut down.
+      - name: Boot the destination simulators
+        run: |
+          set -euo pipefail
+          runtime="com.apple.CoreSimulator.SimRuntime.iOS-${IOS_SIMULATOR_OS//./-}"
+          if [[ -n "${ONLY_TESTING}" ]]; then
+            # shellcheck disable=SC2086 # One identifier per word.
+            python3 ci/test_shards.py --devices --runtime "${runtime}" --only-testing ${ONLY_TESTING} > devices.txt
+          else
+            python3 ci/test_shards.py --shards "${SHARD_COUNT}" --shard "${SHARD}" --devices --runtime "${runtime}" > devices.txt
+          fi
+          while IFS=$'\t' read -r device _; do
+            xcrun simctl boot "${device}"
+            xcrun simctl bootstatus "${device}" -b > /dev/null
+            scripts/prepare-ui-simulator --keyboard-only "${device}"
+            xcrun simctl shutdown "${device}"
+          done < devices.txt
 
       # Returns once the background poll has seen the build's upload step succeed; fails once it sees the build fail
       # or get cancelled, or if the poll stopped without a result.
@@ -338,29 +355,20 @@ jobs:
           set -euo pipefail
           mkdir -p Build
           tar -C Build -xf "${RUNNER_TEMP}/app-build.tar"
-          # Classes that need an iPad or a Pro Max skip on this iPhone, so they run after this shard's own tests on the
-          # image's matching simulator instead (TAL-471): devices.txt holds one simulator and its identifiers per line.
-          # Each boots once here, so its first boot is over before any test runs, and waits shut down.
-          runtime="com.apple.CoreSimulator.SimRuntime.iOS-${IOS_SIMULATOR_OS//./-}"
           if [[ -n "${ONLY_TESTING}" ]]; then
             # shellcheck disable=SC2086 # One identifier per word.
             python3 ci/test_shards.py --only-testing ${ONLY_TESTING} > selection.txt
-            # shellcheck disable=SC2086
-            python3 ci/test_shards.py --devices --runtime "${runtime}" --only-testing ${ONLY_TESTING} > devices.txt
           else
             python3 ci/test_shards.py --shards "${SHARD_COUNT}" --shard "${SHARD}" > selection.txt
-            python3 ci/test_shards.py --shards "${SHARD_COUNT}" --shard "${SHARD}" --devices --runtime "${runtime}" > devices.txt
           fi
-          while IFS=$'\t' read -r device _; do
-            xcrun simctl boot "${device}"
-            xcrun simctl bootstatus "${device}" -b > /dev/null
-            xcrun simctl shutdown "${device}"
-          done < devices.txt
           echo "Shard ${SHARD} of ${SHARD_COUNT}: $(grep -c -- '-only-testing:' selection.txt) selected, $(grep -c -- '-skip-testing:' selection.txt) skipped entries, $(wc -l < devices.txt | tr -d ' ') other simulator(s)"
 
       # The memory sampler runs for the whole step; "Report memory" stops it, summarizes it and uploads its log.
-      # A failure keeps the device's diagnostics in the result bundle: hosted flakes rarely reproduce locally (TAL-490).
+      # The step's own limit ends a stuck run inside the job's, so the steps after it still upload the result bundle
+      # and the memory log and the job fails rather than being cancelled, which the failure alert sees (TAL-670): a
+      # shard spends up to about 10 minutes before this step and about 3 after it.
       - name: Test without building
+        timeout-minutes: ${{ fromJSON(inputs.test_iterations) > 1 && 330 || 45 }}
         env:
           SIMULATOR_ID: ${{ steps.sim.outputs.udid }}
         run: |
@@ -372,10 +380,10 @@ jobs:
           while IFS= read -r option; do selection+=("${option}"); done < selection.txt
           [[ "${TEST_ITERATIONS}" =~ ^[1-9][0-9]*$ ]] || { echo "test_iterations must be a positive integer, got '${TEST_ITERATIONS}'" >&2; exit 1; }
           xctestrun=(Build/Products/*.xctestrun)
-          # Usage: run_tests simulator result-bundle diagnostics option...
+          # Usage: run_tests simulator result-bundle option...
           run_tests() {
-            local simulator=$1 bundle=$2 diagnostics=$3
-            shift 3
+            local simulator=$1 bundle=$2
+            shift 2
             if (( TEST_ITERATIONS > 1 )); then set -- "$@" -test-iterations "${TEST_ITERATIONS}" -run-tests-until-failure; fi
             xcodebuild test-without-building \
               -xctestrun "${xctestrun[0]}" \
@@ -383,24 +391,24 @@ jobs:
               -testLanguage en \
               -testRegion US \
               -resultBundlePath "${bundle}" \
-              -collect-test-diagnostics "${diagnostics}" \
+              -collect-test-diagnostics never \
               -parallel-testing-enabled NO \
               "$@" 2>&1 | tee -a "${XCODEBUILD_LOG}"
           }
           # A scoped run of destination classes alone selects nothing for this simulator. Every run goes ahead after
-          # an earlier one fails, so each run reports its own result; the step fails if any did. Collecting a hosted
-          # simulator's diagnostics times out after 600 s even when every test passed, so only the shard's own run pays
-          # that (TAL-490); the destination runs skip it rather than push the catch-all past its timeout (TAL-471).
+          # an earlier one fails, so each run reports its own result; the step fails if any did. No run collects the
+          # simulator's diagnostics: on a hosted runner that waited 600 s on every shard, passing or failing, and never
+          # returned any (TAL-669). The result bundle keeps each failure's screenshots, recording and logs.
           status=0
           if [[ -s selection.txt ]]; then
-            run_tests "${SIMULATOR_ID}" "${RESULT_BUNDLE_PATH}" on-failure "${selection[@]}" || status=$?
+            run_tests "${SIMULATOR_ID}" "${RESULT_BUNDLE_PATH}" "${selection[@]}" || status=$?
           fi
           index=0
           while IFS=$'\t' read -r device identifiers; do
             index=$((index + 1))
             options=()
             for identifier in ${identifiers}; do options+=("-only-testing:${identifier}"); done
-            run_tests "${device}" "DestinationResults-${index}.xcresult" never "${options[@]}" < /dev/null || status=$?
+            run_tests "${device}" "DestinationResults-${index}.xcresult" "${options[@]}" < /dev/null || status=$?
           done < devices.txt
           duration_seconds=$((SECONDS - start_seconds))
           echo "### App shard ${SHARD} of ${SHARD_COUNT}" >> "${GITHUB_STEP_SUMMARY}"
