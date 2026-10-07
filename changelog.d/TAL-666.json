@@ -1,1 +1,10 @@
-{"skip": "UI-test fixture only: a scripted run waiting on the test heartbeats like the server, so the stall watchdog stays quiet."}
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Queued messages and steering are now checked reliably before each release.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}
