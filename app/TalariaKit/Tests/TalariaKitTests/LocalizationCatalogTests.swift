@@ -181,7 +181,6 @@ final class LocalizationCatalogTests: XCTestCase {
         "Search Cards",
         "Search Sessions",
         "Select a Chat",
-        "Send Message",
         "Sending voice note...",
         "Server Access",
         "Server Identity",

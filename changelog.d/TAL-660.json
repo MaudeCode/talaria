@@ -1,0 +1,19 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "With a hardware keyboard, Return now sends your message and Command-Return adds a new line; choose Command-Return to send instead in Settings, Chats, Send With.",
+      "highlight": false
+    },
+    {
+      "category": "Added",
+      "summary": "While a reply is running, Control-Return on a hardware keyboard queues your message, or steers the reply when your messages normally queue.",
+      "highlight": false
+    },
+    {
+      "category": "Fixed",
+      "summary": "A message with attached files sent while a reply is running now waits in the queue with its files, instead of steering the reply with the text and leaving the files behind.",
+      "highlight": false
+    }
+  ]
+}

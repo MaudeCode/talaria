@@ -25,6 +25,7 @@ enum SyncedPreferenceAllowlist {
         .init(key: TalariaLiveActivityMode.storageKey, suite: .standard),
         .init(key: StreamedTextAnimationSettings.isEnabledKey, suite: .standard),
         .init(key: StreamingSendBehavior.storageKey, suite: .standard),
+        .init(key: ComposerSendKey.storageKey, suite: .standard),
         .init(key: ComposerSTTProviderPreference.storageKey, suite: .standard),
         .init(key: ListenPlaybackSpeed.storageKey, suite: .standard),
         .init(key: ChatTranscriptDisplaySettings.showsThinkingAndToolCardsKey, suite: .standard),

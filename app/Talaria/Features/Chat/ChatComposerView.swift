@@ -73,7 +73,8 @@ struct MessageComposerView: View {
     let voiceInputRequestID: Int
     let apiClient: APIClient?
     let uploadAttachmentErrorMessage: String?
-    let onSend: () -> Void
+    /// The behavior override for a send during a reply; nil uses the stored setting.
+    let onSend: (StreamingSendBehavior?) -> Void
     let onSendAs: (String) -> Void
     let onSendVoiceNote: (Data, String) -> Void
     let onCancel: () -> Void
@@ -141,6 +142,8 @@ struct MessageComposerView: View {
     @State private var voiceNoteCancelArmed = false
     @State private var didAutoStartVoiceInput = false
     @AppStorage(ComposerSTTProviderPreference.storageKey) private var sttProviderPreferenceRawValue = ComposerSTTProviderPreference.defaultValue.rawValue
+    @AppStorage(ComposerSendKey.storageKey) private var sendKeyRawValue = ComposerSendKey.defaultValue.rawValue
+    @AppStorage(StreamingSendBehavior.storageKey) private var streamingSendBehaviorRawValue = StreamingSendBehavior.steer.rawValue
     @AppStorage(SectionVisibilitySettings.chatGitKey) private var showsGitControls = true
     @AppStorage(ComposerVisibilitySettings.workspaceKey) private var showsWorkspaceControl = true
     @AppStorage(ComposerVisibilitySettings.profileKey) private var showsProfileControl = true
@@ -679,8 +682,10 @@ struct MessageComposerView: View {
                     measuredHeight: $textFieldHeight,
                     isDisabled: isReadOnly || (isAnsweringClarification && isSending),
                     isKeyboardSendEnabled: !showsStopButton && !isActionButtonDisabled,
+                    keyboardSendKey: ComposerSendKey.storedValue(sendKeyRawValue),
+                    alternateSendBehavior: StreamingSendBehavior.storedValue(streamingSendBehaviorRawValue).alternate,
                     verticalPadding: textFieldVerticalPadding,
-                    onKeyboardSend: actionButtonTapped,
+                    onKeyboardSend: actionButtonTapped(behavior:),
                     onPasteFileProviders: onPasteFileProviders,
                     onPasteFileURLs: onPasteFileURLs,
                     onPasteImageProviders: onPasteImageProviders,
@@ -734,7 +739,7 @@ struct MessageComposerView: View {
                 : (showsStopButton ? "Stop response" : "Send"),
             options: sendOptions,
             isDisabled: isActionButtonDisabled,
-            onTap: actionButtonTapped,
+            onTap: { actionButtonTapped(behavior: nil) },
             onOption: { submitDraft(as: $0) }
         )
     }
@@ -1237,23 +1242,23 @@ struct MessageComposerView: View {
             || isUpdatingConfiguration
     }
 
-    private func actionButtonTapped() {
+    private func actionButtonTapped(behavior: StreamingSendBehavior?) {
         guard !isActionButtonDisabled else { return }
         if showsStopButton {
             onCancel()
         } else {
-            submitDraft(as: nil)
+            submitDraft(as: nil, behavior: behavior)
         }
     }
 
-    private func submitDraft(as command: String?) {
+    private func submitDraft(as command: String?, behavior: StreamingSendBehavior? = nil) {
         if voiceInput.isListening {
             voiceInput.stopBeforeSubmittingDraft()
         }
         if let command {
             onSendAs(command)
         } else {
-            onSend()
+            onSend(behavior)
         }
     }
 

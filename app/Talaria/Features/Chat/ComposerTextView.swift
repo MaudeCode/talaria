@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 import UIKit
 import UniformTypeIdentifiers
 
@@ -8,7 +9,9 @@ struct ComposerTextView: UIViewRepresentable {
     @Binding var isFocused: Bool
     let isDisabled: Bool
     let isKeyboardSendEnabled: Bool
-    let onKeyboardSend: () -> Void
+    let keyboardSendKey: ComposerSendKey
+    let alternateSendBehavior: StreamingSendBehavior
+    let onKeyboardSend: (StreamingSendBehavior?) -> Void
     let onHeightChange: (CGFloat) -> Void
     let onPasteFileProviders: ([NSItemProvider]) -> Void
     let onPasteFileURLs: ([URL]) -> Void
@@ -29,8 +32,6 @@ struct ComposerTextView: UIViewRepresentable {
         textView.textContainerInset = .zero
         textView.textContainer.lineFragmentPadding = 0
         textView.textContentType = .none
-        textView.isKeyboardSendEnabled = isKeyboardSendEnabled
-        textView.onKeyboardSend = onKeyboardSend
         textView.pasteConfiguration = UIPasteConfiguration(
             acceptableTypeIdentifiers: [
                 UTType.fileURL.identifier,
@@ -38,10 +39,7 @@ struct ComposerTextView: UIViewRepresentable {
                 UTType.text.identifier
             ]
         )
-        textView.onPasteFileProviders = onPasteFileProviders
-        textView.onPasteFileURLs = onPasteFileURLs
-        textView.onPasteImageProviders = onPasteImageProviders
-        textView.onPasteImages = onPasteImages
+        applyInputHandling(to: textView)
         context.coordinator.reportHeight(for: textView)
         return textView
     }
@@ -64,14 +62,20 @@ struct ComposerTextView: UIViewRepresentable {
         textView.textAlignment = isRTL ? .right : .natural
         context.coordinator.applyEditability(!isDisabled, to: textView)
         textView.textColor = isDisabled ? .secondaryLabel : .label
+        applyInputHandling(to: textView)
+        context.coordinator.syncFocus(for: textView, shouldFocus: isFocused, isDisabled: isDisabled)
+        context.coordinator.reportHeight(for: textView)
+    }
+
+    private func applyInputHandling(to textView: PastingTextView) {
         textView.isKeyboardSendEnabled = isKeyboardSendEnabled
+        textView.keyboardSendKey = keyboardSendKey
+        textView.alternateSendBehavior = alternateSendBehavior
         textView.onKeyboardSend = onKeyboardSend
         textView.onPasteFileProviders = onPasteFileProviders
         textView.onPasteFileURLs = onPasteFileURLs
         textView.onPasteImageProviders = onPasteImageProviders
         textView.onPasteImages = onPasteImages
-        context.coordinator.syncFocus(for: textView, shouldFocus: isFocused, isDisabled: isDisabled)
-        context.coordinator.reportHeight(for: textView)
     }
 
     @MainActor
@@ -179,6 +183,11 @@ struct ComposerTextView: UIViewRepresentable {
             }
         }
 
+        func textView(_ textView: UITextView, editMenuForTextIn range: NSRange, suggestedActions: [UIMenuElement]) -> UIMenu? {
+            // An empty menu presents nothing; nil keeps the system menu.
+            (textView as? PastingTextView)?.isOpeningEditMenuFromControlReturn == true ? UIMenu(children: []) : nil
+        }
+
         func textViewDidBeginEditing(_ textView: UITextView) {
             if !isFocused {
                 isFocused = true
@@ -242,7 +251,10 @@ struct ComposerTextView: UIViewRepresentable {
 
     final class PastingTextView: UITextView {
         var isKeyboardSendEnabled = false
-        var onKeyboardSend: () -> Void = {}
+        var keyboardSendKey = ComposerSendKey.defaultValue
+        var alternateSendBehavior = StreamingSendBehavior.steer.alternate
+        /// Receives the behavior override: nil for the send key, the alternate for Ctrl+Return.
+        var onKeyboardSend: (StreamingSendBehavior?) -> Void = { _ in }
         var onPasteFileProviders: ([NSItemProvider]) -> Void = { _ in }
         var onPasteFileURLs: ([URL]) -> Void = { _ in }
         var onPasteImageProviders: ([NSItemProvider]) -> Void = { _ in }
@@ -278,30 +290,71 @@ struct ComposerTextView: UIViewRepresentable {
         }
 
         override var keyCommands: [UIKeyCommand]? {
-            let sendCommand = UIKeyCommand(
-                title: ComposerKeyboardCommand.title,
-                action: #selector(sendMessageFromKeyboard),
-                input: ComposerKeyboardCommand.input,
-                modifierFlags: ComposerKeyboardCommand.modifierFlags
-            )
-            return (super.keyCommands ?? []) + [sendCommand]
+            let composerCommands = ComposerKeyboardCommand.commands(
+                sendKey: keyboardSendKey,
+                alternateBehavior: alternateSendBehavior
+            ).map { command in
+                let keyCommand = UIKeyCommand(
+                    title: command.title,
+                    action: Self.selector(for: command.action),
+                    input: ComposerKeyboardCommand.input,
+                    modifierFlags: command.modifierFlags
+                )
+                // Plain Return must beat the text view's own newline insertion.
+                keyCommand.wantsPriorityOverSystemBehavior = true
+                return keyCommand
+            }
+            return (super.keyCommands ?? []) + composerCommands
+        }
+
+        static func selector(for action: ComposerKeyboardCommand.Action) -> Selector {
+            switch action {
+            case .send: #selector(sendMessageFromKeyboard)
+            case .alternateSend: #selector(sendAlternateFromKeyboard)
+            case .newline: #selector(insertNewlineFromKeyboard)
+            }
         }
 
         override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
-            if action == #selector(sendMessageFromKeyboard) {
-                return isKeyboardSendEnabled
-            }
-
-            if action == #selector(paste(_:)), hasPasteboardContent {
+            switch action {
+            // A declined command falls through to the text view, so Return commits a marked-text
+            // composition (TAL-159) instead of sending or inserting a newline mid-composition.
+            case #selector(sendMessageFromKeyboard), #selector(sendAlternateFromKeyboard):
+                return isKeyboardSendEnabled && markedTextRange == nil
+            case #selector(insertNewlineFromKeyboard):
+                return isEditable && markedTextRange == nil
+            case #selector(paste(_:)) where hasPasteboardContent:
                 return true
+            default:
+                return super.canPerformAction(action, withSender: sender)
             }
-
-            return super.canPerformAction(action, withSender: sender)
         }
 
-        @objc private func sendMessageFromKeyboard() {
-            guard isKeyboardSendEnabled else { return }
-            onKeyboardSend()
+        @objc func sendMessageFromKeyboard() {
+            guard canPerformAction(#selector(sendMessageFromKeyboard), withSender: nil) else { return }
+            onKeyboardSend(nil)
+        }
+
+        @objc func sendAlternateFromKeyboard() {
+            guard canPerformAction(#selector(sendAlternateFromKeyboard), withSender: nil) else { return }
+            onKeyboardSend(alternateSendBehavior)
+        }
+
+        /// UIKit also reads Ctrl+Return as a keyboard secondary click: a press-only gesture recognizer on the
+        /// text view starts the edit menu, which then covers the composer and takes the next keystrokes.
+        var isOpeningEditMenuFromControlReturn: Bool {
+            (gestureRecognizers ?? []).contains { recognizer in
+                recognizer.allowedTouchTypes.isEmpty
+                    && !recognizer.allowedPressTypes.isEmpty
+                    && [.began, .changed, .ended].contains(recognizer.state)
+                    && recognizer.modifierFlags.contains(ComposerKeyboardCommand.alternateSendModifierFlags)
+            }
+        }
+
+        /// Typed-text insertion, so undo, a selection replacement and the draft binding behave as for any key.
+        @objc func insertNewlineFromKeyboard() {
+            guard canPerformAction(#selector(insertNewlineFromKeyboard), withSender: nil) else { return }
+            insertText("\n")
         }
 
         override func paste(_ sender: Any?) {

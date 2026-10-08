@@ -6,6 +6,7 @@ struct ChatsSettingsView: View {
     let server: URL
 
     @AppStorage(StreamingSendBehavior.storageKey) private var streamingSendBehaviorRawValue = StreamingSendBehavior.steer.rawValue
+    @AppStorage(ComposerSendKey.storageKey) private var sendKeyRawValue = ComposerSendKey.defaultValue.rawValue
     @AppStorage(ComposerSTTProviderPreference.storageKey) private var sttProviderPreferenceRawValue = ComposerSTTProviderPreference.defaultValue.rawValue
     @AppStorage(ChatTranscriptDisplaySettings.showsThinkingAndToolCardsKey) private var showsThinkingAndToolCards = true
     @AppStorage(ChatTranscriptDisplaySettings.thinkingCardsStartExpandedKey) private var thinkingCardsStartExpanded = false
@@ -62,6 +63,20 @@ struct ChatsSettingsView: View {
                         Text(behavior.settingsDescription).tag(behavior.rawValue)
                     }
                 }
+
+                SettingsDivider()
+
+                SettingsPickerRow(
+                    title: String(localized: "Send With"),
+                    systemImage: "keyboard",
+                    selection: $sendKeyRawValue
+                ) {
+                    ForEach(ComposerSendKey.allCases) { sendKey in
+                        Text(sendKey.title).tag(sendKey.rawValue)
+                    }
+                }
+
+                SettingsFootnote(String(localized: "Hardware keyboard only. While a reply runs, Control-Return queues the message, or steers it if Send While Responding queues."))
 
                 SettingsDivider()
 

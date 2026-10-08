@@ -1462,6 +1462,7 @@ final class SettingsStructureUITests: SettingsUITestCase {
         XCTAssertTrue(composerHeading.exists)
         for label in [
             "Send While Responding",
+            "Send With",
             "Dictation Provider",
             "Workspace",
             "Profile",
@@ -3099,7 +3100,10 @@ extension TalariaUITestCase {
     }
 
     func tapSettingsRow(label: String) {
-        let row = app.buttons[label]
+        // The category just tapped stays in the tree while its page pushes, and Providers' row shares its label.
+        let row = app.buttons
+            .matching(NSPredicate(format: "label == %@ AND NOT (identifier BEGINSWITH %@)", label, "settings-category-"))
+            .firstMatch
         let bottom = app.frame.maxY
         repeatStep(12, until: { row.exists && row.frame.maxY <= bottom }) {
             app.swipeUp()
@@ -3519,6 +3523,60 @@ final class QueuedMessagesChipUITests: ChatUITestCase {
         tapCenter(of: backgroundOption)
         XCTAssertTrue(element(labelContaining: "did not return a background task").awaitExistence(timeout: 5))
         XCTAssertEqual(composerInput.value as? String, "First queued message", "A failed menu send cleared the draft")
+    }
+}
+
+/// A hardware keyboard sends on Return, adds a newline on ⌘Return or Shift+Return, and during a reply
+/// Ctrl+Return sends the other way from the stored behavior: steer's other way is the queue (TAL-660).
+final class ComposerHardwareKeyboardUITests: ChatUITestCase {
+    /// The simulator presses Return for "\n"; `XCUIKeyboardKey.return` ("\r") reaches no key at all.
+    private static let returnKey = "\n"
+
+    func testReturnSendsCommandReturnAddsANewlineAndControlReturnQueuesDuringAReply() throws {
+        launchChatFixture(argument: "--ui-test-chat-controls", trace: "start -> Cmd-Return -> Shift-Return -> Return -> token -> Ctrl-Return")
+        let input = readyComposerInput(try openFixtureSession())
+        Thread.sleep(forTimeInterval: 1) // let the keyboard land, as `sendFixtureMessage` does
+        input.typeText("Run the deterministic fixture")
+        input.typeKey(Self.returnKey, modifierFlags: .command)
+        input.typeText("second line")
+        input.typeKey(Self.returnKey, modifierFlags: .shift)
+        input.typeText("third line")
+        XCTAssertEqual(
+            input.value as? String,
+            "Run the deterministic fixture\nsecond line\nthird line",
+            "Command-Return or Shift-Return did not add a newline"
+        )
+        attachScreenshot(named: "newlines-from-the-keyboard")
+
+        input.typeKey(Self.returnKey, modifierFlags: [])
+        XCTAssertTrue(app.staticTexts["Waiting for control input."].awaitExistence(timeout: 10), "Return did not send the draft")
+        XCTAssertTrue(poll(timeout: 5) { (input.value as? String)?.contains("third line") != true }, "Return left the draft in the composer")
+
+        input.typeText("Queued from the keyboard")
+        input.typeKey(Self.returnKey, modifierFlags: .control)
+        XCTAssertTrue(app.buttons["1 queued"].awaitExistence(timeout: 5), "Control-Return did not queue the draft while steering is the setting")
+        XCTAssertTrue(poll(timeout: 5) { (input.value as? String)?.contains("Queued from the keyboard") != true }, "Control-Return left the draft in the composer")
+        // A Control-Return key command would also open the text view's edit menu, which takes the next keystrokes.
+        input.typeText("Next draft")
+        XCTAssertEqual(input.value as? String, "Next draft", "Typing after Control-Return did not reach the composer")
+        XCTAssertFalse(element(labelContaining: "Select All").exists, "Control-Return opened the edit menu")
+        attachScreenshot(named: "control-return-queued")
+    }
+
+    /// With Send With set to ⌘ Return, Return is the newline and ⌘Return sends.
+    func testCommandReturnModeSendsOnCommandReturnAndAddsANewlineOnReturn() throws {
+        fixtureTrace = "start -> Return -> Cmd-Return -> token"
+        launchFixture(additionalArguments: ["--ui-test-chat-controls", "-composerSendKey", "commandReturn"])
+        let input = readyComposerInput(try openFixtureSession())
+        Thread.sleep(forTimeInterval: 1)
+        input.typeText("Run the deterministic fixture")
+        input.typeKey(Self.returnKey, modifierFlags: [])
+        input.typeText("second line")
+        XCTAssertEqual(input.value as? String, "Run the deterministic fixture\nsecond line", "Return did not add a newline")
+
+        input.typeKey(Self.returnKey, modifierFlags: .command)
+        XCTAssertTrue(app.staticTexts["Waiting for control input."].awaitExistence(timeout: 10), "Command-Return did not send the draft")
+        XCTAssertTrue(poll(timeout: 5) { (input.value as? String)?.contains("second line") != true }, "Command-Return left the draft in the composer")
     }
 }
 
