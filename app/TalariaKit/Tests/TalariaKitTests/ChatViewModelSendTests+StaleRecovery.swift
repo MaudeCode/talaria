@@ -242,6 +242,20 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(userRows.map(\.messageId), ["user-1", "user-2"])
     }
 
+    // Without `_turn_id`, a copy after the turn the device showed is new; the two clocks are not compared.
+    @MainActor
+    func testContextlessReloadConfirmsALegacyServersCopyAcrossClockSkew() async throws {
+        let skewed = serverNow - 900
+        let userRows = try await contextlessRepeatReload(
+            earlierTurn: """
+            {"role": "user", "content": "continue", "timestamp": \(skewed - 10), "message_id": "user-1"},
+            {"role": "assistant", "content": "Earlier answer.", "timestamp": \(skewed - 9), "message_id": "assistant-1"}
+            """,
+            runningTurn: #"{"role": "user", "content": "continue", "timestamp": \#(skewed), "message_id": "user-2"}"#
+        )
+        XCTAssertEqual(userRows.map(\.messageId), ["user-1", "user-2"])
+    }
+
     // Current Web stamps the running prompt with the stream as its `_turn_id`: that identity, not the two clocks, decides.
     @MainActor
     func testContextlessReloadConfirmsTheRunningTurnsPromptAcrossServerClockSkew() async throws {

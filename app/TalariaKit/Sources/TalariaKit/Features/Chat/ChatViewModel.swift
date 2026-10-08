@@ -1865,6 +1865,8 @@ public final class ChatViewModel {
         var unconfirmedMessages: [ChatMessage] = []
         for index in localMessages.indices where isPrompt(localMessages[index]) {
             var excludedLoadedIndices = claimedLoadedIndices
+            // The newest loaded row the device showed before the prompt: every row after it is newer.
+            var shownBoundary: Int?
             if runningTurnID != nil {
                 // Each shown row claims the oldest loaded row with its key, so keyless rows match by place.
                 var unclaimedShownRows = Dictionary(
@@ -1876,14 +1878,16 @@ public final class ChatViewModel {
                     guard let key = shownRowKey(loadedMessage), let count = unclaimedShownRows[key], count > 0
                     else { continue }
                     unclaimedShownRows[key] = count - 1
-                    excludedLoadedIndices.insert(loadedIndex)
+                    shownBoundary = loadedIndex
                 }
+                if let shownBoundary { excludedLoadedIndices.formUnion(0...shownBoundary) }
             }
             if let confirmingIndex = equivalentUserMessageIndex(
                 in: loadedMessages,
                 excluding: excludedLoadedIndices,
                 localMessage: localMessages[index],
-                turnID: index == runningPromptIndex ? runningTurnID : nil
+                turnID: index == runningPromptIndex ? runningTurnID : nil,
+                comparesClocks: shownBoundary == nil
             ) {
                 if runningTurnID != nil { claimedLoadedIndices.insert(confirmingIndex) }
             } else {
@@ -2312,14 +2316,18 @@ public final class ChatViewModel {
         in loadedMessages: [ChatMessage],
         excluding excludedIndices: Set<Int>,
         localMessage: ChatMessage,
-        turnID: String?
+        turnID: String?,
+        comparesClocks: Bool
     ) -> Int? {
         let localContent = normalizedUserMessageContent(localMessage)
         let localAttachmentKeys = attachmentKeys(for: localMessage)
 
         return loadedMessages.indices.first { loadedIndex in
             let loadedMessage = loadedMessages[loadedIndex]
-            guard !excludedIndices.contains(loadedIndex), loadedMessage.role == "user" else { return false }
+            // The running turn's own stamped row stays eligible wherever the server placed it.
+            let isRunningTurnRow = turnID != nil && loadedMessage.turnId == turnID
+            guard isRunningTurnRow || !excludedIndices.contains(loadedIndex), loadedMessage.role == "user"
+            else { return false }
 
             if loadedMessage.messageId == localMessage.messageId {
                 return true
@@ -2343,8 +2351,10 @@ public final class ChatViewModel {
                 return loadedTurnID == turnID
             }
 
-            // An older identical prompt ("continue") must not confirm a newer one.
-            guard let localTimestamp = localMessage.timestamp,
+            // An older identical prompt ("continue") must not confirm a newer one. Past a shown boundary every
+            // candidate is newer than the prompt's history, so the phone's and server's clocks are not compared.
+            guard comparesClocks,
+                  let localTimestamp = localMessage.timestamp,
                   let loadedTimestamp = loadedMessage.timestamp
             else {
                 return true
