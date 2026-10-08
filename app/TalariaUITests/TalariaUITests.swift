@@ -214,20 +214,23 @@ final class LongPromptFoldUITests: ChatUITestCase {
 final class ChatNavigationUITests: ChatUITestCase {
     func testApprovalBypassChipTurnsBypassOffForTheSession() throws {
         // The composer renders before the chat reads its bypass state, so the status waits for the fixture to answer
-        // that read (`approvalBypassAnsweredNotification` in the app): a loaded hosted runner answered it 10 s after
-        // the composer (TAL-664).
+        // that read (`approvalBypassAnsweredName` in the app): a loaded hosted runner answered it 10 s after the
+        // composer (TAL-664). An earlier test on this simulator may have left the state answered.
         var bypassAnswered: Int32 = 0
         notify_register_check("dev.kil.talaria.ui-test.approval-bypass-answered", &bypassAnswered)
         defer { notify_cancel(bypassAnswered) }
-        var posted: Int32 = 0
-        notify_check(bypassAnswered, &posted) // The first check after registering always reports a post.
+        notify_set_state(bypassAnswered, 0)
         launchFixture(additionalArguments: ["--ui-test-approval-bypass"])
         let session = fixtureSessionButton
         XCTAssertTrue(session.awaitExistence(timeout: 15))
         tapFixtureSession(session)
         XCTAssertNotNil(waitForComposer(timeout: 30))
         XCTAssertTrue(
-            poll(timeout: 30) { notify_check(bypassAnswered, &posted); return posted != 0 },
+            poll(timeout: 30) {
+                var state: UInt64 = 0
+                notify_get_state(bypassAnswered, &state)
+                return state == 1
+            },
             "The chat never read its approval bypass state."
         )
         let status = app.descendants(matching: .any)

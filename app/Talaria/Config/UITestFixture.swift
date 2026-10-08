@@ -11,9 +11,10 @@ struct UITestFixtureEnvironment {
     nonisolated static let launchArgument = UITestFixtureLaunch.launchArgument
     nonisolated static let relayConnectedArgument = UITestFixtureLaunch.relayConnectedArgument
     nonisolated static let approvalBypassArgument = "--ui-test-approval-bypass"
-    /// Posted when the fixture answers a session's approval-bypass read, so a UI test can wait for the App to learn
-    /// the state instead of for the composer, which renders first (TAL-664).
-    nonisolated static let approvalBypassAnsweredNotification = "dev.kil.talaria.ui-test.approval-bypass-answered"
+    /// Its Darwin notify state turns 1 when the fixture answers a session's approval-bypass read, so a UI test can wait
+    /// for the App to learn the state instead of for the composer, which renders first (TAL-664). A state, unlike a
+    /// post seen through `notify_check`, has no false positive.
+    nonisolated static let approvalBypassAnsweredName = "dev.kil.talaria.ui-test.approval-bypass-answered"
     nonisolated static let reauthenticationArgument = "--ui-test-reauthentication"
     nonisolated static let trustedReauthenticationArgument = "--ui-test-reauthentication-trusted"
     /// Launches with no saved server so the fixture lands on onboarding.
@@ -505,6 +506,11 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     static let sessionTitle = "UI Fixture Session"
     private static let recoveryState = NSLock()
     nonisolated(unsafe) private static var approvalBypassOverride: Bool?
+    private static let approvalBypassAnsweredToken: Int32 = {
+        var token: Int32 = 0
+        notify_register_check(UITestFixtureEnvironment.approvalBypassAnsweredName, &token)
+        return token
+    }()
     /// The session's toolsets as the fixture saved them (TAL-631); nil is the profile's defaults.
     private static let sessionToolsets = OSAllocatedUnfairLock<[String]?>(initialState: nil)
     nonisolated(unsafe) private static var sessionReads = 0
@@ -886,7 +892,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
                 return approvalBypassOverride
                     ?? ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.approvalBypassArgument)
             }
-            if request.httpMethod != "POST" { notify_post(UITestFixtureEnvironment.approvalBypassAnsweredNotification) }
+            if request.httpMethod != "POST" { notify_set_state(approvalBypassAnsweredToken, 1) }
             return json(["ok": true, "yolo_enabled": enabled])
         case "/api/chat/stream", "/api/approval/stream", "/api/clarify/stream", "/api/kanban/events/stream":
             return Data("event: stream_end\ndata: {}\n\n".utf8)
