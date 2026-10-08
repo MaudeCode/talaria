@@ -54,7 +54,7 @@ struct AppleAccountSettingsView: View {
     @State private var isConfirmingDelete = false
     @State private var isDeleting = false
     @State private var passwordAccount: ServerAccount?
-    @State private var errorMessage: String?
+    @State private var errorMessage: SettingsErrorText?
     @State private var help: SettingsSectionHelp?
 
     init(authManager: AuthManager, server: URL?) {
@@ -186,6 +186,7 @@ struct AppleAccountSettingsView: View {
             }
             .font(.subheadline)
             .accessibilityElement(children: .combine)
+            .copyableError(coordinator.status.copyableError)
             .accessibilityIdentifier("settings-icloud-sync-status")
 
             Button("Sync Now") {
@@ -347,7 +348,7 @@ struct AppleAccountSettingsView: View {
         case .success(let authorization):
             guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
                   let identityToken = credential.identityToken else {
-                errorMessage = String(localized: "Apple did not return an identity token.")
+                errorMessage = SettingsErrorText(String(localized: "Apple did not return an identity token."))
                 return
             }
             // Sync needs only the Apple user; the relay needs the token exchange.
@@ -365,7 +366,7 @@ struct AppleAccountSettingsView: View {
             }
         case .failure(let error):
             if (error as? ASAuthorizationError)?.code != .canceled {
-                errorMessage = error.localizedDescription
+                errorMessage = SettingsErrorText(error)
             }
         }
     }
@@ -403,7 +404,7 @@ struct AppleAccountSettingsView: View {
             relayCredentials = TalariaRelayConfigurationStore.load()
         } catch {
             relayCredentials = TalariaRelayConfigurationStore.load()
-            errorMessage = error.localizedDescription
+            errorMessage = SettingsErrorText(error)
         }
     }
 
@@ -413,8 +414,8 @@ struct AppleAccountSettingsView: View {
         // One action: if sync could not record the disconnect, leave the relay
         // signed in too rather than half-applying the choice.
         guard coordinator.disconnect() else {
-            if case .failed(let message) = coordinator.status {
-                errorMessage = message
+            if case .failed(let message, let detail) = coordinator.status {
+                errorMessage = SettingsErrorText(message, detail: detail)
             }
             return
         }
@@ -427,7 +428,7 @@ struct AppleAccountSettingsView: View {
             pending.pendingRevocation = true
             try? TalariaRelayConfigurationStore.save(pending)
             relayCredentials = pending
-            errorMessage = error.localizedDescription
+            errorMessage = SettingsErrorText(error)
         }
     }
 
@@ -439,7 +440,7 @@ struct AppleAccountSettingsView: View {
         do {
             try await coordinator.deleteSyncedData()
         } catch {
-            errorMessage = (error as? ConfigurationSyncStoreError)?.userMessage ?? error.localizedDescription
+            errorMessage = SettingsErrorText(error)
         }
     }
 }
@@ -452,7 +453,7 @@ private struct ServerPasswordSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var password = ""
     @State private var isSaving = false
-    @State private var errorMessage: String?
+    @State private var errorMessage: SettingsErrorText?
     @State private var help: SettingsSectionHelp?
 
     var body: some View {
@@ -506,7 +507,7 @@ private struct ServerPasswordSheet: View {
         if await authManager.verifyAndStorePassword(for: account, password: password) {
             dismiss()
         } else {
-            errorMessage = authManager.lastErrorMessage
+            errorMessage = authManager.lastErrorMessage.map { SettingsErrorText($0) }
         }
     }
 }
@@ -526,7 +527,7 @@ extension ConfigurationSyncStatus {
             String(localized: "Offline. Changes sync when you're back online.")
         case .syncing:
             String(localized: "Syncing…")
-        case .failed(let message):
+        case .failed(let message, _):
             message
         case .missingCredentials(let serverIDs):
             serverIDs.count == 1
@@ -538,6 +539,15 @@ extension ConfigurationSyncStatus {
             } else {
                 String(localized: "Synced")
             }
+        }
+    }
+
+    /// What the status row offers to copy; nil outside the error states.
+    var copyableError: SettingsErrorText? {
+        switch self {
+        case .failed(let message, let detail): SettingsErrorText(message, detail: detail)
+        case .unavailable, .appleCredentialRevoked: SettingsErrorText(summary)
+        default: nil
         }
     }
 

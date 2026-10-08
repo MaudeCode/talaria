@@ -25,7 +25,7 @@ struct RelayConnectionManagementView: View {
     @State private var unenrollmentAccount: RelayPublisherRow?
     @State private var isPresentingUnenrollment = false
     @State private var failedServerID: String?
-    @State private var errorMessage: String?
+    @State private var errorMessage: SettingsErrorText?
     @State private var isConfirmingDisconnect = false
     @State private var isDisconnecting = false
 
@@ -248,7 +248,7 @@ struct RelayConnectionManagementView: View {
         } catch {
             self.credentials = TalariaRelayConfigurationStore.load()
             failedServerID = state(for: server) == .connected ? nil : server.id
-            errorMessage = error.localizedDescription
+            errorMessage = SettingsErrorText(error)
         }
     }
 
@@ -272,7 +272,7 @@ struct RelayConnectionManagementView: View {
             self.credentials = TalariaRelayConfigurationStore.load()
             try await TalariaAggregateLiveActivityManager.shared.refresh()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = SettingsErrorText(error)
         }
     }
 
@@ -291,7 +291,7 @@ struct RelayConnectionManagementView: View {
             pending.pendingRevocation = true
             try? TalariaRelayConfigurationStore.save(pending)
             self.credentials = pending
-            errorMessage = error.localizedDescription
+            errorMessage = SettingsErrorText(error)
         }
     }
 }

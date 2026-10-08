@@ -196,6 +196,12 @@ actor CloudKitConfigurationSyncStore: ConfigurationSyncStore {
         guard let ckError = error as? CKError else {
             return (error as? URLError) != nil ? .offline : .failed(error.localizedDescription)
         }
+        // CloudKit's own description names record IDs and zones, so it goes in
+        // the copyable detail and the row shows a sentence instead.
+        let unmapped = ConfigurationSyncStoreError.failed(
+            String(localized: "iCloud couldn't save your settings. Try again later."),
+            detail: "CKError \(ckError.code.rawValue) \(ckError.code.name): \(ckError.localizedDescription)"
+        )
         switch ckError.code {
         case .networkUnavailable, .networkFailure, .serviceUnavailable, .requestRateLimited, .zoneBusy:
             return .offline
@@ -206,10 +212,61 @@ actor CloudKitConfigurationSyncStore: ConfigurationSyncStore {
         case .zoneNotFound, .userDeletedZone:
             return .syncedDataDeleted
         case .partialFailure:
-            let nested = ckError.partialErrorsByItemID?.values.first
-            return nested.map(mapped) ?? .failed(ckError.localizedDescription)
+            return ckError.partialErrorsByItemID?.values.first.map(mapped) ?? unmapped
+        case .serverRejectedRequest:
+            // Production refuses a record type missing from the deployed schema
+            // ("Cannot create new type … in production schema").
+            return .failed(
+                String(localized: "iCloud sync isn't set up for this build yet. Settings sync will resume after an update."),
+                detail: unmapped.detail
+            )
         default:
-            return .failed(ckError.localizedDescription)
+            return unmapped
+        }
+    }
+}
+
+private extension CKError.Code {
+    /// The SDK case name; CloudKit codes have no string form of their own.
+    var name: String {
+        switch self {
+        case .internalError: "internalError"
+        case .partialFailure: "partialFailure"
+        case .networkUnavailable: "networkUnavailable"
+        case .networkFailure: "networkFailure"
+        case .badContainer: "badContainer"
+        case .serviceUnavailable: "serviceUnavailable"
+        case .requestRateLimited: "requestRateLimited"
+        case .missingEntitlement: "missingEntitlement"
+        case .notAuthenticated: "notAuthenticated"
+        case .permissionFailure: "permissionFailure"
+        case .unknownItem: "unknownItem"
+        case .invalidArguments: "invalidArguments"
+        case .resultsTruncated: "resultsTruncated"
+        case .serverRecordChanged: "serverRecordChanged"
+        case .serverRejectedRequest: "serverRejectedRequest"
+        case .assetFileNotFound: "assetFileNotFound"
+        case .assetFileModified: "assetFileModified"
+        case .incompatibleVersion: "incompatibleVersion"
+        case .constraintViolation: "constraintViolation"
+        case .operationCancelled: "operationCancelled"
+        case .changeTokenExpired: "changeTokenExpired"
+        case .batchRequestFailed: "batchRequestFailed"
+        case .zoneBusy: "zoneBusy"
+        case .badDatabase: "badDatabase"
+        case .quotaExceeded: "quotaExceeded"
+        case .zoneNotFound: "zoneNotFound"
+        case .limitExceeded: "limitExceeded"
+        case .userDeletedZone: "userDeletedZone"
+        case .tooManyParticipants: "tooManyParticipants"
+        case .alreadyShared: "alreadyShared"
+        case .referenceViolation: "referenceViolation"
+        case .managedAccountRestricted: "managedAccountRestricted"
+        case .participantMayNeedVerification: "participantMayNeedVerification"
+        case .serverResponseLost: "serverResponseLost"
+        case .assetNotAvailable: "assetNotAvailable"
+        case .accountTemporarilyUnavailable: "accountTemporarilyUnavailable"
+        default: "unknown"
         }
     }
 }
@@ -236,16 +293,23 @@ struct UnavailableConfigurationSyncStore: ConfigurationSyncStore {
     }
 }
 
-extension ConfigurationSyncStoreError {
+extension ConfigurationSyncStoreError: LocalizedError, ErrorDetailProviding {
+    public var errorDescription: String? { userMessage }
+
     /// Copy shown in Settings. Never carries a credential: every case is a
-    /// fixed sentence or a CloudKit/system description of the failure.
+    /// fixed sentence or a system description of the failure.
     public var userMessage: String {
         switch self {
         case .offline: String(localized: "Waiting for a network connection.")
         case .accountUnavailable(let reason): reason
         case .changeTokenExpired: String(localized: "iCloud asked for a full resync.")
         case .syncedDataDeleted: String(localized: "Synced data was deleted from iCloud.")
-        case .failed(let message): message
+        case .failed(let message, _): message
         }
+    }
+
+    public var detail: String? {
+        guard case .failed(_, let detail) = self else { return nil }
+        return detail
     }
 }

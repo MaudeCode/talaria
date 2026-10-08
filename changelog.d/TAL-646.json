@@ -1,0 +1,14 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Tap an error in Settings to copy its details for a bug report.",
+      "highlight": false
+    },
+    {
+      "category": "Changed",
+      "summary": "iCloud Sync errors read as plain sentences instead of raw CloudKit messages.",
+      "highlight": false
+    }
+  ]
+}
