@@ -1817,19 +1817,19 @@ struct ChatView: View {
         guard viewModel.clarificationPrompt == nil else { return }
         prepareTranscriptForExplicitSend()
 
-        let didSend = await viewModel.sendVoiceNote(
+        let outcome = await viewModel.sendVoiceNote(
             audioData: audioData,
             filename: filename,
             modelContext: modelContext
         )
 
-        if didSend {
+        if outcome.didStart {
             onConversationStarted()
             ChatHaptics.messageSent(isEnabled: isHapticsEnabled)
         }
 
-        if let lastError = viewModel.lastError {
-            onAPIError(lastError)
+        if let error = outcome.error {
+            onAPIError(error)
         }
     }
 
@@ -3022,6 +3022,11 @@ private struct ChatLiveSync: ViewModifier {
                 Task {
                     await viewModel.handleSessionsChange(change, modelContext: modelContext)
                     reportLastError()
+                }
+            }
+            .onChange(of: viewModel.queuedSendFailure?.id) {
+                if let failure = viewModel.queuedSendFailure {
+                    onAPIError(failure.error)
                 }
             }
     }
