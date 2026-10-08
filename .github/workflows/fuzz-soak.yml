@@ -7,6 +7,10 @@
 # Both live in the TalariaKit package and run with `swift test`, without a
 # simulator (TAL-399).
 #
+# An input that traps the test process cannot report its seed, so the run
+# journals the seed in flight (`FuzzSeedJournal`, TAL-175) and uploads the
+# journal when it fails; `app/scripts/test-fuzz-seed-journal` proves the path.
+#
 # Not a required check. A failure means a new minimized regression test and a
 # fix belong on a branch, not that main is broken.
 name: Fuzz Soak
@@ -40,9 +44,18 @@ jobs:
       - uses: ./.github/actions/setup-xcode
 
       - name: Run the fuzz soak
+        env:
+          TALARIA_FUZZ_SEED_JOURNAL_DIR: ${{ runner.temp }}/fuzz-seed-journal
         run: |
           set -euo pipefail
           start_seconds=${SECONDS}
           swift test --package-path TalariaKit --only-use-versions-from-resolved-file --filter UntrustedInputFuzzSoakTests
           echo "### Fuzz soak" >> "${GITHUB_STEP_SUMMARY}"
           echo "- Duration: $((SECONDS - start_seconds))s" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload the seed journal
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuzz-seed-journal
+          path: ${{ runner.temp }}/fuzz-seed-journal
