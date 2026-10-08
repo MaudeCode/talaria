@@ -256,6 +256,79 @@ final class ChatScrollPolicyTests: XCTestCase {
         )
     }
 
+    // MARK: Disclosure settling
+
+    private typealias Settle = ChatScrollPolicy.DisclosureSettle
+
+    func testFinalFollowSuppressedBySettlingReplaysWhenItExpires() {
+        var settle = Settle()
+        let generation = settle.begin()
+        // The stream's last trigger lands inside the window; nothing follows it.
+        settle.recordSuppressedFollow(isFollowing: true)
+
+        XCTAssertTrue(settle.expire(generation: generation, isFollowing: true))
+        XCTAssertFalse(settle.isSettling)
+    }
+
+    func testOwedFollowReplaysOnlyOnce() {
+        var settle = Settle()
+        let first = settle.begin()
+        settle.recordSuppressedFollow(isFollowing: true)
+        XCTAssertTrue(settle.expire(generation: first, isFollowing: true))
+
+        let second = settle.begin()
+        XCTAssertFalse(settle.expire(generation: second, isFollowing: true))
+    }
+
+    func testUserOptOutCancelsOwedFollow() {
+        var settle = Settle()
+        let generation = settle.begin()
+        settle.recordSuppressedFollow(isFollowing: true)
+        settle.cancelOwedFollow()
+
+        // Even a re-arm before expiry does not revive the cancelled follow.
+        XCTAssertFalse(settle.expire(generation: generation, isFollowing: true))
+    }
+
+    func testExpiryWithLatchOffDoesNotReplay() {
+        var settle = Settle()
+        let generation = settle.begin()
+        settle.recordSuppressedFollow(isFollowing: true)
+
+        XCTAssertFalse(settle.expire(generation: generation, isFollowing: false))
+    }
+
+    func testFollowSkippedWithLatchOffOrOutsideSettlingIsNotOwed() {
+        var settle = Settle()
+        settle.recordSuppressedFollow(isFollowing: true)
+        let generation = settle.begin()
+        settle.recordSuppressedFollow(isFollowing: false)
+
+        XCTAssertFalse(settle.expire(generation: generation, isFollowing: true))
+    }
+
+    func testExplicitResetEndsSettlingAndDropsOwedFollow() {
+        var settle = Settle()
+        let generation = settle.begin()
+        settle.recordSuppressedFollow(isFollowing: true)
+
+        // A send or scroll-to-bottom tap performs its own jump.
+        settle.end()
+        XCTAssertFalse(settle.isSettling)
+        XCTAssertFalse(settle.expire(generation: generation, isFollowing: true))
+    }
+
+    func testOutdatedExpiryCannotEndALaterSuspension() {
+        var settle = Settle()
+        let first = settle.begin()
+        settle.recordSuppressedFollow(isFollowing: true)
+        let second = settle.begin()
+
+        XCTAssertFalse(settle.expire(generation: first, isFollowing: true))
+        XCTAssertTrue(settle.isSettling)
+        XCTAssertTrue(settle.expire(generation: second, isFollowing: true))
+    }
+
     // MARK: Scroll-away detection
 
     private typealias Geometry = ChatScrollPolicy.ScrollGeometry

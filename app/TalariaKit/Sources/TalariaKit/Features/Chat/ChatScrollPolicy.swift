@@ -74,6 +74,61 @@ public enum ChatScrollPolicy {
     /// tokens) still returns to normal scrolling.
     public static let disclosureHoldMaximum: TimeInterval = 2
 
+    /// The suspension a disclosure toggle starts, and the one automatic follow
+    /// it may owe. Follow triggers are edge-triggered, so one that lands while
+    /// the toggle settles is recorded and replayed when the suspension expires,
+    /// provided the latch still follows. Without the replay a stream's last
+    /// trigger can leave its final content below the viewport while the latch
+    /// still reports following.
+    public struct DisclosureSettle: Equatable {
+        public private(set) var isSettling = false
+        /// Identifies the current suspension, so an outdated expiry cannot end
+        /// a later one.
+        private var generation = 0
+        private var owesFollow = false
+
+        public init() {}
+
+        /// A disclosure toggled: start, or restart, the suspension. Returns the
+        /// generation its expiry must present.
+        public mutating func begin() -> Int {
+            generation += 1
+            isSettling = true
+            return generation
+        }
+
+        /// An automatic follow was skipped. It is owed only when the latch
+        /// wanted it and the suspension alone blocked it.
+        public mutating func recordSuppressedFollow(isFollowing: Bool) {
+            if isSettling, isFollowing {
+                owesFollow = true
+            }
+        }
+
+        /// The reader opted out of follow, so nothing is owed any more.
+        public mutating func cancelOwedFollow() {
+            owesFollow = false
+        }
+
+        /// An explicit jump ends the suspension at once and performs its own
+        /// scroll, so the owed follow is dropped.
+        public mutating func end() {
+            owesFollow = false
+            guard isSettling else { return }
+            generation += 1
+            isSettling = false
+        }
+
+        /// The suspension's timer fired. Returns true when the owed follow
+        /// should run now.
+        public mutating func expire(generation: Int, isFollowing: Bool) -> Bool {
+            guard generation == self.generation, isSettling else { return false }
+            isSettling = false
+            defer { owesFollow = false }
+            return owesFollow && isFollowing
+        }
+    }
+
     /// Scroll-gesture events that drive the follow latch.
     public enum FollowEvent: Equatable {
         /// An explicit jump to the latest content: scroll-to-bottom tap or send.

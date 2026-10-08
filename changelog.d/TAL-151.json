@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A reply that finishes while you open or close a card in the chat now still scrolls into view.",
+      "highlight": false
+    }
+  ]
+}
