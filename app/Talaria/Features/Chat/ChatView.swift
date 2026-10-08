@@ -1438,7 +1438,11 @@ struct ChatView: View {
     }
 
     private var transcriptBottomInsetHeight: CGFloat {
-        return max(96, composerHeight + 44 + composerAccessorySpacerHeight())
+        let inset = max(96, composerHeight + 44 + composerAccessorySpacerHeight())
+        guard composerAvailableHeight > 0 else { return inset }
+        // A short pane, as on an iPhone in landscape with the keyboard up, keeps the transcript's minimum in view
+        // above the composer instead of scrolling it all out of the viewport (TAL-680).
+        return min(inset, max(composerHeight, composerAvailableHeight - MessageComposerView.minimumTranscriptHeight))
     }
 
     private var isComposerBusyOrUnavailable: Bool {

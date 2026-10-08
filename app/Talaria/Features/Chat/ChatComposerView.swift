@@ -121,6 +121,7 @@ struct MessageComposerView: View {
 
     @State private var textFieldHeight: CGFloat = 0
     @State private var composerSurfaceHeight: CGFloat = 110
+    @State private var twoRowComposerHeight: CGFloat = 0
     @GestureState private var clarificationResizeTranslation: CGFloat = 0
     @State private var textInputHeight: CGFloat = 22
     @State private var noticeMessage: String?
@@ -339,9 +340,11 @@ struct MessageComposerView: View {
             GeometryReader { proxy in
                 Color.clear
                     .onAppear {
+                        recordTwoRowComposerHeight(proxy.size.height)
                         onHeightChange(proxy.size.height)
                     }
                     .onChange(of: proxy.size.height) { _, newHeight in
+                        recordTwoRowComposerHeight(newHeight)
                         onHeightChange(newHeight)
                     }
             }
@@ -645,9 +648,7 @@ struct MessageComposerView: View {
                 .disabled(!canFocusTextView)
                 .accessibilityLabel("Message")
 
-                voiceButton
-                contextIndicator
-                actionButton
+                trailingComposerControls
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
@@ -674,40 +675,59 @@ struct MessageComposerView: View {
                     .padding(.top, 6)
                 }
 
-                ComposerTextInputView(
-                    text: $draftMessage,
-                    revision: draftWriteRevision,
-                    isFocused: $isFocused,
-                    inputHeight: $textInputHeight,
-                    measuredHeight: $textFieldHeight,
-                    isDisabled: isReadOnly || (isAnsweringClarification && isSending),
-                    isKeyboardSendEnabled: !showsStopButton && !isActionButtonDisabled,
-                    keyboardSendKey: ComposerSendKey.storedValue(sendKeyRawValue),
-                    alternateSendBehavior: StreamingSendBehavior.storedValue(streamingSendBehaviorRawValue).alternate,
-                    verticalPadding: textFieldVerticalPadding,
-                    onKeyboardSend: actionButtonTapped(behavior:),
-                    onPasteFileProviders: onPasteFileProviders,
-                    onPasteFileURLs: onPasteFileURLs,
-                    onPasteImageProviders: onPasteImageProviders,
-                    onPasteImages: onPasteImages,
-                    placeholder: isAnsweringClarification ? "Type a response" : "Ask anything... /commands"
-                )
-
-                HStack(alignment: .center, spacing: 12) {
-                    leadingComposerControls
-
-                    Spacer(minLength: 0)
-                    if !isAnsweringClarification {
-                        voiceButton
-                        contextIndicator
-                    }
-                    actionButton
+                // One layout for both arrangements keeps the text view in place in the tree: re-hosting it
+                // would drop the keyboard.
+                ComposerCardLayout(isOneRow: usesOneRowCard) {
+                    ComposerTextInputView(
+                        text: $draftMessage,
+                        revision: draftWriteRevision,
+                        isFocused: $isFocused,
+                        inputHeight: $textInputHeight,
+                        measuredHeight: $textFieldHeight,
+                        isDisabled: isReadOnly || (isAnsweringClarification && isSending),
+                        isKeyboardSendEnabled: !showsStopButton && !isActionButtonDisabled,
+                        keyboardSendKey: ComposerSendKey.storedValue(sendKeyRawValue),
+                        alternateSendBehavior: StreamingSendBehavior.storedValue(streamingSendBehaviorRawValue).alternate,
+                        verticalPadding: textFieldVerticalPadding,
+                        onKeyboardSend: actionButtonTapped(behavior:),
+                        onPasteFileProviders: onPasteFileProviders,
+                        onPasteFileURLs: onPasteFileURLs,
+                        onPasteImageProviders: onPasteImageProviders,
+                        onPasteImages: onPasteImages,
+                        placeholder: isAnsweringClarification ? "Type a response" : "Ask anything... /commands",
+                        // One line, scrolling inside it.
+                        maximumInputHeight: usesOneRowCard ? 22 : .infinity
+                    )
+                    HStack(spacing: 12) { leadingComposerControls }
+                    HStack(spacing: 12) { trailingComposerControls }
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 2)
-                .padding(.bottom, 8)
             }
         }
+    }
+
+    @ViewBuilder
+    private var trailingComposerControls: some View {
+        if !isAnsweringClarification {
+            voiceButton
+            contextIndicator
+        }
+        actionButton
+    }
+
+    /// The transcript's share of the chat pane: room under the navigation bar for at least one row (TAL-680).
+    static let minimumTranscriptHeight: CGFloat = 96
+
+    /// A pane too short for the two-row composer and the transcript's minimum, as on an iPhone in landscape with
+    /// the keyboard up, gets the card in one row: +, the text, then voice, context and send. The control strip folds
+    /// away meanwhile (TAL-680). It is judged against the two-row composer's height, so the shorter composer does not
+    /// switch it back.
+    private var usesOneRowCard: Bool {
+        guard !usesSingleLineShell, !isAnsweringClarification, availableHeight > 0 else { return false }
+        return availableHeight - twoRowComposerHeight < Self.minimumTranscriptHeight
+    }
+
+    private func recordTwoRowComposerHeight(_ height: CGFloat) {
+        if !usesSingleLineShell, !usesOneRowCard { twoRowComposerHeight = height }
     }
 
     private var voiceButton: some View {
@@ -830,8 +850,8 @@ struct MessageComposerView: View {
 
     /// Every configuration control, one tap away in the strip under the card (TAL-629). It stays up
     /// with the keyboard and in the one-line shell; a clarification or a read-only session hides it, and
-    /// so does the chevron beside +, until it is tapped again (TAL-630). A new chat's start status shows
-    /// either way.
+    /// so does the chevron beside +, until it is tapped again (TAL-630), and a short pane's one-row card
+    /// (TAL-680). A new chat's start status shows either way.
     @ViewBuilder
     private var controlStrip: some View {
         if showsControlStrip, let sessionStart {
@@ -858,13 +878,13 @@ struct MessageComposerView: View {
                     reasoningMenu
                 }
             }
-            // The chevron folds it away in place: taking it out of the layout re-hosts the card's text
-            // view, which drops the keyboard.
-            .frame(height: isControlStripExpanded ? nil : 0, alignment: .top)
+            // The chevron, or the one-row card, folds it away in place: taking it out of the layout re-hosts
+            // the card's text view, which drops the keyboard.
+            .frame(height: showsControlStripContent ? nil : 0, alignment: .top)
             .clipped()
-            .opacity(isControlStripExpanded ? 1 : 0)
-            .allowsHitTesting(isControlStripExpanded)
-            .accessibilityHidden(!isControlStripExpanded)
+            .opacity(showsControlStripContent ? 1 : 0)
+            .allowsHitTesting(showsControlStripContent)
+            .accessibilityHidden(!showsControlStripContent)
             .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
         }
     }
@@ -888,16 +908,21 @@ struct MessageComposerView: View {
     }
 
     private var showsStripUnderCard: Bool {
-        showsControlStrip && (sessionStart != nil || isControlStripExpanded)
+        showsControlStrip && (sessionStart != nil || showsControlStripContent)
     }
 
-    /// + and, beside it, the chevron that shows or hides the control strip.
+    /// The chevron's choice, except in the one-row card, which has no room for the strip (TAL-680).
+    private var showsControlStripContent: Bool {
+        isControlStripExpanded && !usesOneRowCard
+    }
+
+    /// + and, beside it, the chevron that shows or hides the control strip; the one-row card has no strip to show.
     @ViewBuilder
     private var leadingComposerControls: some View {
         if !isAnsweringClarification {
             composerPlusMenu
         }
-        if showsControlStrip, sessionStart == nil {
+        if showsControlStrip, sessionStart == nil, !usesOneRowCard {
             controlStripToggle
         }
     }
