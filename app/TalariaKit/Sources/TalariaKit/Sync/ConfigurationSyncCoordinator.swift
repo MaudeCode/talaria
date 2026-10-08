@@ -212,7 +212,7 @@ public final class ConfigurationSyncCoordinator {
             try await store.deleteAll()
         } catch {
             let mapped = CloudKitConfigurationSyncStore.mapped(error)
-            status = .failed(mapped.userMessage)
+            status = .failed(mapped.userMessage, detail: mapped.detail)
             throw mapped
         }
         forgetRemoteState()
@@ -459,13 +459,13 @@ public final class ConfigurationSyncCoordinator {
             status = .offline
         case .syncedDataDeleted:
             forgetRemoteState()
-            status = .failed(mapped.userMessage)
+            status = .failed(mapped.userMessage, detail: mapped.detail)
         case .accountUnavailable(let reason):
             status = .unavailable(reason)
         case .changeTokenExpired, .failed:
-            status = .failed(mapped.userMessage)
+            status = .failed(mapped.userMessage, detail: mapped.detail)
         }
-        syncLogger.warning("Configuration sync failed: \(mapped.userMessage, privacy: .public)")
+        syncLogger.warning("Configuration sync failed: \(mapped.detail ?? mapped.userMessage, privacy: .public)")
     }
 
     private func finishedStatus(_ authManager: AuthManager) -> ConfigurationSyncStatus {

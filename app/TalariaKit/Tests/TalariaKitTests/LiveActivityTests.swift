@@ -407,6 +407,12 @@ final class LiveActivityTests: XCTestCase {
         )
         XCTAssertEqual(message(502, "<html>Bad Gateway</html>"), "Talaria Relay is unavailable right now. Try again shortly.")
         XCTAssertEqual(
+            TalariaRelayClient.ClientError.invalidResponse(404, #"{"error":"device_not_registered"}"#).detail,
+            "Relay HTTP 404 device_not_registered"
+        )
+        XCTAssertEqual(TalariaRelayClient.ClientError.invalidResponse(502, "<html>Bad Gateway</html>").detail, "Relay HTTP 502")
+        XCTAssertNil(TalariaRelayClient.ClientError.invalidURL.detail)
+        XCTAssertEqual(
             TalariaRelayClient.ClientError.rejected("Apple did not return a valid identity token.").errorDescription,
             "Apple did not return a valid identity token."
         )

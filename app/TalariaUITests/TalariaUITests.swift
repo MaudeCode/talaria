@@ -1544,6 +1544,29 @@ final class SettingsStructureUITests: SettingsUITestCase {
 }
 
 final class RelaySettingsUITests: SettingsUITestCase {
+    func testSyncErrorStatusOffersCopy() throws {
+        // The relay sign-in signs sync in with the same Apple account; the
+        // fixture's iCloud store is unavailable, so turning sync on fails.
+        launchFixture(additionalArguments: ["--ui-test-relay-connected"])
+        openSettings()
+        tapCenter(of: app.buttons["settings-apple-account"])
+        XCTAssertTrue(app.navigationBars["Apple Account"].awaitExistence(timeout: 3))
+
+        let toggle = app.switches["settings-icloud-sync-toggle"]
+        XCTAssertTrue(toggle.awaitExistence(timeout: 3))
+        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+
+        let status = app.buttons["settings-icloud-sync-status"]
+        XCTAssertTrue(status.awaitExistence(timeout: 5), "The sync error is not a tappable control")
+        XCTAssertTrue(status.label.contains("iCloud sync is off in the UI-test fixture."))
+        tapCenter(of: status)
+        XCTAssertTrue(app.buttons["Copy"].awaitExistence(timeout: 3), "Tapping the sync error offered no Copy action")
+        let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        screenshot.name = "Sync error Copy menu"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+    }
+
     func testConnectedRelaySettingsUsePassiveStatusAndManagedDisconnect() throws {
         launchFixture(additionalArguments: ["--ui-test-relay-connected"])
         openSettings()

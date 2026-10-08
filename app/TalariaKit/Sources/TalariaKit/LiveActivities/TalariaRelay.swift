@@ -170,7 +170,7 @@ public final class TalariaRelayClient {
         var publishers: [PublisherSubscription]
     }
 
-    public enum ClientError: LocalizedError {
+    public enum ClientError: LocalizedError, ErrorDetailProviding {
         case invalidURL
         case invalidResponse(Int, String?)
         case rejected(String)
@@ -188,11 +188,21 @@ public final class TalariaRelayClient {
             }
         }
 
+        /// `Relay HTTP <status> <error code>` for a copied error report.
+        public var detail: String? {
+            guard case .invalidResponse(let status, let body) = self else { return nil }
+            return ["Relay HTTP \(status)", Self.errorCode(body)].compactMap { $0 }.joined(separator: " ")
+        }
+
+        /// The relay's JSON `error` code; the rest of the body is never surfaced.
+        private static func errorCode(_ body: String?) -> String? {
+            struct Failure: Decodable { var error: String }
+            return body.flatMap { try? JSONDecoder().decode(Failure.self, from: Data($0.utf8)).error }
+        }
+
         /// Readable copy for a relay failure; never the raw response body.
         static func message(status: Int, body: String?) -> String {
-            struct Failure: Decodable { var error: String }
-            let code = body.flatMap { try? JSONDecoder().decode(Failure.self, from: Data($0.utf8)).error }
-            switch code {
+            switch errorCode(body) {
             case "device_not_registered":
                 return String(localized: "This device isn't registered with Talaria Relay yet. Try again.")
             case "device_revoked":

@@ -230,7 +230,9 @@ public enum ConfigurationSyncStoreError: Error, Equatable {
     case changeTokenExpired
     /// The zone is gone: another device deleted the synced Talaria data.
     case syncedDataDeleted
-    case failed(String)
+    /// `detail` is the technical cause, kept for a copied error report and
+    /// never shown inline.
+    case failed(String, detail: String? = nil)
 }
 
 /// The per-device sync bookkeeping. It maps server ids (normalized URLs) to
@@ -306,7 +308,7 @@ public enum ConfigurationSyncStatus: Equatable, Sendable {
     case unavailable(String)
     case offline
     case syncing
-    case failed(String)
+    case failed(String, detail: String? = nil)
     /// Synced, but these servers have no saved password yet, so another device
     /// could not sign in to them.
     case missingCredentials([String])

@@ -717,6 +717,53 @@ final class ConfigurationSyncTests: XCTestCase {
         )
     }
 
+    func testCloudKitSchemaRejectionReadsAsSentenceWithCodeInDetail() {
+        let raw = "Error saving record <CKRecordID: 0x600000c1; recordName=preferences, "
+            + "zoneID=TalariaConfiguration:__defaultOwner__> to server: "
+            + "Cannot create new type AppPreferences in production schema"
+        let recordID = CKRecord.ID(recordName: "preferences", zoneID: CloudKitConfigurationSyncStore.zoneID)
+        let schemaRejection = CKError(.serverRejectedRequest, userInfo: [NSLocalizedDescriptionKey: raw])
+        let partialFailure = CKError(.partialFailure, userInfo: [CKPartialErrorsByItemIDKey: [recordID: schemaRejection]])
+
+        let mapped = CloudKitConfigurationSyncStore.mapped(partialFailure)
+
+        XCTAssertEqual(
+            mapped.userMessage,
+            "iCloud sync isn't set up for this build yet. Settings sync will resume after an update."
+        )
+        XCTAssertEqual(mapped.detail, "CKError 15 serverRejectedRequest: \(raw)")
+    }
+
+    func testOtherServerRejectionIsNotReportedAsMissingSchema() {
+        let raw = "Error saving record <CKRecordID: 0x600000c1; recordName=preferences, "
+            + "zoneID=TalariaConfiguration:__defaultOwner__> to server: Request rejected"
+        let mapped = CloudKitConfigurationSyncStore.mapped(
+            CKError(.serverRejectedRequest, userInfo: [NSLocalizedDescriptionKey: raw])
+        )
+
+        XCTAssertEqual(mapped.userMessage, "iCloud couldn't save your settings. Try again later.")
+        XCTAssertEqual(mapped.detail, "CKError 15 serverRejectedRequest: \(raw)")
+    }
+
+    func testUnknownCloudKitErrorKeepsRecordTextOutOfTheMessage() {
+        let raw = "Error saving record <CKRecordID: 0x600000c1; recordName=preferences, "
+            + "zoneID=TalariaConfiguration:__defaultOwner__> to server: Quota exceeded"
+        let mapped = CloudKitConfigurationSyncStore.mapped(
+            CKError(.quotaExceeded, userInfo: [NSLocalizedDescriptionKey: raw])
+        )
+
+        XCTAssertEqual(mapped.userMessage, "iCloud couldn't save your settings. Try again later.")
+        XCTAssertFalse(mapped.userMessage.contains("CKRecordID"))
+        XCTAssertEqual(mapped.detail, "CKError 25 quotaExceeded: \(raw)")
+    }
+
+    func testCopiedErrorTextAddsDetailLineOnlyWhenPresent() {
+        let failure = ConfigurationSyncStoreError.failed("iCloud couldn't save your settings.", detail: "CKError 25 quotaExceeded: full")
+        XCTAssertEqual(SettingsErrorText(failure).copiedText, "iCloud couldn't save your settings.\nCKError 25 quotaExceeded: full")
+        XCTAssertEqual(SettingsErrorText(ConfigurationSyncStoreError.offline).copiedText, "Waiting for a network connection.")
+        XCTAssertEqual(SettingsErrorText("Apple did not return an identity token.").copiedText, "Apple did not return an identity token.")
+    }
+
     func testTimestampsKeepSubSecondPrecision() throws {
         let setup = makeSetup(url: serverA, password: "pw", updatedAt: fixedNow.addingTimeInterval(0.25))
         let data = try ConfigurationSyncCodec.encoder().encode(setup)
