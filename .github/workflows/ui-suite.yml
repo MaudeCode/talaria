@@ -80,6 +80,8 @@ jobs:
           app/ci/ui-suite-wait-turn "$GITHUB_RUN_ID" && exit 0
           status=$?
           (( status == 20 )) || exit "$status"
+          # A branch run keeps its commit. Main's tests main's head, which it alerts and counts for.
+          [[ -n "$REF" || "$GITHUB_REF_NAME" == main ]] || REF=$GITHUB_SHA
           inputs=(-f test_iterations="$TEST_ITERATIONS" -f priority="$PRIORITY")
           [[ -z "$REF" ]] || inputs+=(-f ref="$REF")
           [[ -z "$ONLY_TESTING" ]] || inputs+=(-f only_testing="$ONLY_TESTING")

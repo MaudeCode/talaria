@@ -189,7 +189,12 @@ class TestIOSRunnerTest < Minitest::Test
     refute_match(/simulator|xcodebuild/i, package.to_yaml)
     steps = package["steps"].map { |step| [step["name"] || step["uses"], step] }.to_h
     names = steps.keys
-    assert_equal("./.github/actions/setup-xcode", names[1])
+    # The queue guard runs before the checkout of the tested commit in every macOS job (TAL-679).
+    assert_equal(["Refuse an attempt that skipped the queue", "actions/checkout@v7", "./.github/actions/setup-xcode"],
+                 names[0, 3])
+    %w[app-build app-test].each do |job|
+      assert_equal(package["steps"][0], workflow_jobs("app-tests.yml").fetch(job)["steps"][0])
+    end
     build, wait, fetch, suite = ["Build the package tests", "Wait for the Web contract probe",
                                  "Download the probe's live response fixture", "Test the package"].map { |name| names.index(name) }
     assert_equal([build + 1, build + 2, build + 3], [wait, fetch, suite])
