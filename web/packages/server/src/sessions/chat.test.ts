@@ -2044,6 +2044,19 @@ describe('chat turns through the sidecar', () => {
     expect(history[3]).toMatchObject({ content: '', api_content: 'use postgres' })
   })
 
+  it('sends each history row its stored timestamp so an Agent prune re-inserts it under the same identity (TAL-681)', async () => {
+    const sid = await newSession(s)
+    const session = s.deps.sessionStore.get(sid)
+    session.messages = [{ role: 'user', content: 'checking in', timestamp: 6000.25 }, { role: 'assistant', content: 'all good', timestamp: 6001.5 }]
+    session.context_messages = structuredClone(session.messages)
+    s.deps.sessionStore.save(session)
+    let history: Json[] = []
+    sidecar.respond('chat.start', (params) => { history = params.conversation_history; return completed([...history, { role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'ok' }]) })
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'and the cron?' }))
+    await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    expect(history.map((m) => [m.content, m.timestamp])).toEqual([['checking in', 6000.25], ['all good', 6001.5]])
+  })
+
   it('a persisted read-only session (an inherited messaging/Claude Code import) is never continued', async () => {
     const sid = await newSession(s)
     const imported = s.deps.sessionStore.get(sid)
