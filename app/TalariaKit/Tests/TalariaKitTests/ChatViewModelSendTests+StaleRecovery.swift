@@ -219,6 +219,16 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(userRows.map { $0.messageId?.prefix(6) }, [nil, "local-"])
     }
 
+    // With neither a `message_id` nor a timestamp, the shown turn is matched by its place: it comes first.
+    @MainActor
+    func testContextlessReloadKeepsRepeatedPromptWhenShownRowsHaveNoStableKey() async throws {
+        let userRows = try await contextlessRepeatReload(earlierTurn: """
+            {"role": "user", "content": "continue"},
+            {"role": "assistant", "content": "Earlier answer."}
+            """)
+        XCTAssertEqual(userRows.map { $0.messageId?.prefix(6) }, [nil, "local-"])
+    }
+
     @MainActor
     func testContextlessReloadReplacesQuicklyRepeatedPromptWithTheServersCopy() async throws {
         let earlier = serverNow - 10

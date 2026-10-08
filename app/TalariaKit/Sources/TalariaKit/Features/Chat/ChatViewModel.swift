@@ -1863,8 +1863,19 @@ public final class ChatViewModel {
             guard isPrompt(localMessages[index]) else { return false }
             var candidateMessages = loadedMessages
             if runningTurnID != nil {
-                let shownRowKeys = Set(localMessages[..<index].compactMap(shownRowKey))
-                candidateMessages.removeAll { shownRowKey($0).map(shownRowKeys.contains) == true }
+                // Each shown row claims the oldest loaded row with its key, so keyless rows match by place.
+                var unclaimedShownRows = Dictionary(
+                    localMessages[..<index].compactMap(shownRowKey).map { ($0, 1) },
+                    uniquingKeysWith: +
+                )
+                candidateMessages = []
+                for loadedMessage in loadedMessages {
+                    if let key = shownRowKey(loadedMessage), let count = unclaimedShownRows[key], count > 0 {
+                        unclaimedShownRows[key] = count - 1
+                    } else {
+                        candidateMessages.append(loadedMessage)
+                    }
+                }
             }
             return !loadedMessagesContainEquivalentUserMessage(
                 candidateMessages,
@@ -2287,8 +2298,7 @@ public final class ChatViewModel {
         if let messageID = message.messageId {
             return messageID.hasPrefix("local-") ? nil : messageID
         }
-        guard let timestamp = message.timestamp else { return nil }
-        return "\(message.role ?? "")|\(timestamp)|\(message.content ?? "")"
+        return "\(message.role ?? "")|\(message.timestamp.map { "\($0)" } ?? "")|\(message.content ?? "")"
     }
 
     nonisolated private static func loadedMessagesContainEquivalentUserMessage(
