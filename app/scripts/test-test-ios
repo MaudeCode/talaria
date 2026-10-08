@@ -399,4 +399,28 @@ TALARIA_RECORD_VISUAL_REFERENCES=1 "$repo/scripts/test-ios" TalariaTests/RecordF
 [[ "$(<"$state/recorded")" == $'-only-testing:TalariaTests/Record\n-only-testing:TalariaTests/RecordFailure' ]]
 [[ ! -e "$marker" ]]
 
+# A run cancelled while waiting for admission leaves the recording run's marker in place.
+export TALARIA_FAKE_XCODEBUILD_SECONDS=3
+TALARIA_RECORD_VISUAL_REFERENCES=1 "$repo/scripts/test-ios" TalariaTests/RecordOwner > "$state/record-owner.log" 2>&1 &
+owner=$!
+wait_until_active "$owner"
+"$repo/scripts/test-ios" TalariaTests/RecordWaiter > "$state/record-waiter.log" 2>&1 &
+waiter=$!
+for _ in {1..200}; do
+    pgrep -qP "$waiter" lockf && break
+    sleep 0.01
+done
+# Ctrl-C signals the whole process group; signalling only the shell would wait out lockf.
+kill -TERM "$waiter"
+pkill -TERM -P "$waiter" lockf || true
+wait "$waiter" || true
+kill -0 "$owner"  # The owner is still recording.
+[[ -e "$marker" ]] || {
+    print -u2 "A cancelled waiter removed the active recording run's marker."
+    exit 1
+}
+wait "$owner"
+unset TALARIA_FAKE_XCODEBUILD_SECONDS
+[[ ! -e "$marker" ]]
+
 print "test-ios worktree admission, selection, runner-hang retry, photo seeding and cleanup checks passed ($rounds concurrent rounds)."

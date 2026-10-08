@@ -33,7 +33,8 @@ TALARIA_RECORD_VISUAL_REFERENCES=1 scripts/test-ios TalariaTests/AppScreenVisual
 
 `scripts/test-ios` drops a `.record` marker beside the references for the length
 of the run, because `xcodebuild` does not forward host environment variables
-into the simulator test process. The marker is removed when the run ends and is
+into the simulator test process. The recording run removes its marker when it ends;
+a run cancelled while waiting for admission leaves it in place. The marker is
 ignored by Git.
 
 A recording run always fails: recording writes the new PNG and then reports the

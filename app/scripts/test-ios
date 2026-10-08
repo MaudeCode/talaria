@@ -14,14 +14,16 @@ IOS_SIMULATOR_ID=${IOS_SIMULATOR_ID:-${TALARIA_SIMULATOR_ID:-}}
 xcodebuild_pid=""
 # xcodebuild does not forward host environment variables into the simulator test
 # process, so the visual-reference record switch travels as a marker file the
-# tests can stat. It never outlives the run.
+# tests can stat. It never outlives the run that created it.
 visual_reference_marker="$repo_root/TalariaTests/VisualReferences/.record"
+owns_visual_reference_marker=false
 mkdir -p "$runtime_dir/results"
 mkdir -p "$lease_dir"
 exec 9>"$lock_file"
 
 cleanup() {
-    rm -f "$visual_reference_marker"
+    # A run cancelled while waiting for admission must not remove the marker of the run it waits on.
+    [[ "$owns_visual_reference_marker" != true ]] || rm -f "$visual_reference_marker"
     if [[ -n "$xcodebuild_pid" ]]; then
         kill -TERM "$xcodebuild_pid" 2>/dev/null || true
         wait "$xcodebuild_pid" 2>/dev/null || true
@@ -163,6 +165,7 @@ rm -f "$visual_reference_marker"
 if [[ -n "${TALARIA_RECORD_VISUAL_REFERENCES:-}" ]]; then
     mkdir -p "${visual_reference_marker:h}"
     : > "$visual_reference_marker"
+    owns_visual_reference_marker=true
 fi
 
 # Usage: run_tests phase parallel-testing filter...
