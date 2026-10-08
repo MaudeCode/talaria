@@ -22,6 +22,8 @@ struct ComposerTextInputView: View {
     let onPasteImages: ([UIImage]) -> Void
 
     var placeholder: LocalizedStringKey = "Ask anything... /commands"
+    /// Caps the text at that height; longer text scrolls inside it.
+    var maximumInputHeight: CGFloat = .infinity
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -40,7 +42,7 @@ struct ComposerTextInputView: View {
                 onPasteImageProviders: onPasteImageProviders,
                 onPasteImages: onPasteImages
             )
-            .frame(height: inputHeight)
+            .frame(height: min(inputHeight, maximumInputHeight))
             .padding(.vertical, verticalPadding)
             .padding(.horizontal, 16)
 
@@ -101,5 +103,54 @@ struct ComposerKeyboardCommand: Equatable {
         // Plain Return already inserts a newline in ⌘Return mode, so only Return mode needs this one.
         let newline = ComposerKeyboardCommand(action: .newline, modifierFlags: .command, title: String(localized: "New Line"))
         return [send, newline, alternateSend]
+    }
+}
+
+/// The composer card: its text and two control groups, + and the chevron, then voice, context and send. The text
+/// sits over a row of the controls, or, in a pane too short for that, between them in one row (TAL-680). Its
+/// subviews are the text, the leading group and the trailing group, in that order.
+struct ComposerCardLayout: Layout {
+    var isOneRow: Bool
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? subviews.reduce(0) { $0 + $1.sizeThatFits(.unspecified).width }
+        return CGSize(width: width, height: frames(width: width, subviews: subviews).height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for (subview, frame) in zip(subviews, frames(width: bounds.width, subviews: subviews).frames) {
+            subview.place(
+                at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY),
+                proposal: ProposedViewSize(frame.size)
+            )
+        }
+    }
+
+    private func frames(width: CGFloat, subviews: Subviews) -> (frames: [CGRect], height: CGFloat) {
+        guard subviews.count == 3 else { return ([], 0) }
+        let leading = subviews[1].sizeThatFits(.unspecified)
+        let trailing = subviews[2].sizeThatFits(.unspecified)
+        func frame(x: CGFloat, midY: CGFloat, size: CGSize) -> CGRect {
+            CGRect(x: x, y: midY - size.height / 2, width: size.width, height: size.height)
+        }
+        if isOneRow {
+            let textWidth = max(0, width - 10 - leading.width - trailing.width - 16)
+            let text = CGSize(width: textWidth, height: subviews[0].sizeThatFits(ProposedViewSize(width: textWidth, height: nil)).height)
+            let height = max(text.height, leading.height, trailing.height)
+            return ([
+                frame(x: 10 + leading.width, midY: height / 2, size: text),
+                frame(x: 10, midY: height / 2, size: leading),
+                frame(x: width - 16 - trailing.width, midY: height / 2, size: trailing)
+            ], height)
+        }
+        // The controls row: 16 pt in from each side, 2 pt under the text, 8 pt above the card's edge.
+        let text = CGSize(width: width, height: subviews[0].sizeThatFits(ProposedViewSize(width: width, height: nil)).height)
+        let rowHeight = max(leading.height, trailing.height)
+        let rowMidY = text.height + 2 + rowHeight / 2
+        return ([
+            CGRect(origin: .zero, size: text),
+            frame(x: 16, midY: rowMidY, size: leading),
+            frame(x: width - 16 - trailing.width, midY: rowMidY, size: trailing)
+        ], text.height + 2 + rowHeight + 8)
     }
 }

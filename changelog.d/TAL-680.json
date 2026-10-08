@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "On iPhone in landscape, the message composer fits in one row above the keyboard, so the conversation stays visible while typing.",
+      "highlight": false
+    }
+  ]
+}

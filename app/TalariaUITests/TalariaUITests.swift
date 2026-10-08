@@ -1240,14 +1240,29 @@ final class ChatReadableWidthUITests: ChatUITestCase {
         tapCenter(of: jump)
         XCTAssertTrue(jump.awaitNonExistence(timeout: 5), "The jump did not return to the latest message")
 
-        // The expanded composer stays above the keyboard.
+        // The expanded composer stays above the keyboard, inside the pane and below the navigation bar, with
+        // the transcript still showing above it (TAL-680).
         app.buttons["Message"].tap()
         let textView = app.textViews.firstMatch
         XCTAssertTrue(textView.awaitExistence(timeout: 10))
         let keyboard = app.keyboards.firstMatch
-        if keyboard.awaitExistence(timeout: 5) {
-            XCTAssertLessThanOrEqual(settledFrame(of: textView).maxY, settledFrame(of: keyboard).minY)
-        }
+        XCTAssertTrue(keyboard.awaitExistence(timeout: 10), "The keyboard did not come up")
+        let keyboardFrame = settledFrame(of: keyboard)
+        let card = settledFrame(of: textView)
+            .union(settledFrame(of: app.buttons["Composer options"]))
+            .union(settledFrame(of: app.buttons["Send"]))
+        let navigationBar = app.navigationBars.firstMatch.frame
+        let keyboardPane = settledFrame(of: app.otherElements["chat-detail:\(fixtureSessionTitle)"].firstMatch)
+        let context = "card \(card), pane \(keyboardPane), navigation bar \(navigationBar), keyboard \(keyboardFrame)"
+        XCTAssertLessThanOrEqual(card.maxY, keyboardFrame.minY, context)
+        XCTAssertGreaterThanOrEqual(card.minY, max(keyboardPane.minY, navigationBar.maxY), context)
+        // The reply's link preview card is the transcript's last row.
+        let latestRow = settledFrame(of: element(labelContaining: "example.invalid"))
+        let strip = CGRect(x: keyboardPane.minX, y: navigationBar.maxY, width: keyboardPane.width, height: card.minY - navigationBar.maxY)
+        XCTAssertGreaterThanOrEqual(
+            latestRow.intersection(strip).height, 20,
+            "The transcript's last row \(latestRow) does not show above the composer: \(context)"
+        )
     }
 
     /// Mirrors `AdaptiveReadableContentWidth.chat`; the UI test bundle does not link TalariaKit.
