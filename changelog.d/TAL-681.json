@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Long chats no longer repeat your earlier messages after a turn trims old tool output, and the model no longer sees those repeats.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

@@ -1160,7 +1160,7 @@ function stripOobBlocks(content: unknown): unknown {
  * out-of-band blocks, and keeps a cancelled (`_recovered`) user prompt only where it separates two assistant turns —
  * otherwise the neighbours fuse cleanly or the prompt is stale, and replaying it would answer it again.
  * `preserveApiContent` (Python `_sanitize_messages_for_agent`) keeps the Agent's `api_content` replay sidecar on
- * user/assistant rows for turn history; compression and other projections strip it.
+ * user/assistant rows and every row's `timestamp` for turn history; compression and other projections strip both.
  */
 export function sanitizeMessagesForApi(messages: Message[], { preserveApiContent = false } = {}): Message[] {
   // Calls are OpenAI `tool_calls` or Anthropic-style `tool_use` content blocks; results name them by `tool_call_id`,
@@ -1186,6 +1186,9 @@ export function sanitizeMessagesForApi(messages: Message[], { preserveApiContent
     const sanitized = Object.fromEntries(Object.entries(msg).filter(([k]) => API_SAFE_MSG_KEYS.has(k)))
     if (Array.isArray(sanitized.tool_calls) && !sanitized.tool_calls.length) Reflect.deleteProperty(sanitized, 'tool_calls')
     if (replay) sanitized.api_content = replay
+    // TAL-681: the Agent re-inserts turn history when it prunes and keys display dedupe on the row timestamp, so turn
+    // history keeps it (persistence-only: the Agent strips it before the provider call).
+    if (preserveApiContent && msg.timestamp != null) sanitized.timestamp = msg.timestamp
     if (recovered) sanitized._recovered = true
     if ('content' in sanitized) sanitized.content = stripOobBlocks(sanitized.content)
     if (sanitized.role) clean.push(sanitized)
