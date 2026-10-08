@@ -46,6 +46,43 @@ final class BackgroundUpdateTranscriptUITests: ChatUITestCase {
     }
 }
 
+/// Load Older keeps the reader where they were, and a disclosure toggled right as the older rows land pins its own
+/// row instead of leaving the offset to the prepend, which let SwiftUI carry the reader away (TAL-149).
+final class LoadOlderPositionUITests: ChatUITestCase {
+    func testADisclosureToggledAsOlderRowsLandKeepsItsRowStill() throws {
+        launchFixture(additionalArguments: ["--ui-test-older-messages"])
+        _ = try openFixtureSession()
+
+        // The newest page holds turns 26-50; a status-bar tap scrolls up to its first row and the Load Older button.
+        // A swipe would overscroll the top into pull to refresh, which loads the older page itself.
+        let loadOlder = app.buttons["Load older messages"]
+        let firstLoaded = app.staticTexts["Paged prompt 26"]
+        // Transcript controls report `isHittable == false`; being below the navigation bar is what counts.
+        let isInView = { [app] in loadOlder.exists && loadOlder.frame.minY > app.navigationBars.firstMatch.frame.maxY }
+        repeatStep(3, until: { poll(timeout: 3, until: isInView) }) { tap(at: CGPoint(x: 200, y: 8)) }
+        XCTAssertTrue(isInView(), "Load Older never came into view")
+        let promptBefore = settledFrame(of: firstLoaded)
+        let worked = app.buttons.matching(identifier: "Worked").allElementsBoundByIndex
+            .first { $0.frame.minY > promptBefore.maxY }
+        let workedBefore = try XCTUnwrap(worked, "Turn 26 has no Worked disclosure").frame
+        attachScreenshot(named: "Before Load Older")
+
+        // The fixture answers at once; tapping by coordinate, with no element query in between, lands the toggle
+        // inside the prepend's one-second stabilization window.
+        tapCenter(of: loadOlder)
+        tap(at: CGPoint(x: workedBefore.midX, y: workedBefore.midY))
+
+        XCTAssertTrue(app.staticTexts["Paged prompt 1"].awaitExistence(timeout: 10), "The older page never landed")
+        XCTAssertTrue(element(labelContaining: "Paging").awaitExistence(timeout: 5), "The disclosure did not expand")
+        let promptAfter = settledFrame(of: firstLoaded)
+        attachScreenshot(named: "After Load Older and the disclosure")
+        XCTAssertEqual(promptAfter.minY, promptBefore.minY, accuracy: 1, "The transcript moved under the reader")
+        XCTAssertEqual(app.buttons.matching(identifier: "Worked").allElementsBoundByIndex
+            .first { $0.frame.minY > promptAfter.maxY }?.frame.minY ?? .nan, workedBefore.minY, accuracy: 1,
+            "The tapped disclosure moved")
+    }
+}
+
 /// The compaction reference card renders after the row the server names (TAL-560).
 final class CompressionReferenceUITests: ChatUITestCase {
     func testTheReferenceCardFollowsTheServersNamedRow() throws {
