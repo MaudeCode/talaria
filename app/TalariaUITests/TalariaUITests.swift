@@ -2812,8 +2812,15 @@ class TalariaUITestCase: XCTestCase {
         screenshot.name = name
         screenshot.lifetime = .keepAlways
         add(screenshot)
-        app.navigationBars["FullDocumentManagerViewControllerNavigationBar"].swipeDown(velocity: .fast)
-        XCTAssertTrue(save.awaitNonExistence(timeout: 10), "The file exporter did not dismiss for \(name)")
+        // A fast fling on the bar can send a hosted simulator to the home screen (TAL-674); drag the sheet down instead.
+        let window = app.windows.firstMatch
+        let bar = app.navigationBars["FullDocumentManagerViewControllerNavigationBar"].frame
+        window.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: bar.midX - window.frame.minX, dy: bar.midY - window.frame.minY))
+            .press(forDuration: 0.1, thenDragTo: window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.98)))
+        let dismissed = save.awaitNonExistence(timeout: 10)
+        XCTAssertEqual(app.state, .runningForeground, "Dismissing the file exporter for \(name) left Talaria")
+        XCTAssertTrue(dismissed, "The file exporter did not dismiss for \(name)")
     }
 
     /// Backgrounds the app under test and returns once it has left the foreground, so work the
