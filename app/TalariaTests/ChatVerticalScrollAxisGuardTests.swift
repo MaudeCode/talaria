@@ -1,6 +1,7 @@
 import UIKit
 import XCTest
 @testable import Talaria
+import TalariaKit
 
 @MainActor
 final class ChatVerticalScrollAxisGuardTests: XCTestCase {
@@ -141,7 +142,7 @@ final class ChatScrollPositionControllerTests: XCTestCase {
         let controller = ChatScrollPositionController()
         controller.attach(to: scrollView)
 
-        XCTAssertTrue(controller.capture())
+        XCTAssertTrue(controller.capture(anchorRowID: nil))
         XCTAssertTrue(controller.restoreAfterPrepend())
 
         scrollView.contentSize.height += 640
@@ -157,7 +158,7 @@ final class ChatScrollPositionControllerTests: XCTestCase {
         let controller = ChatScrollPositionController()
         controller.attach(to: scrollView)
 
-        controller.holdPosition {}
+        controller.holdPosition(anchorRowID: nil) {}
         scrollView.contentSize.height += 640
         scrollView.contentOffset.y = scrollView.contentSize.height - scrollView.bounds.height
 
@@ -173,7 +174,7 @@ final class ChatScrollPositionControllerTests: XCTestCase {
         let controller = ChatScrollPositionController()
         controller.attach(to: scrollView)
 
-        controller.holdPosition {}
+        controller.holdPosition(anchorRowID: nil) {}
         scrollView.contentSize.height -= 200
 
         XCTAssertEqual(scrollView.contentOffset.y, bottom - 200, accuracy: 0.001)
@@ -185,7 +186,7 @@ final class ChatScrollPositionControllerTests: XCTestCase {
         let controller = ChatScrollPositionController()
         controller.attach(to: scrollView)
 
-        controller.holdPosition {}
+        controller.holdPosition(anchorRowID: nil) {}
         controller.releaseHold()
         scrollView.contentOffset.y = 300
 
@@ -200,7 +201,7 @@ final class ChatScrollPositionControllerTests: XCTestCase {
         let controller = ChatScrollPositionController()
         controller.attach(to: scrollView)
 
-        controller.holdPosition {}
+        controller.holdPosition(anchorRowID: nil) {}
         for growth in [640, 400, 220, 90, 40] as [CGFloat] {
             scrollView.contentSize.height += growth
             scrollView.contentOffset.y = scrollView.contentSize.height - scrollView.bounds.height
@@ -215,7 +216,7 @@ final class ChatScrollPositionControllerTests: XCTestCase {
         controller.attach(to: scrollView)
 
         let resynced = expectation(description: "resync after revert")
-        controller.holdPosition { resynced.fulfill() }
+        controller.holdPosition(anchorRowID: nil) { resynced.fulfill() }
         scrollView.contentSize.height += 640
         scrollView.contentOffset.y = scrollView.contentSize.height - scrollView.bounds.height
 
@@ -231,7 +232,7 @@ final class ChatScrollPositionControllerTests: XCTestCase {
         let controller = ChatScrollPositionController()
         controller.attach(to: scrollView)
 
-        controller.holdPosition {}
+        controller.holdPosition(anchorRowID: nil) {}
         scrollView.contentOffset.y = 300
 
         XCTAssertEqual(scrollView.contentOffset.y, 300, accuracy: 0.001)
@@ -256,9 +257,9 @@ final class ChatScrollPositionControllerTests: XCTestCase {
         let controller = ChatScrollPositionController()
         controller.attach(to: scrollView)
 
-        controller.holdPosition {}
+        controller.holdPosition(anchorRowID: nil) {}
         controller.releaseHold()
-        XCTAssertTrue(controller.capture())
+        XCTAssertTrue(controller.capture(anchorRowID: nil))
 
         XCTAssertFalse(controller.isHoldingPosition)
         XCTAssertTrue(controller.restoreAfterPrepend())
@@ -274,8 +275,8 @@ final class ChatScrollPositionControllerTests: XCTestCase {
         let controller = ChatScrollPositionController()
         controller.attach(to: scrollView)
 
-        XCTAssertTrue(controller.capture())
-        controller.holdPosition {}
+        XCTAssertTrue(controller.capture(anchorRowID: nil))
+        controller.holdPosition(anchorRowID: nil) {}
 
         XCTAssertFalse(controller.restoreAfterPrepend())
         scrollView.contentSize.height += 640
@@ -290,9 +291,9 @@ final class ChatScrollPositionControllerTests: XCTestCase {
         let controller = ChatScrollPositionController()
         controller.attach(to: scrollView)
 
-        XCTAssertTrue(controller.capture())
+        XCTAssertTrue(controller.capture(anchorRowID: nil))
         XCTAssertTrue(controller.restoreAfterPrepend())
-        controller.holdPosition {}
+        controller.holdPosition(anchorRowID: nil) {}
 
         XCTAssertFalse(controller.isHoldingPosition)
         scrollView.contentSize.height += 640
@@ -305,12 +306,105 @@ final class ChatScrollPositionControllerTests: XCTestCase {
         let controller = ChatScrollPositionController()
         controller.attach(to: scrollView)
 
-        XCTAssertTrue(controller.capture())
+        XCTAssertTrue(controller.capture(anchorRowID: nil))
         XCTAssertTrue(controller.restoreAfterPrepend())
         controller.releaseHold()
         scrollView.contentSize.height += 640
 
         XCTAssertEqual(scrollView.contentOffset.y, 880, accuracy: 0.001)
+    }
+
+    func testPrependFollowsItsAnchorRowAndIgnoresGrowthBelowIt() {
+        // Older rows land above the previous first row while a row below the
+        // reader grows. Only the growth above the anchor moves the offset, and
+        // the anchor's frame may arrive after the content-size change.
+        let scrollView = makeScrollView()
+        scrollView.contentOffset = CGPoint(x: 0, y: 240)
+        let controller = ChatScrollPositionController()
+        controller.attach(to: scrollView)
+        controller.recordRowMinY(60, for: "first")
+
+        XCTAssertTrue(controller.capture(anchorRowID: "first"))
+        XCTAssertTrue(controller.restoreAfterPrepend())
+
+        scrollView.contentSize.height += 640
+        controller.recordRowMinY(700, for: "first")
+        XCTAssertEqual(scrollView.contentOffset.y, 880, accuracy: 0.001)
+
+        scrollView.contentSize.height += 300
+        XCTAssertEqual(scrollView.contentOffset.y, 880, accuracy: 0.001)
+    }
+
+    func testHoldFollowsTheTappedRowTopNotItsOwnGrowth() {
+        let scrollView = makeScrollView()
+        scrollView.contentOffset = CGPoint(x: 0, y: 240)
+        let controller = ChatScrollPositionController()
+        controller.attach(to: scrollView)
+        controller.recordRowMinY(400, for: "tapped")
+
+        controller.holdPosition(anchorRowID: "tapped") {}
+        scrollView.contentSize.height += 300
+        XCTAssertEqual(scrollView.contentOffset.y, 240, accuracy: 0.001)
+
+        // A row above the tapped one settles taller.
+        controller.recordRowMinY(480, for: "tapped")
+        scrollView.contentSize.height += 80
+        XCTAssertEqual(scrollView.contentOffset.y, 320, accuracy: 0.001)
+    }
+
+    func testDisclosureToggledDuringPrependKeepsTappedRowStationary() {
+        // The reader taps a disclosure inside the one-second prepend window. Its
+        // expansion must not be compensated as prepended content, while rows
+        // inserted above it that finish measuring later still are.
+        let scrollView = makeScrollView()
+        let controller = armedPrepend(in: scrollView)
+        controller.recordRowMinY(1_040, for: "tapped")
+
+        controller.holdPosition(anchorRowID: "tapped") {}
+        scrollView.contentSize.height += 300
+        XCTAssertEqual(scrollView.contentOffset.y, 880, accuracy: 0.001)
+        XCTAssertTrue(controller.isHoldingPosition)
+
+        controller.recordRowMinY(750, for: "first")
+        controller.recordRowMinY(1_090, for: "tapped")
+        scrollView.contentSize.height += 50
+        XCTAssertEqual(scrollView.contentOffset.y, 930, accuracy: 0.001)
+    }
+
+    func testRowlessDisclosureDuringPrependFollowsThePrependAnchor() {
+        // A control outside any row (the turn-changes card) sits below every
+        // inserted row, so the previous first row still describes the reader.
+        let scrollView = makeScrollView()
+        let controller = armedPrepend(in: scrollView)
+
+        controller.holdPosition(anchorRowID: nil) {}
+        XCTAssertTrue(controller.isHoldingPosition)
+        scrollView.contentSize.height += 300
+        XCTAssertEqual(scrollView.contentOffset.y, 880, accuracy: 0.001)
+
+        controller.recordRowMinY(750, for: "first")
+        scrollView.contentSize.height += 50
+        XCTAssertEqual(scrollView.contentOffset.y, 930, accuracy: 0.001)
+    }
+
+    func testHoldArmedDuringPrependLastsUntilThePrependWindowEnds() throws {
+        let start = ContinuousClock.now
+        let scrollView = makeScrollView()
+        let controller = armedPrepend(in: scrollView)
+        controller.recordRowMinY(1_040, for: "tapped")
+        controller.holdPosition(anchorRowID: "tapped") {}
+
+        let pastQuietPeriod = expectation(description: "past the hold's quiet period")
+        DispatchQueue.main.asyncAfter(deadline: .now() + ChatScrollPolicy.disclosureHoldQuietPeriod + 0.1) {
+            pastQuietPeriod.fulfill()
+        }
+        wait(for: [pastQuietPeriod], timeout: 2)
+        try XCTSkipIf(ContinuousClock.now - start >= .milliseconds(900), "The main thread stalled past the prepend window.")
+
+        XCTAssertTrue(controller.isHoldingPosition)
+        controller.recordRowMinY(1_090, for: "tapped")
+        scrollView.contentSize.height += 50
+        XCTAssertEqual(scrollView.contentOffset.y, 930, accuracy: 0.001)
     }
 
     func testCancelledPrependDoesNotMoveScrollPosition() {
@@ -319,7 +413,7 @@ final class ChatScrollPositionControllerTests: XCTestCase {
         let controller = ChatScrollPositionController()
         controller.attach(to: scrollView)
 
-        XCTAssertTrue(controller.capture())
+        XCTAssertTrue(controller.capture(anchorRowID: nil))
         controller.cancelPreservation()
         scrollView.contentSize.height += 640
 
@@ -332,7 +426,7 @@ final class ChatScrollPositionControllerTests: XCTestCase {
         let controller = ChatScrollPositionController()
         controller.attach(to: scrollView)
 
-        XCTAssertTrue(controller.capture())
+        XCTAssertTrue(controller.capture(anchorRowID: nil))
         scrollView.contentOffset.y = 300
 
         XCTAssertFalse(controller.restoreAfterPrepend())
@@ -346,7 +440,7 @@ final class ChatScrollPositionControllerTests: XCTestCase {
         XCTAssertEqual(
             ChatScrollPositionController.compensatedOffsetY(
                 baselineOffsetY: -12,
-                contentHeightDelta: -100,
+                anchorShift: -100,
                 adjustedInset: inset,
                 contentSizeHeight: 1_200,
                 boundsHeight: 480
@@ -357,7 +451,7 @@ final class ChatScrollPositionControllerTests: XCTestCase {
         XCTAssertEqual(
             ChatScrollPositionController.compensatedOffsetY(
                 baselineOffsetY: 700,
-                contentHeightDelta: 500,
+                anchorShift: 500,
                 adjustedInset: inset,
                 contentSizeHeight: 1_200,
                 boundsHeight: 480
@@ -371,5 +465,20 @@ final class ChatScrollPositionControllerTests: XCTestCase {
         let scrollView = UIScrollView(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
         scrollView.contentSize = CGSize(width: 320, height: 1_200)
         return scrollView
+    }
+
+    /// A Load Older prepend that has landed: 640pt of rows above the previous
+    /// first row, compensated from 240 to 880, with its window still armed.
+    private func armedPrepend(in scrollView: UIScrollView) -> ChatScrollPositionController {
+        scrollView.contentOffset = CGPoint(x: 0, y: 240)
+        let controller = ChatScrollPositionController()
+        controller.attach(to: scrollView)
+        controller.recordRowMinY(60, for: "first")
+        XCTAssertTrue(controller.capture(anchorRowID: "first"))
+        XCTAssertTrue(controller.restoreAfterPrepend())
+        controller.recordRowMinY(700, for: "first")
+        scrollView.contentSize.height += 640
+        XCTAssertEqual(scrollView.contentOffset.y, 880, accuracy: 0.001)
+        return controller
     }
 }

@@ -231,15 +231,30 @@ struct ChatTranscriptView: View {
     /// expressed through SwiftUI.
     private var transcriptContentID: String { "chat-transcript-content" }
 
-    /// A tapped row is about to grow or shrink below the reader. Pin the offset
+    /// A tapped row is about to grow or shrink. Pin the reader to that row's top
     /// so a default anchor SwiftUI re-applies on the size change (seen at the
     /// exact top after a status-bar scroll) cannot move them. If the pin had to
     /// undo SwiftUI, finish with a SwiftUI-driven scroll to the same place so
     /// its own offset model, and hit-testing of the visible rows, catch up.
-    private func pinReader(proxy: ScrollViewProxy) {
-        scrollPositionController.holdPosition {
+    private func pinReaderForDisclosure(proxy: ScrollViewProxy, anchorRowID: String?) {
+        scrollPositionController.holdPosition(anchorRowID: anchorRowID) {
             proxy.scrollTo(transcriptContentID, anchor: .top)
         }
+        onDisclosureToggle()
+    }
+
+    /// Reports the row's content-space top so position preservation can tell
+    /// growth above it from growth below, and pins on this row when one of its
+    /// disclosures toggles.
+    private func positionAnchoredRow(_ row: some View, id: String, proxy: ScrollViewProxy) -> some View {
+        row
+            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(transcriptContentID)).minY } action: {
+                scrollPositionController.recordRowMinY($0, for: id)
+            }
+            .onDisappear { scrollPositionController.forgetRow(id) }
+            .environment(\.chatDisclosureToggled) {
+                pinReaderForDisclosure(proxy: proxy, anchorRowID: id)
+            }
     }
 
     /// Deliberate scrolls end a disclosure pin first. The pin exists only to
@@ -258,7 +273,7 @@ struct ChatTranscriptView: View {
             olderMessagesButton(proxy: proxy)
 
             if let compressionReferenceCard, compressionReferenceCard.afterRenderID == nil {
-                compressionReferenceCardView(compressionReferenceCard)
+                compressionReferenceCardView(compressionReferenceCard, proxy: proxy)
             }
 
             ForEach(Array(displayedTranscriptMessages.enumerated()), id: \.element.id) { index, transcriptMessage in
@@ -277,7 +292,7 @@ struct ChatTranscriptView: View {
                     || (index + 1 < displayedTranscriptMessages.count && displayedTranscriptMessages[index + 1].message.isLocalSteeringHint)
                 )
 
-                ChatTranscriptMessageBlock(
+                let row = ChatTranscriptMessageBlock(
                     transcriptMessage: transcriptMessage,
                     transcriptBlockSpacing: transcriptBlockSpacing,
                     showsThinkingAndToolCards: showsThinkingAndToolCards,
@@ -314,11 +329,13 @@ struct ChatTranscriptView: View {
                     onLoadEarlierSceneRows: { onLoadEarlierSceneRows(transcriptMessage) }
                 )
                 .equatable()
-                .id(transcriptMessage.renderID)
+
+                positionAnchoredRow(row, id: transcriptMessage.renderID, proxy: proxy)
+                    .id(transcriptMessage.renderID)
 
                 if let compressionReferenceCard,
                    compressionReferenceCard.afterRenderID == transcriptMessage.renderID {
-                    compressionReferenceCardView(compressionReferenceCard)
+                    compressionReferenceCardView(compressionReferenceCard, proxy: proxy)
                 }
             }
 
@@ -333,6 +350,7 @@ struct ChatTranscriptView: View {
                 .id(bottomAnchorID)
                 .allowsHitTesting(false)
         }
+        .coordinateSpace(.named(transcriptContentID))
         .padding(.top, 16)
         .frame(width: contentWidth, alignment: .leading)
         .padding(.horizontal, transcriptHorizontalPadding)
@@ -340,8 +358,7 @@ struct ChatTranscriptView: View {
         .frame(width: viewportWidth)
         .clipped()
         .environment(\.chatDisclosureToggled) {
-            pinReader(proxy: proxy)
-            onDisclosureToggle()
+            pinReaderForDisclosure(proxy: proxy, anchorRowID: nil)
         }
         .id(transcriptContentID)
         .environment(\.chatMessageMenuRegistry, menuRegistry)
@@ -362,8 +379,12 @@ struct ChatTranscriptView: View {
         }
     }
 
-    private func compressionReferenceCardView(_ card: CompressionReferenceCard) -> some View {
-        MarkerMessageCardView(kind: .compressionReference, content: card.referenceText)
+    private func compressionReferenceCardView(_ card: CompressionReferenceCard, proxy: ScrollViewProxy) -> some View {
+        positionAnchoredRow(
+            MarkerMessageCardView(kind: .compressionReference, content: card.referenceText),
+            id: "compression-reference",
+            proxy: proxy
+        )
     }
 
     private var transcriptHorizontalPadding: CGFloat {
@@ -385,8 +406,8 @@ struct ChatTranscriptView: View {
     }
 
     private func loadOlderMessagesPreservingPosition(proxy: ScrollViewProxy) async {
-        let capturedExactPosition = scrollPositionController.capture()
         let renderID = displayedTranscriptMessages.first?.renderID
+        let capturedExactPosition = scrollPositionController.capture(anchorRowID: renderID)
         let didLoad = await onLoadOlderMessages()
         guard didLoad else {
             scrollPositionController.cancelPreservation()
