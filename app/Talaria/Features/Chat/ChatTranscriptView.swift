@@ -48,6 +48,8 @@ struct ChatTranscriptView: View {
     let transcriptBottomInsetHeight: CGFloat
     /// Bumped by the scroll-to-latest chip above the composer.
     let scrollToBottomRequest: Int
+    /// Bumped when a follow blocked by a settling disclosure is due.
+    let followReplayRequest: Int
     let assistantName: String
     let localAttachmentPreviews: [String: [String: Data]]
     let listeningMessageID: String?
@@ -71,6 +73,9 @@ struct ChatTranscriptView: View {
     let onUpdateScrollMetrics: (ChatScrollMetrics) -> Void
     let onFollowEvent: (ChatScrollPolicy.FollowEvent) -> Void
     let onDisclosureToggle: () -> Void
+    /// Reports an automatic follow skipped by the guard, so one blocked only by
+    /// a settling disclosure replays when the suspension ends.
+    let onFollowSuppressed: () -> Void
     let onDismissKeyboard: () -> Void
     let onScrollToBottom: (ScrollViewProxy) -> Void
     let onScrollToLatestTranscriptMessage: (ScrollViewProxy) -> Void
@@ -180,32 +185,30 @@ struct ChatTranscriptView: View {
                 }
                 .background(Color(.systemBackground))
                 .onChange(of: messages.count) {
-                    guard isFollowingLatestContent else { return }
-
                     if latestTranscriptMessageRole == "user" {
-                        releasingHold { onScrollToLatestTranscriptMessage(proxy) }
+                        following { onScrollToLatestTranscriptMessage(proxy) }
                     } else {
-                        releasingHold { onScrollToLatestContent(proxy, true) }
+                        following { onScrollToLatestContent(proxy, true) }
                     }
                 }
                 .onChange(of: scrollToBottomRequest) {
                     releasingHold { onScrollToBottom(proxy) }
                 }
                 .onChange(of: streamingScrollTrigger) {
-                    if isFollowingLatestContent {
-                        releasingHold { onScrollToLatestContent(proxy, true) }
-                    }
+                    following { onScrollToLatestContent(proxy, true) }
+                }
+                .onChange(of: followReplayRequest) {
+                    following { onScrollToLatestContent(proxy, true) }
                 }
                 .onChange(of: cacheFirstReconcileScrollToken) {
                     // Cache-first reconcile (#289): the server transcript just replaced
                     // the lighter cached render, so snap back to the bottom (no
                     // animation) unless the reader has scrolled away in the meantime.
-                    guard isFollowingLatestContent else { return }
-                    releasingHold { onScrollToLatestContent(proxy, false) }
+                    following { onScrollToLatestContent(proxy, false) }
                 }
                 .onChange(of: clarificationPrompt?.id) {
-                    guard clarificationPrompt != nil, isFollowingLatestContent else { return }
-                    releasingHold { onScrollToBottom(proxy) }
+                    guard clarificationPrompt != nil else { return }
+                    following { onScrollToBottom(proxy) }
                 }
                 .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
                     // The keyboard shrinks the viewport, so keep a following
@@ -213,8 +216,8 @@ struct ChatTranscriptView: View {
                     // is too loose: its 80/160pt band still covers a reader who
                     // deliberately nudged up, and scrolling for them would reset
                     // the latch they just set.
-                    if isFollowingLatestContent, isScrolledNearBottom {
-                        releasingHold { onScrollToBottom(proxy) }
+                    if isScrolledNearBottom {
+                        following { onScrollToBottom(proxy) }
                     }
                 }
             }
@@ -255,6 +258,16 @@ struct ChatTranscriptView: View {
             .environment(\.chatDisclosureToggled) {
                 pinReaderForDisclosure(proxy: proxy, anchorRowID: id)
             }
+    }
+
+    /// Runs an automatic follow only while `isFollowingLatestContent` holds.
+    /// A skipped one is reported so ChatView can replay it after settling.
+    private func following(_ scroll: () -> Void) {
+        guard isFollowingLatestContent else {
+            onFollowSuppressed()
+            return
+        }
+        releasingHold(scroll)
     }
 
     /// Deliberate scrolls end a disclosure pin first. The pin exists only to

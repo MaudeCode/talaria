@@ -119,10 +119,11 @@ struct ChatView: View {
     @State private var isReadingOlderTranscript = false
     @State private var followLatch = ChatScrollPolicy.FollowLatch()
     @State private var followScrollGeneration = 0
-    /// While true the transcript's bottom size-change anchor and follow-driven
+    /// While settling, the transcript's bottom size-change anchor and follow-driven
     /// scrolls are suspended so a disclosure toggle grows or shrinks in place.
-    @State private var isDisclosureSettling = false
-    @State private var disclosureSettleGeneration = 0
+    @State private var disclosureSettle = ChatScrollPolicy.DisclosureSettle()
+    /// Bumped when a follow the settling suspension blocked is due (TAL-151).
+    @State private var followReplayRequest = 0
     /// While set and in the future, auto-follow scrolls snap instead of animating, so
     /// the cache-first → network reconcile re-pins to the bottom without a jump (#289).
     @State private var cacheFirstSnapUntil: Date?
@@ -1247,6 +1248,7 @@ struct ChatView: View {
             transcriptBlockSpacing: transcriptBlockSpacing,
             transcriptBottomInsetHeight: transcriptBottomInsetHeight,
             scrollToBottomRequest: scrollToBottomRequest,
+            followReplayRequest: followReplayRequest,
             assistantName: viewModel.assistantName,
             localAttachmentPreviews: viewModel.localAttachmentPreviews,
             listeningMessageID: viewModel.listeningMessageID,
@@ -1284,6 +1286,7 @@ struct ChatView: View {
             onUpdateScrollMetrics: updateScrollMetrics,
             onFollowEvent: handleFollowEvent,
             onDisclosureToggle: suspendBottomAnchorForDisclosure,
+            onFollowSuppressed: recordSuppressedFollow,
             onDismissKeyboard: dismissKeyboard,
             onScrollToBottom: scrollToBottom,
             onScrollToLatestTranscriptMessage: { proxy in
@@ -1402,6 +1405,10 @@ struct ChatView: View {
     /// toggle is mid-animation.
     private var isFollowingLatestContent: Bool {
         shouldFollowLatestMessage && !isDisclosureSettling
+    }
+
+    private var isDisclosureSettling: Bool {
+        disclosureSettle.isSettling
     }
 
     private var showsScrollToBottomButton: Bool {
@@ -2685,6 +2692,7 @@ struct ChatView: View {
         if isUserInitiated {
             handleFollowEvent(.reset)
         } else if !isFollowingLatestContent {
+            recordSuppressedFollow()
             return
         }
 
@@ -2698,7 +2706,10 @@ struct ChatView: View {
             guard !Task.isCancelled, generation == followScrollGeneration else { return }
             // Re-check at fire time: a drag or a disclosure toggle may have
             // begun during the delay.
-            if !isUserInitiated, !isFollowingLatestContent { return }
+            if !isUserInitiated, !isFollowingLatestContent {
+                recordSuppressedFollow()
+                return
+            }
 
             // Snap (no animation) while inside the cache-first reconcile window so the
             // taller server transcript replacing the cached one doesn't animate a jump
@@ -2787,36 +2798,45 @@ struct ChatView: View {
         // asked to leave it; without this, the edge-triggered follow that the
         // send's own message fires is swallowed and never replayed.
         if event == .reset {
-            endDisclosureSettling()
+            updateDisclosureSettle { $0.end() }
         }
 
         let resolved = ChatScrollPolicy.resolveFollow(current: followLatch, event: event)
         if resolved != followLatch {
             followLatch = resolved
         }
-    }
-
-    private func endDisclosureSettling() {
-        guard isDisclosureSettling else { return }
-
-        // Outdate the pending release so it cannot clear a later suspension.
-        disclosureSettleGeneration += 1
-        isDisclosureSettling = false
+        if !resolved.isFollowing {
+            updateDisclosureSettle { $0.cancelOwedFollow() }
+        }
     }
 
     /// Suspends follow scrolls and the bottom anchor through a disclosure
     /// animation; the transcript view pins the offset itself. The latch is
-    /// untouched, so the next streaming trigger catches up once the toggle has
-    /// settled.
+    /// untouched, and a follow the suspension blocked replays once the toggle
+    /// has settled, so a stream's last trigger is not lost.
     private func suspendBottomAnchorForDisclosure() {
-        disclosureSettleGeneration += 1
-        let generation = disclosureSettleGeneration
-        isDisclosureSettling = true
+        let generation = disclosureSettle.begin()
 
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(ChatScrollPolicy.disclosureAnchorSuspension))
-            guard generation == disclosureSettleGeneration else { return }
-            isDisclosureSettling = false
+            if disclosureSettle.expire(generation: generation, isFollowing: shouldFollowLatestMessage) {
+                followReplayRequest += 1
+            }
+        }
+    }
+
+    private func recordSuppressedFollow() {
+        let isFollowing = shouldFollowLatestMessage
+        updateDisclosureSettle { $0.recordSuppressedFollow(isFollowing: isFollowing) }
+    }
+
+    /// Writes only real changes: scroll reports and stream triggers call in
+    /// here continuously, and every state write re-renders the chat.
+    private func updateDisclosureSettle(_ change: (inout ChatScrollPolicy.DisclosureSettle) -> Void) {
+        var settle = disclosureSettle
+        change(&settle)
+        if settle != disclosureSettle {
+            disclosureSettle = settle
         }
     }
 
