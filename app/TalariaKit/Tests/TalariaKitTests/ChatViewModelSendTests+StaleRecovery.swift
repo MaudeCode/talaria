@@ -189,32 +189,83 @@ extension ChatViewModelSendTests {
 
     @MainActor
     func testContextlessReloadKeepsRepeatedPromptOverOlderIdenticalTurn() async throws {
-        try await assertContextlessReloadKeepsRepeatedPrompt(olderTurnAge: 3_600, showsOlderTurnBeforeSending: false)
+        let earlier = serverNow - 3_600
+        let userRows = try await contextlessRepeatReload(showsEarlierTurn: false, earlierTurn: """
+            {"role": "user", "content": "continue", "timestamp": \(earlier), "message_id": "user-1"},
+            {"role": "assistant", "content": "Earlier answer.", "timestamp": \(earlier + 1), "message_id": "assistant-1"}
+            """)
+        XCTAssertEqual(userRows.map { $0.messageId?.prefix(6) }, ["user-1", "local-"])
     }
 
-    // A quick repeat sits inside the recency window, so only the turn's position tells the two prompts apart.
+    // A quick repeat sits inside the recency window, so only the turn it follows tells the two prompts apart.
     @MainActor
     func testContextlessReloadKeepsQuicklyRepeatedPromptAfterTheTurnItFollows() async throws {
-        try await assertContextlessReloadKeepsRepeatedPrompt(olderTurnAge: 10, showsOlderTurnBeforeSending: true)
+        let earlier = serverNow - 10
+        let userRows = try await contextlessRepeatReload(earlierTurn: """
+            {"role": "user", "content": "continue", "timestamp": \(earlier), "message_id": "user-1"},
+            {"role": "assistant", "content": "Earlier answer.", "timestamp": \(earlier + 1), "message_id": "assistant-1"}
+            """)
+        XCTAssertEqual(userRows.map { $0.messageId?.prefix(6) }, ["user-1", "local-"])
+    }
+
+    // An old server may send no `message_id`; the shown rows' own server timestamps still mark them.
+    @MainActor
+    func testContextlessReloadKeepsQuicklyRepeatedPromptWhenShownRowsHaveNoMessageID() async throws {
+        let earlier = serverNow - 10
+        let userRows = try await contextlessRepeatReload(earlierTurn: """
+            {"role": "user", "content": "continue", "timestamp": \(earlier)},
+            {"role": "assistant", "content": "Earlier answer.", "timestamp": \(earlier + 1)}
+            """)
+        XCTAssertEqual(userRows.map { $0.messageId?.prefix(6) }, [nil, "local-"])
     }
 
     @MainActor
     func testContextlessReloadReplacesQuicklyRepeatedPromptWithTheServersCopy() async throws {
-        try await assertContextlessReloadKeepsRepeatedPrompt(
-            olderTurnAge: 10,
-            showsOlderTurnBeforeSending: true,
-            serverPersistedRepeat: true
+        let earlier = serverNow - 10
+        let userRows = try await contextlessRepeatReload(
+            earlierTurn: """
+            {"role": "user", "content": "continue", "timestamp": \(earlier), "message_id": "user-1"},
+            {"role": "assistant", "content": "Earlier answer.", "timestamp": \(earlier + 1), "message_id": "assistant-1"}
+            """,
+            runningTurn: #"{"role": "user", "content": "continue", "timestamp": \#(serverNow), "message_id": "user-2"}"#
         )
+        XCTAssertEqual(userRows.map(\.messageId), ["user-1", "user-2"])
+    }
+
+    // Current Web stamps the running prompt with the stream as its `_turn_id`: that identity, not the two clocks, decides.
+    @MainActor
+    func testContextlessReloadConfirmsTheRunningTurnsPromptAcrossServerClockSkew() async throws {
+        let skewed = serverNow - 900
+        let userRows = try await contextlessRepeatReload(
+            earlierTurn: """
+            {"role": "user", "content": "continue", "timestamp": \(skewed - 10), "_turn_id": "stream-old"},
+            {"role": "assistant", "content": "Earlier answer.", "timestamp": \(skewed - 9), "_turn_id": "stream-old"}
+            """,
+            runningTurn: #"{"role": "user", "content": "continue", "timestamp": \#(skewed), "_turn_id": "stream-123"}"#
+        )
+        XCTAssertEqual(userRows.map(\.turnId), ["stream-old", "stream-123"])
     }
 
     @MainActor
-    private func assertContextlessReloadKeepsRepeatedPrompt(
-        olderTurnAge: Int,
-        showsOlderTurnBeforeSending: Bool,
-        serverPersistedRepeat: Bool = false
-    ) async throws {
-        let now = serverNow
-        let olderTurn = now - olderTurnAge
+    func testContextlessReloadKeepsRepeatedPromptThatOnlyAnEarlierTurnMatches() async throws {
+        let earlier = serverNow - 10
+        let userRows = try await contextlessRepeatReload(showsEarlierTurn: false, earlierTurn: """
+            {"role": "user", "content": "continue", "timestamp": \(earlier), "_turn_id": "stream-old"},
+            {"role": "assistant", "content": "Earlier answer.", "timestamp": \(earlier + 1), "_turn_id": "stream-old"}
+            """)
+        XCTAssertEqual(userRows.map(\.turnId), ["stream-old", nil])
+        XCTAssertEqual(userRows.last?.messageId?.hasPrefix("local-"), true)
+    }
+
+    /// Sends "continue" again after `earlierTurn` (shown first unless `showsEarlierTurn` is false), then reloads with
+    /// no model context while the same stream still runs and the server holds `runningTurn` after that turn.
+    /// Returns the reloaded user rows, after checking the earlier turn keeps its place.
+    @MainActor
+    private func contextlessRepeatReload(
+        showsEarlierTurn: Bool = true,
+        earlierTurn: String,
+        runningTurn: String? = nil
+    ) async throws -> [ChatMessage] {
         var hasStarted = false
         let viewModel = try makeViewModel { request in
             switch request.url?.path {
@@ -223,16 +274,10 @@ extension ChatViewModelSendTests {
                 return apiTestJSONResponse(#"{"session_id": "session-abc", "stream_id": "stream-123"}"#, for: request)
             case "/api/session":
                 let activeStream = hasStarted ? #""active_stream_id": "stream-123","# : ""
-                let repeatRow = hasStarted && serverPersistedRepeat
-                    ? #",{"role": "user", "content": "continue", "timestamp": \#(now), "message_id": "user-2"}"#
-                    : ""
+                let rows = [earlierTurn] + (hasStarted ? [runningTurn].compactMap { $0 } : [])
                 return apiTestJSONResponse("""
                 {"session": {"session_id": "session-abc", "title": "Planning", \(activeStream)
-                  "messages": [
-                    {"role": "user", "content": "continue", "timestamp": \(olderTurn), "message_id": "user-1"},
-                    {"role": "assistant", "content": "Earlier answer.", "timestamp": \(olderTurn + 1), "message_id": "assistant-1"}
-                    \(repeatRow)
-                  ]}}
+                  "messages": [\(rows.joined(separator: ","))]}}
                 """, for: request)
             default:
                 XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
@@ -240,20 +285,16 @@ extension ChatViewModelSendTests {
             }
         }
 
-        if showsOlderTurnBeforeSending {
+        if showsEarlierTurn {
             await viewModel.loadMessages()
-            XCTAssertEqual(viewModel.messages.compactMap(\.messageId), ["user-1", "assistant-1"])
+            XCTAssertEqual(viewModel.messages.compactMap(\.content), ["continue", "Earlier answer."])
         }
         let didStart = await viewModel.sendMessage("continue")
         XCTAssertTrue(didStart)
         await viewModel.loadMessages()
 
-        let loadedRows = viewModel.messages.prefix(3)
-        XCTAssertEqual(loadedRows.compactMap(\.content), ["continue", "Earlier answer.", "continue"])
-        XCTAssertEqual(loadedRows.first?.messageId, "user-1")
-        let repeatID = try XCTUnwrap(loadedRows.last?.messageId)
-        XCTAssertTrue(serverPersistedRepeat ? repeatID == "user-2" : repeatID.hasPrefix("local-"), repeatID)
-        XCTAssertEqual(viewModel.messages.filter { $0.role == "user" }.count, 2)
+        XCTAssertEqual(viewModel.messages.prefix(3).compactMap(\.content), ["continue", "Earlier answer.", "continue"])
+        return viewModel.messages.filter { $0.role == "user" }
     }
 
     @MainActor

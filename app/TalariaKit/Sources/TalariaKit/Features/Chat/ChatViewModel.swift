@@ -1420,7 +1420,7 @@ public final class ChatViewModel {
                 reloadedMessages = Self.insertingUnconfirmedLocalUserMessages(
                     from: previousMessages,
                     into: loadedMessages,
-                    confirmsOnlyAfterShownHistory: true
+                    runningTurnID: activeStreamIDBeforeLoad
                 )
             } else {
                 reloadedMessages = loadedMessages
@@ -1846,28 +1846,32 @@ public final class ChatViewModel {
     /// Re-inserts the local optimistic user rows the reloaded transcript has not
     /// confirmed yet, so a prompt in flight renders exactly once.
     ///
-    /// With `confirmsOnlyAfterShownHistory`, only loaded rows after the newest server row shown before the
-    /// prompt can confirm it: the server persists the prompt after everything the device already showed, so a
-    /// just-answered identical turn ("continue", then "continue" again) cannot stand in for it.
+    /// A contextless reload passes the `runningTurnID` its newest prompt started. Current Web stamps that
+    /// prompt's row with it as `_turn_id`, so identity decides. For an older server, rows the device showed
+    /// before a prompt cannot confirm it, so a just-answered identical turn ("continue", then "continue"
+    /// again) cannot stand in for it.
     nonisolated private static func insertingUnconfirmedLocalUserMessages(
         from localMessages: [ChatMessage],
         into loadedMessages: [ChatMessage],
-        confirmsOnlyAfterShownHistory: Bool = false
+        runningTurnID: String? = nil
     ) -> [ChatMessage] {
-        let unconfirmedMessages = localMessages.indices.compactMap { index -> ChatMessage? in
-            let localMessage = localMessages[index]
-            guard isLocalOptimisticUserMessage(localMessage), !localMessage.isLocalSteeringHint else { return nil }
-            var candidateMessages = loadedMessages[...]
-            if confirmsOnlyAfterShownHistory,
-               let shownIndex = localMessages[..<index].reversed().lazy.compactMap({ shownMessage in
-                   shownMessage.messageId.flatMap { id in loadedMessages.lastIndex { $0.messageId == id } }
-               }).first {
-                candidateMessages = loadedMessages[(shownIndex + 1)...]
-            }
-            return loadedMessagesContainEquivalentUserMessage(candidateMessages, localMessage: localMessage)
-                ? nil
-                : localMessage
+        let isPrompt = { (message: ChatMessage) in
+            isLocalOptimisticUserMessage(message) && !message.isLocalSteeringHint
         }
+        let runningPromptIndex = localMessages.lastIndex(where: isPrompt)
+        let unconfirmedMessages = localMessages.indices.filter { index in
+            guard isPrompt(localMessages[index]) else { return false }
+            var candidateMessages = loadedMessages
+            if runningTurnID != nil {
+                let shownRowKeys = Set(localMessages[..<index].compactMap(shownRowKey))
+                candidateMessages.removeAll { shownRowKey($0).map(shownRowKeys.contains) == true }
+            }
+            return !loadedMessagesContainEquivalentUserMessage(
+                candidateMessages,
+                localMessage: localMessages[index],
+                turnID: index == runningPromptIndex ? runningTurnID : nil
+            )
+        }.map { localMessages[$0] }
 
         guard !unconfirmedMessages.isEmpty else {
             return loadedMessages
@@ -2278,9 +2282,19 @@ public final class ChatViewModel {
         message.role == "user" && message.messageId?.hasPrefix("local-") == true
     }
 
+    /// A server row's identity across reloads: its `message_id`, else its role, server timestamp and content.
+    nonisolated private static func shownRowKey(_ message: ChatMessage) -> String? {
+        if let messageID = message.messageId {
+            return messageID.hasPrefix("local-") ? nil : messageID
+        }
+        guard let timestamp = message.timestamp else { return nil }
+        return "\(message.role ?? "")|\(timestamp)|\(message.content ?? "")"
+    }
+
     nonisolated private static func loadedMessagesContainEquivalentUserMessage(
-        _ loadedMessages: ArraySlice<ChatMessage>,
-        localMessage: ChatMessage
+        _ loadedMessages: [ChatMessage],
+        localMessage: ChatMessage,
+        turnID: String? = nil
     ) -> Bool {
         let localContent = normalizedUserMessageContent(localMessage)
         let localAttachmentKeys = attachmentKeys(for: localMessage)
@@ -2303,6 +2317,11 @@ public final class ChatViewModel {
                 else {
                     return false
                 }
+            }
+
+            // The running prompt's stamped turn, not the two clocks, decides on current Web.
+            if let turnID, let loadedTurnID = loadedMessage.turnId {
+                return loadedTurnID == turnID
             }
 
             // An older identical prompt ("continue") must not confirm a newer one.
