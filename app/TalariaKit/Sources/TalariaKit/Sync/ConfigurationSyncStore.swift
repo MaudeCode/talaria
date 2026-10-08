@@ -213,9 +213,11 @@ actor CloudKitConfigurationSyncStore: ConfigurationSyncStore {
             return .syncedDataDeleted
         case .partialFailure:
             return ckError.partialErrorsByItemID?.values.first.map(mapped) ?? unmapped
-        case .serverRejectedRequest:
+        case .serverRejectedRequest
+            where ckError.localizedDescription.localizedCaseInsensitiveContains("production schema"):
             // Production refuses a record type missing from the deployed schema
-            // ("Cannot create new type … in production schema").
+            // ("Cannot create new type … in production schema"); CloudKit uses
+            // the same code for other rejections, which stay generic.
             return .failed(
                 String(localized: "iCloud sync isn't set up for this build yet. Settings sync will resume after an update."),
                 detail: unmapped.detail

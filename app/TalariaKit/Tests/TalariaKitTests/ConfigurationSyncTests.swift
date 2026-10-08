@@ -734,6 +734,17 @@ final class ConfigurationSyncTests: XCTestCase {
         XCTAssertEqual(mapped.detail, "CKError 15 serverRejectedRequest: \(raw)")
     }
 
+    func testOtherServerRejectionIsNotReportedAsMissingSchema() {
+        let raw = "Error saving record <CKRecordID: 0x600000c1; recordName=preferences, "
+            + "zoneID=TalariaConfiguration:__defaultOwner__> to server: Request rejected"
+        let mapped = CloudKitConfigurationSyncStore.mapped(
+            CKError(.serverRejectedRequest, userInfo: [NSLocalizedDescriptionKey: raw])
+        )
+
+        XCTAssertEqual(mapped.userMessage, "iCloud couldn't save your settings. Try again later.")
+        XCTAssertEqual(mapped.detail, "CKError 15 serverRejectedRequest: \(raw)")
+    }
+
     func testUnknownCloudKitErrorKeepsRecordTextOutOfTheMessage() {
         let raw = "Error saving record <CKRecordID: 0x600000c1; recordName=preferences, "
             + "zoneID=TalariaConfiguration:__defaultOwner__> to server: Quota exceeded"
