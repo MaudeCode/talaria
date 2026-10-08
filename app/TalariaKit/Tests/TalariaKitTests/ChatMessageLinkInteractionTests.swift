@@ -106,6 +106,18 @@ final class MarkdownLinkRangesTests: XCTestCase {
         XCTAssertEqual(ranges.first?.range, 12..<19)
     }
 
+    /// A heading block's Markdown keeps its ATX marker, which is not drawn
+    /// (TAL-172). An escaped `#` in the heading text is drawn and still counts.
+    func testHeadingMarkerIsNotCountedAsDrawnText() {
+        let ranges = MarkdownLinkRanges.ranges(
+            markdown: "### \\# lead [charlie](https://example.invalid/c)\n",
+            plainText: "# lead charlie\n"
+        )
+
+        XCTAssertEqual(ranges.map(\.range), [7..<14])
+        XCTAssertEqual(ranges.first?.url, URL(string: "https://example.invalid/c"))
+    }
+
     /// A paragraph the two parsers disagree about must yield nothing, so the
     /// press falls through to the message menu instead of a guessed link.
     func testDisagreementBetweenParsersReportsNoLinks() {

@@ -137,11 +137,17 @@ extension MarkdownUI.Theme {
                         : SwiftUI.Color(.tertiarySystemGroupedBackground)
                 )
             }
-            // Restates the base theme's own paragraph metrics; the block exists so
-            // a paragraph can report where its links landed (TAL-49).
+            // Paragraphs and headings restate the base theme's own metrics; the
+            // blocks exist so their text can report where links landed (TAL-49).
             .paragraph { configuration in
                 ChatMarkdownParagraph(configuration: configuration, tracksLinks: !isStreaming)
             }
+            .heading1 { ChatMarkdownHeading(level: 1, configuration: $0, tracksLinks: !isStreaming) }
+            .heading2 { ChatMarkdownHeading(level: 2, configuration: $0, tracksLinks: !isStreaming) }
+            .heading3 { ChatMarkdownHeading(level: 3, configuration: $0, tracksLinks: !isStreaming) }
+            .heading4 { ChatMarkdownHeading(level: 4, configuration: $0, tracksLinks: !isStreaming) }
+            .heading5 { ChatMarkdownHeading(level: 5, configuration: $0, tracksLinks: !isStreaming) }
+            .heading6 { ChatMarkdownHeading(level: 6, configuration: $0, tracksLinks: !isStreaming) }
             .codeBlock { configuration in
                 MathFenceOrCodeBlock(
                     language: configuration.language,

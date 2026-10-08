@@ -39,8 +39,10 @@ public enum MarkdownLinkRanges {
         let expected = normalized(plainText)
         guard !expected.isEmpty else { return [] }
 
+        // A heading block's Markdown keeps its ATX marker (`## `), which is not
+        // drawn. A paragraph never starts with one: cmark escapes a leading `#`.
         guard let attributed = try? AttributedString(
-            markdown: markdown,
+            markdown: markdown.replacing(/^#{1,6}[ \t]+/, with: ""),
             options: AttributedString.MarkdownParsingOptions(
                 allowsExtendedAttributes: false,
                 interpretedSyntax: .inlineOnlyPreservingWhitespace,
