@@ -227,7 +227,9 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   // Until the transcript arrives the header shows the title the sidebar already has for this session.
   const listedTitle = sessionId ? qc.getQueryData<SessionsList>(keys.sessions.list({}))?.sessions.find((r) => r.session_id === sessionId)?.title : undefined
   const title = session?.title ?? listedTitle ?? ''
-  const workspace = session?.workspace ?? settings.data?.default_workspace
+  // TAL-639: an existing chat names only its own workspace, none until its record loads, so the Files page and
+  // terminal never mount on the default and remount; the default stands in only for the unsaved chat.
+  const workspace = sessionId ? session?.workspace : settings.data?.default_workspace
   const workspaces = useWorkspacesQuery()
   // TAL-303: the server names the workspace: the session's own label, else the default workspace's registry entry.
   const wsLabel = session ? session.workspace_name : workspaces.data?.workspaces.find((w) => w.path === workspace)?.name
