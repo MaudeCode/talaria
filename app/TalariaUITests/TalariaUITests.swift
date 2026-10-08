@@ -2962,6 +2962,23 @@ fileprivate extension ChatUITestCase {
         XCTAssertFalse(app.buttons["Listen"].exists, "A link press must not offer message actions")
         dismissContextMenu(avoiding: openLink.frame)
         XCTAssertTrue(openLink.awaitNonExistence(timeout: 5), "The link actions did not close")
+
+        // A heading renders through its own block style (TAL-172): its link
+        // offers the link actions, and its lead text the message actions.
+        let headingLink = app.links["HeadingLink"]
+        XCTAssertTrue(headingLink.awaitExistence(timeout: 15), "Missing the fixture's heading link")
+        let headingLinkFrame = settledFrame(of: headingLink)
+        longPress(at: CGPoint(x: headingLinkFrame.midX, y: headingLinkFrame.midY))
+        XCTAssertTrue(openLink.awaitExistence(timeout: 5), "The heading link's own actions did not open")
+        XCTAssertFalse(app.buttons["Fork From Here"].exists, "A heading link press must not offer message actions")
+        dismissContextMenu(avoiding: openLink.frame)
+        XCTAssertTrue(openLink.awaitNonExistence(timeout: 5), "The heading link actions did not close")
+
+        longPress(at: CGPoint(x: headingLinkFrame.minX - 30, y: headingLinkFrame.midY))
+        XCTAssertTrue(fork.awaitExistence(timeout: 5), "The heading's lead text did not open the message actions")
+        XCTAssertFalse(openLink.exists, "A heading's lead text must not offer link actions")
+        dismissContextMenu(avoiding: app.buttons["Listen"].frame.union(fork.frame))
+        XCTAssertTrue(fork.awaitNonExistence(timeout: 5), "The message actions did not close")
     }
 
     /// Taps the half of the screen the open menu does not cover; a tap outside a context menu

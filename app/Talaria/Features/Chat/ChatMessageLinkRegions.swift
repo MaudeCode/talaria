@@ -154,3 +154,59 @@ struct ChatMarkdownParagraph: View {
         .relativeLineSpacing(.em(0.25))
     }
 }
+
+/// A Markdown heading, tracked for links (TAL-172).
+///
+/// The styling restates the base `gitHub` theme's six heading styles from the
+/// pinned MarkdownUI 2.4.1, because installing this style replaces them; keep it
+/// in step when MarkdownUI is upgraded. The h1/h2 bottom padding sits outside
+/// the tracked text so the reported rects stay relative to the text itself.
+struct ChatMarkdownHeading: View {
+    let level: Int
+    let configuration: BlockConfiguration
+    let tracksLinks: Bool
+
+    var body: some View {
+        if level <= 2 {
+            VStack(alignment: .leading, spacing: 0) {
+                heading
+                Divider().overlay(Self.divider)
+            }
+        } else {
+            heading
+        }
+    }
+
+    private var heading: some View {
+        ChatMarkdownLinkTrackedText(content: configuration.content, tracksLinks: tracksLinks) {
+            configuration.label
+        }
+        // Inside the heading's text style, so `em` resolves against its font size.
+        .relativePadding(.bottom, length: .em(level <= 2 ? 0.3 : 0))
+        .relativeLineSpacing(.em(0.125))
+        .markdownMargin(top: 24, bottom: 16)
+        .markdownTextStyle {
+            FontWeight(.semibold)
+            if let fontScale {
+                FontSize(.em(fontScale))
+            }
+            if level == 6 {
+                ForegroundColor(Self.tertiaryText)
+            }
+        }
+    }
+
+    private var fontScale: CGFloat? {
+        switch level {
+        case 1: 2
+        case 2: 1.5
+        case 3: 1.25
+        case 5: 0.875
+        case 6: 0.85
+        default: nil
+        }
+    }
+
+    private static let divider = Color(light: Color(rgba: 0xd0d0_d3ff), dark: Color(rgba: 0x3334_38ff))
+    private static let tertiaryText = Color(light: Color(rgba: 0x6b6e_7bff), dark: Color(rgba: 0x6d70_7dff))
+}

@@ -1205,7 +1205,8 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         [
             "role": "assistant",
             "content": "FixturePlainLead \(String(repeating: "deterministic filler prose that makes this bubble tall. ", count: 12))"
-                + "[FixtureLinkTarget](https://example.invalid/fixture-link) FixturePlainTail",
+                + "[FixtureLinkTarget](https://example.invalid/fixture-link) FixturePlainTail"
+                + "\n\n## Lead [HeadingLink](https://example.invalid/heading-link)",
             "message_id": "ui-fixture-link-assistant",
             "_ts": 2_000_000_101
         ]

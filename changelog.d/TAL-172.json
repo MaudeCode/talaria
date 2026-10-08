@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Long-pressing a link inside a chat heading now shows Open Link, Copy Link, and Share instead of the message actions.",
+      "highlight": false
+    }
+  ]
+}
