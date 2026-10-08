@@ -2957,11 +2957,9 @@ public final class ChatViewModel {
     ) async -> SlashCommandExecutionResult {
         switch behavior {
         case .steer:
-            // Steering has no attachment channel, so a textless send — which
-            // exists only to deliver its staged files — has to queue instead of
-            // steering an empty string that would drop them.
-            if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-               !attachmentCoordinator.pendingAttachments.isEmpty {
+            // Steering has no attachment channel, so a send with staged files queues
+            // them with its text instead of steering the text and leaving them behind.
+            if !attachmentCoordinator.pendingAttachments.isEmpty {
                 return await queueMessageFromSlashCommand(draft)
             }
             return await steerResponseFromSlashCommand(draft)

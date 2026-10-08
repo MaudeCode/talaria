@@ -365,6 +365,48 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(viewModel.pendingAttachments.map(\.path), ["/tmp/workspace/notes.txt"])
     }
 
+    /// Steering carries no files, so a steer with text and staged files queues them together rather than
+    /// steering the text and leaving the files behind for an unrelated later message (TAL-660).
+    func testSteerWithTextAndStagedFilesQueuesThemTogether() async throws {
+        let streamClient = SpySSEStreamingClient()
+        let viewModel = try makeViewModel(streamClient: streamClient) { request in
+            switch request.url?.path {
+            case "/api/upload":
+                return apiTestJSONResponse("""
+                {
+                  "filename": "notes.txt",
+                  "path": "/tmp/workspace/notes.txt",
+                  "size": 5,
+                  "mime": "text/plain",
+                  "is_image": false,
+                  "named_in_prompt": true
+                }
+                """, for: request)
+            case "/api/chat/start":
+                return apiTestJSONResponse(
+                    #"{"session_id":"session-abc","stream_id":"stream-123"}"#,
+                    for: request
+                )
+            case "/api/chat/steer":
+                return apiTestJSONResponse(#"{"accepted":true,"stream_id":"stream-123"}"#, for: request)
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        let didStartRun = await viewModel.sendMessage("Initial request")
+        XCTAssertTrue(didStartRun)
+        await viewModel.uploadAttachment(data: Data("hello".utf8), filename: "notes.txt")
+
+        let result = await viewModel.submitStreamingMessage("Read the notes", behavior: .steer)
+
+        XCTAssertEqual(result, .executed(message: nil))
+        XCTAssertTrue(viewModel.pendingAttachments.isEmpty, "The steer left the staged files behind")
+        XCTAssertEqual(viewModel.queuedMessagePreviews.map(\.text), ["Read the notes"])
+        XCTAssertEqual(viewModel.queuedMessagePreviews.first?.attachmentNames.count, 1)
+    }
+
     /// A textless send during a run cannot steer — steering carries no files —
     /// so it queues, and the drain replays it with the synthesized message.
     func testTextlessSendDuringRunQueuesAndDrainsWithAttachment() async throws {
