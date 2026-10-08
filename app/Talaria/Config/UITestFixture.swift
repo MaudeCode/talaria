@@ -11,6 +11,9 @@ struct UITestFixtureEnvironment {
     nonisolated static let launchArgument = UITestFixtureLaunch.launchArgument
     nonisolated static let relayConnectedArgument = UITestFixtureLaunch.relayConnectedArgument
     nonisolated static let approvalBypassArgument = "--ui-test-approval-bypass"
+    /// Posted when the fixture answers a session's approval-bypass read, so a UI test can wait for the App to learn
+    /// the state instead of for the composer, which renders first (TAL-664).
+    nonisolated static let approvalBypassAnsweredNotification = "dev.kil.talaria.ui-test.approval-bypass-answered"
     nonisolated static let reauthenticationArgument = "--ui-test-reauthentication"
     nonisolated static let trustedReauthenticationArgument = "--ui-test-reauthentication-trusted"
     /// Launches with no saved server so the fixture lands on onboarding.
@@ -883,6 +886,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
                 return approvalBypassOverride
                     ?? ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.approvalBypassArgument)
             }
+            if request.httpMethod != "POST" { notify_post(UITestFixtureEnvironment.approvalBypassAnsweredNotification) }
             return json(["ok": true, "yolo_enabled": enabled])
         case "/api/chat/stream", "/api/approval/stream", "/api/clarify/stream", "/api/kanban/events/stream":
             return Data("event: stream_end\ndata: {}\n\n".utf8)
