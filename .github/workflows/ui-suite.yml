@@ -53,12 +53,16 @@ permissions:
 jobs:
   queue:
     # Waits on Linux, holding no macOS runner, until this run's turn (app/ci/ui-suite-wait-turn reads this job's name).
+    # Its attempt goes to the suite, whose macOS jobs refuse a "Re-run failed jobs" attempt that skipped it. A job runs
+    # at most six hours, so near that the run dispatches the same suite again, which joins the queue, and fails.
     name: Queue
     runs-on: ubuntu-latest
     timeout-minutes: 360
     permissions:
       contents: read
-      actions: read
+      actions: write
+    outputs:
+      attempt: ${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -66,7 +70,22 @@ jobs:
       - name: Wait for this run's turn
         env:
           GH_TOKEN: ${{ github.token }}
-        run: app/ci/ui-suite-wait-turn "$GITHUB_RUN_ID"
+          UI_SUITE_QUEUE_LIMIT_SECONDS: "20700"
+          REF: ${{ inputs.ref }}
+          ONLY_TESTING: ${{ inputs.only_testing }}
+          TEST_ITERATIONS: ${{ inputs.test_iterations || '1' }}
+          PRIORITY: ${{ inputs.priority || false }}
+        run: |
+          set -uo pipefail
+          app/ci/ui-suite-wait-turn "$GITHUB_RUN_ID" && exit 0
+          status=$?
+          (( status == 20 )) || exit "$status"
+          inputs=(-f test_iterations="$TEST_ITERATIONS" -f priority="$PRIORITY")
+          [[ -z "$REF" ]] || inputs+=(-f ref="$REF")
+          [[ -z "$ONLY_TESTING" ]] || inputs+=(-f only_testing="$ONLY_TESTING")
+          gh workflow run ui-suite.yml --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF_NAME" "${inputs[@]}"
+          echo "::error::Waited the queue's limit; dispatched the same suite again, which waits its turn."
+          exit 1
 
   suite:
     name: UI suite
@@ -83,6 +102,7 @@ jobs:
       only_testing: ${{ inputs.only_testing }}
       # Strings end to end: schedule runs have no such input, so they pass "1".
       test_iterations: ${{ inputs.test_iterations || '1' }}
+      queue_attempt: ${{ needs.queue.outputs.attempt }}
 
   alert:
     # Hands a failed, unscoped suite of main's head to the fix agent: one signed POST, which files or updates a ticket

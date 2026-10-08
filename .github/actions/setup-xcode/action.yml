@@ -7,6 +7,9 @@
 # and exports IOS_SIMULATOR_OS: the newest installed iOS simulator runtime the SDK can run (major.minor). The image
 # can ship an SDK without its own runtime (Xcode 27.1's iOS 27.1 SDK beside only the iOS 27.0 runtime), so
 # simulator jobs boot and build for that runtime instead of the SDK version.
+# First, when the job's environment sets UI_SUITE_QUEUE_ATTEMPT (app-tests.yml in a queued ui-suite.yml run), it
+# fails unless that is this attempt: "Re-run failed jobs" skips the passed Queue job, so the retried macOS jobs would
+# run beside another suite (TAL-679).
 name: Set up Xcode
 description: Select an exact Xcode major.minor on a hosted macOS runner and fail if the image lacks it.
 inputs:
@@ -17,6 +20,12 @@ inputs:
 runs:
   using: composite
   steps:
+    - shell: bash
+      run: |
+        if [[ -n "${UI_SUITE_QUEUE_ATTEMPT:-}" && "${UI_SUITE_QUEUE_ATTEMPT}" != "${GITHUB_RUN_ATTEMPT}" ]]; then
+          echo "::error::This UI suite attempt skipped its queue: use Re-run all jobs, not Re-run failed jobs."
+          exit 1
+        fi
     - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
       with:
         xcode-version: ${{ inputs.xcode-version }}

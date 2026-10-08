@@ -77,4 +77,10 @@ expect wait $me
 rm -f "$work/runs.json"
 expect wait $me
 
+# Waiting past the limit exits 20 instead of running into the job's timeout.
+runs "$(run $me in_progress fix/x 'UI suite on x')" "$(run 90 queued fix/y 'UI suite on y')"
+code=0
+UI_SUITE_QUEUE_POLL_SECONDS=1 UI_SUITE_QUEUE_LIMIT_SECONDS=2 "$script" $me >/dev/null 2>&1 || code=$?
+[[ "$code" == 20 ]] || { echo "Expected exit 20 at the limit, got $code." >&2; exit 1; }
+
 echo "ui-suite-wait-turn tests passed."

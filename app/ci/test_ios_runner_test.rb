@@ -289,7 +289,8 @@ class TestIOSRunnerTest < Minitest::Test
     refute_match(/full_ui|mode: full/, workflow_text("ci.yml"))
     suite = YAML.safe_load_file(File.join(WORKFLOWS, "ui-suite.yml"), aliases: true)
     assert_equal({"mode" => "full", "ref" => "${{ inputs.ref }}", "only_testing" => "${{ inputs.only_testing }}",
-                  "test_iterations" => "${{ inputs.test_iterations || '1' }}"}, suite["jobs"]["suite"]["with"])
+                  "test_iterations" => "${{ inputs.test_iterations || '1' }}",
+                  "queue_attempt" => "${{ needs.queue.outputs.attempt }}"}, suite["jobs"]["suite"]["with"])
     assert_equal("string", suite[true]["workflow_dispatch"]["inputs"]["test_iterations"]["type"])
     # A release calls app-tests.yml directly: a called ui-suite.yml's concurrency left its jobs pending (TAL-417).
     assert_equal(%w[schedule workflow_dispatch], suite[true].keys)

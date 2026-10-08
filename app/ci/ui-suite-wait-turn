@@ -4,14 +4,15 @@
 # Unfinished runs queue by rank: priority first (a run on main, or one named "... (priority)"), then oldest run ID.
 # It is RUN_ID's turn when no unfinished run ranks ahead of it and no run behind it is already past its "Queue" job;
 # a running run from before this queue, with no "Queue" job, also counts as running. Nothing is ever cancelled.
-# --once checks once: exit 0 for its turn, 10 to wait. Polls every UI_SUITE_QUEUE_POLL_SECONDS (default 60) otherwise;
-# the job's timeout caps the wait. Read-only; ci/gh-api-poll retries transient API errors. Needs GH_TOKEN with
+# --once checks once: exit 0 for its turn, 10 to wait. Otherwise it polls every UI_SUITE_QUEUE_POLL_SECONDS
+# (default 60) and exits 20 once UI_SUITE_QUEUE_LIMIT_SECONDS (default none) have passed. Read-only; ci/gh-api-poll retries transient API errors. Needs GH_TOKEN with
 # actions: read and GITHUB_REPOSITORY.
 set -euo pipefail
 
 run=${1:?usage: ci/ui-suite-wait-turn RUN_ID [--once]}
 once=${2:-}
 poll=${UI_SUITE_QUEUE_POLL_SECONDS:-60}
+limit=${UI_SUITE_QUEUE_LIMIT_SECONDS:-0}
 api="$(dirname "$0")/gh-api-poll"
 actions="repos/${GITHUB_REPOSITORY}/actions"
 
@@ -41,5 +42,6 @@ turn() {
 
 until turn; do
   [[ "${once}" != --once ]] || exit 10
+  (( limit == 0 || SECONDS < limit )) || { echo "Waited ${limit} s."; exit 20; }
   sleep "${poll}"
 done
