@@ -2816,6 +2816,7 @@ class TalariaUITestCase: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication()
+        warmUpKeyboardOnce()
     }
 
     override func tearDownWithError() throws {
@@ -2824,7 +2825,6 @@ class TalariaUITestCase: XCTestCase {
     }
 
     func launch(arguments: [String]) {
-        warmUpKeyboardOnce()
         app.launchArguments = arguments
         app.launch()
     }
@@ -2833,8 +2833,9 @@ class TalariaUITestCase: XCTestCase {
 
     /// A freshly booted hosted simulator took up to 15 s to bring up its first software keyboard, and the system
     /// sometimes tore that keyboard down a few seconds later, dropping the composer's focus in whichever test raised
-    /// it (TAL-678). Each test process raises one keyboard in portrait and landscape before its first launch, so no
-    /// test is the first. Coordinate taps and unasserted waits: the warm-up never fails the test it runs in.
+    /// it (TAL-678). Each test process raises one keyboard in portrait and landscape in its first test's setup, so no
+    /// test is the first, and no `measure` block times it. Coordinate taps and unasserted waits: the warm-up never
+    /// fails the test it runs in.
     private func warmUpKeyboardOnce() {
         guard !Self.didWarmUpKeyboard else { return }
         Self.didWarmUpKeyboard = true
