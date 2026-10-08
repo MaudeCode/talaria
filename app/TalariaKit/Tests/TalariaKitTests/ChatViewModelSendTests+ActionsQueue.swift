@@ -682,7 +682,7 @@ extension ChatViewModelSendTests {
           }
         }
         """)
-        await drainMainActor()
+        try await waitUntil { !viewModel.isLoading }
         requests.request(at: 3).complete(withJSON: """
         {
           "session_id": "session-abc",
