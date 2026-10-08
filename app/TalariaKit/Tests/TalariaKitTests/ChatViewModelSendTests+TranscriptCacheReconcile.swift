@@ -1112,7 +1112,7 @@ extension ChatViewModelSendTests {
           }
         }
         """)
-        await drainMainActor()
+        try await waitUntil { viewModel.messageSendWaiterCount == 1 }
         requests.request(at: 2).complete(withJSON: """
         {
           "session_id": "session-abc",
@@ -1181,7 +1181,7 @@ extension ChatViewModelSendTests {
           }
         }
         """)
-        await drainMainActor()
+        try await waitUntil { viewModel.messageSendWaiterCount == 1 }
         requests.request(at: 1).complete(
             withJSON: #"{"error":"session already has an active stream","active_stream_id":"stream-existing"}"#,
             statusCode: 409
@@ -1278,7 +1278,7 @@ extension ChatViewModelSendTests {
           }
         }
         """)
-        await drainMainActor()
+        try await waitUntil { viewModel.messageSendWaiterCount == 1 }
         requests.request(at: 1).complete(
             withJSON: #"{"error":"session already has an active stream","active_stream_id":"stream-existing"}"#,
             statusCode: 409
@@ -1398,7 +1398,7 @@ extension ChatViewModelSendTests {
         await fulfillment(of: [chatStartRequestStarted], timeout: 10)
 
         requests.request(at: 0).fail(with: URLError(.timedOut))
-        await drainMainActor()
+        try await waitUntil { viewModel.messageSendWaiterCount == 1 }
         requests.request(at: 1).complete(withJSON: #"{"error":"start failed"}"#)
         let didStart = await sendTask.value
         XCTAssertFalse(didStart)
