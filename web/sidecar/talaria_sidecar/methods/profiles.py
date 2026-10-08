@@ -24,6 +24,9 @@ log = logging.getLogger("talaria_sidecar.profiles")
 _PROFILE_ID_RE = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}")
 _PROFILE_DIRS = ("skills", "memories", "sessions", "logs", "cron")
 _CLONE_CONFIG_FILES = ("config.yaml", ".env", "SOUL.md")
+_AVATAR_EXTS = ("png", "jpg", "webp")
+# The Agent's ``INTERNAL_LISTING_SOURCES``: worker sessions are never a profile's conversation.
+_INTERNAL_SOURCES = ("kanban", "tool", "oneshot")
 _TERMINAL_ENV = {
     "backend": "TERMINAL_ENV", "env_type": "TERMINAL_ENV", "cwd": "TERMINAL_CWD", "timeout": "TERMINAL_TIMEOUT", "lifetime_seconds": "TERMINAL_LIFETIME_SECONDS",
     "modal_mode": "TERMINAL_MODAL_MODE", "docker_image": "TERMINAL_DOCKER_IMAGE", "docker_forward_env": "TERMINAL_DOCKER_FORWARD_ENV", "docker_env": "TERMINAL_DOCKER_ENV",
@@ -96,6 +99,58 @@ def _visible(profile_dir: Path) -> bool:
     return not (isinstance(data, dict) and data.get("visible") is False)
 
 
+def _bounded(value, limit: int) -> str:
+    """One printable line of at most ``limit`` characters; anything but a string reads as empty."""
+    if not isinstance(value, str):
+        return ""
+    text = " ".join("".join(c if c.isprintable() else " " for c in value).split())
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + "\u2026"
+
+
+def bot_identity(home: Path) -> dict:
+    """The presentation-only Bot Mode identity from ``profile.yaml`` and ``assets/``; never the raw ``ui_meta``."""
+    meta = _yaml_load(home / "profile.yaml") or {}
+    ui_meta = meta.get("ui_meta") if isinstance(meta.get("ui_meta"), dict) else {}
+    bots = ui_meta.get("hermes-bots") if isinstance(ui_meta.get("hermes-bots"), dict) else {}
+    return {
+        # Bot Mode's roster name (``ui_meta['hermes-bots'].title``) wins over the profile's own display name.
+        "display_name": _bounded(bots.get("title"), 80) or _bounded(meta.get("display_name"), 80),
+        "description": _bounded(meta.get("description"), 280), "has_avatar": any((home / "assets" / f"avatar.{ext}").is_file() for ext in _AVATAR_EXTS),
+    }
+
+
+def canonical_bot_chat(home: Path) -> dict | None:
+    """The profile's canonical Bot Chat: its session titled exactly ``Bot Chat`` (Bot Mode's registry) and live
+    compression tip, read through a read-only handle. Missing, unreadable, archived, worker-owned, or an Agent
+    without Bot Mode answers None; the gateway's resurrection of accidental archives is a write and stays there."""
+    db_path = home / "state.db"
+    if not db_path.is_file():
+        return None
+    try:
+        from hermes_state import SessionDB
+
+        title = getattr(SessionDB, "CANONICAL_BOT_CHAT_TITLE", None)
+        if not title:
+            return None
+        db = SessionDB(db_path=db_path, read_only=True)
+    except Exception:  # noqa: BLE001
+        return None
+    try:
+        row = db.get_session_by_title(title)
+        if not row or row.get("title") != title or row.get("archived") or str(row.get("source") or "").strip().lower() in _INTERNAL_SOURCES:
+            return None
+        session_id = str(row["id"])
+        return {"session_id": session_id, "tip_session_id": str(db.get_compression_tip(session_id) or session_id)}
+    except Exception:  # noqa: BLE001
+        log.debug("canonical Bot Chat lookup failed for %s", db_path, exc_info=True)
+        return None
+    finally:
+        try:
+            db.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
 def _row(home: Path, name: str, is_default: bool) -> dict:
     from hermes_cli.profiles import _check_gateway_running, _read_config_model
 
@@ -111,6 +166,7 @@ def _row(home: Path, name: str, is_default: bool) -> dict:
     return {
         "name": name, "path": str(home), "is_default": is_default, "gateway_running": gateway_running, "model": model, "provider": provider,
         "has_env": (home / ".env").exists(), "visible": _visible(home), "skill_count": enabled, "enabled_skills": enabled, "total_skills": total,
+        **bot_identity(home), "canonical_session": canonical_bot_chat(home),
     }
 
 

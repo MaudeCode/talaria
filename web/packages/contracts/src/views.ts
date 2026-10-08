@@ -5,6 +5,7 @@
  * that must survive a round trip (documented passthrough).
  */
 import { z } from 'zod'
+import { CanonicalBotChatSchema } from './sidecar/namespaces.js'
 
 const Json = z.unknown()
 export const NullableString = z.string().nullable()
@@ -472,6 +473,10 @@ export type Settings = z.infer<typeof SettingsSchema>
 export const ProfileSchema = z.looseObject({
   name: z.string(), path: z.string().optional(), is_active: z.boolean().optional(), is_default: z.boolean().optional(), model: NullableString.optional(), provider: NullableString.optional(), skill_count: z.number().optional(),
   total_skills: z.number().optional(), enabled_skills: z.number().optional(), gateway_running: z.boolean().optional(), has_env: z.boolean().optional(), visible: z.boolean().optional(),
+  /** TAL-213: Bot Mode identity from `profile.yaml` (the bot's roster title, else the profile's display name), one bounded printable line each. */
+  display_name: z.string().optional(), description: z.string().optional(), has_avatar: z.boolean().optional(),
+  /** TAL-213: present only when the profile has a canonical Bot Chat; clients open `tip_session_id` after switching to the profile. */
+  canonical_session: CanonicalBotChatSchema.nullable().optional(),
 })
 export const ProfilesSchema = z.looseObject({ profiles: z.array(ProfileSchema), active: z.string(), single_profile_mode: z.boolean().optional() })
 export type Profiles = z.infer<typeof ProfilesSchema>

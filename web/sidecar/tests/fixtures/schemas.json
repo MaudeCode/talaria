@@ -1889,6 +1889,42 @@
               "type": "integer",
               "minimum": -9007199254740991,
               "maximum": 9007199254740991
+            },
+            "display_name": {
+              "default": "",
+              "type": "string"
+            },
+            "description": {
+              "default": "",
+              "type": "string"
+            },
+            "has_avatar": {
+              "default": false,
+              "type": "boolean"
+            },
+            "canonical_session": {
+              "default": null,
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "session_id": {
+                      "type": "string"
+                    },
+                    "tip_session_id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "session_id",
+                    "tip_session_id"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
             }
           },
           "required": [
@@ -1902,7 +1938,11 @@
             "visible",
             "skill_count",
             "enabled_skills",
-            "total_skills"
+            "total_skills",
+            "display_name",
+            "description",
+            "has_avatar",
+            "canonical_session"
           ],
           "additionalProperties": false
         }
@@ -1964,6 +2004,42 @@
             "type": "integer",
             "minimum": -9007199254740991,
             "maximum": 9007199254740991
+          },
+          "display_name": {
+            "default": "",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "type": "string"
+          },
+          "has_avatar": {
+            "default": false,
+            "type": "boolean"
+          },
+          "canonical_session": {
+            "default": null,
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "session_id": {
+                    "type": "string"
+                  },
+                  "tip_session_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "session_id",
+                  "tip_session_id"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -1977,7 +2053,11 @@
           "visible",
           "skill_count",
           "enabled_skills",
-          "total_skills"
+          "total_skills",
+          "display_name",
+          "description",
+          "has_avatar",
+          "canonical_session"
         ],
         "additionalProperties": false
       }

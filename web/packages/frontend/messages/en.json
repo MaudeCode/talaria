@@ -1758,6 +1758,7 @@
 		}
 	],
 	"profile_use": "Use",
+	"profile_open_bot_chat": "Open Bot Chat",
 	"profile_switch_title": "Switch to this profile",
 	"profile_delete_title": "Delete this profile",
 	"profile_default_label": "(default)",

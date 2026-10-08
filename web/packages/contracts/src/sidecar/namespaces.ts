@@ -101,9 +101,14 @@ export const STATE_DB_METHODS = {
 } as const
 
 // ── profiles ───────────────────────────────────────────────────────────
+/** TAL-213: the profile's canonical Bot Chat (its session titled exactly "Bot Chat") and that chat's live compression tip. */
+export const CanonicalBotChatSchema = z.object({ session_id: z.string(), tip_session_id: z.string() })
 export const ProfileRowSchema = z.object({
   name: z.string(), path: z.string(), is_default: z.boolean(), gateway_running: z.boolean(), model: z.string().nullable(), provider: z.string().nullable(), has_env: z.boolean(),
   visible: z.boolean(), skill_count: z.number().int(), enabled_skills: z.number().int(), total_skills: z.number().int(),
+  // Absent reads as no identity and no chat, so hand-built rows (test fakes) need not spell them out.
+  display_name: z.string().default(''), description: z.string().default(''), has_avatar: z.boolean().default(false),
+  canonical_session: CanonicalBotChatSchema.nullable().default(null),
 })
 export const PROFILES_METHODS = {
   'profiles.list': { params: BaseHomeParams, result: z.object({ profiles: z.array(ProfileRowSchema) }) },

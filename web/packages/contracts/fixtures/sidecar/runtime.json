@@ -2,10 +2,10 @@
   "runtime.handshake": [
     {
       "params": {
-        "rpc_version": 12
+        "rpc_version": 13
       },
       "result": {
-        "rpc_version": 12,
+        "rpc_version": 13,
         "python": "<agent>/venv/bin/python",
         "python_version": "3.11.15",
         "agent_dir": "<agent>",
@@ -25,7 +25,7 @@
     {
       "params": {},
       "result": {
-        "rpc_version": 12,
+        "rpc_version": 13,
         "python": "<agent>/venv/bin/python",
         "python_version": "3.11.15",
         "agent_dir": "<agent>",
