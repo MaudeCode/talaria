@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from '@tanstack/react-router'
 import { Plus, Trash2 } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
@@ -21,18 +20,22 @@ export function ProfilesPage() {
   const qc = useQueryClient()
   const profiles = useProfilesQuery()
   const switchProfile = useSwitchProfile()
-  const navigate = useNavigate()
   const [creating, setCreating] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
   const del = useMutation({ mutationFn: (name: string) => api.deleteProfile(name), onSuccess: () => { showToast(m.profile_deleted_toast()); void qc.invalidateQueries({ queryKey: keys.profiles }) }, onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error') })
   const list = profiles.data?.profiles ?? []
   const active = profiles.data?.active
-  // TAL-213: the server resolves each profile's canonical Bot Chat; opening it switches to that profile first.
-  const openBotChat = (name: string, chat: { tip_session_id: string } | null | undefined) => {
-    if (!chat) return
-    const sessionId = chat.tip_session_id
-    if (name === active) { void navigate({ to: '/session/$sessionId', params: { sessionId } }); return }
-    switchProfile.mutate(name, { onSuccess: () => { window.location.assign(appUrl(`session/${encodeURIComponent(sessionId)}`).href) }, onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error') })
+  // TAL-213: the server resolves each profile's canonical Bot Chat. Opening it always reasserts the profile (another tab
+  // may have moved the shared cookie) and opens the chat from the row the switch just resolved.
+  const openBotChat = (name: string) => {
+    switchProfile.mutate(name, {
+      onSuccess: (res) => {
+        const sessionId = res.profiles.find((p) => p.name === name)?.canonical_session?.tip_session_id
+        if (sessionId) window.location.assign(appUrl(`session/${encodeURIComponent(sessionId)}`).href)
+        else window.location.reload()
+      },
+      onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error'),
+    })
   }
   return (
     <HubPage title={m.tab_profiles()} help={<ProfileConceptHelp />} actions={!profiles.data?.single_profile_mode && <PanelHeadButton label={m.profile_create()} className="primary" onClick={() => setCreating(true)}><Plus size={16} aria-hidden="true" /></PanelHeadButton>}>
@@ -60,7 +63,7 @@ export function ProfilesPage() {
                 </div>
               </div>
               <div className="ml-auto flex items-center gap-3">
-                {p.canonical_session && <Button onClick={() => openBotChat(p.name, p.canonical_session)} disabled={switchProfile.isPending}>{m.profile_open_bot_chat()}</Button>}
+                {p.canonical_session && <Button onClick={() => openBotChat(p.name)} disabled={switchProfile.isPending}>{m.profile_open_bot_chat()}</Button>}
                 {!isActive && <Button onClick={() => switchProfile.mutate(p.name, { onSuccess: () => { showToast(m.profile_switched({ name: p.name })); window.location.reload() } })} title={m.profile_switch_title()}>{m.profile_use()}</Button>}
                 {!p.is_default && !isActive && <IconButton label={m.profile_delete_title()} onClick={() => setDeleting(p.name)}><Trash2 size={14} aria-hidden="true" /></IconButton>}
               </div>

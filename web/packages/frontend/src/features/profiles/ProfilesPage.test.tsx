@@ -13,7 +13,7 @@ vi.mock(import('../../api/endpoints'), async (importOriginal) => ({
     active: 'default',
     single_profile_mode: false,
   })),
-  switchProfile: vi.fn(() => Promise.resolve({ profiles: [], active: 'scout', is_default: false, default_model: null, default_model_provider: null, default_workspace: null })),
+  switchProfile: vi.fn(() => Promise.resolve({ profiles: [{ name: 'scout', canonical_session: { session_id: 'scout-root', tip_session_id: 'scout-live' } }], active: 'scout', is_default: false, default_model: null, default_model_provider: null, default_workspace: null })),
 }))
 import * as api from '../../api/endpoints'
 import { ProfilesPage } from './ProfilesPage'
@@ -45,7 +45,8 @@ describe('ProfilesPage', () => {
       expect(within(plain).queryByRole('button', { name: 'Open Bot Chat' })).not.toBeInTheDocument()
       await userEvent.click(within(scout).getByRole('button', { name: 'Open Bot Chat' }))
       expect(api.switchProfile).toHaveBeenCalledWith('scout')
-      await vi.waitFor(() => { expect(assign).toHaveBeenCalledWith(expect.stringMatching(/\/session\/scout-tip$/)) })
+      // The chat opens from the row the switch resolved, not the cached listing.
+      await vi.waitFor(() => { expect(assign).toHaveBeenCalledWith(expect.stringMatching(/\/session\/scout-live$/)) })
     } finally {
       vi.unstubAllGlobals()
     }
