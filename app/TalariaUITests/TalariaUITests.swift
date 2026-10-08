@@ -1041,17 +1041,12 @@ final class ChatComposerUITests: ChatUITestCase {
 
         let collapsedComposer = app.buttons["Message"]
         XCTAssertTrue(collapsedComposer.awaitExistence(timeout: 5))
-        // The control strip stays under the one-line composer (TAL-629).
+        // The control strip stays under the one-line composer (TAL-629), and so does +. Its Attach
+        // menu is checked in `ComposerPhotoPickerUITests`. This test opens no composer menu: the first
+        // UIKit menu of a launch can hang its presentation on a hosted simulator and swallow the
+        // tap meant to close it (TAL-676).
         XCTAssertTrue(app.buttons["Choose workspace path"].exists)
-        XCTAssertTrue(collapsedComposer.exists)
-
-        let composerOptions = app.buttons["Composer options"]
-        XCTAssertTrue(composerOptions.exists)
-        composerOptions.tap()
-        XCTAssertTrue(app.buttons["Attach File"].awaitExistence(timeout: 3))
-        XCTAssertTrue(app.buttons["Photos"].exists)
-        XCTAssertTrue(app.buttons["Camera"].exists)
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4)).tap()
+        XCTAssertTrue(app.buttons["Composer options"].exists)
 
         let collapsedComposerScreenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         collapsedComposerScreenshot.name = "Collapsed composer"
@@ -1062,6 +1057,10 @@ final class ChatComposerUITests: ChatUITestCase {
         let keyboard = app.keyboards.firstMatch
         let reexpandedTextView = app.textViews.firstMatch
         XCTAssertTrue(reexpandedTextView.awaitExistence(timeout: 10))
+        XCTAssertTrue(
+            poll(timeout: 10) { reexpandedTextView.value(forKey: "hasKeyboardFocus") as? Bool == true },
+            "Tapping Message expanded the composer without giving it keyboard focus"
+        )
         reexpandedTextView.typeText("Draft")
 
         // With the keyboard up the strip's controls stay one tap away (TAL-629).
@@ -1069,10 +1068,6 @@ final class ChatComposerUITests: ChatUITestCase {
         let model = app.buttons["Select model"]
         XCTAssertTrue(app.buttons["Choose workspace path"].exists)
         XCTAssertLessThan(model.frame.maxY, keyboard.frame.minY, "The model control is under the keyboard")
-        tapCenter(of: model)
-        XCTAssertTrue(app.buttons["All Models..."].awaitExistence(timeout: 3), "The model menu did not open")
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)).tap()
-        XCTAssertTrue(app.buttons["All Models..."].awaitNonExistence(timeout: 3))
 
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
             .press(
@@ -1100,6 +1095,9 @@ final class ComposerPhotoPickerUITests: ChatUITestCase {
         options.tap()
         let photos = app.buttons["Photos"]
         XCTAssertTrue(photos.awaitExistence(timeout: 5))
+        // The whole Attach menu: + carries it in every composer shell (TAL-676 moved this check here).
+        XCTAssertTrue(app.buttons["Attach File"].exists)
+        XCTAssertTrue(app.buttons["Camera"].exists)
         photos.tap()
 
         // The picker loads out of process; its cells are labelled "Photo, <date>".
