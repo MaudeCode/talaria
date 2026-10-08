@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Repeating an earlier prompt such as \"continue\" no longer disappears from the bottom of the chat when it reloads mid-response.",
+      "highlight": false
+    }
+  ]
+}

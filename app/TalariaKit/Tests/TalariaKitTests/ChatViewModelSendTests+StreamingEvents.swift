@@ -312,6 +312,7 @@ extension ChatViewModelSendTests {
     func testLoadMessagesClearsPendingStreamingBuffersBeforeReload() async throws {
         let streamClient = SpySSEStreamingClient()
         streamClient.automaticallyFlushPendingStreamingContent = false
+        let now = serverNow
         let viewModel = try makeViewModel(streamClient: streamClient) { request in
             switch request.url?.path {
             case "/api/chat/start":
@@ -332,13 +333,13 @@ extension ChatViewModelSendTests {
                       {
                         "role": "user",
                         "content": "Keep working",
-                        "timestamp": 1770000100,
+                        "timestamp": \(now),
                         "message_id": "user-1"
                       },
                       {
                         "role": "assistant",
                         "content": "From server.",
-                        "timestamp": 1770000101,
+                        "timestamp": \(now + 1),
                         "message_id": "assistant-1"
                       }
                     ]

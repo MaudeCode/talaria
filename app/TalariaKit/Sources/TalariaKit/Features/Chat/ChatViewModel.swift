@@ -1415,15 +1415,11 @@ public final class ChatViewModel {
                 // No persistence context, so the cache merge above cannot run and an
                 // optimistic prompt the server has not persisted yet would vanish.
                 // The same run is still authoritative, so carry it across the reload.
-                // Without a cache there is nothing to tell a fresh prompt from an old
-                // identical one, so any equivalent user message counts as confirmation:
-                // dropping a duplicate is what this path already did, showing one twice
-                // is not. A different (or finished) run owns the transcript, so its
-                // rows win instead.
+                // A different (or finished) run owns the transcript, so its rows win
+                // instead.
                 reloadedMessages = Self.insertingUnconfirmedLocalUserMessages(
                     from: previousMessages,
-                    into: loadedMessages,
-                    requiresRecentTimestamp: false
+                    into: loadedMessages
                 )
             } else {
                 reloadedMessages = loadedMessages
@@ -1842,8 +1838,7 @@ public final class ChatViewModel {
         )
         return insertingUnconfirmedLocalUserMessages(
             from: cachedMessages,
-            into: mergedMessages,
-            requiresRecentTimestamp: true
+            into: mergedMessages
         )
     }
 
@@ -1851,16 +1846,14 @@ public final class ChatViewModel {
     /// confirmed yet, so a prompt in flight renders exactly once.
     nonisolated private static func insertingUnconfirmedLocalUserMessages(
         from localMessages: [ChatMessage],
-        into loadedMessages: [ChatMessage],
-        requiresRecentTimestamp: Bool
+        into loadedMessages: [ChatMessage]
     ) -> [ChatMessage] {
         let unconfirmedMessages = localMessages.filter { localMessage in
             isLocalOptimisticUserMessage(localMessage)
                 && !localMessage.isLocalSteeringHint
                 && !loadedMessagesContainEquivalentUserMessage(
                     loadedMessages,
-                    localMessage: localMessage,
-                    requiresRecentTimestamp: requiresRecentTimestamp
+                    localMessage: localMessage
                 )
         }
 
@@ -2275,8 +2268,7 @@ public final class ChatViewModel {
 
     nonisolated private static func loadedMessagesContainEquivalentUserMessage(
         _ loadedMessages: [ChatMessage],
-        localMessage: ChatMessage,
-        requiresRecentTimestamp: Bool = true
+        localMessage: ChatMessage
     ) -> Bool {
         let localContent = normalizedUserMessageContent(localMessage)
         let localAttachmentKeys = attachmentKeys(for: localMessage)
@@ -2301,8 +2293,8 @@ public final class ChatViewModel {
                 }
             }
 
-            guard requiresRecentTimestamp,
-                  let localTimestamp = localMessage.timestamp,
+            // An older identical prompt ("continue") must not confirm a newer one.
+            guard let localTimestamp = localMessage.timestamp,
                   let loadedTimestamp = loadedMessage.timestamp
             else {
                 return true

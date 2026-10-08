@@ -121,6 +121,7 @@ extension ChatViewModelSendTests {
         let streamClient = SpySSEStreamingClient()
         var didRequestStatus = false
         var didReloadMessages = false
+        let now = serverNow
         let viewModel = try makeViewModel(streamClient: streamClient) { request in
             switch request.url?.path {
             case "/api/chat/start":
@@ -150,13 +151,13 @@ extension ChatViewModelSendTests {
                       {
                         "role": "user",
                         "content": "Keep working",
-                        "timestamp": 1770000100,
+                        "timestamp": \(now),
                         "message_id": "user-1"
                       },
                       {
                         "role": "assistant",
                         "content": "First middle ",
-                        "timestamp": 1770000101,
+                        "timestamp": \(now + 1),
                         "message_id": "assistant-1"
                       }
                     ]
@@ -184,6 +185,38 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(streamClient.startedURLs.count, 2)
         XCTAssertEqual(viewModel.messages.compactMap(\.content), ["Keep working", "First middle last."])
         XCTAssertEqual(viewModel.messages.filter { $0.role == "assistant" }.count, 1)
+    }
+
+    @MainActor
+    func testContextlessReloadKeepsRepeatedPromptOverOlderIdenticalTurn() async throws {
+        let olderTurn = serverNow - 3_600
+        let viewModel = try makeViewModel { request in
+            switch request.url?.path {
+            case "/api/chat/start":
+                return apiTestJSONResponse(#"{"session_id": "session-abc", "stream_id": "stream-123"}"#, for: request)
+            case "/api/session":
+                return apiTestJSONResponse("""
+                {"session": {"session_id": "session-abc", "title": "Planning", "active_stream_id": "stream-123",
+                  "messages": [
+                    {"role": "user", "content": "continue", "timestamp": \(olderTurn), "message_id": "user-1"},
+                    {"role": "assistant", "content": "Earlier answer.", "timestamp": \(olderTurn + 1), "message_id": "assistant-1"}
+                  ]}}
+                """, for: request)
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        let didStart = await viewModel.sendMessage("continue")
+        XCTAssertTrue(didStart)
+        await viewModel.loadMessages()
+
+        let loadedRows = viewModel.messages.prefix(3)
+        XCTAssertEqual(loadedRows.compactMap(\.content), ["continue", "Earlier answer.", "continue"])
+        XCTAssertEqual(loadedRows.first?.messageId, "user-1")
+        XCTAssertEqual(loadedRows.last?.messageId?.hasPrefix("local-"), true)
+        XCTAssertEqual(viewModel.messages.filter { $0.role == "user" }.count, 2)
     }
 
     @MainActor
@@ -1342,6 +1375,7 @@ extension ChatViewModelSendTests {
     @MainActor
     func testOldServerFallbackKeepsTheUsersPendingSteeringHint() async throws {
         let streamClient = SpySSEStreamingClient()
+        let now = serverNow
         let viewModel = try makeViewModel(streamClient: streamClient) { request in
             switch request.url?.path {
             case "/api/chat/start":
@@ -1356,10 +1390,10 @@ extension ChatViewModelSendTests {
                     "session_id": "session-abc",
                     "title": "Planning",
                     "active_stream_id": "stream-123",
-                    "pending_started_at": 1770000100,
+                    "pending_started_at": \(now),
                     "messages": [
-                      { "role": "user", "content": "Initial request", "timestamp": 1770000100, "message_id": "user-1" },
-                      { "role": "assistant", "content": "Before hint. ", "timestamp": 1770000101, "message_id": "assistant-1" }
+                      { "role": "user", "content": "Initial request", "timestamp": \(now), "message_id": "user-1" },
+                      { "role": "assistant", "content": "Before hint. ", "timestamp": \(now + 1), "message_id": "assistant-1" }
                     ]
                   }
                 }
