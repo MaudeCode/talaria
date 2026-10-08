@@ -3062,7 +3062,10 @@ extension TalariaUITestCase {
     }
 
     func tapSettingsRow(label: String) {
-        let row = app.buttons[label]
+        // The category just tapped stays in the tree while its page pushes, and Providers' row shares its label.
+        let row = app.buttons
+            .matching(NSPredicate(format: "label == %@ AND NOT (identifier BEGINSWITH %@)", label, "settings-category-"))
+            .firstMatch
         let bottom = app.frame.maxY
         repeatStep(12, until: { row.exists && row.frame.maxY <= bottom }) {
             app.swipeUp()
