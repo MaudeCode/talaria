@@ -2824,8 +2824,39 @@ class TalariaUITestCase: XCTestCase {
     }
 
     func launch(arguments: [String]) {
+        warmUpKeyboardOnce()
         app.launchArguments = arguments
         app.launch()
+    }
+
+    private static var didWarmUpKeyboard = false
+
+    /// A freshly booted hosted simulator took up to 15 s to bring up its first software keyboard, and the system
+    /// sometimes tore that keyboard down a few seconds later, dropping the composer's focus in whichever test raised
+    /// it (TAL-678). Each test process raises one keyboard in portrait and landscape before its first launch, so no
+    /// test is the first. Coordinate taps and unasserted waits: the warm-up never fails the test it runs in.
+    private func warmUpKeyboardOnce() {
+        guard !Self.didWarmUpKeyboard else { return }
+        Self.didWarmUpKeyboard = true
+        XCTContext.runActivity(named: "Warm up the software keyboard (TAL-678)") { _ in
+            let orientation = XCUIDevice.shared.orientation
+            defer {
+                app.terminate()
+                XCUIDevice.shared.orientation = orientation
+            }
+            XCUIDevice.shared.orientation = .portrait
+            app.launchArguments = fixtureLaunchArguments
+            app.launch()
+            guard fixtureSessionButton.awaitExistence(timeout: 30) else { return }
+            fixtureSessionButton.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            guard let composer = waitForComposer(timeout: 30) else { return }
+            composer.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            let keyboard = app.keyboards.firstMatch
+            for orientation in [UIDeviceOrientation.portrait, .landscapeLeft, .portrait] {
+                XCUIDevice.shared.orientation = orientation
+                _ = keyboard.awaitExistence(timeout: 30)
+            }
+        }
     }
 
     func launchFixture(additionalArguments: [String] = []) {
