@@ -17,6 +17,8 @@ final class ProvidersViewModel {
     private(set) var errorMessage: String?
     private(set) var quotaSources: [ProviderQuotaSource] = []
     private(set) var hasStableQuotaSources = false
+    /// True once a server list arrived; a cached snapshot alone leaves it false.
+    private(set) var hasServerQuotaSources = false
     private(set) var isQuotaLoading = false
     private(set) var refreshingQuotaSourceIDs: Set<String> = []
     private(set) var quotaErrorMessage: String?
@@ -219,6 +221,7 @@ final class ProvidersViewModel {
             + quotaSources.filter { newerIDs.contains($0.id) && !incomingIDs.contains($0.id) }
         targetedQuotaRefreshSequences = targetedQuotaRefreshSequences.filter { $0.value > sequence }
         hasStableQuotaSources = true
+        hasServerQuotaSources = true
         quotaProfileID = response.profileID
         quotaScopeID = response.scopeID
         persistQuotaWidgetSnapshot()

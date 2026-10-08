@@ -36,8 +36,10 @@ struct AppSidebarDrawer: View {
                     .frame(minHeight: viewportHeight, alignment: .top)
             }
             .scrollBounceBehavior(.basedOnSize)
+            // The container already excludes the content insets; subtracting them again left a
+            // gap the height of the top safe area under the quota rows once the drawer opened (TAL-663).
             .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                geometry.containerSize.height - geometry.contentInsets.top - geometry.contentInsets.bottom
+                geometry.containerSize.height
             } action: { _, height in
                 viewportHeight = height
             }

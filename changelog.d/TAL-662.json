@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Pinning a provider quota to the sidebar works again when an earlier pin belonged to a hidden or removed provider.",
+      "highlight": false
+    }
+  ]
+}

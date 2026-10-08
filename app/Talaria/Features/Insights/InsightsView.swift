@@ -68,7 +68,15 @@ struct InsightsView: View {
                 quotaScrollPosition = initialQuotaSourceID
                 await refreshPendingWidgetSourceIfNeeded()
             }
-            .onChange(of: quotaViewModel.quotaSources.map(\.id)) {
+            // Also runs on appearance and when a pin syncs in or a provider is hidden.
+            .onChange(
+                of: [
+                    visibleQuotaSources.map(\.id),
+                    [firstSidebarQuotaSourceID, secondSidebarQuotaSourceID],
+                    [String(quotaViewModel.hasServerQuotaSources)],
+                ],
+                initial: true
+            ) {
                 pruneSidebarQuotaPins()
             }
             // Joins the shared quota schedule while Insights is visible and active:
@@ -397,20 +405,23 @@ struct InsightsView: View {
         pruneSidebarQuotaPins()
     }
 
-    /// Also runs when the shared periodic refresh changes the source list.
+    /// Releases pins Insights cannot show, so a hidden or vanished source never holds a slot.
     private func pruneSidebarQuotaPins() {
         guard quotaViewModel.hasStableQuotaSources else { return }
-        let currentIDs = Set(quotaViewModel.quotaSources.map(\.id))
-        if !firstSidebarQuotaSourceID.isEmpty, !currentIDs.contains(firstSidebarQuotaSourceID) {
-            firstSidebarQuotaSourceID = ""
+        let pinnedIDs = pinnedSidebarSourceIDs
+        var keeping = Set(visibleQuotaSources.map(\.id))
+        if !quotaViewModel.hasServerQuotaSources {
+            // A cached list cannot prove a synced pin's source is gone; only the server's can.
+            let cachedIDs = Set(quotaViewModel.quotaSources.map(\.id))
+            keeping.formUnion(pinnedIDs.filter { !cachedIDs.contains($0) })
         }
-        if !secondSidebarQuotaSourceID.isEmpty, !currentIDs.contains(secondSidebarQuotaSourceID) {
-            secondSidebarQuotaSourceID = ""
-        }
-        if firstSidebarQuotaSourceID.isEmpty, !secondSidebarQuotaSourceID.isEmpty {
-            firstSidebarQuotaSourceID = secondSidebarQuotaSourceID
-            secondSidebarQuotaSourceID = ""
-        }
+        let kept = ProviderQuotaSidebarSettings.pruned(
+            first: firstSidebarQuotaSourceID,
+            second: secondSidebarQuotaSourceID,
+            keeping: keeping
+        )
+        if firstSidebarQuotaSourceID != kept.first { firstSidebarQuotaSourceID = kept.first }
+        if secondSidebarQuotaSourceID != kept.second { secondSidebarQuotaSourceID = kept.second }
     }
 
     private func loadInsights() async {

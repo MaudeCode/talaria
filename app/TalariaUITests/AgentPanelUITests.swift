@@ -403,3 +403,22 @@ final class AgentPanelLiveRefreshUITests: AgentPanelUITestCase {
         )
     }
 }
+
+final class SidebarQuotaUITests: AgentPanelUITestCase {
+    /// A pinned quota sits directly above Settings once the drawer is fully open (TAL-663).
+    func testPinnedQuotaSitsAboveSettingsInOpenSidebar() {
+        launchPanelFixture(
+            "--ui-test-fixture",
+            additionalArguments: ["-\(Self.firstSidebarSourceKey)", "ui-fixture-source"]
+        )
+        openPanel("Insights")
+        let sidebar = openSidebar()
+        let quota = sidebar.descendants(matching: .any)["app-sidebar-quota-ui-fixture-source"].firstMatch
+        XCTAssertTrue(quota.awaitExistence(timeout: Self.navigationTimeout), "The pinned quota is missing from the sidebar")
+        let gap = sidebar.buttons["Settings"].firstMatch.settledFrame.minY - quota.settledFrame.maxY
+        attachScreenshot(named: "sidebar-pinned-quota")
+        XCTAssertLessThan(gap, 60, "A blank gap opened between the pinned quota and Settings")
+    }
+
+    private static let firstSidebarSourceKey = "providerQuotaSidebar.source1"
+}
