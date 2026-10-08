@@ -49,6 +49,8 @@ struct UITestFixtureEnvironment {
     nonisolated static let backgroundUpdatesArgument = "--ui-test-background-updates"
     /// Serves a compacted chat whose reference card the server placed after its second row (TAL-560).
     nonisolated static let compressionReferenceArgument = "--ui-test-compression-reference"
+    /// TAL-149: 100 messages paged by `msg_before`, each reply with a Worked disclosure, so Load Older has history.
+    nonisolated static let olderMessagesArgument = "--ui-test-older-messages"
     /// Adds a pinned long-titled chat and scheduled and webhook groups whose server counts say
     /// more exist than are listed, so the sidebar's row and group chrome can be inspected (TAL-482).
     nonisolated static let sidebarVarietyArgument = "--ui-test-sidebar-variety"
@@ -131,6 +133,9 @@ struct UITestFixtureEnvironment {
     }
     nonisolated static var hasCompressionReference: Bool {
         ProcessInfo.processInfo.arguments.contains(compressionReferenceArgument)
+    }
+    nonisolated static var hasOlderMessages: Bool {
+        ProcessInfo.processInfo.arguments.contains(olderMessagesArgument)
     }
     nonisolated static var hasSidebarVariety: Bool {
         ProcessInfo.processInfo.arguments.contains(sidebarVarietyArgument)
@@ -717,6 +722,8 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         case "/api/sessions/bulk":
             let ids = requestJSON(request)["session_ids"] as? [String] ?? []
             return json(["results": ids.map { ["session_id": $0, "ok": true] }])
+        case "/api/session" where UITestFixtureEnvironment.hasOlderMessages:
+            return pagedSessionResponse(url)
         case "/api/session":
             return UITestChatScenario.current == nil ? sessionResponse() : chatSessionResponse()
         case "/api/media" where UITestFixtureEnvironment.hasTranscriptMedia:
@@ -997,6 +1004,34 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         var detail = session(id: sessionID, title: sessionTitle)
         detail["messages"] = messages
         return json(["session": detail])
+    }
+
+    /// The page ending before `msg_before` (the newest page without it), with its `_messages_offset`.
+    private static func pagedSessionResponse(_ url: URL) -> Data {
+        let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        func value(_ name: String) -> Int? { query.first { $0.name == name }?.value.flatMap(Int.init) }
+        let end = min(value("msg_before") ?? pagedMessages.count, pagedMessages.count)
+        let start = max(0, end - (value("msg_limit") ?? pagedMessages.count))
+        var detail = session(id: sessionID, title: sessionTitle)
+        detail["messages"] = Array(pagedMessages[start..<end])
+        detail["message_count"] = pagedMessages.count
+        detail["_messages_offset"] = start
+        return json(["session": detail])
+    }
+
+    private static let pagedMessages: [[String: Any]] = (0..<50).flatMap { turn -> [[String: Any]] in
+        let answer = "Paged answer \(turn + 1)."
+        let thinking = (1...8).map { "Paged reasoning \(turn + 1), line \($0)." }.joined(separator: "\n")
+        return [
+            ["role": "user", "content": "Paged prompt \(turn + 1)", "message_id": "paged-user-\(turn)", "_turn_id": "paged-\(turn)", "_ts": 2_000_000_000 + turn * 2],
+            [
+                "role": "assistant", "content": answer, "message_id": "paged-reply-\(turn)", "_turn_id": "paged-\(turn)", "_ts": 2_000_000_001 + turn * 2,
+                "_anchor_activity_scene": [
+                    "version": "activity_scene_v1", "final_answer": answer, "terminal_state": "completed",
+                    "activity_rows": [["row_id": "paged-thinking-\(turn)", "order_index": 0, "role": "reasoning", "text": thinking, "titles": ["Paging"]]]
+                ] as [String: Any]
+            ]
+        ]
     }
 
     static let backgroundResultText = "The repo has three packages."

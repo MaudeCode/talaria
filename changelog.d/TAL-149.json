@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Expanding a section right after loading older messages keeps that message in place instead of scrolling it upward.",
+      "highlight": false
+    }
+  ]
+}
