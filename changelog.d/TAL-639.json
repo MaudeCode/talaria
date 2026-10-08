@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Opening an existing chat no longer briefly shows the default workspace in the Files panel and then closes the file or dialog you just opened.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

@@ -107,3 +107,28 @@ test('the Files page creates, renames, moves and deletes workspace entries', asy
   rmSync(workspace, { recursive: true, force: true })
   errors.splice(0, errors.length, ...errors.filter((e) => !/400 POST .*\/api\/file\/(create|delete)$|status of 400/.test(e)))
 })
+
+/** TAL-639: until an existing chat's record loads, the Files page names no workspace, so the session's workspace arriving never remounts it. */
+test('the Files page waits for the session record instead of showing the default workspace', async ({ page }, testInfo) => {
+  const workspace = realpathSync(mkdtempSync(join(tmpdir(), 'tal639-')))
+  writeFileSync(join(workspace, 'seed.txt'), 'seed text')
+  expect((await page.request.post('/api/workspaces/add', { data: { path: workspace } })).ok()).toBe(true)
+  const created = (await (await page.request.post('/api/session/new', { data: { workspace } })).json()) as { session: { session_id: string } }
+  const { promise: loaded, resolve: release } = Promise.withResolvers<undefined>()
+  await page.route('**/api/session?**', async (route) => { await loaded; await route.continue() })
+
+  await page.goto(`/session/${created.session.session_id}`)
+  if (testInfo.project.name === 'mobile') await page.locator('#btnTitlebarSidePanel').click()
+  else await page.getByRole('button', { name: 'Show workspace panel' }).click()
+  await page.getByRole('tablist', { name: 'Side panel' }).getByRole('tab', { name: 'Files' }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'This chat has no workspace.' })).toBeVisible()
+  await expect(page.locator('[data-files-toolbar]')).toHaveCount(0)
+
+  release(undefined)
+  await expect(page.locator('[data-files-toolbar]')).toContainText(workspace)
+  await page.getByRole('tree', { name: 'Files' }).getByRole('treeitem', { name: 'seed.txt', exact: true }).click()
+  await expect(page.getByRole('textbox', { name: 'Preview' })).toHaveValue('seed text')
+
+  await page.request.post('/api/workspaces/remove', { data: { path: workspace } })
+  rmSync(workspace, { recursive: true, force: true })
+})
