@@ -24,7 +24,7 @@ export const COMMIT_MESSAGE_DIFF_LIMIT = 64 * 1024
 export const WORKSPACE_GIT_DESTRUCTIVE_ENV = 'HERMES_WEBUI_WORKSPACE_GIT_DESTRUCTIVE'
 export const WORKSPACE_BUSY_MESSAGE = 'A Git operation is running in this workspace.'
 export const WORKSPACE_WRITE_BUSY_MESSAGE = 'A file operation is running in this workspace.'
-const GIT_ENV_SCRUB_KEYS = ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM', 'GIT_CONFIG_COUNT', 'GIT_CONFIG_PARAMETERS', 'GIT_ASKPASS', 'SSH_ASKPASS', 'GIT_SSH', 'GIT_SSH_COMMAND']
+const GIT_ENV_SCRUB_KEYS = ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM', 'GIT_CONFIG_COUNT', 'GIT_CONFIG_PARAMETERS', 'GIT_ASKPASS', 'SSH_ASKPASS', 'GIT_SSH', 'GIT_SSH_COMMAND', 'GIT_GLOB_PATHSPECS', 'GIT_NOGLOB_PATHSPECS', 'GIT_ICASE_PATHSPECS']
 const GIT_ENV_SCRUB_PREFIXES = ['GIT_CONFIG_KEY_', 'GIT_CONFIG_VALUE_']
 const BRANCH_SWITCH_STASH_PREFIX = 'hermes-webui branch switch'
 const GIT_HARDENED_CONFIG: [string, string][] = [
@@ -243,6 +243,8 @@ export class GitRunner {
     for (const key of GIT_ENV_SCRUB_KEYS) Reflect.deleteProperty(env, key)
     for (const key of Object.keys(env)) if (GIT_ENV_SCRUB_PREFIXES.some((p) => key.startsWith(p))) Reflect.deleteProperty(env, key)
     env.GIT_TERMINAL_PROMPT = '0'
+    // Every pathspec here is a resolved file path; a glob reading would let `a\b.txt` also match `ab.txt`.
+    env.GIT_LITERAL_PATHSPECS = '1'
     return env
   }
 
@@ -404,12 +406,12 @@ export class GitRunner {
     return rel || '.'
   }
 
+  /** Git and `repoRel` both separate with `/`; a backslash is a literal POSIX filename character, never a separator. */
   private static workspaceRel(ctx: GitContext, repoRel: string): string | null {
-    const normalized = repoRel.replace(/\\/g, '/')
-    if (!ctx.workspacePrefix) return normalized
+    if (!ctx.workspacePrefix) return repoRel
     const prefix = `${ctx.workspacePrefix.replace(/\/+$/, '')}/`
-    if (normalized === ctx.workspacePrefix) return '.'
-    if (normalized.startsWith(prefix)) return normalized.slice(prefix.length)
+    if (repoRel === ctx.workspacePrefix) return '.'
+    if (repoRel.startsWith(prefix)) return repoRel.slice(prefix.length)
     return null
   }
 

@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The Web Git panel shows, diffs, stages, commits, and discards files with a backslash in their name instead of treating it as a folder.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
