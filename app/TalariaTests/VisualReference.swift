@@ -134,9 +134,22 @@ enum VisualReference {
                 .environment(\.dynamicTypeSize, dynamicTypeSize)
                 .environment(\.locale, Locale(identifier: "en_US"))
         )
-        renderer.scale = 2
-        renderer.isOpaque = true
-        return try XCTUnwrap(renderer.cgImage, "ImageRenderer produced no image")
+        // `renderer.cgImage` draws its pixels lazily on the GPU; on a cold simulator a slow
+        // pipeline build outlasted that wait and the comparison read an unfinished image
+        // (TAL-675). Drawing into a bitmap this harness owns finishes before it returns.
+        let scale = 2
+        let width = Int(size.width) * scale
+        let height = Int(size.height) * scale
+        var buffer = [UInt8](repeating: 0, count: width * height * 4)
+        let image = buffer.withUnsafeMutableBytes { raw -> CGImage? in
+            guard let context = makeContext(raw.baseAddress, width: width, height: height) else { return nil }
+            renderer.render(rasterizationScale: CGFloat(scale)) { _, draw in
+                context.scaleBy(x: CGFloat(scale), y: CGFloat(scale))
+                draw(context)
+            }
+            return context.makeImage()
+        }
+        return try XCTUnwrap(image, "ImageRenderer produced no image")
     }
 
     private static var isRecording: Bool {
