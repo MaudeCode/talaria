@@ -134,22 +134,30 @@ enum VisualReference {
                 .environment(\.dynamicTypeSize, dynamicTypeSize)
                 .environment(\.locale, Locale(identifier: "en_US"))
         )
-        // `renderer.cgImage` draws its pixels lazily on the GPU; on a cold simulator a slow
-        // pipeline build outlasted that wait and the comparison read an unfinished image
-        // (TAL-675). Drawing into a bitmap this harness owns finishes before it returns.
-        let scale = 2
-        let width = Int(size.width) * scale
-        let height = Int(size.height) * scale
-        var buffer = [UInt8](repeating: 0, count: width * height * 4)
-        let image = buffer.withUnsafeMutableBytes { raw -> CGImage? in
-            guard let context = makeContext(raw.baseAddress, width: width, height: height) else { return nil }
-            renderer.render(rasterizationScale: CGFloat(scale)) { _, draw in
-                context.scaleBy(x: CGFloat(scale), y: CGFloat(scale))
-                draw(context)
+        renderer.scale = 2
+        renderer.isOpaque = true
+        let lazyImage = try XCTUnwrap(renderer.cgImage, "ImageRenderer produced no image")
+        return try settledPixels(of: lazyImage)
+    }
+
+    /// `ImageRenderer.cgImage` draws its pixels lazily on the GPU. On a cold simulator a slow
+    /// pipeline build outlasted the image provider's wait, so the first read returned an
+    /// unfinished image (TAL-675). Reads until two in a row agree, turning the run loop in
+    /// between, so comparison, attachments and recording all see the finished pixels.
+    /// ponytail: two equal unfinished reads would still pass; a bounded wait covers the
+    /// observed 10 s pipeline build.
+    @MainActor
+    private static func settledPixels(of lazyImage: CGImage) throws -> CGImage {
+        var previous = try pixels(of: lazyImage)
+        for _ in 0..<20 {
+            var current = try pixels(of: lazyImage)
+            if current == previous {
+                return try image(from: &current, width: lazyImage.width, height: lazyImage.height)
             }
-            return context.makeImage()
+            previous = current
+            RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.5))
         }
-        return try XCTUnwrap(image, "ImageRenderer produced no image")
+        throw VisualReferenceError.renderNeverSettled
     }
 
     private static var isRecording: Bool {
@@ -261,8 +269,14 @@ enum VisualReference {
 
 enum VisualReferenceError: Error, CustomStringConvertible {
     case bitmapContextUnavailable
+    case renderNeverSettled
 
     var description: String {
-        "Could not create the bitmap context used to compare visual references."
+        switch self {
+        case .bitmapContextUnavailable:
+            "Could not create the bitmap context used to compare visual references."
+        case .renderNeverSettled:
+            "ImageRenderer kept returning different pixels for 10 seconds."
+        }
     }
 }
