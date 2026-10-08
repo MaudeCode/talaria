@@ -1417,15 +1417,12 @@ public final class ChatViewModel {
                 // No persistence context, so the cache merge above cannot run and an
                 // optimistic prompt the server has not persisted yet would vanish.
                 // The same run is still authoritative, so carry it across the reload.
-                // Without a cache there is nothing to tell a fresh prompt from an old
-                // identical one, so any equivalent user message counts as confirmation:
-                // dropping a duplicate is what this path already did, showing one twice
-                // is not. A different (or finished) run owns the transcript, so its
-                // rows win instead.
+                // A different (or finished) run owns the transcript, so its rows win
+                // instead.
                 reloadedMessages = Self.insertingUnconfirmedLocalUserMessages(
                     from: previousMessages,
                     into: loadedMessages,
-                    requiresRecentTimestamp: false
+                    runningTurnID: activeStreamIDBeforeLoad
                 )
             } else {
                 reloadedMessages = loadedMessages
@@ -1844,26 +1841,60 @@ public final class ChatViewModel {
         )
         return insertingUnconfirmedLocalUserMessages(
             from: cachedMessages,
-            into: mergedMessages,
-            requiresRecentTimestamp: true
+            into: mergedMessages
         )
     }
 
     /// Re-inserts the local optimistic user rows the reloaded transcript has not
     /// confirmed yet, so a prompt in flight renders exactly once.
+    ///
+    /// A contextless reload passes the `runningTurnID` its newest prompt started. Current Web stamps that
+    /// prompt's row with it as `_turn_id`, so identity decides. For an older server, rows the device showed
+    /// before a prompt cannot confirm it, so a just-answered identical turn ("continue", then "continue"
+    /// again) cannot stand in for it.
     nonisolated private static func insertingUnconfirmedLocalUserMessages(
         from localMessages: [ChatMessage],
         into loadedMessages: [ChatMessage],
-        requiresRecentTimestamp: Bool
+        runningTurnID: String? = nil
     ) -> [ChatMessage] {
-        let unconfirmedMessages = localMessages.filter { localMessage in
-            isLocalOptimisticUserMessage(localMessage)
-                && !localMessage.isLocalSteeringHint
-                && !loadedMessagesContainEquivalentUserMessage(
-                    loadedMessages,
-                    localMessage: localMessage,
-                    requiresRecentTimestamp: requiresRecentTimestamp
+        let isPrompt = { (message: ChatMessage) in
+            isLocalOptimisticUserMessage(message) && !message.isLocalSteeringHint
+        }
+        let runningPromptIndex = localMessages.lastIndex(where: isPrompt)
+        // Contextless only: a loaded row confirms one prompt, so an earlier prompt that is still optimistic
+        // claims its own persisted copy before a repeat can match it.
+        var claimedLoadedIndices = Set<Int>()
+        var unconfirmedMessages: [ChatMessage] = []
+        for index in localMessages.indices where isPrompt(localMessages[index]) {
+            var excludedLoadedIndices = claimedLoadedIndices
+            // The newest loaded row the device showed before the prompt: every row after it is newer.
+            var shownBoundary: Int?
+            if runningTurnID != nil {
+                // Each shown row claims the oldest loaded row with its key, so keyless rows match by place.
+                var unclaimedShownRows = Dictionary(
+                    localMessages[..<index].compactMap(shownRowKey).map { ($0, 1) },
+                    uniquingKeysWith: +
                 )
+                for (loadedIndex, loadedMessage) in loadedMessages.enumerated()
+                where !claimedLoadedIndices.contains(loadedIndex) {
+                    guard let key = shownRowKey(loadedMessage), let count = unclaimedShownRows[key], count > 0
+                    else { continue }
+                    unclaimedShownRows[key] = count - 1
+                    shownBoundary = loadedIndex
+                }
+                if let shownBoundary { excludedLoadedIndices.formUnion(0...shownBoundary) }
+            }
+            if let confirmingIndex = equivalentUserMessageIndex(
+                in: loadedMessages,
+                excluding: excludedLoadedIndices,
+                localMessage: localMessages[index],
+                turnID: index == runningPromptIndex ? runningTurnID : nil,
+                comparesClocks: shownBoundary == nil
+            ) {
+                if runningTurnID != nil { claimedLoadedIndices.insert(confirmingIndex) }
+            } else {
+                unconfirmedMessages.append(localMessages[index])
+            }
         }
 
         guard !unconfirmedMessages.isEmpty else {
@@ -2275,16 +2306,30 @@ public final class ChatViewModel {
         message.role == "user" && message.messageId?.hasPrefix("local-") == true
     }
 
-    nonisolated private static func loadedMessagesContainEquivalentUserMessage(
-        _ loadedMessages: [ChatMessage],
+    /// A server row's identity across reloads: its `message_id`, else its role, server timestamp and content.
+    nonisolated private static func shownRowKey(_ message: ChatMessage) -> String? {
+        if let messageID = message.messageId {
+            return messageID.hasPrefix("local-") ? nil : messageID
+        }
+        return "\(message.role ?? "")|\(message.timestamp.map { "\($0)" } ?? "")|\(message.content ?? "")"
+    }
+
+    nonisolated private static func equivalentUserMessageIndex(
+        in loadedMessages: [ChatMessage],
+        excluding excludedIndices: Set<Int>,
         localMessage: ChatMessage,
-        requiresRecentTimestamp: Bool = true
-    ) -> Bool {
+        turnID: String?,
+        comparesClocks: Bool
+    ) -> Int? {
         let localContent = normalizedUserMessageContent(localMessage)
         let localAttachmentKeys = attachmentKeys(for: localMessage)
 
-        return loadedMessages.contains { loadedMessage in
-            guard loadedMessage.role == "user" else { return false }
+        return loadedMessages.indices.first { loadedIndex in
+            let loadedMessage = loadedMessages[loadedIndex]
+            // The running turn's own stamped row stays eligible wherever the server placed it.
+            let isRunningTurnRow = turnID != nil && loadedMessage.turnId == turnID
+            guard isRunningTurnRow || !excludedIndices.contains(loadedIndex), loadedMessage.role == "user"
+            else { return false }
 
             if loadedMessage.messageId == localMessage.messageId {
                 return true
@@ -2303,7 +2348,14 @@ public final class ChatViewModel {
                 }
             }
 
-            guard requiresRecentTimestamp,
+            // The running prompt's stamped turn, not the two clocks, decides on current Web.
+            if let turnID, let loadedTurnID = loadedMessage.turnId {
+                return loadedTurnID == turnID
+            }
+
+            // An older identical prompt ("continue") must not confirm a newer one. Past a shown boundary every
+            // candidate is newer than the prompt's history, so the phone's and server's clocks are not compared.
+            guard comparesClocks,
                   let localTimestamp = localMessage.timestamp,
                   let loadedTimestamp = loadedMessage.timestamp
             else {

@@ -20,6 +20,10 @@ extension ChatViewModelSendTests {
         return (response, Data(#"{"error": "TTS engine unavailable"}"#.utf8))
     }
 
+    /// The test-owned clock for server rows that confirm a prompt sent during the test: a reload only accepts
+    /// a server copy near the optimistic row's device timestamp, so a frozen epoch reads as an older turn.
+    var serverNow: Int { Int(Date().timeIntervalSince1970) }
+
     func makeEphemeralUserDefaults() throws -> UserDefaults {
         let suiteName = "TalariaTests.\(UUID().uuidString)"
         let userDefaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
