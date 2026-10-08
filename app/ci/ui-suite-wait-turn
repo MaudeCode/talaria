@@ -3,7 +3,8 @@
 # Returns when it is this ui-suite.yml run's turn, so suite runs take turns instead of replacing each other (TAL-679).
 # Unfinished runs queue by rank: priority first (a run on main, or one named "... (priority)"), then oldest run ID.
 # It is RUN_ID's turn when no unfinished run ranks ahead of it and no run behind it is already past its "Queue" job;
-# a running run from before this queue, with no "Queue" job, also counts as running. Nothing is ever cancelled.
+# a started run from before this queue, with jobs but no "Queue" job, also counts as running, even while its jobs wait
+# for runners and GitHub reports it queued. Nothing is ever cancelled.
 # --once checks once: exit 0 for its turn, 10 to wait. Otherwise it polls every UI_SUITE_QUEUE_POLL_SECONDS
 # (default 60) and exits 20 once UI_SUITE_QUEUE_LIMIT_SECONDS (default none) have passed. Read-only; ci/gh-api-poll retries transient API errors. Needs GH_TOKEN with
 # actions: read and GITHUB_REPOSITORY.
@@ -34,9 +35,10 @@ turn() {
     if (( rank < mine || (rank == mine && id < run) )); then
       echo "Waiting: run ${id} is ahead."; return 1
     fi
-    [[ "${status}" == in_progress ]] || continue
-    running=$("${api}" "${actions}/runs/${id}/jobs?per_page=100" --jq '[.jobs[] | select(.name == "Queue")]
-        | if length == 0 then "from before the queue" elif .[0].conclusion == "success" then "running" else "" end') ||
+    [[ "${status}" == in_progress || "${status}" == queued ]] || continue
+    running=$("${api}" "${actions}/runs/${id}/jobs?per_page=100" --jq '[.jobs[] | select(.name == "Queue")] as $queue
+        | if (.jobs | length) == 0 then "" elif ($queue | length) == 0 then "from before the queue"
+          elif $queue[0].conclusion == "success" then "running" else "" end') ||
       return 1
     [[ -z "${running}" ]] || { echo "Waiting: run ${id} is ${running}."; return 1; }
   done <<< "${runs}"

@@ -31,7 +31,8 @@ run() { printf '{"id":%s,"status":"%s","head_branch":"%s","display_title":"%s"}'
 # runs RUN...; each later "jobs ID QUEUE_STATUS QUEUE_CONCLUSION" (or "jobs ID none") writes that run's jobs
 runs() { rm -f "$work"/*.json; local IFS=,; echo "{\"workflow_runs\":[$*]}" > "$work/runs.json"; }
 jobs() {
-  if [[ "$2" == none ]]; then echo '{"jobs":[{"name":"UI suite / UI suite build","status":"in_progress","conclusion":null}]}'
+  if [[ "$2" == empty ]]; then echo '{"jobs":[]}'
+  elif [[ "$2" == none ]]; then echo '{"jobs":[{"name":"UI suite / UI suite build","status":"in_progress","conclusion":null}]}'
   else printf '{"jobs":[{"name":"Queue","status":"%s","conclusion":%s}]}' "$2" "$3"; fi > "$work/jobs.$1.json"
 }
 expect() { # expect go|wait RUN_ID
@@ -71,8 +72,11 @@ jobs 120 in_progress null
 expect go $me
 jobs 120 completed '"failure"'
 expect go $me
-runs "$(run $me in_progress fix/x 'UI suite on x')" "$(run 120 queued fix/y 'UI suite on y')"
+runs "$(run $me in_progress fix/x 'UI suite on x')" "$(run 120 queued fix/y 'UI suite on y')"; jobs 120 empty
 expect go $me
+# A run from before the queue whose jobs wait for runners is reported queued, but it has started.
+jobs 120 none
+expect wait $me
 # A run that cannot see itself yet waits.
 runs "$(run 120 queued fix/y 'UI suite on y')"
 expect wait $me
