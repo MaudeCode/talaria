@@ -189,7 +189,10 @@ struct ChatUIKitMenuButton<Label: View>: View {
     }
 }
 
-private struct ChatUIKitMenuButtonBacker: UIViewControllerRepresentable {
+/// A plain view, not a view controller: inserting a controller-backed view adds a child controller, and the
+/// chat's inspector split view controller then rebuilds its column, which drops the composer's keyboard
+/// focus whenever a send swaps the composer's buttons (TAL-677).
+private struct ChatUIKitMenuButtonBacker: UIViewRepresentable {
     @Environment(\.isEnabled) private var isEnabled
 
     let horizontalPadding: CGFloat
@@ -202,11 +205,12 @@ private struct ChatUIKitMenuButtonBacker: UIViewControllerRepresentable {
         Coordinator(menu: menu, primaryAction: primaryAction)
     }
 
-    func makeUIViewController(context: Context) -> ChatMenuButtonHostController {
-        let controller = ChatMenuButtonHostController()
-        let button = controller.button
+    func makeUIView(context: Context) -> ChatMenuButtonContainerView {
+        let container = ChatMenuButtonContainerView()
+        let button = container.button
 
-        controller.setHitPadding(horizontal: horizontalPadding, vertical: verticalPadding)
+        container.horizontalPadding = horizontalPadding
+        container.verticalPadding = verticalPadding
         button.menu = UIMenu(children: [
             UIDeferredMenuElement.uncached { completion in
                 completion(context.coordinator.menu().children)
@@ -220,23 +224,24 @@ private struct ChatUIKitMenuButtonBacker: UIViewControllerRepresentable {
         button.isEnabled = isEnabled
         button.isAccessibilityElement = false
 
-        return controller
+        return container
     }
 
-    func updateUIViewController(_ uiViewController: ChatMenuButtonHostController, context: Context) {
+    func updateUIView(_ container: ChatMenuButtonContainerView, context: Context) {
         context.coordinator.menu = menu
         context.coordinator.primaryAction = primaryAction
-        uiViewController.setHitPadding(horizontal: horizontalPadding, vertical: verticalPadding)
+        container.horizontalPadding = horizontalPadding
+        container.verticalPadding = verticalPadding
         // Every composer redraw lands here; re-setting it unchanged hung UI queries as the photo picker closed.
-        if uiViewController.button.isContextMenuInteractionEnabled != showsMenu {
-            uiViewController.button.isContextMenuInteractionEnabled = showsMenu
+        if container.button.isContextMenuInteractionEnabled != showsMenu {
+            container.button.isContextMenuInteractionEnabled = showsMenu
         }
-        uiViewController.button.isEnabled = isEnabled
+        container.button.isEnabled = isEnabled
     }
 
     func sizeThatFits(
         _ proposal: ProposedViewSize,
-        uiViewController: ChatMenuButtonHostController,
+        uiView: ChatMenuButtonContainerView,
         context: Context
     ) -> CGSize? {
         CGSize(
@@ -256,48 +261,41 @@ private struct ChatUIKitMenuButtonBacker: UIViewControllerRepresentable {
     }
 }
 
-private final class ChatMenuButtonHostController: UIViewController {
+private final class ChatMenuButtonContainerView: UIView {
     let button = UIButton(type: .custom)
-    private let container = ChatMenuButtonContainerView()
+    var horizontalPadding: CGFloat = 0
+    var verticalPadding: CGFloat = 0
 
-    func setHitPadding(horizontal: CGFloat, vertical: CGFloat) {
-        container.horizontalPadding = horizontal
-        container.verticalPadding = vertical
-    }
-
-    override func loadView() {
-        container.backgroundColor = .clear
-        container.isOpaque = false
-        container.isAccessibilityElement = false
-        container.button = button
-        view = container
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .clear
+        isOpaque = false
+        isAccessibilityElement = false
 
         button.backgroundColor = .clear
         button.setTitle(nil, for: .normal)
         button.setImage(nil, for: .normal)
         button.translatesAutoresizingMaskIntoConstraints = false
 
-        container.addSubview(button)
+        addSubview(button)
         NSLayoutConstraint.activate([
-            button.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            button.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            button.topAnchor.constraint(equalTo: container.topAnchor),
-            button.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+            button.leadingAnchor.constraint(equalTo: leadingAnchor),
+            button.trailingAnchor.constraint(equalTo: trailingAnchor),
+            button.topAnchor.constraint(equalTo: topAnchor),
+            button.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
     }
-}
 
-private final class ChatMenuButtonContainerView: UIView {
-    var horizontalPadding: CGFloat = 0
-    var verticalPadding: CGFloat = 0
-    weak var button: UIButton?
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
 
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
         guard
             isUserInteractionEnabled,
             !isHidden,
             alpha >= 0.01,
-            let button,
             button.isEnabled,
             !button.isHidden,
             button.alpha >= 0.01

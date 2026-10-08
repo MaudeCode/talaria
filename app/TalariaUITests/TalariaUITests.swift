@@ -2993,10 +2993,18 @@ fileprivate extension ChatUITestCase {
     /// (`ChatView.applyInitialComposerFocusPolicyIfNeeded`), swapping the "Message" shell for the text view at any
     /// moment, so a shell found earlier may be gone by the time it is tapped (TAL-667). Each pass reads the shell
     /// again, by a snapshot that fails quietly once it is gone, and taps where it is.
+    /// XCTest waits for the app to idle between reading that frame and tapping, and a focus landing then raises
+    /// the keyboard over the shell, so the tap types a space (TAL-677). While the chat loads or shows its empty
+    /// state, it is left to focus itself; only a chat that will not, or one that has not within the grace, is tapped.
     func readyComposerInput(_ composer: XCUIElement) -> XCUIElement {
         let input = app.textViews.firstMatch
-        XCTAssertTrue(poll(timeout: 10) {
+        let focusesItself = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label IN %@", ["Loading messages", "Send a message to start the conversation."])
+        ).firstMatch
+        let ownFocusDeadline = Date().addingTimeInterval(8)
+        XCTAssertTrue(poll(timeout: 15) {
             if input.exists { return true }
+            if Date() < ownFocusDeadline, focusesItself.exists { return input.awaitExistence(timeout: 1) }
             guard let frame = try? composer.snapshot().frame else { return input.exists }
             tap(at: CGPoint(x: frame.midX, y: frame.midY))
             return input.awaitExistence(timeout: 2)
