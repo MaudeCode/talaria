@@ -1859,30 +1859,37 @@ public final class ChatViewModel {
             isLocalOptimisticUserMessage(message) && !message.isLocalSteeringHint
         }
         let runningPromptIndex = localMessages.lastIndex(where: isPrompt)
-        let unconfirmedMessages = localMessages.indices.filter { index in
-            guard isPrompt(localMessages[index]) else { return false }
-            var candidateMessages = loadedMessages
+        // Contextless only: a loaded row confirms one prompt, so an earlier prompt that is still optimistic
+        // claims its own persisted copy before a repeat can match it.
+        var claimedLoadedIndices = Set<Int>()
+        var unconfirmedMessages: [ChatMessage] = []
+        for index in localMessages.indices where isPrompt(localMessages[index]) {
+            var excludedLoadedIndices = claimedLoadedIndices
             if runningTurnID != nil {
                 // Each shown row claims the oldest loaded row with its key, so keyless rows match by place.
                 var unclaimedShownRows = Dictionary(
                     localMessages[..<index].compactMap(shownRowKey).map { ($0, 1) },
                     uniquingKeysWith: +
                 )
-                candidateMessages = []
-                for loadedMessage in loadedMessages {
-                    if let key = shownRowKey(loadedMessage), let count = unclaimedShownRows[key], count > 0 {
-                        unclaimedShownRows[key] = count - 1
-                    } else {
-                        candidateMessages.append(loadedMessage)
-                    }
+                for (loadedIndex, loadedMessage) in loadedMessages.enumerated()
+                where !claimedLoadedIndices.contains(loadedIndex) {
+                    guard let key = shownRowKey(loadedMessage), let count = unclaimedShownRows[key], count > 0
+                    else { continue }
+                    unclaimedShownRows[key] = count - 1
+                    excludedLoadedIndices.insert(loadedIndex)
                 }
             }
-            return !loadedMessagesContainEquivalentUserMessage(
-                candidateMessages,
+            if let confirmingIndex = equivalentUserMessageIndex(
+                in: loadedMessages,
+                excluding: excludedLoadedIndices,
                 localMessage: localMessages[index],
                 turnID: index == runningPromptIndex ? runningTurnID : nil
-            )
-        }.map { localMessages[$0] }
+            ) {
+                if runningTurnID != nil { claimedLoadedIndices.insert(confirmingIndex) }
+            } else {
+                unconfirmedMessages.append(localMessages[index])
+            }
+        }
 
         guard !unconfirmedMessages.isEmpty else {
             return loadedMessages
@@ -2301,16 +2308,18 @@ public final class ChatViewModel {
         return "\(message.role ?? "")|\(message.timestamp.map { "\($0)" } ?? "")|\(message.content ?? "")"
     }
 
-    nonisolated private static func loadedMessagesContainEquivalentUserMessage(
-        _ loadedMessages: [ChatMessage],
+    nonisolated private static func equivalentUserMessageIndex(
+        in loadedMessages: [ChatMessage],
+        excluding excludedIndices: Set<Int>,
         localMessage: ChatMessage,
-        turnID: String? = nil
-    ) -> Bool {
+        turnID: String?
+    ) -> Int? {
         let localContent = normalizedUserMessageContent(localMessage)
         let localAttachmentKeys = attachmentKeys(for: localMessage)
 
-        return loadedMessages.contains { loadedMessage in
-            guard loadedMessage.role == "user" else { return false }
+        return loadedMessages.indices.first { loadedIndex in
+            let loadedMessage = loadedMessages[loadedIndex]
+            guard !excludedIndices.contains(loadedIndex), loadedMessage.role == "user" else { return false }
 
             if loadedMessage.messageId == localMessage.messageId {
                 return true

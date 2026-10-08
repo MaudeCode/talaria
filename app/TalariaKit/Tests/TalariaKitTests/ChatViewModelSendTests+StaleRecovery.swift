@@ -267,6 +267,43 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(userRows.last?.messageId?.hasPrefix("local-"), true)
     }
 
+    // The first prompt is still optimistic (its refresh failed), so it claims its own persisted copy first.
+    @MainActor
+    func testContextlessReloadKeepsRepeatedPromptAfterAnUnconfirmedEarlierPrompt() async throws {
+        let streamClient = SpySSEStreamingClient()
+        let earlier = serverNow - 10
+        var startCount = 0
+        let viewModel = try makeViewModel(streamClient: streamClient) { request in
+            switch request.url?.path {
+            case "/api/chat/start":
+                startCount += 1
+                return apiTestJSONResponse(#"{"session_id": "session-abc", "stream_id": "stream-\#(startCount)"}"#, for: request)
+            case "/api/session" where startCount == 2:
+                return apiTestJSONResponse("""
+                {"session": {"session_id": "session-abc", "title": "Planning", "active_stream_id": "stream-2",
+                  "messages": [
+                    {"role": "user", "content": "continue", "timestamp": \(earlier), "message_id": "user-1"},
+                    {"role": "assistant", "content": "Earlier answer.", "timestamp": \(earlier + 1), "message_id": "assistant-1"}
+                  ]}}
+                """, for: request)
+            default:
+                throw URLError(.notConnectedToInternet)
+            }
+        }
+
+        let didStartFirst = await viewModel.sendMessage("continue")
+        XCTAssertTrue(didStartFirst)
+        streamClient.emit(.token("Earlier answer."))
+        streamClient.emit(.streamEnd)
+        try await waitUntil { viewModel.activeStreamID == nil }
+        let didStartRepeat = await viewModel.sendMessage("continue")
+        XCTAssertTrue(didStartRepeat)
+        await viewModel.loadMessages()
+
+        let userRows = viewModel.messages.filter { $0.role == "user" }
+        XCTAssertEqual(userRows.map { $0.messageId?.prefix(6) }, ["user-1", "local-"])
+    }
+
     /// Sends "continue" again after `earlierTurn` (shown first unless `showsEarlierTurn` is false), then reloads with
     /// no model context while the same stream still runs and the server holds `runningTurn` after that turn.
     /// Returns the reloaded user rows, after checking the earlier turn keeps its place.
