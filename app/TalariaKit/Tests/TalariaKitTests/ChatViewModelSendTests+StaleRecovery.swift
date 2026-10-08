@@ -189,17 +189,49 @@ extension ChatViewModelSendTests {
 
     @MainActor
     func testContextlessReloadKeepsRepeatedPromptOverOlderIdenticalTurn() async throws {
-        let olderTurn = serverNow - 3_600
+        try await assertContextlessReloadKeepsRepeatedPrompt(olderTurnAge: 3_600, showsOlderTurnBeforeSending: false)
+    }
+
+    // A quick repeat sits inside the recency window, so only the turn's position tells the two prompts apart.
+    @MainActor
+    func testContextlessReloadKeepsQuicklyRepeatedPromptAfterTheTurnItFollows() async throws {
+        try await assertContextlessReloadKeepsRepeatedPrompt(olderTurnAge: 10, showsOlderTurnBeforeSending: true)
+    }
+
+    @MainActor
+    func testContextlessReloadReplacesQuicklyRepeatedPromptWithTheServersCopy() async throws {
+        try await assertContextlessReloadKeepsRepeatedPrompt(
+            olderTurnAge: 10,
+            showsOlderTurnBeforeSending: true,
+            serverPersistedRepeat: true
+        )
+    }
+
+    @MainActor
+    private func assertContextlessReloadKeepsRepeatedPrompt(
+        olderTurnAge: Int,
+        showsOlderTurnBeforeSending: Bool,
+        serverPersistedRepeat: Bool = false
+    ) async throws {
+        let now = serverNow
+        let olderTurn = now - olderTurnAge
+        var hasStarted = false
         let viewModel = try makeViewModel { request in
             switch request.url?.path {
             case "/api/chat/start":
+                hasStarted = true
                 return apiTestJSONResponse(#"{"session_id": "session-abc", "stream_id": "stream-123"}"#, for: request)
             case "/api/session":
+                let activeStream = hasStarted ? #""active_stream_id": "stream-123","# : ""
+                let repeatRow = hasStarted && serverPersistedRepeat
+                    ? #",{"role": "user", "content": "continue", "timestamp": \#(now), "message_id": "user-2"}"#
+                    : ""
                 return apiTestJSONResponse("""
-                {"session": {"session_id": "session-abc", "title": "Planning", "active_stream_id": "stream-123",
+                {"session": {"session_id": "session-abc", "title": "Planning", \(activeStream)
                   "messages": [
                     {"role": "user", "content": "continue", "timestamp": \(olderTurn), "message_id": "user-1"},
                     {"role": "assistant", "content": "Earlier answer.", "timestamp": \(olderTurn + 1), "message_id": "assistant-1"}
+                    \(repeatRow)
                   ]}}
                 """, for: request)
             default:
@@ -208,6 +240,10 @@ extension ChatViewModelSendTests {
             }
         }
 
+        if showsOlderTurnBeforeSending {
+            await viewModel.loadMessages()
+            XCTAssertEqual(viewModel.messages.compactMap(\.messageId), ["user-1", "assistant-1"])
+        }
         let didStart = await viewModel.sendMessage("continue")
         XCTAssertTrue(didStart)
         await viewModel.loadMessages()
@@ -215,7 +251,8 @@ extension ChatViewModelSendTests {
         let loadedRows = viewModel.messages.prefix(3)
         XCTAssertEqual(loadedRows.compactMap(\.content), ["continue", "Earlier answer.", "continue"])
         XCTAssertEqual(loadedRows.first?.messageId, "user-1")
-        XCTAssertEqual(loadedRows.last?.messageId?.hasPrefix("local-"), true)
+        let repeatID = try XCTUnwrap(loadedRows.last?.messageId)
+        XCTAssertTrue(serverPersistedRepeat ? repeatID == "user-2" : repeatID.hasPrefix("local-"), repeatID)
         XCTAssertEqual(viewModel.messages.filter { $0.role == "user" }.count, 2)
     }
 

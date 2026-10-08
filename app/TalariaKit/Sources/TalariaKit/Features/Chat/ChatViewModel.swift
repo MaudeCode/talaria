@@ -1419,7 +1419,8 @@ public final class ChatViewModel {
                 // instead.
                 reloadedMessages = Self.insertingUnconfirmedLocalUserMessages(
                     from: previousMessages,
-                    into: loadedMessages
+                    into: loadedMessages,
+                    confirmsOnlyAfterShownHistory: true
                 )
             } else {
                 reloadedMessages = loadedMessages
@@ -1844,17 +1845,28 @@ public final class ChatViewModel {
 
     /// Re-inserts the local optimistic user rows the reloaded transcript has not
     /// confirmed yet, so a prompt in flight renders exactly once.
+    ///
+    /// With `confirmsOnlyAfterShownHistory`, only loaded rows after the newest server row shown before the
+    /// prompt can confirm it: the server persists the prompt after everything the device already showed, so a
+    /// just-answered identical turn ("continue", then "continue" again) cannot stand in for it.
     nonisolated private static func insertingUnconfirmedLocalUserMessages(
         from localMessages: [ChatMessage],
-        into loadedMessages: [ChatMessage]
+        into loadedMessages: [ChatMessage],
+        confirmsOnlyAfterShownHistory: Bool = false
     ) -> [ChatMessage] {
-        let unconfirmedMessages = localMessages.filter { localMessage in
-            isLocalOptimisticUserMessage(localMessage)
-                && !localMessage.isLocalSteeringHint
-                && !loadedMessagesContainEquivalentUserMessage(
-                    loadedMessages,
-                    localMessage: localMessage
-                )
+        let unconfirmedMessages = localMessages.indices.compactMap { index -> ChatMessage? in
+            let localMessage = localMessages[index]
+            guard isLocalOptimisticUserMessage(localMessage), !localMessage.isLocalSteeringHint else { return nil }
+            var candidateMessages = loadedMessages[...]
+            if confirmsOnlyAfterShownHistory,
+               let shownIndex = localMessages[..<index].reversed().lazy.compactMap({ shownMessage in
+                   shownMessage.messageId.flatMap { id in loadedMessages.lastIndex { $0.messageId == id } }
+               }).first {
+                candidateMessages = loadedMessages[(shownIndex + 1)...]
+            }
+            return loadedMessagesContainEquivalentUserMessage(candidateMessages, localMessage: localMessage)
+                ? nil
+                : localMessage
         }
 
         guard !unconfirmedMessages.isEmpty else {
@@ -2267,7 +2279,7 @@ public final class ChatViewModel {
     }
 
     nonisolated private static func loadedMessagesContainEquivalentUserMessage(
-        _ loadedMessages: [ChatMessage],
+        _ loadedMessages: ArraySlice<ChatMessage>,
         localMessage: ChatMessage
     ) -> Bool {
         let localContent = normalizedUserMessageContent(localMessage)
