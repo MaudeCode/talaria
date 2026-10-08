@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The keyboard stays up after you send a message, so you can type the next one right away.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}
