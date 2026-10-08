@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Opening a chat, New Chat, or Settings while a session link is still loading is no longer replaced by the linked session.",
+      "highlight": false
+    }
+  ]
+}

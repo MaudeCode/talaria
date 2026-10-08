@@ -1806,20 +1806,16 @@ struct SessionListView: View {
             return
         }
 
-        let session = await viewModel.loadSessionForDeepLink(id: sessionID, modelContext: modelContext)
-        // Re-checked post-await: the view (and this task) may have been torn down —
-        // e.g. dismissed, or the active server changed under `.id(server)` — while
-        // the network load was in flight. Selecting or persisting for a session
-        // whose owning view no longer exists is stale work, not a real navigation.
-        guard !Task.isCancelled else { return }
-        guard let session else {
-            handleLastError()
-            return
-        }
-
         // A deep-linked external session needs the same server-side import a
         // tapped row does before it can be continued.
-        await openSession(session)
+        await openSession {
+            let session = await viewModel.loadSessionForDeepLink(id: sessionID, modelContext: modelContext)
+            // Re-checked post-await: the view (and this task) may have been torn down —
+            // e.g. dismissed, or the active server changed under `.id(server)` — while
+            // the network load was in flight. Selecting or persisting for a session
+            // whose owning view no longer exists is stale work, not a real navigation.
+            return Task.isCancelled ? nil : session
+        }
     }
 
     /// Opens the New Chat composer in response to the "New Chat" App Intents (#337/#338),
@@ -1855,26 +1851,31 @@ struct SessionListView: View {
         navigationState.select(PendingNewChatRoute(projectID: selectedProjectID))
     }
 
-    /// External sessions are imported (or refreshed) server-side before navigation,
-    /// so the opened session carries the server's authoritative writability. A failed
-    /// import stays on the list and surfaces through the action-error alert.
     private func openSession(_ session: SessionSummary, in list: AppSection = .chats) async {
-        let navigationRevision = navigationState.rootRevision
-        guard let resolvedSession = await viewModel.sessionToOpen(
-            for: session,
-            modelContext: modelContext
-        ) else {
+        await openSession(in: list) { session }
+    }
+
+    /// A failed load or import stays on the list and surfaces through the
+    /// action-error alert; a destination chosen meanwhile is never replaced.
+    private func openSession(in list: AppSection = .chats, load: () async -> SessionSummary?) async {
+        let outcome = await SessionListOpen.resolve(
+            beginOpen: { navigationState.beginOpen() },
+            openRevision: { navigationState.openRevision },
+            load: load,
+            importSession: { await viewModel.sessionToOpen(for: $0, modelContext: modelContext) }
+        )
+        switch outcome {
+        case let .open(session):
+            // A compact chat pushes over the Chats list whichever list it came from.
+            selectSession(session, in: horizontalSizeClass == .regular ? list : .chats)
+        case .failed:
+            guard !Task.isCancelled else { return }
             // Forwards an expired session/cookie to the auth manager the same way
             // every other network-backed session-list action does.
             handleLastError()
-            return
+        case .superseded:
+            break
         }
-
-        // Any destination chosen while the import was in flight — New Chat, a
-        // utility, another row — is newer than this one and must not be replaced.
-        guard navigationRevision == navigationState.rootRevision else { return }
-        // A compact chat pushes over the Chats list whichever list it came from.
-        selectSession(resolvedSession, in: horizontalSizeClass == .regular ? list : .chats)
     }
 
     private func selectSession(_ session: SessionSummary, in list: AppSection = .chats) {

@@ -64,6 +64,14 @@ public struct SessionNavigationState: Equatable {
     public var pushesProviderQuotaWidget = false
     private var newChatSessionID: String?
     private var deepLinkedSessionLoadID: String?
+    private var startedOpens = 0
+
+    /// Advances with every navigation and with every session open that starts
+    /// resolving, so an open still loading or importing yields to anything newer —
+    /// including a row tap whose own import has not landed yet (TAL-153).
+    public var openRevision: Int {
+        rootRevision + startedOpens
+    }
 
     public init(lastSelectedSessionID: String? = nil) {
         self.lastSelectedSessionID = Self.normalized(lastSelectedSessionID)
@@ -139,6 +147,12 @@ public struct SessionNavigationState: Equatable {
         destination = nil
         newChatSessionID = nil
         section = .chats
+    }
+
+    /// Starts a session open and returns the `openRevision` it stays current at.
+    public mutating func beginOpen() -> Int {
+        startedOpens += 1
+        return openRevision
     }
 
     public mutating func beginDeepLinkedSessionLoad(id: String?) -> String? {
