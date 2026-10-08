@@ -1119,6 +1119,12 @@ final class ProvidersViewModelTests: APIClientTestCase {
     }
 
     @MainActor
+    func testExpansionAnimationFollowsReduceMotion() {
+        XCTAssertEqual(ProvidersView.expansionAnimation(reduceMotion: false), .snappy(duration: 0.22))
+        XCTAssertNil(ProvidersView.expansionAnimation(reduceMotion: true))
+    }
+
+    @MainActor
     func testModelCountPrefersModelsTotalWhenListIsTrimmed() {
         let trimmed = ProviderSummary(
             id: "nous",

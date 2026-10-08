@@ -17,6 +17,7 @@ struct ProvidersView: View {
     ) private var providerAliasesData = Data()
     @State private var providerPendingRenameID: String?
     @State private var providerRenameText = ""
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(server: URL) {
         self.server = server
@@ -164,8 +165,14 @@ struct ProvidersView: View {
         return "#\(index)"
     }
 
+    /// Drives the models disclosure and its chevron rotation; Reduce Motion
+    /// switches both instantly.
+    static func expansionAnimation(reduceMotion: Bool) -> Animation? {
+        reduceMotion ? nil : .snappy(duration: 0.22)
+    }
+
     private func toggleExpanded(_ key: String) {
-        withAnimation(.snappy(duration: 0.22)) {
+        withAnimation(Self.expansionAnimation(reduceMotion: reduceMotion)) {
             if expandedProviderKeys.contains(key) {
                 expandedProviderKeys.remove(key)
             } else {
