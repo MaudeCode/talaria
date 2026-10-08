@@ -6,10 +6,10 @@
  */
 import { readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { SIDECAR_METHODS, SIDECAR_RPC_VERSION, type RuntimeDescribe, type SidecarMethodName, type SidecarParams, type SidecarResult } from '@maudecode/talaria-web-contracts'
+import { SIDECAR_METHODS, SIDECAR_RPC_VERSION, type RuntimeDescribe, type SidecarMethodName, type SidecarParams, type SidecarResult, type SidecarResultInput } from '@maudecode/talaria-web-contracts'
 import { SidecarError, type CallOptions, type SidecarLike, type SidecarStatus, type StreamFrame } from './client.js'
 
-type Responder<M extends SidecarMethodName> = (params: SidecarParams<M>, emit: (frame: Omit<StreamFrame, 'seq'>) => void, opts: CallOptions) => SidecarResult<M> | Promise<SidecarResult<M>>
+type Responder<M extends SidecarMethodName> = (params: SidecarParams<M>, emit: (frame: Omit<StreamFrame, 'seq'>) => void, opts: CallOptions) => SidecarResultInput<M> | Promise<SidecarResultInput<M>>
 
 export interface FakeSidecarOptions {
   fixturesDir?: string
