@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The welcome screen scrolls at the largest text sizes on smaller iPhones, so its whole introduction can be read.",
+      "highlight": false
+    }
+  ]
+}

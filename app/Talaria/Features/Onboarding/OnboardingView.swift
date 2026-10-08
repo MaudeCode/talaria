@@ -157,7 +157,9 @@ struct OnboardingView: View {
                 endPoint: .bottom
             )
             .frame(height: 50)
-            .offset(y: -50),
+            .offset(y: -50)
+            // The fade overlaps the page above the bar; a drag that starts on it scrolls the page.
+            .allowsHitTesting(false),
             alignment: .top
         )
     }
