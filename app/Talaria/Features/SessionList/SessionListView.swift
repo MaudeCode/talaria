@@ -1859,7 +1859,8 @@ struct SessionListView: View {
     /// action-error alert; a destination chosen meanwhile is never replaced.
     private func openSession(in list: AppSection = .chats, load: () async -> SessionSummary?) async {
         let outcome = await SessionListOpen.resolve(
-            revision: { navigationState.rootRevision },
+            beginOpen: { navigationState.beginOpen() },
+            openRevision: { navigationState.openRevision },
             load: load,
             importSession: { await viewModel.sessionToOpen(for: $0, modelContext: modelContext) }
         )

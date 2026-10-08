@@ -14,20 +14,21 @@ public enum SessionListOpen {
     /// External sessions are imported (or refreshed) server-side before navigation,
     /// so the opened session carries the server's authoritative writability.
     ///
-    /// The revision is read before the first await: any destination chosen while
-    /// the load or import was in flight — New Chat, a utility, another row — is
-    /// newer than this one and must not be replaced (TAL-153).
+    /// The open begins before the first await: any destination chosen or open
+    /// started while the load or import was in flight — New Chat, a utility,
+    /// another row — is newer than this one and must not be replaced (TAL-153).
     @MainActor
     public static func resolve(
-        revision: () -> Int,
+        beginOpen: () -> Int,
+        openRevision: () -> Int,
         load: () async -> SessionSummary?,
         importSession: (SessionSummary) async -> SessionSummary?
     ) async -> Outcome {
-        let startRevision = revision()
+        let startRevision = beginOpen()
         guard let session = await load() else { return .failed }
-        guard startRevision == revision() else { return .superseded }
+        guard startRevision == openRevision() else { return .superseded }
         guard let resolved = await importSession(session) else { return .failed }
-        guard startRevision == revision() else { return .superseded }
+        guard startRevision == openRevision() else { return .superseded }
         return .open(resolved)
     }
 }
