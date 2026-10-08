@@ -724,6 +724,24 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     s.deps.profiles.invalidate()
   })
 
+  it('TAL-213: each profile row ships its own Bot Mode identity and canonical Bot Chat, and none for a profile without them', async () => {
+    const chat = { session_id: 'scout-root', tip_session_id: 'scout-tip' }
+    const restore = sidecar.responderFor('profiles.list')
+    sidecar.respond('profiles.list', () => ({ profiles: [
+      { name: 'default', path: s.state, is_default: true, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 },
+      { name: 'scout', path: join(s.state, 'profiles', 'scout'), is_default: false, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0, display_name: 'Research lead', description: 'Finds sources.', has_avatar: true, canonical_session: chat },
+    ] }))
+    s.deps.profiles.invalidate()
+    try {
+      const rows = (await json(await s.get('/api/profiles'))).profiles as Json[]
+      expect(rows.find((p) => p.name === 'scout')).toMatchObject({ display_name: 'Research lead', description: 'Finds sources.', has_avatar: true, canonical_session: chat })
+      expect(rows.find((p) => p.name === 'default')).toMatchObject({ display_name: '', description: '', has_avatar: false, canonical_session: null })
+    } finally {
+      sidecar.respond('profiles.list', restore)
+      s.deps.profiles.invalidate()
+    }
+  })
+
   it('profiles list/active/switch/create/delete go through the sidecar and set the profile cookie', async () => {
     let res = await s.get('/api/profiles')
     expect(res.status).toBe(200)
@@ -1320,6 +1338,7 @@ describe('isolated profile mode', () => {
     expect(s.deps.profileHome('tenant')).toBe(home)
     let body = await json(await s.get('/api/profiles'))
     expect((body.profiles as Json[]).map((p) => p.name)).toEqual(['tenant'])
+    expect((body.profiles as Json[])[0]).toMatchObject({ display_name: '', description: '', has_avatar: false, canonical_session: null })
     expect(body.single_profile_mode).toBe(true)
     let res = await post(s, '/api/profile/switch', { name: 'other' })
     expect(res.status).toBe(403)

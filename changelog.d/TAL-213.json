@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Profiles shows each bot's name and description, and an Open Bot Chat button takes you straight to that bot's Bot Chat.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

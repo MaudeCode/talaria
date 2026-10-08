@@ -89,7 +89,7 @@ export class ProfileService {
       const home = this.deps.baseHome
       let stats = { enabled: 0, total: 0 }
       try { stats = await this.sidecar().call('profiles.skills_stats', { profile_home: home }) } catch { /* fall back to zeros */ }
-      return [{ name, path: home, is_default: name === 'default', is_active: true, gateway_running: false, model: null, provider: null, has_env: existsSync(join(home, '.env')), visible: true, skill_count: stats.enabled, enabled_skills: stats.enabled, total_skills: stats.total }]
+      return [{ name, path: home, is_default: name === 'default', is_active: true, gateway_running: false, model: null, provider: null, has_env: existsSync(join(home, '.env')), visible: true, skill_count: stats.enabled, enabled_skills: stats.enabled, total_skills: stats.total, display_name: '', description: '', has_avatar: false, canonical_session: null }]
     }
     let rows: Dict[]
     if (this.cache && this.now() - this.cache.at < 5) rows = this.cache.rows

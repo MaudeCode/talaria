@@ -17,7 +17,11 @@
             "visible": true,
             "skill_count": 0,
             "enabled_skills": 0,
-            "total_skills": 0
+            "total_skills": 0,
+            "display_name": "",
+            "description": "",
+            "has_avatar": false,
+            "canonical_session": null
           }
         ]
       }
@@ -41,7 +45,11 @@
           "visible": true,
           "skill_count": 58,
           "enabled_skills": 58,
-          "total_skills": 58
+          "total_skills": 58,
+          "display_name": "",
+          "description": "",
+          "has_avatar": false,
+          "canonical_session": null
         }
       }
     }

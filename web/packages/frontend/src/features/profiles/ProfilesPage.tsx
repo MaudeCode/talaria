@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from '@tanstack/react-router'
 import { Plus, Trash2 } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
@@ -14,16 +15,25 @@ import { ConfirmDialog, Dialog } from '../../ui/Dialog'
 import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { cn } from '../../ui/cn'
+import { appUrl } from '../../lib/appRoot'
 
 export function ProfilesPage() {
   const qc = useQueryClient()
   const profiles = useProfilesQuery()
   const switchProfile = useSwitchProfile()
+  const navigate = useNavigate()
   const [creating, setCreating] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
   const del = useMutation({ mutationFn: (name: string) => api.deleteProfile(name), onSuccess: () => { showToast(m.profile_deleted_toast()); void qc.invalidateQueries({ queryKey: keys.profiles }) }, onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error') })
   const list = profiles.data?.profiles ?? []
   const active = profiles.data?.active
+  // TAL-213: the server resolves each profile's canonical Bot Chat; opening it switches to that profile first.
+  const openBotChat = (name: string, chat: { tip_session_id: string } | null | undefined) => {
+    if (!chat) return
+    const sessionId = chat.tip_session_id
+    if (name === active) { void navigate({ to: '/session/$sessionId', params: { sessionId } }); return }
+    switchProfile.mutate(name, { onSuccess: () => { window.location.assign(appUrl(`session/${encodeURIComponent(sessionId)}`).href) }, onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error') })
+  }
   return (
     <HubPage title={m.tab_profiles()} help={<ProfileConceptHelp />} actions={!profiles.data?.single_profile_mode && <PanelHeadButton label={m.profile_create()} className="primary" onClick={() => setCreating(true)}><Plus size={16} aria-hidden="true" /></PanelHeadButton>}>
       {profiles.isPending && <LoadingState />}
@@ -33,13 +43,15 @@ export function ProfilesPage() {
         {list.map((p) => {
           const isActive = p.name === active
           return (
-            <li key={p.name} className={cn('flex items-center gap-3 rounded-lg border border-border bg-surface px-3 py-2.5', isActive && 'border-accent-bg-strong')} data-profile={p.name}>
-              <div className="min-w-0 flex-1">
+            <li key={p.name} className={cn('flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface px-3 py-2.5', isActive && 'border-accent-bg-strong')} data-profile={p.name}>
+              <div className="min-w-0 flex-1 basis-48">
                 <div className="flex items-center gap-2 text-sm font-medium text-text">
-                  <span className="truncate">{p.name}</span>
+                  {p.display_name && <span className="truncate">{p.display_name}</span>}
+                  <span className={cn('truncate', p.display_name && 'text-xs font-normal text-muted')}>{p.name}</span>
                   {p.is_default && <span className="text-xs text-muted">{m.profile_default_label()}</span>}
                   {isActive && <span className="rounded-full bg-accent-bg px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-accent-text">{m.profile_active()}</span>}
                 </div>
+                {p.description && <div className="mt-0.5 truncate text-xs text-muted" title={p.description}>{p.description}</div>}
                 <div className="mt-0.5 flex flex-wrap gap-x-3 text-[11px] text-muted">
                   {p.model && <span>{p.provider ? `${p.provider} · ` : ''}{p.model}</span>}
                   {p.has_env ? <span>{m.profile_api_keys_configured()}</span> : <span>{m.profile_no_configuration()}</span>}
@@ -47,8 +59,11 @@ export function ProfilesPage() {
                   {(p.enabled_skills ?? p.skill_count) !== undefined && <span>{m.profile_skill_count({ count: p.enabled_skills ?? p.skill_count ?? 0 })}</span>}
                 </div>
               </div>
-              {!isActive && <Button onClick={() => switchProfile.mutate(p.name, { onSuccess: () => { showToast(m.profile_switched({ name: p.name })); window.location.reload() } })} title={m.profile_switch_title()}>{m.profile_use()}</Button>}
-              {!p.is_default && !isActive && <IconButton label={m.profile_delete_title()} onClick={() => setDeleting(p.name)}><Trash2 size={14} aria-hidden="true" /></IconButton>}
+              <div className="ml-auto flex items-center gap-3">
+                {p.canonical_session && <Button onClick={() => openBotChat(p.name, p.canonical_session)} disabled={switchProfile.isPending}>{m.profile_open_bot_chat()}</Button>}
+                {!isActive && <Button onClick={() => switchProfile.mutate(p.name, { onSuccess: () => { showToast(m.profile_switched({ name: p.name })); window.location.reload() } })} title={m.profile_switch_title()}>{m.profile_use()}</Button>}
+                {!p.is_default && !isActive && <IconButton label={m.profile_delete_title()} onClick={() => setDeleting(p.name)}><Trash2 size={14} aria-hidden="true" /></IconButton>}
+              </div>
             </li>
           )
         })}

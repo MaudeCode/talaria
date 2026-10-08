@@ -34186,6 +34186,37 @@
                           },
                           "visible": {
                             "type": "boolean"
+                          },
+                          "display_name": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "has_avatar": {
+                            "type": "boolean"
+                          },
+                          "canonical_session": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "session_id": {
+                                    "type": "string"
+                                  },
+                                  "tip_session_id": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "session_id",
+                                  "tip_session_id"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           }
                         },
                         "required": [
@@ -34345,6 +34376,37 @@
                           },
                           "visible": {
                             "type": "boolean"
+                          },
+                          "display_name": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "has_avatar": {
+                            "type": "boolean"
+                          },
+                          "canonical_session": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "session_id": {
+                                    "type": "string"
+                                  },
+                                  "tip_session_id": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "session_id",
+                                  "tip_session_id"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           }
                         },
                         "required": [
@@ -34524,6 +34586,37 @@
                         },
                         "visible": {
                           "type": "boolean"
+                        },
+                        "display_name": {
+                          "type": "string"
+                        },
+                        "description": {
+                          "type": "string"
+                        },
+                        "has_avatar": {
+                          "type": "boolean"
+                        },
+                        "canonical_session": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "session_id": {
+                                  "type": "string"
+                                },
+                                "tip_session_id": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "session_id",
+                                "tip_session_id"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
