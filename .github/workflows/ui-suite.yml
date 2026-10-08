@@ -2,7 +2,7 @@
 # tests, the launch smoke and every UI test) and the TalariaKit package tests (app-tests.yml, full mode). It is too
 # long for every main push, so it runs nightly, on demand, and on main after every fifth App-changing merge since its
 # last run (ci.yml's ui-suite-cadence, TAL-655). A failed run on main goes to the fix agent (the alert job). A
-# release calls app-tests.yml directly instead (TAL-417), so this workflow's concurrency never holds a release's suite.
+# release calls app-tests.yml directly instead (TAL-417), so a release's suite never waits in this workflow's queue.
 #
 # A manual run can scope and repeat the suite instead (TAL-401), for example 10 runs in a row of one flaky test:
 #   gh workflow run ui-suite.yml --repo MaudeCode/talaria --ref <branch> \
@@ -10,12 +10,15 @@
 # only_testing runs those identifiers in one shard; test_iterations above 1 stops at the first failing iteration.
 #
 # The run name records the tested commit (TAL-408): "UI suite on <commit>", or "UI suite (scoped) on <ref>" with
-# only_testing. A release reuses a successful unscoped run named for its source commit, or for an earlier main commit
-# with no App changes since, instead of calling the suite again (app/ci/find-ui-suite-run), and the cadence counts
-# from the newest one (app/ci/ui-suite-due), so keep this format in step with those scripts.
+# only_testing, plus " (priority)" for a priority dispatch, which the queue reads. A release reuses a successful
+# unscoped run named for its source commit, or for an earlier main commit with no App changes since, instead of calling
+# the suite again (app/ci/find-ui-suite-run), and the cadence counts from the newest one (app/ci/ui-suite-due), so keep
+# this format in step with those scripts.
 
 name: UI suite
-run-name: ${{ inputs.only_testing && format('UI suite (scoped) on {0}', inputs.ref || github.sha) || format('UI suite on {0}', inputs.ref || github.sha) }}
+run-name: >-
+  ${{ format('{0}{1}', inputs.only_testing && format('UI suite (scoped) on {0}', inputs.ref || github.sha)
+  || format('UI suite on {0}', inputs.ref || github.sha), inputs.priority && ' (priority)' || '') }}
 
 on:
   schedule:
@@ -34,22 +37,64 @@ on:
         description: Runs of each selected test (a positive integer); above 1 stops at the first failure.
         type: string
         default: "1"
+      priority:
+        description: Queue ahead of ordinary branch runs, for a branch that fixes main's suite. Main's runs always are.
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
-# Nightly and dispatched suites run one at a time; the next waits (TAL-413). GitHub keeps one waiting run per group, so
-# a third run replaces the waiting one: a replaced nightly just means a release runs the suite itself. A release's
-# suite may overlap one: the shards queue only once their build holds a macOS runner (app-tests.yml), so overlapping
-# suites cannot deadlock. A called workflow's concurrency left a release's jobs pending forever (TAL-417), so
-# nothing calls this one.
-concurrency:
-  group: ui-suite
-  cancel-in-progress: false
+# Suite runs take turns in the queue job (TAL-679) instead of a concurrency group, where GitHub keeps one waiting run
+# and each new dispatch cancelled it. Priority runs (main's, and dispatches with priority) go ahead of other waiting
+# runs; nothing is cancelled. A release calls app-tests.yml directly and does not queue (TAL-417): its shards queue
+# for macOS runners only once their build holds one (app-tests.yml), so overlapping suites cannot deadlock.
 
 jobs:
+  queue:
+    # Waits on Linux, holding no macOS runner, until this run's turn (app/ci/ui-suite-wait-turn reads this job's name).
+    # Its attempt goes to the suite, whose macOS jobs refuse a "Re-run failed jobs" attempt that skipped it. A job runs
+    # at most six hours, so near that the run dispatches the same suite again, which joins the queue, and fails.
+    name: Queue
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    permissions:
+      contents: read
+      actions: write
+    outputs:
+      attempt: ${{ github.run_attempt }}
+      requeued: ${{ steps.wait.outputs.requeued }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: app/ci
+      - name: Wait for this run's turn
+        id: wait
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UI_SUITE_QUEUE_LIMIT_SECONDS: "20700"
+          REF: ${{ inputs.ref }}
+          ONLY_TESTING: ${{ inputs.only_testing }}
+          TEST_ITERATIONS: ${{ inputs.test_iterations || '1' }}
+          PRIORITY: ${{ inputs.priority || false }}
+        run: |
+          set -uo pipefail
+          app/ci/ui-suite-wait-turn "$GITHUB_RUN_ID" && exit 0
+          status=$?
+          (( status == 20 )) || exit "$status"
+          # A branch run keeps its commit. Main's tests main's head, which it alerts and counts for.
+          [[ -n "$REF" || "$GITHUB_REF_NAME" == main ]] || REF=$GITHUB_SHA
+          inputs=(-f test_iterations="$TEST_ITERATIONS" -f priority="$PRIORITY")
+          [[ -z "$REF" ]] || inputs+=(-f ref="$REF")
+          [[ -z "$ONLY_TESTING" ]] || inputs+=(-f only_testing="$ONLY_TESTING")
+          gh workflow run ui-suite.yml --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF_NAME" "${inputs[@]}"
+          echo "requeued=true" >> "$GITHUB_OUTPUT"
+          echo "::error::Waited the queue's limit; dispatched the same suite again, which waits its turn."
+          exit 1
+
   suite:
     name: UI suite
+    needs: queue
     permissions:
       contents: read
       actions: read
@@ -62,6 +107,7 @@ jobs:
       only_testing: ${{ inputs.only_testing }}
       # Strings end to end: schedule runs have no such input, so they pass "1".
       test_iterations: ${{ inputs.test_iterations || '1' }}
+      queue_attempt: ${{ needs.queue.outputs.attempt }}
 
   alert:
     # Hands a failed, unscoped suite of main's head to the fix agent: one signed POST, which files or updates a ticket
@@ -71,11 +117,13 @@ jobs:
     # body is JSON with run_id, run_url, head_sha, display_title and failed_jobs, signed like a GitHub webhook
     # (x-hub-signature-256: sha256=<HMAC-SHA256 hex of the body>). A shard GitHub cancels at its timeout leaves the
     # suite cancelled rather than failed, so a cancelled suite alerts too when a job failed or timed out; one a person
-    # cancelled has neither and sends nothing (TAL-670).
+    # cancelled has neither and sends nothing (TAL-670). A failed Queue job, which skips the suite, alerts too, unless it
+    # failed only after dispatching the same suite again at its limit (TAL-679).
     name: Send the failure to the fix agent
-    needs: suite
+    needs: [queue, suite]
     if: >-
-      always() && (needs.suite.result == 'failure' || needs.suite.result == 'cancelled')
+      always() && (needs.suite.result == 'failure' || needs.suite.result == 'cancelled'
+      || (needs.queue.result == 'failure' && needs.queue.outputs.requeued != 'true'))
       && github.ref == 'refs/heads/main' && !inputs.only_testing && (!inputs.ref || inputs.ref == github.sha)
     runs-on: ubuntu-latest
     timeout-minutes: 5

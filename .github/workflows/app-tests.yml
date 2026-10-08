@@ -19,6 +19,8 @@
 #     shards: full mode's simulator test shards, 1 to 6 (default 4; a release passes its own count, TAL-414).
 #     package_tests: false leaves out the package tests job (default true); a release runs the same suite in its
 #       contracts job instead (TAL-414).
+#     queue_attempt: the run attempt that passed ui-suite.yml's queue; every macOS job fails on any other attempt
+#       before its checkout (TAL-679). Empty (default) for every other caller.
 #   No outputs: the calling job's result is the suite's result.
 # Jobs are named "App build"/"App package tests", or "UI suite build"/"UI suite build started"/"UI suite tests
 # (shard N)"/"UI suite package tests" in full mode, whose build artifact is ui-suite-build.
@@ -56,6 +58,9 @@ on:
       package_tests:
         type: boolean
         default: true
+      queue_attempt:
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -78,6 +83,16 @@ jobs:
     runs-on: xcode-27
     timeout-minutes: 45
     steps:
+      # "Re-run failed jobs" skips ui-suite.yml's passed Queue job, so a retried job would run beside another suite.
+      # This step is the workflow's own, ahead of the checkout of the tested commit (TAL-679).
+      - &queue-guard
+        name: Refuse an attempt that skipped the queue
+        if: inputs.queue_attempt != '' && inputs.queue_attempt != format('{0}', github.run_attempt)
+        working-directory: .
+        run: |
+          echo "::error::This UI suite attempt skipped its queue: use Re-run all jobs, not Re-run failed jobs."
+          exit 1
+
       - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref || github.sha }}
@@ -130,6 +145,7 @@ jobs:
       CONTRACTS_SELECTED: ${{ inputs.contracts }}
       LIVE_CONTRACT_TEST: TalariaKitTests.APIClientSessionListTests testLiveUpstreamContractResponsesDecodeWhenSupplied
     steps:
+      - *queue-guard
       - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref || github.sha }}
@@ -249,6 +265,7 @@ jobs:
       MEMORY_LOG: memory.log
       XCODEBUILD_LOG: xcodebuild-test.log
     steps:
+      - *queue-guard
       - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref || github.sha }}

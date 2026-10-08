@@ -49,10 +49,13 @@ class TestIOSRunnerTest < Minitest::Test
     alert = YAML.safe_load_file(File.join(WORKFLOWS, "ui-suite.yml"), aliases: true)["jobs"].fetch("alert")
 
     # A shard GitHub cancels at its timeout leaves the suite cancelled, not failed, and failure() never ran the alert
-    # (TAL-670); ci/ui-suite-failed-jobs keeps a person's cancel from sending anything.
-    assert_equal("always() && (needs.suite.result == 'failure' || needs.suite.result == 'cancelled') " \
+    # (TAL-670); ci/ui-suite-failed-jobs keeps a person's cancel from sending anything. A failed Queue job skips the
+    # suite and alerts too, unless it failed after requeueing the suite at its limit (TAL-679).
+    assert_equal("always() && (needs.suite.result == 'failure' || needs.suite.result == 'cancelled' " \
+                 "|| (needs.queue.result == 'failure' && needs.queue.outputs.requeued != 'true')) " \
                  "&& github.ref == 'refs/heads/main' && !inputs.only_testing && (!inputs.ref || inputs.ref == github.sha)",
                  alert["if"])
+    assert_equal(%w[queue suite], alert["needs"])
     assert_equal({"contents" => "read", "actions" => "read", "checks" => "read"}, alert["permissions"])
     post = alert["steps"].find { |step| step["name"] == "Post the signed failure report" }["run"]
     assert_includes(post, 'failed_jobs=$(app/ci/ui-suite-failed-jobs "$GITHUB_RUN_ID")')
@@ -189,7 +192,12 @@ class TestIOSRunnerTest < Minitest::Test
     refute_match(/simulator|xcodebuild/i, package.to_yaml)
     steps = package["steps"].map { |step| [step["name"] || step["uses"], step] }.to_h
     names = steps.keys
-    assert_equal("./.github/actions/setup-xcode", names[1])
+    # The queue guard runs before the checkout of the tested commit in every macOS job (TAL-679).
+    assert_equal(["Refuse an attempt that skipped the queue", "actions/checkout@v7", "./.github/actions/setup-xcode"],
+                 names[0, 3])
+    %w[app-build app-test].each do |job|
+      assert_equal(package["steps"][0], workflow_jobs("app-tests.yml").fetch(job)["steps"][0])
+    end
     build, wait, fetch, suite = ["Build the package tests", "Wait for the Web contract probe",
                                  "Download the probe's live response fixture", "Test the package"].map { |name| names.index(name) }
     assert_equal([build + 1, build + 2, build + 3], [wait, fetch, suite])
@@ -289,7 +297,8 @@ class TestIOSRunnerTest < Minitest::Test
     refute_match(/full_ui|mode: full/, workflow_text("ci.yml"))
     suite = YAML.safe_load_file(File.join(WORKFLOWS, "ui-suite.yml"), aliases: true)
     assert_equal({"mode" => "full", "ref" => "${{ inputs.ref }}", "only_testing" => "${{ inputs.only_testing }}",
-                  "test_iterations" => "${{ inputs.test_iterations || '1' }}"}, suite["jobs"]["suite"]["with"])
+                  "test_iterations" => "${{ inputs.test_iterations || '1' }}",
+                  "queue_attempt" => "${{ needs.queue.outputs.attempt }}"}, suite["jobs"]["suite"]["with"])
     assert_equal("string", suite[true]["workflow_dispatch"]["inputs"]["test_iterations"]["type"])
     # A release calls app-tests.yml directly: a called ui-suite.yml's concurrency left its jobs pending (TAL-417).
     assert_equal(%w[schedule workflow_dispatch], suite[true].keys)
