@@ -446,11 +446,14 @@ class PublicationTests(unittest.TestCase):
                          "needs.prepare.outputs.app_changed == 'true' && needs.ui-suite-lookup.outputs.reused == 'false'")
         # The suite's test shards post failing tests as commit statuses while they run (TAL-673).
         self.assertEqual(jobs["ui-suite"]["permissions"], {"contents": "read", "actions": "read", "statuses": "write"})
-        # Nightly and dispatched suites queue one at a time (TAL-413); nothing calls ui-suite.yml (TAL-417).
+        # Nightly and dispatched suites take turns in the queue job, not a concurrency group that cancels waiting runs
+        # (TAL-679); nothing calls ui-suite.yml (TAL-417).
         suite = json.loads(subprocess.check_output([
             "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))",
             str(root / ".github/workflows/ui-suite.yml")], text=True))
-        self.assertEqual(suite["concurrency"], {"group": "ui-suite", "cancel-in-progress": False})
+        self.assertNotIn("concurrency", suite)
+        self.assertEqual(suite["jobs"]["suite"]["needs"], "queue")
+        self.assertIn('app/ci/ui-suite-wait-turn "$GITHUB_RUN_ID"', suite["jobs"]["queue"]["steps"][-1]["run"])
         self.assertNotIn("workflow_call", suite["true"])  # Ruby YAML reads `on` as true
         # The lookup only reads Actions runs.
         self.assertEqual(jobs["ui-suite-lookup"]["if"], "needs.prepare.outputs.app_changed == 'true'")

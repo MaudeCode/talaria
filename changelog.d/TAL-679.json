@@ -1,0 +1,1 @@
+{"skip": "CI tooling only: UI suite runs wait their turn in a queue instead of cancelling each other."}

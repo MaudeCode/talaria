@@ -2,7 +2,7 @@
 # tests, the launch smoke and every UI test) and the TalariaKit package tests (app-tests.yml, full mode). It is too
 # long for every main push, so it runs nightly, on demand, and on main after every fifth App-changing merge since its
 # last run (ci.yml's ui-suite-cadence, TAL-655). A failed run on main goes to the fix agent (the alert job). A
-# release calls app-tests.yml directly instead (TAL-417), so this workflow's concurrency never holds a release's suite.
+# release calls app-tests.yml directly instead (TAL-417), so a release's suite never waits in this workflow's queue.
 #
 # A manual run can scope and repeat the suite instead (TAL-401), for example 10 runs in a row of one flaky test:
 #   gh workflow run ui-suite.yml --repo MaudeCode/talaria --ref <branch> \
@@ -10,12 +10,15 @@
 # only_testing runs those identifiers in one shard; test_iterations above 1 stops at the first failing iteration.
 #
 # The run name records the tested commit (TAL-408): "UI suite on <commit>", or "UI suite (scoped) on <ref>" with
-# only_testing. A release reuses a successful unscoped run named for its source commit, or for an earlier main commit
-# with no App changes since, instead of calling the suite again (app/ci/find-ui-suite-run), and the cadence counts
-# from the newest one (app/ci/ui-suite-due), so keep this format in step with those scripts.
+# only_testing, plus " (priority)" for a priority dispatch, which the queue reads. A release reuses a successful
+# unscoped run named for its source commit, or for an earlier main commit with no App changes since, instead of calling
+# the suite again (app/ci/find-ui-suite-run), and the cadence counts from the newest one (app/ci/ui-suite-due), so keep
+# this format in step with those scripts.
 
 name: UI suite
-run-name: ${{ inputs.only_testing && format('UI suite (scoped) on {0}', inputs.ref || github.sha) || format('UI suite on {0}', inputs.ref || github.sha) }}
+run-name: >-
+  ${{ format('{0}{1}', inputs.only_testing && format('UI suite (scoped) on {0}', inputs.ref || github.sha)
+  || format('UI suite on {0}', inputs.ref || github.sha), inputs.priority && ' (priority)' || '') }}
 
 on:
   schedule:
@@ -34,22 +37,40 @@ on:
         description: Runs of each selected test (a positive integer); above 1 stops at the first failure.
         type: string
         default: "1"
+      priority:
+        description: Queue ahead of ordinary branch runs, for a branch that fixes main's suite. Main's runs always are.
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
-# Nightly and dispatched suites run one at a time; the next waits (TAL-413). GitHub keeps one waiting run per group, so
-# a third run replaces the waiting one: a replaced nightly just means a release runs the suite itself. A release's
-# suite may overlap one: the shards queue only once their build holds a macOS runner (app-tests.yml), so overlapping
-# suites cannot deadlock. A called workflow's concurrency left a release's jobs pending forever (TAL-417), so
-# nothing calls this one.
-concurrency:
-  group: ui-suite
-  cancel-in-progress: false
+# Suite runs take turns in the queue job (TAL-679) instead of a concurrency group, where GitHub keeps one waiting run
+# and each new dispatch cancelled it. Priority runs (main's, and dispatches with priority) go ahead of other waiting
+# runs; nothing is cancelled. A release calls app-tests.yml directly and does not queue (TAL-417): its shards queue
+# for macOS runners only once their build holds one (app-tests.yml), so overlapping suites cannot deadlock.
 
 jobs:
+  queue:
+    # Waits on Linux, holding no macOS runner, until this run's turn (app/ci/ui-suite-wait-turn reads this job's name).
+    name: Queue
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: app/ci
+      - name: Wait for this run's turn
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: app/ci/ui-suite-wait-turn "$GITHUB_RUN_ID"
+
   suite:
     name: UI suite
+    needs: queue
     permissions:
       contents: read
       actions: read
