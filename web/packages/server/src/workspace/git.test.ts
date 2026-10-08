@@ -393,6 +393,75 @@ describe('slow git off the event loop', () => {
   })
 })
 
+describe.skipIf(process.platform === 'win32')('literal backslashes in POSIX paths', () => {
+  let s: TestServer
+  let ws: string
+  beforeAll(async () => {
+    s = await bootTestServer({ env: { HERMES_WEBUI_WORKSPACE_GIT_DESTRUCTIVE: '1', GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.com', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.com' } })
+    ws = realpathSync(join(s.state, 'workspace'))
+    git(ws, 'init', '-q', '-b', 'main')
+    mkdirSync(join(ws, 'a'))
+    mkdirSync(join(ws, 'sub'))
+    // `a\b.txt` is one file at the root; `a/b.txt` and the glob-equivalent `ab.txt` are the files a separator or glob reading would hit.
+    for (const name of ['a\\b.txt', 'a/b.txt', 'ab.txt', 'old.txt', 'sub/c\\d.txt']) writeFileSync(join(ws, name), 'one\n')
+    git(ws, 'add', '.')
+    git(ws, 'commit', '-q', '-m', 'init')
+  })
+  afterAll(() => s.close())
+
+  const sessionIn = async (dir: string): Promise<string> => {
+    // The state workspace is registered at boot; other directories are added first.
+    if (dir !== ws) expect((await post(s, '/api/workspaces/add', { path: dir })).status).toBe(200)
+    return String(((await json(await post(s, '/api/session/new', { workspace: dir }))).session as Json).session_id)
+  }
+  const files = async (sid: string): Promise<Json[]> => {
+    s.deps.git.invalidateStatusCache(ws)
+    return (((await json(await s.get(`/api/git/status?session_id=${sid}`))).git as Json).files as Json[])
+  }
+
+  it('status, diff, and selected operations keep the exact path', async () => {
+    const sid = await sessionIn(ws)
+    for (const name of ['a\\b.txt', 'ab.txt', 'sub/c\\d.txt']) writeFileSync(join(ws, name), 'one\ntwo\n')
+    git(ws, 'mv', 'old.txt', 'new.txt')
+    let rows = await files(sid)
+    expect(rows.map((f) => f.path).sort()).toEqual(['a\\b.txt', 'ab.txt', 'new.txt', 'sub/c\\d.txt'])
+    expect(rows.find((f) => f.path === 'a\\b.txt')).toMatchObject({ status: 'M', unstaged: true, additions: 1, deletions: 0 })
+    expect(rows.find((f) => f.path === 'new.txt')).toMatchObject({ old_path: 'old.txt', staged: true })
+
+    const diff = (await json(await s.get(`/api/git/diff?session_id=${sid}&path=${encodeURIComponent('a\\b.txt')}`))).diff as Json
+    expect(diff).toMatchObject({ path: 'a\\b.txt', additions: 1 })
+    expect(String(diff.diff)).toContain('+two')
+
+    // Staging `a\b.txt` stages that file only, not `ab.txt` (which the glob pathspec `a\b.txt` also matches).
+    let res = await post(s, '/api/git/stage', { session_id: sid, paths: ['a\\b.txt'] })
+    expect(res.status).toBe(200)
+    rows = ((await json(res)).git as Json).files as Json[]
+    expect(rows.find((f) => f.path === 'a\\b.txt')).toMatchObject({ staged: true, unstaged: false })
+    expect(rows.find((f) => f.path === 'ab.txt')).toMatchObject({ staged: false, unstaged: true })
+    expect((await post(s, '/api/git/unstage', { session_id: sid, path: 'a\\b.txt' })).status).toBe(200)
+
+    res = await post(s, '/api/git/commit-selected', { session_id: sid, message: 'backslash', paths: ['a\\b.txt'] })
+    expect(res.status).toBe(200)
+    expect((await json(res)).paths).toEqual(['a\\b.txt'])
+    expect(git(ws, 'show', '--name-only', '--format=', 'HEAD').split('\n').filter(Boolean)).toEqual(['"a\\\\b.txt"'])
+
+    res = await post(s, '/api/git/discard', { session_id: sid, paths: ['sub/c\\d.txt'] })
+    expect(res.status).toBe(200)
+    expect(git(ws, 'status', '--porcelain', '--', 'ab.txt').trim()).toBe('M ab.txt')
+    expect(git(ws, 'diff', '--quiet', 'HEAD', '--', ':(literal)sub/c\\d.txt')).toBe('')
+    expect((await s.get(`/api/git/diff?session_id=${sid}&path=..%2Foutside`)).status).toBe(400)
+  })
+
+  it('a subdirectory workspace reports its backslash path relative to the workspace', async () => {
+    writeFileSync(join(ws, 'sub', 'c\\d.txt'), 'one\nthree\n')
+    const sid = await sessionIn(join(ws, 'sub'))
+    expect((await files(sid)).map((f) => f.path)).toEqual(['c\\d.txt'])
+    const diff = (await json(await s.get(`/api/git/diff?session_id=${sid}&path=${encodeURIComponent('c\\d.txt')}`))).diff as Json
+    expect(diff).toMatchObject({ path: 'c\\d.txt', additions: 1, deletions: 0 })
+    expect((await s.get(`/api/git/diff?session_id=${sid}&path=..%2Fab.txt`)).status).toBe(400)
+  })
+})
+
 describe('destructive gate', () => {
   it('rejects mutations with 403 until HERMES_WEBUI_WORKSPACE_GIT_DESTRUCTIVE=1', async () => {
     const s = await bootTestServer()
