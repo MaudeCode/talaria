@@ -49,10 +49,13 @@ class TestIOSRunnerTest < Minitest::Test
     alert = YAML.safe_load_file(File.join(WORKFLOWS, "ui-suite.yml"), aliases: true)["jobs"].fetch("alert")
 
     # A shard GitHub cancels at its timeout leaves the suite cancelled, not failed, and failure() never ran the alert
-    # (TAL-670); ci/ui-suite-failed-jobs keeps a person's cancel from sending anything.
-    assert_equal("always() && (needs.suite.result == 'failure' || needs.suite.result == 'cancelled') " \
+    # (TAL-670); ci/ui-suite-failed-jobs keeps a person's cancel from sending anything. A failed Queue job skips the
+    # suite and alerts too, unless it failed after requeueing the suite at its limit (TAL-679).
+    assert_equal("always() && (needs.suite.result == 'failure' || needs.suite.result == 'cancelled' " \
+                 "|| (needs.queue.result == 'failure' && needs.queue.outputs.requeued != 'true')) " \
                  "&& github.ref == 'refs/heads/main' && !inputs.only_testing && (!inputs.ref || inputs.ref == github.sha)",
                  alert["if"])
+    assert_equal(%w[queue suite], alert["needs"])
     assert_equal({"contents" => "read", "actions" => "read", "checks" => "read"}, alert["permissions"])
     post = alert["steps"].find { |step| step["name"] == "Post the signed failure report" }["run"]
     assert_includes(post, 'failed_jobs=$(app/ci/ui-suite-failed-jobs "$GITHUB_RUN_ID")')

@@ -12,7 +12,10 @@ cat > "$work/bin/gh" <<'EOF'
 filter=""
 for argument in "$@"; do
   case "$argument" in
-    *"/actions/workflows/ui-suite.yml/runs?"*) file="$QUEUE_TEST_DIR/runs.json" ;;
+    *"/actions/workflows/ui-suite.yml/runs?"*)
+      # Every page of the last day's runs, not just the newest 100.
+      [[ "$*" == *--paginate* && "$argument" == *"&created=%3E%3D20"* ]] || { echo "unbounded run list: $*" >&2; exit 1; }
+      file="$QUEUE_TEST_DIR/runs.json" ;;
     *"/actions/runs/"*"/jobs?"*) id=${argument#*/actions/runs/}; file="$QUEUE_TEST_DIR/jobs.${id%%/*}.json" ;;
   esac
 done

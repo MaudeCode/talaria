@@ -18,8 +18,11 @@ actions="repos/${GITHUB_REPOSITORY}/actions"
 
 turn() {
   local runs mine rank id status running
-  # One line per unfinished run: "RANK ID STATUS", RANK 0 for priority.
-  runs=$("${api}" -H "Cache-Control: no-cache" "${actions}/workflows/ui-suite.yml/runs?per_page=100" \
+  # One line per unfinished run: "RANK ID STATUS", RANK 0 for priority. Every page of the last day's runs: no run
+  # stays unfinished that long (six hours in the queue, then the suite's own job limits).
+  since=$(jq -nr 'now - 86400 | strftime("%Y-%m-%dT%H:%M:%SZ")')
+  runs=$("${api}" --paginate -H "Cache-Control: no-cache" \
+    "${actions}/workflows/ui-suite.yml/runs?per_page=100&created=%3E%3D${since}" \
     --jq '.workflow_runs[] | select(.status != "completed")
       | (if .head_branch == "main" or (.display_title | endswith(" (priority)")) then 0 else 1 end) as $rank
       | "\($rank) \(.id) \(.status)"') ||
