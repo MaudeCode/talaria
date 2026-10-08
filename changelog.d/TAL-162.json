@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Expanding a provider's models in Settings no longer animates when Reduce Motion is on.",
+      "highlight": false
+    }
+  ]
+}
