@@ -299,13 +299,13 @@ struct ChatView: View {
             voiceInputRequestID: 0,
             apiClient: viewModel.client,
             uploadAttachmentErrorMessage: prompt == nil ? viewModel.uploadAttachmentErrorMessage : nil,
-            onSend: {
+            onSend: { behavior in
                 Task {
                     guard prompt?.id == viewModel.clarificationPrompt?.id else { return }
                     if let prompt {
                         await submitClarification(promptID: prompt.id)
                     } else {
-                        await sendDraftMessage()
+                        await sendDraftMessage(behavior: behavior)
                     }
                 }
             },
@@ -1750,7 +1750,8 @@ struct ChatView: View {
     }
 
     /// Sends the draft; `command` (the send button's long-press menu) sends it as that slash command.
-    private func sendDraftMessage(as command: String? = nil) async {
+    /// During a reply it sends with `behavior` (Ctrl+Return's alternate), or else the stored setting.
+    private func sendDraftMessage(as command: String? = nil, behavior: StreamingSendBehavior? = nil) async {
         guard viewModel.clarificationPrompt == nil else { return }
         let submittedDraft = draftMessage
         let submittedDraftRevision = draftRevision
@@ -1780,13 +1781,12 @@ struct ChatView: View {
         let didStart: Bool
         if viewModel.activeStreamID != nil {
             prepareTranscriptForExplicitSend()
-            let result = await viewModel.submitStreamingMessage(
-                submittedDraft,
-                behavior: StreamingSendBehavior.storedValue(streamingSendBehaviorRawValue)
-            )
+            let behavior = behavior ?? StreamingSendBehavior.storedValue(streamingSendBehaviorRawValue)
+            let result = await viewModel.submitStreamingMessage(submittedDraft, behavior: behavior)
             handleSlashExecutionResult(
                 result,
-                parsedCommand: SlashCommandCatalog.command(named: streamingSendBehaviorCommandName),
+                // Each behavior's raw value names its slash command.
+                parsedCommand: SlashCommandCatalog.command(named: behavior.rawValue),
                 submittedDraft: submittedDraft,
                 submittedDraftRevision: submittedDraftRevision,
                 consumesDraft: result.isSuccessfulSubmission
@@ -1934,17 +1934,6 @@ struct ChatView: View {
             command?.handler == .serverSide(.steer) ||
             command?.handler == .serverSide(.interrupt) ||
             command?.handler == .serverSide(.background)
-    }
-
-    private var streamingSendBehaviorCommandName: String {
-        switch StreamingSendBehavior.storedValue(streamingSendBehaviorRawValue) {
-        case .steer:
-            "steer"
-        case .interrupt:
-            "interrupt"
-        case .queue:
-            "queue"
-        }
     }
 
     private var draftKey: ChatDraftKey {

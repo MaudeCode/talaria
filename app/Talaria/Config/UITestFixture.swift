@@ -171,6 +171,7 @@ struct UITestFixtureEnvironment {
             StreamingSendBehavior.steer.rawValue,
             forKey: StreamingSendBehavior.storageKey
         )
+        UserDefaults.standard.set(ComposerSendKey.defaultValue.rawValue, forKey: ComposerSendKey.storageKey)
         UserDefaults.standard.set(
             ComposerSTTProviderPreference.defaultValue.rawValue,
             forKey: ComposerSTTProviderPreference.storageKey

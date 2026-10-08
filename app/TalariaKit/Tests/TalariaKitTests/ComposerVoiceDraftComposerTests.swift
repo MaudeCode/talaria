@@ -178,6 +178,19 @@ final class ComposerVoiceDraftComposerTests: XCTestCase {
         XCTAssertEqual(counter.audioEngineCalls, 0)
     }
 
+    func testStreamingSendBehaviorAlternateQueuesASendNowAndSteersAQueue() {
+        XCTAssertEqual(StreamingSendBehavior.steer.alternate, .queue)
+        XCTAssertEqual(StreamingSendBehavior.interrupt.alternate, .queue)
+        XCTAssertEqual(StreamingSendBehavior.queue.alternate, .steer)
+    }
+
+    func testComposerSendKeyDefaultsToReturn() {
+        XCTAssertEqual(ComposerSendKey.defaultValue, .return)
+        XCTAssertEqual(ComposerSendKey.storedValue("unknown"), .return)
+        XCTAssertEqual(ComposerSendKey.storedValue("return"), .return)
+        XCTAssertEqual(ComposerSendKey.storedValue("commandReturn"), .commandReturn)
+    }
+
     func testSTTProviderPreferenceDefaultsToServerFirst() {
         XCTAssertEqual(ComposerSTTProviderPreference.defaultValue, .serverFirst)
         XCTAssertEqual(

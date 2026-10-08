@@ -31,8 +31,37 @@ public enum StreamingSendBehavior: String, CaseIterable, Identifiable {
         }
     }
 
+    /// The other way to send while a reply runs, for Ctrl+Return: queue when the setting sends now, steer when it queues.
+    public var alternate: StreamingSendBehavior {
+        self == .queue ? .steer : .queue
+    }
+
     public static func storedValue(_ rawValue: String) -> StreamingSendBehavior {
         StreamingSendBehavior(rawValue: rawValue) ?? .steer
+    }
+}
+
+/// The hardware-keyboard key that sends the draft; the other of Return and ⌘Return inserts a newline.
+public enum ComposerSendKey: String, CaseIterable, Identifiable {
+    case `return`
+    case commandReturn
+
+    public static let storageKey = "composerSendKey"
+    public static let defaultValue: ComposerSendKey = .return
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .return:
+            String(localized: "Return")
+        case .commandReturn:
+            String(localized: "⌘ Return")
+        }
+    }
+
+    public static func storedValue(_ rawValue: String) -> ComposerSendKey {
+        ComposerSendKey(rawValue: rawValue) ?? defaultValue
     }
 }
 
