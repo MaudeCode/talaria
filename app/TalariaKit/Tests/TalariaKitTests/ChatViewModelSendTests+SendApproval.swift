@@ -246,7 +246,7 @@ extension ChatViewModelSendTests {
         let didStart = await viewModel.sendVoiceNote(
             audioData: Data("fake-m4a-bytes".utf8),
             filename: "voice-note.m4a"
-        )
+        ).didStart
 
         XCTAssertTrue(didStart)
         XCTAssertEqual(requestedPaths, ["/api/transcribe", "/api/upload", "/api/chat/start"])
@@ -1191,7 +1191,7 @@ extension ChatViewModelSendTests {
         XCTAssertTrue(viewModel.isSendingVoiceNote)
 
         transcribeGate.signal()
-        let didSendVoice = await voiceSend.value
+        let didSendVoice = await voiceSend.value.didStart
 
         XCTAssertTrue(didSendVoice)
         XCTAssertEqual(startCount, 1)
@@ -1250,7 +1250,7 @@ extension ChatViewModelSendTests {
         let didSendVoice = await viewModel.sendVoiceNote(
             audioData: Data("fake-m4a-bytes".utf8),
             filename: "voice-note.m4a"
-        )
+        ).didStart
 
         XCTAssertFalse(didSendVoice)
         XCTAssertFalse(viewModel.isSendingVoiceNote)

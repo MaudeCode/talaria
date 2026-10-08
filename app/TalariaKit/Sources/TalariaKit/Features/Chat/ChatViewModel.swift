@@ -84,6 +84,8 @@ public final class ChatViewModel {
     public private(set) var messageActionErrorMessage: String?
     private(set) var cacheErrorMessage: String?
     public private(set) var lastError: Error?
+    /// The latest queued send that failed; ChatView forwards its error to `onAPIError` (TAL-150).
+    public private(set) var queuedSendFailure: ChatSendFailure?
     public private(set) var displayTitle: String
     public private(set) var listeningMessageID: String?
     public private(set) var streamingScrollTrigger = 0
@@ -2408,14 +2410,22 @@ public final class ChatViewModel {
         queuedAttachments: [PendingAttachment]? = nil,
         modelContext: ModelContext? = nil
     ) async -> Bool {
+        await performMessageSend(draft, queuedAttachments: queuedAttachments, modelContext: modelContext).didStart
+    }
+
+    private func performMessageSend(
+        _ draft: String,
+        queuedAttachments: [PendingAttachment]?,
+        modelContext: ModelContext?
+    ) async -> ChatSendOutcome {
         // Reentrancy guard, mirroring `sendVoiceNote`. It must run before
         // `prepareForSend` so a rejected send never consumes the composer's
         // staged attachments, and before `performChatSend` so a rejected caller
         // never reaches that method's `defer { isStartingChat = false }`.
-        guard !isStartingChat, !isSendingVoiceNote else { return false }
+        guard !isStartingChat, !isSendingVoiceNote else { return ChatSendOutcome(didStart: false) }
         guard !isViewingCachedData else {
             sendErrorMessage = String(localized: "Reconnect to the server to send a message.")
-            return false
+            return ChatSendOutcome(didStart: false)
         }
 
         // A server that names attached files in the prompt (TAL-276) gets the bare draft, as Web
@@ -2428,17 +2438,17 @@ public final class ChatViewModel {
         let hasSendableAttachments = attachmentsToSend.contains {
             !$0.path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
-        guard !message.isEmpty || hasSendableAttachments else { return false }
+        guard !message.isEmpty || hasSendableAttachments else { return ChatSendOutcome(didStart: false) }
 
         guard let sessionID else {
             sendErrorMessage = String(localized: "The server did not provide a session ID.")
-            return false
+            return ChatSendOutcome(didStart: false)
         }
 
         let localMessageID = "local-\(UUID().uuidString)"
         let attachmentPreparation = attachmentCoordinator.prepareForSend(queuedAttachments, localMessageID: localMessageID)
 
-        let didStart = await performChatSend(
+        let outcome = await performChatSend(
             sessionID: sessionID,
             localMessageID: localMessageID,
             // The optimistic row shows the draft and its attachments, which is what the server
@@ -2451,22 +2461,24 @@ public final class ChatViewModel {
             attachmentsToRestoreOnFailure: queuedAttachments == nil ? attachmentPreparation.attachments : [],
             modelContext: modelContext
         )
-        if didStart {
+        if outcome.didStart {
             for attachment in attachmentPreparation.attachments {
                 guard let fileName = attachment.draftFileName else { continue }
                 await attachmentCoordinator.deleteDraftCopy(named: fileName)
             }
         }
-        return didStart
+        return outcome
     }
 
     /// Records → transcribes → uploads → sends a server-transcribed voice note
     /// (Telegram-style). The sent message's text is the transcript and its sole
     /// attachment is the audio clip, rendered as a playable note by the inline
     /// audio player. Aborts (toast, no partial send) if transcription fails or
-    /// returns nothing. Returns true only if the chat send started.
+    /// returns nothing. The outcome says whether the chat send started and carries
+    /// the error this voice note hit, captured before the `defer` below releases the
+    /// pipeline to a queued send that clears `lastError` (TAL-150).
     @discardableResult
-    public func sendVoiceNote(audioData: Data, filename: String, modelContext: ModelContext? = nil) async -> Bool {
+    public func sendVoiceNote(audioData: Data, filename: String, modelContext: ModelContext? = nil) async -> ChatSendOutcome {
         // Reentrancy guard: bail if a voice note OR a regular chat send is already
         // in flight. It has to live here rather than only in `performChatSend`,
         // because transcription and upload run before that call and must not start
@@ -2475,19 +2487,19 @@ public final class ChatViewModel {
         // `defer { … = false }` (clearing the flag while the other still runs, and
         // firing two concurrent `startChat`s). The UI already blocks this; the guard
         // keeps a future caller (accessibility shortcut, test harness) safe too.
-        guard !isSendingVoiceNote, !isStartingChat else { return false }
+        guard !isSendingVoiceNote, !isStartingChat else { return ChatSendOutcome(didStart: false) }
         guard !isViewingCachedData else {
             setUploadAttachmentError(String(localized: "Reconnect to the server to send a voice note."))
-            return false
+            return ChatSendOutcome(didStart: false)
         }
-        guard !audioData.isEmpty else { return false }
+        guard !audioData.isEmpty else { return ChatSendOutcome(didStart: false) }
         guard audioData.count <= PendingAttachment.maximumUploadBytes else {
             setUploadAttachmentError(PendingAttachment.uploadTooLargeMessage(filename: filename))
-            return false
+            return ChatSendOutcome(didStart: false)
         }
         guard let sessionID else {
             setUploadAttachmentError(String(localized: "The server did not provide a session ID."))
-            return false
+            return ChatSendOutcome(didStart: false)
         }
 
         isSendingVoiceNote = true
@@ -2511,27 +2523,29 @@ public final class ChatViewModel {
             if let serverError = response.error?.trimmingCharacters(in: .whitespacesAndNewlines),
                !serverError.isEmpty {
                 setUploadAttachmentError(serverError)
-                return false
+                return ChatSendOutcome(didStart: false)
             }
             let text = (response.transcript ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty else {
                 setUploadAttachmentError(String(localized: "Couldn't transcribe that voice note. Try recording again."))
-                return false
+                return ChatSendOutcome(didStart: false)
             }
             transcript = text
         } catch {
             lastError = error
             setUploadAttachmentError(error.localizedDescription)
-            return false
+            return ChatSendOutcome(didStart: false, error: error)
         }
 
         // 2. Upload the clip as a standalone attachment (kept out of the composer's
-        //    pending list). On failure the coordinator already surfaced the error.
+        //    pending list). On failure the coordinator already surfaced the error,
+        //    reporting its thrown error through `lastError`; no other send can clear
+        //    that while this voice note owns the pipeline.
         guard let pending = await attachmentCoordinator.uploadStandaloneAttachment(
             data: audioData,
             filename: filename
         ) else {
-            return false
+            return ChatSendOutcome(didStart: false, error: lastError)
         }
 
         // 3. Send a chat message: text = transcript, attachments = [the clip].
@@ -2576,7 +2590,7 @@ public final class ChatViewModel {
         apiPayloads: [JSONValue]?,
         attachmentsToRestoreOnFailure: [PendingAttachment],
         modelContext: ModelContext?
-    ) async -> Bool {
+    ) async -> ChatSendOutcome {
         // Single-owner backstop for the shared start pipeline: only one caller may
         // own the optimistic row, the `startChat` request, and `isStartingChat` at a
         // time. Deliberately does not test `isSendingVoiceNote` — the voice pipeline
@@ -2586,7 +2600,7 @@ public final class ChatViewModel {
         // instead of racing the append and the `defer`.
         guard !isStartingChat else {
             restorePendingAttachments(attachmentsToRestoreOnFailure)
-            return false
+            return ChatSendOutcome(didStart: false)
         }
         isStartingChat = true
         isStartingMessageSend = true
@@ -2630,7 +2644,7 @@ public final class ChatViewModel {
                 rollbackOptimisticMessage(id: localMessageID)
                 cacheCurrentMessages(sessionID: sessionID, modelContext: modelContext)
                 restorePendingAttachments(attachmentsToRestoreOnFailure)
-                return false
+                return ChatSendOutcome(didStart: false)
             }
 
             completeExplicitModelPickForChatStart(explicitModelPick)
@@ -2639,7 +2653,7 @@ public final class ChatViewModel {
                 armsAggregateForLocalWork: true,
                 runStartedAt: response.runStartedAt(sentAt: sentAt)
             )
-            return true
+            return ChatSendOutcome(didStart: true)
         } catch {
             if let streamID = (error as? APIError)?.activeStreamID {
                 rollbackOptimisticMessage(id: localMessageID)
@@ -2649,14 +2663,14 @@ public final class ChatViewModel {
                 // The server kept the earlier run, not this newly submitted text.
                 // Report an unaccepted send so ChatView restores the draft while
                 // the coordinator reconnects to the existing response.
-                return false
+                return ChatSendOutcome(didStart: false)
             }
             lastError = error
             sendErrorMessage = error.localizedDescription
             rollbackOptimisticMessage(id: localMessageID)
             cacheCurrentMessages(sessionID: sessionID, modelContext: modelContext)
             restorePendingAttachments(attachmentsToRestoreOnFailure)
-            return false
+            return ChatSendOutcome(didStart: false, error: error)
         }
     }
 
@@ -5442,9 +5456,16 @@ public final class ChatViewModel {
         isSendingQueuedMessage = true
 
         Task { @MainActor in
-            let sent = await sendMessage(next.text, queuedAttachments: next.attachments)
+            let outcome = await performMessageSend(next.text, queuedAttachments: next.attachments, modelContext: nil)
+            let sent = outcome.didStart
             if !sent {
                 queuedSlashMessages.insert(next, at: 0)
+                // No caller awaits a queued send, so its error goes to `queuedSendFailure` for ChatView's
+                // `onAPIError` (an expired sign-in reauthenticates), while `sendErrorMessage` already shows
+                // it in the chat. The message stays queued for the next natural trigger, never an immediate retry.
+                if let error = outcome.error {
+                    queuedSendFailure = ChatSendFailure(error: error)
+                }
             }
             isSendingQueuedMessage = false
             // Only chain-drain after a *successful* send. A failed send requeues the message and

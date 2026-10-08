@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A queued message or voice note that fails because your sign-in expired now asks you to sign in again instead of failing quietly.",
+      "highlight": false
+    }
+  ]
+}

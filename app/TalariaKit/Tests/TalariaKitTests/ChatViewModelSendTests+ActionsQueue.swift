@@ -1677,7 +1677,7 @@ extension ChatViewModelSendTests {
         // The voice note fails without starting a stream, so releasing the pipeline
         // is the queued message's only remaining trigger.
         transcribeGate.signal()
-        let didSendVoice = await voiceSend.value
+        let didSendVoice = await voiceSend.value.didStart
         XCTAssertFalse(didSendVoice)
 
         try await waitUntil { chatStartCount == 2 }
@@ -1691,6 +1691,108 @@ extension ChatViewModelSendTests {
             statusText.contains("Queued messages: 0"),
             "The queued message should have drained once the voice note released the pipeline. Status was:\n\(statusText)"
         )
+    }
+
+    /// TAL-150: the drain a failed voice note releases clears `lastError` when its send starts, so the voice
+    /// note's own error must reach ChatView through its outcome. The drained send is held open while the
+    /// test reads, so no actor resume order decides which error survives.
+    @MainActor
+    func testVoiceNoteAPIErrorSurvivesTheQueuedDrainItReleases() async throws {
+        let streamClient = SpySSEStreamingClient()
+        let transcribeGate = DispatchSemaphore(value: 0)
+        let drainedStartGate = DispatchSemaphore(value: 0)
+        defer {
+            transcribeGate.signal()
+            drainedStartGate.signal()
+        }
+        var chatStartCount = 0
+
+        let viewModel = try makeViewModel(streamClient: streamClient) { request in
+            switch request.url?.path {
+            case "/api/chat/start":
+                chatStartCount += 1
+                switch chatStartCount {
+                case 1:
+                    return apiTestJSONResponse(#"{"session_id":"session-abc","stream_id":"stream-1"}"#, for: request)
+                case 2:
+                    return apiTestJSONResponse(#"{"error":"expired"}"#, statusCode: 401, for: request)
+                default:
+                    drainedStartGate.wait()
+                    return apiTestJSONResponse(#"{"session_id":"session-abc","stream_id":"stream-3"}"#, for: request)
+                }
+            case "/api/transcribe":
+                transcribeGate.wait()
+                return apiTestJSONResponse(#"{"ok": true, "transcript": "voice words"}"#, for: request)
+            case "/api/upload":
+                return apiTestJSONResponse("""
+                {"filename":"voice-note.m4a","path":"/tmp/workspace/voice-note.m4a","size":14,"mime":"audio/m4a","is_image":false}
+                """, for: request)
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        let didStart = await viewModel.sendMessage("first message")
+        XCTAssertTrue(didStart)
+        let queueCommand = try XCTUnwrap(SlashCommandCatalog.command(named: "queue"))
+        let queued = await viewModel.executeSlashCommand(queueCommand, args: "queued message")
+        XCTAssertEqual(queued, .executed(message: nil))
+
+        let voiceSend = Task { @MainActor in
+            await viewModel.sendVoiceNote(audioData: Data("fake-m4a-bytes".utf8), filename: "voice-note.m4a")
+        }
+        try await waitUntil { viewModel.isSendingVoiceNote }
+        streamClient.emit(.streamEnd)
+        transcribeGate.signal()
+
+        let outcome = await voiceSend.value
+        // The drained send is in flight and has already reset the shared error.
+        try await waitUntil { chatStartCount == 3 && viewModel.isStartingChat }
+        XCTAssertNil(viewModel.lastError)
+
+        XCTAssertFalse(outcome.didStart)
+        guard case APIError.unauthorized? = outcome.error else {
+            return XCTFail("Expected the voice note's unauthorized error, got \(String(describing: outcome.error)).")
+        }
+    }
+
+    /// TAL-150: a queued send fails with no caller waiting on it, so its error is published for ChatView's
+    /// auth handling while the message stays queued for the next natural trigger (issue #202).
+    @MainActor
+    func testFailedQueuedSendPublishesItsAPIErrorAndStaysQueued() async throws {
+        let streamClient = SpySSEStreamingClient()
+        var chatStartCount = 0
+        let viewModel = try makeViewModel(streamClient: streamClient) { request in
+            switch request.url?.path {
+            case "/api/chat/start":
+                chatStartCount += 1
+                if chatStartCount == 1 {
+                    return apiTestJSONResponse(#"{"session_id":"session-abc","stream_id":"stream-1"}"#, for: request)
+                }
+                return apiTestJSONResponse(#"{"error":"expired"}"#, statusCode: 401, for: request)
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        let didStart = await viewModel.sendMessage("first message")
+        XCTAssertTrue(didStart)
+        let queueCommand = try XCTUnwrap(SlashCommandCatalog.command(named: "queue"))
+        let queued = await viewModel.executeSlashCommand(queueCommand, args: "queued message")
+        XCTAssertEqual(queued, .executed(message: nil))
+        XCTAssertNil(viewModel.queuedSendFailure)
+
+        streamClient.emit(.streamEnd)
+        try await waitUntil { chatStartCount == 2 && !viewModel.isStartingChat }
+        await drainMainActor()
+
+        guard case APIError.unauthorized? = viewModel.queuedSendFailure?.error else {
+            return XCTFail("Expected the queued send's unauthorized error, got \(String(describing: viewModel.queuedSendFailure)).")
+        }
+        XCTAssertEqual(chatStartCount, 2)
+        XCTAssertEqual(viewModel.queuedMessagePreviews.map(\.text), ["queued message"])
     }
 }
 
