@@ -7,9 +7,7 @@
  * redelivered at turn teardown with a bounded retry budget).
  */
 import { randomUUID } from 'node:crypto'
-import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { atomicWriteText } from '../fs/atomic.js'
 import type { SidecarLike } from '../sidecar/client.js'
 import type { SessionChannels, StreamRegistry } from './streams.js'
 import type { SessionStore } from './store.js'
@@ -17,7 +15,7 @@ import type { Session } from './session.js'
 import { str } from '../util.js'
 import { batchUpdate, recordBackgroundUpdate } from './background-updates.js'
 import type { BackgroundActivity } from './background-tasks.js'
-import { heldWakeups, holdWakeups, mergeWakeups, poolRecovery, releaseWakeups, wakeupPaused, type HeldWakeup } from './wakeup-pause.js'
+import { HeldWakeups, mergeWakeups, poolRecovery, wakeupPaused, type HeldWakeup } from './wakeup-pause.js'
 
 type Dict = Record<string, unknown>
 export const COMPLETION_POLL_MS = 1000
@@ -27,8 +25,6 @@ const WAKEUP_RETRY_MAX_ATTEMPTS = 5
 const WAKEUP_BATCH_MAX_CHARS = 24_000
 /** A session with held wakeups rechecks its pause at least this often (a credential edit has no deadline). */
 const HELD_RECHECK_SECONDS = 300
-/** TAL-576: the sessions holding wakeups, so a restarted server resumes them. */
-const HELD_INDEX = '_wakeup_held.json'
 
 interface StartedTurn { _status?: number; error?: string; stream_id?: string; retryable?: boolean }
 
@@ -88,8 +84,12 @@ export class CompletionDrain {
   private recoveryWarnedFor: unknown = null
   private lastDrainError: string | null = null
   private heldResumed = false
+  /** TAL-576: wakeups held while their session is paused. */
+  private readonly heldWakeups: HeldWakeups
 
-  constructor(private readonly deps: CompletionDrainDeps) {}
+  constructor(private readonly deps: CompletionDrainDeps) {
+    this.heldWakeups = new HeldWakeups(join(deps.store.sessionDir, '_wakeup_held.json'))
+  }
 
   start(): void {
     if (this.timer || this.stopped) return
@@ -318,61 +318,48 @@ export class CompletionDrain {
     try { return poolRecovery((await sidecar.call('usage.pool', { profile_home: home, provider })).entries, this.deps.now()) } catch { return null }
   }
 
-  private heldIndex(): string[] {
-    try { const sids = JSON.parse(readFileSync(join(this.deps.store.sessionDir, HELD_INDEX), 'utf8')) as unknown; return Array.isArray(sids) ? sids.map(str) : [] } catch { return [] }
-  }
-
-  /** A restarted server resumes every session it left holding wakeups; a deleted session leaves the index. */
+  /** A restarted server resumes every session it left holding wakeups; a deleted session's are dropped. */
   private resumeHeld(): void {
-    for (const sid of this.heldIndex()) {
-      try { this.deps.store.get(sid, { metadataOnly: true, promote: false, cacheOnMiss: false }) } catch { this.indexHeld(sid, false); continue }
+    for (const sid of this.heldWakeups.sessions()) {
+      try { this.deps.store.get(sid, { metadataOnly: true, promote: false, cacheOnMiss: false }) } catch { this.release(sid); continue }
       void this.drainDeferred(sid)
     }
   }
 
-  /**
-   * Saves the session's held wakeups and keeps the held index in step: a session joins the index before its held
-   * wakeups are written and leaves only after they are gone, so a crash between the two writes never hides one.
-   */
-  private saveHeld(sid: string, session: Session): void {
-    const holds = heldWakeups(session).length > 0
-    if (holds) this.indexHeld(sid, true)
-    try { this.deps.store.save(session, { touchUpdatedAt: false }) } catch (error) { this.deps.log(`[webui] WARNING: failed to save held wakeups for session ${sid}: ${(error as Error).message}`); return }
-    if (!holds) this.indexHeld(sid, false)
+  /** Admitted or settled wakeups (every one, with none given) leave the held file. */
+  private release(sid: string, entries?: Deferred[]): void {
+    try { this.heldWakeups.release(sid, entries) } catch (error) { this.deps.log(`[webui] WARNING: failed to release held wakeups for session ${sid}: ${(error as Error).message}`) }
   }
 
-  private indexHeld(sid: string, holds: boolean): void {
-    const sids = new Set(this.heldIndex())
-    if (holds === sids.has(sid)) return
-    if (holds) sids.add(sid)
-    else sids.delete(sid)
-    try { atomicWriteText(join(this.deps.store.sessionDir, HELD_INDEX), JSON.stringify([...sids])) } catch (error) { this.deps.log(`[webui] WARNING: failed to update the held wakeup index: ${(error as Error).message}`) }
-  }
-
-  /** Admitted or settled wakeups leave the session's held copy. */
-  private release(sid: string, entries: Deferred[]): void {
-    let session: Session
-    try { session = this.deps.store.get(sid, { promote: false }) } catch { return }
-    if (releaseWakeups(session, entries)) this.saveHeld(sid, session)
+  private saveSession(sid: string, session: Session): void {
+    try { this.deps.store.save(session, { touchUpdatedAt: false }) } catch (error) { this.deps.log(`[webui] WARNING: failed to save wakeup pause for session ${sid}: ${(error as Error).message}`) }
   }
 
   /**
-   * TAL-576: while the provider has no usable credentials no wakeup turn starts. The entries are held on the session
-   * until a turn admits them, and a timer rechecks the pause at the pool's earliest retry deadline, at least every
-   * five minutes. Returns whether the wakeup stays paused.
+   * TAL-576: while the provider has no usable credentials no wakeup turn starts. The entries are held until a turn
+   * admits them, and a timer rechecks the pause at the pool's earliest retry deadline, at least every five minutes.
+   * Returns whether the wakeup stays paused.
    */
   private async holdWhilePaused(sid: string, session: Session, home: string, batched: Deferred[]): Promise<boolean> {
     const pause = session.process_wakeup_pause
     if (!wakeupPaused(session, home)) {
-      if (pause !== session.process_wakeup_pause) this.saveHeld(sid, session)
+      if (pause !== session.process_wakeup_pause) this.saveSession(sid, session)
       return false
     }
     const recovery = await this.poolRecovery(home, session)
+    // A turn that succeeded or a provider switched during the lookup lifted the pause already.
     let current: Session
     try { current = this.deps.store.get(sid) } catch { current = session }
-    if (recovery === true) { current.process_wakeup_pause = null; this.saveHeld(sid, current); return false }
-    holdWakeups(current, batched)
-    this.saveHeld(sid, current)
+    const before = current.process_wakeup_pause
+    if (recovery === true) current.process_wakeup_pause = null
+    if (recovery === true || !wakeupPaused(current, home)) {
+      if (before !== current.process_wakeup_pause) this.saveSession(sid, current)
+      return false
+    }
+    try { this.heldWakeups.hold(sid, batched) } catch (error) {
+      for (const e of batched) this.recordDeferred(sid, e.process_id, e.wakeup_prompt, e.event)
+      this.deps.log(`[webui] WARNING: failed to persist held wakeups for session ${sid}; kept in memory: ${(error as Error).message}`)
+    }
     this.retryAttempts.delete(sid)
     this.scheduleDrain(sid, Math.min(recovery === null ? HELD_RECHECK_SECONDS : recovery - this.deps.now(), HELD_RECHECK_SECONDS))
     this.deps.log(`[webui] server-side wakeup paused for session ${sid}: provider credential pool is empty`)
@@ -424,15 +411,10 @@ export class CompletionDrain {
     try { const { consumed } = await sidecar.call('process.consumed', { process_ids: completions.map((e) => e.process_id) }); return new Set(completions.filter((e) => consumed.includes(e.process_id))) } catch { return new Set() }
   }
 
-  /** TAL-576: the wakeups the session holds; they leave it only once a turn admits them. */
-  private held(sid: string): Deferred[] {
-    try { return heldWakeups(this.deps.store.get(sid, { promote: false })) } catch { return [] }
-  }
-
   /** Python `drain_deferred_wakeups_for_session`: turn-teardown idle hook; only the last active stream's teardown fires. */
   async drainDeferred(sid: string): Promise<number> {
     if (!sid || this.hasActiveTurn(sid)) return 0
-    const entries = mergeWakeups([...(this.deferred.get(sid) ?? [])], this.held(sid))
+    const entries = mergeWakeups([...(this.deferred.get(sid) ?? [])], this.heldWakeups.get(sid))
     if (!entries.length) return 0
     this.deferred.delete(sid)
     this.pendingSessions.delete(sid)

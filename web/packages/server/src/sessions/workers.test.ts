@@ -517,8 +517,9 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
     await new Promise((r) => setTimeout(r, 50))
     await idle()
   }
-  const heldIndex = (): string[] => { try { return JSON.parse(readFileSync(join(s.deps.sessionStore.sessionDir, '_wakeup_held.json'), 'utf8')) as string[] } catch { return [] } }
-  const heldIds = (sid: string): unknown[] => ((s.deps.sessionStore.get(sid).extra.process_wakeup_held as Json[] | undefined) ?? []).map((e) => e.process_id)
+  const heldFile = (): Record<string, Json[]> => { try { return JSON.parse(readFileSync(join(s.deps.sessionStore.sessionDir, '_wakeup_held.json'), 'utf8')) as Record<string, Json[]> } catch { return {} } }
+  const heldIndex = (): string[] => Object.keys(heldFile())
+  const heldIds = (sid: string): unknown[] => (heldFile()[sid] ?? []).map((e) => e.process_id)
   const pausedSession = async (): Promise<string> => {
     starts = []
     poolEmpty()
@@ -533,9 +534,9 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
     await complete(sid, `${sid}_2`)
     await complete(sid, `${sid}_3`)
     expect(starts, 'a paused session starts no wakeup turn').toHaveLength(1)
-    // Held on the session document, so a restart before the pause lifts loses none.
-    const held = (JSON.parse(readFileSync(s.deps.sessionStore.pathFor(sid), 'utf8')) as Json).process_wakeup_held as Json[]
-    expect(held.map((e) => e.process_id), 'paused wakeups wait on the session').toEqual([`${sid}_2`, `${sid}_3`])
+    // Held with their payload in one durable file, so a restart before the pause lifts loses none.
+    expect(heldIds(sid), 'paused wakeups are held').toEqual([`${sid}_2`, `${sid}_3`])
+    expect(str(heldFile()[sid]![0]!.wakeup_prompt)).toContain(`Background process ${sid}_2 completed`)
     expect(s.deps.completions.deferredCount(sid)).toBe(0)
     expect(heldIndex()).toContain(sid)
     expect(s.deps.sessionStore.get(sid).process_wakeup_pause).toMatchObject({ paused: true, classification: 'credential_pool_empty' })
@@ -552,7 +553,6 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
     expect(starts).toHaveLength(3)
     expect(starts[1]).toContain(`Background process ${sid}_5 completed`)
     expect(starts[2]).toContain(`Background process ${sid}_2 completed`)
-    expect(s.deps.sessionStore.get(sid).extra).not.toHaveProperty('process_wakeup_held')
     expect(heldIndex()).not.toContain(sid)
     expect(s.deps.sessionStore.get(sid).process_wakeup_pause).toBeNull()
   })
@@ -572,14 +572,8 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
 
   it('keeps held wakeups until a turn admits them, and a restarted server resumes them', async () => {
     const sid = await pausedSession()
-    // The index is written before the session, so a crash between the two writes still finds the session.
-    const save = vi.spyOn(s.deps.sessionStore, 'save').mockImplementationOnce(() => { throw new Error('crashed') })
     await complete(sid, `${sid}_2`)
-    save.mockRestore()
-    expect(heldIndex()).toContain(sid)
-    // The next save persists what the failed one could not.
-    await complete(sid, `${sid}_2b`)
-    expect(heldIds(sid)).toEqual([`${sid}_2`, `${sid}_2b`])
+    expect(heldIds(sid)).toEqual([`${sid}_2`])
     writeFileSync(join(s.state, 'auth.json'), JSON.stringify({ credential_pool: { openrouter: [{ api_key: 'sk-a' }, { api_key: 'sk-b' }, { api_key: 'sk-c' }] } }))
     // The pause lifts but the turn is refused: the held copy stays on disk.
     const refused = new CompletionDrain({
@@ -589,7 +583,7 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
     await refused.drainDeferred(sid)
     refused.stop()
     expect(s.deps.sessionStore.get(sid).process_wakeup_pause).toBeNull()
-    expect(heldIds(sid)).toEqual([`${sid}_2`, `${sid}_2b`])
+    expect(heldIds(sid)).toEqual([`${sid}_2`])
     expect(heldIndex()).toContain(sid)
     // A new server's first drain resumes the session and the admitted wakeup leaves the disk.
     const prompts: string[] = []
@@ -606,9 +600,23 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
     for (let i = 0; i < 50 && !prompts.length; i += 1) await new Promise((r) => setTimeout(r, 20))
     await new Promise((r) => setTimeout(r, 50))
     expect(prompts[0]).toContain(`Background process ${sid}_2 completed`)
-    expect(prompts[0]).toContain(`Background process ${sid}_2b completed`)
     expect(heldIds(sid)).toEqual([])
     expect(heldIndex()).not.toContain(sid)
+  })
+
+  it('does not hold a wakeup when the pause lifted during the pool lookup', async () => {
+    const sid = await pausedSession()
+    const session = s.deps.sessionStore.get(sid)
+    session.model_provider = 'openrouter'
+    session.process_wakeup_pause = { ...(session.process_wakeup_pause as Json), provider: 'openrouter' }
+    s.deps.sessionStore.save(session)
+    // A user turn succeeds while the lookup is in flight; the pool itself still reports no usable entry.
+    sidecar.respond('usage.pool', () => { s.deps.sessionStore.get(sid).process_wakeup_pause = null; return { entries: [] } })
+    sidecar.respond('chat.start', (params) => { starts.push(str(params.user_message)); return completed('ok') })
+    await complete(sid, `${sid}_2`)
+    sidecar.respond('usage.pool', () => { throw new Error('unset') })
+    expect(starts[1]).toContain(`Background process ${sid}_2 completed`)
+    expect(heldIds(sid)).toEqual([])
   })
 
   it('rechecks the pool at its retry deadline and delivers the held wakeups', async () => {

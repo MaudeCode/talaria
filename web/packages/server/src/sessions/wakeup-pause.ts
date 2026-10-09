@@ -5,6 +5,7 @@
 import { createHash } from 'node:crypto'
 import { readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+import { atomicWriteText } from '../fs/atomic.js'
 import type { Session } from './session.js'
 import { isDict } from './merge.js'
 import { str } from '../util.js'
@@ -49,16 +50,11 @@ export function poolRecovery(entries: readonly { status: string; retry_after: st
   return earliest !== null && earliest <= now ? true : earliest
 }
 
-/** A wakeup held while paused. It stays on the session document until a turn admits it, so a restart loses none. */
+/** A wakeup held while its session is paused. */
 export interface HeldWakeup { process_id: string; wakeup_prompt: string; event?: Record<string, unknown> }
-const HELD_KEY = 'process_wakeup_held'
 
 const heldKey = (e: HeldWakeup): string => e.process_id || e.wakeup_prompt
-
-export function heldWakeups(s: Session): HeldWakeup[] {
-  const held = s.extra[HELD_KEY]
-  return Array.isArray(held) ? held.filter((e): e is HeldWakeup => isDict(e) && typeof e.wakeup_prompt === 'string' && typeof e.process_id === 'string') : []
-}
+const isHeld = (e: unknown): e is HeldWakeup => isDict(e) && typeof e.wakeup_prompt === 'string' && typeof e.process_id === 'string'
 
 /** Adds entries not held yet, so held and in-memory copies of one wakeup merge into one. */
 export function mergeWakeups(into: HeldWakeup[], entries: readonly HeldWakeup[]): HeldWakeup[] {
@@ -67,19 +63,49 @@ export function mergeWakeups(into: HeldWakeup[], entries: readonly HeldWakeup[])
   return into
 }
 
-export function holdWakeups(s: Session, entries: readonly HeldWakeup[]): void {
-  s.extra[HELD_KEY] = mergeWakeups(heldWakeups(s), entries)
-}
+/**
+ * Held wakeups by session in one atomically written file: holding one is a single durable write, it leaves only once a
+ * turn admits it, and a restarted server finds every one.
+ */
+export class HeldWakeups {
+  constructor(private readonly path: string) {}
 
-/** Drops the delivered entries; whether any were held (the caller saves). */
-export function releaseWakeups(s: Session, entries: readonly HeldWakeup[]): boolean {
-  const held = heldWakeups(s)
-  const done = new Set(entries.map(heldKey))
-  const left = held.filter((e) => !done.has(heldKey(e)))
-  if (left.length === held.length) return false
-  if (left.length) s.extra[HELD_KEY] = left
-  else Reflect.deleteProperty(s.extra, HELD_KEY)
-  return true
+  private read(): Record<string, HeldWakeup[]> {
+    let raw: unknown
+    try { raw = JSON.parse(readFileSync(this.path, 'utf8')) } catch { return {} }
+    if (!isDict(raw)) return {}
+    const out: Record<string, HeldWakeup[]> = {}
+    for (const [sid, entries] of Object.entries(raw)) if (Array.isArray(entries)) out[sid] = entries.filter(isHeld)
+    return out
+  }
+
+  /** Throws when the file cannot be written. */
+  private write(all: Record<string, HeldWakeup[]>): void {
+    for (const sid of Object.keys(all)) if (!all[sid]!.length) Reflect.deleteProperty(all, sid)
+    atomicWriteText(this.path, JSON.stringify(all))
+  }
+
+  sessions(): string[] { return Object.keys(this.read()) }
+
+  get(sid: string): HeldWakeup[] { return this.read()[sid] ?? [] }
+
+  /** Throws when the entries could not be written. */
+  hold(sid: string, entries: readonly HeldWakeup[]): void {
+    const all = this.read()
+    const before = all[sid]?.length ?? 0
+    all[sid] = mergeWakeups(all[sid] ?? [], entries)
+    if (all[sid].length !== before) this.write(all)
+  }
+
+  /** Drops delivered entries, or the whole session with no entries given; throws when the file cannot be written. */
+  release(sid: string, entries?: readonly HeldWakeup[]): void {
+    const all = this.read()
+    const held = all[sid]
+    if (!held) return
+    const done = new Set((entries ?? held).map(heldKey))
+    all[sid] = held.filter((e) => !done.has(heldKey(e)))
+    if (all[sid].length !== held.length) this.write(all)
+  }
 }
 
 /** Whether the session's wakeups stay paused; a pause whose provider or credential state changed is cleared (the caller saves). */
