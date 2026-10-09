@@ -14,6 +14,7 @@ import type { Session } from './session.js'
 import { str } from '../util.js'
 import { batchUpdate, recordBackgroundUpdate } from './background-updates.js'
 import type { BackgroundActivity } from './background-tasks.js'
+import { wakeupPaused } from './wakeup-pause.js'
 
 type Dict = Record<string, unknown>
 export const COMPLETION_POLL_MS = 1000
@@ -304,6 +305,10 @@ export class CompletionDrain {
     if (session.pre_compression_snapshot) { redefer(batched); this.deps.log(`[webui] WARNING: automatic wakeup retained: sealed snapshot ${sid} cannot own a turn`); return false }
     // TAL-534: the delegation's ledger row lives in the session's own profile, whichever profile is active now.
     const home = this.deps.profileHome(session.profile ?? this.deps.activeProfile())
+    // TAL-576: no turn while the provider has no usable credentials; the entries wait unclaimed for the next turn teardown.
+    const pause = session.process_wakeup_pause
+    if (wakeupPaused(session, home)) { redefer(batched); this.retryAttempts.delete(sid); this.deps.log(`[webui] server-side wakeup paused for session ${sid}: provider credential pool is empty`); return false }
+    if (pause !== session.process_wakeup_pause) { try { this.deps.store.save(session) } catch { /* the cleared pause is re-derived on the next wakeup */ } }
     const claimed = await this.claimBatch(home, batched)
     if (!claimed) { redefer(batched); this.scheduleRetry(sid); return false }
     const { deliver, held } = claimed

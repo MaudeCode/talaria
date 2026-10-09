@@ -37,6 +37,7 @@ import { WORKSPACE_BUSY_MESSAGE } from '../workspace/git.js'
 import type { WorkspaceRegistry } from '../workspace/workspaces.js'
 import { str } from '../util.js'
 import { toolEditDiff } from './tool-display.js'
+import { recordWakeupPause } from './wakeup-pause.js'
 
 export const CHAT_LOCK_WAIT_SECONDS = 2
 const IMAGE_MODE_TIMEOUT_MS = 15_000
@@ -747,6 +748,8 @@ export class TurnRunner {
       s.pending_attachments = []
       s.pending_started_at = null
       s.pending_user_source = null
+      // TAL-576: a turn that ran means the provider has usable credentials again.
+      s.process_wakeup_pause = null
       const attachments = opts.attachments ?? []
       if (attachments.length) {
         for (let i = s.messages.length - 1; i >= 0; i -= 1) {
@@ -976,6 +979,8 @@ export class TurnRunner {
   /** Python `_materialize_pending_user_turn_before_error` + error message append + save. */
   private persistError(s: Session, streamId: string, label: string, payload: Record<string, unknown>, activeTurnToken: string | null, agentRows: Message[] = []): void {
     const startedAt = s.pending_started_at
+    // TAL-576: an automatic wakeup with no usable credentials pauses the next ones instead of failing each.
+    if (s.pending_user_source === 'process_wakeup' && payload.type === 'credential_pool_empty') recordWakeupPause(s, this.deps.profileHome(s.profile), this.deps.now())
     this.materializePendingUserTurn(s, activeTurnToken, streamId)
     const duration = typeof startedAt === 'number' && startedAt > 0 ? Math.max(0, this.deps.now() - startedAt) : null
     s.active_stream_id = null

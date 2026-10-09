@@ -498,6 +498,72 @@ describe('background wakeups carry their update metadata (TAL-371)', () => {
   })
 })
 
+describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
+  let s: TestServer
+  let sidecar: FakeSidecar
+  let starts: string[]
+  beforeAll(async () => {
+    sidecar = new FakeSidecar()
+    s = await bootTestServer({ sidecar })
+    sidecar.respond('process.mark_consumed', () => ({ ok: true }))
+    writeFileSync(join(s.state, 'auth.json'), JSON.stringify({ credential_pool: { openrouter: [{ api_key: 'sk-old', last_status: 'exhausted', request_count: 9 }] } }))
+  })
+  afterAll(() => s.close())
+
+  const poolEmpty = (): void => { sidecar.respond('chat.start', (params) => { starts.push(str(params.user_message)); return { ...completed(''), messages: [{ role: 'user', content: str(params.user_message) }], status: 'error' as const, failed: true, error: 'All 2 credential(s) exhausted for provider openrouter' } }) }
+  const idle = async (): Promise<void> => { for (let i = 0; i < 100 && s.deps.registry.activeRuns.size; i += 1) await new Promise((r) => setTimeout(r, 20)) }
+  const complete = async (sid: string, id: string): Promise<void> => {
+    await s.deps.completions.processOne({ process_id: id, session_id: id, type: 'completion', command: 'make', exit_code: 0, output: 'ok', origin_ui_session_id: sid, consumed: false })
+    await new Promise((r) => setTimeout(r, 50))
+    await idle()
+  }
+  const pausedSession = async (): Promise<string> => {
+    starts = []
+    poolEmpty()
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    await complete(sid, `${sid}_1`)
+    expect(starts).toHaveLength(1)
+    return sid
+  }
+
+  it('starts no further wakeup turn until the credentials change', async () => {
+    const sid = await pausedSession()
+    await complete(sid, `${sid}_2`)
+    await complete(sid, `${sid}_3`)
+    expect(starts, 'a paused session starts no wakeup turn').toHaveLength(1)
+    expect(s.deps.completions.deferredCount(sid), 'paused wakeups wait for the next turn').toBe(2)
+    expect(s.deps.sessionStore.get(sid).process_wakeup_pause).toMatchObject({ paused: true, classification: 'credential_pool_empty' })
+    // Token refresh and request telemetry are no credential change.
+    writeFileSync(join(s.state, 'auth.json'), JSON.stringify({ credential_pool: { openrouter: [{ api_key: 'sk-rotated', last_status: 'ok', request_count: 10 }] } }))
+    await complete(sid, `${sid}_4`)
+    expect(starts).toHaveLength(1)
+    // An added key is.
+    writeFileSync(join(s.state, 'auth.json'), JSON.stringify({ credential_pool: { openrouter: [{ api_key: 'sk-rotated' }, { api_key: 'sk-new' }] } }))
+    sidecar.respond('chat.start', (params) => { starts.push(str(params.user_message)); return completed('woke up') })
+    await complete(sid, `${sid}_5`)
+    await idle()
+    // The new completion wakes the session; its teardown delivers the ones held while paused.
+    expect(starts).toHaveLength(3)
+    expect(starts[1]).toContain(`Background process ${sid}_5 completed`)
+    expect(starts[2]).toContain(`Background process ${sid}_2 completed`)
+    expect(s.deps.completions.deferredCount(sid)).toBe(0)
+    expect(s.deps.sessionStore.get(sid).process_wakeup_pause).toBeNull()
+  })
+
+  it('a successful user turn clears the pause and delivers the held wakeups', async () => {
+    const sid = await pausedSession()
+    await complete(sid, `${sid}_2`)
+    expect(starts).toHaveLength(1)
+    sidecar.respond('chat.start', (params) => { starts.push(str(params.user_message)); return completed('ok') })
+    await json(await post(s, '/api/chat/start', { session_id: sid, message: 'hello' }))
+    for (let i = 0; i < 100 && starts.length < 3; i += 1) await new Promise((r) => setTimeout(r, 20))
+    expect(starts[1]).toContain('hello')
+    expect(starts[2]).toContain(`Background process ${sid}_2 completed`)
+    await idle()
+    expect(s.deps.sessionStore.get(sid).process_wakeup_pause).toBeNull()
+  })
+})
+
 describe('hygiene tick', () => {
   it('copy-truncates oversized logs into <log>.1 and honours the size cap', () => {
     const dir = join(process.env.TMPDIR ?? '/tmp', `talaria-hygiene-${String(process.pid)}-${String(Date.now())}`)
