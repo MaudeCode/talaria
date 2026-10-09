@@ -2661,25 +2661,13 @@ final class AdaptiveLayoutOnboardingUITests: AdaptiveLayoutUITestCase {
                     "Server field did not take focus [\(variant.name)]"
                 )
                 XCUIDevice.shared.orientation = variant.orientation == .portrait ? .landscapeLeft : .portrait
-                // iOS 27 usually resets the page-style TabView to the welcome page when the
-                // device rotates with the keyboard up (TAL-201); not strict, because some
-                // variants survive. Remove with that fix. Only the reset is expected: a
-                // surviving field must still keep focus, and reading focus on a missing
-                // field would interrupt the test before the remaining variants.
-                let pagerReset = XCTExpectedFailure.Options()
-                pagerReset.isEnabled = ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27
-                pagerReset.isStrict = false
-                let fieldSurvived = serverField.awaitExistence(timeout: 5)
-                XCTExpectFailure("TAL-201: iOS 27 pager resets on rotation", options: pagerReset) {
-                    XCTAssertTrue(fieldSurvived, "Server URL field lost on rotation [\(variant.name)]")
-                }
-                if fieldSurvived {
-                    // The rotated layout restores focus after the field reappears.
-                    XCTAssertTrue(
-                        poll(timeout: 10) { hasKeyboardFocus(serverField) },
-                        "Rotation dropped field focus [\(variant.name)]"
-                    )
-                }
+                XCTAssertTrue(serverField.awaitExistence(timeout: 5), "Server URL field lost on rotation [\(variant.name)]")
+                XCTAssertTrue(element(label: "Page 5 of 5").exists, "Rotation left the connect page [\(variant.name)]")
+                // The rotated layout restores focus after the field reappears.
+                XCTAssertTrue(
+                    poll(timeout: 10) { hasKeyboardFocus(serverField) },
+                    "Rotation dropped field focus [\(variant.name)]"
+                )
                 app.terminate()
             }
         }

@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Rotating your iPhone while typing your server address no longer sends setup back to the welcome page.",
+      "highlight": false
+    }
+  ]
+}
