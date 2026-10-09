@@ -1762,8 +1762,9 @@ struct ChatView: View {
         }
     }
 
-    /// Sends the draft; `command` (the send button's long-press menu) sends it as that slash command.
-    /// During a reply it sends with `behavior` (Ctrl+Return's alternate), or else the stored setting.
+    /// Sends the draft; `command` (a side question or background task from Send's long-press menu) sends it
+    /// as that slash command. During a reply it sends with `behavior` (Ctrl+Return's alternate or the menu's
+    /// choice), or else the stored setting.
     private func sendDraftMessage(as command: String? = nil, behavior: StreamingSendBehavior? = nil) async {
         guard viewModel.clarificationPrompt == nil else { return }
         let submittedDraft = draftMessage
