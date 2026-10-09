@@ -1,9 +1,10 @@
-import { closeSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { closeSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { RequestContext } from '../http/context.js'
-import { serveFileBytes } from './media.js'
+import type { Session } from '../sessions/session.js'
+import { mediaAnchorRoot, serveFileBytes, type MediaAccessDeps } from './media.js'
 
 vi.mock('node:fs', async (importOriginal) => {
   const fs = await importOriginal<typeof import('node:fs')>()
@@ -47,5 +48,48 @@ describe('serveFileBytes descriptor ownership (TAL-572)', () => {
 
   it('closes a 416 response descriptor once', () => {
     expect(serve({ range: 'bytes=99-' }).status).toBe(416)
+  })
+})
+
+describe('mediaAnchorRoot session MEDIA scan (TAL-573)', () => {
+  let base: string
+  let deps: MediaAccessDeps
+  beforeEach(() => {
+    base = realpathSync(mkdtempSync(join(tmpdir(), 'tal-573-')))
+    const home = join(base, 'home')
+    const workspace = join(base, 'ws')
+    for (const dir of [home, workspace, join(base, 'outside')]) mkdirSync(dir)
+    for (const file of [join(workspace, 'a.png'), join(base, 'outside', 'a.png')]) writeFileSync(file, 'png-bytes')
+    const hermesHome = join(home, '.hermes')
+    deps = {
+      home,
+      hermesHome,
+      extraRoots: '',
+      activeWorkspace: () => workspace,
+      policy: { home, hermesHome, stateDir: join(hermesHome, 'webui_state'), snapshotDir: () => join(hermesHome, 'media_snapshots'), activeWorkspace: () => workspace },
+    }
+  })
+  afterEach(() => { rmSync(base, { recursive: true, force: true }) })
+
+  /** A session whose transcript grants `ref`, counting every read of its messages (the scan's only entry). */
+  const spySession = (ref: string): { session: Session; reads: () => number } => {
+    let reads = 0
+    const messages = [{ role: 'assistant', content: `MEDIA:${ref}` }]
+    const session = { get messages() { reads += 1; return messages } } as unknown as Session
+    return { session, reads: () => reads }
+  }
+
+  it('skips the scan when an allowed root authorizes the path', () => {
+    const target = join(base, 'ws', 'a.png')
+    const { session, reads } = spySession(target)
+    expect(mediaAnchorRoot(target, session, deps)).toBe(join(base, 'ws'))
+    expect(reads()).toBe(0)
+  })
+
+  it('scans the session when no root authorizes the path', () => {
+    const target = join(base, 'outside', 'a.png')
+    const { session, reads } = spySession(target)
+    expect(mediaAnchorRoot(target, session, deps)).toBe(join(base, 'outside'))
+    expect(reads()).toBe(1)
   })
 })
