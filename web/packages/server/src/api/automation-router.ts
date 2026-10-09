@@ -131,7 +131,13 @@ export const automationRouter = os.router({
   extensions: {
     status: os.extensions.status.handler(({ context: { ctx } }) => run(() => ctx.deps.extensions.status() as Promise<never>)),
     registry: os.extensions.registry.handler(({ context: { ctx } }) => run(() => ctx.deps.extensions.registry())),
-    manifests: os.extensions.manifests.handler(({ context: { ctx } }) => run(() => ctx.deps.extensions.manifests())),
+    manifests: os.extensions.manifests.handler(({ context: { ctx } }) => run(async () => {
+      // Python `build_manifests`: extension entries first, then each dashboard plugin whose id is still free.
+      const out = await ctx.deps.extensions.manifests()
+      const seen = new Set(out.manifests.map((m) => m.id))
+      out.manifests.push(...ctx.deps.dashboardPlugins.manifests().filter((m) => !seen.has(m.id)))
+      return out
+    })),
     toggle: os.extensions.toggle.handler(({ input, context: { ctx } }) => run(() => ctx.deps.extensions.setEnabled(input.id, input.enabled) as Promise<never>)),
     consent: os.extensions.consent.handler(({ input, context: { ctx } }) => run(() => ctx.deps.extensions.setConsent(input.id, input.approved) as Promise<never>)),
     install: os.extensions.install.handler(({ input, context: { ctx } }) => run(() => ctx.deps.extensions.install(input.id, input.download_url, input.sha256))),

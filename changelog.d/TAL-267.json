@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Dashboard plugins enabled in settings appear under Extensions again and open their panels and pages.",
+      "highlight": false,
+      "components": ["web"]
+    },
+    {
+      "category": "Fixed",
+      "summary": "Extension panels load inside the app instead of showing a blank frame.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

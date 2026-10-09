@@ -98,6 +98,16 @@ change. Its panel is served at `dashboard-plugins/<name>/index.html`: your own
 with `#root` and `#app` mount nodes. Anything that reached into the WebUI page
 (`window.parent`, shared globals, cookies) must move to protocol methods.
 
+A plugin is off until `dashboard_plugins.<name>` is `true` in `settings.json`;
+while off, its panel, assets, and tab page all answer 404. Assets are served
+only from `dist/` or `static/`, without dotfiles, for known static file types.
+The tab page at the manifest's `tab.path` (default `/<name>`) serves
+`dist/index.html`, the plugin's `static/index.html`, or a shell that mounts
+`dist/index.js` into `#pluginPageContainer`; a path the app or the server
+already owns is refused. `/plugins/plugin.css` serves the shared stylesheet
+from the plugins directory (`HERMES_WEBUI_PLUGINS_DIR`, default
+`~/.hermes/plugins`).
+
 ## 9. Things that no longer exist
 
 - Styling or scripting the core page; reading `S`, `INFLIGHT`, or other globals.

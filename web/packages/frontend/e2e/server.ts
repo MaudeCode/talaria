@@ -52,6 +52,8 @@ export async function bootServer(baseUrl: string, extraEnv: Record<string, strin
     HERMES_CONFIG_PATH: join(state, 'config.yaml'),
     // Keep the developer's real ~/.claude/projects out of the imported-session list.
     HERMES_WEBUI_CLAUDE_PROJECTS_DIR: join(state, 'claude-projects'),
+    // Keep the developer's real ~/.hermes/plugins dashboard plugins out of the extension list.
+    HERMES_WEBUI_PLUGINS_DIR: join(state, 'plugins'),
     HERMES_WEBUI_SKIP_ONBOARDING: '1',
     HERMES_WEBUI_TEST_NETWORK_BLOCK: '1',
     AWS_EC2_METADATA_DISABLED: 'true',
