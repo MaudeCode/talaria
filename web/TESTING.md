@@ -34,6 +34,8 @@ CI (`.github/workflows/web-verify.yml`) runs the server, sidecar (provisioning t
   stub, synthetic `state.db` through `node:sqlite`, synthetic git repositories and `file://` remotes for
   git and self-update tests, `InMemoryTransport` for the MCP bin, and a fake serve command for `ctl`.
 - Focus a file with `npx vitest run src/tools/updates.test.ts`; `-t "name"` selects one case.
+- `HERMES_WEBUI_TEST_HOOKS=1` enables `GET /api/approval/inject_test` and `/api/clarify/inject_test` for
+  loopback clients: each queues a fake approval or clarify prompt that `respond` clears without the Agent.
 
 ## Sidecar tests
 

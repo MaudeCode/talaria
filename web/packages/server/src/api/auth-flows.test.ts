@@ -360,6 +360,9 @@ describe('passkeys', () => {
     const deleted = await json(await post(s, '/api/auth/passkey/delete', { id }, headers))
     expect((deleted.credentials as Json[]).map((c) => c.id)).toEqual([b64u(second.credentialId)])
     expect((await json(await s.get('/api/auth/passkeys', { headers }))).credentials).toHaveLength(1)
+    // The legacy POST form answers the same list, behind the same owner gate.
+    expect((await json(await post(s, '/api/auth/passkeys', {}, headers))).credentials).toHaveLength(1)
+    expect((await post(s, '/api/auth/passkeys', {})).status).toBe(401)
   })
 
   it('clearing passwords through settings also clears passkeys', () => {
@@ -375,6 +378,7 @@ describe('passkey flag off', () => {
   afterAll(() => s.close())
   it('hides the surface', async () => {
     expect(await json(await s.get('/api/auth/passkeys'))).toEqual({ credentials: [], disabled: true })
+    expect(await json(await post(s, '/api/auth/passkeys', {}))).toEqual({ credentials: [], disabled: true })
     expect((await post(s, '/api/auth/passkey/options', {})).status).toBe(404)
     expect((await post(s, '/api/auth/passkey/register/options', {})).status).toBe(404)
   })

@@ -12,7 +12,8 @@ export interface RawRoute {
   tags: string[]
   query?: Record<string, { description: string; required?: boolean }>
   requestBody?: { contentType: string; description: string }
-  responses: Record<number, { description: string; contentType?: string }>
+  /** One media type, or several when the route answers different ones (an SSE route's JSON probe). */
+  responses: Record<number, { description: string; contentType?: string | string[]; headers?: Record<string, string> }>
 }
 
 export const RAW_ROUTES: readonly RawRoute[] = [
@@ -40,6 +41,11 @@ export const RAW_ROUTES: readonly RawRoute[] = [
     method: 'GET', path: '/api/sessions/events', summary: 'Global session-list invalidation stream (`sessions_changed`).', tags: ['sessions'],
     query: { gateway: { description: '`1` merges the gateway feed with a `stream` discriminator and an initial `gateway_status` frame.' } },
     responses: { 200: { description: 'Event stream.', contentType: 'text/event-stream' } },
+  },
+  {
+    method: 'GET', path: '/api/sessions/gateway/stream', summary: 'Standalone gateway-session feed: an initial `sessions_changed {sessions}` snapshot, then the watcher events, with `: keepalive` comments. `/api/sessions/events?gateway=1` carries the same feed merged.', tags: ['sessions'],
+    query: { probe: { description: '`1` answers the stream status as JSON instead of streaming (`scope: gateway_sessions`).' } },
+    responses: { 200: { description: 'Event stream, or the probe JSON with `probe=1`.', contentType: ['text/event-stream', 'application/json'] }, 404: { description: 'Agent sessions are not enabled (`show_cli_sessions`).', contentType: 'application/json' }, 503: { description: 'The gateway watcher is not running, or the client stream limit is reached.', contentType: 'application/json' } },
   },
   {
     method: 'GET', path: '/api/sessions/{session_id}/events', summary: 'Per-session run-journal relay with `Last-Event-ID` resume and `session_snapshot` fallback.', tags: ['sessions'],
@@ -108,6 +114,10 @@ export const RAW_ROUTES: readonly RawRoute[] = [
     method: 'POST', path: '/api/csp-report', summary: 'Browser CSP report sink (public, rate limited, always 204).', tags: ['tools'],
     requestBody: { contentType: 'application/json', description: 'CSP report payload.' },
     responses: { 204: { description: 'Accepted or dropped.', contentType: 'application/json' } },
+  },
+  {
+    method: 'POST', path: '/api/process-complete-ack', summary: 'Retired: replaced by `/api/bg-task-complete-ack`. Always 410; CSRF exempt so a tab without a token learns the new path.', tags: ['chat'],
+    responses: { 410: { description: '`{error, replaced_by}`.', contentType: 'application/json', headers: { 'X-Replaced-By': 'The replacement path, `/api/bg-task-complete-ack`.' } } },
   },
   {
     method: 'POST', path: '/api/upload', summary: 'Store one chat attachment in the session inbox and return a rollback receipt.', tags: ['files'],

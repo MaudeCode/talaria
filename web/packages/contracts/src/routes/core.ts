@@ -109,6 +109,7 @@ export const PasskeyLoginResponseSchema = z.object({ ok: z.literal(true) })
 export const PasskeyDeleteRequestSchema = z.object({ id: z.string() })
 export const PasskeyDeleteResponseSchema = z.object({ ok: z.literal(true), credentials: z.array(PasskeyCredentialSchema) })
 export const PasskeysListSchema = z.object({ credentials: z.array(PasskeyCredentialSchema), disabled: z.boolean().optional() })
+export type PasskeysList = z.infer<typeof PasskeysListSchema>
 
 export const coreContract = {
   health: oc
@@ -148,6 +149,9 @@ export const coreContract = {
       .input(PasskeyDeleteRequestSchema).output(PasskeyDeleteResponseSchema),
     passkeys: oc
       .route({ method: 'GET', path: '/api/auth/passkeys', tags: ['auth'], summary: 'Registered passkey metadata (`disabled: true` when the feature flag is off).' })
+      .output(PasskeysListSchema),
+    passkeysPost: oc
+      .route({ method: 'POST', path: '/api/auth/passkeys', tags: ['auth'], summary: 'Legacy POST form of the passkey list (owner only).' })
       .output(PasskeysListSchema),
   },
 }

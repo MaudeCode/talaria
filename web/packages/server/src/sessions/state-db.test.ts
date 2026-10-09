@@ -2,7 +2,7 @@ import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import type { SidecarResult } from '@maudecode/talaria-web-contracts'
@@ -157,15 +157,67 @@ describe('state.db projection', () => {
     expect(watcher.pollOnce()).toBe(true)
     const second = await sub.next(AbortSignal.timeout(500))
     expect(second?.sessions.map((r) => r.session_id)).toContain('tg-2')
+    // A wait that times out is not the end; the stop sentinel is.
+    expect(await sub.next(AbortSignal.timeout(20))).toBeNull()
+    expect(sub.ended).toBe(false)
     watcher.stop()
     expect(await sub.next()).toBeNull()
+    expect(sub.ended).toBe(true)
     expect(await watcher.subscribe().next()).toBeNull()
     expect(snapshotHash([{ session_id: 'b', updated_at: 1 }, { session_id: 'a', updated_at: 2 }])).toBe(snapshotHash([{ session_id: 'a', updated_at: 2 }, { session_id: 'b', updated_at: 1 }]))
   })
 
-  it('serves the merged sidebar feed with state.db snapshots (the standalone gateway stream is dropped)', async () => {
+  it('serves the standalone gateway stream and its probe, never with Connection: close', async () => {
     await s.deps.settings.save({ show_cli_sessions: true })
-    expect((await s.get('/api/sessions/gateway/stream')).status).toBe(404)
+    const probe = await s.get('/api/sessions/gateway/stream?probe=1')
+    expect(probe.status).toBe(200)
+    expect(await json(probe)).toEqual({ enabled: true, fallback_poll_ms: 30000, ok: true, watcher_running: true, scope: 'gateway_sessions', session_stream_available: true, session_stream_path: '/api/session/stream' })
+    // #3103: a close header makes browsers end the EventSource and reconnect in a tight loop.
+    const controller = new AbortController()
+    const head = await s.get('/api/sessions/gateway/stream', { signal: controller.signal })
+    expect(head.status).toBe(200)
+    expect(head.headers.get('content-type')).toMatch(/^text\/event-stream/)
+    expect(head.headers.get('connection')).not.toBe('close')
+    controller.abort()
+    const first = await s.sse('/api/sessions/gateway/stream', (f) => f.event === 'sessions_changed', { timeoutMs: 3000 })
+    expect(first[0]?.event).toBe('sessions_changed')
+    expect(((first[0]?.data as Json).sessions as Json[]).map((r) => r.session_id)).toContain('tg-1')
+    // A live insert reaches the stream through the watcher poll.
+    const live = s.sse('/api/sessions/gateway/stream', (f) => f.event === 'sessions_changed' && ((f.data as Json).sessions as Json[]).some((r) => r.session_id === 'tg-gw'), { timeoutMs: 4000 })
+    await new Promise((r) => setTimeout(r, 150))
+    insertSession(db, { id: 'tg-gw', source: 'telegram', started_at: 600, title: 'Gateway live', messages: [['user', 601]], chat_id: 'c-gw' })
+    expect((await live).some((f) => ((f.data as Json).sessions as Json[]).some((r) => r.session_id === 'tg-gw'))).toBe(true)
+    // A watcher that is not running answers 503 on both modes.
+    const stopped = vi.spyOn(s.deps.gatewayWatchers, 'get').mockReturnValue({ isAlive: () => false } as never)
+    try {
+      const down = await s.get('/api/sessions/gateway/stream?probe=1')
+      expect(down.status).toBe(503)
+      expect(await json(down)).toMatchObject({ ok: false, watcher_running: false, error: 'watcher not started' })
+      const stream = await s.get('/api/sessions/gateway/stream')
+      expect(stream.status).toBe(503)
+      expect(await json(stream)).toEqual({ error: 'watcher not started' })
+    } finally { stopped.mockRestore() }
+    // A subscriber the watcher dropped as a slow consumer ends both responses so EventSource reconnects, while the
+    // watcher itself keeps running.
+    const dropped = vi.spyOn(s.deps.gatewayWatchers, 'get').mockReturnValue({ isAlive: () => true, subscribe: () => ({ next: () => Promise.resolve(null), ended: true, close: () => undefined }) } as never)
+    try {
+      for (const path of ['/api/sessions/gateway/stream', '/api/sessions/events?gateway=1']) {
+        const res = await s.get(path)
+        expect(res.status).toBe(200)
+        expect(await res.text()).toContain('event: sessions_changed')
+      }
+    } finally { dropped.mockRestore() }
+    await s.deps.settings.save({ show_cli_sessions: false })
+    const off = await s.get('/api/sessions/gateway/stream?probe=1')
+    expect(off.status).toBe(404)
+    expect(await json(off)).toMatchObject({ enabled: false, ok: false, error: 'agent sessions not enabled' })
+    const offStream = await s.get('/api/sessions/gateway/stream')
+    expect(offStream.status).toBe(404)
+    expect(await json(offStream)).toEqual({ error: 'agent sessions not enabled' })
+  })
+
+  it('serves the merged sidebar feed with state.db snapshots', async () => {
+    await s.deps.settings.save({ show_cli_sessions: true })
     const merged = await s.sse('/api/sessions/events?gateway=1', (f) => f.event === 'sessions_changed' && (f.data as Json).stream === 'gateway', { timeoutMs: 3000 })
     expect(merged[0]).toMatchObject({ event: 'gateway_status', data: { ok: true, watcher_running: true } })
     expect(merged.some((f) => f.event === 'sessions_changed' && (f.data as Json).stream === 'gateway')).toBe(true)

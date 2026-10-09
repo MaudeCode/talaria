@@ -10,4 +10,12 @@ describe('OpenAPI generation', () => {
     expect(document.paths).toHaveProperty('/api/update-notifications/clear')
     expect(document.paths).toHaveProperty('/api/update-notifications/{id}/actions/{action_id}')
   })
+
+  it('documents raw routes with every media type and header they answer with', async () => {
+    const paths = (await generateOpenApiDocument()).paths as Record<string, Record<string, { responses: Record<string, { content?: Record<string, unknown>; headers?: Record<string, unknown> }> }>>
+    expect(Object.keys(paths['/api/sessions/gateway/stream']?.get?.responses['200']?.content ?? {})).toEqual(['text/event-stream', 'application/json'])
+    const gone = paths['/api/process-complete-ack']?.post?.responses
+    expect(Object.keys(gone ?? {})).toEqual(['410'])
+    expect(gone?.['410']?.headers).toHaveProperty('X-Replaced-By')
+  })
 })

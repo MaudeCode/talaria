@@ -440,8 +440,9 @@ export async function handleSessionEvents(ctx: RequestContext): Promise<void> {
         for (;;) {
           const pending = await nextWithin((signal) => gatewaySub.next(signal), 0, abort.signal)
           if (pending === null) {
-            // The watcher stopped (a profile switch swapped it): end the response so EventSource reconnects both halves.
-            if (!watcher?.isAlive() || abort.signal.aborted) return
+            // The watcher stopped (a profile switch swapped it) or dropped this slow subscriber: end the response so
+            // EventSource reconnects both halves.
+            if (gatewaySub.ended || !watcher?.isAlive() || abort.signal.aborted) return
             break
           }
           sse.event(pending.type, { ...pending, stream: 'gateway' })
@@ -462,6 +463,39 @@ export async function handleSessionEvents(ctx: RequestContext): Promise<void> {
   } finally {
     sub.close()
     gatewaySub?.close()
+    sse.end()
+  }
+}
+
+/**
+ * `/api/sessions/gateway/stream`: the gateway feed alone (`?probe=1` answers its status as JSON). Long-lived, so no
+ * `Connection: close`: browsers treat it as the end of the EventSource and reconnect in a tight loop (#3103).
+ */
+export async function handleGatewayStream(ctx: RequestContext): Promise<void> {
+  const watcher = ctx.deps.gatewayWatchers.get(ctx.deps.activeProfile())
+  const [probe, status] = gatewayProbePayload(ctx, watcher)
+  if (truthyQuery(ctx.query.get('probe'))) { ctx.json(probe, { status }); return }
+  if (status !== 200 || !watcher) { ctx.json({ error: probe.error }, { status }); return }
+  const sse = claimOrReject(ctx, false)
+  if (!sse) return
+  const sub = watcher.subscribe()
+  const abort = new AbortController()
+  ctx.res.on('close', () => { abort.abort() })
+  try {
+    sse.start()
+    sse.event('sessions_changed', { sessions: initialGatewaySessions(ctx) })
+    for (;;) {
+      if (!(await sse.ready())) return
+      const event = await nextWithin((signal) => sub.next(signal), SSE_HEARTBEAT_INTERVAL_MS, abort.signal)
+      if (sse.isClosed) return
+      if (event) { sse.event(event.type, event); continue }
+      // The watcher stopped (a profile switch swapped it) or dropped this slow subscriber: end the response so
+      // EventSource reconnects.
+      if (sub.ended || !watcher.isAlive()) return
+      sse.comment('keepalive')
+    }
+  } finally {
+    sub.close()
     sse.end()
   }
 }

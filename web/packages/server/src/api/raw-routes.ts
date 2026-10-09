@@ -13,6 +13,8 @@ import { HttpFailure } from '../sessions/service.js'
 import { SessionNotFound } from '../sessions/store.js'
 import { openAnchoredFd, safeResolve } from '../workspace/fs.js'
 import { isWithin, resolvePathLikePython } from '../workspace/paths.js'
+import { isLoopback } from '../http/origin.js'
+import { truthy } from '../config.js'
 import { AUDIO_VIDEO_PDF_TYPES, contentDispositionValue, INLINE_IMAGE_TYPES, isValidDigest, mediaAnchorRoot, mediaTarget, mimeFor, serveFileBytes, serveInlineHtmlPreview, snapshotPathForDigest, snapshotServableForPath } from '../workspace/media.js'
 import { PREVIEW_PREFIX, previewGrantRoot } from '../workspace/preview.js'
 import { REMOTE_WORKSPACE_UNSUPPORTED_CODE, REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE } from '../workspace/workspaces.js'
@@ -35,6 +37,8 @@ export const RAW_GET_ROUTES: Record<string, RawHandler> = {
   '/api/media': handleMedia,
   '/api/folder/download': handleFolderDownload,
   '/api/session/export': handleSessionExport,
+  '/api/approval/inject_test': testHook(handleApprovalInject),
+  '/api/clarify/inject_test': testHook(handleClarifyInject),
 }
 
 export const RAW_POST_ROUTES: Record<string, RawHandler> = {
@@ -42,6 +46,7 @@ export const RAW_POST_ROUTES: Record<string, RawHandler> = {
   '/api/transcribe': handleTranscribe,
   '/api/tts': handleTts,
   '/api/csp-report': handleCspReport,
+  '/api/process-complete-ack': handleProcessCompleteAck,
 }
 
 /** Run a raw handler, translating thrown `HttpError`s into the JSON error body. */
@@ -64,6 +69,42 @@ export async function runRaw(ctx: RequestContext, handler: RawHandler): Promise<
     }
     throw error
   }
+}
+
+/** Retired by the `process_complete` -> `bg_task_complete` rename: always 410, naming the replacement. */
+function handleProcessCompleteAck(ctx: RequestContext): void {
+  ctx.json({ error: 'gone: /api/process-complete-ack was replaced by /api/bg-task-complete-ack as part of the process_complete -> bg_task_complete event rename', replaced_by: '/api/bg-task-complete-ack' }, { status: 410, headers: { 'X-Replaced-By': '/api/bg-task-complete-ack' } })
+}
+
+/**
+ * Automated-test hooks: served only to a loopback peer while `HERMES_WEBUI_TEST_HOOKS=1` is set (loopback alone means
+ * nothing behind a same-host reverse proxy); anything else gets the plain 404.
+ */
+function testHook(handler: RawHandler): RawHandler {
+  return (ctx) => {
+    if (!truthy(ctx.deps.config.env.HERMES_WEBUI_TEST_HOOKS) || !isLoopback(ctx.peer)) {
+      ctx.json({ error: 'not found' }, { status: 404 })
+      return
+    }
+    return handler(ctx)
+  }
+}
+
+/** Queue a fake approval; `_injected` entries are answered locally, since no Agent is parked on them. */
+function handleApprovalInject(ctx: RequestContext): void {
+  const sid = ctx.query.get('session_id') ?? ''
+  if (!sid) throw new HttpError(400, 'session_id required')
+  const key = ctx.query.get('pattern_key') || 'test_pattern'
+  ctx.deps.pending.submitApproval(sid, { command: ctx.query.get('command') || 'rm -rf /tmp/test', pattern_key: key, pattern_keys: [key], description: 'test pattern', session_id: sid, _injected: true })
+  ctx.json({ ok: true, session_id: sid })
+}
+
+/** Queue a fake clarify prompt (repeated `choices`); answered locally like an injected approval. */
+function handleClarifyInject(ctx: RequestContext): void {
+  const sid = ctx.query.get('session_id') ?? ''
+  if (!sid) throw new HttpError(400, 'session_id required')
+  ctx.deps.pending.submitClarify(sid, { question: ctx.query.get('question') || 'Which option?', choices_offered: ctx.query.getAll('choices').filter(Boolean), session_id: sid, kind: 'clarify', _injected: true })
+  ctx.json({ ok: true, session_id: sid })
 }
 
 function fileRawTarget(ctx: RequestContext, workspace: string, sid: string, rel: string): [string, string] | null {

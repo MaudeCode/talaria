@@ -4,7 +4,7 @@
  * `{"error": ...}` body, or `RawResponse` to emit an arbitrary payload/status.
  */
 import { implement, ORPCError } from '@orpc/server'
-import { coreContract, type AuthStatus, type Bootstrap, type Health } from '@maudecode/talaria-web-contracts'
+import { coreContract, type AuthStatus, type Bootstrap, type Health, type PasskeysList } from '@maudecode/talaria-web-contracts'
 import type { RequestContext } from '../http/context.js'
 import { activeProfileName, authStatusPayload, clearAuthCookieHeader, clearProfileCookieHeader, ensureTrustedAuthSession, sessionCanManageServer } from '../auth/gate.js'
 import { OidcAuthError, OidcConfigError } from '../auth/oidc.js'
@@ -253,13 +253,16 @@ export const coreRouter = os.router({
         throw error
       }
     }),
-    passkeys: os.auth.passkeys.handler(({ context }) => {
-      const { ctx } = context
-      if (!ctx.deps.auth.passkeyFeatureFlagEnabled()) return { credentials: [], disabled: true }
-      return { credentials: ctx.deps.passkeys.registered() as never }
-    }),
+    passkeys: os.auth.passkeys.handler(({ context }) => passkeyList(context.ctx)),
+    passkeysPost: os.auth.passkeysPost.handler(({ context }) => passkeyList(context.ctx)),
   },
 })
+
+/** The passkey list; owner-only for both methods through `OPERATOR_ONLY_PATHS`. */
+function passkeyList(ctx: RequestContext): PasskeysList {
+  if (!ctx.deps.auth.passkeyFeatureFlagEnabled()) return { credentials: [], disabled: true }
+  return { credentials: ctx.deps.passkeys.registered() as PasskeysList['credentials'] }
+}
 
 /** Python `_client_ip_for_rate_limit` + trusted-proxy forwarding for the native OIDC start limiter. */
 export function rateLimitClientIp(ctx: RequestContext): string {

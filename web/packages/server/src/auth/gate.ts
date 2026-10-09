@@ -33,7 +33,8 @@ export const OPERATOR_ONLY_PATHS = new Set([
   '/api/session/recovery/audit', '/api/session/recovery/repair-safe',
 ])
 
-const CSRF_EXEMPT_PATHS = new Set(['/api/auth/login', '/api/auth/passkey/options', '/api/auth/passkey/login', '/api/csp-report'])
+// `/api/process-complete-ack` only answers 410: an old tab without a token learns the replacement instead of a 403.
+const CSRF_EXEMPT_PATHS = new Set(['/api/auth/login', '/api/auth/passkey/options', '/api/auth/passkey/login', '/api/csp-report', '/api/process-complete-ack'])
 export const PROFILE_COOKIE_NAME = 'hermes_profile'
 
 export function isPublicPath(path: string): boolean {
