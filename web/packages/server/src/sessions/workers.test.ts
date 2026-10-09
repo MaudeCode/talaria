@@ -597,7 +597,14 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
       sidecar: () => restarted, baseHome: s.state, profileHome: () => s.state, activeProfile: () => 'default', store: s.deps.sessionStore, channels: s.deps.channels, registry: s.deps.registry,
       startTurn: (_session, prompt) => { prompts.push(prompt); return { stream_id: 'resumed' } }, now: () => Date.now() / 1000, log: () => undefined,
     })
+    // A transient load failure on resume keeps the held copy.
+    const load = vi.spyOn(s.deps.sessionStore, 'get').mockImplementationOnce(() => { throw new Error('EIO') })
     await resumed.drainOnce()
+    await new Promise((r) => setTimeout(r, 50))
+    load.mockRestore()
+    expect(prompts).toEqual([])
+    expect(heldIds(sid)).toEqual([`${sid}_2`])
+    await resumed.drainDeferred(sid)
     for (let i = 0; i < 50 && !prompts.length; i += 1) await new Promise((r) => setTimeout(r, 20))
     await new Promise((r) => setTimeout(r, 50))
     expect(prompts[0]).toContain(`Background process ${sid}_2 completed`)
@@ -618,6 +625,16 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
     sidecar.respond('usage.pool', () => { throw new Error('unset') })
     expect(starts[1]).toContain(`Background process ${sid}_2 completed`)
     expect(heldIds(sid)).toEqual([])
+  })
+
+  it('never overwrites a held file it cannot read', async () => {
+    const path = join(s.deps.sessionStore.sessionDir, '_wakeup_held.json')
+    const sid = await pausedSession()
+    writeFileSync(path, '{"other": [{"process_id": "x", "wakeup_prompt": "kept"}]')
+    await complete(sid, `${sid}_2`)
+    expect(readFileSync(path, 'utf8')).toBe('{"other": [{"process_id": "x", "wakeup_prompt": "kept"}]')
+    expect(s.deps.completions.deferredCount(sid), 'the wakeup is kept in memory instead').toBe(1)
+    rmSync(path)
   })
 
   it('drops the held wakeups of a deleted session', async () => {

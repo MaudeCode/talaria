@@ -7,6 +7,7 @@
  * redelivered at turn teardown with a bounded retry budget).
  */
 import { randomUUID } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import type { SidecarLike } from '../sidecar/client.js'
 import type { SessionChannels, StreamRegistry } from './streams.js'
@@ -134,7 +135,7 @@ export class CompletionDrain {
       }
     }
     // TAL-576: whether or not every profile recovered, the sessions left holding wakeups resume once a sidecar answers.
-    if (!this.heldResumed) { this.heldResumed = true; this.resumeHeld() }
+    if (!this.heldResumed) this.resumeHeld()
     const { events } = await sidecar.call('process.drain', { profile_home: this.deps.profileHome(this.deps.activeProfile()), max_events: 256 })
     let routed = 0
     const unrouted: Dict[] = []
@@ -319,12 +320,21 @@ export class CompletionDrain {
     try { return poolRecovery((await sidecar.call('usage.pool', { profile_home: home, provider })).entries, this.deps.now()) } catch { return null }
   }
 
-  /** A restarted server resumes every session it left holding wakeups; a deleted session's are dropped. */
+  /** A restarted server resumes every session it left holding wakeups (`startWakeup` drops a deleted session's). */
   private resumeHeld(): void {
-    for (const sid of this.heldWakeups.sessions()) {
-      try { this.deps.store.get(sid, { metadataOnly: true, promote: false, cacheOnMiss: false }) } catch { this.release(sid); continue }
-      void this.drainDeferred(sid)
-    }
+    let sids: string[]
+    try { sids = this.heldWakeups.sessions() } catch (error) { this.deps.log(`[webui] WARNING: held wakeups unreadable; retrying: ${(error as Error).message}`); return }
+    this.heldResumed = true
+    for (const sid of sids) void this.drainDeferred(sid)
+  }
+
+  private held(sid: string): Deferred[] {
+    try { return this.heldWakeups.get(sid) } catch (error) { this.deps.log(`[webui] WARNING: held wakeups unreadable for session ${sid}: ${(error as Error).message}`); return [] }
+  }
+
+  /** A session whose file is gone was deleted; any other load failure keeps its wakeups. */
+  private deleted(sid: string, error: unknown): boolean {
+    return error instanceof SessionNotFound && !existsSync(this.deps.store.pathFor(sid))
   }
 
   /** Admitted or settled wakeups (every one, with none given) leave the held file. */
@@ -373,7 +383,7 @@ export class CompletionDrain {
     let session: Session
     try { session = this.deps.store.get(sid) } catch (error) {
       // A deleted session owns no turn: its wakeups, held ones included, go with it.
-      if (error instanceof SessionNotFound) { this.release(sid); this.deps.log(`[webui] server-side wakeup dropped for deleted session ${sid}`); return false }
+      if (this.deleted(sid, error)) { this.release(sid); this.deps.log(`[webui] server-side wakeup dropped for deleted session ${sid}`); return false }
       redefer(batched); this.deps.log(`[webui] WARNING: server-side wakeup retained for session ${sid}: session unavailable`); return false
     }
     if (session.pre_compression_snapshot) { redefer(batched); this.deps.log(`[webui] WARNING: automatic wakeup retained: sealed snapshot ${sid} cannot own a turn`); return false }
@@ -419,7 +429,7 @@ export class CompletionDrain {
   /** Python `drain_deferred_wakeups_for_session`: turn-teardown idle hook; only the last active stream's teardown fires. */
   async drainDeferred(sid: string): Promise<number> {
     if (!sid || this.hasActiveTurn(sid)) return 0
-    const entries = mergeWakeups([...(this.deferred.get(sid) ?? [])], this.heldWakeups.get(sid))
+    const entries = mergeWakeups([...(this.deferred.get(sid) ?? [])], this.held(sid))
     if (!entries.length) return 0
     this.deferred.delete(sid)
     this.pendingSessions.delete(sid)

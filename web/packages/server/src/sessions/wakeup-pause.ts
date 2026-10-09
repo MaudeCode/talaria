@@ -70,10 +70,12 @@ export function mergeWakeups(into: HeldWakeup[], entries: readonly HeldWakeup[])
 export class HeldWakeups {
   constructor(private readonly path: string) {}
 
+  /** Only a missing file is empty: any other read or parse failure throws, so no write replaces what it could not read. */
   private read(): Record<string, HeldWakeup[]> {
-    let raw: unknown
-    try { raw = JSON.parse(readFileSync(this.path, 'utf8')) } catch { return {} }
-    if (!isDict(raw)) return {}
+    let text: string
+    try { text = readFileSync(this.path, 'utf8') } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {}; throw error }
+    const raw = JSON.parse(text) as unknown
+    if (!isDict(raw)) throw new Error(`${this.path} is not a held wakeup map`)
     const out: Record<string, HeldWakeup[]> = {}
     for (const [sid, entries] of Object.entries(raw)) if (Array.isArray(entries)) out[sid] = entries.filter(isHeld)
     return out
@@ -85,11 +87,13 @@ export class HeldWakeups {
     atomicWriteText(this.path, JSON.stringify(all))
   }
 
+  /** Throws when the file cannot be read. */
   sessions(): string[] { return Object.keys(this.read()) }
 
+  /** Throws when the file cannot be read. */
   get(sid: string): HeldWakeup[] { return this.read()[sid] ?? [] }
 
-  /** Throws when the entries could not be written. */
+  /** Throws when the file cannot be read or written. */
   hold(sid: string, entries: readonly HeldWakeup[]): void {
     const all = this.read()
     const before = all[sid]?.length ?? 0
@@ -97,7 +101,7 @@ export class HeldWakeups {
     if (all[sid].length !== before) this.write(all)
   }
 
-  /** Drops delivered entries, or the whole session with no entries given; throws when the file cannot be written. */
+  /** Drops delivered entries, or the whole session with no entries given; throws when the file cannot be read or written. */
   release(sid: string, entries?: readonly HeldWakeup[]): void {
     const all = this.read()
     const held = all[sid]
