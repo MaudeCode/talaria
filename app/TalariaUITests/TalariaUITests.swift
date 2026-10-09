@@ -2136,7 +2136,12 @@ final class SidebarPresentationUITests: SidebarUITestCase {
         // swipes the row instead), and SidebarGestureUITests owns the edge swipe (TAL-653).
         let sidebar = openSidebar()
         let closeNavigation = app.buttons["Close navigation"]
-        XCTAssertEqual(sidebar.elementType, .alert)
+        // The modal trait that makes the sidebar an alert lands once `isPresented` reaches the
+        // drawer, which can trail its slide-in on a loaded host (TAL-492).
+        XCTAssertTrue(
+            poll(timeout: 5) { sidebar.elementType == .alert },
+            "The open sidebar is not modal: \(sidebar.elementType)"
+        )
         for destination in ["Chats", "Tasks", "Kanban", "Skills", "Memory", "Insights", "Settings"] {
             XCTAssertTrue(
                 sidebar.descendants(matching: .any)[destination].exists,
