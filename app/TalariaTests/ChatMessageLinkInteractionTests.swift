@@ -138,26 +138,10 @@ final class ChatMarkdownLinkGeometryTests: XCTestCase {
     }
 
     private func host(_ view: some View) throws {
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
-        let window = try XCTUnwrap(scene.windows.first { $0.isKeyWindow } ?? scene.windows.first)
-        let root = try XCTUnwrap(window.rootViewController)
-
-        let host = UIHostingController(rootView: AnyView(
-            view
-                .frame(width: paragraphWidth)
-                .coordinateSpace(.named(ChatMessageInteraction.rowCoordinateSpace))
-        ))
-        root.addChild(host)
-        host.view.frame = CGRect(x: 0, y: 0, width: paragraphWidth, height: 300)
-        root.view.addSubview(host.view)
-        host.didMove(toParent: root)
-        host.view.layoutIfNeeded()
+        try hostInOwnWindow(
+            view.coordinateSpace(.named(ChatMessageInteraction.rowCoordinateSpace)),
+            size: CGSize(width: paragraphWidth, height: 300)
+        )
         RunLoop.current.run(until: Date().addingTimeInterval(0.5))
-        addTeardownBlock {
-            MainActor.assumeIsolated {
-                host.view.removeFromSuperview()
-                host.removeFromParent()
-            }
-        }
     }
 }

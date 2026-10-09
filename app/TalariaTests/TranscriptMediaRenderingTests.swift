@@ -37,7 +37,7 @@ final class TranscriptMediaRenderingTests: XCTestCase {
         )
         let loads = LoadRecorder()
 
-        try host(MessageBubbleView(
+        try hostInOwnWindow(MessageBubbleView(
             message: message,
             loadTranscriptMediaImage: { reference in
                 loads.record(reference.url)
@@ -46,7 +46,7 @@ final class TranscriptMediaRenderingTests: XCTestCase {
             loadTranscriptMediaData: { _ in nil },
             // A fresh namespace: the decoded-image cache must not answer for another test's run.
             transcriptMediaCacheNamespace: "https://example.invalid|\(UUID().uuidString)"
-        ))
+        ), size: CGSize(width: 360, height: 900))
 
         let deadline = Date().addingTimeInterval(5)
         while Date() < deadline {
@@ -55,24 +55,6 @@ final class TranscriptMediaRenderingTests: XCTestCase {
         }
         XCTAssertEqual(Set(loads.urls), Set(media.map(\.url)), "Each construct's image loads as the server's item")
         XCTAssertFalse(loads.urls.contains(audio.url), "Audio renders as a tile, not an inline image")
-    }
-
-    private func host(_ view: some View) throws {
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
-        let window = try XCTUnwrap(scene.windows.first { $0.isKeyWindow } ?? scene.windows.first)
-        let root = try XCTUnwrap(window.rootViewController)
-        let host = UIHostingController(rootView: AnyView(view.frame(width: 360)))
-        root.addChild(host)
-        host.view.frame = CGRect(x: 0, y: 0, width: 360, height: 900)
-        root.view.addSubview(host.view)
-        host.didMove(toParent: root)
-        host.view.layoutIfNeeded()
-        addTeardownBlock {
-            MainActor.assumeIsolated {
-                host.view.removeFromSuperview()
-                host.removeFromParent()
-            }
-        }
     }
 }
 
