@@ -46,6 +46,19 @@ async function run<T>(fn: () => Promise<T> | T): Promise<never> {
 
 const home = (ctx: RequestContext): string => ctx.deps.profileHome(activeProfileName(ctx))
 
+function runningSidecar(ctx: RequestContext): NonNullable<ReturnType<RequestContext['deps']['sidecar']>> {
+  const sidecar = ctx.deps.sidecar()
+  if (!sidecar) throw new HttpError(503, 'Hermes Agent sidecar is not running')
+  return sidecar
+}
+
+/** A slash command's sidecar failure: `notFound` is 404, bad input 400, the rest as `failure` maps them. */
+function commandFailure(error: unknown, notFound: string, message: string): never {
+  if (error instanceof SidecarError && error.condition === notFound) throw new HttpError(404, message)
+  if (error instanceof SidecarError && (error.condition === 'invalid_params' || error.code === -32602)) throw new HttpError(400, error.message)
+  return failure(error)
+}
+
 const principalHash = (...parts: string[]): string => createHash('sha256').update(JSON.stringify(parts), 'utf8').digest('hex')
 
 export function updateNotificationOwner(session: SessionInfo | null): string {
@@ -254,16 +267,34 @@ export const toolsRouter = os.router({
     exec: os.commands.exec.handler(({ input, context: { ctx } }) => run(async () => {
       const command = str(input.command).trim()
       if (!command) throw new HttpError(400, 'command is required')
-      const sidecar = ctx.deps.sidecar()
-      if (!sidecar) throw new HttpError(503, 'Hermes Agent sidecar is not running')
       try {
-        return { output: (await sidecar.call('commands.exec', { profile_home: home(ctx), command }, { timeoutMs: 120_000 })).output }
+        return { output: (await runningSidecar(ctx).call('commands.exec', { profile_home: home(ctx), command }, { timeoutMs: 120_000 })).output }
       } catch (error) {
-        if (error instanceof SidecarError) {
-          if (error.condition === 'command_not_found') throw new HttpError(404, 'Plugin command not found')
-          if (error.condition === 'invalid_params' || error.code === -32602) throw new HttpError(400, error.message)
-          throw new HttpError(500, error.message)
-        }
+        return commandFailure(error, 'command_not_found', 'Plugin command not found')
+      }
+    })),
+    bundles: os.commands.bundles.handler(({ context: { ctx } }) => run(async () => {
+      const sidecar = ctx.deps.sidecar()
+      try {
+        return { bundles: sidecar ? (await sidecar.call('commands.bundles', { profile_home: home(ctx) })).bundles : [] }
+      } catch {
+        return { bundles: [] }
+      }
+    })),
+    resolveBundle: os.commands.resolveBundle.handler(({ input, context: { ctx } }) => run(async () => {
+      const command = str(input.command).trim()
+      if (!command) throw new HttpError(400, 'command is required')
+      try {
+        return await runningSidecar(ctx).call('commands.bundle_resolve', { profile_home: home(ctx), command }, { timeoutMs: 120_000 })
+      } catch (error) {
+        return commandFailure(error, 'bundle_not_found', 'Bundle command not found')
+      }
+    })),
+    resolveMoa: os.commands.resolveMoa.handler(({ input, context: { ctx } }) => run(async () => {
+      try {
+        return (await runningSidecar(ctx).call('commands.moa_preset', { profile_home: home(ctx), preset: str(input.preset).trim() || null })).moa
+      } catch (error) {
+        if (error instanceof SidecarError && error.condition === 'moa_unavailable') throw new HttpError(503, error.message)
         throw error
       }
     })),

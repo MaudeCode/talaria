@@ -44289,6 +44289,171 @@
         }
       }
     },
+    "/api/commands/bundles": {
+      "get": {
+        "operationId": "commands.bundles",
+        "summary": "The active profile's skill bundles; empty when the Agent is unavailable.",
+        "tags": [
+          "tools"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "bundles": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "skill_count": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "source": {
+                            "const": "bundle"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "description",
+                          "skill_count",
+                          "source"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "bundles"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/commands/bundles/resolve": {
+      "post": {
+        "operationId": "commands.resolveBundle",
+        "summary": "Expands `/<bundle> [instruction]` into the user message that loads its skills. 404 for an unknown bundle.",
+        "tags": [
+          "tools"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "command": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "const": "bundle"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "loaded_skills": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "missing_skills": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "source",
+                    "message",
+                    "loaded_skills",
+                    "missing_skills"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/commands/moa/resolve": {
+      "get": {
+        "operationId": "commands.resolveMoa",
+        "summary": "The active profile's normalized MoA config merged with `preset`, or its default preset when that is absent or unknown. 503 when the Agent has no MoA.",
+        "tags": [
+          "tools"
+        ],
+        "parameters": [
+          {
+            "name": "preset",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "preset": {
+                      "type": "string"
+                    },
+                    "usage": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "preset",
+                    "usage"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/notes/sources": {
       "get": {
         "operationId": "notes.sources",

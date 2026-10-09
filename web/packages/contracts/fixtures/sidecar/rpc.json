@@ -17,6 +17,8 @@
           "chat.steer_now",
           "chat.steer_withdraw",
           "clarify.respond",
+          "commands.bundle_resolve",
+          "commands.bundles",
           "commands.exec",
           "commands.moa_preset",
           "commands.registry",

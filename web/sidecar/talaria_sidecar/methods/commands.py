@@ -244,6 +244,77 @@ def execute_plugin_command(command: str) -> str | None:
         return f"Plugin command error: {type(exc).__name__}"
 
 
+def _profile_bundles(skill_bundles) -> dict[str, dict[str, Any]]:
+    """The scoped profile's bundles keyed ``/slug``, read from disk the way ``scan_bundles`` reads them.
+
+    ``scan_bundles``/``get_skill_bundles`` publish one profile's bundles in a process-wide cache keyed only by mtime,
+    which cron jobs in other profiles read concurrently, so the sidecar never fills it."""
+    out: dict[str, dict[str, Any]] = {}
+    for path in skill_bundles._iter_bundle_files():
+        info = skill_bundles._load_bundle_file(path)
+        if info:
+            out.setdefault(f"/{info['slug']}", info)
+    return out
+
+
+def list_command_bundles() -> list[dict[str, Any]]:
+    """The profile's skill bundles as slash-command rows; [] when the bundle runtime is missing or fails."""
+    try:
+        import agent.skill_bundles as skill_bundles
+    except ImportError:
+        return []
+    try:
+        bundles = sorted(_profile_bundles(skill_bundles).values(), key=lambda b: b["slug"])
+    except Exception:  # noqa: BLE001
+        log.warning("Failed to list skill bundles", exc_info=True)
+        return []
+    return [{"name": str(b["slug"]).strip().lower(), "description": str(b.get("description") or "").strip() or "Skill bundle",
+             "skill_count": len(b.get("skills") or []), "source": "bundle"} for b in bundles if str(b.get("slug") or "").strip()]
+
+
+def _bundle_invocation(info: dict[str, Any], instruction: str) -> tuple[str, list[str], list[str]] | None:
+    """``build_bundle_invocation_message`` for a bundle read by ``_profile_bundles`` (that one looks it up in the shared cache),
+    skipping the skills disabled for Web chat (``skills.platform_disabled.webui``)."""
+    from agent.skill_commands import _disabled_skill_names, _load_skill_blocks, _load_skill_payload, _scaffold_header
+
+    name = info["name"]
+    loaded, missing, disabled, blocks = _load_skill_blocks(
+        [(skill or "").strip() for skill in info["skills"]], _load_skill_payload, lambda _skill: f'[Loaded as part of the "{name}" skill bundle.]',
+        None, disabled_names=_disabled_skill_names("webui"))
+    if not blocks:
+        return None
+    header = _scaffold_header(f'"{name}" skill bundle', loaded, lead_lines=[f"Bundle: {name}"], missing=missing, disabled=disabled,
+                              extra_instruction=info.get("instruction") or "", user_instruction=instruction)
+    return "\n\n".join([header, *blocks]), loaded, missing
+
+
+def resolve_bundle_command(command: str) -> dict[str, Any]:
+    """Expand ``/<bundle> [instruction]`` into the user message that loads the bundle's skills."""
+    name, instruction = parse_slash_command(command)
+    try:
+        import agent.skill_bundles as skill_bundles
+        from agent.skill_commands import resolve_slash_key
+    except ImportError as exc:
+        raise RpcError("Skill bundle runtime unavailable", condition="bundle_unavailable") from exc
+    try:
+        bundles = _profile_bundles(skill_bundles)
+        key = resolve_slash_key(name, bundles)
+        result = _bundle_invocation(bundles[key], instruction) if key else None
+    except ValueError as exc:
+        raise InvalidParams(str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Failed to resolve skill bundle command", exc_info=True)
+        raise RpcError("Skill bundle command unavailable", condition="bundle_unavailable") from exc
+    if key is None:
+        raise RpcError("Bundle command not found", condition="bundle_not_found")
+    message, loaded, missing = result or ("", [], [])
+    message = str(message or "").strip()
+    if not message:
+        raise RpcError("Bundle command returned no invocation text", condition="bundle_unavailable")
+    return {"name": key.lstrip("/"), "source": "bundle", "message": message, "loaded_skills": [str(s) for s in loaded or []],
+            "missing_skills": [str(s) for s in missing or []]}
+
+
 def resolve_moa_config(preset: str | None) -> dict:
     try:
         from hermes_cli.moa_config import moa_usage, normalize_moa_config
@@ -351,6 +422,16 @@ def register(registry) -> None:
         if output is None:
             raise RpcError(f"unknown command {parse_slash_command(command)[0]!r}", condition="command_not_found")
         return {"output": output, "source": source}
+
+    @registry.method("commands.bundles")
+    def bundles(ctx: CallContext, params: dict) -> dict:
+        with scoped_home(profile_home_param(params)):
+            return {"bundles": list_command_bundles()}
+
+    @registry.method("commands.bundle_resolve")
+    def bundle_resolve(ctx: CallContext, params: dict) -> dict:
+        with scoped_home(profile_home_param(params)):
+            return resolve_bundle_command(str(params.get("command") or ""))
 
     @registry.method("commands.moa_preset")
     def moa(ctx: CallContext, params: dict) -> dict:
