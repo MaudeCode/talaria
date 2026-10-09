@@ -101,16 +101,9 @@ struct MemoryFileView: View {
                     .disabled(viewModel.isSaving || viewModel.isShowingCachedContent)
                 }
 
-                Button {
+                RefreshToolbarButton(isLoading: viewModel.isLoading) {
                     Task { await loadMemory(viewModel, onAPIError: onAPIError) }
-                } label: {
-                    if viewModel.isLoading {
-                        ProgressView()
-                    } else {
-                        Label("Refresh", systemImage: "arrow.clockwise")
-                    }
                 }
-                .disabled(viewModel.isLoading)
             }
         }
         .sheet(item: $viewModel.editingSection) { section in

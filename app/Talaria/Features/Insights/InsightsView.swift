@@ -46,16 +46,9 @@ struct InsightsView: View {
             .navigationTitle("Insights")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
+                    RefreshToolbarButton(isLoading: isRefreshing) {
                         Task { await refreshAll() }
-                    } label: {
-                        if isRefreshing {
-                            ProgressView()
-                        } else {
-                            Label("Refresh", systemImage: "arrow.clockwise")
-                        }
                     }
-                    .disabled(isRefreshing)
                 }
             }
             .task(id: viewModel.selectedTimeframe) {

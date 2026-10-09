@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Refresh buttons in Tasks, Skills, Memory, and Insights keep their icon while loading, so iPhone Duo keeps them in its side bar on the outer display.",
+      "highlight": false
+    }
+  ]
+}

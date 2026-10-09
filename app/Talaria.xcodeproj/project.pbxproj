@@ -172,6 +172,7 @@
 		C0DE20000000000000000001 /* ChatTactileButtonStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE20000000000000000002 /* ChatTactileButtonStyle.swift */; };
 		C09300000000000000000001 /* HapticButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = C09300000000000000000002 /* HapticButton.swift */; };
 		C43600000000000000000001 /* StatusChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43600000000000000000002 /* StatusChip.swift */; };
+		C48300000000000000000001 /* RefreshToolbarButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = C48300000000000000000002 /* RefreshToolbarButton.swift */; };
 		TAL643000000000000001002 /* SectionSelectionRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = TAL643000000000000000002 /* SectionSelectionRow.swift */; };
 		C43600000000000000000003 /* AccessorySurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43600000000000000000004 /* AccessorySurface.swift */; };
 		C02100000000000000000001 /* FileExportPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = C02100000000000000000002 /* FileExportPresentation.swift */; };
@@ -605,6 +606,7 @@
 		C0DE20000000000000000002 /* ChatTactileButtonStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTactileButtonStyle.swift; sourceTree = "<group>"; };
 		C09300000000000000000002 /* HapticButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HapticButton.swift; sourceTree = "<group>"; };
 		C43600000000000000000002 /* StatusChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusChip.swift; sourceTree = "<group>"; };
+		C48300000000000000000002 /* RefreshToolbarButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RefreshToolbarButton.swift; sourceTree = "<group>"; };
 		TAL643000000000000000002 /* SectionSelectionRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SectionSelectionRow.swift; sourceTree = "<group>"; };
 		C43600000000000000000004 /* AccessorySurface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessorySurface.swift; sourceTree = "<group>"; };
 		C02100000000000000000002 /* FileExportPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileExportPresentation.swift; sourceTree = "<group>"; };
@@ -1081,6 +1083,7 @@
 			children = (
 				C09300000000000000000002 /* HapticButton.swift */,
 				C43600000000000000000002 /* StatusChip.swift */,
+				C48300000000000000000002 /* RefreshToolbarButton.swift */,
 				TAL643000000000000000002 /* SectionSelectionRow.swift */,
 				C43600000000000000000004 /* AccessorySurface.swift */,
 				C02100000000000000000002 /* FileExportPresentation.swift */,
@@ -1891,6 +1894,7 @@
 				C06900000000000000000007 /* UITestFixture+Workspace.swift in Sources */,
 				C09300000000000000000001 /* HapticButton.swift in Sources */,
 				C43600000000000000000001 /* StatusChip.swift in Sources */,
+				C48300000000000000000001 /* RefreshToolbarButton.swift in Sources */,
 				TAL643000000000000001002 /* SectionSelectionRow.swift in Sources */,
 				C43600000000000000000003 /* AccessorySurface.swift in Sources */,
 				C02100000000000000000001 /* FileExportPresentation.swift in Sources */,
