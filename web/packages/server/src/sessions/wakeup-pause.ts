@@ -35,8 +35,13 @@ export function credentialStateFingerprint(profileHome: string): string {
   return createHash('sha256').update(JSON.stringify([auth, stamp('config.yaml'), stamp('config.yml'), stamp('.env')])).digest('hex')
 }
 
-export function recordWakeupPause(s: Session, profileHome: string, now: number): void {
-  s.process_wakeup_pause = { paused: true, source: 'process_wakeup', classification: 'credential_pool_empty', provider: s.model_provider ?? '', paused_at: now, credential_state_fingerprint: credentialStateFingerprint(profileHome) }
+/**
+ * `provider` is the session's own (a switch lifts the pause); `pool_provider` is whose pool ran dry: the provider the
+ * Agent resolved for the turn, which a session on the config's implicit provider does not name.
+ */
+export function recordWakeupPause(s: Session, profileHome: string, now: number, runtimeProvider: string): void {
+  const provider = s.model_provider ?? ''
+  s.process_wakeup_pause = { paused: true, source: 'process_wakeup', classification: 'credential_pool_empty', provider, pool_provider: runtimeProvider.trim() || provider, paused_at: now, credential_state_fingerprint: credentialStateFingerprint(profileHome) }
 }
 
 /** The pool's state for a paused session: `true` once an entry is usable, else the earliest retry deadline (epoch s), else null. */

@@ -14,6 +14,7 @@ import type { SessionChannels, StreamRegistry } from './streams.js'
 import { SessionNotFound, type SessionStore } from './store.js'
 import type { Session } from './session.js'
 import { str } from '../util.js'
+import { isDict } from './merge.js'
 import { batchUpdate, recordBackgroundUpdate } from './background-updates.js'
 import type { BackgroundActivity } from './background-tasks.js'
 import { HeldWakeups, mergeWakeups, poolRecovery, wakeupPaused, type HeldWakeup } from './wakeup-pause.js'
@@ -312,20 +313,13 @@ export class CompletionDrain {
     this.retryTimers.set(sid, timer)
   }
 
-  /**
-   * TAL-576: `usage.pool` for the session's provider through `poolRecovery`; null when the sidecar cannot say. A session
-   * on the config's implicit provider names none, so every pool counts: at worst one more wakeup fails and re-pauses.
-   */
+  /** TAL-576: `usage.pool` for the provider whose pool ran dry, through `poolRecovery`; null when the sidecar cannot say. */
   private async poolRecovery(home: string, session: Session): Promise<true | number | null> {
     const sidecar = this.deps.sidecar()
-    if (!sidecar) return null
-    const provider = str(session.model_provider).trim()
-    try {
-      const providers = provider ? [provider] : (await sidecar.call('usage.pool_providers', { profile_home: home })).providers
-      const entries = []
-      for (const pid of providers) entries.push(...(await sidecar.call('usage.pool', { profile_home: home, provider: pid })).entries)
-      return poolRecovery(entries, this.deps.now())
-    } catch { return null }
+    const pause = session.process_wakeup_pause
+    const provider = str(isDict(pause) ? pause.pool_provider : '').trim() || str(session.model_provider).trim()
+    if (!sidecar || !provider) return null
+    try { return poolRecovery((await sidecar.call('usage.pool', { profile_home: home, provider })).entries, this.deps.now()) } catch { return null }
   }
 
   /** A restarted server resumes every session it left holding wakeups (`startWakeup` drops a deleted session's). */

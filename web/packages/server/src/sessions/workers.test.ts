@@ -666,20 +666,26 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
   })
 
   it('rechecks the pool at its retry deadline and delivers the held wakeups', async () => {
-    // The session names no provider (the config's implicit one), so every pool is checked.
+    // The session names no provider (the config's implicit one): only the pool of the provider the Agent resolved counts,
+    // never another provider's usable key.
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
     expect(s.deps.sessionStore.get(sid).model_provider).toBeNull()
-    sidecar.respond('usage.pool_providers', () => ({ providers: ['openrouter'] }))
     const deadline = Date.now() + 600
-    sidecar.respond('usage.pool', () => ({ entries: [{ credential_id: 'k1', label: 'k1', status: Date.now() < deadline ? 'exhausted' as const : 'available' as const, unavailable_reason: null, retry_after: new Date(deadline).toISOString(), matches_api_key: false }] }))
+    const asked: string[] = []
+    sidecar.respond('usage.pool', (params) => {
+      asked.push(params.provider)
+      const status = params.provider === 'openrouter' && Date.now() < deadline ? 'exhausted' as const : 'available' as const
+      return { entries: [{ credential_id: 'k1', label: 'k1', status, unavailable_reason: null, retry_after: new Date(deadline).toISOString(), matches_api_key: false }] }
+    })
     starts = []
-    poolEmpty()
+    sidecar.respond('chat.start', (params) => { starts.push(str(params.user_message)); return { ...completed(''), provider: 'openrouter', messages: [{ role: 'user', content: str(params.user_message) }], status: 'error' as const, failed: true, error: 'All 2 credential(s) exhausted for provider openrouter' } })
     await complete(sid, `${sid}_1`)
     await complete(sid, `${sid}_2`)
     expect(starts).toHaveLength(1)
     sidecar.respond('chat.start', (params) => { starts.push(str(params.user_message)); return completed('ok') })
     for (let i = 0; i < 100 && starts.length < 2; i += 1) await new Promise((r) => setTimeout(r, 20))
     expect(starts[1], 'the deadline alone resumes the held wakeup').toContain(`Background process ${sid}_2 completed`)
+    expect(new Set(asked)).toEqual(new Set(['openrouter']))
     await idle()
     expect(s.deps.sessionStore.get(sid).process_wakeup_pause).toBeNull()
   })
