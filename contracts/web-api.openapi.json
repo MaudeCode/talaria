@@ -43996,6 +43996,7 @@
     "/api/notes/search": {
       "get": {
         "operationId": "notes.search",
+        "summary": "Joplin notes matching `q` (`limit` 1-50, default 20). 404 while external notes sources are disabled; 502 when Joplin fails.",
         "tags": [
           "tools"
         ],
@@ -44036,19 +44037,328 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "source": {
+                      "const": "joplin"
+                    },
+                    "query": {
+                      "type": "string"
+                    },
                     "results": {
                       "type": "array",
                       "items": {
-                        "anyOf": [
-                          {},
-                          {
-                            "type": "null"
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "snippet": {
+                            "type": "string"
+                          },
+                          "parent_id": {
+                            "type": "string"
+                          },
+                          "updated_time": {},
+                          "source": {
+                            "const": "joplin"
                           }
+                        },
+                        "required": [
+                          "id",
+                          "title",
+                          "snippet",
+                          "parent_id",
+                          "source"
                         ]
                       }
                     }
                   },
-                  "additionalProperties": {}
+                  "required": [
+                    "source",
+                    "query",
+                    "results"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/notes/item": {
+      "get": {
+        "operationId": "notes.item",
+        "summary": "One Joplin note for preview. 404 while external notes sources are disabled; 502 for an invalid id or a Joplin failure.",
+        "tags": [
+          "tools"
+        ],
+        "parameters": [
+          {
+            "name": "source",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "const": "joplin"
+                    },
+                    "note": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "body": {
+                          "type": "string"
+                        },
+                        "parent_id": {
+                          "type": "string"
+                        },
+                        "updated_time": {},
+                        "created_time": {},
+                        "source": {
+                          "const": "joplin"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "title",
+                        "body",
+                        "parent_id",
+                        "source"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "source",
+                    "note"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/wiki/status": {
+      "get": {
+        "operationId": "wiki.status",
+        "summary": "LLM wiki summary from `WIKI_PATH` (env, then the profile `.env`), `skills.config.wiki.path` or `wiki.path` in config.yaml, else `~/wiki`. Always 200.",
+        "tags": [
+          "tools"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "available": {
+                      "type": "boolean"
+                    },
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "status": {
+                      "enum": [
+                        "missing",
+                        "not_directory",
+                        "ready",
+                        "empty",
+                        "error"
+                      ],
+                      "type": "string"
+                    },
+                    "entry_count": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "page_count": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "raw_source_count": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "last_updated": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "last_writer": {
+                      "type": "string"
+                    },
+                    "path_configured": {
+                      "type": "boolean"
+                    },
+                    "path_source": {
+                      "type": "string"
+                    },
+                    "toggle_available": {
+                      "const": false
+                    },
+                    "toggle_reason": {
+                      "type": "string"
+                    },
+                    "docs_url": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "available",
+                    "enabled",
+                    "status",
+                    "entry_count",
+                    "page_count",
+                    "raw_source_count",
+                    "last_updated",
+                    "last_writer",
+                    "path_configured",
+                    "path_source",
+                    "toggle_available",
+                    "toggle_reason",
+                    "docs_url"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/wiki/browse": {
+      "get": {
+        "operationId": "wiki.browse",
+        "summary": "Allowlisted `*.md` pages under `entities`, `concepts`, `comparisons`, and `queries`; 404 when the wiki directory is missing.",
+        "tags": [
+          "tools"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "pages": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "path": {
+                            "type": "string"
+                          },
+                          "size": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "mtime": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "path",
+                          "size",
+                          "mtime"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "pages"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/wiki/page": {
+      "get": {
+        "operationId": "wiki.page",
+        "summary": "One allowlisted page, cut at 2 MiB. 400 for a missing or non-canonical path; 404 for anything not listed.",
+        "tags": [
+          "tools"
+        ],
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "content": {
+                      "type": "string"
+                    },
+                    "path": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "content",
+                    "path"
+                  ]
                 }
               }
             }

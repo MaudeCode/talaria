@@ -731,6 +731,18 @@ export const McpServerSchema = z.looseObject({ name: z.string(), id: z.string().
 export const McpServersSchema = z.looseObject({ servers: z.array(McpServerSchema), health_pending: z.boolean().optional(), reload_required: z.boolean().optional(), toggle_supported: z.boolean().optional() })
 export const McpToolsSchema = z.looseObject({ tools: z.array(z.looseObject({ name: z.string().optional(), server: z.string().optional(), description: z.string().optional() })), total: z.number().int().optional(), source: z.string().optional(), inventory_scope: z.string().optional(), unavailable_servers: z.array(z.string()).optional() })
 export const NotesSourcesSchema = z.looseObject({ enabled: z.boolean().optional(), sources: z.array(Json).optional(), source: z.string().optional(), inventory_scope: z.string().optional(), recent_ai_notes: z.array(Json).optional(), attach_supported: z.boolean().optional(), automatic_recall_unchanged: z.boolean().optional() })
+/** Joplin search hit: bounded, redacted display text and a snippet around the query; `updated_time` is Joplin's raw value. */
+export const NoteSearchResultSchema = z.object({ id: z.string(), title: z.string(), snippet: z.string(), parent_id: z.string(), updated_time: Json, source: z.literal('joplin') })
+export const NotesSearchSchema = z.object({ source: z.literal('joplin'), query: z.string(), results: z.array(NoteSearchResultSchema) })
+/** One Joplin note for preview: `body` is cut at 50,000 characters (with a notice) and redacted. */
+export const NoteItemSchema = z.object({ source: z.literal('joplin'), note: z.object({ id: z.string(), title: z.string(), body: z.string(), parent_id: z.string(), updated_time: Json, created_time: Json, source: z.literal('joplin') }) })
+/** LLM wiki summary: counts and timestamps only, never page bodies or the wiki path. `error` names the exception type when `status` is `error`. */
+export const WikiStatusSchema = z.object({
+  available: z.boolean(), enabled: z.boolean(), status: z.enum(['missing', 'not_directory', 'ready', 'empty', 'error']), entry_count: z.number().int(), page_count: z.number().int(), raw_source_count: z.number().int(),
+  last_updated: z.string().nullable(), last_writer: z.string(), path_configured: z.boolean(), path_source: z.string(), toggle_available: z.literal(false), toggle_reason: z.string(), docs_url: z.string(), error: z.string().optional(),
+})
+export const WikiBrowseSchema = z.object({ pages: z.array(z.object({ name: z.string(), path: z.string(), size: z.number().int(), mtime: z.number().int() })) })
+export const WikiPageSchema = z.object({ content: z.string(), path: z.string() })
 export const TodoItemSchema = z.looseObject({ id: z.union([z.string(), z.number()]).optional(), text: z.string().optional(), content: z.string().optional(), title: z.string().optional(), status: z.string().optional(), done: z.boolean().optional(), completed: z.boolean().optional() })
 export const TodoStateSchema = z.looseObject({ session_id: z.string().optional(), todos: z.array(TodoItemSchema).optional(), summary: z.record(z.string(), z.unknown()).optional(), version: z.number().optional(), ts: z.number().optional(), source: z.string().optional(), description: z.string().optional(), pending_count: z.number().optional() })
 export type TodoState = z.infer<typeof TodoStateSchema>

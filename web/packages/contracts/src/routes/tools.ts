@@ -1,6 +1,6 @@
 import { oc } from '@orpc/contract'
 import { z } from 'zod'
-import { SkillsSchema, SkillContentSchema, SkillsUsageSchema, MemorySchema, PromptSchema, PromptsSchema, CommandsSchema, LogsSchema, InsightsSchema, AgentHealthSchema, SystemHealthSchema, McpServerSchema, McpServersSchema, McpToolsSchema, PluginsSchema, UpdatesCheckSchema, UpdatesSummarySchema, UpdateApplySchema, UpdateNotificationsSchema, UpdateNotificationSchema, TabIdSchema, FrontendBuildIdSchema, NotesSourcesSchema, DashboardStatusSchema, TranscribeCapabilitySchema } from '../views.js'
+import { SkillsSchema, SkillContentSchema, SkillsUsageSchema, MemorySchema, PromptSchema, PromptsSchema, CommandsSchema, LogsSchema, InsightsSchema, AgentHealthSchema, SystemHealthSchema, McpServerSchema, McpServersSchema, McpToolsSchema, PluginsSchema, UpdatesCheckSchema, UpdatesSummarySchema, UpdateApplySchema, UpdateNotificationsSchema, UpdateNotificationSchema, TabIdSchema, FrontendBuildIdSchema, NotesSourcesSchema, NotesSearchSchema, NoteItemSchema, WikiStatusSchema, WikiBrowseSchema, WikiPageSchema, DashboardStatusSchema, TranscribeCapabilitySchema } from '../views.js'
 
 /** Skills, memory, prompts, commands, notes, insights, logs, health, MCP, plugins, updates, and diagnostics. */
 
@@ -37,7 +37,13 @@ export const toolsContract = {
   },
   notes: {
     sources: oc.route({ method: 'GET', path: '/api/notes/sources', tags }).output(NotesSourcesSchema),
-    search: oc.route({ method: 'GET', path: '/api/notes/search', tags }).input(z.object({ source: z.string().optional(), q: z.string().optional(), limit: z.string().optional() })).output(z.looseObject({ results: z.array(Json).optional() })),
+    search: oc.route({ method: 'GET', path: '/api/notes/search', tags, summary: 'Joplin notes matching `q` (`limit` 1-50, default 20). 404 while external notes sources are disabled; 502 when Joplin fails.' }).input(z.object({ source: z.string().optional(), q: z.string().optional(), limit: z.string().optional() })).output(NotesSearchSchema),
+    item: oc.route({ method: 'GET', path: '/api/notes/item', tags, summary: 'One Joplin note for preview. 404 while external notes sources are disabled; 502 for an invalid id or a Joplin failure.' }).input(z.object({ source: z.string().optional(), id: z.string().optional() })).output(NoteItemSchema),
+  },
+  wiki: {
+    status: oc.route({ method: 'GET', path: '/api/wiki/status', tags, summary: 'LLM wiki summary from `WIKI_PATH` (env, then the profile `.env`), `skills.config.wiki.path` or `wiki.path` in config.yaml, else `~/wiki`. Always 200.' }).output(WikiStatusSchema),
+    browse: oc.route({ method: 'GET', path: '/api/wiki/browse', tags, summary: 'Allowlisted `*.md` pages under `entities`, `concepts`, `comparisons`, and `queries`; 404 when the wiki directory is missing.' }).output(WikiBrowseSchema),
+    page: oc.route({ method: 'GET', path: '/api/wiki/page', tags, summary: 'One allowlisted page, cut at 2 MiB. 400 for a missing or non-canonical path; 404 for anything not listed.' }).input(z.object({ path: z.string().optional() })).output(WikiPageSchema),
   },
   insights: oc.route({ method: 'GET', path: '/api/insights', tags }).input(z.object({ days: z.string().optional() })).output(InsightsSchema),
   logs: oc.route({ method: 'GET', path: '/api/logs', tags }).input(z.object({ file: z.string().optional(), tail: z.string().optional() })).output(LogsSchema),

@@ -1,0 +1,22 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "The Web server again searches Joplin notes and returns one note for preview when external notes sources are enabled.",
+      "highlight": false,
+      "components": ["web"]
+    },
+    {
+      "category": "Added",
+      "summary": "The Web server again reports LLM wiki status and lists and reads wiki pages.",
+      "highlight": false,
+      "components": ["web"]
+    },
+    {
+      "category": "Security",
+      "summary": "Wiki reads serve only Markdown pages inside the wiki's page folders, refusing hidden files, hard links, and symlinks that point elsewhere.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
