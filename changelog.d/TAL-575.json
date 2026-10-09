@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Provider errors asking for more credits now show the out-of-credits hint instead of a bare error.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

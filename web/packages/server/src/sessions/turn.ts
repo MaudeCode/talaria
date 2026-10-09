@@ -158,7 +158,7 @@ export function classifyProviderError(errStr: string, opts: { silentFailure?: bo
   if (['interrupted by user', 'response interrupted', 'operation interrupted', 'operation was interrupted', 'operation aborted', 'request was aborted', 'aborterror'].some((k) => lower.includes(k))) {
     return { label: 'Response interrupted', type: 'interrupted', hint: 'The run stopped before a provider response completed. If you did not cancel it, try again.' }
   }
-  const quota = ['insufficient_quota', 'insufficient credits', 'out of credits', 'credits exhausted', 'quota exceeded', 'usage limit', 'plan limit', 'billing'].some((k) => lower.includes(k))
+  const quota = ['insufficient_quota', 'insufficient credits', 'out of credits', 'credits exhausted', 'quota exceeded', 'usage limit', 'plan limit', 'billing', 'more credits', 'can only afford', 'fewer max_tokens', 'credit balance', 'exceeded your current quota', 'usage_limit_exceeded', 'reached the limit of messages', 'used up your usage'].some((k) => lower.includes(k))
   const poolEmpty = lower.includes('credential(s) exhausted') || lower.includes('credentials exhausted') || (lower.includes('credential') && lower.includes('exhausted'))
   const auth = !quota && !poolEmpty && (errStr.includes('401') || lower.includes('authentication') || lower.includes('unauthorized') || lower.includes('invalid api key') || lower.includes('invalid_api_key') || lower.includes('no cookie auth credentials'))
   const notFound = errStr.includes('404') || lower.includes('not found') || lower.includes('does not exist') || lower.includes('model_not_found') || lower.includes('invalid model') || lower.includes('does not match any known model') || lower.includes('unknown model')
