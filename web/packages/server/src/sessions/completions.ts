@@ -14,7 +14,7 @@ import type { Session } from './session.js'
 import { str } from '../util.js'
 import { batchUpdate, recordBackgroundUpdate } from './background-updates.js'
 import type { BackgroundActivity } from './background-tasks.js'
-import { wakeupPaused } from './wakeup-pause.js'
+import { holdWakeups, poolRecovery, takeHeldWakeups, wakeupPaused, type HeldWakeup } from './wakeup-pause.js'
 
 type Dict = Record<string, unknown>
 export const COMPLETION_POLL_MS = 1000
@@ -22,6 +22,8 @@ const EMIT_COALESCE_WINDOW_S = 1
 const WAKEUP_RETRY_SECONDS = 30
 const WAKEUP_RETRY_MAX_ATTEMPTS = 5
 const WAKEUP_BATCH_MAX_CHARS = 24_000
+/** A paused session rechecks its credential pool's retry deadline at least this often. */
+const PAUSE_RECHECK_MAX_SECONDS = 3600
 
 interface StartedTurn { _status?: number; error?: string; stream_id?: string; retryable?: boolean }
 
@@ -45,7 +47,7 @@ export interface CompletionDrainDeps {
 
 /** `event` is the raw completion event: async delegations claim and acknowledge it in the Agent's ledger (TAL-459), and every
  * kind describes the wakeup's background update (TAL-371). */
-interface Deferred { process_id: string; wakeup_prompt: string; event?: Dict }
+type Deferred = HeldWakeup
 interface HeldClaim { event: Dict; claim_id: string }
 const DELIVERY_CONSUMER = 'webui'
 
@@ -290,11 +292,47 @@ export class CompletionDrain {
     const attempts = (this.retryAttempts.get(sid) ?? 0) + 1
     this.retryAttempts.set(sid, attempts)
     if (attempts > WAKEUP_RETRY_MAX_ATTEMPTS) { this.deps.log(`[webui] WARNING: server-side wakeup retry budget exhausted for session ${sid}; deferred entries wait for the next turn teardown`); return }
+    this.scheduleDrain(sid, WAKEUP_RETRY_SECONDS)
+  }
+
+  private scheduleDrain(sid: string, delaySeconds: number): void {
     const existing = this.retryTimers.get(sid)
     if (existing) clearTimeout(existing)
-    const timer = setTimeout(() => { this.retryTimers.delete(sid); void this.drainDeferred(sid) }, WAKEUP_RETRY_SECONDS * 1000)
+    const timer = setTimeout(() => { this.retryTimers.delete(sid); void this.drainDeferred(sid) }, Math.max(0, delaySeconds) * 1000)
     timer.unref()
     this.retryTimers.set(sid, timer)
+  }
+
+  /** TAL-576: `usage.pool` for the session's provider through `poolRecovery`; null when the sidecar cannot say. */
+  private async poolRecovery(home: string, session: Session): Promise<true | number | null> {
+    const sidecar = this.deps.sidecar()
+    const provider = str(session.model_provider).trim()
+    if (!sidecar || !provider) return null
+    try { return poolRecovery((await sidecar.call('usage.pool', { profile_home: home, provider })).entries, this.deps.now()) } catch { return null }
+  }
+
+  /**
+   * TAL-576: while the provider has no usable credentials no wakeup turn starts. The entries are held on the session,
+   * delivered by the next turn teardown, and a timer rechecks the pool at its earliest retry deadline. Returns whether
+   * the wakeup stays paused.
+   */
+  private async holdWhilePaused(sid: string, session: Session, home: string, batched: Deferred[]): Promise<boolean> {
+    const pause = session.process_wakeup_pause
+    const save = (s: Session): void => { try { this.deps.store.save(s, { touchUpdatedAt: false }) } catch (error) { this.deps.log(`[webui] WARNING: failed to save wakeup pause for session ${sid}: ${(error as Error).message}`) } }
+    if (!wakeupPaused(session, home)) {
+      if (pause !== session.process_wakeup_pause) save(session)
+      return false
+    }
+    const recovery = await this.poolRecovery(home, session)
+    let current: Session
+    try { current = this.deps.store.get(sid) } catch { current = session }
+    if (recovery === true) { current.process_wakeup_pause = null; save(current); return false }
+    holdWakeups(current, batched)
+    save(current)
+    this.retryAttempts.delete(sid)
+    if (recovery !== null) this.scheduleDrain(sid, Math.min(recovery - this.deps.now(), PAUSE_RECHECK_MAX_SECONDS))
+    this.deps.log(`[webui] server-side wakeup paused for session ${sid}: provider credential pool is empty`)
+    return true
   }
 
   /** Python `_start_server_side_wakeup_turn`: one batched turn; 409 re-defers, other failures re-defer with a timed retry. */
@@ -305,10 +343,7 @@ export class CompletionDrain {
     if (session.pre_compression_snapshot) { redefer(batched); this.deps.log(`[webui] WARNING: automatic wakeup retained: sealed snapshot ${sid} cannot own a turn`); return false }
     // TAL-534: the delegation's ledger row lives in the session's own profile, whichever profile is active now.
     const home = this.deps.profileHome(session.profile ?? this.deps.activeProfile())
-    // TAL-576: no turn while the provider has no usable credentials; the entries wait unclaimed for the next turn teardown.
-    const pause = session.process_wakeup_pause
-    if (wakeupPaused(session, home)) { redefer(batched); this.retryAttempts.delete(sid); this.deps.log(`[webui] server-side wakeup paused for session ${sid}: provider credential pool is empty`); return false }
-    if (pause !== session.process_wakeup_pause) { try { this.deps.store.save(session) } catch { /* the cleared pause is re-derived on the next wakeup */ } }
+    if (await this.holdWhilePaused(sid, session, home, batched)) return false
     const claimed = await this.claimBatch(home, batched)
     if (!claimed) { redefer(batched); this.scheduleRetry(sid); return false }
     const { deliver, held } = claimed
@@ -344,11 +379,21 @@ export class CompletionDrain {
     try { const { consumed } = await sidecar.call('process.consumed', { process_ids: completions.map((e) => e.process_id) }); return new Set(completions.filter((e) => consumed.includes(e.process_id))) } catch { return new Set() }
   }
 
+  /** TAL-576: the wakeups held on the session while it was paused. */
+  private takeHeld(sid: string): Deferred[] {
+    let session: Session
+    try { session = this.deps.store.get(sid, { promote: false }) } catch { return [] }
+    const held = takeHeldWakeups(session)
+    if (!held.length) return []
+    try { this.deps.store.save(session, { touchUpdatedAt: false }) } catch (error) { holdWakeups(session, held); this.deps.log(`[webui] WARNING: held wakeups kept for session ${sid}: ${(error as Error).message}`); return [] }
+    return held
+  }
+
   /** Python `drain_deferred_wakeups_for_session`: turn-teardown idle hook; only the last active stream's teardown fires. */
   async drainDeferred(sid: string): Promise<number> {
     if (!sid || this.hasActiveTurn(sid)) return 0
-    const entries = this.deferred.get(sid)
-    if (!entries?.length) return 0
+    const entries = [...(this.deferred.get(sid) ?? []), ...this.takeHeld(sid)]
+    if (!entries.length) return 0
     this.deferred.delete(sid)
     this.pendingSessions.delete(sid)
     const prompted = entries.filter((e) => e.wakeup_prompt.trim())

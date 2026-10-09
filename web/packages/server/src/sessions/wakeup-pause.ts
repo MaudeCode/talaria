@@ -38,6 +38,39 @@ export function recordWakeupPause(s: Session, profileHome: string, now: number):
   s.process_wakeup_pause = { paused: true, source: 'process_wakeup', classification: 'credential_pool_empty', provider: s.model_provider ?? '', paused_at: now, credential_state_fingerprint: credentialStateFingerprint(profileHome) }
 }
 
+/** The pool's state for a paused session: `true` once an entry is usable, else the earliest retry deadline (epoch s), else null. */
+export function poolRecovery(entries: readonly { status: string; retry_after: string | null }[], now: number): true | number | null {
+  let earliest: number | null = null
+  for (const entry of entries) {
+    if (entry.status === 'available') return true
+    const at = entry.retry_after ? Date.parse(entry.retry_after) / 1000 : NaN
+    if (Number.isFinite(at)) earliest = Math.min(earliest ?? at, at)
+  }
+  return earliest !== null && earliest <= now ? true : earliest
+}
+
+/** A wakeup held while paused. Held wakeups live on the session document, so a restart before the pause lifts loses none. */
+export interface HeldWakeup { process_id: string; wakeup_prompt: string; event?: Record<string, unknown> }
+const HELD_KEY = 'process_wakeup_held'
+
+function heldWakeups(s: Session): HeldWakeup[] {
+  const held = s.extra[HELD_KEY]
+  return Array.isArray(held) ? held.filter((e): e is HeldWakeup => isDict(e) && typeof e.wakeup_prompt === 'string' && typeof e.process_id === 'string') : []
+}
+
+export function holdWakeups(s: Session, entries: readonly HeldWakeup[]): void {
+  const held = heldWakeups(s)
+  for (const entry of entries) if (!entry.process_id || !held.some((h) => h.process_id === entry.process_id)) held.push(entry)
+  s.extra[HELD_KEY] = held
+}
+
+/** Removes and returns the held wakeups; the caller saves when any were taken. */
+export function takeHeldWakeups(s: Session): HeldWakeup[] {
+  const held = heldWakeups(s)
+  Reflect.deleteProperty(s.extra, HELD_KEY)
+  return held
+}
+
 /** Whether the session's wakeups stay paused; a pause whose provider or credential state changed is cleared (the caller saves). */
 export function wakeupPaused(s: Session, profileHome: string): boolean {
   const pause = s.process_wakeup_pause

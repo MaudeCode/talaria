@@ -105,9 +105,11 @@ projection of SSE frames that converges on the server's settled fields.
    (`sessions/completions.ts`) runs under its own retry and batch limits, and a
    limit exit is reported as an automatic-wakeup limit, never as a user
    cancellation. A wakeup that fails with `credential_pool_empty` records
-   `process_wakeup_pause` (`sessions/wakeup-pause.ts`); later wakeups wait for
-   the next turn teardown instead of starting until the profile's credential
-   state or the session's provider changes, or a turn succeeds.
+   `process_wakeup_pause` (`sessions/wakeup-pause.ts`). Later wakeups are held
+   on the session document instead of starting a turn until the profile's
+   credential state or the session's provider changes, the pool's earliest
+   retry deadline passes, or a turn succeeds; the next turn teardown delivers
+   them.
 9. **Observation has a degraded path.** Long-running or many-session
    observation exposes heartbeat or degraded status so the UI does not appear
    silent and ordinary APIs do not stall behind active streams.

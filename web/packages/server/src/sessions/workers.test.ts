@@ -531,7 +531,10 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
     await complete(sid, `${sid}_2`)
     await complete(sid, `${sid}_3`)
     expect(starts, 'a paused session starts no wakeup turn').toHaveLength(1)
-    expect(s.deps.completions.deferredCount(sid), 'paused wakeups wait for the next turn').toBe(2)
+    // Held on the session document, so a restart before the pause lifts loses none.
+    const held = (JSON.parse(readFileSync(s.deps.sessionStore.pathFor(sid), 'utf8')) as Json).process_wakeup_held as Json[]
+    expect(held.map((e) => e.process_id), 'paused wakeups wait on the session').toEqual([`${sid}_2`, `${sid}_3`])
+    expect(s.deps.completions.deferredCount(sid)).toBe(0)
     expect(s.deps.sessionStore.get(sid).process_wakeup_pause).toMatchObject({ paused: true, classification: 'credential_pool_empty' })
     // Token refresh and request telemetry are no credential change.
     writeFileSync(join(s.state, 'auth.json'), JSON.stringify({ credential_pool: { openrouter: [{ api_key: 'sk-rotated', last_status: 'ok', request_count: 10 }] } }))
@@ -546,7 +549,7 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
     expect(starts).toHaveLength(3)
     expect(starts[1]).toContain(`Background process ${sid}_5 completed`)
     expect(starts[2]).toContain(`Background process ${sid}_2 completed`)
-    expect(s.deps.completions.deferredCount(sid)).toBe(0)
+    expect(s.deps.sessionStore.get(sid).extra).not.toHaveProperty('process_wakeup_held')
     expect(s.deps.sessionStore.get(sid).process_wakeup_pause).toBeNull()
   })
 
@@ -559,6 +562,25 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
     for (let i = 0; i < 100 && starts.length < 3; i += 1) await new Promise((r) => setTimeout(r, 20))
     expect(starts[1]).toContain('hello')
     expect(starts[2]).toContain(`Background process ${sid}_2 completed`)
+    await idle()
+    expect(s.deps.sessionStore.get(sid).process_wakeup_pause).toBeNull()
+  })
+
+  it('rechecks the pool at its retry deadline and delivers the held wakeups', async () => {
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    const session = s.deps.sessionStore.get(sid)
+    session.model_provider = 'openrouter'
+    s.deps.sessionStore.save(session)
+    const deadline = Date.now() + 600
+    sidecar.respond('usage.pool', () => ({ entries: [{ credential_id: 'k1', label: 'k1', status: Date.now() < deadline ? 'exhausted' as const : 'available' as const, unavailable_reason: null, retry_after: new Date(deadline).toISOString(), matches_api_key: false }] }))
+    starts = []
+    poolEmpty()
+    await complete(sid, `${sid}_1`)
+    await complete(sid, `${sid}_2`)
+    expect(starts).toHaveLength(1)
+    sidecar.respond('chat.start', (params) => { starts.push(str(params.user_message)); return completed('ok') })
+    for (let i = 0; i < 100 && starts.length < 2; i += 1) await new Promise((r) => setTimeout(r, 20))
+    expect(starts[1], 'the deadline alone resumes the held wakeup').toContain(`Background process ${sid}_2 completed`)
     await idle()
     expect(s.deps.sessionStore.get(sid).process_wakeup_pause).toBeNull()
   })
