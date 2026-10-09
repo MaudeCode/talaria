@@ -517,6 +517,8 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
     await new Promise((r) => setTimeout(r, 50))
     await idle()
   }
+  const heldIndex = (): string[] => { try { return JSON.parse(readFileSync(join(s.deps.sessionStore.sessionDir, '_wakeup_held.json'), 'utf8')) as string[] } catch { return [] } }
+  const heldIds = (sid: string): unknown[] => ((s.deps.sessionStore.get(sid).extra.process_wakeup_held as Json[] | undefined) ?? []).map((e) => e.process_id)
   const pausedSession = async (): Promise<string> => {
     starts = []
     poolEmpty()
@@ -535,6 +537,7 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
     const held = (JSON.parse(readFileSync(s.deps.sessionStore.pathFor(sid), 'utf8')) as Json).process_wakeup_held as Json[]
     expect(held.map((e) => e.process_id), 'paused wakeups wait on the session').toEqual([`${sid}_2`, `${sid}_3`])
     expect(s.deps.completions.deferredCount(sid)).toBe(0)
+    expect(heldIndex()).toContain(sid)
     expect(s.deps.sessionStore.get(sid).process_wakeup_pause).toMatchObject({ paused: true, classification: 'credential_pool_empty' })
     // Token refresh and request telemetry are no credential change.
     writeFileSync(join(s.state, 'auth.json'), JSON.stringify({ credential_pool: { openrouter: [{ api_key: 'sk-rotated', last_status: 'ok', request_count: 10 }] } }))
@@ -550,6 +553,7 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
     expect(starts[1]).toContain(`Background process ${sid}_5 completed`)
     expect(starts[2]).toContain(`Background process ${sid}_2 completed`)
     expect(s.deps.sessionStore.get(sid).extra).not.toHaveProperty('process_wakeup_held')
+    expect(heldIndex()).not.toContain(sid)
     expect(s.deps.sessionStore.get(sid).process_wakeup_pause).toBeNull()
   })
 
@@ -564,6 +568,40 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
     expect(starts[2]).toContain(`Background process ${sid}_2 completed`)
     await idle()
     expect(s.deps.sessionStore.get(sid).process_wakeup_pause).toBeNull()
+  })
+
+  it('keeps held wakeups until a turn admits them, and a restarted server resumes them', async () => {
+    const sid = await pausedSession()
+    await complete(sid, `${sid}_2`)
+    expect(heldIds(sid)).toEqual([`${sid}_2`])
+    writeFileSync(join(s.state, 'auth.json'), JSON.stringify({ credential_pool: { openrouter: [{ api_key: 'sk-a' }, { api_key: 'sk-b' }, { api_key: 'sk-c' }] } }))
+    // The pause lifts but the turn is refused: the held copy stays on disk.
+    const refused = new CompletionDrain({
+      sidecar: () => sidecar, baseHome: s.state, profileHome: () => s.state, activeProfile: () => 'default', store: s.deps.sessionStore, channels: s.deps.channels, registry: s.deps.registry,
+      startTurn: () => ({ _status: 500, error: 'boom' }), now: () => Date.now() / 1000, log: () => undefined,
+    })
+    await refused.drainDeferred(sid)
+    refused.stop()
+    expect(s.deps.sessionStore.get(sid).process_wakeup_pause).toBeNull()
+    expect(heldIds(sid)).toEqual([`${sid}_2`])
+    expect(heldIndex()).toContain(sid)
+    // A new server's first drain resumes the session and the admitted wakeup leaves the disk.
+    const prompts: string[] = []
+    const restarted = new FakeSidecar()
+    restarted.describe = { rpc_version: SIDECAR_RPC_VERSION } as RuntimeDescribe
+    restarted.respond('process.recover', () => ({ homes: 1 }))
+    restarted.respond('process.drain', () => ({ events: [] }))
+    restarted.respond('process.mark_consumed', () => ({ ok: true }))
+    const resumed = new CompletionDrain({
+      sidecar: () => restarted, baseHome: s.state, profileHome: () => s.state, activeProfile: () => 'default', store: s.deps.sessionStore, channels: s.deps.channels, registry: s.deps.registry,
+      startTurn: (_session, prompt) => { prompts.push(prompt); return { stream_id: 'resumed' } }, now: () => Date.now() / 1000, log: () => undefined,
+    })
+    await resumed.drainOnce()
+    for (let i = 0; i < 50 && !prompts.length; i += 1) await new Promise((r) => setTimeout(r, 20))
+    await new Promise((r) => setTimeout(r, 50))
+    expect(prompts[0]).toContain(`Background process ${sid}_2 completed`)
+    expect(heldIds(sid)).toEqual([])
+    expect(heldIndex()).not.toContain(sid)
   })
 
   it('rechecks the pool at its retry deadline and delivers the held wakeups', async () => {

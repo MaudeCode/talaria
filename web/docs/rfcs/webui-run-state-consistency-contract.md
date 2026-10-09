@@ -108,8 +108,10 @@ projection of SSE frames that converges on the server's settled fields.
    `process_wakeup_pause` (`sessions/wakeup-pause.ts`). Later wakeups are held
    on the session document instead of starting a turn until the profile's
    credential state or the session's provider changes, the pool's earliest
-   retry deadline passes, or a turn succeeds; the next turn teardown delivers
-   them.
+   retry deadline passes, or a turn succeeds. A held wakeup leaves the document
+   only once a turn admits it; the drain rechecks held sessions at least every
+   five minutes, and `sessions/_wakeup_held.json` lists them so a restarted
+   server resumes them.
 9. **Observation has a degraded path.** Long-running or many-session
    observation exposes heartbeat or degraded status so the UI does not appear
    silent and ordinary APIs do not stall behind active streams.

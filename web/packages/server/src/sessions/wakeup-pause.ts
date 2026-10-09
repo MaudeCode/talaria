@@ -49,26 +49,37 @@ export function poolRecovery(entries: readonly { status: string; retry_after: st
   return earliest !== null && earliest <= now ? true : earliest
 }
 
-/** A wakeup held while paused. Held wakeups live on the session document, so a restart before the pause lifts loses none. */
+/** A wakeup held while paused. It stays on the session document until a turn admits it, so a restart loses none. */
 export interface HeldWakeup { process_id: string; wakeup_prompt: string; event?: Record<string, unknown> }
 const HELD_KEY = 'process_wakeup_held'
 
-function heldWakeups(s: Session): HeldWakeup[] {
+const heldKey = (e: HeldWakeup): string => e.process_id || e.wakeup_prompt
+
+export function heldWakeups(s: Session): HeldWakeup[] {
   const held = s.extra[HELD_KEY]
   return Array.isArray(held) ? held.filter((e): e is HeldWakeup => isDict(e) && typeof e.wakeup_prompt === 'string' && typeof e.process_id === 'string') : []
 }
 
-export function holdWakeups(s: Session, entries: readonly HeldWakeup[]): void {
-  const held = heldWakeups(s)
-  for (const entry of entries) if (!entry.process_id || !held.some((h) => h.process_id === entry.process_id)) held.push(entry)
-  s.extra[HELD_KEY] = held
+/** Adds entries not held yet, so held and in-memory copies of one wakeup merge into one. */
+export function mergeWakeups(into: HeldWakeup[], entries: readonly HeldWakeup[]): HeldWakeup[] {
+  const keys = new Set(into.map(heldKey))
+  for (const entry of entries) if (!keys.has(heldKey(entry))) { keys.add(heldKey(entry)); into.push(entry) }
+  return into
 }
 
-/** Removes and returns the held wakeups; the caller saves when any were taken. */
-export function takeHeldWakeups(s: Session): HeldWakeup[] {
+export function holdWakeups(s: Session, entries: readonly HeldWakeup[]): void {
+  s.extra[HELD_KEY] = mergeWakeups(heldWakeups(s), entries)
+}
+
+/** Drops the delivered entries; whether any were held (the caller saves). */
+export function releaseWakeups(s: Session, entries: readonly HeldWakeup[]): boolean {
   const held = heldWakeups(s)
-  Reflect.deleteProperty(s.extra, HELD_KEY)
-  return held
+  const done = new Set(entries.map(heldKey))
+  const left = held.filter((e) => !done.has(heldKey(e)))
+  if (left.length === held.length) return false
+  if (left.length) s.extra[HELD_KEY] = left
+  else Reflect.deleteProperty(s.extra, HELD_KEY)
+  return true
 }
 
 /** Whether the session's wakeups stay paused; a pause whose provider or credential state changed is cleared (the caller saves). */
