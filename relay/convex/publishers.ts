@@ -374,6 +374,19 @@ export const acknowledgeViewedSession = internalMutation({
   },
 });
 
+// The event is authorized only for a profile this publisher has enrolled; delivery is not implemented yet.
+export const acceptSessionStarted = internalMutation({
+  args: { ...publisherRequestArgs, sessionId: v.string(), eventId: v.string(), startedAt: v.number() },
+  returns: acceptResultValidator,
+  handler: async (ctx, args) => {
+    const authorization = await authorizePublisherMutation(ctx, args);
+    if (authorization === null) return { status: "unauthorized" as const };
+    if (authorization === "replay") return { status: "replay" as const };
+    const grants = await grantsForProfile(ctx, args.publisherOwnerUserId, args.publisherId, args.profileId);
+    return { status: grants.length > 0 ? "accepted" as const : "unauthorized" as const };
+  },
+});
+
 export const listCurrentStates = internalQuery({
   args: { userId: v.string(), now: v.number() },
   returns: v.array(storedSessionStateValidator),

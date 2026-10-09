@@ -118,6 +118,23 @@ Each state may carry an optional `alertEligible` boolean. Omitting it means `tru
 
 The per-session route remains available at `PUT /v1/publishers/{publisherId}/profiles/{profileId}/sessions/{sessionId}/activity` with `eventId`, `revision`, and `state`; use `state: null` to tombstone it.
 
+## Announce a new session
+
+`PUT /v1/publishers/{publisherId}/profiles/{profileId}/sessions/{sessionId}/started`
+
+```json
+{
+  "version": 1,
+  "eventId": "started:session-id",
+  "publisherId": "https://hermes.example.com",
+  "profileId": "opaque-server-generated-profile-scope",
+  "sessionId": "session-id",
+  "startedAt": 1787845600000
+}
+```
+
+The publisher sends this once when a session first appears in an enrolled profile, whether it started in Talaria Web or in the Agent. `startedAt` is the session's start in publisher milliseconds. A retry or restart reuses the same `eventId`, so the relay may deduplicate on it. The body carries exactly these fields and nothing from the transcript: an unknown field, a value past its bound, or a `sessionId` that differs from the path answers 400. A `publisherId` or `profileId` that differs from the path answers 403, and a profile this publisher has not enrolled answers 409 with `status: "unauthorized"`. The relay validates and acknowledges the event; it does not deliver anything to devices yet.
+
 ## Device and Live Activity routes
 
 `PUT /v1/devices/{deviceId}` upserts the signed-in user's device:
