@@ -260,10 +260,13 @@ function dashboardMode(raw: unknown): DashboardMode | null {
   return (DASHBOARD_MODES as readonly string[]).includes(mode) ? (mode as DashboardMode) : null
 }
 
+/** The configured dashboard link: `url`, else the legacy `target`. */
+const dashboardLink = (cfg: Dict): string => str(cfg.url ?? cfg.target)
+
 /** Python `get_dashboard_config`: the profile's `webui.dashboard` link settings; 400 for an invalid stored URL. */
 export function dashboardConfig(config: Config): { enabled: DashboardMode; url: string } {
   const cfg = dict(dict(config.webui).dashboard)
-  return { enabled: dashboardMode(cfg.enabled) ?? 'auto', url: normalizeBrowserUrl(cfg.url ? str(cfg.url) : '') }
+  return { enabled: dashboardMode(cfg.enabled) ?? 'auto', url: normalizeBrowserUrl(dashboardLink(cfg)) }
 }
 
 /** Python `save_dashboard_config` validation: 400 for an unknown mode or an unsafe URL; an empty URL clears it. */
@@ -280,6 +283,8 @@ export function applyDashboardConfig(config: Config, next: { enabled: DashboardM
   if (!webui.dashboard || typeof webui.dashboard !== 'object' || Array.isArray(webui.dashboard)) webui.dashboard = {}
   const dashboard = webui.dashboard as Dict
   dashboard.enabled = next.enabled
+  // `url` replaces the legacy `target`, so clearing the URL clears the link.
+  Reflect.deleteProperty(dashboard, 'target')
   if (next.url) dashboard.url = next.url
   else Reflect.deleteProperty(dashboard, 'url')
 }
@@ -289,7 +294,7 @@ export async function dashboardStatus(config: Config, env: Record<string, string
   const cfg = dict(dict(config.webui).dashboard)
   const enabled = dashboardMode(cfg.enabled) ?? 'auto'
   if (enabled === 'never') return { running: false, enabled: 'never' }
-  const raw = str(cfg.url ?? cfg.target)
+  const raw = dashboardLink(cfg)
   let browserUrl = ''
   try { browserUrl = raw ? normalizeBrowserUrl(raw) : '' } catch { return { running: false, enabled, error: 'invalid dashboard url' } }
   let override: [string, number, string, string] | null = null

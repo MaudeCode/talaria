@@ -1,9 +1,21 @@
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Dict } from '../config/agent-config.js'
 import { projectOsDashboard, type ProjectOsDeps } from './project-os.js'
+
+// Runs once right after `readdirSync` lists `dir`, so a test can swap a listed directory before the scan dequeues it.
+const afterListing = vi.hoisted(() => ({ dir: '', run: null as null | (() => void) }))
+vi.mock('node:fs', async (importOriginal) => {
+  const fs = await importOriginal<typeof import('node:fs')>()
+  const readdirSync = ((...args: Parameters<typeof fs.readdirSync>) => {
+    const listed = fs.readdirSync(...args)
+    if (afterListing.run && String(args[0]) === afterListing.dir) { const run = afterListing.run; afterListing.run = null; run() }
+    return listed
+  }) as typeof fs.readdirSync
+  return { ...fs, default: { ...fs, readdirSync }, readdirSync }
+})
 
 const EMPTY = { workspace: null, repo_root: null, git: null, docs: {}, handoff: null, active: null, heartbeat: null, goal_summary: '' }
 
@@ -73,6 +85,24 @@ describe('project-os dashboard (TAL-266)', () => {
       expect(body.repo_root).toBe(root)
       expect(JSON.stringify(body)).not.toContain('outside truth')
     } finally {
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
+  it('never reads through a directory swapped for an outside symlink after it was listed', async () => {
+    const outside = realpathSync(mkdtempSync(join(tmpdir(), 'project-os-outside-')))
+    try {
+      mkdirSync(join(outside, '.ax', 'status'), { recursive: true })
+      writeFileSync(join(outside, '.ax', 'status', 'active.json'), JSON.stringify({ board: 'ops', secret: 'outside truth' }))
+      mkdirSync(join(root, 'apps'))
+      afterListing.dir = root
+      afterListing.run = () => { rmSync(join(root, 'apps'), { recursive: true }); symlinkSync(outside, join(root, 'apps')) }
+      const body = await projectOsDashboard('ops', deps())
+      expect(afterListing.run).toBeNull()
+      expect(body.repo_root).toBe(root)
+      expect(JSON.stringify(body)).not.toContain('outside truth')
+    } finally {
+      afterListing.run = null
       rmSync(outside, { recursive: true, force: true })
     }
   })

@@ -517,6 +517,13 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
       expect(dashboard()).toEqual({ enabled: 'always', url: 'https://dashboard.example.test' })
       expect(await json(await post(s, '/api/dashboard/config', { enabled: 'auto', url: '' }))).toEqual({ enabled: 'auto', url: '' })
       expect(dashboard()).toEqual({ enabled: 'auto' })
+      // A legacy `target` is the link until a save replaces or clears it.
+      configs.set(s.state, { ...structuredClone(seed), webui: { dashboard: { enabled: 'always', target: 'http://127.0.0.1:19200' } } })
+      s.deps.agentConfig.invalidate()
+      expect(await json(await s.get('/api/dashboard/config'))).toEqual({ enabled: 'always', url: 'http://127.0.0.1:19200' })
+      expect(await json(await post(s, '/api/dashboard/config', { enabled: 'always', url: '' }))).toEqual({ enabled: 'always', url: '' })
+      expect(dashboard()).toEqual({ enabled: 'always' })
+      expect(await json(await s.get('/api/dashboard/status'))).toMatchObject({ url: 'http://127.0.0.1:9119' })
       configs.set(s.state, { ...structuredClone(seed), webui: { dashboard: { url: 'ftp://nope' } } })
       s.deps.agentConfig.invalidate()
       const stored = await s.get('/api/dashboard/config')

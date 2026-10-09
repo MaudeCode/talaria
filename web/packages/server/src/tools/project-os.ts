@@ -35,22 +35,29 @@ const isDir = (path: string): boolean => { try { return statSync(path).isDirecto
 type Doc = FileContent & Dict
 const clip = (value: string): string => Array.from(value).slice(0, SUMMARY_MAX).join('')
 
-function readDoc(root: string, rel: string): Doc | null {
-  try { return { ...readFileContent(root, rel) } } catch { return null }
+/**
+ * A repo root and the directory its reads are anchored to. A repo found by the workspace scan reads through the
+ * workspace, so a directory swapped for a symlink after the scan listed it cannot lead a read out of the workspace.
+ */
+interface Repo { path: string; anchor: string; rel: string }
+const ownRoot = (path: string): Repo => ({ path, anchor: path, rel: '' })
+
+function readDoc(repo: Repo, file: string): Doc | null {
+  try { return { ...readFileContent(repo.anchor, repo.rel ? `${repo.rel}/${file}` : file), path: file } } catch { return null }
 }
 
-function readJson(root: string, rel: string): Dict | null {
-  const doc = readDoc(root, rel)
+function readJson(repo: Repo, file: string): Dict | null {
+  const doc = readDoc(repo, file)
   if (typeof doc?.content !== 'string') return null
   try { const parsed: unknown = JSON.parse(doc.content); return isDict(parsed) ? parsed : null } catch { return null }
 }
 
 /** Every board id, slug, or name the repo's `.ax` truth files claim. */
-function truthBoardSlugs(root: string): Set<string> {
+function truthBoardSlugs(repo: Repo): Set<string> {
   const slugs = new Set<string>()
   const add = (v: unknown): void => { const t = text(v); if (t) slugs.add(t) }
   for (const rel of TRUTH_FILES) {
-    const truth = readJson(root, rel)
+    const truth = readJson(repo, rel)
     if (!truth) continue
     if (isDict(truth.board)) for (const key of ['slug', 'id', 'name', 'display_name']) add(truth.board[key])
     else add(truth.board)
@@ -59,40 +66,41 @@ function truthBoardSlugs(root: string): Set<string> {
   return slugs
 }
 
-const repoMatchesBoard = (root: string, slug: string): boolean => Boolean(slug) && truthBoardSlugs(root).has(slug)
+const repoMatchesBoard = (repo: Repo, slug: string): boolean => Boolean(slug) && truthBoardSlugs(repo).has(slug)
 
 /** The workspace, every `.ax` or `docs/project-os` directory found breadth-first beneath it (symlinks not followed), then the server's cwd. */
-function candidateRepoRoots(workspaceRoot: string | null, cwd: string): string[] {
-  const candidates: string[] = []
-  const add = (path: string): void => {
-    const resolved = resolvePathLikePython(path)
-    if (isDir(resolved) && !candidates.includes(resolved)) candidates.push(resolved)
+function candidateRepoRoots(workspaceRoot: string | null, cwd: string): Repo[] {
+  const candidates: Repo[] = []
+  const add = (repo: Repo): void => {
+    if (isDir(repo.path) && !candidates.some((c) => c.path === repo.path)) candidates.push(repo)
   }
   if (workspaceRoot === null) return candidates
-  add(workspaceRoot)
   const scanRoot = resolvePathLikePython(workspaceRoot)
+  add(ownRoot(scanRoot))
   if (!isDir(scanRoot)) return candidates
-  const queue: [string, number][] = [[scanRoot, 0]]
+  // Queued as paths relative to the scan root; each found repo reads through it.
+  const queue: [string, number][] = [['', 0]]
   let inspected = 0
   while (queue.length && inspected < SCAN_MAX_DIRS) {
-    const [current, depth] = queue.shift()!
+    const [rel, depth] = queue.shift()!
+    const current = rel ? join(scanRoot, rel) : scanRoot
     inspected += 1
-    if (isDir(join(current, '.ax')) || isDir(join(current, 'docs', 'project-os'))) add(current)
+    if (isDir(join(current, '.ax')) || isDir(join(current, 'docs', 'project-os'))) add({ path: current, anchor: scanRoot, rel })
     if (depth >= SCAN_MAX_DEPTH) continue
     let names: string[]
     // Real directories only: a directory symlink could lead the scan, and every later read, out of the workspace.
     try { names = readdirSync(current, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort() } catch { continue }
     for (const name of names) {
       if (SCAN_SKIP.has(name) || (name.startsWith('.') && name !== '.ax')) continue
-      queue.push([join(current, name), depth + 1])
+      queue.push([rel ? `${rel}/${name}` : name, depth + 1])
     }
   }
-  add(cwd)
+  add(ownRoot(resolvePathLikePython(cwd)))
   return candidates
 }
 
-function resolveRepoRootForBoard(repoRoot: string | null, slug: string, cwd: string): string | null {
-  const existing = repoRoot !== null && existsSync(repoRoot) ? repoRoot : null
+function resolveRepoRootForBoard(repoRoot: string | null, slug: string, cwd: string): Repo | null {
+  const existing = repoRoot !== null && existsSync(repoRoot) ? ownRoot(repoRoot) : null
   if (!slug) return existing
   if (existing !== null && repoMatchesBoard(existing, slug)) return existing
   return candidateRepoRoots(repoRoot, cwd).find((candidate) => repoMatchesBoard(candidate, slug)) ?? existing
@@ -138,23 +146,23 @@ function onboardingContext(root: string, project: Doc | null, plan: Doc | null, 
   }
 }
 
-function readRepo(root: string): { handoff: Dict | null; active: Dict | null; heartbeat: Dict | null; docs: Record<'project' | 'plan' | 'status' | 'blocker_resolver', Doc | null>; onboarding: Dict } {
+function readRepo(repo: Repo): { handoff: Dict | null; active: Dict | null; heartbeat: Dict | null; docs: Record<'project' | 'plan' | 'status' | 'blocker_resolver', Doc | null>; onboarding: Dict } {
   const docs = {
-    project: readDoc(root, 'docs/project-os/PROJECT.md'),
-    plan: readDoc(root, 'docs/project-os/PLAN.md'),
-    status: readDoc(root, 'docs/project-os/STATUS.md'),
-    blocker_resolver: readDoc(root, 'docs/project-os/BLOCKER-RESOLVER.md'),
+    project: readDoc(repo, 'docs/project-os/PROJECT.md'),
+    plan: readDoc(repo, 'docs/project-os/PLAN.md'),
+    status: readDoc(repo, 'docs/project-os/STATUS.md'),
+    blocker_resolver: readDoc(repo, 'docs/project-os/BLOCKER-RESOLVER.md'),
   }
-  const rootProject = readDoc(root, 'PROJECT.md')
-  const rootPlan = readDoc(root, 'PLAN.md')
-  const rootStatus = readDoc(root, 'STATUS.md')
-  const onboarding = onboardingContext(root, rootProject, rootPlan, rootStatus)
+  const rootProject = readDoc(repo, 'PROJECT.md')
+  const rootPlan = readDoc(repo, 'PLAN.md')
+  const rootStatus = readDoc(repo, 'STATUS.md')
+  const onboarding = onboardingContext(repo.path, rootProject, rootPlan, rootStatus)
   if (onboarding.active === true) {
     docs.project = rootProject ?? docs.project
     docs.plan = rootPlan ?? docs.plan
     docs.status = rootStatus ?? docs.status
   }
-  return { handoff: readJson(root, '.ax/handoff/current.json'), active: readJson(root, '.ax/status/active.json'), heartbeat: readJson(root, '.ax/status/heartbeat.json'), docs, onboarding }
+  return { handoff: readJson(repo, '.ax/handoff/current.json'), active: readJson(repo, '.ax/status/active.json'), heartbeat: readJson(repo, '.ax/status/heartbeat.json'), docs, onboarding }
 }
 
 export async function projectOsDashboard(requestedBoard: string, deps: ProjectOsDeps): Promise<ProjectOsDashboard> {
@@ -172,17 +180,17 @@ export async function projectOsDashboard(requestedBoard: string, deps: ProjectOs
       selected = null
     }
   }
-  repoRoot = resolveRepoRootForBoard(repoRoot, board, deps.cwd)
-  if (repoRoot === null) return EMPTY
-  let repo = readRepo(repoRoot)
+  let found = resolveRepoRootForBoard(repoRoot, board, deps.cwd)
+  if (found === null) return EMPTY
+  let repo = readRepo(found)
   // `.ax/status/active.json` may point at the real repo root; read everything again from there.
   const activeRoot = text(repo.active?.repo_root)
   if (activeRoot && existsSync(expandHome(activeRoot))) {
     const moved = resolvePathLikePython(activeRoot)
-    if (moved !== repoRoot) { repoRoot = moved; repo = readRepo(repoRoot) }
+    if (moved !== found.path) { found = ownRoot(moved); repo = readRepo(found) }
   }
   let git: ProjectOsDashboard['git'] = null
-  try { git = await deps.git(repoRoot) } catch { git = null }
+  try { git = await deps.git(found.path) } catch { git = null }
   let boardName: unknown = null
   let boardDesc: unknown = null
   if (repo.handoff) {
@@ -195,8 +203,8 @@ export async function projectOsDashboard(requestedBoard: string, deps: ProjectOs
     boardDesc = boardDesc || selected.description
   }
   return {
-    workspace: repoRoot,
-    repo_root: repoRoot,
+    workspace: found.path,
+    repo_root: found.path,
     selected_board_slug: board || null,
     git,
     docs: repo.docs,
