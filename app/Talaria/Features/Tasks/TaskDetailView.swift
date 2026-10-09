@@ -80,16 +80,9 @@ struct TaskDetailView: View {
         .navigationTitle(viewModel.job.displayName)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
-                Button {
+                RefreshToolbarButton(isLoading: viewModel.isLoading) {
                     Task { await loadOutput() }
-                } label: {
-                    if viewModel.isLoading {
-                        ProgressView()
-                    } else {
-                        Label("Refresh", systemImage: "arrow.clockwise")
-                    }
                 }
-                .disabled(viewModel.isLoading)
 
                 Menu {
                     Button {

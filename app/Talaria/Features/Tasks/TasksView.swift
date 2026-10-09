@@ -8,7 +8,6 @@ struct TasksView: View {
     @Binding var selection: SectionItem?
     let onAPIError: (Error) -> Void
 
-    @State private var showsLoading = false
     @State private var isPresentingCreateTask = false
 
     var body: some View {
@@ -24,16 +23,9 @@ struct TasksView: View {
                     }
                     .disabled(viewModel.isMutating)
 
-                    Button {
+                    RefreshToolbarButton(isLoading: viewModel.isLoading) {
                         Task { await loadTasks() }
-                    } label: {
-                        if showsLoading {
-                            ProgressView()
-                        } else {
-                            Label("Refresh", systemImage: "arrow.clockwise")
-                        }
                     }
-                    .disabled(viewModel.isLoading)
                 }
             }
             .sheet(isPresented: $isPresentingCreateTask) {
@@ -59,7 +51,6 @@ struct TasksView: View {
             .refreshesLive(on: .cronRun, every: .seconds(30), showsStatus: false) {
                 await loadTasks()
             }
-            .delayedStatus(viewModel.isLoading, isVisible: $showsLoading)
     }
 
     @ViewBuilder

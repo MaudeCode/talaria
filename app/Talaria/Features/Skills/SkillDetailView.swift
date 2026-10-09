@@ -16,16 +16,9 @@ struct SkillDetailView: View {
             .navigationTitle(skill.name ?? String(localized: "Skill"))
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
+                    RefreshToolbarButton(isLoading: isLoading) {
                         Task { await loadDetail() }
-                    } label: {
-                        if isLoading {
-                            ProgressView()
-                        } else {
-                            Label("Refresh", systemImage: "arrow.clockwise")
-                        }
                     }
-                    .disabled(isLoading)
                 }
             }
             .task {

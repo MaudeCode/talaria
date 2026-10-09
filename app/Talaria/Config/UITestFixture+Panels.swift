@@ -11,6 +11,9 @@ enum UITestPanelScenario: String, CaseIterable {
     /// held like a populated first load so its loading state shows too.
     case failing = "--ui-test-panels-error"
 
+    /// Holds every Refresh load, not only each panel's first (`holdsPanelLoad`).
+    static let holdPanelRefreshesArgument = "--ui-test-hold-panel-refreshes"
+
     static var current: Self? {
         let arguments = ProcessInfo.processInfo.arguments
         return allCases.first { arguments.contains($0.rawValue) }
@@ -105,12 +108,22 @@ extension UITestFixtureURLProtocol {
         }
     }
 
+    /// Every load behind a panel's or detail's toolbar Refresh, held each time with
+    /// `holdPanelRefreshesArgument` so a journey can inspect the button mid-refresh (TAL-483).
+    private static let panelRefreshPaths: Set<String> = panelDelayPaths.union([
+        "/api/crons/output",
+        "/api/skills/content"
+    ])
+
     /// Whether to hold a panel's first load until the UI test has seen its loading state
     /// (TAL-401); a fixed stall let a slow runner miss it.
     static func holdsPanelLoad(for url: URL) -> Bool {
-        [.populated, .failing].contains(UITestPanelScenario.current)
-            && panelDelayPaths.contains(url.path)
-            && url.query?.contains("since=") != true
+        guard [.populated, .failing].contains(UITestPanelScenario.current),
+              url.query?.contains("since=") != true else { return false }
+        if ProcessInfo.processInfo.arguments.contains(UITestPanelScenario.holdPanelRefreshesArgument) {
+            return panelRefreshPaths.contains(url.path)
+        }
+        return panelDelayPaths.contains(url.path)
             && UITestPanelFixtureState.shared.consumeDelay(for: url.path)
     }
 

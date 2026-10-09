@@ -430,3 +430,71 @@ final class SidebarQuotaUITests: AgentPanelUITestCase {
 
     private static let firstSidebarSourceKey = "providerQuotaSidebar.source1"
 }
+
+/// TAL-483: every toolbar Refresh keeps its "Refresh" label and its place in the bar while it
+/// loads, and is disabled meanwhile. The fixture holds each Refresh load until the test releases
+/// it. On the iPhone Duo outer display the bar is vertical, so this is the Duo layout probe too.
+final class RefreshToolbarButtonUITests: AgentPanelUITestCase {
+    func testRefreshButtonsKeepTheirBarWhileLoading() throws {
+        launchPanelFixture("--ui-test-panels", additionalArguments: ["--ui-test-hold-panel-refreshes"])
+        let sidebar = app.buttons["Open navigation"]
+        let back = app.buttons["BackButton"].firstMatch
+
+        openPanel("Tasks")
+        let job = element(labelContaining: "Fixture Nightly Digest")
+        assertRefreshKeepsItsBar("Tasks", loaded: job, beside: sidebar)
+        tapCenter(of: job)
+        assertRefreshKeepsItsBar(
+            "Task detail", loaded: element(labelContaining: "Deterministic fixture digest output"), beside: back
+        )
+        tapCenter(of: back)
+
+        openPanel("Skills")
+        let skill = element(labelContaining: "fixture-runner")
+        assertRefreshKeepsItsBar("Skills", loaded: skill, beside: sidebar)
+        tapCenter(of: skill)
+        assertRefreshKeepsItsBar(
+            "Skill detail", loaded: element(labelContaining: "Deterministic fixture skill content"), beside: back
+        )
+        tapCenter(of: back)
+
+        openPanel("Memory")
+        let notes = app.buttons.containing(.staticText, identifier: "My Notes").firstMatch
+        XCTAssertTrue(releaseHeldLoads { notes.exists }, "Memory did not list its files")
+        tapCenter(of: notes)
+        assertRefreshKeepsItsBar("Memory", loaded: element(labelContaining: "Fixture notes body"), beside: back)
+        tapCenter(of: back)
+
+        openPanel("Insights")
+        assertRefreshKeepsItsBar("Insights", loaded: element(labelled: "Provider quotas"), beside: sidebar)
+    }
+
+    /// Lets `screen` finish loading, then taps its Refresh and checks it during the held refresh
+    /// and after it. `control` is the screen's own sidebar or Back button, which shares the bar.
+    private func assertRefreshKeepsItsBar(_ screen: String, loaded: XCUIElement, beside control: XCUIElement) {
+        let refresh = app.buttons["Refresh"].firstMatch
+        XCTAssertTrue(
+            releaseHeldLoads { loaded.exists && refresh.exists && refresh.isEnabled },
+            "\(screen) offered no enabled Refresh once loaded"
+        )
+        tapCenter(of: refresh)
+        XCTAssertTrue(poll(timeout: 10) { !refresh.isEnabled }, "\(screen)'s Refresh stayed enabled while loading")
+        XCTAssertEqual(refresh.label, "Refresh", "\(screen)'s Refresh changed what VoiceOver reads while loading")
+        assertRefresh(refresh, sharesTheBarWith: control, "\(screen) while loading")
+        XCTAssertTrue(releaseHeldLoads { refresh.isEnabled }, "\(screen)'s refresh never finished")
+        assertRefresh(refresh, sharesTheBarWith: control, "\(screen) after loading")
+    }
+
+    /// One bar holds both buttons: the same row in a horizontal bar, the same column in the Duo's
+    /// vertical one. A Refresh the system moved to a bar of its own lines up with neither.
+    private func assertRefresh(_ refresh: XCUIElement, sharesTheBarWith control: XCUIElement, _ state: String) {
+        XCTAssertTrue(control.awaitExistence(timeout: 5), "\(state): missing \(control.label)")
+        let button = refresh.settledFrame
+        let neighbour = control.settledFrame
+        attachScreenshot(named: "Refresh, \(state)")
+        XCTAssertTrue(
+            abs(button.midY - neighbour.midY) < 2 || abs(button.midX - neighbour.midX) < 2,
+            "\(state): Refresh \(button) left the bar of \(control.label) \(neighbour)"
+        )
+    }
+}

@@ -16,16 +16,9 @@ struct SkillsView: View {
             .navigationTitle("Skills")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
+                    RefreshToolbarButton(isLoading: viewModel.isLoading) {
                         Task { await loadSkills() }
-                    } label: {
-                        if viewModel.isLoading {
-                            ProgressView()
-                        } else {
-                            Label("Refresh", systemImage: "arrow.clockwise")
-                        }
                     }
-                    .disabled(viewModel.isLoading)
                 }
             }
             .task {
