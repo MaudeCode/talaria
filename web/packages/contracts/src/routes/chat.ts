@@ -42,8 +42,6 @@ export const chatContract = {
     result: oc.route({ method: 'GET', path: '/api/background/result', tags }).input(z.object({ session_id: z.string(), task_id: z.string() })).output(BackgroundTaskResultSchema),
     dismiss: oc.route({ method: 'POST', path: '/api/background/dismiss', tags }).input(BackgroundDismissRequestSchema).output(BackgroundDismissResponseSchema),
     ack: oc.route({ method: 'POST', path: '/api/bg-task-complete-ack', tags }).input(z.object({ session_id: z.string().optional(), task_id: z.string().optional(), process_id: z.string().optional() }).catchall(Json)).output(z.object({ ok: z.literal(true), session_id: z.string(), task_id: z.string(), noop: z.literal(true) })),
-    /** Always 410 with `X-Replaced-By: /api/bg-task-complete-ack`; CSRF exempt so a tab without a token learns the new path. */
-    processAck: oc.route({ method: 'POST', path: '/api/process-complete-ack', tags, summary: 'Gone: replaced by `/api/bg-task-complete-ack` (always 410).' }).input(z.object({}).catchall(Json)).output(z.object({ error: z.string(), replaced_by: z.string() })),
   },
   btw: oc.route({ method: 'POST', path: '/api/btw', tags, summary: 'Ephemeral side question answered in a hidden session that inherits the transcript.' }).input(z.object({ session_id: z.string().optional(), question: z.string().optional() }).catchall(Json)).output(z.object({ stream_id: z.string(), session_id: z.string(), parent_session_id: z.string() })),
 }

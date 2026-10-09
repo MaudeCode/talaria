@@ -157,8 +157,12 @@ describe('state.db projection', () => {
     expect(watcher.pollOnce()).toBe(true)
     const second = await sub.next(AbortSignal.timeout(500))
     expect(second?.sessions.map((r) => r.session_id)).toContain('tg-2')
+    // A wait that times out is not the end; the stop sentinel is.
+    expect(await sub.next(AbortSignal.timeout(20))).toBeNull()
+    expect(sub.ended).toBe(false)
     watcher.stop()
     expect(await sub.next()).toBeNull()
+    expect(sub.ended).toBe(true)
     expect(await watcher.subscribe().next()).toBeNull()
     expect(snapshotHash([{ session_id: 'b', updated_at: 1 }, { session_id: 'a', updated_at: 2 }])).toBe(snapshotHash([{ session_id: 'a', updated_at: 2 }, { session_id: 'b', updated_at: 1 }]))
   })
@@ -193,6 +197,16 @@ describe('state.db projection', () => {
       expect(stream.status).toBe(503)
       expect(await json(stream)).toEqual({ error: 'watcher not started' })
     } finally { stopped.mockRestore() }
+    // A subscriber the watcher dropped as a slow consumer ends both responses so EventSource reconnects, while the
+    // watcher itself keeps running.
+    const dropped = vi.spyOn(s.deps.gatewayWatchers, 'get').mockReturnValue({ isAlive: () => true, subscribe: () => ({ next: () => Promise.resolve(null), ended: true, close: () => undefined }) } as never)
+    try {
+      for (const path of ['/api/sessions/gateway/stream', '/api/sessions/events?gateway=1']) {
+        const res = await s.get(path)
+        expect(res.status).toBe(200)
+        expect(await res.text()).toContain('event: sessions_changed')
+      }
+    } finally { dropped.mockRestore() }
     await s.deps.settings.save({ show_cli_sessions: false })
     const off = await s.get('/api/sessions/gateway/stream?probe=1')
     expect(off.status).toBe(404)

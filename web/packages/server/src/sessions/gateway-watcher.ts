@@ -21,10 +21,12 @@ export interface GatewaySessionsEvent { type: 'sessions_changed'; sessions: Dict
 export interface GatewaySubscriber {
   /** Resolves with the next event, or null when the watcher stopped or this subscriber was dropped as a slow consumer. */
   next: (signal?: AbortSignal) => Promise<GatewaySessionsEvent | null>
+  /** True once `next` delivered the end (the watcher stopped or dropped this subscriber); a null from a wait that timed out leaves it false. */
+  readonly ended: boolean
   close: () => void
 }
 
-interface Queue { items: (GatewaySessionsEvent | null)[]; wake: (() => void) | null }
+interface Queue { items: (GatewaySessionsEvent | null)[]; wake: (() => void) | null; ended: boolean }
 
 export function snapshotHash(sessions: Dict[]): string {
   const key = [...sessions].sort((a, b) => str(a.session_id).localeCompare(str(b.session_id))).map((s) => `${str(s.session_id)}:${str(s.updated_at ?? 0)}:${str(s.message_count ?? 0)}`).join('|')
@@ -87,19 +89,24 @@ export class GatewayWatcher {
   }
 
   subscribe(): GatewaySubscriber {
-    const q: Queue = { items: [], wake: null }
+    const q: Queue = { items: [], wake: null, ended: false }
     this.subscribers.add(q)
     // Stop-race safety: a subscriber attached after stop() still receives the sentinel so its SSE loop ends and reconnects.
     if (this.stopping) q.items.push(null)
     return {
       next: (signal) => new Promise((resolve) => {
-        const deliver = (): void => { resolve(q.items.shift() ?? null) }
+        const deliver = (): void => {
+          const item = q.items.shift() ?? null
+          if (item === null) q.ended = true
+          resolve(item)
+        }
         if (q.items.length) { deliver(); return }
         if (signal?.aborted) { resolve(null); return }
         const onAbort = (): void => { q.wake = null; resolve(null) }
         signal?.addEventListener('abort', onAbort, { once: true })
         q.wake = () => { signal?.removeEventListener('abort', onAbort); deliver() }
       }),
+      get ended() { return q.ended },
       close: () => { this.subscribers.delete(q) },
     }
   }

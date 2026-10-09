@@ -46,6 +46,7 @@ export const RAW_POST_ROUTES: Record<string, RawHandler> = {
   '/api/transcribe': handleTranscribe,
   '/api/tts': handleTts,
   '/api/csp-report': handleCspReport,
+  '/api/process-complete-ack': handleProcessCompleteAck,
 }
 
 /** Run a raw handler, translating thrown `HttpError`s into the JSON error body. */
@@ -68,6 +69,11 @@ export async function runRaw(ctx: RequestContext, handler: RawHandler): Promise<
     }
     throw error
   }
+}
+
+/** Retired by the `process_complete` -> `bg_task_complete` rename: always 410, naming the replacement. */
+function handleProcessCompleteAck(ctx: RequestContext): void {
+  ctx.json({ error: 'gone: /api/process-complete-ack was replaced by /api/bg-task-complete-ack as part of the process_complete -> bg_task_complete event rename', replaced_by: '/api/bg-task-complete-ack' }, { status: 410, headers: { 'X-Replaced-By': '/api/bg-task-complete-ack' } })
 }
 
 /**

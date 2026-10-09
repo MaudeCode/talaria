@@ -3,7 +3,7 @@ import { GATEWAY_APPROVAL_RELAY_UNAVAILABLE, isGenericContinuationIntent } from 
 import { implement } from '@orpc/server'
 import { chatContract, MAX_CHAT_ATTACHMENTS } from '@maudecode/talaria-web-contracts'
 import { randomUUID } from 'node:crypto'
-import { HttpError, RawResponse, type ApiContext } from './router.js'
+import { HttpError, type ApiContext } from './router.js'
 import { requestSessionIdGuard, streamOwnerSessionId, streamVisibleToRequest } from './session-visibility.js'
 import type { RequestContext } from '../http/context.js'
 import { ensureAgentRuntimeCurrent, HttpFailure } from '../sessions/service.js'
@@ -380,9 +380,6 @@ export const chatRouter = os.router({
       if (!task) throw new HttpError(404, 'Background task not found')
       return { ok: true as const, task }
     })),
-    processAck: os.background.processAck.handler(() => {
-      throw new RawResponse(410, { error: 'gone: /api/process-complete-ack was replaced by /api/bg-task-complete-ack as part of the process_complete -> bg_task_complete event rename', replaced_by: '/api/bg-task-complete-ack' }, { 'X-Replaced-By': '/api/bg-task-complete-ack' })
-    }),
     ack: os.background.ack.handler(({ input, context: { ctx } }) => run(() => {
       const body = input as Record<string, unknown>
       requireField(body, 'session_id')

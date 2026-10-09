@@ -38268,50 +38268,6 @@
         }
       }
     },
-    "/api/process-complete-ack": {
-      "post": {
-        "operationId": "background.processAck",
-        "summary": "Gone: replaced by `/api/bg-task-complete-ack` (always 410).",
-        "tags": [
-          "chat"
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "additionalProperties": {}
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "replaced_by": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "replaced_by"
-                  ]
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/btw": {
       "post": {
         "operationId": "btw",
@@ -55172,9 +55128,10 @@
         ],
         "responses": {
           "200": {
-            "description": "Event stream, or the probe JSON.",
+            "description": "Event stream, or the probe JSON with `probe=1`.",
             "content": {
-              "text/event-stream": {}
+              "text/event-stream": {},
+              "application/json": {}
             }
           },
           "404": {
@@ -55768,6 +55725,31 @@
           "description": "CSP report payload.",
           "content": {
             "application/json": {}
+          }
+        }
+      }
+    },
+    "/api/process-complete-ack": {
+      "post": {
+        "summary": "Retired: replaced by `/api/bg-task-complete-ack`. Always 410; CSRF exempt so a tab without a token learns the new path.",
+        "tags": [
+          "chat"
+        ],
+        "parameters": [],
+        "responses": {
+          "410": {
+            "description": "`{error, replaced_by}`.",
+            "content": {
+              "application/json": {}
+            },
+            "headers": {
+              "X-Replaced-By": {
+                "description": "The replacement path, `/api/bg-task-complete-ack`.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           }
         }
       }

@@ -440,8 +440,9 @@ export async function handleSessionEvents(ctx: RequestContext): Promise<void> {
         for (;;) {
           const pending = await nextWithin((signal) => gatewaySub.next(signal), 0, abort.signal)
           if (pending === null) {
-            // The watcher stopped (a profile switch swapped it): end the response so EventSource reconnects both halves.
-            if (!watcher?.isAlive() || abort.signal.aborted) return
+            // The watcher stopped (a profile switch swapped it) or dropped this slow subscriber: end the response so
+            // EventSource reconnects both halves.
+            if (gatewaySub.ended || !watcher?.isAlive() || abort.signal.aborted) return
             break
           }
           sse.event(pending.type, { ...pending, stream: 'gateway' })
@@ -488,8 +489,9 @@ export async function handleGatewayStream(ctx: RequestContext): Promise<void> {
       const event = await nextWithin((signal) => sub.next(signal), SSE_HEARTBEAT_INTERVAL_MS, abort.signal)
       if (sse.isClosed) return
       if (event) { sse.event(event.type, event); continue }
-      // The watcher stopped (a profile switch swapped it): end the response so EventSource reconnects to the new one.
-      if (!watcher.isAlive()) return
+      // The watcher stopped (a profile switch swapped it) or dropped this slow subscriber: end the response so
+      // EventSource reconnects.
+      if (sub.ended || !watcher.isAlive()) return
       sse.comment('keepalive')
     }
   } finally {
