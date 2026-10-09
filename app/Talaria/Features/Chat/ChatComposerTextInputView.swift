@@ -70,7 +70,8 @@ struct ComposerTextInputView: View {
 
 /// The composer's hardware-keyboard commands, all on Return: the "Send With" key sends, the other of
 /// Return and ⌘Return inserts a newline, and Ctrl+Return sends the other way while a reply runs (TAL-660).
-/// Shift+Return and Option+Return match no command, so the text view inserts their newline itself.
+/// Shift+Return and Option+Return insert a newline too. They are commands, not left to the text view, because the
+/// system keyboard's own Return handling can drop the key while it settles an autocorrect candidate (TAL-689).
 struct ComposerKeyboardCommand: Equatable {
     enum Action: Equatable {
         case send
@@ -84,6 +85,8 @@ struct ComposerKeyboardCommand: Equatable {
     let action: Action
     let modifierFlags: UIKeyModifierFlags
     let title: String
+    /// Left out of the keyboard-shortcut list, which shows each action once.
+    var isHidden = false
 
     static func commands(
         sendKey: ComposerSendKey,
@@ -99,10 +102,17 @@ struct ComposerKeyboardCommand: Equatable {
             modifierFlags: alternateSendModifierFlags,
             title: alternateBehavior == .queue ? String(localized: "Queue Message") : String(localized: "Send Now")
         )
-        guard sendKey == .return else { return [send, alternateSend] }
-        // Plain Return already inserts a newline in ⌘Return mode, so only Return mode needs this one.
-        let newline = ComposerKeyboardCommand(action: .newline, modifierFlags: .command, title: String(localized: "New Line"))
-        return [send, newline, alternateSend]
+        // The other of Return and ⌘Return is the listed newline; Shift and Option add hidden ones.
+        let newlineFlags: [UIKeyModifierFlags] = [sendKey == .return ? .command : [], .shift, .alternate]
+        let newlines = newlineFlags.enumerated().map { index, flags in
+            ComposerKeyboardCommand(
+                action: .newline,
+                modifierFlags: flags,
+                title: String(localized: "New Line"),
+                isHidden: index > 0
+            )
+        }
+        return [send] + newlines + [alternateSend]
     }
 }
 

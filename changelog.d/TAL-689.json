@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "With a hardware keyboard, Shift-Return and Option-Return now always add a new line in the message box; a busy keyboard could drop them before.",
+      "highlight": false
+    }
+  ]
+}

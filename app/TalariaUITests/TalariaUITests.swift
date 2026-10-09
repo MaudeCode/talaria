@@ -1155,16 +1155,20 @@ final class ComposerPhotoPickerUITests: ChatUITestCase {
         XCTAssertTrue(app.buttons["Camera"].exists)
         photos.tap()
 
-        // The picker loads out of process; its cells are labelled "Photo, <date>".
+        // The picker is an XPC service iOS launches for this app process on the tap, so no setup step can warm it,
+        // and it shows "Loading..." until it has started and read the library. That took 5 s on a Mac and 12-23 s on
+        // the 3-core hosted runners (UI suite runs 37870338864, 37876656319, 37889374950); handing the photo back
+        // took up to 13 s more. Run 37902410267 ran out of the 20 s this wait had (TAL-687). Its cells are labelled
+        // "Photo, <date>".
         let photo = app.images.matching(NSPredicate(format: "label BEGINSWITH[c] %@", "Photo")).firstMatch
-        XCTAssertTrue(photo.awaitExistence(timeout: 20), "The Photos picker showed no photo")
+        XCTAssertTrue(photo.awaitExistence(timeout: 60), "The Photos picker showed no photo")
         photo.tap()
         let done = app.buttons["Done"]
         XCTAssertTrue(done.awaitExistence(timeout: 5), "The Photos picker offered no Done")
         done.tap()
 
         let remove = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Remove attachment")).firstMatch
-        XCTAssertTrue(remove.awaitExistence(timeout: 15), "The picked photo never attached to the composer")
+        XCTAssertTrue(remove.awaitExistence(timeout: 30), "The picked photo never attached to the composer")
     }
 }
 

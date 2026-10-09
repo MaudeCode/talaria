@@ -280,3 +280,22 @@ enum VisualReferenceError: Error, CustomStringConvertible {
         }
     }
 }
+
+extension XCTestCase {
+    /// Lays `view` out on screen in a window of its own, for tests that need a real draw pass or view lifecycle.
+    /// The app's root is a live `UIHostingController` that keeps updating its own screens, and SwiftUI does not
+    /// support a hosting view added under another hosting controller's view (TAL-690). The window is hidden at
+    /// teardown.
+    @MainActor
+    func hostInOwnWindow(_ view: some View, size: CGSize) throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(origin: .zero, size: size)
+        window.rootViewController = UIHostingController(rootView: view.frame(width: size.width))
+        window.isHidden = false
+        window.layoutIfNeeded()
+        addTeardownBlock {
+            MainActor.assumeIsolated { window.isHidden = true }
+        }
+    }
+}
