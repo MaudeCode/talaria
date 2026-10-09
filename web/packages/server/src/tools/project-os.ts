@@ -61,7 +61,7 @@ function truthBoardSlugs(root: string): Set<string> {
 
 const repoMatchesBoard = (root: string, slug: string): boolean => Boolean(slug) && truthBoardSlugs(root).has(slug)
 
-/** The workspace, every `.ax` or `docs/project-os` directory found breadth-first beneath it, then the server's cwd. */
+/** The workspace, every `.ax` or `docs/project-os` directory found breadth-first beneath it (symlinks not followed), then the server's cwd. */
 function candidateRepoRoots(workspaceRoot: string | null, cwd: string): string[] {
   const candidates: string[] = []
   const add = (path: string): void => {
@@ -80,7 +80,8 @@ function candidateRepoRoots(workspaceRoot: string | null, cwd: string): string[]
     if (isDir(join(current, '.ax')) || isDir(join(current, 'docs', 'project-os'))) add(current)
     if (depth >= SCAN_MAX_DEPTH) continue
     let names: string[]
-    try { names = readdirSync(current).filter((name) => isDir(join(current, name))).sort() } catch { continue }
+    // Real directories only: a directory symlink could lead the scan, and every later read, out of the workspace.
+    try { names = readdirSync(current, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort() } catch { continue }
     for (const name of names) {
       if (SCAN_SKIP.has(name) || (name.startsWith('.') && name !== '.ax')) continue
       queue.push([join(current, name), depth + 1])

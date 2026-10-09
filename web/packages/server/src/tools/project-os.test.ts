@@ -63,6 +63,20 @@ describe('project-os dashboard (TAL-266)', () => {
     expect((await projectOsDashboard('other', deps())).repo_root).toBe(root)
   })
 
+  it('never scans into a directory symlink that leaves the workspace', async () => {
+    const outside = realpathSync(mkdtempSync(join(tmpdir(), 'project-os-outside-')))
+    try {
+      mkdirSync(join(outside, '.ax', 'status'), { recursive: true })
+      writeFileSync(join(outside, '.ax', 'status', 'active.json'), JSON.stringify({ board: 'ops', secret: 'outside truth' }))
+      symlinkSync(outside, join(root, 'linked'))
+      const body = await projectOsDashboard('ops', deps())
+      expect(body.repo_root).toBe(root)
+      expect(JSON.stringify(body)).not.toContain('outside truth')
+    } finally {
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
   it("starts from the board's default workdir and follows active.json to the real repo root", async () => {
     write('work/.ax/status/active.json', { repo_root: join(root, 'real') })
     write('real/.ax/status/active.json', { repo_root: join(root, 'real'), phase: 'build' })
