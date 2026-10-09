@@ -10,7 +10,7 @@ import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import type { SidecarLike } from '../sidecar/client.js'
 import type { SessionChannels, StreamRegistry } from './streams.js'
-import type { SessionStore } from './store.js'
+import { SessionNotFound, type SessionStore } from './store.js'
 import type { Session } from './session.js'
 import { str } from '../util.js'
 import { batchUpdate, recordBackgroundUpdate } from './background-updates.js'
@@ -127,13 +127,14 @@ export class CompletionDrain {
       try {
         await sidecar.call('process.recover', { base_home: this.deps.baseHome })
         this.recoveredFor = describe
-        if (!this.heldResumed) { this.heldResumed = true; this.resumeHeld() }
       } catch (error) {
         // Retried on every pass; reported once per sidecar so a lasting failure does not flood the log.
         if (this.recoveryWarnedFor !== describe) this.deps.log(`[webui] WARNING: background process recovery failed; retrying: ${(error as Error).message}`)
         this.recoveryWarnedFor = describe
       }
     }
+    // TAL-576: whether or not every profile recovered, the sessions left holding wakeups resume once a sidecar answers.
+    if (!this.heldResumed) { this.heldResumed = true; this.resumeHeld() }
     const { events } = await sidecar.call('process.drain', { profile_home: this.deps.profileHome(this.deps.activeProfile()), max_events: 256 })
     let routed = 0
     const unrouted: Dict[] = []
@@ -370,7 +371,11 @@ export class CompletionDrain {
   private async startWakeup(sid: string, batched: Deferred[]): Promise<boolean> {
     const redefer = (entries: Deferred[]): void => { for (const e of entries) this.recordDeferred(sid, e.process_id, e.wakeup_prompt, e.event) }
     let session: Session
-    try { session = this.deps.store.get(sid) } catch { redefer(batched); this.deps.log(`[webui] WARNING: server-side wakeup retained for session ${sid}: session unavailable`); return false }
+    try { session = this.deps.store.get(sid) } catch (error) {
+      // A deleted session owns no turn: its wakeups, held ones included, go with it.
+      if (error instanceof SessionNotFound) { this.release(sid); this.deps.log(`[webui] server-side wakeup dropped for deleted session ${sid}`); return false }
+      redefer(batched); this.deps.log(`[webui] WARNING: server-side wakeup retained for session ${sid}: session unavailable`); return false
+    }
     if (session.pre_compression_snapshot) { redefer(batched); this.deps.log(`[webui] WARNING: automatic wakeup retained: sealed snapshot ${sid} cannot own a turn`); return false }
     // TAL-534: the delegation's ledger row lives in the session's own profile, whichever profile is active now.
     const home = this.deps.profileHome(session.profile ?? this.deps.activeProfile())

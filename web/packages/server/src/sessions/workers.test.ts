@@ -589,7 +589,8 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
     const prompts: string[] = []
     const restarted = new FakeSidecar()
     restarted.describe = { rpc_version: SIDECAR_RPC_VERSION } as RuntimeDescribe
-    restarted.respond('process.recover', () => ({ homes: 1 }))
+    // One broken profile fails recovery; the held sessions resume regardless.
+    restarted.respond('process.recover', () => { throw new Error('unrecoverable checkpoint') })
     restarted.respond('process.drain', () => ({ events: [] }))
     restarted.respond('process.mark_consumed', () => ({ ok: true }))
     const resumed = new CompletionDrain({
@@ -617,6 +618,15 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
     sidecar.respond('usage.pool', () => { throw new Error('unset') })
     expect(starts[1]).toContain(`Background process ${sid}_2 completed`)
     expect(heldIds(sid)).toEqual([])
+  })
+
+  it('drops the held wakeups of a deleted session', async () => {
+    const sid = await pausedSession()
+    await complete(sid, `${sid}_2`)
+    expect(heldIds(sid)).toEqual([`${sid}_2`])
+    expect((await post(s, '/api/session/delete', { session_id: sid })).status).toBe(200)
+    await s.deps.completions.drainDeferred(sid)
+    expect(heldIndex()).not.toContain(sid)
   })
 
   it('rechecks the pool at its retry deadline and delivers the held wakeups', async () => {
