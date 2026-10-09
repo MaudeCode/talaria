@@ -369,7 +369,12 @@ final class AgentPanelContentUITests: AgentPanelUITestCase {
         // only advances once the new response lands; the cards alone stay visible through a
         // reload and would pass even if nothing switched.
         XCTAssertTrue(element(labelContaining: "Last 30 Days").exists, "Insights did not report its timeframe")
-        tapCenter(of: app.buttons["7 Days"].firstMatch)
+        // On a loaded hosted runner the segmented control can lift its thumb for a synthesized
+        // tap and drop it without selecting (TAL-693). Nothing in the app reverts a selection, so
+        // a segment that never shows selected is the tap's loss, not the reload's.
+        let sevenDays = app.buttons["7 Days"].firstMatch
+        repeatStep(3, until: { poll(timeout: 2) { sevenDays.isSelected } }) { tapCenter(of: sevenDays) }
+        XCTAssertTrue(sevenDays.isSelected, "The timeframe picker never took the 7 Days selection")
         XCTAssertTrue(
             element(labelContaining: "Last 7 Days").awaitExistence(timeout: 15),
             "Switching the analytics timeframe did not reload the analytics"
