@@ -16,6 +16,8 @@ import { str } from '../util.js'
 
 export const PRESENCE_LEASE_SECONDS = 90
 export const PRESENCE_MAX_LEASES = 256
+/** How long a tab's sequence fence outlives its lease, so a reloaded tab whose clock moved back recovers. */
+export const PRESENCE_FENCE_SECONDS = 15 * 60
 const PRESENCE_TAB_RE = /^[A-Za-z0-9_-]{8,64}$/
 const DEFAULT_RELAY_URL = 'https://relay.talaria.kil.dev'
 const TERMINAL_RETENTION_S = 15 * 60
@@ -110,9 +112,9 @@ function signedHeaders(key: KeyObject, keyId: string, method: string, path: stri
 
 /**
  * Profile-scoped browser activity leases; a fresh active lease mutes alerts for that profile.
- * Each tab's entry also fences its sequence number, so it outlives lease expiry: a delayed lower
- * sequence stays rejected. At most PRESENCE_MAX_LEASES tabs are kept; the least recently updated
- * tab is evicted first, which drops its fence too.
+ * Each tab's entry also fences its sequence number for PRESENCE_FENCE_SECONDS past lease expiry,
+ * so a delayed lower sequence stays rejected. At most PRESENCE_MAX_LEASES tabs are kept; the least
+ * recently updated tab is evicted first, which drops its fence too.
  */
 export class PresenceLeases {
   private readonly leases = new Map<string, { expires: number; seq: number; active: boolean }>()
@@ -120,6 +122,7 @@ export class PresenceLeases {
 
   private apply(profile: string, tabId: string, seq: number, active: boolean): void {
     const now = this.now()
+    for (const [key, entry] of this.leases) if (entry.expires + PRESENCE_FENCE_SECONDS <= now) this.leases.delete(key)
     const key = `${profile}\n${tabId}`
     const current = this.leases.get(key)
     if (current && seq <= current.seq) return

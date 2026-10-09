@@ -3,7 +3,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
-import { loadRelayConfig, PRESENCE_LEASE_SECONDS, PRESENCE_MAX_LEASES, PresenceLeases, profileIdentity, RelayPairingError, RelayPublisher, validatedOrigin, type RelayConfig } from './relay.js'
+import { loadRelayConfig, PRESENCE_FENCE_SECONDS, PRESENCE_LEASE_SECONDS, PRESENCE_MAX_LEASES, PresenceLeases, profileIdentity, RelayPairingError, RelayPublisher, validatedOrigin, type RelayConfig } from './relay.js'
 
 type Json = Record<string, unknown>
 const RELAY = 'https://relay.talaria.kil.dev'
@@ -226,6 +226,18 @@ describe('Talaria relay pairing and publishing', () => {
     expect(leases.has('default')).toBe(true)
     // A restart starts alert-eligible with no fences.
     expect(new PresenceLeases(() => now).has('default')).toBe(false)
+  })
+
+  it('drops a presence fence after its retention so a reloaded tab with an earlier clock recovers', () => {
+    let now = 1000
+    const leases = new PresenceLeases(() => now)
+    leases.revoke('default', 'tab_00000007', 50)
+    now += PRESENCE_LEASE_SECONDS + PRESENCE_FENCE_SECONDS - 1
+    leases.renew('default', 'tab_00000007', 40)
+    expect(leases.has('default')).toBe(false)
+    now += 1
+    leases.renew('default', 'tab_00000007', 40)
+    expect(leases.has('default')).toBe(true)
   })
 
   it('bounds presence state by evicting the least recently updated tab', () => {
