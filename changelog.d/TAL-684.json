@@ -1,0 +1,1 @@
+{"skip": "UI test tooling only: the session row tap reads the search control's frame once, so the runner no longer crashes when iOS swaps the control."}
