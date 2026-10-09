@@ -3644,12 +3644,16 @@ final class QueuedMessagesChipUITests: ChatUITestCase {
         if swipeTypingTip.exists { app.buttons["Continue"].firstMatch.tap() }
         let keyboardTop = keyboard.frame.minY
         app.buttons["Send"].press(forDuration: 1)
-        let queueOption = app.buttons["Queue"]
+        // An item with a subtitle reads both, so it is found by its title.
+        let queueOption = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Queue")).firstMatch
         XCTAssertTrue(queueOption.awaitExistence(timeout: 5), "Long-pressing Send did not open the send menu")
         Thread.sleep(forTimeInterval: 0.6) // a dismissal would be under way by now
         XCTAssertTrue(keyboard.exists && abs(keyboard.frame.minY - keyboardTop) < 2, "Opening the send menu dropped the keyboard")
-        XCTAssertTrue(app.buttons["Steer"].exists)
-        XCTAssertTrue(app.buttons["Stop and send"].exists)
+        // The "While responding" setting's Steer carries the checkmark (TAL-445).
+        let steerOption = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Steer")).firstMatch
+        XCTAssertTrue(steerOption.exists && app.buttons["Stop and send"].exists)
+        XCTAssertTrue(steerOption.isSelected, "The default, Steer, is not checked")
+        XCTAssertFalse(queueOption.isSelected, "Queue is checked although Steer is the default")
         XCTAssertFalse(app.buttons["Side question"].exists, "A side question waits for the running reply")
         attachScreenshot(named: "send-menu")
         // A streaming reply redraws the composer while the menu is open; the tap must still choose (TAL-648).

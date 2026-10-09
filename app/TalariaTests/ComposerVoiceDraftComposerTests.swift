@@ -16,6 +16,32 @@ final class ComposerVoiceDraftComposerTests: XCTestCase {
         ])
     }
 
+    /// TAL-445: during a reply, long-pressing Send offers Steer, Queue and Stop and send, in that order. Each sends
+    /// the draft through that behavior once; the stored default only marks its item and is never written.
+    func testSendMenuDuringAReplySendsThroughEachBehaviorAndChecksTheDefault() {
+        for defaultBehavior in StreamingSendBehavior.allCases {
+            let options = ComposerSendButton.options(isWaitingForStream: true, carriesFiles: false, defaultBehavior: defaultBehavior)
+            XCTAssertEqual(options.map(\.action), [.behavior(.steer), .behavior(.queue), .behavior(.interrupt), .command("background")])
+            XCTAssertEqual(options.map(\.title), ["Steer", "Queue", "Stop and send", "Run in background"])
+            XCTAssertEqual(options.map(\.subtitle), ["Steer active response", "Send after response", nil, nil])
+            XCTAssertEqual(options.filter(\.isDefault).map(\.action), [.behavior(defaultBehavior)])
+        }
+    }
+
+    /// Steering cannot carry files, so a tap with files queues: the menu drops Steer and checks Queue instead.
+    func testSendMenuWithFilesDropsSteerAndChecksWhatATapDoes() {
+        let options = ComposerSendButton.options(isWaitingForStream: true, carriesFiles: true, defaultBehavior: .steer)
+        XCTAssertEqual(options.map(\.action), [.behavior(.queue), .behavior(.interrupt)])
+        XCTAssertEqual(options.filter(\.isDefault).map(\.action), [.behavior(.queue)])
+    }
+
+    /// Between replies the ways to send during one, and their VoiceOver actions, are absent.
+    func testSendMenuBetweenRepliesOffersNoStreamingBehavior() {
+        let options = ComposerSendButton.options(isWaitingForStream: false, carriesFiles: false, defaultBehavior: .queue)
+        XCTAssertEqual(options.map(\.action), [.command("btw"), .command("background")])
+        XCTAssertFalse(options.contains(where: \.isDefault))
+    }
+
     func testCommandReturnModeSendsOnCommandReturnAndInsertsANewlineOnReturn() {
         let commands = ComposerKeyboardCommand.commands(sendKey: .commandReturn, alternateBehavior: .steer)
         XCTAssertEqual(commands, [

@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "While a response runs, long-press Send to steer, queue, or stop and send one message; the menu checks your default and describes each choice, and your setting stays as it was.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}

@@ -1468,7 +1468,8 @@ struct ComposerSendButton: View {
         var isDefault = false
     }
 
-    /// Long-pressing Send offers the other ways to send the draft, so no one types `/queue` (TAL-630).
+    /// Long-pressing Send offers the other ways to send the draft, so no one types `/queue` (TAL-630). During a
+    /// reply it lists Steer, Queue and Stop and send for this message alone, checking the one a tap does (TAL-445).
     /// Steer, side questions and background tasks cannot carry files, so staged files hide them; a side
     /// question waits for the running reply, so it shows only between replies.
     static func options(
@@ -1478,9 +1479,11 @@ struct ComposerSendButton: View {
     ) -> [Option] {
         var options: [Option] = []
         if isWaitingForStream {
-            options.append(.init(title: String(localized: "Queue"), systemImage: "text.badge.plus", action: .command("queue")))
-            if !carriesFiles { options.append(.init(title: String(localized: "Steer"), systemImage: "arrow.turn.down.right", action: .command("steer"))) }
-            options.append(.init(title: String(localized: "Stop and send"), systemImage: "stop.circle", action: .command("interrupt")))
+            let tapBehavior = defaultBehavior.sending(withFiles: carriesFiles)
+            for behavior in [StreamingSendBehavior.steer, .queue, .interrupt]
+            where behavior.sending(withFiles: carriesFiles) == behavior {
+                options.append(option(for: behavior, isDefault: behavior == tapBehavior))
+            }
         } else if !carriesFiles {
             options.append(.init(title: String(localized: "Side question"), systemImage: "bubble.left.and.text.bubble.right", action: .command("btw")))
         }
@@ -1488,6 +1491,18 @@ struct ComposerSendButton: View {
             options.append(.init(title: String(localized: "Run in background"), systemImage: "square.stack.3d.down.right", action: .command("background")))
         }
         return options
+    }
+
+    /// Stop and send's setting description is its title, so it goes without a subtitle.
+    private static func option(for behavior: StreamingSendBehavior, isDefault: Bool) -> Option {
+        switch behavior {
+        case .steer:
+            .init(title: String(localized: "Steer"), subtitle: behavior.settingsDescription, systemImage: "arrow.turn.down.right", action: .behavior(behavior), isDefault: isDefault)
+        case .queue:
+            .init(title: String(localized: "Queue"), subtitle: behavior.settingsDescription, systemImage: "text.badge.plus", action: .behavior(behavior), isDefault: isDefault)
+        case .interrupt:
+            .init(title: String(localized: "Stop and send"), systemImage: "stop.circle", action: .behavior(behavior), isDefault: isDefault)
+        }
     }
 
     let glyph: Glyph

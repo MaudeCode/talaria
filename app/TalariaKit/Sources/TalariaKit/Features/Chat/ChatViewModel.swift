@@ -3040,13 +3040,8 @@ public final class ChatViewModel {
         _ draft: String,
         behavior: StreamingSendBehavior
     ) async -> SlashCommandExecutionResult {
-        switch behavior {
+        switch behavior.sending(withFiles: !attachmentCoordinator.pendingAttachments.isEmpty) {
         case .steer:
-            // Steering has no attachment channel, so a send with staged files queues
-            // them with its text instead of steering the text and leaving them behind.
-            if !attachmentCoordinator.pendingAttachments.isEmpty {
-                return await queueMessageFromSlashCommand(draft)
-            }
             return await steerResponseFromSlashCommand(draft)
         case .interrupt:
             return await interruptResponseFromSlashCommand(draft)
