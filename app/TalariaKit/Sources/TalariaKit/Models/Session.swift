@@ -884,6 +884,8 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
     public let messagesOffset: Int?
     /// The server-placed "Context compaction · Reference only" card (TAL-560); nil shows none.
     public let compressionReference: CompressionReference?
+    /// The chat this one was branched from, while it still loads (TAL-454); nil shows no link.
+    public let branchedFrom: SessionBranchLink?
     /// Where `messages` end in the active run's journal (TAL-316); nil means attach live without replay.
     public let transcriptSeq: TranscriptSeq?
     /// False for a server that predates `transcript_seq` (the key is absent, not null).
@@ -950,6 +952,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
         case transformedMessagesTruncated = "_messagesTruncated"
         case transformedMessagesOffset = "_messagesOffset"
         case compressionReference
+        case branchedFrom
         case enabledToolsets
         case transcriptSeq
     }
@@ -1013,6 +1016,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
             ?? container.decodeLossyIntIfPresent(forKey: .transformedMessagesOffset)
             ?? container.decodeLossyIntIfPresent(forKey: .messagesOffset)
         compressionReference = try? container.decodeIfPresent(CompressionReference.self, forKey: .compressionReference)
+        branchedFrom = try? container.decodeIfPresent(SessionBranchLink.self, forKey: .branchedFrom)
         transcriptSeq = try? container.decodeIfPresent(TranscriptSeq.self, forKey: .transcriptSeq)
         statesTranscriptSeq = container.contains(.transcriptSeq)
         enabledToolsets = try? container.decodeIfPresent([String].self, forKey: .enabledToolsets)
@@ -1065,6 +1069,12 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
 public struct TranscriptSeq: Decodable, Equatable {
     let streamId: String
     let seq: Int
+}
+
+/// The chat a `/branch` copied (TAL-454), with the server-redacted title the link shows.
+public struct SessionBranchLink: Decodable, Equatable, Sendable {
+    public let sessionId: String
+    public let title: String
 }
 
 /// The "Context compaction · Reference only" card the server places (TAL-560): its text, and the full-transcript index of

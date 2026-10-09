@@ -3961,5 +3961,27 @@
         "after_message_index": 3
       }
     }
+  },
+  "branched_session": {
+    "stored_parent": {
+      "session_id": "contract-branch-parent",
+      "title": "Plan the migration"
+    },
+    "session": {
+      "session_id": "contract-branch",
+      "title": "Plan the migration (fork)",
+      "parent_session_id": "contract-branch-parent",
+      "session_source": "fork",
+      "read_only": false,
+      "can_branch": true,
+      "can_pin": true,
+      "can_archive": true,
+      "can_delete": true,
+      "can_duplicate": true,
+      "branched_from": {
+        "session_id": "contract-branch-parent",
+        "title": "Plan the migration"
+      }
+    }
   }
 }

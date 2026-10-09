@@ -31,6 +31,25 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(server.backgroundReads.count, 1, "Recovery refreshes background work once, like a manual refresh")
     }
 
+    /// TAL-454: offline, the chat shows the branch link its last detail cached; the server's next answer replaces it.
+    func testOfflineChatShowsTheCachedBranchLinkUntilTheServerAnswers() async throws {
+        let context = try makeOfflineRecoveryContext()
+        let serverURL = try XCTUnwrap(URL(string: "https://example.test"))
+        let link = SessionBranchLink(sessionId: "parent", title: "Plan")
+        try CacheStore.cacheBranchedFrom(link, session: SessionSummary(sessionId: "session-abc", title: "Planning"), serverURL: serverURL, in: context)
+        let server = ScriptedSessionServer(reachableFromRead: 2)
+        let viewModel = try makeViewModel(handler: server.handle)
+
+        await viewModel.loadMessages(modelContext: context)
+        XCTAssertTrue(viewModel.isViewingCachedData)
+        XCTAssertEqual(viewModel.branchedFrom, link)
+
+        await viewModel.loadMessages(modelContext: context)
+        XCTAssertFalse(viewModel.isViewingCachedData)
+        XCTAssertNil(viewModel.branchedFrom, "The server's detail names no parent")
+        XCTAssertNil(try CacheStore.cachedBranchedFrom(serverURL: serverURL, sessionID: "session-abc", in: context))
+    }
+
     func testRecoveryLoopEndsWhenCancelled() async throws {
         let server = ScriptedSessionServer(reachableFromRead: 1)
         let viewModel = try makeViewModel(handler: server.handle)

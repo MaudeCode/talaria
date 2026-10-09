@@ -49,6 +49,8 @@ struct UITestFixtureEnvironment {
     nonisolated static let backgroundUpdatesArgument = "--ui-test-background-updates"
     /// Serves a compacted chat whose reference card the server placed after its second row (TAL-560).
     nonisolated static let compressionReferenceArgument = "--ui-test-compression-reference"
+    /// Serves the fixture chat as a branch of "Fixture Session 01", which opens with its own transcript (TAL-454).
+    nonisolated static let branchedFromArgument = "--ui-test-branched-from"
     /// TAL-149: 100 messages paged by `msg_before`, each reply with a Worked disclosure, so Load Older has history.
     nonisolated static let olderMessagesArgument = "--ui-test-older-messages"
     /// Adds a pinned long-titled chat and scheduled and webhook groups whose server counts say
@@ -133,6 +135,9 @@ struct UITestFixtureEnvironment {
     }
     nonisolated static var hasCompressionReference: Bool {
         ProcessInfo.processInfo.arguments.contains(compressionReferenceArgument)
+    }
+    nonisolated static var hasBranchedFrom: Bool {
+        ProcessInfo.processInfo.arguments.contains(branchedFromArgument)
     }
     nonisolated static var hasOlderMessages: Bool {
         ProcessInfo.processInfo.arguments.contains(olderMessagesArgument)
@@ -724,6 +729,8 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             return json(["results": ids.map { ["session_id": $0, "ok": true] }])
         case "/api/session" where UITestFixtureEnvironment.hasOlderMessages:
             return pagedSessionResponse(url)
+        case "/api/session" where UITestFixtureEnvironment.hasBranchedFrom:
+            return branchedSessionResponse(url)
         case "/api/session":
             return UITestChatScenario.current == nil ? sessionResponse() : chatSessionResponse()
         case "/api/media" where UITestFixtureEnvironment.hasTranscriptMedia:
@@ -1003,6 +1010,21 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         }
         var detail = session(id: sessionID, title: sessionTitle)
         detail["messages"] = messages
+        return json(["session": detail])
+    }
+
+    /// The fixture chat, branched from the list's "Fixture Session 01", or that parent, which links nowhere (TAL-454).
+    private static func branchedSessionResponse(_ url: URL) -> Data {
+        let parentID = "ui-fixture-session-1"
+        let requested = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "session_id" }?.value
+        let isParent = requested == parentID
+        var detail = session(id: isParent ? parentID : sessionID, title: isParent ? "Fixture Session 01" : sessionTitle)
+        let text = isParent ? "Parent fixture" : "Branched fixture"
+        detail["messages"] = [
+            ["role": "user", "content": "\(text) prompt", "message_id": "\(text) prompt", "_ts": 2_000_000_000],
+            ["role": "assistant", "content": "\(text) reply", "message_id": "\(text) reply", "_ts": 2_000_000_001]
+        ]
+        detail["branched_from"] = isParent ? NSNull() : ["session_id": parentID, "title": "Fixture Session 01"]
         return json(["session": detail])
     }
 

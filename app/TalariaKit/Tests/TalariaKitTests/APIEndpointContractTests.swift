@@ -703,6 +703,18 @@ final class SharedContractTests: XCTestCase {
         XCTAssertEqual(messages[3 - offset].messageId, "reference-anchor")
     }
 
+    func testSharedWebSessionLinksOnlyTheBranchToItsParent() throws {
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
+        // A release checks this App against every retained Web; one from before TAL-454 has no such example.
+        guard let example = object["branched_session"] as? [String: Any] else { return }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let branch = try decoder.decode(SessionDetail.self, from: JSONSerialization.data(withJSONObject: example["session"] ?? [:]))
+        XCTAssertEqual(branch.branchedFrom, SessionBranchLink(sessionId: "contract-branch-parent", title: "Plan the migration"))
+        let ordinary = try decoder.decode(SessionDetail.self, from: JSONSerialization.data(withJSONObject: object["session"] ?? [:]))
+        XCTAssertNil(ordinary.branchedFrom)
+    }
+
     func testAnOlderBackgroundUpdateBecomesOneLineFromItsSummary() throws {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase

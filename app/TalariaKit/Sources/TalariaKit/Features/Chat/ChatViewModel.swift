@@ -213,6 +213,21 @@ public final class ChatViewModel {
             serverWorkspaceName = session?.workspaceName
         }
     }
+    /// The chat this one was branched from (TAL-454); nil shows no link.
+    public private(set) var branchedFrom: SessionBranchLink?
+    private func applyBranchedFrom(from session: SessionDetail?, modelContext: ModelContext?) {
+        branchedFrom = session?.branchedFrom
+        guard let session, let modelContext, ownsCurrentCache else { return }
+        do {
+            try CacheStore.cacheBranchedFrom(branchedFrom, session: SessionSummary(from: session), serverURL: server, in: modelContext)
+        } catch {
+            cacheErrorMessage = error.localizedDescription
+        }
+    }
+    /// The cached link paints with the cached transcript; a failed read shows none.
+    private func restoreCachedBranchedFrom(sessionID: String, modelContext: ModelContext) {
+        branchedFrom = try? CacheStore.cachedBranchedFrom(serverURL: server, sessionID: sessionID, in: modelContext)
+    }
     private func clearCompressionReference() {
         compressionReference = nil
         compressionReferenceCard = nil
@@ -1486,6 +1501,7 @@ public final class ChatViewModel {
             // read-only flag behind once its transcript has been rejected.
             applyReadOnlyState(from: session)
             applyCompressionReference(from: session)
+            applyBranchedFrom(from: session, modelContext: modelContext)
             let newerSteerRows = pendingSteerRows(changedAfter: steerChangesAtFetch)
             applyReloadedMessages(
                 reloadedMessages,
@@ -1559,6 +1575,7 @@ public final class ChatViewModel {
                     )
                     if !cachedMessages.isEmpty {
                         clearCompressionReference()
+                        restoreCachedBranchedFrom(sessionID: sessionID, modelContext: modelContext)
                         messages = cachedMessages
                         latestServerLoadHadAssistantResponseAfterLatestUser = Self.hasAssistantResponseAfterLatestUser(
                             in: messages
@@ -1674,6 +1691,7 @@ public final class ChatViewModel {
 
         guard !cachedMessages.isEmpty else { return [] }
 
+        restoreCachedBranchedFrom(sessionID: sessionID, modelContext: modelContext)
         messages = cachedMessages
         messagesOffset = 0
         hasOlderMessages = false

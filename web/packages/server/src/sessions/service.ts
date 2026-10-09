@@ -621,9 +621,34 @@ export class SessionService {
     raw.read_only = this.isReadOnly(s)
     raw.assistant_name = this.assistantName(s)
     raw.workspace_name = this.workspaceNames()(s)
+    raw.branched_from = this.branchedFrom(s)
     withSessionWireFlags(raw, activeStreamIds)
     raw.pending_steers = raw.active_stream_id ? (this.deps.runtime.pendingSteers?.(str(raw.active_stream_id)) ?? []) : []
     return redactSessionData(raw, this.deps.redactEnabled())
+  }
+
+  /**
+   * TAL-454: the chat `/branch` copied, while it still loads (archived included). A compression continuation is also a
+   * fork of its parent but not a branch, so it links nowhere.
+   */
+  private branchedFrom(s: Session): { session_id: string; title: string } | null {
+    const parentId = s.parent_session_id
+    if (!parentId || str(s.session_source).trim().toLowerCase() !== 'fork' || s.compression_recovery_source_session_id) return null
+    let title: unknown
+    try {
+      const parent = this.store.get(parentId, { metadataOnly: true, promote: false, cacheOnMiss: false })
+      if (!this.visibleToActiveProfile(parent.profile)) return null
+      title = parent.title
+    } catch {
+      // A read-only foreign parent (a cron run) has no sidecar and opens from the active profile's state.db while it
+      // has transcript rows and is not a deleted chat (`claimOrSynthesizeCliSession`'s `was_webui` and `no_foreign_state`).
+      const dbPath = this.stateDbPath(null)
+      const row = stateDbSessionRow(dbPath, parentId)
+      if (!row || this.store.wasDeleted(parentId) || this.indexMarksWasWebui(parentId)) return null
+      if (!stateDbSessionMessages(dbPath, parentId, { stitch: true }).length) return null
+      title = row.title
+    }
+    return { session_id: parentId, title: str(redactText(str(title) || 'Untitled', this.deps.redactEnabled())) }
   }
 
   /**

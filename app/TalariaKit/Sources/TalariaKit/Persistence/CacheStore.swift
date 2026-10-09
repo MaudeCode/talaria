@@ -131,6 +131,48 @@ public enum CacheStore {
         try context.save()
     }
 
+    /// Records a session's `branched_from` from its detail (TAL-454). A chat the list has not cached yet (one opened
+    /// straight from `/fork`) gets its row from that detail, so the link shows offline too.
+    @MainActor
+    public static func cacheBranchedFrom(
+        _ link: SessionBranchLink?,
+        session: SessionSummary,
+        serverURL: URL,
+        in context: ModelContext
+    ) throws {
+        guard let sessionID = session.sessionId else { return }
+        let serverURLString = serverURL.absoluteString
+        let cacheKey = CachedSession.cacheKey(serverURLString: serverURLString, sessionID: sessionID)
+        let row: CachedSession
+        if let cachedSession = try cachedSession(cacheKey: cacheKey, in: context) {
+            guard cachedSession.branchedFromSessionID != link?.sessionId || cachedSession.branchedFromTitle != link?.title else { return }
+            row = cachedSession
+        } else {
+            guard link != nil, session.archived != true else { return }
+            row = CachedSession(serverURLString: serverURLString, session: session)
+            context.insert(row)
+        }
+        row.branchedFromSessionID = link?.sessionId
+        row.branchedFromTitle = link?.title
+        try context.save()
+    }
+
+    @MainActor
+    public static func cachedBranchedFrom(
+        serverURL: URL,
+        sessionID: String,
+        in context: ModelContext,
+        now: Date = Date()
+    ) throws -> SessionBranchLink? {
+        let cacheKey = CachedSession.cacheKey(serverURLString: serverURL.absoluteString, sessionID: sessionID)
+        guard let cachedSession = try cachedSession(cacheKey: cacheKey, in: context),
+              cachedSession.expiresAt > now,
+              let sessionID = cachedSession.branchedFromSessionID,
+              let title = cachedSession.branchedFromTitle
+        else { return nil }
+        return SessionBranchLink(sessionId: sessionID, title: title)
+    }
+
     @MainActor
     public static func cacheMessages(
         _ messages: [ChatMessage],

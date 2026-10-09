@@ -1211,6 +1211,7 @@ struct ChatView: View {
             messages: viewModel.messages,
             displayedTranscriptMessages: displayedTranscriptMessages,
             compressionReferenceCard: viewModel.compressionReferenceCard,
+            branchedFrom: viewModel.branchedFrom,
             reasoningGroups: viewModel.displayedReasoningGroups,
             completedToolCallGroupsForAnchor: { anchorMessageID in
                 viewModel.completedToolCallGroupsForAnchor(anchorMessageID)

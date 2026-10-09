@@ -106,6 +106,28 @@ final class CompressionReferenceUITests: ChatUITestCase {
     }
 }
 
+/// A branched chat links back to the chat it was branched from, and that chat, not a branch, shows no link (TAL-454).
+final class BranchedFromUITests: ChatUITestCase {
+    func testTheBranchRowOpensTheParentChat() throws {
+        launchFixture(additionalArguments: ["--ui-test-branched-from"])
+        let session = fixtureSessionButton
+        XCTAssertTrue(session.awaitExistence(timeout: 15), "Missing deterministic session fixture")
+        tapFixtureSession(session)
+        XCTAssertNotNil(waitForComposer(timeout: 30), "The branched session never opened")
+        XCTAssertTrue(app.staticTexts["Branched fixture reply"].awaitExistence(timeout: 15), "The branch transcript is missing")
+
+        // VoiceOver reads the label and the button trait: "Branched from Fixture Session 01, button".
+        let link = app.buttons["Branched from Fixture Session 01"]
+        XCTAssertTrue(link.awaitExistence(timeout: 15), "The branch row is missing")
+        attachScreenshot(named: "branched-from-row")
+        tapCenter(of: link)
+
+        XCTAssertTrue(app.staticTexts["Parent fixture reply"].awaitExistence(timeout: 15), "The row did not open the parent chat")
+        XCTAssertTrue(link.awaitNonExistence(timeout: 10), "The parent chat shows a branch row")
+        attachScreenshot(named: "branched-from-parent")
+    }
+}
+
 /// The session's background work is the server's record: the card above the composer shows what it pins with the full
 /// result on request and a shared Dismiss, and a delegation row shows its subagents' progress in place (TAL-372).
 final class BackgroundWorkUITests: ChatUITestCase {

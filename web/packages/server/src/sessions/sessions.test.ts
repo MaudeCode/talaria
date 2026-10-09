@@ -337,6 +337,58 @@ describe('session lifecycle over HTTP', () => {
     expect(child.parent_session_id).toBe(sid)
   })
 
+  it('links a branch, and only a branch, to the chat it came from while that chat loads (TAL-454)', async () => {
+    const secret = 'sk-proj-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789'
+    const detail = async (id: unknown): Promise<Json> => (await json(await s.get(`/api/session?session_id=${String(id)}`))).session as Json
+    const sid = String((await newSession(s)).session_id)
+    const parent = s.deps.sessionStore.get(sid)
+    Object.assign(parent, { title: `Deploy with ${secret}`, messages: [{ role: 'user', content: 'x' }, { role: 'assistant', content: 'y' }] })
+    stampCompressionExhaustedRecovery(parent, 'Context length exceeded.', '')
+    s.deps.sessionStore.save(parent)
+    const branch = await json(await post(s, '/api/session/branch', { session_id: sid }))
+    const linked = (await detail(branch.session_id)).branched_from as Json
+    expect(linked).toEqual({ session_id: sid, title: expect.stringContaining('Deploy with') as unknown })
+    expect(linked.title).not.toContain(secret)
+    // An archived parent still opens.
+    expect((await post(s, '/api/session/archive', { session_id: sid, archived: true })).status).toBe(200)
+    expect(((await detail(branch.session_id)).branched_from as Json).session_id).toBe(sid)
+    // An ordinary chat, and a compression continuation, which is also a fork of its parent, link nowhere.
+    expect((await detail(sid)).branched_from).toBeNull()
+    const continuation = (await json(await post(s, '/api/session/compression-recovery/start', { session_id: sid }))).session as Json
+    expect(continuation).toMatchObject({ parent_session_id: sid, session_source: 'fork' })
+    expect((await detail(continuation.session_id)).branched_from).toBeNull()
+    // A deleted parent can no longer be opened.
+    expect((await post(s, '/api/session/delete', { session_id: sid })).status).toBe(200)
+    expect((await detail(branch.session_id)).branched_from).toBeNull()
+
+    // A cron run lives only in state.db; a branch of it links to it there.
+    const cron = 'cron_tal454_run'
+    const db = new DatabaseSync(join(s.state, 'state.db'))
+    db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, title TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
+    db.prepare('INSERT INTO sessions (id, source, title, started_at) VALUES (?, ?, ?, ?)').run(cron, 'cron', 'Nightly report', 100)
+    db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(cron, 'assistant', 'All green.', 101)
+    db.close()
+    const cronBranch = await post(s, '/api/session/branch', { session_id: cron })
+    expect(cronBranch.status).toBe(200)
+    const cronBranchId = (await json(cronBranch)).session_id
+    expect((await detail(cronBranchId)).branched_from).toEqual({ session_id: cron, title: 'Nightly report' })
+    // Once its transcript rows are gone the run no longer opens, so the branch links nowhere.
+    const pruned = new DatabaseSync(join(s.state, 'state.db'))
+    pruned.prepare('DELETE FROM messages WHERE session_id = ?').run(cron)
+    pruned.close()
+    expect((await detail(cronBranchId)).branched_from).toBeNull()
+  })
+
+  it('serves the shared branched example as the contract fixture records it (TAL-454)', async () => {
+    const fixture = (JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as Json).branched_session as Json
+    const stored = fixture.stored_parent as Json
+    s.deps.sessionStore.save(new Session({ ...stored, messages: [{ role: 'user', content: 'x' }] }, { workspace: s.state, model: null }))
+    const branch = await json(await post(s, '/api/session/branch', { session_id: stored.session_id }))
+    const served = (await json(await s.get(`/api/session?session_id=${String(branch.session_id)}`))).session as Json
+    const expected = fixture.session as Json
+    for (const key of ['title', 'parent_session_id', 'session_source', 'branched_from']) expect(served[key], key).toEqual(expected[key])
+  })
+
   it('deletes a session, tombstones it, and prunes it from the index', async () => {
     const a = await newSession(s)
     const sid = String(a.session_id)
