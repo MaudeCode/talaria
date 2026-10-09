@@ -360,7 +360,7 @@ describe('session lifecycle over HTTP', () => {
     // A deleted parent can no longer be opened.
     expect((await post(s, '/api/session/delete', { session_id: sid })).status).toBe(200)
     expect((await detail(branch.session_id)).branched_from).toBeNull()
- 
+
     // A cron run lives only in state.db; a branch of it links to it there.
     const cron = 'cron_tal454_run'
     const db = new DatabaseSync(join(s.state, 'state.db'))
