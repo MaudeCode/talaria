@@ -252,6 +252,10 @@ export const CompressionReferenceSchema = z.object({
 })
 export type CompressionReference = z.infer<typeof CompressionReferenceSchema>
 
+/** TAL-454: the chat a `/branch` copied, with its redacted title. */
+export const BranchedFromSchema = z.object({ session_id: SessionIdSchema, title: z.string() })
+export type BranchedFrom = z.infer<typeof BranchedFromSchema>
+
 /** Full session record from `GET /api/session` and mutations returning `session`. */
 export const SessionSchema = z.looseObject({
   session_id: SessionIdSchema, title: z.string(), workspace: z.string().optional(), created_workspace: z.string().nullable().optional(), model: NullableString.optional(), model_provider: NullableString.optional(),
@@ -277,6 +281,7 @@ export const SessionSchema = z.looseObject({
   assistant_name: z.string().optional(),
   workspace_name: WorkspaceNameSchema,
   compression_reference: CompressionReferenceSchema.nullable().optional(),
+  branched_from: BranchedFromSchema.nullable().optional().describe('TAL-454: the chat this one was branched from while it still loads (archived included); null for a compression continuation, a deleted or missing parent, and every other chat.'),
 })
 export type Session = z.infer<typeof SessionSchema>
 export const SessionEnvelopeSchema = z.looseObject({ session: SessionSchema })

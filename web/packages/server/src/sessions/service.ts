@@ -621,9 +621,22 @@ export class SessionService {
     raw.read_only = this.isReadOnly(s)
     raw.assistant_name = this.assistantName(s)
     raw.workspace_name = this.workspaceNames()(s)
+    raw.branched_from = this.branchedFrom(s)
     withSessionWireFlags(raw, activeStreamIds)
     raw.pending_steers = raw.active_stream_id ? (this.deps.runtime.pendingSteers?.(str(raw.active_stream_id)) ?? []) : []
     return redactSessionData(raw, this.deps.redactEnabled())
+  }
+
+  /**
+   * TAL-454: the chat `/branch` copied, while it still loads (archived included). A compression continuation is also a
+   * fork of its parent but not a branch, so it links nowhere.
+   */
+  private branchedFrom(s: Session): { session_id: string; title: string } | null {
+    if (!s.parent_session_id || str(s.session_source).trim().toLowerCase() !== 'fork' || s.compression_recovery_source_session_id) return null
+    let parent: Session
+    try { parent = this.store.get(s.parent_session_id, { metadataOnly: true, promote: false, cacheOnMiss: false }) } catch { return null }
+    if (!this.visibleToActiveProfile(parent.profile)) return null
+    return { session_id: parent.session_id, title: str(redactText(parent.title || 'Untitled', this.deps.redactEnabled())) }
   }
 
   /**

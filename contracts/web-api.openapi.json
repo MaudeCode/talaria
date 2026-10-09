@@ -4705,6 +4705,30 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "branched_from": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "session_id": {
+                                  "type": "string",
+                                  "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
+                                },
+                                "title": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "session_id",
+                                "title"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-454: the chat this one was branched from while it still loads (archived included); null for a compression continuation, a deleted or missing parent, and every other chat."
                         }
                       },
                       "required": [
@@ -6804,6 +6828,30 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "branched_from": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "session_id": {
+                                  "type": "string",
+                                  "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
+                                },
+                                "title": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "session_id",
+                                "title"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-454: the chat this one was branched from while it still loads (archived included); null for a compression continuation, a deleted or missing parent, and every other chat."
                         }
                       },
                       "required": [
@@ -8649,6 +8697,30 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "branched_from": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "session_id": {
+                                  "type": "string",
+                                  "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
+                                },
+                                "title": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "session_id",
+                                "title"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-454: the chat this one was branched from while it still loads (archived included); null for a compression continuation, a deleted or missing parent, and every other chat."
                         }
                       },
                       "required": [
@@ -11692,6 +11764,30 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "branched_from": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "session_id": {
+                                  "type": "string",
+                                  "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
+                                },
+                                "title": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "session_id",
+                                "title"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-454: the chat this one was branched from while it still loads (archived included); null for a compression continuation, a deleted or missing parent, and every other chat."
                         }
                       },
                       "required": [
@@ -14569,6 +14665,30 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "branched_from": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "session_id": {
+                                  "type": "string",
+                                  "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
+                                },
+                                "title": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "session_id",
+                                "title"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-454: the chat this one was branched from while it still loads (archived included); null for a compression continuation, a deleted or missing parent, and every other chat."
                         }
                       },
                       "required": [
@@ -18123,6 +18243,30 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "branched_from": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "session_id": {
+                                  "type": "string",
+                                  "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
+                                },
+                                "title": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "session_id",
+                                "title"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-454: the chat this one was branched from while it still loads (archived included); null for a compression continuation, a deleted or missing parent, and every other chat."
                         }
                       },
                       "required": [
@@ -19993,6 +20137,30 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "branched_from": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "session_id": {
+                                  "type": "string",
+                                  "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
+                                },
+                                "title": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "session_id",
+                                "title"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-454: the chat this one was branched from while it still loads (archived included); null for a compression continuation, a deleted or missing parent, and every other chat."
                         }
                       },
                       "required": [
@@ -21925,6 +22093,30 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "branched_from": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "session_id": {
+                                  "type": "string",
+                                  "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
+                                },
+                                "title": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "session_id",
+                                "title"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-454: the chat this one was branched from while it still loads (archived included); null for a compression continuation, a deleted or missing parent, and every other chat."
                         }
                       },
                       "required": [
@@ -23844,6 +24036,30 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "branched_from": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "session_id": {
+                                  "type": "string",
+                                  "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
+                                },
+                                "title": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "session_id",
+                                "title"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-454: the chat this one was branched from while it still loads (archived included); null for a compression continuation, a deleted or missing parent, and every other chat."
                         }
                       },
                       "required": [
@@ -33238,6 +33454,30 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "branched_from": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "session_id": {
+                                  "type": "string",
+                                  "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
+                                },
+                                "title": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "session_id",
+                                "title"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-454: the chat this one was branched from while it still loads (archived included); null for a compression continuation, a deleted or missing parent, and every other chat."
                         }
                       },
                       "required": [
@@ -35249,6 +35489,30 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "branched_from": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "session_id": {
+                                  "type": "string",
+                                  "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
+                                },
+                                "title": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "session_id",
+                                "title"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-454: the chat this one was branched from while it still loads (archived included); null for a compression continuation, a deleted or missing parent, and every other chat."
                         }
                       },
                       "required": [
@@ -37160,6 +37424,30 @@
                                   "type": "null"
                                 }
                               ]
+                            },
+                            "branched_from": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "session_id": {
+                                      "type": "string",
+                                      "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
+                                    },
+                                    "title": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "session_id",
+                                    "title"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "TAL-454: the chat this one was branched from while it still loads (archived included); null for a compression continuation, a deleted or missing parent, and every other chat."
                             }
                           },
                           "required": [

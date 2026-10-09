@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "A branched chat links back to the chat it was branched from; tap the link at the top of the chat to open the original.",
+      "highlight": false,
+      "components": ["app"]
+    },
+    {
+      "category": "Added",
+      "summary": "Chats report the chat they were branched from, so the iPhone app can link back to it.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
