@@ -98,6 +98,8 @@ export const STATE_DB_METHODS = {
   'state_db.sync_usage': { params: Session.extend({ input_tokens: z.number().int().optional(), output_tokens: z.number().int().optional(), estimated_cost: z.number().nullable().optional(), model: z.string().nullable().optional(), title: z.string().nullable().optional(), message_count: z.number().int().nullable().optional(), cache_read_tokens: z.number().int().optional(), cache_write_tokens: z.number().int().optional(), api_call_count: z.number().int().nullable().optional() }), result: Ok },
   'state_db.sync_title': { params: Session.extend({ title: z.string() }), result: Ok },
   'state_db.delete_cli_session': { params: Session, result: Ok },
+  /** TAL-258: append one row through the Agent's `SessionDB.append_message` (bumps `message_count`); `ok` is false without a state.db. */
+  'state_db.append_message': { params: Session.extend({ role: z.string().min(1), content: z.string(), tool_name: z.string().nullable().optional(), timestamp: z.number().nullable().optional() }), result: Ok },
 } as const
 
 // ── profiles ───────────────────────────────────────────────────────────
@@ -199,7 +201,11 @@ export const OAUTH_METHODS = {
 // ── aux / text / process / usage / gateway ─────────────────────────────
 export const AuxUsageSchema = z.object({ prompt_tokens: z.number().int().optional(), completion_tokens: z.number().int().optional(), total_tokens: z.number().int().optional() })
 export const AUX_METHODS = {
-  'aux.complete': { params: ProfileHomeParams.extend({ task: z.string().min(1), messages: z.array(Loose).min(1), main_runtime: Loose.nullable().optional(), main_fallback: z.boolean().optional(), max_tokens: z.number().int().nullable().optional(), temperature: z.number().nullable().optional() }), result: z.object({ model: z.string(), text: z.string(), usage: AuxUsageSchema.nullable() }), stream: z.discriminatedUnion('event', [z.object({ event: z.literal('token'), data: z.object({ text: z.string() }) })]) },
+  /**
+   * One auxiliary completion. TAL-258: `model` (with `provider`) asks that model itself, reasoning off and no tools, instead
+   * of the task's auxiliary route; `credential_missing` means it has no credential. `finish_reason` is the provider's, when known.
+   */
+  'aux.complete': { params: ProfileHomeParams.extend({ task: z.string().min(1), messages: z.array(Loose).min(1), main_runtime: Loose.nullable().optional(), main_fallback: z.boolean().optional(), max_tokens: z.number().int().nullable().optional(), temperature: z.number().nullable().optional(), model: z.string().nullable().optional(), provider: z.string().nullable().optional() }), result: z.object({ model: z.string(), text: z.string(), usage: AuxUsageSchema.nullable(), finish_reason: z.string().nullable().default(null) }), stream: z.discriminatedUnion('event', [z.object({ event: z.literal('token'), data: z.object({ text: z.string() }) })]) },
   'aux.resolve': { params: ProfileHomeParams.extend({ task: z.string().min(1), main_runtime: Loose.nullable().optional() }), result: z.object({ configured: z.boolean(), model: z.string().nullable(), error: z.string().optional() }) },
 } as const
 export const TEXT_METHODS = {

@@ -59,7 +59,7 @@ def test_unconfigured_auxiliary_falls_back_to_the_main_model(monkeypatch) -> Non
 
     _patch(monkeypatch, factory)
     result = aux.complete("compression", MESSAGES, main_runtime={"model": "claude-x", "provider": "anthropic"}, max_tokens=None, temperature=None, ctx=Ctx(), main_fallback=True)
-    assert result == {"model": "claude-x", "text": "feat: main model answer", "usage": None}
+    assert result == {"model": "claude-x", "text": "feat: main model answer", "usage": None, "finish_reason": None}
     # The auxiliary client saw the fully resolved main runtime, not just the hint.
     assert seen["main_runtime"]["api_key"] == "sk-main" and seen["main_runtime"]["model"] == "claude-x"
     call = FakeAgent.calls[0]

@@ -38,6 +38,21 @@
       }
     }
   ],
+  "state_db.append_message": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "session_id": "webui-1",
+        "role": "tool",
+        "content": "{\"_handoff_summary_card\": true, \"session_id\": \"webui-1\", \"summary\": \"- Ship it.\"}",
+        "tool_name": "handoff_summary",
+        "timestamp": 1.0
+      },
+      "result": {
+        "ok": true
+      }
+    }
+  ],
   "state_db.delete_cli_session": [
     {
       "params": {

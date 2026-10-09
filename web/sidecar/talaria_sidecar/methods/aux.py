@@ -69,14 +69,42 @@ def _main_model_completion(messages: list, runtime: dict, *, task: str) -> dict:
                 close()
             except Exception:  # noqa: BLE001
                 log.debug("%s fallback agent close failed", task, exc_info=True)
-    return {"model": str(runtime.get("model") or ""), "text": str((result or {}).get("final_response") or "").strip(), "usage": None}
+    return {"model": str(runtime.get("model") or ""), "text": str((result or {}).get("final_response") or "").strip(), "usage": None, "finish_reason": None}
 
 
-def complete(task: str, messages: list, *, main_runtime: dict | None, max_tokens: int | None, temperature: float | None, ctx: CallContext, main_fallback: bool = False) -> dict:
+def _model_completion(task: str, messages: list, *, model: str, provider: str | None, max_tokens: int | None, temperature: float | None) -> dict:
+    """TAL-258 (predecessor ``_agent_text_completion``): the named model answers itself through the Agent's ``call_llm``,
+    reasoning off and no tools, so the caller sees its ``finish_reason``. ``max_tokens`` reaches the provider on the routes
+    the Agent forwards a cap on. ``credential_missing`` when the model has no credential."""
+    from .chat import _resolve_runtime
+
+    runtime = _resolve_runtime(provider, model)
+    if not runtime.get("api_key"):
+        raise RpcError(f"no credential for model {model or 'default'!r}", condition="credential_missing")
+    from agent.auxiliary_client import call_llm
+
+    resolved = model or str(runtime.get("model") or "")
+    response = call_llm(
+        task, provider=provider or runtime.get("provider"), model=resolved, base_url=runtime.get("base_url"), api_key=runtime.get("api_key"),
+        api_mode=runtime.get("api_mode"), messages=messages, max_tokens=int(max_tokens) if max_tokens else None,
+        temperature=float(temperature) if temperature is not None else None, reasoning_config={"enabled": False}, timeout=30.0,
+    )
+    choice = (getattr(response, "choices", None) or [None])[0]
+    message = getattr(choice, "message", None)
+    reason = getattr(choice, "finish_reason", None)
+    return {"model": resolved, "text": str(getattr(message, "content", None) or "").strip(), "usage": _usage_dict(getattr(response, "usage", None)),
+            "finish_reason": str(reason) if reason else None}
+
+
+def complete(task: str, messages: list, *, main_runtime: dict | None, max_tokens: int | None, temperature: float | None, ctx: CallContext, main_fallback: bool = False,
+             model: str | None = None, provider: str | None = None) -> dict:
     """One auxiliary completion; streams ``token`` frames when the client supports it.
 
     With ``main_fallback`` the main model answers (through ``AIAgent``) when no auxiliary client is configured or the
-    auxiliary call fails, as the predecessor's git commit-message route did."""
+    auxiliary call fails, as the predecessor's git commit-message route did. An explicit ``model`` skips the auxiliary
+    route: that model answers (``_model_completion``)."""
+    if model is not None:
+        return _model_completion(task, messages, model=model, provider=provider, max_tokens=max_tokens, temperature=temperature)
     try:
         from agent.auxiliary_client import get_text_auxiliary_client
     except Exception as exc:  # noqa: BLE001
@@ -109,6 +137,7 @@ def _stream_completion(client, model: str, messages: list, *, max_tokens: int | 
         kwargs["temperature"] = float(temperature)
     text_parts: list[str] = []
     usage = None
+    finish_reason = None
     try:
         stream = client.chat.completions.create(stream=True, **kwargs)
         for chunk in stream:
@@ -119,6 +148,8 @@ def _stream_completion(client, model: str, messages: list, *, max_tokens: int | 
             if piece:
                 text_parts.append(piece)
                 ctx.emit("token", {"text": piece})
+            if choices and getattr(choices[0], "finish_reason", None):
+                finish_reason = str(choices[0].finish_reason)
             chunk_usage = getattr(chunk, "usage", None)
             if chunk_usage is not None:
                 usage = _usage_dict(chunk_usage)
@@ -129,7 +160,8 @@ def _stream_completion(client, model: str, messages: list, *, max_tokens: int | 
         response = client.chat.completions.create(**kwargs)
         text_parts = [str(response.choices[0].message.content or "")]
         usage = _usage_dict(getattr(response, "usage", None))
-    return {"model": str(model), "text": "".join(text_parts).strip(), "usage": usage}
+        finish_reason = str(response.choices[0].finish_reason) if getattr(response.choices[0], "finish_reason", None) else None
+    return {"model": str(model), "text": "".join(text_parts).strip(), "usage": usage, "finish_reason": finish_reason}
 
 
 def _usage_dict(usage) -> dict | None:
@@ -154,7 +186,9 @@ def register(registry) -> None:
             raise InvalidParams("messages must be a non-empty list")
         main_runtime = params.get("main_runtime") if isinstance(params.get("main_runtime"), dict) else None
         with scoped_home(profile_home_param(params)):
-            return complete(task, messages, main_runtime=main_runtime, max_tokens=params.get("max_tokens"), temperature=params.get("temperature"), ctx=ctx, main_fallback=bool(params.get("main_fallback")))
+            model = params.get("model")
+            return complete(task, messages, main_runtime=main_runtime, max_tokens=params.get("max_tokens"), temperature=params.get("temperature"), ctx=ctx, main_fallback=bool(params.get("main_fallback")),
+                            model=str(model).strip() if isinstance(model, str) else None, provider=str(params.get("provider") or "").strip() or None)
 
     @registry.method("aux.resolve")
     def resolve(ctx: CallContext, params: dict) -> dict:

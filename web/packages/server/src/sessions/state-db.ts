@@ -735,3 +735,64 @@ export function insightsSessionRows(dbPath: string, cutoff: number): Dict[] {
     db.close()
   }
 }
+
+/** A state.db `timestamp` in unix seconds: a number, or an ISO-8601 string (Python `fromisoformat`); null when unreadable. */
+export function stateDbTimestampSeconds(value: unknown): number | null {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+  if (typeof value !== 'string' || !value.trim()) return null
+  const ms = Date.parse(value.trim())
+  return Number.isFinite(ms) ? ms / 1000 : null
+}
+
+/** Python `CONVERSATION_ROUND_THRESHOLD`: the handoff dock is offered from this many rounds. */
+export const CONVERSATION_ROUND_THRESHOLD = 10
+
+/**
+ * Python `count_conversation_rounds` (TAL-258): a round is a user message answered by the assistant; consecutive user
+ * messages merge into one. With `since`, only rows stamped after it count (an unreadable stamp still counts). A missing
+ * or unreadable database is 0.
+ */
+export function countConversationRounds(dbPath: string, sid: string, since: number | null = null): number {
+  if (!existsSync(dbPath)) return 0
+  let rows: Dict[]
+  try {
+    const db = openStateDbReadonly(dbPath)
+    try { rows = db.prepare('SELECT role, timestamp FROM messages WHERE session_id = ? ORDER BY timestamp ASC').all(sid) } finally { db.close() }
+  } catch {
+    return 0
+  }
+  let rounds = 0
+  let seenUser = false
+  let answered = false
+  for (const row of rows) {
+    if (since !== null) {
+      const ts = stateDbTimestampSeconds(row.timestamp)
+      if (ts !== null && ts <= since) continue
+    }
+    const role = lower(row.role)
+    if (role === 'user') {
+      if (seenUser && answered) { rounds += 1; answered = false }
+      seenUser = true
+    } else if (role === 'assistant' && seenUser) {
+      answered = true
+    }
+  }
+  return seenUser && answered ? rounds + 1 : rounds
+}
+
+/** The content of the session's newest `tool` row (the handoff marker's tail dedupe, TAL-258); null when there is none. */
+export function stateDbLatestToolContent(dbPath: string, sid: string): string | null {
+  if (!existsSync(dbPath)) return null
+  try {
+    const db = openStateDbReadonly(dbPath)
+    try {
+      const row = db.prepare("SELECT content FROM messages WHERE session_id = ? AND role = 'tool' ORDER BY rowid DESC LIMIT 1").get(sid) as Dict | undefined
+      const content = row === undefined ? null : decodeStateDbContent(row.content)
+      return typeof content === 'string' ? content : null
+    } finally {
+      db.close()
+    }
+  } catch {
+    return null
+  }
+}

@@ -64,6 +64,7 @@ SCENARIOS: list[tuple[str, dict]] = [
     ("state_db.sync_start", {"profile_home": "{home}", "session_id": "webui-1", "model": "test-model"}),
     ("state_db.sync_usage", {"profile_home": "{home}", "session_id": "webui-1", "input_tokens": 10, "output_tokens": 5, "title": "Hello", "message_count": 2}),
     ("state_db.sync_title", {"profile_home": "{home}", "session_id": "webui-1", "title": "Hello again"}),
+    ("state_db.append_message", {"profile_home": "{home}", "session_id": "webui-1", "role": "tool", "content": "{\"_handoff_summary_card\": true, \"session_id\": \"webui-1\", \"summary\": \"- Ship it.\"}", "tool_name": "handoff_summary", "timestamp": 1.0}),
     ("state_db.delete_cli_session", {"profile_home": "{home}", "session_id": "cli-1"}),
     ("state_db.delete_cli_session", {"profile_home": "{home}", "session_id": "missing"}),
     # mcp / stt / usage (a provider with no account-usage fetcher answers offline)
