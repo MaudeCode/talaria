@@ -10,14 +10,19 @@ final class ComposerVoiceDraftComposerTests: XCTestCase {
         XCTAssertEqual(commands, [
             .init(action: .send, modifierFlags: [], title: "Send Message"),
             .init(action: .newline, modifierFlags: .command, title: "New Line"),
+            .init(action: .newline, modifierFlags: .shift, title: "New Line", isHidden: true),
+            .init(action: .newline, modifierFlags: .alternate, title: "New Line", isHidden: true),
             .init(action: .alternateSend, modifierFlags: .control, title: "Queue Message")
         ])
     }
 
-    func testCommandReturnModeSendsOnCommandReturnAndLeavesReturnToTheTextView() {
+    func testCommandReturnModeSendsOnCommandReturnAndInsertsANewlineOnReturn() {
         let commands = ComposerKeyboardCommand.commands(sendKey: .commandReturn, alternateBehavior: .steer)
         XCTAssertEqual(commands, [
             .init(action: .send, modifierFlags: .command, title: "Send Message"),
+            .init(action: .newline, modifierFlags: [], title: "New Line"),
+            .init(action: .newline, modifierFlags: .shift, title: "New Line", isHidden: true),
+            .init(action: .newline, modifierFlags: .alternate, title: "New Line", isHidden: true),
             .init(action: .alternateSend, modifierFlags: .control, title: "Send Now")
         ])
     }
@@ -26,12 +31,16 @@ final class ComposerVoiceDraftComposerTests: XCTestCase {
     func testTextViewInstallsPriorityReturnCommandsForEachAction() {
         let textView = ComposerTextView.PastingTextView()
         let installed = (textView.keyCommands ?? []).filter { $0.input == ComposerKeyboardCommand.input }
+        let newline = ComposerTextView.PastingTextView.selector(for: .newline)
         XCTAssertEqual(installed.map(\.action), [
             ComposerTextView.PastingTextView.selector(for: .send),
-            ComposerTextView.PastingTextView.selector(for: .newline),
+            newline,
+            newline,
+            newline,
             ComposerTextView.PastingTextView.selector(for: .alternateSend)
         ])
-        XCTAssertEqual(installed.map(\.modifierFlags), [[], .command, .control])
+        XCTAssertEqual(installed.map(\.modifierFlags), [[], .command, .shift, .alternate, .control])
+        XCTAssertEqual(installed.map { $0.attributes.contains(.hidden) }, [false, false, true, true, false])
         XCTAssertTrue(installed.allSatisfy(\.wantsPriorityOverSystemBehavior))
     }
 

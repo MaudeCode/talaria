@@ -302,6 +302,7 @@ struct ComposerTextView: UIViewRepresentable {
                 )
                 // Plain Return must beat the text view's own newline insertion.
                 keyCommand.wantsPriorityOverSystemBehavior = true
+                if command.isHidden { keyCommand.attributes = .hidden }
                 return keyCommand
             }
             return (super.keyCommands ?? []) + composerCommands
