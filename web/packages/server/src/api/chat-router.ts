@@ -3,15 +3,16 @@ import { GATEWAY_APPROVAL_RELAY_UNAVAILABLE, isGenericContinuationIntent } from 
 import { implement } from '@orpc/server'
 import { chatContract, MAX_CHAT_ATTACHMENTS } from '@maudecode/talaria-web-contracts'
 import { randomUUID } from 'node:crypto'
-import { HttpError, type ApiContext } from './router.js'
+import { HttpError, RawResponse, type ApiContext } from './router.js'
 import { requestSessionIdGuard, streamOwnerSessionId, streamVisibleToRequest } from './session-visibility.js'
 import type { RequestContext } from '../http/context.js'
 import { ensureAgentRuntimeCurrent, HttpFailure } from '../sessions/service.js'
 import { SessionNotFound } from '../sessions/store.js'
 import type { Session } from '../sessions/session.js'
 import { compressionRecoveryPayload, isSafeSessionId } from '../sessions/session.js'
+import { messageText } from '../sessions/merge.js'
 import { str } from '../util.js'
-import type { TurnRunner } from '../sessions/turn.js'
+import type { StartTurnOptions, TurnFailure, TurnRunner } from '../sessions/turn.js'
 
 const os = implement(chatContract).$context<ApiContext>().use(requestSessionIdGuard)
 const STEER_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/
@@ -112,7 +113,7 @@ function modelState(ctx: RequestContext, s: Session, body: Record<string, unknow
 }
 
 /** `chat.start`; a `chat.steer` sent while a background turn runs starts the user's turn through it too (TAL-460). */
-async function startChat(ctx: RequestContext, body: Record<string, unknown>): Promise<Record<string, unknown>> {
+async function startChat(ctx: RequestContext, body: Record<string, unknown>, settle: Pick<StartTurnOptions, 'onDone' | 'onFailed'> = {}): Promise<Record<string, unknown>> {
   requireField(body, 'session_id')
   if (str(body.message).trim() === '[SILENT]') return { status: 'suppressed', reason: 'silent_control_message' }
   if (body.regenerate === true) throw new HttpError(409, 'Regeneration is not supported by this backend.', { code: 'unsupported_regeneration_backend' })
@@ -156,13 +157,48 @@ async function startChat(ctx: RequestContext, body: Record<string, unknown>): Pr
   const workspace = resolveWorkspace(ctx, s, body.workspace)
   const [model, provider, normalized] = modelState(ctx, s, body)
   if (body.moa_config) throw new HttpError(503, 'MoA overrides need the Agent command registry (checkpoint 7).')
-  const response = ctx.deps.turns.start(s, { msg, attachments, workspace, model, modelProvider: provider, normalizedModel: normalized, source: 'webui' })
+  const response = ctx.deps.turns.start(s, { msg, attachments, workspace, model, modelProvider: provider, normalizedModel: normalized, source: 'webui', ...settle })
   if (response._status !== undefined && response._status >= 400) throw new HttpError(response._status, response.error ?? 'chat start failed', response.active_stream_id ? { active_stream_id: response.active_stream_id } : {})
   return startPayload(response)
 }
 
+/**
+ * Legacy `POST /api/chat`: the `chat.start` admission, then the turn awaited to its end. A turn that was cancelled, or
+ * failed after streaming text, answers `partial` with that text; any other failure answers with its error frame.
+ */
+async function syncChat(ctx: RequestContext, body: Record<string, unknown>): Promise<Record<string, unknown>> {
+  if (ctx.deps.sessions.isSubagentViewOnly(str(body.session_id))) throw new HttpError(400, 'Subagent sessions are view-only and cannot be written from WebUI')
+  if (!str(body.message).trim()) throw new HttpError(400, 'empty message')
+  let outcome: { answer: string } | TurnFailure | null = null
+  const started = await startChat(ctx, { session_id: body.session_id, message: body.message, workspace: body.workspace, model: body.model, ...('model_provider' in body ? { model_provider: body.model_provider } : {}) }, {
+    onDone: (answer) => { outcome = { answer } },
+    onFailed: (failure) => { outcome = failure },
+  })
+  const streamId = str(started.stream_id)
+  if (streamId) await ctx.deps.turns.finished(streamId)
+  const s = getSession(ctx, str(body.session_id))
+  const session = ctx.deps.turns.publicTerminalSession(s) as never
+  const ended = outcome as { answer: string } | TurnFailure | null
+  // A `[SILENT]` control message starts no turn.
+  if (!streamId || (ended && 'answer' in ended)) {
+    const answer = ended && 'answer' in ended ? ended.answer : ''
+    return { answer, status: 'done', session, result: { final_response: answer, completed: true, interrupted: false } }
+  }
+  const partial = s.messages.filter((m) => m._turn_id === streamId && m._partial).map((m) => messageText(m.content)).join('').trim()
+  const cancelled = ended?.cancelled ?? false
+  if (cancelled || (ended?.apperror && partial)) return { answer: partial, status: 'partial', session, result: { final_response: partial, completed: false, interrupted: cancelled } }
+  if (ended?.apperror) {
+    const { message, ...rest } = ended.apperror
+    const type = str(rest.type)
+    throw new HttpError(type === 'agent_runtime_stale' ? 409 : type === 'sidecar_unavailable' ? 503 : 500, str(message) || 'chat failed', rest)
+  }
+  // Python `_chat_writeback_timeout_response`: the turn ended but another stream owned the session at writeback.
+  throw new HttpError(503, 'response persistence is uncertain', { code: 'chat_writeback_timeout', message: 'The response finished but could not be persisted because this session remained busy. Do not retry automatically; refresh the session first.', retryable: false, outcome_unknown: true })
+}
+
 export const chatRouter = os.router({
   chat: {
+    sync: os.chat.sync.handler(({ input, context: { ctx } }) => run(() => syncChat(ctx, input as Record<string, unknown>))),
     start: os.chat.start.handler(({ input, context: { ctx } }) => run(() => startChat(ctx, input as Record<string, unknown>))),
     steer: os.chat.steer.handler(({ input, context: { ctx } }) => run(async () => {
       const sid = str(input.session_id).trim()
@@ -308,7 +344,8 @@ export const chatRouter = os.router({
       const cleanup = (): void => { try { ctx.deps.sessionStore.deleteFiles(bg.session_id, { tombstone: false }) } catch { /* best effort */ } }
       const started = ctx.deps.turns.start(bg, {
         msg: prompt, attachments: [], workspace: parent.workspace, model, modelProvider, source: 'webui',
-        onDone: (answer) => { ctx.deps.background.settleCommand(parent.session_id, taskId, 'completed', answer); cleanup() },
+        // Python: the last non-error assistant reply with content, else "(no answer produced)".
+        onDone: (answer) => { ctx.deps.background.settleCommand(parent.session_id, taskId, 'completed', answer || '(no answer produced)'); cleanup() },
         onFailed: () => { ctx.deps.background.settleCommand(parent.session_id, taskId, 'failed', '(background task failed)'); cleanup() },
       })
       if (started._status !== undefined && started._status >= 400) {
@@ -343,6 +380,9 @@ export const chatRouter = os.router({
       if (!task) throw new HttpError(404, 'Background task not found')
       return { ok: true as const, task }
     })),
+    processAck: os.background.processAck.handler(() => {
+      throw new RawResponse(410, { error: 'gone: /api/process-complete-ack was replaced by /api/bg-task-complete-ack as part of the process_complete -> bg_task_complete event rename', replaced_by: '/api/bg-task-complete-ack' }, { 'X-Replaced-By': '/api/bg-task-complete-ack' })
+    }),
     ack: os.background.ack.handler(({ input, context: { ctx } }) => run(() => {
       const body = input as Record<string, unknown>
       requireField(body, 'session_id')

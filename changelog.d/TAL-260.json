@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Talaria Web again answers the legacy blocking chat endpoint, the standalone gateway session stream, and the POST form of the passkey list, and tells old tabs that the retired process acknowledgement moved.",
+      "highlight": false,
+      "components": ["web"]
+    },
+    {
+      "category": "Fixed",
+      "summary": "A cancelled background task now finishes as failed instead of staying listed as running.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

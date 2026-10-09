@@ -2004,6 +2004,21 @@ describe('chat turns through the sidecar', () => {
     expect(leftover).toEqual([])
   })
 
+  it('a cancelled background task settles as failed and leaves no hidden session behind', async () => {
+    const sid = await newSession(s)
+    sidecar.respond('chat.interrupt', () => ({ ok: true }))
+    sidecar.respond('chat.start', (params, emit, opts) => new Promise((resolve) => {
+      emit({ event: 'token', data: { text: 'working' } })
+      opts.signal?.addEventListener('abort', () => { resolve({ ...completed([{ role: 'user', content: str(params.user_message) }]), status: 'cancelled' }) })
+    }))
+    const bg = await json(await post(s, '/api/background', { session_id: sid, prompt: 'stop me' }))
+    await s.sse(`/api/chat/stream?stream_id=${String(bg.stream_id)}`, (f) => f.event === 'token')
+    expect(await json(await s.get(`/api/chat/cancel?stream_id=${String(bg.stream_id)}`))).toMatchObject({ cancelled: true })
+    await s.deps.turns.finished(String(bg.stream_id))
+    expect((await json(await s.get(`/api/background/status?session_id=${sid}`))).results).toEqual([{ task_id: bg.task_id, prompt: 'stop me', answer: '(background task failed)', completed_at: expect.any(Number) as number }])
+    expect(existsSync(s.deps.sessionStore.pathFor(String(bg.session_id)))).toBe(false)
+  })
+
   it('the next model history includes the Agent state.db turns appended after the WebUI transcript', async () => {
     const sid = await newSession(s)
     const session = s.deps.sessionStore.get(sid)

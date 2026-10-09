@@ -42,6 +42,11 @@ export const RAW_ROUTES: readonly RawRoute[] = [
     responses: { 200: { description: 'Event stream.', contentType: 'text/event-stream' } },
   },
   {
+    method: 'GET', path: '/api/sessions/gateway/stream', summary: 'Standalone gateway-session feed: an initial `sessions_changed {sessions}` snapshot, then the watcher events, with `: keepalive` comments. `/api/sessions/events?gateway=1` carries the same feed merged.', tags: ['sessions'],
+    query: { probe: { description: '`1` answers the stream status as JSON instead of streaming (`scope: gateway_sessions`).' } },
+    responses: { 200: { description: 'Event stream, or the probe JSON.', contentType: 'text/event-stream' }, 404: { description: 'Agent sessions are not enabled (`show_cli_sessions`).', contentType: 'application/json' }, 503: { description: 'The gateway watcher is not running, or the client stream limit is reached.', contentType: 'application/json' } },
+  },
+  {
     method: 'GET', path: '/api/sessions/{session_id}/events', summary: 'Per-session run-journal relay with `Last-Event-ID` resume and `session_snapshot` fallback.', tags: ['sessions'],
     query: { after_event_id: { description: 'Resume cursor when the header is unavailable.' } },
     responses: { 200: { description: 'Event stream.', contentType: 'text/event-stream' }, 404: { description: 'Session not found.', contentType: 'application/json' } },

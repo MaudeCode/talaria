@@ -107,10 +107,14 @@ export interface StartTurnOptions {
   source?: string
   goalRelated?: boolean
   ephemeral?: boolean
+  /** The settled turn's answer: its last non-error assistant reply, or `` when it produced none. */
   onDone?: (answer: string) => void
-  /** Runs when the turn ends in an error or cancel (Python background runner: `complete_background(..., "(background task failed)")`). */
-  onFailed?: () => void
+  /** Runs on every other end: an error, a cancel, or a writeback another stream took over (Python background runner: `complete_background(..., "(background task failed)")`). */
+  onFailed?: (failure: TurnFailure) => void
 }
+
+/** How a turn that did not complete ended: the `apperror` frame it sent, if any, and whether it was cancelled. */
+export interface TurnFailure { apperror: Record<string, unknown> | null; cancelled: boolean }
 
 export interface StartTurnResponse {
   stream_id?: string
@@ -346,6 +350,11 @@ export class TurnRunner {
     return response
   }
 
+  /** Resolves once the stream's worker has ended (settled, failed, or torn down); it never rejects. */
+  finished(streamId: string): Promise<void> {
+    return this.workers.get(streamId) ?? Promise.resolve()
+  }
+
   /** Python `_checkpoint_user_message_for_eager_session_save`. */
   private checkpointUserMessage(s: Session, msg: string, attachments: Record<string, unknown>[], startedAt: number | null, source: string, turnId: string): void {
     const latest = s.messages[s.messages.length - 1]
@@ -364,7 +373,10 @@ export class TurnRunner {
     } catch (error) {
       deps.log(`[webui] WARNING: run journal degraded for stream ${streamId}: ${(error as Error).message}`)
     }
+    const failure: TurnFailure = { apperror: null, cancelled: false }
     const put = (event: string, data: Record<string, unknown>, meta: { redacted?: boolean } = {}): void => {
+      if (event === 'apperror') failure.apperror = data
+      else if (event === 'cancel') failure.cancelled = true
       for (const steerEvent of this.takeSteerEventsBefore(streamId, event)) put(steerEvent[0], steerEvent[1])
       if (this.registry.cancelled.has(streamId) && !['cancel', 'apperror', 'steer_consumed', 'steer_withdrawn'].includes(event)) return
       // `cancel()` already wrote the terminal row and closed the stream: the worker's unwind adds no second one.
@@ -461,7 +473,7 @@ export class TurnRunner {
     if (stop) stop.prompt = userMessage
     if (activeRun) activeRun.phase = 'running'
     const settledAt = { value: false }
-    let failed = false
+    let succeeded = false
     // TAL-424: steers an errored turn ended without taking, sent as one follow-up turn once this one is torn down.
     let followUp: string[] = []
     try {
@@ -655,12 +667,11 @@ export class TurnRunner {
         followUp = leftovers
         this.persistError(s, streamId, classification.label, payload, activeTurnToken, resultMessages)
         // TAL-512: a btw error carries no session: its journaled frame must not keep a copy of the parent conversation.
-        if (!opts.ephemeral) payload.session = redactSessionData(this.terminalSessionPayload(s), deps.redactEnabled())
+        if (!opts.ephemeral) payload.session = this.publicTerminalSession(s)
         payload.session_id = s.session_id
         payload.old_session_id = sessionId
         for (const [event, data] of steerEvents) put(event, data)
         put('apperror', payload)
-        failed = true
         return
       }
       // TAL-512: a btw turn passes the failure check above first, so its last assistant row is this turn's reply.
@@ -670,6 +681,7 @@ export class TurnRunner {
           const m = resultMessages[i]!
           if (m.role === 'assistant') { answer = str(m.content); break }
         }
+        succeeded = true
         opts.onDone?.(answer)
         // Python `_ephemeral_session_payload`: only role and content leave the server for a btw turn.
         put('done', { session: { session_id: sessionId, messages: resultMessages.map((m) => ({ role: m.role, content: m.content })) }, usage: { input_tokens: 0, output_tokens: 0 }, ephemeral: true, answer, terminal_state: answer.trim() ? 'completed' : 'no_response' })
@@ -798,7 +810,7 @@ export class TurnRunner {
         cache_hit_percent: cacheHit(cacheReadTokens, inputTokens), turn_cache_hit_percent: cacheHit(turnCacheRead, turnInput), duration_seconds: Math.round(duration * 1000) / 1000,
         context_length: s.context_length ?? 0, threshold_tokens: s.threshold_tokens ?? 0, last_prompt_tokens: s.last_prompt_tokens ?? 0,
       }
-      const doneSession = redactSessionData(this.terminalSessionPayload(s), deps.redactEnabled())
+      const doneSession = this.publicTerminalSession(s)
       // TAL-299: the ring's figures match the terminal session's (and a detail reload's).
       for (const key of CONTEXT_USAGE_FIELDS) doneUsage[key] = doneSession[key]
       if (usage.completion_tokens && duration > 0) doneUsage.tps = Math.round((usage.completion_tokens / duration) * 10) / 10
@@ -827,13 +839,12 @@ export class TurnRunner {
       const work = await Promise.allSettled([this.backgroundTitle(s, put), this.continueGoal(s, streamId, put)])
       put('stream_end', { session_id: sessionId })
       for (const r of work) if (r.status === 'rejected') throw r.reason
-      // Python: the last non-error assistant reply with content, else "(no answer produced)".
-      opts.onDone?.(lastAnswer(s.messages) || '(no answer produced)')
+      succeeded = true
+      opts.onDone?.(lastAnswer(s.messages))
     } catch (error) {
       if (settledAt.value && !(error instanceof SidecarError)) {
         deps.log(`[webui] ERROR settling turn ${streamId}\n${error instanceof Error ? (error.stack ?? error.message) : String(error)}`)
       }
-      failed = true
       if (this.registry.cancelled.has(streamId)) {
         this.finalizeCancelled(s, streamId, opts.ephemeral)
         put('cancel', this.cancelFrame(sessionId))
@@ -853,7 +864,7 @@ export class TurnRunner {
         if (current.active_stream_id === streamId) {
           for (const [event, data] of this.takeSteerEventsBefore(streamId, 'apperror')) put(event, data)
           this.persistError(current, streamId, classification.label, payload, activeTurnToken)
-          if (!opts.ephemeral) payload.session = redactSessionData(this.terminalSessionPayload(current), deps.redactEnabled())
+          if (!opts.ephemeral) payload.session = this.publicTerminalSession(current)
         }
       } catch (persistError) {
         deps.log(`[webui] WARNING: failed to persist turn error for ${sessionId}: ${(persistError as Error).message}`)
@@ -865,7 +876,7 @@ export class TurnRunner {
       this.teardown(sessionId, streamId)
       // After persistence and teardown: a background route's failure cleanup deletes the hidden session, which must
       // not race the error writeback above (a re-saved session would resurface in the sidebar).
-      if (failed) opts.onFailed?.()
+      if (!succeeded) opts.onFailed?.(failure)
       this.startSteerFollowUp(sessionId, followUp)
     }
   }
@@ -928,6 +939,11 @@ export class TurnRunner {
       } catch { /* skip unreadable */ } finally { closeSync(fd) }
     }
     return images ? [{ type: 'text', text: withFiles() }, ...parts] : withFiles()
+  }
+
+  /** The settled session as a terminal frame carries it: the display window, redacted. */
+  publicTerminalSession(s: Session): Record<string, unknown> {
+    return redactSessionData(this.terminalSessionPayload(s), this.deps.redactEnabled())
   }
 
   /**
@@ -1032,7 +1048,7 @@ export class TurnRunner {
    */
   private cancelFrame(sessionId: string | null): Record<string, unknown> {
     let snapshot: Record<string, unknown> | null = null
-    if (sessionId) try { snapshot = redactSessionData(this.terminalSessionPayload(this.deps.store.get(sessionId)), this.deps.redactEnabled()) } catch { snapshot = null }
+    if (sessionId) try { snapshot = this.publicTerminalSession(this.deps.store.get(sessionId)) } catch { snapshot = null }
     return { type: 'cancelled', status: 'cancelled', terminal_state: 'cancelled', ...(sessionId ? { session_id: sessionId } : {}), ...(snapshot ? { session: snapshot } : {}) }
   }
 
@@ -1669,7 +1685,8 @@ export class TurnRunner {
     const profileHome = this.deps.profileHome(s?.profile ?? null)
     let resolved = false
     let withdrawn = false
-    if (entry) {
+    if (entry?._injected === true) resolved = Boolean(this.deps.pending.resolveApproval(sessionId, str(entry.approval_id)).entry)
+    else if (entry) {
       if (!sidecar) return relayFailure('not running')
       try {
         const result = await sidecar.call('approval.respond', { profile_home: profileHome, session_id: sessionId, choice: choice as 'once' | 'session' | 'always' | 'deny', request_id: entry ? str(entry.request_id) || null : null })
@@ -1755,6 +1772,11 @@ export class TurnRunner {
     if (!entry) return { ok: false, stale: true }
     const response = typeof reply === 'string' ? reply : clarifyReply(entry, reply)
     if (response === null) return { ok: false, invalid: true }
+    // A test-hook prompt has no parked Agent waiter: it is answered here.
+    if (entry._injected === true) {
+      this.deps.pending.resolveClarify(sessionId, str(entry.clarify_id))
+      return { ok: true, response }
+    }
     const sidecar = this.deps.sidecar()
     if (!sidecar) return { ok: false, error: 'The Agent sidecar is not running; retry in a moment.' }
     let ok = false
