@@ -15,6 +15,9 @@ struct ChatCodeBlock: View {
     @AppStorage(ChatTranscriptDisplaySettings.wrapsCodeBlockLinesKey) private var wrapsCodeBlockLines = false
     @State private var copyConfirmation = CopyConfirmation()
     @State private var highlightedCode: NSAttributedString?
+    @State private var scrollViewportWidth: CGFloat = 0
+
+    private static let codeHorizontalPadding: CGFloat = 16
 
     private let logger = Logger.talariaMarkdownRendering
 
@@ -63,6 +66,7 @@ struct ChatCodeBlock: View {
                 ScrollView(.horizontal) {
                     styledCodeText(fixedHorizontal: true)
                 }
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { scrollViewportWidth = $0 }
             }
         }
         .background(codeBlockBackground)
@@ -110,15 +114,18 @@ struct ChatCodeBlock: View {
     /// The code body with its shared monospaced styling and padding. `fixedHorizontal`
     /// is `true` inside the horizontal `ScrollView` (each line keeps its natural width)
     /// and `false` when wrapping (lines reflow to the bubble width, growing vertically).
+    /// When scrolling, the body is at least as wide as the block, so a diff
+    /// line's tint reaches the block's edge even when every line is short.
     private func styledCodeText(fixedHorizontal: Bool) -> some View {
         codeText
+            .frame(minWidth: fixedHorizontal ? max(scrollViewportWidth - 2 * Self.codeHorizontalPadding, 0) : nil, alignment: .leading)
             .fixedSize(horizontal: fixedHorizontal, vertical: true)
             .relativeLineSpacing(.em(0.18))
             .markdownTextStyle {
                 FontFamilyVariant(.monospaced)
                 FontSize(.em(0.84))
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Self.codeHorizontalPadding)
             .padding(.top, 8)
             .padding(.bottom, 16)
     }

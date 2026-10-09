@@ -20,11 +20,13 @@ struct PlainCodeBlockText: View {
     }
 
     var body: some View {
+        let lines = self.lines
+        let kinds = colorsDiffLines
+            ? MarkdownDiffLineKind.kinds(forLines: lines.map { $0.segments.first?.text ?? "" })
+            : []
         VStack(alignment: .leading, spacing: 3) {
             ForEach(lines) { line in
-                let kind = colorsDiffLines
-                    ? MarkdownDiffLineKind(line: line.segments.first?.text ?? "")
-                    : .context
+                let kind = kinds.isEmpty ? .context : kinds[line.id]
                 Group {
                     if wraps {
                         combinedText(for: line)
@@ -88,5 +90,6 @@ private struct DiffLineStyle: ViewModifier {
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(label)
+            .accessibilityAddTraits(.isStaticText)
     }
 }

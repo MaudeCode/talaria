@@ -1124,7 +1124,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             index 83db48f..bf269f4 100644
             --- a/Fixture.swift
             +++ b/Fixture.swift
-            @@ -1,3 +1,3 @@ struct Fixture {
+            @@ -1,2 +1,3 @@ struct Fixture {
              let unchanged = true
             -let fixtureRemoved = 1
             +let fixtureAdded = 2
