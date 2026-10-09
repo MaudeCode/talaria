@@ -1,6 +1,6 @@
 import { oc } from '@orpc/contract'
 import { z } from 'zod'
-import { WorkspaceEntrySchema, WorkspacesSchema, DirListingSchema, FileContentSchema } from '../views.js'
+import { WorkspaceEntrySchema, WorkspacesSchema, DirListingSchema, FileContentSchema, FileEntrySchema } from '../views.js'
 
 const Json = z.unknown()
 const tags = ['workspaces']
@@ -9,6 +9,9 @@ const WorkspacesMutation = z.object({ ok: z.literal(true), workspaces: z.array(W
 
 const SessionPath = z.object({ session_id: z.string(), path: z.string() })
 const OkPath = z.object({ ok: z.literal(true), path: z.string() })
+/** TAL-263: `token` is the grant from `files.escapeAuthorize`; `path` is workspace-relative and must sit under the granted symlink. */
+const EscapeQuery = z.object({ session_id: z.string().optional(), token: z.string().optional(), path: z.string().optional() })
+const EscapeReadOnly = { escape_read_only: z.literal(true).describe('Opened through an escape grant; clients offer no edits.') }
 
 export const workspacesContract = {
   workspaces: {
@@ -31,5 +34,18 @@ export const workspacesContract = {
     reveal: oc.route({ method: 'POST', path: '/api/file/reveal', tags: ['files'] }).input(SessionPath).output(OkPath),
     path: oc.route({ method: 'POST', path: '/api/file/path', tags: ['files'], summary: 'Absolute on-disk path of a workspace-relative path; the file need not exist.' }).input(SessionPath).output(OkPath),
     openVsCode: oc.route({ method: 'POST', path: '/api/file/open-vscode', tags: ['files'] }).input(SessionPath).output(OkPath),
+    /**
+     * TAL-263: a 300-second, read-only grant for one workspace symlink whose target sits outside the workspace. A directory
+     * grant reaches the target's tree; a file grant reaches that file alone. Requires a same-origin `Origin` header; a
+     * supplied `token` is refused. Any later change to the link expires the grant (403).
+     */
+    escapeAuthorize: oc.route({ method: 'POST', path: '/api/escape/authorize', tags: ['files'] })
+      .input(z.object({ session_id: z.string().optional(), path: z.string().optional(), token: z.string().optional() }))
+      .output(z.object({ token: z.string(), path: z.string(), is_dir: z.boolean(), expires_at: z.number(), expires_in: z.number().int(), read_only: z.literal(true) })),
+    /** TAL-263: a granted directory listed under virtual workspace paths; nested links leaving the grant stay display-only. */
+    escapeList: oc.route({ method: 'GET', path: '/api/escape/list', tags: ['files'] }).input(EscapeQuery)
+      .output(DirListingSchema.extend({ path: z.string(), entries: z.array(FileEntrySchema.extend(EscapeReadOnly)), virtual_root: z.string(), read_only: z.literal(true) })),
+    /** TAL-263: a granted file's content and preview kind; an `html` preview's `preview_url` frames `/api/escape/file/raw`. */
+    escapeRead: oc.route({ method: 'GET', path: '/api/escape/file/read', tags: ['files'] }).input(EscapeQuery).output(FileContentSchema.extend(EscapeReadOnly)),
   },
 }

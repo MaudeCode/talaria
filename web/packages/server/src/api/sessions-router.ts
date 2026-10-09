@@ -25,6 +25,7 @@ import { randomUUID } from 'node:crypto'
 import { pyOsError, pyRepr, str } from '../util.js'
 import { ensureTrustedAuthSession, sessionCanManageServer } from '../auth/gate.js'
 import { RelayPairingError } from '../sessions/relay.js'
+import { EscapeGrantExpired, type EscapeRequest } from '../workspace/escape.js'
 
 const os = implement({ ...sessionsContract, ...workspacesContract }).$context<ApiContext>().use(requestSessionIdGuard)
 
@@ -728,8 +729,59 @@ export const sessionsRouter = os.router({
         throw fileError(error)
       }
     })),
+    escapeAuthorize: os.files.escapeAuthorize.handler(({ input, context: { ctx } }) => run(() => {
+      // A Referer alone is not a browser fetch: Python required `Origin`, which the global CSRF check has already matched.
+      if (!ctx.header('origin')) throw new HttpError(403, 'browser origin required')
+      const declared = Number(ctx.header('content-length') ?? '0')
+      if (declared > ESCAPE_AUTHORIZE_MAX_BODY_BYTES) throw new HttpError(400, `Request body too large (${String(declared)} bytes, max ${String(ESCAPE_AUTHORIZE_MAX_BODY_BYTES)})`)
+      if (input.token?.trim()) throw new HttpError(400, 'token must not be provided')
+      const sid = (input.session_id ?? '').trim()
+      const rel = (input.path ?? '').trim()
+      if (!sid) throw new HttpError(400, 'session_id is required')
+      if (!rel) throw new HttpError(400, 'path is required')
+      const s = fileOpsSession(ctx, sid)
+      try {
+        return ctx.deps.escapeGrants.authorize(s.workspace, sid, s.profile, rel)
+      } catch (error) {
+        throw fileError(error, 404)
+      }
+    })),
+    escapeList: os.files.escapeList.handler(({ input, context: { ctx } }) => run(() => {
+      const req = escapeRequest(ctx, input.session_id, input.token, input.path ?? '.')
+      try {
+        const listing = ctx.deps.escapeGrants.list(req)
+        return { ...listing, entries: serializeEntriesForBrowser(listing.entries) }
+      } catch (error) {
+        throw fileError(error, 404)
+      }
+    })),
+    escapeRead: os.files.escapeRead.handler(({ input, context: { ctx } }) => run(() => {
+      const req = escapeRequest(ctx, input.session_id, input.token, input.path ?? '')
+      try {
+        const file = ctx.deps.escapeGrants.read(req)
+        // The frame loads the bytes through the same grant; the workspace preview grant would outlive and skip its re-checks.
+        return file.preview === 'html' ? { ...file, preview_url: `api/escape/file/raw?${new URLSearchParams({ session_id: String(input.session_id), token: String(input.token), path: req.requestPath, inline: '1' }).toString()}` } : file
+      } catch (error) {
+        throw fileError(error, 404)
+      }
+    })),
   },
 })
+
+const ESCAPE_AUTHORIZE_MAX_BODY_BYTES = 4096
+
+/** The escape routes' shared front half: required ids, the session, and the grant re-check (403 when it fails). */
+export function escapeRequest(ctx: RequestContext, sid: string | undefined, token: string | undefined, rel: string): EscapeRequest {
+  if (!sid) throw new HttpError(400, 'session_id is required')
+  if (!token) throw new HttpError(400, 'token is required')
+  const s = fileOpsSession(ctx, sid)
+  try {
+    return ctx.deps.escapeGrants.resolve(s.workspace, sid, s.profile, token, rel)
+  } catch (error) {
+    if (error instanceof EscapeGrantExpired) throw new HttpError(403, error.message)
+    throw fileError(error, 404)
+  }
+}
 
 function isSymlinkAt(path: string): boolean {
   try { return lstatSync(path).isSymbolicLink() } catch { return false }
@@ -740,7 +792,7 @@ function assertWorkspaceFree(ctx: RequestContext, path: string): void {
   if (ctx.deps.git.workspaceBusy(path)) throw new HttpError(409, WORKSPACE_BUSY_MESSAGE)
 }
 
-function fileError(error: unknown, notFoundStatus = 400): Error {
+export function fileError(error: unknown, notFoundStatus = 400): Error {
   if (error instanceof HttpError) return error
   if (error instanceof HttpFailure) return new HttpError(error.status, error.message, error.extra)
   if (error instanceof NotFoundError || error instanceof PathTraversalError || error instanceof FileTooLargeError) return new HttpError(notFoundStatus, sanitizeError(error))

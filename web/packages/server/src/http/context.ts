@@ -24,6 +24,7 @@ import type { WorkspaceRegistry } from '../workspace/workspaces.js'
 import type { GitRunner } from '../workspace/git.js'
 import type { RollbackStore } from '../workspace/rollback.js'
 import type { UploadInbox } from '../workspace/upload.js'
+import type { EscapeGrants } from '../workspace/escape.js'
 import type { MediaAccessDeps, MediaPolicyDeps } from '../workspace/media.js'
 import type { WorktreeLocks } from '../workspace/worktrees.js'
 import type { Session } from '../sessions/session.js'
@@ -58,6 +59,11 @@ import type { GatewayWatcherRegistry } from '../sessions/gateway-watcher.js'
 import type { PasskeyStore } from '../auth/passkeys.js'
 import type { UpdateService } from '../tools/updates.js'
 import type { UpdateNotificationStore } from '../tools/update-notifications.js'
+
+/** A request target fit for logs: `token` query values (escape grants, media tokens) are masked. */
+export function loggedUrl(url: string | undefined): string {
+  return (url ?? '').replace(/([?&]token=)[^&#]*/gi, '$1***')
+}
 
 export interface AppDeps {
   config: ServerConfig
@@ -105,6 +111,8 @@ export interface AppDeps {
   git: GitRunner
   rollback: RollbackStore
   uploads: UploadInbox
+  /** Read-only grants for workspace symlinks that point outside the workspace (TAL-263). */
+  escapeGrants: EscapeGrants
   mediaPolicy: MediaPolicyDeps
   /** The `/api/media` allow-list, shared with the transcript media projection (TAL-186). */
   mediaAccess: MediaAccessDeps
@@ -372,7 +380,7 @@ export class RequestContext {
       ts: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),
       remote: this.peer || '-',
       method: this.method,
-      path: this.req.url ?? '-',
+      path: loggedUrl(this.req.url) || '-',
       status,
       ms: Math.round((Date.now() - this.startedAtMs) * 10) / 10,
     }

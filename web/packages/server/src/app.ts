@@ -20,7 +20,7 @@ import { toolsRouter } from './api/tools-router.js'
 import { automationRouter } from './api/automation-router.js'
 import { handleExtensionSidecarProxy, handleExtensionStatic, handleKanbanEventsStream, handleTerminalOutput, matchSidecarProxy } from './api/automation-raw.js'
 import { handleApprovalStream, handleChatStream, handleClarifyStream, handleGatewayStream, handleSessionEvents, handleSessionJournalStream, handleSessionStream, sessionEventsPathSessionId } from './api/sse-routes.js'
-import { BodyError, RequestContext, acceptsEncoding, type AppDeps, type HeaderMap } from './http/context.js'
+import { BodyError, RequestContext, acceptsEncoding, loggedUrl, type AppDeps, type HeaderMap } from './http/context.js'
 import { activeProfileName, checkAuth, checkCsrf, csrfError, getProfileCookie, isCsrfExemptPath, isPublicPath } from './auth/gate.js'
 import { guardQuerySessionId } from './api/session-visibility.js'
 import { checkSameOriginBrowserRequest } from './http/origin.js'
@@ -311,7 +311,7 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
             if (Object.keys(extra).length) options.context.ctx.extraResponseHeaders = extra
             throw error
           }
-          options.context.ctx.deps.log(`[webui] ERROR ${options.context.ctx.method} ${options.context.ctx.req.url ?? ''}\n${error instanceof Error ? (error.stack ?? error.message) : String(error)}`)
+          options.context.ctx.deps.log(`[webui] ERROR ${options.context.ctx.method} ${loggedUrl(options.context.ctx.req.url)}\n${error instanceof Error ? (error.stack ?? error.message) : String(error)}`)
           throw new ORPCError('INTERNAL_SERVER_ERROR', { message: 'Internal server error' })
         }
       },
@@ -439,7 +439,7 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
       notFound(ctx)
     } catch (error) {
       if (ctx.isFinished) return
-      deps.log(`[webui] ERROR ${ctx.method} ${req.url ?? ''}\n${error instanceof Error ? (error.stack ?? error.message) : String(error)}`)
+      deps.log(`[webui] ERROR ${ctx.method} ${loggedUrl(req.url)}\n${error instanceof Error ? (error.stack ?? error.message) : String(error)}`)
       try {
         ctx.json({ error: 'Internal server error' }, { status: 500 })
       } catch {

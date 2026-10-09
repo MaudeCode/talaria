@@ -27358,6 +27358,362 @@
         }
       }
     },
+    "/api/escape/authorize": {
+      "post": {
+        "operationId": "files.escapeAuthorize",
+        "tags": [
+          "files"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "session_id": {
+                    "type": "string"
+                  },
+                  "path": {
+                    "type": "string"
+                  },
+                  "token": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "token": {
+                      "type": "string"
+                    },
+                    "path": {
+                      "type": "string"
+                    },
+                    "is_dir": {
+                      "type": "boolean"
+                    },
+                    "expires_at": {
+                      "type": "number"
+                    },
+                    "expires_in": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "read_only": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "token",
+                    "path",
+                    "is_dir",
+                    "expires_at",
+                    "expires_in",
+                    "read_only"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/escape/list": {
+      "get": {
+        "operationId": "files.escapeList",
+        "tags": [
+          "files"
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "token",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "entries": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "path": {
+                            "type": "string"
+                          },
+                          "is_dir": {
+                            "type": "boolean"
+                          },
+                          "type": {
+                            "type": "string"
+                          },
+                          "size": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "mtime": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "mtime_ns": {
+                            "anyOf": [
+                              {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "birthtime_ns": {
+                            "anyOf": [
+                              {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "hidden": {
+                            "type": "boolean"
+                          },
+                          "workspace_sort_rank": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "target": {
+                            "type": "string"
+                          },
+                          "target_outside_workspace": {
+                            "type": "boolean"
+                          },
+                          "escape_read_only": {
+                            "const": true,
+                            "description": "Opened through an escape grant; clients offer no edits."
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "escape_read_only"
+                        ],
+                        "additionalProperties": {}
+                      }
+                    },
+                    "signature": {
+                      "type": "string"
+                    },
+                    "workspace": {
+                      "type": "string"
+                    },
+                    "workspace_recovered": {
+                      "type": "boolean"
+                    },
+                    "is_git": {
+                      "type": "boolean"
+                    },
+                    "virtual_root": {
+                      "type": "string"
+                    },
+                    "read_only": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "entries",
+                    "virtual_root",
+                    "read_only"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/escape/file/read": {
+      "get": {
+        "operationId": "files.escapeRead",
+        "tags": [
+          "files"
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "token",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "content": {
+                      "type": "string"
+                    },
+                    "lines": {
+                      "type": "number"
+                    },
+                    "size": {
+                      "type": "number"
+                    },
+                    "truncated": {
+                      "type": "boolean"
+                    },
+                    "binary": {
+                      "type": "boolean"
+                    },
+                    "mime": {
+                      "type": "string"
+                    },
+                    "preview": {
+                      "enum": [
+                        "text",
+                        "markdown",
+                        "csv",
+                        "html",
+                        "image",
+                        "pdf",
+                        "audio",
+                        "video",
+                        "binary"
+                      ],
+                      "type": "string"
+                    },
+                    "table": {
+                      "type": "array",
+                      "items": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "table_truncated": {
+                      "type": "boolean"
+                    },
+                    "preview_url": {
+                      "type": "string"
+                    },
+                    "escape_read_only": {
+                      "const": true,
+                      "description": "Opened through an escape grant; clients offer no edits."
+                    }
+                  },
+                  "required": [
+                    "escape_read_only"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/git-info": {
       "get": {
         "operationId": "gitInfo",
@@ -55350,6 +55706,93 @@
           },
           "404": {
             "description": "Path outside the workspace or missing.",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "416": {
+            "description": "Range not satisfiable."
+          }
+        }
+      }
+    },
+    "/api/escape/file/raw": {
+      "get": {
+        "summary": "Raw bytes of a file reached through an escape grant (TAL-263), served like `/api/file/raw` and anchored at the grant root.",
+        "tags": [
+          "files"
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "query",
+            "required": true,
+            "description": "Session the grant was minted for.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "token",
+            "in": "query",
+            "required": true,
+            "description": "Grant from `/api/escape/authorize`.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "description": "Workspace-relative path under the granted symlink.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "download",
+            "in": "query",
+            "required": false,
+            "description": "`1` forces an attachment disposition.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "inline",
+            "in": "query",
+            "required": false,
+            "description": "`1` serves HTML inline under a CSP sandbox.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "File bytes with byte-range support, `Cache-Control: no-store`.",
+            "content": {
+              "application/octet-stream": {}
+            }
+          },
+          "206": {
+            "description": "Partial content for a satisfiable Range header."
+          },
+          "400": {
+            "description": "Missing session_id or token.",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "403": {
+            "description": "The grant expired, belongs to another session, or its symlink changed.",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "404": {
+            "description": "Path outside the granted symlink or missing.",
             "content": {
               "application/json": {}
             }

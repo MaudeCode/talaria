@@ -8,7 +8,7 @@ import { Readable } from 'node:stream'
 import { basename, join, relative } from 'node:path'
 import type { RequestContext } from '../http/context.js'
 import { HttpError } from './router.js'
-import { fileOpsSession } from './sessions-router.js'
+import { escapeRequest, fileError, fileOpsSession } from './sessions-router.js'
 import { HttpFailure } from '../sessions/service.js'
 import { SessionNotFound } from '../sessions/store.js'
 import { FileExistsError, makeAnchoredDir, openAnchoredCreateFd, openAnchoredFd, rmtreeAnchored, safeResolve, safeResolveWs, unlinkAnchored } from '../workspace/fs.js'
@@ -37,6 +37,7 @@ export const RAW_GET_ROUTES: Record<string, RawHandler> = {
   '/api/auth/oidc/start': handleOidcStart,
   '/api/auth/oidc/callback': handleOidcCallback,
   '/api/file/raw': handleFileRaw,
+  '/api/escape/file/raw': handleEscapeFileRaw,
   '/api/media': handleMedia,
   '/api/folder/download': handleFolderDownload,
   '/api/session/export': handleSessionExport,
@@ -131,13 +132,33 @@ function handleFileRaw(ctx: RequestContext): void {
   const s = fileOpsSession(ctx, sid)
   const rel = ctx.query.get('path') ?? ''
   if (rel.includes('\0')) throw new HttpError(400, 'invalid path')
-  const forceDownload = ctx.query.get('download') === '1'
   const resolved = fileRawTarget(ctx, s.workspace, sid, rel)
   if (!resolved) {
     ctx.json({ error: 'not found' }, { status: 404 })
     return
   }
-  const [anchorRoot, target] = resolved
+  serveRawFile(ctx, resolved[0], resolved[1])
+}
+
+/** Python `_handle_escape_file_raw`: `/api/file/raw` for a path under an escape grant, anchored at the grant root. */
+function handleEscapeFileRaw(ctx: RequestContext): void {
+  const req = escapeRequest(ctx, ctx.query.get('session_id') ?? '', ctx.query.get('token') ?? '', ctx.query.get('path') ?? '')
+  let target: string
+  try {
+    target = ctx.deps.escapeGrants.rawTarget(req)
+  } catch (error) {
+    throw fileError(error, 404)
+  }
+  if (!existsSync(target) || !statSync(target).isFile()) {
+    ctx.json({ error: 'not found' }, { status: 404 })
+    return
+  }
+  serveRawFile(ctx, req.externalRoot, target)
+}
+
+/** The `/api/file/raw` response: MIME, attachment for dangerous types unless an inline HTML preview, sandbox CSP, no-store. */
+function serveRawFile(ctx: RequestContext, anchorRoot: string, target: string): void {
+  const forceDownload = ctx.query.get('download') === '1'
   const mime = mimeFor(target)
   const inlinePreview = ctx.query.get('inline') === '1'
   const htmlInlineOk = inlinePreview && mime === 'text/html'
