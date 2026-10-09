@@ -27,6 +27,9 @@ struct StatusChip: View {
     var accessibilityLabel: String?
     let icon: Icon
     var emphasis: Emphasis = .standard
+    /// When set, the time since then follows the label ("· 1:23"). The system advances it, so
+    /// the chip does not redraw each second.
+    var elapsedSince: Date?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -37,7 +40,7 @@ struct StatusChip: View {
                 .foregroundStyle(emphasis == .warning ? AnyShapeStyle(.orange) : textStyle)
                 .accessibilityHidden(true)
 
-            Text(label)
+            caption
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(textStyle)
                 .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
@@ -47,6 +50,13 @@ struct StatusChip: View {
         .fixedSize(horizontal: false, vertical: true)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel ?? label)
+    }
+
+    private var caption: Text {
+        guard let elapsedSince else { return Text(label) }
+        return Text(label)
+            + Text(verbatim: " · ")
+            + Text(timerInterval: elapsedSince...Date.distantFuture, countsDown: false).monospacedDigit()
     }
 
     @ViewBuilder

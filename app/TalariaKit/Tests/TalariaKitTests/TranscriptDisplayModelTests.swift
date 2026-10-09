@@ -774,6 +774,61 @@ final class ChatActiveRunStatusPolicyTests: XCTestCase {
             XCTAssertTrue(ChatActiveRunStatusPresentation(kind: kind).reservesTranscriptSpace, "\(kind)")
         }
     }
+
+    // TAL-446: the run pill times the run while it works, checks or reconnects.
+    func testOnlyRunProgressKindsShowTheElapsedTime() {
+        let start = Date(timeIntervalSince1970: 1_000)
+        let timed: [ChatActiveRunStatusKind] = [.active, .checking, .reconnecting]
+        let untimed: [ChatActiveRunStatusKind] = [.starting, .background, .waitingForNetwork, .stopping, .syncing]
+        for kind in timed {
+            XCTAssertEqual(ChatActiveRunStatusPresentation(kind: kind, runStartedAt: start).runStartedAt, start, "\(kind)")
+        }
+        for kind in untimed {
+            XCTAssertNil(ChatActiveRunStatusPresentation(kind: kind, runStartedAt: start).runStartedAt, "\(kind)")
+        }
+        let unknownStart = ChatActiveRunStatusPresentation(kind: .active)
+        XCTAssertNil(unknownStart.runStartedAt)
+        XCTAssertNil(unknownStart.accessibilityElapsedTime(now: start))
+    }
+
+    func testPolicyTimesTheWorkingAndRecoveryPillsFromTheRunStart() {
+        let start = Date(timeIntervalSince1970: 1_000)
+        func presentation(
+            isStartingChat: Bool = false,
+            recovery: ActiveStreamRecoveryState = .idle,
+            isCancellingStream: Bool = false
+        ) -> ChatActiveRunStatusPresentation? {
+            ChatActiveRunStatusPolicy.presentation(
+                isStartingChat: isStartingChat,
+                hasActiveStream: true,
+                activeStreamRecoveryState: recovery,
+                isCancellingStream: isCancellingStream,
+                activeRunStartedAt: start,
+                isScrolledNearBottom: false
+            )
+        }
+
+        XCTAssertEqual(presentation()?.runStartedAt, start)
+        XCTAssertEqual(presentation(recovery: .checking)?.runStartedAt, start)
+        XCTAssertEqual(presentation(recovery: .reconnecting)?.runStartedAt, start)
+        XCTAssertNil(presentation(recovery: .waitingForNetwork)?.runStartedAt)
+        XCTAssertNil(presentation(isCancellingStream: true)?.runStartedAt)
+    }
+
+    func testVoiceOverReadsHowLongTheRunHasGoneOn() {
+        let start = Date(timeIntervalSince1970: 1_000)
+        let presentation = ChatActiveRunStatusPresentation(kind: .active, runStartedAt: start)
+        let locale = Locale(identifier: "en_US")
+        func elapsed(_ seconds: TimeInterval) -> String? {
+            presentation.accessibilityElapsedTime(now: start.addingTimeInterval(seconds), locale: locale)
+        }
+
+        XCTAssertEqual(elapsed(45.6), "running for 45 seconds")
+        XCTAssertEqual(elapsed(83), "running for 1 minute, 23 seconds")
+        XCTAssertEqual(elapsed(120), "running for 2 minutes")
+        XCTAssertEqual(elapsed(3_723), "running for 1 hour, 2 minutes, 3 seconds")
+        XCTAssertEqual(elapsed(-5), "running for 0 seconds", "A clock behind the run start reads as just started")
+    }
 }
 
 final class AssistantTurnTimestampFormatterTests: XCTestCase {
