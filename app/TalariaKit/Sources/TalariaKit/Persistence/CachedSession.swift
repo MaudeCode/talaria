@@ -51,6 +51,10 @@ public final class CachedSession {
     /// The row's place in the server's latest list, so a cached paint keeps the server's order
     /// (TAL-437). Optional so the unversioned store opens without a migration.
     var listPosition: Int?
+    /// The detail's `branched_from` (TAL-454), which list rows never carry, so `apply` leaves it alone.
+    /// Optional so the unversioned store opens without a migration.
+    var branchedFromSessionID: String?
+    var branchedFromTitle: String?
     var cachedAt: Date
     var expiresAt: Date
 

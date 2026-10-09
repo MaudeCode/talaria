@@ -5,6 +5,7 @@ import TalariaKit
 struct ChatTranscriptView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.openURL) private var openURL
     @State private var scrollPositionController = ChatScrollPositionController()
     /// Owns the transcript's message long press: one handler for every row,
     /// which is what lets a press be resolved against link geometry first.
@@ -15,6 +16,7 @@ struct ChatTranscriptView: View {
     let messages: [ChatMessage]
     let displayedTranscriptMessages: [TranscriptMessage]
     let compressionReferenceCard: CompressionReferenceCard?
+    let branchedFrom: SessionBranchLink?
     let reasoningGroups: [ReasoningGroup]
     let completedToolCallGroupsForAnchor: (String?) -> [ToolCallGroup]
     let archivedActivityRowsForAnchor: (String?) -> [AssistantActivityRow]
@@ -283,6 +285,10 @@ struct ChatTranscriptView: View {
         contentWidth: CGFloat
     ) -> some View {
         VStack(spacing: transcriptMessageSpacing) {
+            if let branchedFrom {
+                branchedFromButton(branchedFrom)
+            }
+
             olderMessagesButton(proxy: proxy)
 
             if let compressionReferenceCard, compressionReferenceCard.afterRenderID == nil {
@@ -398,6 +404,25 @@ struct ChatTranscriptView: View {
             id: "compression-reference",
             proxy: proxy
         )
+    }
+
+    /// Opens the chat this one was branched from through the session deep link (TAL-454), so an offline tap
+    /// opens it from the cached chat list when it is there.
+    private func branchedFromButton(_ link: SessionBranchLink) -> some View {
+        let label = String(localized: "Branched from \(link.title)")
+        return Button {
+            if let url = TalariaDeepLink.sessionURL(sessionID: link.sessionId) { openURL(url) }
+        } label: {
+            Label(label, systemImage: "arrow.triangle.branch")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+        }
+        .buttonStyle(.chatTactile(.capsule))
+        .frame(maxWidth: .infinity)
+        .accessibilityLabel(label)
     }
 
     private var transcriptHorizontalPadding: CGFloat {

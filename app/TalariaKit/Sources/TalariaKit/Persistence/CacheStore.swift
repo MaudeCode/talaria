@@ -131,6 +131,39 @@ public enum CacheStore {
         try context.save()
     }
 
+    /// Records a cached session's `branched_from` from its detail (TAL-454); a session not cached yet has no row to hold it.
+    @MainActor
+    public static func cacheBranchedFrom(
+        _ link: SessionBranchLink?,
+        serverURL: URL,
+        sessionID: String,
+        in context: ModelContext
+    ) throws {
+        let cacheKey = CachedSession.cacheKey(serverURLString: serverURL.absoluteString, sessionID: sessionID)
+        guard let cachedSession = try cachedSession(cacheKey: cacheKey, in: context),
+              cachedSession.branchedFromSessionID != link?.sessionId || cachedSession.branchedFromTitle != link?.title
+        else { return }
+        cachedSession.branchedFromSessionID = link?.sessionId
+        cachedSession.branchedFromTitle = link?.title
+        try context.save()
+    }
+
+    @MainActor
+    public static func cachedBranchedFrom(
+        serverURL: URL,
+        sessionID: String,
+        in context: ModelContext,
+        now: Date = Date()
+    ) throws -> SessionBranchLink? {
+        let cacheKey = CachedSession.cacheKey(serverURLString: serverURL.absoluteString, sessionID: sessionID)
+        guard let cachedSession = try cachedSession(cacheKey: cacheKey, in: context),
+              cachedSession.expiresAt > now,
+              let sessionID = cachedSession.branchedFromSessionID,
+              let title = cachedSession.branchedFromTitle
+        else { return nil }
+        return SessionBranchLink(sessionId: sessionID, title: title)
+    }
+
     @MainActor
     public static func cacheMessages(
         _ messages: [ChatMessage],

@@ -317,6 +317,22 @@ final class CacheStoreTests: XCTestCase {
         XCTAssertEqual(forkedSession.cachedAt, secondCachedAt)
     }
 
+    /// TAL-454: the detail's link survives list refreshes, which never carry it, and a later detail clears it.
+    func testBranchedFromRoundTripsThroughTheCacheAcrossListRefreshes() throws {
+        let context = try makeContext()
+        let serverURL = URL(string: "https://example.test")!
+        let rows = try XCTUnwrap(try decodeSessions(#"{"sessions": [{"session_id": "branch", "title": "Plan (fork)"}]}"#).sessions)
+        try CacheStore.cacheSessions(rows, serverURL: serverURL, in: context)
+        let link = SessionBranchLink(sessionId: "parent", title: "Plan")
+
+        try CacheStore.cacheBranchedFrom(link, serverURL: serverURL, sessionID: "branch", in: context)
+        try CacheStore.cacheSessions(rows, serverURL: serverURL, in: context)
+        XCTAssertEqual(try CacheStore.cachedBranchedFrom(serverURL: serverURL, sessionID: "branch", in: context), link)
+
+        try CacheStore.cacheBranchedFrom(nil, serverURL: serverURL, sessionID: "branch", in: context)
+        XCTAssertNil(try CacheStore.cachedBranchedFrom(serverURL: serverURL, sessionID: "branch", in: context))
+    }
+
     func testCachedSessionsReturnsOnlyUnexpiredVisibleSessionsForServer() throws {
         let context = try makeContext()
         let serverURL = URL(string: "https://example.test")!
