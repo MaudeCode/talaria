@@ -1,6 +1,7 @@
 import { oc } from '@orpc/contract'
 import { z } from 'zod'
 import { SkillsSchema, SkillContentSchema, SkillsUsageSchema, MemorySchema, PromptSchema, PromptsSchema, CommandsSchema, LogsSchema, InsightsSchema, AgentHealthSchema, SystemHealthSchema, McpServerSchema, McpServersSchema, McpToolsSchema, PluginsSchema, UpdatesCheckSchema, UpdatesSummarySchema, UpdateApplySchema, UpdateNotificationsSchema, UpdateNotificationSchema, TabIdSchema, FrontendBuildIdSchema, NotesSourcesSchema, NotesSearchSchema, NoteItemSchema, WikiStatusSchema, WikiBrowseSchema, WikiPageSchema, DashboardStatusSchema, TranscribeCapabilitySchema } from '../views.js'
+import { CommandBundleInvocationSchema, CommandBundleSchema } from '../sidecar/namespaces.js'
 
 /** Skills, memory, prompts, commands, notes, insights, logs, health, MCP, plugins, updates, and diagnostics. */
 
@@ -34,6 +35,9 @@ export const toolsContract = {
   commands: {
     list: oc.route({ method: 'GET', path: '/api/commands', tags }).output(CommandsSchema),
     exec: oc.route({ method: 'POST', path: '/api/commands/exec', tags }).input(z.object({ command: z.string().optional(), session_id: z.string().optional() })).output(z.object({ output: z.string() })),
+    bundles: oc.route({ method: 'GET', path: '/api/commands/bundles', tags, summary: "The active profile's skill bundles; empty when the Agent is unavailable." }).output(z.object({ bundles: z.array(CommandBundleSchema) })),
+    resolveBundle: oc.route({ method: 'POST', path: '/api/commands/bundles/resolve', tags, summary: 'Expands `/<bundle> [instruction]` into the user message that loads its skills. 404 for an unknown bundle.' }).input(z.object({ command: z.string().optional() })).output(CommandBundleInvocationSchema),
+    resolveMoa: oc.route({ method: 'GET', path: '/api/commands/moa/resolve', tags, summary: "The active profile's normalized MoA config merged with its default preset. 503 when the Agent has no MoA." }).output(z.looseObject({ preset: z.string(), usage: z.string() })),
   },
   notes: {
     sources: oc.route({ method: 'GET', path: '/api/notes/sources', tags }).output(NotesSourcesSchema),

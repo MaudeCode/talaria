@@ -689,6 +689,82 @@
     ],
     "additionalProperties": false
   },
+  "commands.bundles": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "bundles": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "skill_count": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "source": {
+              "type": "string",
+              "const": "bundle"
+            }
+          },
+          "required": [
+            "name",
+            "description",
+            "skill_count",
+            "source"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": [
+      "bundles"
+    ],
+    "additionalProperties": false
+  },
+  "commands.bundle_resolve": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string"
+      },
+      "source": {
+        "type": "string",
+        "const": "bundle"
+      },
+      "message": {
+        "type": "string"
+      },
+      "loaded_skills": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "missing_skills": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "required": [
+      "name",
+      "source",
+      "message",
+      "loaded_skills",
+      "missing_skills"
+    ],
+    "additionalProperties": false
+  },
   "commands.moa_preset": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

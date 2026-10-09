@@ -43,9 +43,15 @@ export const CommandSchema = z.object({
  * provider id or directory name is taken by another profile's plugin in this process-wide registry).
  */
 export const PluginProviderSchema = z.object({ name: z.string(), display_name: z.string(), auth_type: z.string(), setup: z.enum(['ready', 'missing_cli', 'needs_setup', 'not_loaded', 'unavailable']) })
+/** A skill bundle: `/<name>` loads its `skill_count` skills in one message (TAL-265). */
+export const CommandBundleSchema = z.object({ name: z.string(), description: z.string(), skill_count: z.number().int(), source: z.literal('bundle') })
+/** `message` is the user message that loads the bundle's skills; members not installed or disabled are in `missing_skills` or left out. */
+export const CommandBundleInvocationSchema = z.object({ name: z.string(), source: z.literal('bundle'), message: z.string(), loaded_skills: z.array(z.string()), missing_skills: z.array(z.string()) })
 export const COMMANDS_METHODS = {
   'commands.registry': { params: ProfileHomeParams, result: z.object({ commands: z.array(CommandSchema) }) },
   'commands.exec': { params: ProfileHomeParams.extend({ command: z.string().min(1) }), result: z.object({ output: z.string(), source: z.enum(['agent', 'plugin']) }) },
+  'commands.bundles': { params: ProfileHomeParams, result: z.object({ bundles: z.array(CommandBundleSchema) }) },
+  'commands.bundle_resolve': { params: ProfileHomeParams.extend({ command: z.string().min(1) }), result: CommandBundleInvocationSchema },
   'commands.moa_preset': { params: ProfileHomeParams.extend({ preset: z.string().nullable().optional() }), result: z.object({ moa: Loose }) },
   'plugins.providers': { params: ProfileHomeParams, result: z.object({ providers: z.array(PluginProviderSchema) }) },
   'plugins.list': { params: ProfileHomeParams.extend({ selected_providers: z.record(z.string(), z.string()).optional() }), result: z.object({ plugins: z.array(z.object({ name: z.string(), key: z.string(), version: z.string(), description: z.string(), enabled: z.boolean(), kind: z.string(), activation: z.string(), hooks: z.array(z.string()), is_active_provider: z.boolean().optional() })), supported_hooks: z.array(z.string()) }) },

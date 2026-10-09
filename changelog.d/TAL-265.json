@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "The Web server again lists the active profile's skill bundles, expands a bundle command into the message that loads its skills, and returns the resolved Mixture of Agents preset.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

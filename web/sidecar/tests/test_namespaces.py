@@ -46,6 +46,9 @@ def run_scenarios(proc: SidecarProcess, home: pathlib.Path):
         params = fill(raw_params)
         if method == "state_db.delete_cli_session" and params["session_id"] == "cli-1":
             _seed_state_db(home)
+        if method == "commands.bundles":
+            (profile / "skill-bundles").mkdir(exist_ok=True)
+            (profile / "skill-bundles" / "media-kit.yaml").write_text("name: media-kit\ndescription: Find media\nskills: [gif-search, not-installed]\n", encoding="utf-8")
         message, frames = proc.call(method, params, timeout=180)
         yield method, params, message, frames
         result = message.get("result") or {}

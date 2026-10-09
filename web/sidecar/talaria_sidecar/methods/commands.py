@@ -26,6 +26,7 @@ _ALLOWED = frozenset(_RUNTIME_COMMANDS)
 _RELOAD_MCP_LOCK = threading.Lock()
 _RELOAD_SKILLS_LOCK = threading.Lock()
 _CODEX_RUNTIME_LOCK = threading.Lock()
+_BUNDLES_LOCK = threading.Lock()
 
 
 def parse_slash_command(command: str) -> tuple[str, str]:
@@ -244,6 +245,52 @@ def execute_plugin_command(command: str) -> str | None:
         return f"Plugin command error: {type(exc).__name__}"
 
 
+def list_command_bundles() -> list[dict[str, Any]]:
+    """The profile's skill bundles as slash-command rows; [] when the bundle runtime is missing or fails."""
+    try:
+        from agent.skill_bundles import scan_bundles
+    except ImportError:
+        return []
+    try:
+        # The Agent caches one profile's bundles process-wide; rescan under the lock so a call never reads another profile's.
+        with _BUNDLES_LOCK:
+            bundles = sorted(scan_bundles().values(), key=lambda b: b["slug"])
+    except Exception:  # noqa: BLE001
+        log.warning("Failed to list skill bundles", exc_info=True)
+        return []
+    return [{"name": str(b["slug"]).strip().lower(), "description": str(b.get("description") or "").strip() or "Skill bundle",
+             "skill_count": len(b.get("skills") or []), "source": "bundle"} for b in bundles if str(b.get("slug") or "").strip()]
+
+
+def resolve_bundle_command(command: str) -> dict[str, Any]:
+    """Expand ``/<bundle> [instruction]`` into the user message that loads the bundle's skills."""
+    name, instruction = parse_slash_command(command)
+    try:
+        from agent.skill_bundles import build_bundle_invocation_message, resolve_bundle_command_key, scan_bundles
+    except ImportError as exc:
+        raise RpcError("Skill bundle runtime unavailable", condition="bundle_unavailable") from exc
+    try:
+        with _BUNDLES_LOCK:
+            scan_bundles()
+            key = resolve_bundle_command_key(name)
+            result = build_bundle_invocation_message(key, instruction) if key else None
+    except KeyError:
+        key = None
+    except ValueError as exc:
+        raise InvalidParams(str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Failed to resolve skill bundle command", exc_info=True)
+        raise RpcError("Skill bundle command unavailable", condition="bundle_unavailable") from exc
+    if key is None:
+        raise RpcError("Bundle command not found", condition="bundle_not_found")
+    message, loaded, missing = result or ("", [], [])
+    message = str(message or "").strip()
+    if not message:
+        raise RpcError("Bundle command returned no invocation text", condition="bundle_unavailable")
+    return {"name": key.lstrip("/"), "source": "bundle", "message": message, "loaded_skills": [str(s) for s in loaded or []],
+            "missing_skills": [str(s) for s in missing or []]}
+
+
 def resolve_moa_config(preset: str | None) -> dict:
     try:
         from hermes_cli.moa_config import moa_usage, normalize_moa_config
@@ -351,6 +398,16 @@ def register(registry) -> None:
         if output is None:
             raise RpcError(f"unknown command {parse_slash_command(command)[0]!r}", condition="command_not_found")
         return {"output": output, "source": source}
+
+    @registry.method("commands.bundles")
+    def bundles(ctx: CallContext, params: dict) -> dict:
+        with scoped_home(profile_home_param(params)):
+            return {"bundles": list_command_bundles()}
+
+    @registry.method("commands.bundle_resolve")
+    def bundle_resolve(ctx: CallContext, params: dict) -> dict:
+        with scoped_home(profile_home_param(params)):
+            return resolve_bundle_command(str(params.get("command") or ""))
 
     @registry.method("commands.moa_preset")
     def moa(ctx: CallContext, params: dict) -> dict:

@@ -96,7 +96,7 @@ under Hermes Agent's context-local home override (`talaria_sidecar/home.py`).
 | `rpc` | `cancel`, `methods` | |
 | `runtime` | `handshake`, `status`, `ensure_current`, `shutdown` | |
 | `goals` | `get`, `command`, `snapshot`, `restore`, `evaluate` | |
-| `commands` | `registry`, `exec`, `moa_preset` | |
+| `commands` | `registry`, `exec`, `bundles`, `bundle_resolve`, `moa_preset` | |
 | `plugins` | `providers`, `list` | |
 | `kanban` | `board`, `boards`, `create_board`, `update_board`, `delete_board`, `switch_board`, `task`, `create_task`, `patch_task`, `task_action`, `comment`, `link`, `unlink`, `events`, `config`, `stats`, `assignees`, `task_log`, `bulk`, `dispatch` | |
 | `state_db` | `sync_start`, `sync_usage`, `sync_title`, `delete_cli_session`, `append_message` | |

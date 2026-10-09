@@ -175,6 +175,60 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     expect(res.status).toBe(404)
   })
 
+  it('command bundles list and resolve through the active profile with the old statuses (TAL-265)', async () => {
+    let res = await s.get('/api/commands/bundles')
+    expect(res.status).toBe(200)
+    expect(await json(res)).toEqual({ bundles: [{ name: 'media-kit', description: 'Find media', skill_count: 2, source: 'bundle' }] })
+    expect(sidecar.calls.at(-1)).toEqual({ method: 'commands.bundles', params: { profile_home: s.deps.profileHome('default') } })
+    res = await post(s, '/api/commands/bundles/resolve', { command: '/media-kit find a cat' })
+    expect(res.status).toBe(200)
+    expect(await json(res)).toMatchObject({ name: 'media-kit', source: 'bundle', loaded_skills: ['gif-search'], missing_skills: ['not-installed'] })
+    expect(sidecar.calls.at(-1)).toEqual({ method: 'commands.bundle_resolve', params: { profile_home: s.deps.profileHome('default'), command: '/media-kit find a cat' } })
+    res = await post(s, '/api/commands/bundles/resolve', { command: '  ' })
+    expect(res.status).toBe(400)
+    const { SidecarError } = await import('../sidecar/client.js')
+    for (const [error, status, message] of [
+      [new SidecarError('Bundle command not found', { condition: 'bundle_not_found' }), 404, 'Bundle command not found'],
+      [new SidecarError('bad bundle name', { condition: 'invalid_params', code: -32602 }), 400, 'bad bundle name'],
+      [new SidecarError('Skill bundle command unavailable', { condition: 'bundle_unavailable' }), 500, 'Skill bundle command unavailable'],
+    ] as const) {
+      sidecar.respond('commands.bundle_resolve', () => { throw error })
+      res = await post(s, '/api/commands/bundles/resolve', { command: '/x' })
+      expect(res.status).toBe(status)
+      expect((await json(res)).error).toBe(message)
+    }
+    sidecar.respond('commands.bundle_resolve', undefined)
+    sidecar.respond('commands.bundles', () => { throw new SidecarError('boom', { condition: 'sidecar_error' }) })
+    expect(await json(await s.get('/api/commands/bundles'))).toEqual({ bundles: [] })
+    sidecar.respond('commands.bundles', undefined)
+    sidecar.status = 'stopped'
+    try {
+      expect(await json(await s.get('/api/commands/bundles'))).toEqual({ bundles: [] })
+      expect((await post(s, '/api/commands/bundles/resolve', { command: '/media-kit' })).status).toBe(503)
+    } finally {
+      sidecar.status = 'ready'
+    }
+  })
+
+  it('MoA resolve returns the profile config merged with its preset, 503 without MoA (TAL-265)', async () => {
+    let res = await s.get('/api/commands/moa/resolve')
+    expect(res.status).toBe(200)
+    const body = await json(res)
+    expect(body).toMatchObject({ default_preset: 'default', preset: 'default' })
+    expect(typeof body.usage).toBe('string')
+    expect(Array.isArray(body.reference_models)).toBe(true)
+    expect(sidecar.calls.at(-1)).toEqual({ method: 'commands.moa_preset', params: { profile_home: s.deps.profileHome('default') } })
+    const { SidecarError } = await import('../sidecar/client.js')
+    sidecar.respond('commands.moa_preset', () => { throw new SidecarError('MoA runtime unavailable (hermes-agent not installed or too old)', { condition: 'moa_unavailable' }) })
+    try {
+      res = await s.get('/api/commands/moa/resolve')
+      expect(res.status).toBe(503)
+      expect((await json(res)).error).toBe('MoA runtime unavailable (hermes-agent not installed or too old)')
+    } finally {
+      sidecar.respond('commands.moa_preset', undefined)
+    }
+  })
+
   it('commands list merges the client-command table ahead of the Agent registry (TAL-314)', async () => {
     const row = (name: string, extra: Json = {}) => ({ name, description: `agent ${name}`, category: 'Session', aliases: [], args_hint: '', subcommands: [], cli_only: false, gateway_only: false, exec: false, ...extra })
     sidecar.respond('commands.registry', () => ({
