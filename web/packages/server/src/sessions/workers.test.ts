@@ -642,6 +642,20 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
     rmSync(path)
   })
 
+  it('never revives a session deleted during the pool lookup', async () => {
+    const sid = await pausedSession()
+    const session = s.deps.sessionStore.get(sid)
+    session.model_provider = 'openrouter'
+    session.process_wakeup_pause = { ...(session.process_wakeup_pause as Json), provider: 'openrouter' }
+    s.deps.sessionStore.save(session)
+    sidecar.respond('usage.pool', () => { s.deps.sessionStore.deleteFiles(sid); return { entries: [{ credential_id: 'k', label: 'k', status: 'available' as const, unavailable_reason: null, retry_after: null, matches_api_key: false }] } })
+    await complete(sid, `${sid}_2`)
+    sidecar.respond('usage.pool', () => { throw new Error('unset') })
+    expect(starts).toHaveLength(1)
+    expect(existsSync(s.deps.sessionStore.pathFor(sid)), 'the deleted session stays deleted').toBe(false)
+    expect(heldIndex()).not.toContain(sid)
+  })
+
   it('drops the held wakeups of a deleted session', async () => {
     const sid = await pausedSession()
     await complete(sid, `${sid}_2`)
@@ -652,10 +666,10 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
   })
 
   it('rechecks the pool at its retry deadline and delivers the held wakeups', async () => {
+    // The session names no provider (the config's implicit one), so every pool is checked.
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
-    const session = s.deps.sessionStore.get(sid)
-    session.model_provider = 'openrouter'
-    s.deps.sessionStore.save(session)
+    expect(s.deps.sessionStore.get(sid).model_provider).toBeNull()
+    sidecar.respond('usage.pool_providers', () => ({ providers: ['openrouter'] }))
     const deadline = Date.now() + 600
     sidecar.respond('usage.pool', () => ({ entries: [{ credential_id: 'k1', label: 'k1', status: Date.now() < deadline ? 'exhausted' as const : 'available' as const, unavailable_reason: null, retry_after: new Date(deadline).toISOString(), matches_api_key: false }] }))
     starts = []

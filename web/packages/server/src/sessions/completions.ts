@@ -312,12 +312,20 @@ export class CompletionDrain {
     this.retryTimers.set(sid, timer)
   }
 
-  /** TAL-576: `usage.pool` for the session's provider through `poolRecovery`; null when the sidecar cannot say. */
+  /**
+   * TAL-576: `usage.pool` for the session's provider through `poolRecovery`; null when the sidecar cannot say. A session
+   * on the config's implicit provider names none, so every pool counts: at worst one more wakeup fails and re-pauses.
+   */
   private async poolRecovery(home: string, session: Session): Promise<true | number | null> {
     const sidecar = this.deps.sidecar()
+    if (!sidecar) return null
     const provider = str(session.model_provider).trim()
-    if (!sidecar || !provider) return null
-    try { return poolRecovery((await sidecar.call('usage.pool', { profile_home: home, provider })).entries, this.deps.now()) } catch { return null }
+    try {
+      const providers = provider ? [provider] : (await sidecar.call('usage.pool_providers', { profile_home: home })).providers
+      const entries = []
+      for (const pid of providers) entries.push(...(await sidecar.call('usage.pool', { profile_home: home, provider: pid })).entries)
+      return poolRecovery(entries, this.deps.now())
+    } catch { return null }
   }
 
   /** A restarted server resumes every session it left holding wakeups (`startWakeup` drops a deleted session's). */
@@ -349,7 +357,7 @@ export class CompletionDrain {
   /**
    * TAL-576: while the provider has no usable credentials no wakeup turn starts. The entries are held until a turn
    * admits them, and a timer rechecks the pause at the pool's earliest retry deadline, at least every five minutes.
-   * Returns whether the wakeup stays paused.
+   * Returns whether the wakeup is handled here (held, or dropped with its deleted session).
    */
   private async holdWhilePaused(sid: string, session: Session, home: string, batched: Deferred[]): Promise<boolean> {
     const pause = session.process_wakeup_pause
@@ -359,20 +367,23 @@ export class CompletionDrain {
     }
     const recovery = await this.poolRecovery(home, session)
     // A turn that succeeded or a provider switched during the lookup lifted the pause already.
-    let current: Session
-    try { current = this.deps.store.get(sid) } catch { current = session }
-    const before = current.process_wakeup_pause
-    if (recovery === true) current.process_wakeup_pause = null
-    if (recovery === true || !wakeupPaused(current, home)) {
-      if (before !== current.process_wakeup_pause) this.saveSession(sid, current)
-      return false
+    // A deleted session owns no turn; a transient load failure holds the wakeups for the next recheck.
+    let current: Session | null = null
+    try { current = this.deps.store.get(sid) } catch (error) { if (this.deleted(sid, error)) { this.release(sid); return true } }
+    if (current) {
+      const before = current.process_wakeup_pause
+      if (recovery === true) current.process_wakeup_pause = null
+      if (recovery === true || !wakeupPaused(current, home)) {
+        if (before !== current.process_wakeup_pause) this.saveSession(sid, current)
+        return false
+      }
     }
     try { this.heldWakeups.hold(sid, batched) } catch (error) {
       for (const e of batched) this.recordDeferred(sid, e.process_id, e.wakeup_prompt, e.event)
       this.deps.log(`[webui] WARNING: failed to persist held wakeups for session ${sid}; kept in memory: ${(error as Error).message}`)
     }
     this.retryAttempts.delete(sid)
-    this.scheduleDrain(sid, Math.min(recovery === null ? HELD_RECHECK_SECONDS : recovery - this.deps.now(), HELD_RECHECK_SECONDS))
+    this.scheduleDrain(sid, typeof recovery === 'number' ? Math.min(recovery - this.deps.now(), HELD_RECHECK_SECONDS) : HELD_RECHECK_SECONDS)
     this.deps.log(`[webui] server-side wakeup paused for session ${sid}: provider credential pool is empty`)
     return true
   }
