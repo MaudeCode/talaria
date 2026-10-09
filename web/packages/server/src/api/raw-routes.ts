@@ -150,10 +150,7 @@ function handleEscapeFileRaw(ctx: RequestContext): void {
   } catch (error) {
     throw fileError(error, 404)
   }
-  if (!existsSync(target) || !statSync(target).isFile()) {
-    ctx.json({ error: 'not found' }, { status: 404 })
-    return
-  }
+  // The anchored open and fstat in `serveRawFile` answer a missing or non-file target with 404 through the pinned root.
   anchoredAt(req, () => { serveRawFile(ctx, req.externalRoot, target) })
 }
 

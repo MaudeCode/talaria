@@ -274,7 +274,14 @@ describe('escape grants', () => {
     expect(await res.text()).toContain('<base target="_blank">')
     expect((await raw('escape-raw/pic.svg')).headers.get('content-disposition')).toMatch(/^attachment/)
     expect((await raw('escape-raw/pic.svg', { download: '1' })).headers.get('content-disposition')).toMatch(/^attachment/)
-    expect(await (await raw('escape-raw/missing.txt')).json()).toEqual({ error: 'not found' })
+    mkdirSync(join(dir, 'sub'))
+    for (const path of ['escape-raw/missing.txt', 'escape-raw', 'escape-raw/sub']) {
+      for (const extra of [{}, { inline: '1' }]) {
+        const r = await raw(path, extra)
+        expect(r.status, path).toBe(404)
+        expect(await r.json()).toEqual({ error: 'not found' })
+      }
+    }
 
     const read = await getJson(`/api/escape/file/read?${qs({ session_id: sid, token: t, path: 'escape-raw/page.html' })}`)
     expect(read.body).toMatchObject({ preview: 'html', preview_url: `api/escape/file/raw?${qs({ session_id: sid, token: t, path: 'escape-raw/page.html', inline: '1' })}` })
