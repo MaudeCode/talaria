@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "eventId": "started:contract-session",
+  "publisherId": "https://contract.example",
+  "profileId": "prf_default",
+  "sessionId": "contract-session",
+  "startedAt": 1800000000000
+}

@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Talaria Web tells your paired relay once when a new chat starts, including chats started from the terminal or messaging apps, so paired iPhones can learn about it without waiting for their next refresh.",
+      "highlight": false,
+      "components": ["web", "relay"]
+    }
+  ]
+}

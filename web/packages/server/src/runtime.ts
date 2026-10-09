@@ -14,6 +14,7 @@ import { PresenceLeases, RelayService } from './sessions/relay.js'
 import { CliSessionSource } from './sessions/cli-sessions.js'
 import { ClaudeCodeSessionSource, claudeCodeProjectsDir } from './sessions/claude-code.js'
 import { GatewayWatcherRegistry } from './sessions/gateway-watcher.js'
+import { readImportableAgentSessionRows } from './sessions/state-db.js'
 import { CompletionDrain } from './sessions/completions.js'
 import { BackgroundActivity, BackgroundTaskStore } from './sessions/background-tasks.js'
 import { HygieneTicker } from './tools/hygiene.js'
@@ -385,6 +386,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   let completions: CompletionDrain
   const relay = new RelayService({
     registry, pending, store, presence: new PresenceLeases(now), profileHome, profilesMatch, fetch: () => lazyFetch, now, log,
+    agentSessions: (profile) => readImportableAgentSessionRows(join(profileHome(profile), 'state.db')),
     stateDir: config.stateDir, env, canonicalProfile: (p) => (isRootProfile(p) ? 'default' : p), addListener: (listener) => events.addListener(listener),
   })
   const turns = new TurnRunner({

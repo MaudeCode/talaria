@@ -1,7 +1,10 @@
 import { createHash, createPublicKey, verify as cryptoVerify } from 'node:crypto'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import type { SidecarResult } from '@maudecode/talaria-web-contracts'
+import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { loadRelayConfig, PRESENCE_LEASE_SECONDS, PresenceLeases, profileIdentity, RelayPairingError, RelayPublisher, validatedOrigin, type RelayConfig } from './relay.js'
 
@@ -236,7 +239,7 @@ describe('relay publisher failure handling', () => {
       await s.deps.relay.pair({ relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'x' }, 'default', true)
       const base = loadRelayConfig(s.state)!
       const config: RelayConfig = { ...base, profiles: { ...base.profiles, other: { identity: '', profile_id: 'prf_other' } } }
-      const publisher = new RelayPublisher(config, { registry: s.deps.registry, pending: s.deps.pending, store: s.deps.sessionStore, presence: s.deps.relay.presence, profileHome: s.deps.profileHome, profilesMatch: s.deps.profilesMatch, fetch: () => s.deps.fetch, now: () => Date.now() / 1000, log: (l) => s.logs.push(l) })
+      const publisher = new RelayPublisher(config, { registry: s.deps.registry, pending: s.deps.pending, store: s.deps.sessionStore, presence: s.deps.relay.presence, profileHome: s.deps.profileHome, profilesMatch: s.deps.profilesMatch, agentSessions: () => [], fetch: () => s.deps.fetch, now: () => Date.now() / 1000, log: (l) => s.logs.push(l) })
       relay.failOnly = 'prf_other'
       relay.snapshotStatus = 403
       await publisher.publishSnapshot(true)
@@ -262,7 +265,7 @@ describe('relay publisher failure handling', () => {
     try {
       await s.deps.relay.pair({ relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'x' }, 'default', true)
       let clock = 1_800_000_000
-      const publisher = new RelayPublisher(loadRelayConfig(s.state)!, { registry: s.deps.registry, pending: s.deps.pending, store: s.deps.sessionStore, presence: s.deps.relay.presence, profileHome: s.deps.profileHome, profilesMatch: s.deps.profilesMatch, fetch: () => s.deps.fetch, now: () => clock, log: (l) => s.logs.push(l) })
+      const publisher = new RelayPublisher(loadRelayConfig(s.state)!, { registry: s.deps.registry, pending: s.deps.pending, store: s.deps.sessionStore, presence: s.deps.relay.presence, profileHome: s.deps.profileHome, profilesMatch: s.deps.profilesMatch, agentSessions: () => [], fetch: () => s.deps.fetch, now: () => clock, log: (l) => s.logs.push(l) })
       const sid = String(((await json(await post(s, '/api/session/new', { title: 'Ended run' }))).session as Json).session_id)
       s.deps.registry.activeRuns.set('stream-t', { stream_id: 'stream-t', session_id: sid, started_at: 1, phase: 'running', workspace: s.state, model: null, provider: null, ephemeral: false })
       publisher.noteTerminal('stream-t', 'completed')
@@ -318,5 +321,83 @@ describe('relay publisher failure handling', () => {
     expect(() => validatedOrigin('https://u:p@a.example')).toThrow()
     expect(() => validatedOrigin('https://a.example/x')).toThrow()
     expect(new RelayPairingError('m', 409).status).toBe(409)
+  })
+})
+
+describe('session-started events from the running server', () => {
+  it('announces a new chat and a new Agent session once each, and a stalled relay never blocks chat or the list', async () => {
+    const sidecar = new FakeSidecar()
+    const s = await bootTestServer({ sidecar })
+    const relay = fakeRelay()
+    const attempts: string[] = []
+    let release: () => void = () => undefined
+    const stalled = new Promise<void>((resolve) => { release = resolve })
+    s.deps.fetch = (input, init) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+      if (!url.endsWith('/started')) return relay.fetch(input, init)
+      attempts.push(url)
+      return stalled.then(() => relay.fetch(input, init))
+    }
+    const reply = (params: Record<string, unknown>): SidecarResult<'chat.start'> => ({
+      status: 'completed', messages: [{ role: 'user', content: String(params.user_message) }, { role: 'assistant', content: 'Hi' }], final_response: 'Hi', error: null, failed: false, partial: false,
+      compression_exhausted: false, tool_limit_reached: false, max_iterations_summary_request: '', usage: null, context: { context_length: 200000 }, model: 'test-model', provider: 'test', compressed: false,
+      agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [],
+    } as unknown as SidecarResult<'chat.start'>)
+    sidecar.respond('chat.start', reply)
+    sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Hello"', usage: null }))
+    const chat = async (message: string): Promise<string> => {
+      const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+      expect((await post(s, '/api/chat/start', { session_id: sid, message })).status).toBe(200)
+      await vi.waitFor(async () => { expect(((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages).toHaveLength(2) })
+      return sid
+    }
+    try {
+      await s.deps.relay.pair({ relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'x' }, 'default', true)
+      const profileId = loadRelayConfig(s.state)!.profiles.default!.profile_id
+      const startedPath = (sid: string): string => `/v1/publishers/${encodeURIComponent('https://pub.example')}/profiles/${profileId}/sessions/${sid}/started`
+      // A publisher pass ends before the next one's snapshot, so two snapshots mean tracking began before these sessions.
+      const passes = async (): Promise<void> => {
+        for (let i = 0; i < 2; i++) {
+          const before = relay.snapshots().length
+          s.deps.relay.current()!.changed()
+          await vi.waitFor(() => { expect(relay.snapshots().length).toBeGreaterThan(before) })
+        }
+      }
+      await passes()
+
+      const first = await chat('hello there')
+      await vi.waitFor(() => { expect(attempts).toEqual([RELAY + startedPath(first)]) })
+      // The relay has not answered: another chat still starts and the list still reads.
+      const second = await chat('and again')
+      expect(((await json(await s.get('/api/sessions'))).sessions as Json[]).map((row) => row.session_id)).toEqual(expect.arrayContaining([first, second]))
+
+      const db = new DatabaseSync(join(s.state, 'state.db'))
+      db.exec(`CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT NOT NULL, model TEXT, started_at REAL NOT NULL, message_count INTEGER DEFAULT 0, title TEXT, parent_session_id TEXT, ended_at REAL, end_reason TEXT);
+        CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT, timestamp REAL NOT NULL)`)
+      const startedAt = Date.now() / 1000
+      db.prepare('INSERT INTO sessions (id, source, started_at, message_count, title) VALUES (?, ?, ?, ?, ?)').run('cli_session_0001', 'cli', startedAt, 1, 'From the terminal')
+      db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run('cli_session_0001', 'user', 'hi', startedAt)
+      db.close()
+
+      release()
+      const started = (): Captured[] => relay.calls.filter((c) => c.url.endsWith('/started'))
+      await vi.waitFor(() => {
+        s.deps.relay.current()!.changed()
+        expect(started().map((c) => c.body.sessionId)).toEqual(expect.arrayContaining([first, second, 'cli_session_0001']))
+      })
+      const firstCall = started().find((c) => c.body.sessionId === first)!
+      verifySigned(relay, firstCall, startedPath(first))
+      expect(firstCall.body).toEqual({ version: 1, eventId: `started:${first}`, publisherId: 'https://pub.example', profileId, sessionId: first, startedAt: firstCall.body.startedAt })
+
+      // Another turn and further publisher passes announce nothing more.
+      expect((await post(s, '/api/chat/start', { session_id: first, message: 'one more' })).status).toBe(200)
+      await vi.waitFor(async () => { expect(((await json(await s.get(`/api/session?session_id=${first}`))).session as Json).messages).toHaveLength(4) })
+      await passes()
+      expect(started().map((c) => c.body.sessionId).sort()).toEqual([first, second, 'cli_session_0001'].sort())
+    } finally {
+      release()
+      s.deps.relay.stop()
+      await s.close()
+    }
   })
 })

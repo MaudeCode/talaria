@@ -38,3 +38,34 @@ it('publishes exactly the shared publisher-snapshot fixture', async () => {
     rmSync(home, { recursive: true, force: true })
   }
 })
+
+// The Relay gate accepts this fixture as the Web publisher's session-started body (relay/tests/sharedContracts.test.ts).
+it('publishes exactly the shared publisher-session-started fixture', async () => {
+  const expected = JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/publisher-session-started.json'), 'utf8')) as { startedAt: number }
+  let now = expected.startedAt / 1000 - 10
+  const home = mkdtempSync(join(tmpdir(), 'talaria-relay-contract-'))
+  try {
+    const keyPath = join(home, 'publisher.pem')
+    writeFileSync(keyPath, generateKeyPairSync('ed25519').privateKey.export({ type: 'pkcs8', format: 'pem' }))
+    const index: Record<string, unknown>[] = []
+    const requests: { url: string; body: string }[] = []
+    const deps = {
+      registry: new StreamRegistry(), presence: new PresenceLeases(() => now), now: () => now, log: vi.fn(),
+      store: { readIndexEntries: () => index },
+      agentSessions: () => [],
+      profileHome: () => home,
+      profilesMatch: (row: string | null | undefined, active: string | null | undefined) => (row ?? 'default') === active,
+      fetch: () => (url: string, init: { body: string }) => { requests.push({ url, body: init.body }); return Promise.resolve(new Response('{}')) },
+    } as unknown as RelayPublisherDeps
+    const publisher = new RelayPublisher({ url: 'https://relay.example', publisher_id: 'https://contract.example', key_id: 'contract-key', private_key_path: keyPath, profiles: { default: { identity: profileIdentity(home), profile_id: 'prf_default' } } }, deps)
+    await publisher.publishStarted()
+    now += 10
+    index.push({ session_id: 'contract-session', created_at: expected.startedAt / 1000, message_count: 1, profile: null })
+    await publisher.publishStarted()
+    expect(requests).toHaveLength(1)
+    expect(requests[0]!.url).toBe(`https://relay.example/v1/publishers/${encodeURIComponent('https://contract.example')}/profiles/prf_default/sessions/contract-session/started`)
+    expect(JSON.parse(requests[0]!.body)).toEqual(expected)
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})

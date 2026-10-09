@@ -2,7 +2,9 @@
  * Talaria Relay: publisher pairing, profile enrollment, browser presence
  * leases, and the best-effort snapshot publisher (Python
  * `api/talaria_relay.py`). Snapshots are Ed25519-signed complete states per
- * enrolled profile; failures back off and never block a turn.
+ * enrolled profile; failures back off and never block a turn. Each session that
+ * first appears in an enrolled profile is announced once with a signed
+ * session-started event (contracts/fixtures/publisher-session-started.json).
  */
 import { readCapped } from '../http/capped.js'
 import { createHash, createPrivateKey, generateKeyPairSync, randomUUID, sign as cryptoSign, type KeyObject } from 'node:crypto'
@@ -20,6 +22,8 @@ const PRESENCE_TAB_RE = /^[A-Za-z0-9_-]{8,64}$/
 const DEFAULT_RELAY_URL = 'https://relay.talaria.kil.dev'
 const TERMINAL_RETENTION_S = 15 * 60
 const REQUEST_TIMEOUT_MS = 10_000
+// Sessions started longer ago than this are never announced, which bounds the started ledger.
+const STARTED_WINDOW_MS = 24 * 60 * 60 * 1000
 const b64u = (data: Buffer): string => data.toString('base64url')
 
 export class RelayPairingError extends Error {
@@ -161,10 +165,15 @@ export interface RelayPublisherDeps {
   presence: PresenceLeases
   profileHome: (profile: string) => string
   profilesMatch: (row: string | null | undefined, active: string | null | undefined) => boolean
+  /** The profile's messageful Agent `state.db` sessions (`readImportableAgentSessionRows`). */
+  agentSessions: (profile: string) => Record<string, unknown>[]
   fetch: () => typeof fetch
   now: () => number
   log: (line: string) => void
 }
+
+/** Per relay profile scope: sessions started before `floor` (first tracking) are never announced. */
+type StartedLedger = Map<string, { floor: number; sessions: Map<string, { startedAt: number; sent: boolean }> }>
 
 export interface RelayState { sessionId: string; streamId: string | null; eventId: string; revision: number; title: string; phase: string; updatedAt: number; deepLink: string; alertEligible?: false }
 
@@ -172,6 +181,8 @@ export interface RelayState { sessionId: string; streamId: string | null; eventI
 export class RelayPublisher {
   private readonly key: KeyObject
   private readonly revisionPath: string
+  private readonly startedPath: string
+  private startedUnsupportedLogged = false
   private lastRevision = 0
   private terminal = new Map<string, ActiveRun & { relay_phase: string; terminal_at: number }>()
   private readonly disabledProfiles = new Set<string>()
@@ -188,6 +199,7 @@ export class RelayPublisher {
   constructor(readonly config: RelayConfig, private readonly deps: RelayPublisherDeps) {
     this.key = loadKey(config.private_key_path)
     this.revisionPath = join(dirname(config.private_key_path), 'talaria-relay-revision')
+    this.startedPath = join(dirname(config.private_key_path), 'talaria-relay-started.json')
     try { this.lastRevision = Number.parseInt(readFileSync(this.revisionPath, 'utf8'), 10) || 0 } catch { this.lastRevision = 0 }
   }
 
@@ -271,6 +283,7 @@ export class RelayPublisher {
         const ready = new Map(this.views)
         await this.publishSnapshot(true)
         await this.flushViews(ready)
+        await this.publishStarted()
         if (this.failures) this.deps.log('[relay] Talaria relay snapshot recovered')
         this.failures = 0
       } catch (error) {
@@ -353,6 +366,87 @@ export class RelayPublisher {
       return
     }
     throw new RelayPairingError('Talaria Relay profile enrollment is unavailable', 502)
+  }
+
+  // The ledger is reread for every change, so a restarted or replacement publisher resends an unsent event under its ID.
+  private loadStarted(): StartedLedger {
+    const ledger: StartedLedger = new Map()
+    let raw: unknown
+    try { raw = JSON.parse(readFileSync(this.startedPath, 'utf8')) } catch { return ledger }
+    const profiles = (raw as { profiles?: unknown } | null)?.profiles
+    if (!Array.isArray(profiles)) return ledger
+    for (const p of profiles as { profileId?: unknown; floor?: unknown; sessions?: unknown }[]) {
+      if (typeof p?.profileId !== 'string' || typeof p.floor !== 'number' || !Array.isArray(p.sessions)) continue
+      const sessions = new Map<string, { startedAt: number; sent: boolean }>()
+      for (const e of p.sessions as { sessionId?: unknown; startedAt?: unknown; sent?: unknown }[]) {
+        if (typeof e?.sessionId === 'string' && typeof e.startedAt === 'number') sessions.set(e.sessionId, { startedAt: e.startedAt, sent: e.sent === true })
+      }
+      ledger.set(p.profileId, { floor: p.floor, sessions })
+    }
+    return ledger
+  }
+
+  private saveStarted(ledger: StartedLedger): void {
+    const profiles = [...ledger].map(([profileId, p]) => ({ profileId, floor: p.floor, sessions: [...p.sessions].map(([sessionId, e]) => ({ sessionId, startedAt: e.startedAt, sent: e.sent })) }))
+    atomicWriteText(this.startedPath, JSON.stringify({ version: 1, profiles }) + '\n')
+  }
+
+  /** Record every messageful Web or Agent session that started in an enrolled profile since tracking began. */
+  private observeStarted(): StartedLedger {
+    const ledger = this.loadStarted()
+    const nowMs = Math.floor(this.deps.now() * 1000)
+    let changed = false
+    let index: Record<string, unknown>[] = []
+    try { index = this.deps.store.readIndexEntries() } catch { index = [] }
+    for (const [profile, cfg] of Object.entries(this.config.profiles)) {
+      if (!this.publishes(profile, cfg)) continue
+      let entry = ledger.get(cfg.profile_id)
+      if (!entry) { entry = { floor: nowMs, sessions: new Map() }; ledger.set(cfg.profile_id, entry); changed = true }
+      const floor = Math.max(entry.floor, nowMs - STARTED_WINDOW_MS)
+      for (const [sid, e] of entry.sessions) if (e.startedAt < floor) { entry.sessions.delete(sid); changed = true }
+      // A compressed Agent chat keeps its lineage root's id and start, so later segments are not new sessions.
+      let agent: Record<string, unknown>[] = []
+      try { agent = this.deps.agentSessions(profile) } catch { agent = [] }
+      const seen = [
+        ...index.filter((row) => Number(row.message_count) > 0 && this.deps.profilesMatch(row.profile as string | null | undefined, profile)).map((row) => [row.session_id, row.created_at]),
+        ...agent.map((row) => [row._lineage_root_id || row.id, row.started_at]),
+      ]
+      for (const [rawSid, created] of seen) {
+        const sid = str(rawSid).trim()
+        const startedAt = Math.floor(Number(created) * 1000)
+        if (!sid || sid.length > 191 || !Number.isSafeInteger(startedAt) || startedAt < floor || entry.sessions.has(sid)) continue
+        entry.sessions.set(sid, { startedAt, sent: false })
+        changed = true
+      }
+    }
+    if (changed) this.saveStarted(ledger)
+    return ledger
+  }
+
+  /** Announce each newly observed session once, oldest first, to the relay scope of the profile that owns it. */
+  async publishStarted(): Promise<void> {
+    const ledger = this.observeStarted()
+    for (const [profile, cfg] of Object.entries(this.config.profiles)) {
+      if (!this.publishes(profile, cfg)) continue
+      const unsent = [...(ledger.get(cfg.profile_id)?.sessions ?? [])].filter(([, e]) => !e.sent).sort((a, b) => a[1].startedAt - b[1].startedAt)
+      for (const [sid, e] of unsent) {
+        const path = `/v1/publishers/${encodeURIComponent(this.config.publisher_id)}/profiles/${encodeURIComponent(cfg.profile_id)}/sessions/${encodeURIComponent(sid)}/started`
+        const body = JSON.stringify({ version: 1, eventId: `started:${sid}`, publisherId: this.config.publisher_id, profileId: cfg.profile_id, sessionId: sid, startedAt: e.startedAt })
+        try {
+          await this.put(path, body)
+        } catch (error) {
+          if (!(error instanceof RelayHttpError) || error.retryable) throw error
+          if (error.status !== 404) this.deps.log(`[relay] Talaria relay rejected a session-started event (HTTP ${String(error.status)})`)
+          else if (!this.startedUnsupportedLogged) {
+            this.startedUnsupportedLogged = true
+            this.deps.log('[relay] Talaria relay does not support session-started events (HTTP 404); devices refresh on their own schedule')
+          }
+        }
+        const latest = this.loadStarted()
+        const sent = latest.get(cfg.profile_id)?.sessions.get(sid)
+        if (sent && !sent.sent) { sent.sent = true; this.saveStarted(latest) }
+      }
+    }
   }
 
   private async publishProfileSnapshot(profile: string, profileId: string): Promise<void> {

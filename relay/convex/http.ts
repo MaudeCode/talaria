@@ -325,6 +325,22 @@ function parseState(
   };
 }
 
+const sessionStartedKeys = ["eventId", "profileId", "publisherId", "sessionId", "startedAt", "version"];
+
+// Exactly the v1 fields, each bounded: an extra field is rejected rather than ignored.
+function parseSessionStarted(value: Record<string, unknown>) {
+  if (Object.keys(value).sort().join() !== sessionStartedKeys.join() || value.version !== 1) return null;
+  const eventId = stringField(value, "eventId", 200);
+  const publisherId = canonicalHttpOrigin(stringField(value, "publisherId", 191) ?? "");
+  const profileId = stringField(value, "profileId", 128);
+  const sessionId = stringField(value, "sessionId", 191);
+  const startedAt = numberField(value, "startedAt");
+  if (!eventId || !publisherId || !profileId || !sessionId || startedAt === null || !Number.isSafeInteger(startedAt) || startedAt < 0) {
+    return null;
+  }
+  return { eventId, publisherId, profileId, sessionId, startedAt };
+}
+
 http.route({
   path: "/v1/auth/apple",
   method: "POST",
@@ -521,6 +537,21 @@ http.route({
       });
       const status = result.status === "accepted" || result.status === "duplicate" ? 200 : 409;
       return json(status, result);
+    }
+
+    if (parts.length === 8 && parts[5] === "sessions" && parts[7] === "started") {
+      const event = parseSessionStarted(body);
+      if (!event || event.sessionId !== parts[6]) return json(400, { error: "invalid_session_started" });
+      if (event.publisherId !== publisherId || event.profileId !== profileId) return json(403, { error: "profile_mismatch" });
+      const result = await ctx.runMutation(internal.publishers.acceptSessionStarted, {
+        publisherId,
+        profileId,
+        ...auth,
+        sessionId: event.sessionId,
+        eventId: event.eventId,
+        startedAt: event.startedAt,
+      });
+      return json(result.status === "accepted" ? 200 : 409, result);
     }
 
     if (parts.length === 8 && parts[5] === "sessions" && parts[7] === "viewed") {
