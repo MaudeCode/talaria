@@ -168,9 +168,9 @@ describe('runtime seams from review round 10', () => {
     ackSync()
     expect((await renaming).status).toBe(200)
     sidecar.respond('state_db.sync_title', (params) => { synced.push(params); return { ok: true as const } })
-    expect(synced.at(-1)).toMatchObject({ session_id: sid, title: 'loud', profile_home: s.state })
+    expect(synced.at(-1)).toMatchObject({ session_id: sid, title: 'loud', profile_home: s.state, manual: true })
     // Regenerating a manually named session applies the full generated-title transition (manual flag cleared,
-    // generated flag set) and syncs the new title the same way a rename does.
+    // generated flag set) and syncs the new title as a user-requested one, so it replaces the manual name in state.db.
     const manual = s.deps.sessionStore.get(sid)
     manual.messages = [{ role: 'user', content: 'How do I rotate the deploy key on the staging cluster safely?' }, { role: 'assistant', content: 'Rotate it in two steps: add the new key, then remove the old one once every node picked it up.' }]
     s.deps.sessionStore.save(manual)
@@ -182,7 +182,7 @@ describe('runtime seams from review round 10', () => {
     const after = s.deps.sessionStore.get(sid)
     expect([after.title, after.manual_title, after.llm_title_generated]).toEqual(['Rotate staging deploy key', false, true])
     await new Promise((r) => setTimeout(r, 20))
-    expect(synced.at(-1)).toMatchObject({ session_id: sid, title: 'Rotate staging deploy key' })
+    expect(synced.at(-1)).toMatchObject({ session_id: sid, title: 'Rotate staging deploy key', manual: true })
     await s.deps.settings.save({ sync_to_insights: false })
   })
 

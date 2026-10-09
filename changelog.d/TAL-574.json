@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Renaming a chat after it got an automatic title now updates the title Insights shows.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

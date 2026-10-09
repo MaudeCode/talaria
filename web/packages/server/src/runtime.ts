@@ -336,11 +336,11 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     hermesHome: config.hermesHome,
     home,
     // Python `_sync_session_title_to_state_db`: with `sync_to_insights` on, the state.db row follows a rename.
-    syncTitle: async (session) => {
+    syncTitle: async (session, manual) => {
       if (!sidecar || !pyBool(settings.load().sync_to_insights)) return
       // Awaited by callers: the rename/regenerate response and the title stream's teardown follow the state.db write.
       try {
-        await sidecar.call('state_db.sync_title', { profile_home: profileHome(session.profile ?? activeProfile()), session_id: session.session_id, title: session.title })
+        await sidecar.call('state_db.sync_title', { profile_home: profileHome(session.profile ?? activeProfile()), session_id: session.session_id, title: session.title, manual: manual === true })
       } catch (error) {
         log(`[webui] state.db title sync failed for ${session.session_id}: ${(error as Error).message}`)
       }
