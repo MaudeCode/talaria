@@ -163,7 +163,6 @@ export function serveFileBytes(ctx: RequestContext, target: string, opts: ServeF
     if (opts.csp) Object.assign(headers, previewHeaders(opts.csp))
     if (!contentLength || snapshot) {
       ctx.send({ status: byteRange ? 206 : 200, headers, body: snapshot ? snapshot.subarray(start, start + contentLength) : Buffer.alloc(0), security: !opts.csp })
-      closeSync(fd)
       return
     }
     // Large files stream the selected span from the descriptor with backpressure (Python copied bounded chunks); the

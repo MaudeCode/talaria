@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Images and files served by Talaria Web no longer risk interrupting another download that starts at the same moment.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
