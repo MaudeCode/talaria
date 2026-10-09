@@ -640,10 +640,12 @@ export class SessionService {
       if (!this.visibleToActiveProfile(parent.profile)) return null
       title = parent.title
     } catch {
-      // A read-only foreign parent (a cron run) has no sidecar and opens from the active profile's state.db, unless it
-      // is a deleted chat (`claimOrSynthesizeCliSession`'s `was_webui`).
-      const row = stateDbSessionRow(this.stateDbPath(null), parentId)
+      // A read-only foreign parent (a cron run) has no sidecar and opens from the active profile's state.db while it
+      // has transcript rows and is not a deleted chat (`claimOrSynthesizeCliSession`'s `was_webui` and `no_foreign_state`).
+      const dbPath = this.stateDbPath(null)
+      const row = stateDbSessionRow(dbPath, parentId)
       if (!row || this.store.wasDeleted(parentId) || this.indexMarksWasWebui(parentId)) return null
+      if (!stateDbSessionMessages(dbPath, parentId, { stitch: true }).length) return null
       title = row.title
     }
     return { session_id: parentId, title: str(redactText(str(title) || 'Untitled', this.deps.redactEnabled())) }

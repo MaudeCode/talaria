@@ -325,12 +325,24 @@ final class CacheStoreTests: XCTestCase {
         try CacheStore.cacheSessions(rows, serverURL: serverURL, in: context)
         let link = SessionBranchLink(sessionId: "parent", title: "Plan")
 
-        try CacheStore.cacheBranchedFrom(link, serverURL: serverURL, sessionID: "branch", in: context)
+        try CacheStore.cacheBranchedFrom(link, session: rows[0], serverURL: serverURL, in: context)
         try CacheStore.cacheSessions(rows, serverURL: serverURL, in: context)
         XCTAssertEqual(try CacheStore.cachedBranchedFrom(serverURL: serverURL, sessionID: "branch", in: context), link)
 
-        try CacheStore.cacheBranchedFrom(nil, serverURL: serverURL, sessionID: "branch", in: context)
+        try CacheStore.cacheBranchedFrom(nil, session: rows[0], serverURL: serverURL, in: context)
         XCTAssertNil(try CacheStore.cachedBranchedFrom(serverURL: serverURL, sessionID: "branch", in: context))
+    }
+
+    /// TAL-454: a chat opened straight from `/fork` before the list cached it still keeps its link.
+    func testBranchedFromCachesAChatTheListHasNotCachedYet() throws {
+        let context = try makeContext()
+        let serverURL = URL(string: "https://example.test")!
+        let link = SessionBranchLink(sessionId: "parent", title: "Plan")
+
+        try CacheStore.cacheBranchedFrom(link, session: SessionSummary(sessionId: "fresh-fork", title: "Plan (fork)"), serverURL: serverURL, in: context)
+
+        XCTAssertEqual(try CacheStore.cachedBranchedFrom(serverURL: serverURL, sessionID: "fresh-fork", in: context), link)
+        XCTAssertEqual(try fetchCachedSessions(in: context).map(\.title), ["Plan (fork)"])
     }
 
     func testCachedSessionsReturnsOnlyUnexpiredVisibleSessionsForServer() throws {

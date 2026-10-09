@@ -370,7 +370,13 @@ describe('session lifecycle over HTTP', () => {
     db.close()
     const cronBranch = await post(s, '/api/session/branch', { session_id: cron })
     expect(cronBranch.status).toBe(200)
-    expect((await detail((await json(cronBranch)).session_id)).branched_from).toEqual({ session_id: cron, title: 'Nightly report' })
+    const cronBranchId = (await json(cronBranch)).session_id
+    expect((await detail(cronBranchId)).branched_from).toEqual({ session_id: cron, title: 'Nightly report' })
+    // Once its transcript rows are gone the run no longer opens, so the branch links nowhere.
+    const pruned = new DatabaseSync(join(s.state, 'state.db'))
+    pruned.prepare('DELETE FROM messages WHERE session_id = ?').run(cron)
+    pruned.close()
+    expect((await detail(cronBranchId)).branched_from).toBeNull()
   })
 
   it('serves the shared branched example as the contract fixture records it (TAL-454)', async () => {

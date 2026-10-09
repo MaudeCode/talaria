@@ -215,11 +215,11 @@ public final class ChatViewModel {
     }
     /// The chat this one was branched from (TAL-454); nil shows no link.
     public private(set) var branchedFrom: SessionBranchLink?
-    private func applyBranchedFrom(from session: SessionDetail?, sessionID: String, modelContext: ModelContext?) {
+    private func applyBranchedFrom(from session: SessionDetail?, modelContext: ModelContext?) {
         branchedFrom = session?.branchedFrom
-        guard let modelContext, ownsCurrentCache else { return }
+        guard let session, let modelContext, ownsCurrentCache else { return }
         do {
-            try CacheStore.cacheBranchedFrom(branchedFrom, serverURL: server, sessionID: sessionID, in: modelContext)
+            try CacheStore.cacheBranchedFrom(branchedFrom, session: SessionSummary(from: session), serverURL: server, in: modelContext)
         } catch {
             cacheErrorMessage = error.localizedDescription
         }
@@ -1501,7 +1501,7 @@ public final class ChatViewModel {
             // read-only flag behind once its transcript has been rejected.
             applyReadOnlyState(from: session)
             applyCompressionReference(from: session)
-            applyBranchedFrom(from: session, sessionID: sessionID, modelContext: modelContext)
+            applyBranchedFrom(from: session, modelContext: modelContext)
             let newerSteerRows = pendingSteerRows(changedAfter: steerChangesAtFetch)
             applyReloadedMessages(
                 reloadedMessages,

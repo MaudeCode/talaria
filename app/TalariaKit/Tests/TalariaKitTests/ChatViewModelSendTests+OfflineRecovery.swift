@@ -35,9 +35,8 @@ extension ChatViewModelSendTests {
     func testOfflineChatShowsTheCachedBranchLinkUntilTheServerAnswers() async throws {
         let context = try makeOfflineRecoveryContext()
         let serverURL = try XCTUnwrap(URL(string: "https://example.test"))
-        try CacheStore.cacheSessions([SessionSummary(sessionId: "session-abc", title: "Planning")], serverURL: serverURL, in: context)
         let link = SessionBranchLink(sessionId: "parent", title: "Plan")
-        try CacheStore.cacheBranchedFrom(link, serverURL: serverURL, sessionID: "session-abc", in: context)
+        try CacheStore.cacheBranchedFrom(link, session: SessionSummary(sessionId: "session-abc", title: "Planning"), serverURL: serverURL, in: context)
         let server = ScriptedSessionServer(reachableFromRead: 2)
         let viewModel = try makeViewModel(handler: server.handle)
 
