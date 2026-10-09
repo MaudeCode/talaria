@@ -23,6 +23,62 @@ final class ApprovalNotificationTests: XCTestCase {
         XCTAssertEqual(observed, ["first", "second"], "Each newly visible queue head must reach the alert boundary once.")
         XCTAssertEqual(coordinator.approvalPrompt?.pending.approvalId, "second")
     }
+
+    @MainActor
+    func testApprovalPollResponseAfterPollingStopsDoesNotShowPrompt() async throws {
+        let approvalRequests = LockedCounter()
+        let releaseResponse = DispatchSemaphore(value: 0)
+        defer { releaseResponse.signal() }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockURLProtocol.self]
+        configuration.httpAdditionalHeaders = [MockURLProtocol.scopeHeader: MockURLProtocol.register { request in
+            XCTAssertEqual(request.url?.path, "/api/approval/pending")
+            _ = approvalRequests.increment()
+            releaseResponse.wait()
+            return apiTestJSONResponse(#"{"pending": {"approval_id": "approval-late"}, "pending_count": 1}"#, for: request)
+        }]
+        let session = URLSession(configuration: configuration)
+        let approvalStream = SpySSEStreamingClient()
+        let delegate = ApprovalNotificationTestDelegate()
+        var coordinator: ChatPendingActionCoordinator? = ChatPendingActionCoordinator(
+            client: APIClient(baseURL: URL(string: "https://approval-alert.test")!, session: session),
+            approvalStreamClient: approvalStream, clarifyStreamClient: SpySSEStreamingClient(),
+            pollingIntervals: .standard
+        )
+        weak var weakCoordinator = coordinator
+        coordinator?.delegate = delegate
+        var shown: [String] = []
+        coordinator?.approvalHeadDidBecomeVisible = { shown.append($0.pending.approvalId ?? "") }
+        coordinator?.startMonitoring()
+        approvalStream.emit(.transportError("approval stream failed"))
+        try await waitUntil { approvalRequests.count == 1 }
+
+        // Stopping while the request is held makes URLSession throw, so let the response finish first. The
+        // main actor stays blocked meanwhile, so the poll cannot apply it before polling stops.
+        releaseResponse.signal()
+        XCTAssertTrue(blockUntilRequestsFinish(session))
+        coordinator?.stopMonitoring(clearPrompt: true)
+
+        // The poll holds the coordinator until it returns, so deallocation means the response was handled.
+        coordinator = nil
+        let deadline = ContinuousClock.now + .seconds(10)
+        while weakCoordinator != nil, ContinuousClock.now < deadline { await Task.yield() }
+        XCTAssertNil(weakCoordinator, "The cancelled poll must finish")
+        XCTAssertEqual(shown, [], "A response that arrives after polling stops must not show a prompt")
+        XCTAssertEqual(approvalRequests.count, 1)
+    }
+
+    /// Blocks the calling thread until `session` has no running request.
+    private nonisolated func blockUntilRequestsFinish(_ session: URLSession) -> Bool {
+        let finished = DispatchSemaphore(value: 0)
+        Task.detached {
+            while await !session.allTasks.isEmpty {
+                try? await Task.sleep(for: .milliseconds(1))
+            }
+            finished.signal()
+        }
+        return finished.wait(timeout: .now() + 10) == .success
+    }
     @MainActor
     func testDeduplicatesAcrossSourcesReconnectAndQueueReplacement() async {
         let scheduler = ApprovalNotificationSpy(status: .authorized)

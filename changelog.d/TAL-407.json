@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Leaving a chat no longer lets a late approval check bring back an approval prompt.",
+      "highlight": false
+    }
+  ]
+}
