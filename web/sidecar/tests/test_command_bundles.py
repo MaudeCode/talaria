@@ -41,7 +41,7 @@ def _fake_bundles(monkeypatch, bundles=(), resolve=None, blocks=None) -> dict:
                  scan_bundles=_shared_cache, get_skill_bundles=_shared_cache, list_bundles=_shared_cache,
                  resolve_bundle_command_key=_shared_cache, build_bundle_invocation_message=_shared_cache)
     _fake_module(monkeypatch, "agent.skill_commands", resolve_slash_key=resolve or (lambda command, table: f"/{command.replace('_', '-')}" if f"/{command.replace('_', '-')}" in table else None),
-                 _load_skill_blocks=load_blocks, _load_skill_payload=lambda identifier: None, _scaffold_header=header, _disabled_skill_names=lambda platform: {"off"})
+                 _load_skill_blocks=load_blocks, _load_skill_payload=lambda identifier: None, _scaffold_header=header, _disabled_skill_names=lambda platform: {"off"} if platform == "webui" else set())
     return seen
 
 
@@ -206,19 +206,23 @@ def test_bundles_are_scoped_to_each_profile(tmp_path: pathlib.Path) -> None:
     other.mkdir(parents=True)
     # Equal mtimes defeat the Agent's process-wide mtime cache, so only a rescan per call keeps profiles apart.
     _write_bundle(home, "alpha-kit", ["cat-finder"], 1_700_000_000)
-    _write_bundle(other, "beta-kit", ["cat-finder", "not-installed"], 1_700_000_000)
-    skill = other / "skills" / "cat-finder"
-    skill.mkdir(parents=True)
-    (skill / "SKILL.md").write_text("---\nname: cat-finder\ndescription: Find cats\n---\nLook for cats.\n", encoding="utf-8")
+    _write_bundle(other, "beta-kit", ["cat-finder", "dog-finder", "not-installed"], 1_700_000_000)
+    for name in ("cat-finder", "dog-finder"):
+        skill = other / "skills" / name
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(f"---\nname: {name}\ndescription: Find pets\n---\nLook for pets.\n", encoding="utf-8")
+    # Web chat's skill scope: dog-finder is disabled for Web only, so the bundle skips it.
+    (other / "config.yaml").write_text("skills:\n  platform_disabled:\n    webui: [dog-finder]\n", encoding="utf-8")
     sidecar = SidecarProcess(home)
     try:
-        for profile, name, count in ((home, "alpha-kit", 1), (other, "beta-kit", 2), (home, "alpha-kit", 1)):
+        for profile, name, count in ((home, "alpha-kit", 1), (other, "beta-kit", 3), (home, "alpha-kit", 1)):
             result = sidecar.result("commands.bundles", {"profile_home": str(profile)})
             assert validate(result, load_schema("commands.bundles")) == []
             assert result["bundles"] == [{"name": name, "description": f"Load {count} skills as a bundle", "skill_count": count, "source": "bundle"}]
         resolved = sidecar.result("commands.bundle_resolve", {"profile_home": str(other), "command": "/beta_kit find a cat"})
         assert validate(resolved, load_schema("commands.bundle_resolve")) == []
         assert resolved["name"] == "beta-kit" and resolved["loaded_skills"] == ["cat-finder"] and resolved["missing_skills"] == ["not-installed"]
+        assert "dog-finder" not in resolved["message"].split("Skills loaded:", 1)[1].split("\n", 1)[0]
         assert "find a cat" in resolved["message"]
         missing, _ = sidecar.call("commands.bundle_resolve", {"profile_home": str(other), "command": "/alpha-kit"})
         assert missing["error"]["data"]["condition"] == "bundle_not_found"

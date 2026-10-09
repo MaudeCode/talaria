@@ -273,13 +273,14 @@ def list_command_bundles() -> list[dict[str, Any]]:
 
 
 def _bundle_invocation(info: dict[str, Any], instruction: str) -> tuple[str, list[str], list[str]] | None:
-    """``build_bundle_invocation_message`` for a bundle read by ``_profile_bundles`` (that one looks it up in the shared cache)."""
+    """``build_bundle_invocation_message`` for a bundle read by ``_profile_bundles`` (that one looks it up in the shared cache),
+    skipping the skills disabled for Web chat (``skills.platform_disabled.webui``)."""
     from agent.skill_commands import _disabled_skill_names, _load_skill_blocks, _load_skill_payload, _scaffold_header
 
     name = info["name"]
     loaded, missing, disabled, blocks = _load_skill_blocks(
         [(skill or "").strip() for skill in info["skills"]], _load_skill_payload, lambda _skill: f'[Loaded as part of the "{name}" skill bundle.]',
-        None, disabled_names=_disabled_skill_names(None))
+        None, disabled_names=_disabled_skill_names("webui"))
     if not blocks:
         return None
     header = _scaffold_header(f'"{name}" skill bundle', loaded, lead_lines=[f"Bundle: {name}"], missing=missing, disabled=disabled,
