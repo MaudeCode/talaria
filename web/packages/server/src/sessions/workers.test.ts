@@ -572,8 +572,14 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
 
   it('keeps held wakeups until a turn admits them, and a restarted server resumes them', async () => {
     const sid = await pausedSession()
+    // The index is written before the session, so a crash between the two writes still finds the session.
+    const save = vi.spyOn(s.deps.sessionStore, 'save').mockImplementationOnce(() => { throw new Error('crashed') })
     await complete(sid, `${sid}_2`)
-    expect(heldIds(sid)).toEqual([`${sid}_2`])
+    save.mockRestore()
+    expect(heldIndex()).toContain(sid)
+    // The next save persists what the failed one could not.
+    await complete(sid, `${sid}_2b`)
+    expect(heldIds(sid)).toEqual([`${sid}_2`, `${sid}_2b`])
     writeFileSync(join(s.state, 'auth.json'), JSON.stringify({ credential_pool: { openrouter: [{ api_key: 'sk-a' }, { api_key: 'sk-b' }, { api_key: 'sk-c' }] } }))
     // The pause lifts but the turn is refused: the held copy stays on disk.
     const refused = new CompletionDrain({
@@ -583,7 +589,7 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
     await refused.drainDeferred(sid)
     refused.stop()
     expect(s.deps.sessionStore.get(sid).process_wakeup_pause).toBeNull()
-    expect(heldIds(sid)).toEqual([`${sid}_2`])
+    expect(heldIds(sid)).toEqual([`${sid}_2`, `${sid}_2b`])
     expect(heldIndex()).toContain(sid)
     // A new server's first drain resumes the session and the admitted wakeup leaves the disk.
     const prompts: string[] = []
@@ -600,6 +606,7 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
     for (let i = 0; i < 50 && !prompts.length; i += 1) await new Promise((r) => setTimeout(r, 20))
     await new Promise((r) => setTimeout(r, 50))
     expect(prompts[0]).toContain(`Background process ${sid}_2 completed`)
+    expect(prompts[0]).toContain(`Background process ${sid}_2b completed`)
     expect(heldIds(sid)).toEqual([])
     expect(heldIndex()).not.toContain(sid)
   })

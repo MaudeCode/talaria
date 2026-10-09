@@ -330,10 +330,15 @@ export class CompletionDrain {
     }
   }
 
-  /** Saves the session's held wakeups and keeps the held index in step. */
+  /**
+   * Saves the session's held wakeups and keeps the held index in step: a session joins the index before its held
+   * wakeups are written and leaves only after they are gone, so a crash between the two writes never hides one.
+   */
   private saveHeld(sid: string, session: Session): void {
-    try { this.deps.store.save(session, { touchUpdatedAt: false }) } catch (error) { this.deps.log(`[webui] WARNING: failed to save held wakeups for session ${sid}: ${(error as Error).message}`) }
-    this.indexHeld(sid, heldWakeups(session).length > 0)
+    const holds = heldWakeups(session).length > 0
+    if (holds) this.indexHeld(sid, true)
+    try { this.deps.store.save(session, { touchUpdatedAt: false }) } catch (error) { this.deps.log(`[webui] WARNING: failed to save held wakeups for session ${sid}: ${(error as Error).message}`); return }
+    if (!holds) this.indexHeld(sid, false)
   }
 
   private indexHeld(sid: string, holds: boolean): void {
