@@ -1354,12 +1354,13 @@ export class SessionService {
    */
   async compressionRecoveryStart(sid: string): Promise<Record<string, unknown>> {
     if (this.isSubagentViewOnly(sid)) throw new HttpFailure(400, 'Subagent sessions are view-only and cannot start compression recovery from WebUI')
-    const source = this.store.get(sid)
-    if (!this.visibleToActiveProfile(source.profile)) throw new HttpFailure(404, 'Session not found')
-    if (!compressionRecoveryPayload(source)) throw new HttpFailure(409, 'Session does not have a compression recovery action.')
     const action = COMPRESSION_RECOVERY_ACTION_START_FOCUSED
     let created = false
     const child = await this.store.withLock(sid, () => {
+      // Validated under the lock: a delete that won it leaves no source to fork.
+      const source = this.store.get(sid)
+      if (!this.visibleToActiveProfile(source.profile)) throw new HttpFailure(404, 'Session not found')
+      if (!compressionRecoveryPayload(source)) throw new HttpFailure(409, 'Session does not have a compression recovery action.')
       const existing = this.compressionRecoveryChild(sid, action, source.profile)
       if (existing) return existing
       const base = (source.title || 'Untitled').trim() || 'Untitled'

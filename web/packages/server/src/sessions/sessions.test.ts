@@ -2385,6 +2385,20 @@ describe('compression recovery start (TAL-257)', () => {
     expect(childFiles(sid)).toHaveLength(1)
   })
 
+  it('answers 404 without a child when a delete wins the source lock', async () => {
+    const sid = await exhausted()
+    let release!: () => void
+    const held = s.deps.sessionStore.withLock(sid, () => new Promise<void>((resolve) => { release = resolve }))
+    const pending = start(sid)
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    s.deps.sessionStore.deleteFiles(sid)
+    release()
+    await held
+    const res = await pending
+    expect([res.status, (await json(res)).error]).toEqual([404, 'Session not found'])
+    expect(childFiles(sid)).toEqual([])
+  })
+
   it('ignores an existing continuation from another profile', async () => {
     const sid = await exhausted()
     const foreign = new Session({ session_id: 'foreignchild1', title: 'Foreign focused continuation', profile: 'other-profile', parent_session_id: sid, compression_recovery_source_session_id: sid, compression_recovery_action: 'start_focused_continuation' }, { workspace: s.state, model: null })
