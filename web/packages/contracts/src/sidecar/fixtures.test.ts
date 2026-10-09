@@ -26,7 +26,7 @@ describe('sidecar method fixtures (recorded from the pinned Agent)', () => {
 
   it('records every method that is not credential, network, or process bound', () => {
     const seen = new Set(recorded.map(([method]) => method))
-    const unexercised = new Set(['rpc.cancel', 'rpc.methods', 'runtime.shutdown', 'goals.restore', 'commands.exec', 'kanban.dispatch', 'providers.resolve_runtime', 'oauth.start', 'oauth.poll', 'oauth.cancel', 'aux.complete', 'stt.transcribe', 'gateway.restart', 'mcp.reload', 'cron.run', 'worktree.create', 'chat.start', 'chat.interrupt', 'chat.steer', 'chat.steer_withdraw', 'chat.steer_now', 'chat.evict_agent', 'chat.commit_memory', 'chat.compress', 'chat.compress_finalize', 'approval.respond', 'approval.pending', 'approval.set_yolo', 'clarify.respond', 'config.set'])
+    const unexercised = new Set(['rpc.cancel', 'rpc.methods', 'runtime.shutdown', 'goals.restore', 'commands.exec', 'kanban.dispatch', 'providers.resolve_runtime', 'oauth.start', 'oauth.poll', 'oauth.cancel', 'aux.complete', 'stt.transcribe', 'gateway.control', 'gateway.restart', 'mcp.reload', 'cron.run', 'worktree.create', 'chat.start', 'chat.interrupt', 'chat.steer', 'chat.steer_withdraw', 'chat.steer_now', 'chat.evict_agent', 'chat.commit_memory', 'chat.compress', 'chat.compress_finalize', 'approval.respond', 'approval.pending', 'approval.set_yolo', 'clarify.respond', 'config.set'])
     const missing = Object.keys(SIDECAR_METHODS).filter((m) => !seen.has(m as SidecarMethodName) && !unexercised.has(m))
     expect(missing).toEqual([])
   })

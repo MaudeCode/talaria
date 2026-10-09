@@ -37,6 +37,7 @@
           "cron.run_detail",
           "cron.status",
           "cron.update",
+          "gateway.control",
           "gateway.restart",
           "goals.command",
           "goals.evaluate",
