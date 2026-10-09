@@ -249,22 +249,52 @@ function readTurnJournals(sessionDir: string): Map<string, Dict[]> {
   return out
 }
 
-/** Turns whose latest event is not terminal and whose user message never reached the sidecar. */
+/** What a turn sent: its trimmed text and attachment names, or null when it sent nothing identifiable. */
+function turnKey(content: unknown, attachments: unknown): string | null {
+  const text = str(content || '').trim()
+  const files = (Array.isArray(attachments) ? attachments : []).map((a) => (isDict(a) ? str(a.name || a.filename || a.path) : str(a))).filter(Boolean).sort()
+  return text || files.length ? JSON.stringify([text, files]) : null
+}
+
+/** A sidecar user row this long before a journaled turn predates it, so it cannot be that turn's row. */
+const TURN_ROW_CLOCK_SLACK_S = 5
+
+/**
+ * Turns whose latest event is not terminal and whose user message never reached the sidecar. A row stamped with the
+ * turn's id (or stream id) is that turn; otherwise rows and turns with the same text and attachments pair up in order,
+ * one row per turn, so a repeated message ("continue") or an attachment-only turn still counts as missing.
+ */
 function pendingJournalTurns(sessionDir: string, sid: string, events: Dict[]): RecoveryItem[] {
-  const latest = new Map<string, Dict>()
+  interface Turn { id: string; ids: Set<string>; first: number; latest: Dict; key: string | null }
+  const turns = new Map<string, Turn>()
   for (const event of events) {
-    const turnId = str(event.turn_id).trim()
-    const previous = latest.get(turnId)
-    if (turnId && (!previous || createdAt(event) >= createdAt(previous))) latest.set(turnId, event)
+    const id = str(event.turn_id).trim()
+    if (!id) continue
+    const turn = turns.get(id) ?? { id, ids: new Set([id]), first: createdAt(event), latest: event, key: null }
+    if (createdAt(event) >= createdAt(turn.latest)) turn.latest = event
+    turn.key ??= turnKey(event.content, event.attachments)
+    const streamId = str(event.stream_id).trim()
+    if (streamId) turn.ids.add(streamId)
+    turns.set(id, turn)
   }
-  if (!latest.size) return []
+  if (!turns.size) return []
   const live = readDoc(join(sessionDir, `${sid}.json`))
-  const sent = new Set((Array.isArray(live?.messages) ? live.messages : []).filter((m): m is Dict => isDict(m) && m.role === 'user').map((m) => str(m.content || '').trim()))
+  const rows = (Array.isArray(live?.messages) ? live.messages : []).filter((m): m is Dict => isDict(m) && m.role === 'user')
+  const rowTurnIds = new Set(rows.map((m) => str(m._turn_id)).filter(Boolean))
+  const journaled = new Set([...turns.values()].flatMap((t) => [...t.ids]))
+  const unmatched = [...turns.values()].filter((t) => ![...t.ids].some((id) => rowTurnIds.has(id))).sort((a, b) => a.first - b.first)
+  const missing = new Set<Turn>()
+  for (const key of new Set(unmatched.map((t) => t.key))) {
+    if (key === null) continue
+    const keyed = unmatched.filter((t) => t.key === key)
+    const earliest = keyed[0]!.first - TURN_ROW_CLOCK_SLACK_S
+    const available = rows.filter((m) => !journaled.has(str(m._turn_id)) && turnKey(m.content, m.attachments) === key && !(Number(m.timestamp) < earliest)).length
+    for (const turn of keyed.slice(available)) missing.add(turn)
+  }
   const items: RecoveryItem[] = []
-  for (const [turnId, event] of [...latest].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
-    const content = str(event.content || '').trim()
-    if (TERMINAL_TURN_EVENTS.has(str(event.event)) || !content || sent.has(content)) continue
-    items.push({ ...item(sid, 'turn_journal_pending_turn', 'repairable', 'audit_only_pending_turn_journal', messageCount(live)), turn_id: turnId, event: str(event.event) })
+  for (const turn of [...missing].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))) {
+    if (TERMINAL_TURN_EVENTS.has(str(turn.latest.event))) continue
+    items.push({ ...item(sid, 'turn_journal_pending_turn', 'repairable', 'audit_only_pending_turn_journal', messageCount(live)), turn_id: turn.id, event: str(turn.latest.event) })
   }
   return items
 }
@@ -307,10 +337,10 @@ export function auditSessionRecovery(deps: RecoveryDeps): RecoveryAudit {
     else items.push(item(sid, 'orphan_backup_without_state_row', 'unsafe_to_repair', 'manual_review', -1, bakMessages))
   }
   if (existsSync(deps.store.indexFile)) {
-    let indexed = new Set<string>()
-    try { indexed = new Set(deps.store.readIndexEntries().map((e) => e.session_id).filter((id): id is string => typeof id === 'string')) } catch { /* a corrupt index lists nothing */ }
-    for (const sid of [...indexed].filter((id) => !live.has(id) && !s.tombstoned.has(id)).sort()) items.push(item(sid, 'index_missing_file', 'repairable', 'rebuild_index'))
-    for (const sid of s.liveIds.filter((id) => !indexed.has(id))) items.push(item(sid, 'index_missing_entry', 'repairable', 'rebuild_index', messageCount(readDoc(join(s.dir, `${sid}.json`)))))
+    let indexed: Set<string> | null = null
+    try { indexed = new Set(deps.store.readIndexEntries().map((e) => e.session_id).filter((id): id is string => typeof id === 'string')) } catch { items.push(item('', 'index_unreadable', 'repairable', 'rebuild_index')) }
+    if (indexed) for (const sid of [...indexed].filter((id) => !live.has(id) && !s.tombstoned.has(id)).sort()) items.push(item(sid, 'index_missing_file', 'repairable', 'rebuild_index'))
+    if (indexed) for (const sid of s.liveIds.filter((id) => !indexed.has(id))) items.push(item(sid, 'index_missing_entry', 'repairable', 'rebuild_index', messageCount(readDoc(join(s.dir, `${sid}.json`)))))
   }
   for (const row of s.db.missing) {
     if (reportedDeleted.has(row.id)) continue

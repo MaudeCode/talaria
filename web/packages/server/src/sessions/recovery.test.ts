@@ -393,4 +393,29 @@ describe('turn journal (read-only)', () => {
     journal('sid-1~1002.jsonl', { event: 'completed', turn_id: 'turn-2', created_at: 3 })
     expect(await audit()).toMatchObject({ status: 'ok', items: [] })
   })
+
+  it('pairs repeated and attachment-only turns with their own rows, and trusts a row stamped with the turn', async () => {
+    const pending = (turn: string, extra: Json): Json => ({ event: 'submitted', turn_id: turn, created_at: 100, ...extra })
+    // An earlier "continue" is not this turn's row; a second one at the turn's time is.
+    write('repeat.json', { session_id: 'repeat', messages: [{ role: 'user', content: 'continue', timestamp: 10 }] })
+    journal('repeat~1.jsonl', pending('turn-r', { content: 'continue' }))
+    write('repeat_sent.json', { session_id: 'repeat_sent', messages: [{ role: 'user', content: 'continue', timestamp: 10 }, { role: 'user', content: 'continue', timestamp: 100 }] })
+    journal('repeat_sent~1.jsonl', pending('turn-s', { content: 'continue' }))
+    write('files.json', { session_id: 'files', messages: [] })
+    journal('files~1.jsonl', pending('turn-f', { content: '', attachments: [{ name: 'notes.txt' }] }))
+    write('stamped.json', { session_id: 'stamped', messages: [{ role: 'user', content: 'rewritten by the server', _turn_id: 'stream-9' }] })
+    journal('stamped~1.jsonl', pending('turn-t', { content: 'typed text', stream_id: 'stream-9' }))
+    const report = await audit()
+    expect(items(report).map((i) => [i.session_id, i.turn_id])).toEqual([['files', 'turn-f'], ['repeat', 'turn-r']])
+  })
+})
+
+describe('index corruption', () => {
+  it('reports an unreadable index even with no sessions, and repair rebuilds it', async () => {
+    write('_index.json', '{not json')
+    expect(items(await audit())).toEqual([{ session_id: '', kind: 'index_unreadable', category: 'repairable', recommendation: 'rebuild_index', live_messages: -1, bak_messages: -1 }])
+    const [status] = await repair()
+    expect(status).toBe(200)
+    expect(JSON.parse(readFileSync(file('_index.json'), 'utf8'))).toEqual([])
+  })
 })
