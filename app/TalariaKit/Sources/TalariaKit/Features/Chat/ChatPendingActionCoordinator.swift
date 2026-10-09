@@ -475,6 +475,7 @@ final class ChatPendingActionCoordinator {
 
         do {
             let response = try await client.approvalPending(sessionID: sessionID)
+            guard !Task.isCancelled else { return }
             applyApprovalUpdate(response, sessionID: sessionID)
         } catch {
             // The web UI also ignores degraded-mode polling failures.

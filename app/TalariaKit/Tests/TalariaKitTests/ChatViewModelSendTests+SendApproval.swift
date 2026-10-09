@@ -992,6 +992,73 @@ extension ChatViewModelSendTests {
     }
 
     @MainActor
+    func testApprovalPollResponseAfterCleanupLeavesApprovalStateUnchanged() async throws {
+        let approvalStreamClient = SpySSEStreamingClient()
+        let approvalPendingRequests = LockedCounter()
+        let releaseApprovalResponse = DispatchSemaphore(value: 0)
+        defer { releaseApprovalResponse.signal() }
+        let hold = PollingLoopHold(pollsByInterval: [1: approvalPendingRequests])
+        let viewModel = try makeViewModel(
+            approvalStreamClient: approvalStreamClient,
+            pollingIntervals: ChatPollingIntervals(
+                approvalNanoseconds: 1,
+                clarificationNanoseconds: 2,
+                backgroundNanoseconds: 3,
+                sleep: { try await hold.sleep($0) }
+            )
+        ) { request in
+            switch request.url?.path {
+            case "/api/chat/start":
+                return apiTestJSONResponse(#"{"session_id": "session-abc", "stream_id": "stream-123"}"#, for: request)
+            case "/api/approval/pending":
+                _ = approvalPendingRequests.increment()
+                releaseApprovalResponse.wait()
+                return apiTestJSONResponse("""
+                {"pending": {"approval_id": "approval-late", "command": "make install",
+                 "description": "Install command", "pattern_key": "install"},
+                 "pending_count": 1}
+                """, for: request)
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        let didStart = await viewModel.sendMessage("Run the installer")
+        XCTAssertTrue(didStart)
+        approvalStreamClient.emit(.transportError("approval stream failed"))
+        try await waitUntil { approvalPendingRequests.count == 1 }
+        XCTAssertNil(viewModel.approvalPrompt)
+
+        // Cancelling while the request is held makes URLSession throw, so the response must arrive
+        // first: hold the main actor until it has, leaving the poll's continuation queued behind cleanup.
+        let client = viewModel.client
+        let session = await client.session
+        releaseApprovalResponse.signal()
+        XCTAssertTrue(blockUntilRequestsFinish(client: client, session: session))
+        viewModel.cleanupPollingTasks()
+
+        await drainMainActor()
+        XCTAssertEqual(approvalPendingRequests.count, 1)
+        XCTAssertNil(viewModel.approvalPrompt, "A response that arrives after cleanup must not show a prompt")
+    }
+
+    /// Blocks the calling thread until `session` has no running request and `client` has returned every
+    /// response, so a response's main-actor continuation is queued but cannot run while the caller blocks.
+    private nonisolated func blockUntilRequestsFinish(client: APIClient, session: URLSession) -> Bool {
+        let finished = DispatchSemaphore(value: 0)
+        Task.detached(priority: .background) {
+            while await !session.allTasks.isEmpty {
+                try? await Task.sleep(for: .milliseconds(1))
+            }
+            // A response already queued on the client actor runs before this lower-priority call.
+            try? await client.requireMutationAuthorization()
+            finished.signal()
+        }
+        return finished.wait(timeout: .now() + 10) == .success
+    }
+
+    @MainActor
     func testApprovalForDifferentSessionDoesNotRenderOverCurrentChat() async throws {
         let viewModel = try makeViewModel { request in
             XCTAssertEqual(request.url?.path, "/api/chat/start")
