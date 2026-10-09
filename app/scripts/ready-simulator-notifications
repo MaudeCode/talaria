@@ -1,15 +1,17 @@
 #!/bin/zsh
-# Waits until a booted simulator's notification service answers (TAL-651). After a fresh boot the
+# Boots a simulator and waits until its notification service answers (TAL-651). After a fresh boot the
 # iOS 27 simulator's dasd can hang in its own launch, and SpringBoard starts its notification
 # server only once dasd answers: until then every notification settings, permission and delivery
 # request hangs, for minutes on a hosted runner. Restarting dasd unblocks SpringBoard. A push to an
 # uninstalled bundle is the probe: it waits for the notification server, then fails as
-# unauthorized without showing anything.
+# unauthorized without showing anything. A push to a shut-down simulator fails at once, which the probe
+# would take for an answer, and parallel testing leaves its leased device shut down (TAL-682).
 # Usage: scripts/ready-simulator-notifications <simulator-udid>
 
 set -euo pipefail
 (( $# == 1 )) || { print -u2 "Usage: scripts/ready-simulator-notifications <simulator-udid>"; exit 64; }
 simulator_id=$1
+xcrun simctl bootstatus "$simulator_id" -b >/dev/null
 
 payload=$(mktemp -t talaria-notification-probe)
 probe_pid=""

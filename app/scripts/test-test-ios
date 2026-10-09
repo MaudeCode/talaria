@@ -49,6 +49,7 @@ EOF
 cat > "$repo/scripts/ready-simulator-notifications" <<'EOF'
 #!/bin/zsh
 print -r -- "$1" >> "$TALARIA_TEST_STATE/notifications-readied"
+print -r -- "ready $1" >> "$TALARIA_TEST_STATE/events"
 EOF
 cat > "$repo/.xcodebuildmcp/config.yaml" <<'EOF'
 defaults:
@@ -60,6 +61,8 @@ if [[ "$*" == "simctl list devices available --json" ]]; then
     <"${TALARIA_DEVICE_FIXTURE:?}"
 elif [[ "$1 $2" == "simctl spawn" ]]; then
     print -r -- "${@:3}" >> "$TALARIA_TEST_STATE/spawned"
+elif [[ "$1 $2" == "simctl bootstatus" || "$1 $2" == "simctl push" ]]; then
+    print -r -- "$2 $3" >> "$TALARIA_TEST_STATE/xcrun-calls"
 elif [[ "$1 $2 $3 $4" == "xcresulttool get test-results summary" ]]; then
     bundle=""
     for (( index = 1; index <= $#; index++ )); do
@@ -119,6 +122,7 @@ active=$(( active + 1 ))
 print -r -- "$active" > "$state/active"
 print -r -- "$maximum" > "$state/maximum"
 print -r -- "$destination|$result_bundle|${(j: :)selectors}|$parallel" >> "$state/runs"
+print -r -- "run ${(j: :)selectors}|$parallel" >> "$state/events"
 rmdir "$lock"
 
 sleep "${TALARIA_FAKE_XCODEBUILD_SECONDS:-0.08}"
@@ -372,6 +376,36 @@ grep -q "Not preparing personal simulator DDDDDDDD" "$state/personal-seed.log"
 [[ $(wc -l < "$state/seeded" | tr -d ' ') == 1 ]]
 [[ "$(<"$state/notifications-readied")" == (AAAAAAAA|BBBBBBBB)-* ]]
 [[ $(wc -l < "$state/notifications-readied" | tr -d ' ') == 1 ]]
+
+# The parallel UI phase can leave the leased device's notification service hanging, so the
+# notification journey's serial phase readies it again right before testing (TAL-682).
+: > "$state/events"
+"$repo/scripts/test-ios" TalariaUITests/ResponseCompletionAlertUITests TalariaUITests/SettingsStructureUITests \
+    > "$state/serial-ready.log" 2>&1
+events=("${(@f)$(<"$state/events")}")
+leased=${events[1]#ready }
+expected="ready $leased"$'\n'"run -only-testing:TalariaUITests/SettingsStructureUITests|YES"
+expected+=$'\n'"ready $leased"$'\n'"run -only-testing:TalariaUITests/ResponseCompletionAlertUITests|NO"
+[[ "${(F)events}" == "$expected" ]] || {
+    print -u2 "Expected the notification service to be readied right before the serial phase:"
+    print -u2 -r -- "${(F)events}"
+    exit 1
+}
+: > "$state/events"
+TALARIA_DEVICE_FIXTURE="$state/fallback-devices" IOS_SIMULATOR_ID=DDDDDDDD-DDDD-DDDD-DDDD-DDDDDDDDDDDD \
+    "$repo/scripts/test-ios" TalariaUITests/ResponseCompletionAlertUITests TalariaUITests/SettingsStructureUITests \
+    > "$state/personal-serial.log" 2>&1
+! grep -q '^ready' "$state/events"
+
+# Xcode shuts the leased device down to clone it, and a push to a shut-down device fails at once, which
+# the probe would take for an answer: readiness boots the device before probing it (TAL-682).
+: > "$state/xcrun-calls"
+zsh "$source_root/scripts/ready-simulator-notifications" AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA
+[[ "$(<"$state/xcrun-calls")" == $'bootstatus AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA\npush AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA' ]] || {
+    print -u2 "Expected notification readiness to boot the simulator before probing it:"
+    cat "$state/xcrun-calls" >&2
+    exit 1
+}
 
 # A failed seed stops before testing and still returns its lease.
 touch "$state/seed-fail"
