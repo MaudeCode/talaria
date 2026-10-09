@@ -8,7 +8,9 @@ import { openAnchoredCreateFd, rmtreeAnchored, unlinkAnchored, FileExistsError }
 import { mimeFor } from './media.js'
 import { MAX_CHAT_ATTACHMENTS } from '@maudecode/talaria-web-contracts'
 
-export interface MultipartResult { fields: Record<string, string>; files: Record<string, { filename: string; body: Buffer }> }
+export interface MultipartFile { filename: string; body: Buffer }
+/** `files` keeps the last part per field name; `parts` keeps every file part in order (repeated field names included). */
+export interface MultipartResult { fields: Record<string, string>; files: Record<string, MultipartFile>; parts: MultipartFile[] }
 
 /** Python `parse_multipart`: boundary split with CRLF or LF part separators. */
 export function parseMultipart(raw: Buffer, contentType: string): MultipartResult {
@@ -17,7 +19,8 @@ export function parseMultipart(raw: Buffer, contentType: string): MultipartResul
   const boundary = Buffer.from((m[1] ?? '').replace(/^"|"$/g, ''))
   const delimiter = Buffer.concat([Buffer.from('--'), boundary])
   const fields: Record<string, string> = {}
-  const files: Record<string, { filename: string; body: Buffer }> = {}
+  const files: Record<string, MultipartFile> = {}
+  const fileParts: MultipartFile[] = []
   const parts = splitBuffer(raw, delimiter)
   for (const part of parts.slice(1)) {
     const stripped = stripLeadingNewlines(part)
@@ -37,10 +40,13 @@ export function parseMultipart(raw: Buffer, contentType: string): MultipartResul
     const fileM = /filename="([^"]*)"/.exec(disp)
     if (!nameM) continue
     const name = nameM[1] ?? ''
-    if (fileM) files[name] = { filename: fileM[1] ?? '', body: Buffer.from(body) }
+    if (fileM) {
+      files[name] = { filename: fileM[1] ?? '', body: Buffer.from(body) }
+      fileParts.push(files[name])
+    }
     else fields[name] = body.toString('utf8')
   }
-  return { fields, files }
+  return { fields, files, parts: fileParts }
 }
 
 function splitBuffer(buf: Buffer, delimiter: Buffer): Buffer[] {

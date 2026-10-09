@@ -222,6 +222,20 @@ describe('archive extraction, workspace upload, and copy path', () => {
       expect(many.status).toBe(200)
       expect(many.body.count).toBe(2)
       expect((many.body.files as Json[]).map((f) => f.filename)).toEqual(['a.txt', 'b.txt'])
+      // Repeated `file` parts are each stored, in order.
+      const repeated = await send('/api/workspace/upload', { session_id: sid, path: 'repeated' }, [['file', 'one.txt', Buffer.from('1')], ['file', 'two.txt', Buffer.from('2')]])
+      expect(repeated.body.count).toBe(2)
+      expect(readFileSync(join(ws, 'repeated', 'one.txt'), 'utf8')).toBe('1')
+      expect(readFileSync(join(ws, 'repeated', 'two.txt'), 'utf8')).toBe('2')
+    })
+
+    it('refuses a zip member whose bytes do not match its CRC-32', async () => {
+      const zip = await zipOf({ 'ok.txt': 'intact payload' })
+      const central = zip.lastIndexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]))
+      zip.writeUInt32LE((zip.readUInt32LE(central + 16) ^ 1) >>> 0, central + 16)
+      const { body } = await wsUpload('crc.zip', zip, 'crc')
+      expect(body).toMatchObject({ extracted: false, extract_error: 'Bad CRC-32 for file ok.txt' })
+      expect(readdirSync(join(ws, 'crc'))).toEqual([])
     })
 
     it('sanitizes a ../ filename into the target and rejects a traversing path with 400', async () => {

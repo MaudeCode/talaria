@@ -436,7 +436,7 @@ async function handleWorkspaceUpload(ctx: RequestContext): Promise<void> {
   const sessionId = form.fields.session_id ?? ''
   const subpath = form.fields.path ?? ''
   if (!sessionId) throw new HttpError(400, 'Missing session_id')
-  if (!Object.keys(form.files).length) throw new HttpError(400, 'No file field in request')
+  if (!form.parts.length) throw new HttpError(400, 'No file field in request')
   let workspace: string
   try {
     workspace = fileOpsSession(ctx, sessionId, { strictWorkspace: true }).workspace
@@ -461,7 +461,7 @@ async function handleWorkspaceUpload(ctx: RequestContext): Promise<void> {
   try {
     // Held for the whole upload, extraction included, so a Git operation cannot start in this workspace meanwhile.
     await ctx.deps.git.holdWrite(workspace, async () => {
-      for (const file of Object.values(form.files)) {
+      for (const file of form.parts) {
         if (!file.filename) continue
         const safeName = sanitizeUploadName(file.filename)
         let dest: string
