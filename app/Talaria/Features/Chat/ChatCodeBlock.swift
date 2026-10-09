@@ -13,7 +13,7 @@ struct ChatCodeBlock: View {
 
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage(ChatTranscriptDisplaySettings.wrapsCodeBlockLinesKey) private var wrapsCodeBlockLines = false
-    @State private var copyConfirmation = CodeBlockCopyConfirmation()
+    @State private var copyConfirmation = CopyConfirmation()
     @State private var highlightedCode: NSAttributedString?
 
     private let logger = Logger.talariaMarkdownRendering
@@ -178,6 +178,32 @@ struct ChatCodeBlock: View {
             !normalized.isEmpty
         else { return nil }
         return normalized
+    }
+
+    /// The Copy button's checkmark state, keyed to the latest copy's expiry.
+    struct CopyConfirmation {
+        static let displayDuration: Duration = .seconds(2)
+
+        private(set) var expiresAt: ContinuousClock.Instant?
+
+        var isShowing: Bool { expiresAt != nil }
+
+        /// Every copy restarts the full interval.
+        mutating func copied(at now: ContinuousClock.Instant) {
+            expiresAt = now + Self.displayDuration
+        }
+
+        /// Clears the checkmark only once the latest copy's interval has passed,
+        /// so a reset scheduled by an earlier copy cannot clear newer feedback.
+        mutating func expire(at now: ContinuousClock.Instant) {
+            if let expiresAt, now >= expiresAt {
+                self.expiresAt = nil
+            }
+        }
+
+        mutating func reset() {
+            expiresAt = nil
+        }
     }
 
     private func logFallback(reason: MarkdownHighlightFallbackReason, normalizedLanguage: String?, code: String) {

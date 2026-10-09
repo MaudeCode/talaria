@@ -181,6 +181,7 @@
 		C09500000000000000000005 /* AdaptiveGlassDebugFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = C09500000000000000000006 /* AdaptiveGlassDebugFixture.swift */; };
 		031031031031031031031009 /* DisplayMathView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03103103103103103103100A /* DisplayMathView.swift */; };
 		031031031031031031031003 /* MarkdownMathRendererTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 031031031031031031031004 /* MarkdownMathRendererTests.swift */; };
+		C1TAL1890000000000000002 /* ChatCodeBlockCopyConfirmationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1TAL1890000000000000001 /* ChatCodeBlockCopyConfirmationTests.swift */; };
 		C12800000000000000000001 /* ToolActivityGroupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C12800000000000000000002 /* ToolActivityGroupView.swift */; };
 		1A2B3C4D5E6F7000000000E0 /* ToolCallCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000E1 /* ToolCallCardView.swift */; };
 		C12800000000000000000003 /* ChatTimelineAccessorySurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = C12800000000000000000004 /* ChatTimelineAccessorySurface.swift */; };
@@ -613,6 +614,7 @@
 		C09500000000000000000006 /* AdaptiveGlassDebugFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdaptiveGlassDebugFixture.swift; sourceTree = "<group>"; };
 		03103103103103103103100A /* DisplayMathView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayMathView.swift; sourceTree = "<group>"; };
 		031031031031031031031004 /* MarkdownMathRendererTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownMathRendererTests.swift; sourceTree = "<group>"; };
+		C1TAL1890000000000000001 /* ChatCodeBlockCopyConfirmationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatCodeBlockCopyConfirmationTests.swift; sourceTree = "<group>"; };
 		C12800000000000000000002 /* ToolActivityGroupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolActivityGroupView.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000E1 /* ToolCallCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolCallCardView.swift; sourceTree = "<group>"; };
 		C12800000000000000000004 /* ChatTimelineAccessorySurface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTimelineAccessorySurface.swift; sourceTree = "<group>"; };
@@ -977,6 +979,7 @@
 				26AB000000000000000000F4 /* ProvidersViewModelTests.swift */,
 				26AB0000000000000000B402 /* AppIconAlternateTests.swift */,
 				031031031031031031031004 /* MarkdownMathRendererTests.swift */,
+				C1TAL1890000000000000001 /* ChatCodeBlockCopyConfirmationTests.swift */,
 				A04500000000000000000018 /* LiveActivityTests.swift */,
 				1A2B3C4D5E6F700000000340 /* AppIntentNewChatTests.swift */,
 				1A2B3C4D5E6F700000000344 /* AppIntentNewChatInProfileTests.swift */,
@@ -2032,6 +2035,7 @@
 				26AB000000000000000000B4 /* ProvidersViewModelTests.swift in Sources */,
 				26AB0000000000000000A402 /* AppIconAlternateTests.swift in Sources */,
 				031031031031031031031003 /* MarkdownMathRendererTests.swift in Sources */,
+				C1TAL1890000000000000002 /* ChatCodeBlockCopyConfirmationTests.swift in Sources */,
 				A04500000000000000000008 /* LiveActivityTests.swift in Sources */,
 				1A2B3C4D5E6F700000000341 /* AppIntentNewChatTests.swift in Sources */,
 				1A2B3C4D5E6F700000000345 /* AppIntentNewChatInProfileTests.swift in Sources */,

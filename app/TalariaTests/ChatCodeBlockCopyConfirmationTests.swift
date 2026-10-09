@@ -1,11 +1,12 @@
 import XCTest
-@testable import TalariaKit
+@testable import Talaria
 
-final class CodeBlockCopyConfirmationTests: XCTestCase {
+final class ChatCodeBlockCopyConfirmationTests: XCTestCase {
+    private typealias CopyConfirmation = ChatCodeBlock.CopyConfirmation
     private let start = ContinuousClock.now
 
     func testCopyShowsConfirmationUntilTwoSecondsPass() {
-        var confirmation = CodeBlockCopyConfirmation()
+        var confirmation = CopyConfirmation()
         XCTAssertFalse(confirmation.isShowing)
 
         confirmation.copied(at: start)
@@ -19,7 +20,7 @@ final class CodeBlockCopyConfirmationTests: XCTestCase {
     }
 
     func testCopyAfterExpiryShowsFreshConfirmation() {
-        var confirmation = CodeBlockCopyConfirmation()
+        var confirmation = CopyConfirmation()
         confirmation.copied(at: start)
         confirmation.expire(at: start + .seconds(2))
 
@@ -32,7 +33,7 @@ final class CodeBlockCopyConfirmationTests: XCTestCase {
     }
 
     func testRepeatedCopyRestartsIntervalAndOlderResetCannotClearIt() {
-        var confirmation = CodeBlockCopyConfirmation()
+        var confirmation = CopyConfirmation()
         confirmation.copied(at: start)
         confirmation.copied(at: start + .milliseconds(1_500))
 
@@ -45,7 +46,7 @@ final class CodeBlockCopyConfirmationTests: XCTestCase {
     }
 
     func testResetClearsConfirmationImmediately() {
-        var confirmation = CodeBlockCopyConfirmation()
+        var confirmation = CopyConfirmation()
         confirmation.copied(at: start)
 
         confirmation.reset()
