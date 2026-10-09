@@ -21,28 +21,45 @@ def _fake_module(monkeypatch, name: str, **attrs) -> None:
     monkeypatch.setitem(sys.modules, name, types.SimpleNamespace(**attrs))
 
 
-def _fake_bundles(monkeypatch, bundles=(), resolver=lambda name: None, builder=lambda key, args: None):
-    _fake_module(monkeypatch, "agent.skill_bundles", scan_bundles=lambda: {f"/{b['slug']}": b for b in bundles},
-                 resolve_bundle_command_key=resolver, build_bundle_invocation_message=builder, _bundles_cache={"/other": {}}, _bundles_cache_mtime=1.0)
-    return sys.modules["agent.skill_bundles"]
+def _shared_cache(*_args):
+    raise AssertionError("the Agent's process-wide bundle cache is shared with other profiles' callers")
 
 
-def _assert_cache_dropped(module) -> None:
-    # Unlocked Agent readers (cron jobs in other profiles) must rescan instead of reading this profile's bundles.
-    assert (module._bundles_cache, module._bundles_cache_mtime) == ({}, None)
+def _fake_bundles(monkeypatch, bundles=(), resolve=None, blocks=None) -> dict:
+    """Bundle files as dicts; ``seen`` records what the Agent's skill helpers were asked to do."""
+    seen: dict = {}
+
+    def load_blocks(identifiers, load, note, task_id, *, disabled_names):
+        seen["blocks"] = (identifiers, note("x"), task_id, disabled_names)
+        return blocks if blocks is not None else (identifiers[:1], identifiers[1:], [], [f"[{identifiers[0]} body]"])
+
+    def header(subject, loaded, **kwargs):
+        seen["header"] = (subject, loaded, kwargs)
+        return f"HEADER {subject}"
+
+    _fake_module(monkeypatch, "agent.skill_bundles", _iter_bundle_files=lambda: list(bundles), _load_bundle_file=lambda b: b,
+                 scan_bundles=_shared_cache, get_skill_bundles=_shared_cache, list_bundles=_shared_cache,
+                 resolve_bundle_command_key=_shared_cache, build_bundle_invocation_message=_shared_cache)
+    _fake_module(monkeypatch, "agent.skill_commands", resolve_slash_key=resolve or (lambda command, table: f"/{command.replace('_', '-')}" if f"/{command.replace('_', '-')}" in table else None),
+                 _load_skill_blocks=load_blocks, _load_skill_payload=lambda identifier: None, _scaffold_header=header, _disabled_skill_names=lambda platform: {"off"})
+    return seen
 
 
-def test_list_command_bundles_returns_bundle_metadata(monkeypatch) -> None:
-    module = _fake_bundles(monkeypatch, [
-        {"slug": "incident-review", "description": "Investigate incidents with the bundled workflow", "skills": ["triage", "report"]},
-        {"slug": "", "description": "ignored", "skills": ["missing-slug"]},
-        {"slug": "bare", "skills": ["one"]},
+def _bundle(slug: str, skills: list[str], **extra) -> dict:
+    return {"name": slug, "slug": slug, "skills": skills, **extra}
+
+
+def test_list_command_bundles_reads_the_profile_files_not_the_shared_cache(monkeypatch) -> None:
+    _fake_bundles(monkeypatch, [
+        _bundle("incident-review", ["triage", "report"], description="Investigate incidents with the bundled workflow"),
+        None,  # an unreadable bundle file
+        _bundle("bare", ["one"]),
+        _bundle("bare", ["two", "three"]),  # a duplicate slug keeps the first file, as scan_bundles does
     ])
     assert commands.list_command_bundles() == [
         {"name": "bare", "description": "Skill bundle", "skill_count": 1, "source": "bundle"},
         {"name": "incident-review", "description": "Investigate incidents with the bundled workflow", "skill_count": 2, "source": "bundle"},
     ]
-    _assert_cache_dropped(module)
 
 
 def test_list_command_bundles_degrades_to_empty(monkeypatch) -> None:
@@ -52,28 +69,19 @@ def test_list_command_bundles_degrades_to_empty(monkeypatch) -> None:
     def explode():
         raise OSError("unreadable bundles dir")
 
-    _fake_module(monkeypatch, "agent.skill_bundles", scan_bundles=explode)
+    _fake_module(monkeypatch, "agent.skill_bundles", _iter_bundle_files=explode)
     assert commands.list_command_bundles() == []
 
 
-def test_resolve_bundle_command_uses_bundle_runtime(monkeypatch) -> None:
-    seen = {}
-
-    def resolve(name):
-        seen["resolve_name"] = name
-        return "/incident-review" if name == "incident-review" else None
-
-    def build(key, args):
-        seen["build"] = (key, args)
-        return ("$incident review the primary alerts", ["triage", "report"], ["gone"])
-
-    module = _fake_bundles(monkeypatch, resolver=resolve, builder=build)
-    assert commands.resolve_bundle_command("/incident-review the primary alerts") == {
-        "name": "incident-review", "source": "bundle", "message": "$incident review the primary alerts",
-        "loaded_skills": ["triage", "report"], "missing_skills": ["gone"],
+def test_resolve_bundle_command_builds_the_agent_invocation(monkeypatch) -> None:
+    seen = _fake_bundles(monkeypatch, [_bundle("incident-review", ["triage", "gone"], instruction="Be brief.")])
+    assert commands.resolve_bundle_command("/incident_review the primary alerts") == {
+        "name": "incident-review", "source": "bundle", "message": 'HEADER "incident-review" skill bundle\n\n[triage body]',
+        "loaded_skills": ["triage"], "missing_skills": ["gone"],
     }
-    assert seen == {"resolve_name": "incident-review", "build": ("/incident-review", "the primary alerts")}
-    _assert_cache_dropped(module)
+    assert seen["blocks"] == (["triage", "gone"], '[Loaded as part of the "incident-review" skill bundle.]', None, {"off"})
+    assert seen["header"] == ('"incident-review" skill bundle', ["triage"], {
+        "lead_lines": ["Bundle: incident-review"], "missing": ["gone"], "disabled": [], "extra_instruction": "Be brief.", "user_instruction": "the primary alerts"})
 
 
 def _condition(exc: pytest.ExceptionInfo) -> str | None:
@@ -81,31 +89,22 @@ def _condition(exc: pytest.ExceptionInfo) -> str | None:
 
 
 def test_resolve_bundle_command_raises_for_unknown_bundle(monkeypatch) -> None:
-    _fake_bundles(monkeypatch)
+    _fake_bundles(monkeypatch, [_bundle("incident-review", ["triage"])])
     with pytest.raises(RpcError, match="Bundle command not found") as exc:
         commands.resolve_bundle_command("/does-not-exist investigate this")
     assert _condition(exc) == "bundle_not_found"
 
-    def missing(_name):
-        raise KeyError(_name)
-
-    _fake_bundles(monkeypatch, resolver=missing)
-    with pytest.raises(RpcError) as exc:
-        commands.resolve_bundle_command("/gone")
-    assert _condition(exc) == "bundle_not_found"
-
 
 def test_resolve_bundle_command_wraps_unexpected_runtime_errors(monkeypatch) -> None:
-    def explode(_name):
+    def explode(_command, _table):
         raise AttributeError("bundle runtime broke")
 
-    module = _fake_bundles(monkeypatch, resolver=explode)
+    _fake_bundles(monkeypatch, [_bundle("incident-review", ["triage"])], resolve=explode)
     with pytest.raises(RpcError, match="Skill bundle command unavailable") as exc:
         commands.resolve_bundle_command("/incident-review investigate this")
     assert _condition(exc) == "bundle_unavailable"
-    _assert_cache_dropped(module)
     # A bundle whose skills all fail to load builds no message.
-    _fake_bundles(monkeypatch, resolver=lambda name: f"/{name}")
+    _fake_bundles(monkeypatch, [_bundle("empty", ["gone"])], blocks=([], ["gone"], [], []))
     with pytest.raises(RpcError, match="no invocation text") as exc:
         commands.resolve_bundle_command("/empty")
     assert _condition(exc) == "bundle_unavailable"
@@ -115,10 +114,10 @@ def test_resolve_bundle_command_wraps_unexpected_runtime_errors(monkeypatch) -> 
 
 
 def test_resolve_bundle_command_rejects_bad_input(monkeypatch) -> None:
-    def invalid(_name):
+    def invalid(_command, _table):
         raise ValueError("bad bundle name")
 
-    _fake_bundles(monkeypatch, resolver=invalid)
+    _fake_bundles(monkeypatch, resolve=invalid)
     for command, message in (("   ", "command is required"), ("/x", "bad bundle name")):
         with pytest.raises(RpcError, match=message) as exc:
             commands.resolve_bundle_command(command)

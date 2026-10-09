@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import threading
-from contextlib import contextmanager
 from typing import Any
 
 from ..errors import InvalidParams, RpcError
@@ -27,7 +26,6 @@ _ALLOWED = frozenset(_RUNTIME_COMMANDS)
 _RELOAD_MCP_LOCK = threading.Lock()
 _RELOAD_SKILLS_LOCK = threading.Lock()
 _CODEX_RUNTIME_LOCK = threading.Lock()
-_BUNDLES_LOCK = threading.Lock()
 
 
 def parse_slash_command(command: str) -> tuple[str, str]:
@@ -246,17 +244,17 @@ def execute_plugin_command(command: str) -> str | None:
         return f"Plugin command error: {type(exc).__name__}"
 
 
-@contextmanager
-def _profile_bundles(skill_bundles):
-    """Scan the scoped profile's bundles into the Agent's cache for this call only.
+def _profile_bundles(skill_bundles) -> dict[str, dict[str, Any]]:
+    """The scoped profile's bundles keyed ``/slug``, read from disk the way ``scan_bundles`` reads them.
 
-    The Agent caches one profile's bundles for the whole process, keyed only by mtime, and other callers (cron jobs)
-    read it without this lock. Emptying it afterwards makes each of them rescan its own profile's bundles."""
-    with _BUNDLES_LOCK:
-        try:
-            yield skill_bundles.scan_bundles()
-        finally:
-            skill_bundles._bundles_cache, skill_bundles._bundles_cache_mtime = {}, None
+    ``scan_bundles``/``get_skill_bundles`` publish one profile's bundles in a process-wide cache keyed only by mtime,
+    which cron jobs in other profiles read concurrently, so the sidecar never fills it."""
+    out: dict[str, dict[str, Any]] = {}
+    for path in skill_bundles._iter_bundle_files():
+        info = skill_bundles._load_bundle_file(path)
+        if info:
+            out.setdefault(f"/{info['slug']}", info)
+    return out
 
 
 def list_command_bundles() -> list[dict[str, Any]]:
@@ -266,8 +264,7 @@ def list_command_bundles() -> list[dict[str, Any]]:
     except ImportError:
         return []
     try:
-        with _profile_bundles(skill_bundles) as found:
-            bundles = sorted(found.values(), key=lambda b: b["slug"])
+        bundles = sorted(_profile_bundles(skill_bundles).values(), key=lambda b: b["slug"])
     except Exception:  # noqa: BLE001
         log.warning("Failed to list skill bundles", exc_info=True)
         return []
@@ -275,19 +272,33 @@ def list_command_bundles() -> list[dict[str, Any]]:
              "skill_count": len(b.get("skills") or []), "source": "bundle"} for b in bundles if str(b.get("slug") or "").strip()]
 
 
+def _bundle_invocation(info: dict[str, Any], instruction: str) -> tuple[str, list[str], list[str]] | None:
+    """``build_bundle_invocation_message`` for a bundle read by ``_profile_bundles`` (that one looks it up in the shared cache)."""
+    from agent.skill_commands import _disabled_skill_names, _load_skill_blocks, _load_skill_payload, _scaffold_header
+
+    name = info["name"]
+    loaded, missing, disabled, blocks = _load_skill_blocks(
+        [(skill or "").strip() for skill in info["skills"]], _load_skill_payload, lambda _skill: f'[Loaded as part of the "{name}" skill bundle.]',
+        None, disabled_names=_disabled_skill_names(None))
+    if not blocks:
+        return None
+    header = _scaffold_header(f'"{name}" skill bundle', loaded, lead_lines=[f"Bundle: {name}"], missing=missing, disabled=disabled,
+                              extra_instruction=info.get("instruction") or "", user_instruction=instruction)
+    return "\n\n".join([header, *blocks]), loaded, missing
+
+
 def resolve_bundle_command(command: str) -> dict[str, Any]:
     """Expand ``/<bundle> [instruction]`` into the user message that loads the bundle's skills."""
     name, instruction = parse_slash_command(command)
     try:
         import agent.skill_bundles as skill_bundles
+        from agent.skill_commands import resolve_slash_key
     except ImportError as exc:
         raise RpcError("Skill bundle runtime unavailable", condition="bundle_unavailable") from exc
     try:
-        with _profile_bundles(skill_bundles):
-            key = skill_bundles.resolve_bundle_command_key(name)
-            result = skill_bundles.build_bundle_invocation_message(key, instruction) if key else None
-    except KeyError:
-        key = None
+        bundles = _profile_bundles(skill_bundles)
+        key = resolve_slash_key(name, bundles)
+        result = _bundle_invocation(bundles[key], instruction) if key else None
     except ValueError as exc:
         raise InvalidParams(str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
