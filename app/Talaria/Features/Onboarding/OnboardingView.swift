@@ -259,6 +259,14 @@ struct OnboardingView: View {
     }
 
     private func handlePageChange(from oldPage: Int, to newPage: Int) {
+        // iOS 27's page-style TabView writes page 0 back to its selection when the device
+        // rotates with the keyboard up (TAL-201). No swipe or button jumps from the connect
+        // page straight to the welcome page, so keep the page and the field's focus.
+        if oldPage == OnboardingFlowPolicy.connectPageIndex, newPage == 0, focusedField != nil {
+            currentPage = oldPage
+            return
+        }
+
         if OnboardingFlowPolicy.shouldClearConnectFocusWhenLeavingPage(newPage) {
             focusedField = nil
         }
