@@ -3,7 +3,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
-import { loadRelayConfig, PRESENCE_LEASE_SECONDS, PresenceLeases, profileIdentity, RelayPairingError, RelayPublisher, validatedOrigin, type RelayConfig } from './relay.js'
+import { loadRelayConfig, PRESENCE_LEASE_SECONDS, PRESENCE_MAX_LEASES, PresenceLeases, profileIdentity, RelayPairingError, RelayPublisher, validatedOrigin, type RelayConfig } from './relay.js'
 
 type Json = Record<string, unknown>
 const RELAY = 'https://relay.talaria.kil.dev'
@@ -206,6 +206,39 @@ describe('Talaria relay pairing and publishing', () => {
     leases.renew('work', 'tab_00000004', 1)
     now += PRESENCE_LEASE_SECONDS + 1
     expect(leases.has('work')).toBe(false)
+  })
+
+  it('keeps a presence sequence fence after its lease expires', () => {
+    let now = 1000
+    const leases = new PresenceLeases(() => now)
+    leases.renew('default', 'tab_00000005', 9)
+    leases.revoke('default', 'tab_00000005', 10)
+    now += PRESENCE_LEASE_SECONDS + 1
+    leases.renew('default', 'tab_00000005', 9)
+    expect(leases.has('default')).toBe(false)
+    leases.renew('default', 'tab_00000005', 11)
+    expect(leases.has('default')).toBe(true)
+    // Fences stay scoped to their profile and tab.
+    leases.renew('default', 'tab_00000006', 1)
+    leases.renew('work', 'tab_00000005', 1)
+    expect(leases.has('work')).toBe(true)
+    leases.revoke('default', 'tab_00000005', 12)
+    expect(leases.has('default')).toBe(true)
+    // A restart starts alert-eligible with no fences.
+    expect(new PresenceLeases(() => now).has('default')).toBe(false)
+  })
+
+  it('bounds presence state by evicting the least recently updated tab', () => {
+    let now = 1000
+    const leases = new PresenceLeases(() => now)
+    leases.revoke('default', 'tab_00000000', 5)
+    for (let i = 1; i < PRESENCE_MAX_LEASES; i++) leases.revoke('default', `tab_${String(i).padStart(8, '0')}`, 1)
+    now += PRESENCE_LEASE_SECONDS + 1
+    leases.renew('default', 'tab_00000000', 4)
+    expect(leases.has('default')).toBe(false)
+    leases.revoke('other', 'tab_99999999', 1)
+    leases.renew('default', 'tab_00000000', 4)
+    expect(leases.has('default')).toBe(true)
   })
 
   it('enrolls another profile with a signed request on the existing key', async () => {

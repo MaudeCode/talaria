@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A delayed activity update from a closed web tab no longer mutes iPhone notifications again after that tab has gone away.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

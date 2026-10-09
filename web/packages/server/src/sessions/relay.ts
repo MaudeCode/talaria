@@ -15,7 +15,7 @@ import type { SessionStore } from './store.js'
 import { str } from '../util.js'
 
 export const PRESENCE_LEASE_SECONDS = 90
-const PRESENCE_MAX_LEASES = 256
+export const PRESENCE_MAX_LEASES = 256
 const PRESENCE_TAB_RE = /^[A-Za-z0-9_-]{8,64}$/
 const DEFAULT_RELAY_URL = 'https://relay.talaria.kil.dev'
 const TERMINAL_RETENTION_S = 15 * 60
@@ -108,18 +108,18 @@ function signedHeaders(key: KeyObject, keyId: string, method: string, path: stri
 
 // ── presence leases ───────────────────────────────────────────────────────
 
-/** Profile-scoped browser activity leases; a fresh active lease mutes alerts for that profile. */
+/**
+ * Profile-scoped browser activity leases; a fresh active lease mutes alerts for that profile.
+ * Each tab's entry also fences its sequence number, so it outlives lease expiry: a delayed lower
+ * sequence stays rejected. At most PRESENCE_MAX_LEASES tabs are kept; the least recently updated
+ * tab is evicted first, which drops its fence too.
+ */
 export class PresenceLeases {
   private readonly leases = new Map<string, { expires: number; seq: number; active: boolean }>()
   constructor(private readonly now: () => number) {}
 
-  private prune(now: number): void {
-    for (const [key, entry] of this.leases) if (entry.expires <= now) this.leases.delete(key)
-  }
-
   private apply(profile: string, tabId: string, seq: number, active: boolean): void {
     const now = this.now()
-    this.prune(now)
     const key = `${profile}\n${tabId}`
     const current = this.leases.get(key)
     if (current && seq <= current.seq) return
@@ -132,8 +132,8 @@ export class PresenceLeases {
   revoke(profile: string, tabId: string, seq = 1): void { this.apply(profile, tabId, seq, false) }
 
   has(profile: string): boolean {
-    this.prune(this.now())
-    for (const [key, entry] of this.leases) if (entry.active && key.startsWith(`${profile}\n`)) return true
+    const now = this.now()
+    for (const [key, entry] of this.leases) if (entry.active && entry.expires > now && key.startsWith(`${profile}\n`)) return true
     return false
   }
 
