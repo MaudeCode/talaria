@@ -422,6 +422,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
         log(`[webui] state.db usage sync failed for ${session.session_id}: ${(error as Error).message}`)
       }
     },
+    configPath: (home) => agentConfig.path(home),
     profileConfig: async (profile) => { try { return await agentConfig.read(profileHome(profile ?? activeProfile())) } catch { return null } },
     titleRefreshEvery: () => { try { const every = Number(settings.load().auto_title_refresh_every); return Number.isInteger(every) && every > 0 ? every : 0 } catch { return 0 } },
     env,
@@ -526,7 +527,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
       },
     }
   }
-  completions = new CompletionDrain({ sidecar: () => sidecar, baseHome, profileHome: (p) => profileHome(p ?? activeProfile()), activeProfile, store, channels, registry, startTurn: async (session, prompt) => {
+  completions = new CompletionDrain({ sidecar: () => sidecar, configPath: (home) => agentConfig.path(home), baseHome, profileHome: (p) => profileHome(p ?? activeProfile()), activeProfile, store, channels, registry, startTurn: async (session, prompt) => {
     // TAL-577: a wakeup passes the user-turn admission; a stale runtime answers a retryable 409, which defers it on a retry timer.
     // TAL-542: its model repair reads the cached catalog only (Python `prefer_cached_catalog`), never waiting on a build.
     try {

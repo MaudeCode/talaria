@@ -79,6 +79,8 @@ export interface TurnRunnerDeps {
   workspaceBusy?: (workspace: string) => boolean
   /** Runs after the run is retired (Python teardown idle hook: deferred process wakeups). */
   onTurnEnd?: (sessionId: string) => void
+  /** TAL-576: the profile's authoritative config file (`AgentConfig.path`); `<home>/config.yaml` when absent. */
+  configPath?: (profileHome: string) => string
   /** The profile's config.yaml (turn budgets, reasoning effort, personality, delivery context); null when unavailable. */
   profileConfig?: (profile: string | null) => Promise<Config | null>
   /** `auto_title_refresh_every`: a generated title follows the latest exchange every N exchanges; 0 turns it off. */
@@ -981,7 +983,7 @@ export class TurnRunner {
   private persistError(s: Session, streamId: string, label: string, payload: Record<string, unknown>, activeTurnToken: string | null, agentRows: Message[] = [], runtimeProvider = ''): void {
     const startedAt = s.pending_started_at
     // TAL-576: an automatic wakeup with no usable credentials pauses the next ones instead of failing each.
-    if (s.pending_user_source === 'process_wakeup' && payload.type === 'credential_pool_empty') recordWakeupPause(s, this.deps.profileHome(s.profile), this.deps.now(), runtimeProvider)
+    if (s.pending_user_source === 'process_wakeup' && payload.type === 'credential_pool_empty') { const home = this.deps.profileHome(s.profile); recordWakeupPause(s, home, this.deps.now(), runtimeProvider, this.deps.configPath?.(home)) }
     this.materializePendingUserTurn(s, activeTurnToken, streamId)
     const duration = typeof startedAt === 'number' && startedAt > 0 ? Math.max(0, this.deps.now() - startedAt) : null
     s.active_stream_id = null

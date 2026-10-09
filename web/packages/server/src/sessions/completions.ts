@@ -44,6 +44,8 @@ export interface CompletionDrainDeps {
   now: () => number
   log: (line: string) => void
   pollMs?: number
+  /** TAL-576: the profile's authoritative config file (`AgentConfig.path`); `<home>/config.yaml` when absent. */
+  configPath?: (profileHome: string) => string
   /** TAL-372: each routed completion settles its background record. */
   background?: Pick<BackgroundActivity, 'recordEvent'>
 }
@@ -355,7 +357,7 @@ export class CompletionDrain {
    */
   private async holdWhilePaused(sid: string, session: Session, home: string, batched: Deferred[]): Promise<boolean> {
     const pause = session.process_wakeup_pause
-    if (!wakeupPaused(session, home)) {
+    if (!wakeupPaused(session, home, this.deps.configPath?.(home))) {
       if (pause !== session.process_wakeup_pause) this.saveSession(sid, session)
       return false
     }
@@ -367,7 +369,7 @@ export class CompletionDrain {
     if (current) {
       const before = current.process_wakeup_pause
       if (recovery === true) current.process_wakeup_pause = null
-      if (recovery === true || !wakeupPaused(current, home)) {
+      if (recovery === true || !wakeupPaused(current, home, this.deps.configPath?.(home))) {
         if (before !== current.process_wakeup_pause) this.saveSession(sid, current)
         return false
       }

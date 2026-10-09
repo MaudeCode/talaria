@@ -27,21 +27,31 @@ function authShape(value: unknown): unknown {
   return out
 }
 
-/** Python `process_wakeup_credential_state_fingerprint`: auth.json by content shape, config.yaml and `.env` by stat. */
-export function credentialStateFingerprint(profileHome: string): string {
-  const stamp = (name: string): string => { try { const st = statSync(join(profileHome, name), { bigint: true }); return `${String(st.mtimeNs)}:${String(st.size)}` } catch { return 'missing' } }
-  let auth: string
-  try { auth = JSON.stringify(authShape(JSON.parse(readFileSync(join(profileHome, 'auth.json'), 'utf8')))) } catch { auth = stamp('auth.json') }
-  return createHash('sha256').update(JSON.stringify([auth, stamp('config.yaml'), stamp('config.yml'), stamp('.env')])).digest('hex')
+const missing = (error: unknown): boolean => ['ENOENT', 'ENOTDIR'].includes(str((error as NodeJS.ErrnoException).code))
+
+/**
+ * Python `process_wakeup_credential_state_fingerprint`: auth.json by content shape, the authoritative config file
+ * (`AgentConfig.path`, which honours `HERMES_CONFIG_PATH`) and `.env` by stat. Throws when any of them cannot be read:
+ * unknown credential state is never a change.
+ */
+export function credentialStateFingerprint(profileHome: string, configPath = join(profileHome, 'config.yaml')): string {
+  const stamp = (path: string): string => { try { const st = statSync(path, { bigint: true }); return `${String(st.mtimeNs)}:${String(st.size)}` } catch (error) { if (missing(error)) return 'missing'; throw error } }
+  let text: string | null = null
+  try { text = readFileSync(join(profileHome, 'auth.json'), 'utf8') } catch (error) { if (!missing(error)) throw error }
+  const auth = text === null ? 'missing' : JSON.stringify(authShape(JSON.parse(text)))
+  return createHash('sha256').update(JSON.stringify([auth, stamp(configPath), stamp(join(profileHome, '.env'))])).digest('hex')
 }
 
 /**
  * `provider` is the session's own (a switch lifts the pause); `pool_provider` is whose pool ran dry: the provider the
- * Agent resolved for the turn, which a session on the config's implicit provider does not name.
+ * Agent resolved for the turn, which a session on the config's implicit provider does not name. Unreadable credential
+ * state records no fingerprint, so the first readable one lifts the pause.
  */
-export function recordWakeupPause(s: Session, profileHome: string, now: number, runtimeProvider: string): void {
+export function recordWakeupPause(s: Session, profileHome: string, now: number, runtimeProvider: string, configPath?: string): void {
   const provider = s.model_provider ?? ''
-  s.process_wakeup_pause = { paused: true, source: 'process_wakeup', classification: 'credential_pool_empty', provider, pool_provider: runtimeProvider.trim() || provider, paused_at: now, credential_state_fingerprint: credentialStateFingerprint(profileHome) }
+  let fingerprint = ''
+  try { fingerprint = credentialStateFingerprint(profileHome, configPath) } catch { /* recorded as unknown */ }
+  s.process_wakeup_pause = { paused: true, source: 'process_wakeup', classification: 'credential_pool_empty', provider, pool_provider: runtimeProvider.trim() || provider, paused_at: now, credential_state_fingerprint: fingerprint }
 }
 
 /** The pool's state for a paused session: `true` once an entry is usable, else the earliest retry deadline (epoch s), else null. */
@@ -117,11 +127,16 @@ export class HeldWakeups {
   }
 }
 
-/** Whether the session's wakeups stay paused; a pause whose provider or credential state changed is cleared (the caller saves). */
-export function wakeupPaused(s: Session, profileHome: string): boolean {
+/**
+ * Whether the session's wakeups stay paused; a pause whose provider or credential state changed is cleared (the caller
+ * saves). Credential state that cannot be read keeps the pause.
+ */
+export function wakeupPaused(s: Session, profileHome: string, configPath?: string): boolean {
   const pause = s.process_wakeup_pause
   if (!isDict(pause) || pause.paused !== true) return false
-  if (str(pause.provider) === (s.model_provider ?? '') && str(pause.credential_state_fingerprint) === credentialStateFingerprint(profileHome)) return true
+  let changed = str(pause.provider) !== (s.model_provider ?? '')
+  if (!changed) { try { changed = str(pause.credential_state_fingerprint) !== credentialStateFingerprint(profileHome, configPath) } catch { return true } }
+  if (!changed) return true
   s.process_wakeup_pause = null
   return false
 }
