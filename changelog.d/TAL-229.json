@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Closing the chat sidebar on desktop no longer flashes rounded corners on the icon rail before the sidebar finishes sliding closed.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
