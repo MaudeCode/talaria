@@ -780,14 +780,14 @@ export function countConversationRounds(dbPath: string, sid: string, since: numb
   return seenUser && answered ? rounds + 1 : rounds
 }
 
-/** The content of the session's newest `tool` row (the handoff marker's tail dedupe, TAL-258); null when there is none. */
-export function stateDbLatestToolContent(dbPath: string, sid: string): string | null {
+/** The content of the session's newest row when that row is a `tool` row (the handoff marker's tail dedupe, TAL-258); else null. */
+export function stateDbTailToolContent(dbPath: string, sid: string): string | null {
   if (!existsSync(dbPath)) return null
   try {
     const db = openStateDbReadonly(dbPath)
     try {
-      const row = db.prepare("SELECT content FROM messages WHERE session_id = ? AND role = 'tool' ORDER BY rowid DESC LIMIT 1").get(sid) as Dict | undefined
-      const content = row === undefined ? null : decodeStateDbContent(row.content)
+      const row = db.prepare('SELECT role, content FROM messages WHERE session_id = ? ORDER BY rowid DESC LIMIT 1').get(sid) as Dict | undefined
+      const content = row?.role === 'tool' ? decodeStateDbContent(row.content) : null
       return typeof content === 'string' ? content : null
     } finally {
       db.close()

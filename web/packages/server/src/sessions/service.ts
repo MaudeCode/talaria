@@ -18,7 +18,7 @@ import { COMPRESSION_RECOVERY_ACTION_START_FOCUSED, compressionRecoveryPayload, 
 import { SessionBusy, SessionNotFound, statSignature, type SessionStore } from './store.js'
 import { UNSETTLED_TODO_KEY, attachTodoState } from './todo.js'
 import { isClaudeCodeSessionId, type ClaudeCodeSessionSource } from './claude-code.js'
-import { CONVERSATION_ROUND_THRESHOLD, countConversationRounds, stateDbCompressionLineage, stateDbLatestToolContent, stateDbLineageReport, stateDbSessionMessages, stateDbSessionRead, stateDbSessionRow, stateDbSessionSources, stateDbTimestampSeconds, type StateDbRead } from './state-db.js'
+import { CONVERSATION_ROUND_THRESHOLD, countConversationRounds, stateDbCompressionLineage, stateDbTailToolContent, stateDbLineageReport, stateDbSessionMessages, stateDbSessionRead, stateDbSessionRow, stateDbSessionSources, stateDbTimestampSeconds, type StateDbRead } from './state-db.js'
 import { completionIncomplete, fallbackHandoffSummary, HANDOFF_SYSTEM_PROMPT, handoffMarker, handoffPayload, handoffTranscript, messageHandoffPayload, sameHandoff } from './handoff.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, compressionReference, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { SidecarError, type SidecarLike } from '../sidecar/client.js'
@@ -1180,12 +1180,12 @@ export class SessionService {
   /**
    * Python `_persist_handoff_summary`: a messaging session gets the marker in state.db and its WebUI record; any other
    * session in its WebUI record, or in state.db when it has none. Each store skips a marker its tail already holds, and
-   * the session lock keeps two summaries from both passing that check.
+   * the session lock keeps two summaries from both passing that check. A card neither store saved answers 503.
    */
   private async persistHandoffMarker(sid: string, profile: string, marker: Message): Promise<void> {
     const card = messageHandoffPayload(marker)
     const toStateDb = async (): Promise<boolean> => {
-      if (sameHandoff(handoffPayload(stateDbLatestToolContent(this.stateDbPath(profile), sid)), card)) return true
+      if (sameHandoff(handoffPayload(stateDbTailToolContent(this.stateDbPath(profile), sid)), card)) return true
       const sidecar = this.deps.sidecar?.()
       if (!sidecar) return false
       try {
@@ -1206,8 +1206,10 @@ export class SessionService {
         this.store.save(live)
         return true
       }
-      if (this.isMessagingSession(sid)) { await toStateDb(); toLocal(); return }
-      if (!toLocal()) await toStateDb()
+      const messaging = this.isMessagingSession(sid)
+      const saved = messaging ? [await toStateDb(), toLocal()].some(Boolean) : toLocal() || await toStateDb()
+      // The caller may switch away on success, so a card saved nowhere is an error, not a summary.
+      if (!saved) throw new HttpFailure(503, 'The handoff summary could not be saved; please retry.')
     })
   }
 

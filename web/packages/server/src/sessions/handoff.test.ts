@@ -264,6 +264,27 @@ describe('handoff dock routes', () => {
       expect(messageCount(sid)).toBe(31)
     })
 
+    it('appends the same card again once newer messages follow the state.db marker', async () => {
+      seedStateDb('gw-tail', roundRows(10), { source: 'telegram' })
+      expect((await post(s, '/api/session/handoff-summary', { session_id: 'gw-tail' })).status).toBe(200)
+      // An unanswered message keeps the round count, so the model writes the same card again.
+      seedStateDb('gw-tail', [['user', 'one more thing', 5000]], { source: 'telegram' })
+      expect((await post(s, '/api/session/handoff-summary', { session_id: 'gw-tail' })).status).toBe(200)
+      const rows = stateRows('gw-tail')
+      expect(markers(rows)).toHaveLength(2)
+      expect(rows.at(-1)).toMatchObject({ role: 'tool' })
+    })
+
+    it('answers 503 when the card is saved nowhere', async () => {
+      seedStateDb('gw-unsaved', roundRows(10), { source: 'telegram' })
+      sidecar.respond('state_db.append_message', (params) => { appended.push(params); return { ok: false } })
+      const res = await post(s, '/api/session/handoff-summary', { session_id: 'gw-unsaved' })
+      expect(res.status).toBe(503)
+      expect((await json(res)).error).toBe('The handoff summary could not be saved; please retry.')
+      expect(appended).toHaveLength(1)
+      expect(markers(stateRows('gw-unsaved'))).toEqual([])
+    })
+
     it('appends a state.db-only session\'s card to state.db', async () => {
       seedStateDb('gw-only', roundRows(10), { source: 'telegram' })
       const payload = await json(await post(s, '/api/session/handoff-summary', { session_id: 'gw-only' }))
