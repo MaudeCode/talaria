@@ -32,6 +32,8 @@
     "@orpc/server": "1.15.2",
     "mdast-util-from-markdown": "2.0.3",
     "node-pty": "1.1.0",
+    "seek-bzip": "2.0.0",
+    "xz-decompress": "0.2.3",
     "zod": "4.6.5"
   },
   "devDependencies": {

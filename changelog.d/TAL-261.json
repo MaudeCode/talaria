@@ -1,0 +1,22 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "The Web server again extracts uploaded zip and tar archives, including gzip, bzip2, and xz tarballs, into a chat's attachments or a workspace folder.",
+      "highlight": false,
+      "components": ["web"]
+    },
+    {
+      "category": "Added",
+      "summary": "The Web server again returns the full on-disk path of a workspace file for Copy file path.",
+      "highlight": false,
+      "components": ["web"]
+    },
+    {
+      "category": "Security",
+      "summary": "Archive uploads refuse any entry that would land outside the destination and stop extracting once they pass the size or file-count limit.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

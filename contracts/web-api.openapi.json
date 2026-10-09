@@ -27183,6 +27183,61 @@
         }
       }
     },
+    "/api/file/path": {
+      "post": {
+        "operationId": "files.path",
+        "summary": "Absolute on-disk path of a workspace-relative path; the file need not exist.",
+        "tags": [
+          "files"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "session_id": {
+                    "type": "string"
+                  },
+                  "path": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "session_id",
+                  "path"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    },
+                    "path": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "path"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/file/open-vscode": {
       "post": {
         "operationId": "files.openVsCode",
@@ -53769,6 +53824,108 @@
         "requestBody": {
           "required": true,
           "description": "Fields `session_id` and `file`.",
+          "content": {
+            "multipart/form-data": {}
+          }
+        }
+      }
+    },
+    "/api/upload/extract": {
+      "post": {
+        "summary": "Extract one archive (.zip, .tar, .tar.gz/.tgz, .tar.bz2/.tbz2, .tar.xz/.txz) into `<session inbox>/<stem>` and return a directory rollback receipt.",
+        "tags": [
+          "files"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "`{ok, extracted, files, dest, rollback_token}`.",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "400": {
+            "description": "No file, unsupported format, slip, member count over 10,000, or extracted bytes over `HERMES_WEBUI_MAX_EXTRACTED_MB`.",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "404": {
+            "description": "Unknown session or another profile's session.",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "413": {
+            "description": "Body exceeds the upload cap.",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "500": {
+            "description": "Unreadable archive or extraction failure.",
+            "content": {
+              "application/json": {}
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "description": "Fields `session_id` and `file`.",
+          "content": {
+            "multipart/form-data": {}
+          }
+        }
+      }
+    },
+    "/api/workspace/upload": {
+      "post": {
+        "summary": "Store files in the session workspace under `path`; archives are extracted into `path/<stem>` and removed. One file answers its object, several answer `{files, count}`.",
+        "tags": [
+          "files"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Per-file `{filename, path, size, mime, is_image, extracted}`; an archive adds `extracted_files`/`extracted_count`, or `extract_error` when extraction failed.",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "400": {
+            "description": "Missing `session_id`, no files, invalid path or name, too many duplicates, or a remote workspace (`code: remote_workspace_unsupported`).",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "403": {
+            "description": "Upload target escapes the workspace.",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "404": {
+            "description": "Unknown session, another profile's session, or an untrusted workspace.",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "409": {
+            "description": "Destination already exists or a Git operation is running.",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "413": {
+            "description": "Body exceeds the upload cap.",
+            "content": {
+              "application/json": {}
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "description": "Field `session_id`, optional `path`, and one or more file parts.",
           "content": {
             "multipart/form-data": {}
           }
