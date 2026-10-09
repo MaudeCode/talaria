@@ -84,6 +84,55 @@ test.describe('shell', () => {
     expect(after ?? '').not.toContain('dark')
   })
 
+  test('corner seams follow the sidebar collapse animation', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'desktop', 'seams only render on desktop')
+    await page.emulateMedia({ reducedMotion: 'no-preference' })
+    await page.goto('/')
+    await settle(page)
+    const seams = () => page.evaluate(() => {
+      const shown = (sel: string) => [...document.querySelectorAll(sel)].map((el) => { const s = getComputedStyle(el); return s.display !== 'none' && s.visibility === 'visible' })
+      return { rail: shown('.rail-seam'), sidebar: shown('.sidebar .seam'), sidebarWidth: document.querySelector('.sidebar')!.getBoundingClientRect().width }
+    })
+    // Toggle, wait for the sidebar's width transition to start, then freeze every transition at `at` ms so the check is frame-exact.
+    const toggleAt = (at: number) => page.evaluate(async (at) => {
+      const layout = document.querySelector('.layout')!
+      const wasCollapsed = layout.classList.contains('sidebar-collapsed')
+      document.getElementById('btnSidebarEdgeToggle')!.click()
+      const transitions = () => document.getAnimations().filter((a): a is CSSTransition => a instanceof CSSTransition)
+      while (layout.classList.contains('sidebar-collapsed') === wasCollapsed || !transitions().some((a) => a.transitionProperty === 'width')) await new Promise(requestAnimationFrame)
+      for (const a of transitions()) { a.pause(); a.currentTime = at }
+    }, at)
+    const finish = () => page.evaluate(() => { for (const a of document.getAnimations()) if (a instanceof CSSTransition) a.finish() })
+    const both = (n: boolean) => [n, n]
+
+    expect(await seams()).toMatchObject({ rail: both(false), sidebar: both(true) })
+
+    // Mid-collapse the sidebar still has width, so its own seams stay and the rail's wait.
+    await toggleAt(120)
+    const mid = await seams()
+    expect(mid.sidebarWidth).toBeGreaterThan(0)
+    expect(mid).toMatchObject({ rail: both(false), sidebar: both(true) })
+    await finish()
+    expect(await seams()).toMatchObject({ rail: both(true), sidebar: both(false), sidebarWidth: 0 })
+
+    // Expanding hands the corners back to the sidebar at once, never showing both sets.
+    await toggleAt(0)
+    expect(await seams()).toMatchObject({ rail: both(false), sidebar: both(true) })
+    await finish()
+    await toggleAt(0)
+    await finish()
+
+    // A persisted collapse renders the final corners on load without running a seam transition.
+    await page.reload()
+    await settle(page)
+    expect(await page.evaluate(() => document.getAnimations().some((a) => a instanceof CSSTransition && a.effect instanceof KeyframeEffect && !!a.effect.target?.matches('.seam')))).toBe(false)
+    expect(await seams()).toMatchObject({ rail: both(true), sidebar: both(false), sidebarWidth: 0 })
+
+    // With reduced motion the sidebar snaps closed, so the seams must not wait either.
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    expect(await page.locator('.rail-seam').first().evaluate((el) => getComputedStyle(el).transitionDelay)).toBe('0s')
+  })
+
   test('chat width setting sizes the chat column and persists', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'desktop', 'chat width only applies above the phone breakpoint')
     await page.setViewportSize({ width: 1600, height: 900 })

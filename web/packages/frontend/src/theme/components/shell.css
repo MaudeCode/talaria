@@ -40,7 +40,7 @@
 .icon-btn:hover{background:var(--icon-btn-hover-bg);color:var(--text);opacity:1}
 .icon-btn{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
 @media (min-width:641px){.layout.sidebar-collapsed .sidebar:not(.mobile-open){width:0 !important;min-width:0;border-right-color:transparent;pointer-events:none;overflow:visible}}
-@media (min-width:641px){.layout.sidebar-collapsed .sidebar:not(.mobile-open) > :not(.workspace-panel-edge-toggle){visibility:hidden}}
+@media (min-width:641px){.layout.sidebar-collapsed .sidebar:not(.mobile-open) > :not(.workspace-panel-edge-toggle,.seam){visibility:hidden}}
 @media (min-width:641px){.layout.sidebar-collapsed .sidebar:not(.mobile-open) .workspace-panel-edge-toggle{pointer-events:auto}}
 @media (min-width:641px){.layout.sidebar-collapsed .sidebar .resize-handle{display:none}}
 @media (min-width:641px){html[data-sidebar-collapsed="1"] .sidebar:not(.mobile-open){width:0 !important;min-width:0;opacity:0;transform:translateX(-14px);border-right-color:transparent;pointer-events:none;overflow:hidden;transition:none}}
@@ -59,8 +59,10 @@
 @media (max-width:640px){.app-titlebar-hamburger svg,.app-titlebar-new-chat svg,.app-titlebar-reload svg,.mobile-sidebar-close svg,.sidebar-nav .nav-tab svg,.icon-btn svg{display:block;flex:0 0 auto}}
 @media (max-width: 640px){.panel-head-btn.mobile-sidebar-close{display:inline-flex !important;align-items:center;justify-content:center;right:4px;top:calc(var(--app-titlebar-safe-top) - 2px);width:44px !important;height:44px !important;min-width:44px;min-height:44px;line-height:1;overflow:hidden}}
 @media (max-width: 640px){.panel-head-btn.mobile-sidebar-close svg{width:14px;height:14px;display:block}}
-/* Collapse/expand animation (a Tailwind transition-[…] class cannot carry durations, so it lives here). */
-@media (min-width:641px){.sidebar{transition:width .24s ease,min-width .24s ease,padding .24s ease,opacity .18s ease,transform .24s ease,margin .24s ease}}
+/* Collapse/expand animation (a Tailwind transition-[…] class cannot carry durations, so it lives here). The corner seams wait out --sidebar-dur. */
+:root{--sidebar-dur:.24s}
+@media (prefers-reduced-motion:reduce){:root{--sidebar-dur:0s}}
+@media (min-width:641px){.sidebar{transition:width var(--sidebar-dur) ease,min-width var(--sidebar-dur) ease,padding var(--sidebar-dur) ease,opacity .18s ease,transform var(--sidebar-dur) ease,margin var(--sidebar-dur) ease}}
 @media (max-width:640px){.sidebar{transition:transform .25s ease}}
 /* Handle spans sidebar x -3..4; the hover bar is 3px on the card side (x 0..3), one seam radius short of top and bottom. */
 .sidebar .resize-handle{right:-4px;width:7px;transition:none}
@@ -182,8 +184,10 @@ html[data-sidebar-collapsed="1"] #app:empty::after{margin-left:0}
 .seam-br{right:-3px;bottom:0;background:radial-gradient(circle at 0 0,transparent calc(var(--island-radius) - .5px),var(--main-surface) var(--island-radius))}
 .seam-tl{left:-3px;top:0;background:radial-gradient(circle at 100% 100%,transparent calc(var(--island-radius) - .5px),var(--main-surface) var(--island-radius))}
 .seam-bl{left:-3px;bottom:0;background:radial-gradient(circle at 100% 0,transparent calc(var(--island-radius) - .5px),var(--main-surface) var(--island-radius))}
-.rail-seam{display:none}
-.layout.sidebar-collapsed .rail-seam{display:block}
-.layout.sidebar-collapsed .sidebar .seam,html.hub-active .rightpanel .seam,html[data-workspace-panel="closed"] .rightpanel .seam{display:none}
+/* Collapsing hands the corners to the rail only once the sidebar has reached width 0; expanding hands them back at once. */
+.rail-seam{visibility:hidden}
+.layout.sidebar-collapsed .rail-seam{visibility:visible;transition:visibility 0s var(--sidebar-dur)}
+.layout.sidebar-collapsed .sidebar .seam{visibility:hidden;transition:visibility 0s var(--sidebar-dur)}
+html.hub-active .rightpanel .seam,html[data-workspace-panel="closed"] .rightpanel .seam{display:none}
 @media (max-width:769px){.seam{display:none}}
 }
