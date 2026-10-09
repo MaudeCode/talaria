@@ -93,7 +93,8 @@ Python proxy enforces consent, target validation, and auth injection.
 
 A dashboard plugin (`~/.hermes/plugins/<name>/dashboard/`) needs no manifest
 change. Its panel is served at `dashboard-plugins/<name>/index.html`: your own
-`dist/index.html` if present, otherwise a generated wrapper that loads
+`dist/index.html` if present (its relative URLs resolve inside `dist/`),
+otherwise a generated wrapper that loads
 `dist/style.css`, `dist/index.js` and the SDK. The IIFE runs inside the sandbox
 with `#root` and `#app` mount nodes. Anything that reached into the WebUI page
 (`window.parent`, shared globals, cookies) must move to protocol methods.
@@ -106,7 +107,7 @@ The tab page at the manifest's `tab.path` (default `/<name>`) serves
 `dist/index.js` into `#pluginPageContainer`; a path the app or the server
 already owns is refused. `/plugins/plugin.css` serves the shared stylesheet
 from the plugins directory (`HERMES_WEBUI_PLUGINS_DIR`, default
-`~/.hermes/plugins`).
+`$HERMES_HOME/plugins`).
 
 ## 9. Things that no longer exist
 

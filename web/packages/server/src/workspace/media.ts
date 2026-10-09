@@ -181,7 +181,11 @@ export function previewHeaders(csp: string): Record<string, string> {
 }
 
 export function htmlPreviewWithBlankBase(raw: Buffer): Buffer {
-  const base = '<base target="_blank">'
+  return htmlWithHeadTag(raw, '<base target="_blank">')
+}
+
+/** Insert `base` as the first `<head>` child, creating the head after any doctype so the page keeps standards mode. */
+export function htmlWithHeadTag(raw: Buffer, base: string): Buffer {
   let text = raw.toString('utf8')
   if (/<head(?:\s[^>]*)?>/i.test(text)) text = text.replace(/(<head\b[^>]*>)/i, `$1${base}`)
   else if (/<!doctype[^>]*>/i.test(text)) text = text.replace(/(<!doctype[^>]*>)/i, `$1<head>${base}</head>`)

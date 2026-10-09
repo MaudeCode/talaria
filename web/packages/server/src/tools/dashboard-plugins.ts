@@ -5,11 +5,12 @@
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { escapeHtml } from '../text/markdown.js'
+import { htmlWithHeadTag } from '../workspace/media.js'
 import { join, resolve } from 'node:path'
 import { isDict, type Dict } from '../config/agent-config.js'
 import type { Settings } from '../settings.js'
 import { pyBool } from '../settings.js'
-import { isServerOwned, isSpaPath } from '../spa.js'
+import { baseHrefFor, isServerOwned, isSpaPath } from '../spa.js'
 import { readContainedFile, text } from './extensions.js'
 
 const NAME_RE = /^[a-z][a-z0-9_-]{0,63}$/
@@ -24,9 +25,14 @@ const ASSET_MIME: Record<string, string> = {
   '.map': 'application/json; charset=utf-8', '.txt': 'text/plain; charset=utf-8',
 }
 
-export interface DashboardPluginDeps { env: Record<string, string | undefined>; homeDir: string; settings: () => Settings }
+export interface DashboardPluginDeps { env: Record<string, string | undefined>; hermesHome: string; settings: () => Settings }
 interface Plugin { name: string; manifest: Dict; tabPath: string; root: string }
 export interface PluginFile { body: Buffer; contentType: string }
+
+/** Add `<base href>` unless the document declares its own. */
+function withBase(body: Buffer, href: string): Buffer {
+  return /<base\b/i.test(body.toString('utf8')) ? body : htmlWithHeadTag(body, `<base href="${escapeHtml(href)}">`)
+}
 
 const html = (body: Buffer | string): PluginFile => ({ body: Buffer.isBuffer(body) ? body : Buffer.from(body, 'utf8'), contentType: ASSET_MIME['.html'] ?? '' })
 
@@ -35,7 +41,7 @@ export class DashboardPlugins {
 
   base(): string {
     const raw = (this.deps.env.HERMES_WEBUI_PLUGINS_DIR ?? '').trim()
-    return resolve(raw || join(this.deps.homeDir, '.hermes', 'plugins'))
+    return resolve(raw || join(this.deps.hermesHome, 'plugins'))
   }
 
   /**
@@ -59,7 +65,9 @@ export class DashboardPlugins {
       const name: unknown = manifest.name || entry
       if (typeof name !== 'string' || !NAME_RE.test(name)) continue
       const tab = isDict(manifest.tab) ? manifest.tab : {}
-      const tabPath = 'path' in tab ? tab.path : `/${name}`
+      const rawTabPath = 'path' in tab ? tab.path : `/${name}`
+      // Request paths arrive without a trailing slash, so the stored tab path drops it too.
+      const tabPath = typeof rawTabPath === 'string' ? rawTabPath.replace(/(?<=.)\/+$/, '') : rawTabPath
       if (typeof tabPath !== 'string' || !TAB_PATH_RE.test(tabPath) || isServerOwned(tabPath) || isSpaPath(tabPath)) continue
       if (out.some((p) => p.name === name || p.tabPath === tabPath)) continue
       out.push({ name, manifest, tabPath, root: dir })
@@ -102,10 +110,15 @@ export class DashboardPlugins {
     return found ? { body: found.body, contentType: ASSET_MIME['.css'] ?? '' } : null
   }
 
-  /** Python `serve_plugin_static`: built assets under `dist/` or `static/` with an allowlisted extension, no dotfiles. */
+  /**
+   * Python `serve_plugin_static`: built assets under `dist/` or `static/` with an allowlisted extension, no dotfiles.
+   * Any other path resolves inside `dist/`, so a `dist/index.html` served as the panel can use its own relative URLs.
+   */
   asset(name: string, rel: string): PluginFile | null {
     const plugin = this.enabledPlugin(name)
-    return plugin ? this.builtAsset(plugin, rel) : null
+    if (!plugin) return null
+    const top = rel.split('/')[0]
+    return this.builtAsset(plugin, top === 'dist' || top === 'static' ? rel : `dist/${rel}`)
   }
 
   private builtAsset(plugin: Plugin, rel: string): PluginFile | null {
@@ -147,7 +160,8 @@ export class DashboardPlugins {
     const plugin = listed && this.enabled(listed.name) ? listed : null
     if (!plugin) return null
     const own = this.builtAsset(plugin, 'dist/index.html')
-    if (own) return own
+    // The tab page resolves relative URLs like the panel document beside it, at any mount depth.
+    if (own) return html(withBase(own.body, `${baseHrefFor(path)}dashboard-plugins/${plugin.name}/`))
     const page = readContainedFile(join(plugin.root, '..'), 'static/index.html')
     if (page) return html(page.body)
     if (!this.builtAsset(plugin, 'dist/index.js')) return null

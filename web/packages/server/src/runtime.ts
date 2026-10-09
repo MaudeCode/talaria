@@ -647,7 +647,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     }),
     kanban: new KanbanService({ sidecar: () => sidecar, config: agentConfig }),
     extensions: new ExtensionService({ env, stateDir: config.stateDir, isAuthEnabled: () => auth.isAuthEnabled(), fetch: lazyFetch, log }),
-    dashboardPlugins: new DashboardPlugins({ env, homeDir: config.homeDir, settings: () => settings.load() }),
+    dashboardPlugins: new DashboardPlugins({ env, hermesHome: config.hermesHome, settings: () => settings.load() }),
     terminals,
     commitMessage: async (session, systemPrompt, userPrompt) => {
       if (!sidecar) throw new GitWorkspaceError('Commit message generation needs the Agent sidecar, which is not running', 'aux_unavailable')

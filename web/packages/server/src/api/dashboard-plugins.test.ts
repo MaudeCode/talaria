@@ -32,6 +32,7 @@ describe('dashboard plugin routes', () => {
     put('spa/dashboard/manifest.json', JSON.stringify({ name: 'spa', label: 'SPA Plugin', version: '1.2.0', tab: { path: '/spa-board', name: 'Board' } }))
     put('spa/dashboard/dist/index.html', '<!doctype html><title>spa own</title>')
     put('spa/dashboard/dist/app.js', 'console.log(1)')
+    put('spa/dashboard/dist/assets/chunk.js', 'chunk()')
     put('spa/dashboard/dist/.env', 'SECRET=1')
     put('spa/dashboard/dist/tool.py', 'print(1)')
     put('spa/dashboard/plugin_api.py', 'print(1)')
@@ -41,6 +42,9 @@ describe('dashboard plugin routes', () => {
     put('iife/dashboard/manifest.json', JSON.stringify({ label: 'IIFE <Plugin>', css: 'dist/style.css' }))
     put('iife/dashboard/dist/index.js', 'window.iife = 1')
     put('iife/dashboard/dist/style.css', 'body{}')
+    // A trailing slash on the tab path still matches the canonical request path.
+    put('slash/dashboard/manifest.json', JSON.stringify({ tab: { path: '/reports/' } }))
+    put('slash/dashboard/dist/index.html', '<!doctype html><html><head><title>slash</title></head><body></body></html>')
     // Manifests that would shadow the app, collide, or are unsafe are skipped.
     put('shadow/dashboard/manifest.json', JSON.stringify({ tab: { path: '/settings' } }))
     put('apishadow/dashboard/manifest.json', JSON.stringify({ tab: { path: '/api/sessions' } }))
@@ -63,7 +67,7 @@ describe('dashboard plugin routes', () => {
     await enable({})
     const body = await (await s.get('/api/extensions/manifests')).json() as { manifests: { id: string; source: string; enabled: boolean; panel: string; nav: { label: string }; name: string }[] }
     const plugins = body.manifests.filter((m) => m.source === 'plugin')
-    expect(plugins.map((m) => m.id)).toEqual(['iife', 'spa'])
+    expect(plugins.map((m) => m.id)).toEqual(['iife', 'slash', 'spa'])
     expect(plugins.find((m) => m.id === 'spa')).toMatchObject({ name: 'SPA Plugin', enabled: false, panel: 'dashboard-plugins/spa/index.html', nav: { label: 'Board' } })
   })
 
@@ -82,7 +86,12 @@ describe('dashboard plugin routes', () => {
     res = await s.get('/spa-board')
     expect(res.status).toBe(200)
     expect(sandboxed(res)).toBe(true)
-    expect(await res.text()).toContain('spa own')
+    // The tab page resolves the document's relative URLs against the panel directory.
+    expect(await res.text()).toBe('<!doctype html><head><base href="./dashboard-plugins/spa/"></head><title>spa own</title>')
+    // The panel document's relative URLs (`./assets/chunk.js`) resolve inside `dist/`.
+    res = await s.get('/dashboard-plugins/spa/assets/chunk.js')
+    expect(res.status).toBe(200)
+    expect(await res.text()).toBe('chunk()')
     res = await s.get('/dashboard-plugins/spa/dist/app.js')
     expect(res.status).toBe(200)
     expect(sandboxed(res)).toBe(true)
@@ -119,6 +128,15 @@ describe('dashboard plugin routes', () => {
     expect(res.status).toBe(200)
     expect(sandboxed(res)).toBe(true)
     frameable(res)
+  })
+
+  it('serves a tab page whose manifest path has a trailing slash', async () => {
+    await enable({ slash: true })
+    for (const path of ['/reports', '/reports/']) {
+      const res = await s.get(path)
+      expect(res.status, path).toBe(200)
+      expect(await res.text()).toContain('<head><base href="./dashboard-plugins/slash/"><title>slash</title>')
+    }
   })
 
   it('never lets a plugin tab path shadow the app or the API', async () => {
