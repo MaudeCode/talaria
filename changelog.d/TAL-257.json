@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Talaria Web again offers session cleanup, a read-only session lineage report, and starting a focused continuation after context compression is exhausted.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

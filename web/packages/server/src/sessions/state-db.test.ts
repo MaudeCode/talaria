@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -7,7 +7,7 @@ import { bootTestServer, type TestServer } from '../test/harness.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import type { SidecarResult } from '@maudecode/talaria-web-contracts'
 import { str } from '../util.js'
-import { agentSessionRowsExisting, cheapChangeFingerprint, latestCronSessionInfo, isCliSessionRowVisible, normalizeAgentSessionSource, projectAgentSessionRows, readImportableAgentSessionRows, stateDbHasSession, stateDbSessionSources } from './state-db.js'
+import { agentSessionRowsExisting, cheapChangeFingerprint, latestCronSessionInfo, isCliSessionRowVisible, normalizeAgentSessionSource, projectAgentSessionRows, readImportableAgentSessionRows, stateDbHasSession, stateDbLineageReport, stateDbSessionSources } from './state-db.js'
 import { GatewayWatcher, snapshotHash } from './gateway-watcher.js'
 import { capRecentCliSessions, keepLatestMessagingSessionPerSource, mergeCliSidebarMetadata, withOwnerLocks, type GatewayIdentity } from './list.js'
 
@@ -413,5 +413,151 @@ describe('claiming a CLI session for WebUI (TAL-256)', () => {
     const webhooks = s.deps.projects.ensureSystemProject('webhook', 'default', { create: false })
     expect(webhooks).toBeTruthy()
     expect(s.deps.sessionStore.get('hook-run').project_id).toBe(webhooks)
+  })
+})
+
+describe('session lineage report', () => {
+  let dir: string
+  let n = 0
+  beforeAll(() => { dir = realpathSync(mkdtempSync(join(tmpdir(), 'lineage-report-'))) })
+  afterAll(() => { rmSync(dir, { recursive: true, force: true }) })
+
+  /** The Agent's `sessions` columns, including `session_source` for forks; rows are inserted in the order given. */
+  function lineageDb(path: string, rows: { id: string; parent?: string; started_at: number; ended_at?: number; end_reason?: string; source?: string; session_source?: string }[]): string {
+    mkdirSync(join(path, '..'), { recursive: true })
+    const db = new DatabaseSync(path)
+    db.exec(`CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, session_source TEXT, title TEXT, model TEXT, started_at REAL NOT NULL, message_count INTEGER DEFAULT 0,
+      parent_session_id TEXT, ended_at REAL, end_reason TEXT);
+      CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)`)
+    for (const r of rows) {
+      db.prepare("INSERT INTO sessions (id, source, session_source, title, model, started_at, message_count, parent_session_id, ended_at, end_reason) VALUES (?, ?, ?, ?, 'openai/gpt-5', ?, 2, ?, ?, ?)")
+        .run(r.id, r.source ?? 'webui', r.session_source ?? null, r.id.replace(/_/g, ' '), r.started_at, r.parent ?? null, r.ended_at ?? null, r.end_reason ?? null)
+    }
+    db.close()
+    return path
+  }
+  const fresh = (rows: Parameters<typeof lineageDb>[1]): string => { n += 1; return lineageDb(join(dir, String(n), 'state.db'), rows) }
+  const t0 = 1_000_000
+  const ids = (rows: unknown): string[] => (rows as Json[]).map((r) => String(r.session_id))
+
+  it('walks continuation parents tip first without mutating', () => {
+    const db = fresh([
+      { id: 'lineage_report_root', started_at: t0, ended_at: t0 + 5, end_reason: 'compression' },
+      { id: 'lineage_report_mid', parent: 'lineage_report_root', started_at: t0 + 6, ended_at: t0 + 12, end_reason: 'cli_close' },
+      { id: 'lineage_report_tip', parent: 'lineage_report_mid', started_at: t0 + 13 },
+    ])
+    const report = stateDbLineageReport(db, 'lineage_report_tip')
+    expect(report).toMatchObject({ mutation: false, found: true, session_id: 'lineage_report_tip', lineage_key: 'lineage_report_root', tip_session_id: 'lineage_report_tip', total_segments: 3, materialized_segments: 3, children: [], manual_review: false })
+    expect(ids(report.segments)).toEqual(['lineage_report_tip', 'lineage_report_mid', 'lineage_report_root'])
+    expect((report.segments as Json[]).map((s) => s.role)).toEqual(['tip', 'hidden_segment', 'hidden_segment'])
+    expect(report).not.toHaveProperty('archive_candidates')
+    expect(report).not.toHaveProperty('delete_candidates')
+  })
+
+  it('stops at a parent from another source', () => {
+    const db = fresh([
+      { id: 'lineage_report_telegram_parent', source: 'telegram', started_at: t0, ended_at: t0 + 5, end_reason: 'compression' },
+      { id: 'lineage_report_webui_tip', parent: 'lineage_report_telegram_parent', started_at: t0 + 6 },
+    ])
+    const report = stateDbLineageReport(db, 'lineage_report_webui_tip')
+    expect(report).toMatchObject({ lineage_key: 'lineage_report_webui_tip', total_segments: 1, children: [] })
+    expect((report.segments as Json[]).map((s) => [s.session_id, s.role])).toEqual([['lineage_report_webui_tip', 'tip']])
+  })
+
+  it('treats an explicit fork as its own lineage', () => {
+    const db = fresh([
+      { id: 'lineage_report_root', started_at: t0, ended_at: t0 + 5, end_reason: 'compression' },
+      { id: 'lineage_report_fork', parent: 'lineage_report_root', started_at: t0 + 6, session_source: 'fork' },
+    ])
+    const report = stateDbLineageReport(db, 'lineage_report_fork')
+    expect(report).toMatchObject({ lineage_key: 'lineage_report_fork', tip_session_id: 'lineage_report_fork', total_segments: 1, children: [], manual_review: false })
+    expect((report.segments as Json[]).map((s) => [s.session_id, s.role])).toEqual([['lineage_report_fork', 'tip']])
+  })
+
+  it('projects a fork as a child, not a segment', () => {
+    const path = fresh([
+      { id: 'lineage_report_root', started_at: t0, ended_at: t0 + 5, end_reason: 'compression' },
+      { id: 'lineage_report_fork', parent: 'lineage_report_root', started_at: t0 + 6, session_source: 'fork' },
+    ])
+    const db = new DatabaseSync(path)
+    db.prepare("INSERT INTO messages (session_id, role, content, timestamp) VALUES ('lineage_report_fork', 'user', 'hello', ?)").run(t0 + 7)
+    db.close()
+    const rows = readImportableAgentSessionRows(path, { excludeSources: [] })
+    expect(rows.map((r) => r.id)).toEqual(['lineage_report_fork'])
+    expect(rows[0]).toMatchObject({ relationship_type: 'child_session', parent_session_id: 'lineage_report_root', _parent_lineage_root_id: 'lineage_report_root' })
+    expect(rows[0]).not.toHaveProperty('_lineage_root_id')
+    expect(rows[0]).not.toHaveProperty('_compression_segment_count')
+  })
+
+  it('lists a non-continuation child', () => {
+    const db = fresh([
+      { id: 'lineage_report_root', started_at: t0, ended_at: t0 + 5, end_reason: 'compression' },
+      { id: 'lineage_report_tip', parent: 'lineage_report_root', started_at: t0 + 6, ended_at: t0 + 15, end_reason: 'user_stop' },
+      { id: 'lineage_report_child', parent: 'lineage_report_tip', started_at: t0 + 8 },
+    ])
+    const report = stateDbLineageReport(db, 'lineage_report_tip')
+    expect(report).toMatchObject({ lineage_key: 'lineage_report_root', mutation: false })
+    expect(ids(report.segments)).toEqual(['lineage_report_tip', 'lineage_report_root'])
+    expect(report.children).toEqual([{ session_id: 'lineage_report_child', role: 'child_session', title: 'lineage report child', source: 'webui', started_at: t0 + 8, updated_at: t0 + 8, end_reason: null, active: true, archived: false }])
+  })
+
+  it('flags a walk that hits the hop limit', () => {
+    const db = fresh([
+      { id: 'lineage_report_root', started_at: t0, ended_at: t0 + 5, end_reason: 'compression' },
+      { id: 'lineage_report_mid', parent: 'lineage_report_root', started_at: t0 + 6, ended_at: t0 + 12, end_reason: 'compression' },
+      { id: 'lineage_report_tip', parent: 'lineage_report_mid', started_at: t0 + 13 },
+    ])
+    const report = stateDbLineageReport(db, 'lineage_report_tip', 1)
+    expect(report).toMatchObject({ mutation: false, manual_review: true, total_segments: 2 })
+    expect(ids(report.segments)).toEqual(['lineage_report_tip', 'lineage_report_mid'])
+  })
+
+  it('orders each parent\'s children newest first', () => {
+    const db = fresh([
+      { id: 'lineage_report_root', started_at: t0, ended_at: t0 + 5, end_reason: 'compression' },
+      { id: 'lineage_report_tip', parent: 'lineage_report_root', started_at: t0 + 6, ended_at: t0 + 15, end_reason: 'user_stop' },
+      { id: 'lineage_report_child_old', parent: 'lineage_report_tip', started_at: t0 + 8 },
+      { id: 'lineage_report_child_new', parent: 'lineage_report_tip', started_at: t0 + 20 },
+    ])
+    expect(ids(stateDbLineageReport(db, 'lineage_report_tip').children)).toEqual(['lineage_report_child_new', 'lineage_report_child_old'])
+  })
+
+  it('reads a database it cannot write', () => {
+    const db = fresh([
+      { id: 'parent-1', started_at: t0, ended_at: t0 + 5, end_reason: 'compression' },
+      { id: 'child-1', parent: 'parent-1', started_at: t0 + 6 },
+    ])
+    chmodSync(db, 0o444)
+    chmodSync(join(db, '..'), 0o555)
+    try {
+      expect(stateDbLineageReport(db, 'child-1')).toMatchObject({ found: true, lineage_key: 'parent-1', total_segments: 2 })
+    } finally {
+      chmodSync(join(db, '..'), 0o755)
+    }
+  })
+
+  describe('GET /api/session/lineage/report', () => {
+    let s: TestServer
+    beforeAll(async () => {
+      s = await bootTestServer()
+      lineageDb(join(s.state, 'state.db'), [
+        { id: 'lineage_report_root', started_at: t0, ended_at: t0 + 5, end_reason: 'compression' },
+        { id: 'lineage_report_tip', parent: 'lineage_report_root', started_at: t0 + 6 },
+      ])
+    })
+    afterAll(() => s.close())
+
+    it('reports from the active profile\'s state.db', async () => {
+      const res = await s.get('/api/session/lineage/report?session_id=lineage_report_tip')
+      expect(res.status).toBe(200)
+      expect(await json(res)).toMatchObject({ mutation: false, found: true, lineage_key: 'lineage_report_root', total_segments: 2 })
+    })
+
+    it('answers 404 for an unknown id and 400 without one', async () => {
+      let res = await s.get('/api/session/lineage/report?session_id=missing_lineage_report_session')
+      expect([res.status, await json(res)]).toEqual([404, { error: 'Session not found' }])
+      res = await s.get('/api/session/lineage/report')
+      expect([res.status, await json(res)]).toEqual([400, { error: 'session_id required' }])
+    })
   })
 })

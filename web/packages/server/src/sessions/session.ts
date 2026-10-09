@@ -176,6 +176,16 @@ export function contextUsage(fields: { post_compression_context_tokens_estimate?
 /** A share's public app-relative URL (TAL-563); rows ship it so clients never rebuild it from the token. */
 export const sharePath = (token: unknown): string | null => (typeof token === 'string' && token.trim() ? `/share/${encodeURIComponent(token.trim())}` : null)
 
+export const COMPRESSION_RECOVERY_TERMINAL_STATE = 'compression_exhausted'
+export const COMPRESSION_RECOVERY_ACTION_START_FOCUSED = 'start_focused_continuation'
+
+/** Python `compression_recovery_payload_for_session`: the session's live recovery payload, or null. */
+export function compressionRecoveryPayload(s: Session): Record<string, unknown> | null {
+  const recovery = s.compression_recovery
+  if (recovery.terminal_state !== COMPRESSION_RECOVERY_TERMINAL_STATE) return null
+  return str(recovery.recommended_action || s.recommended_recovery_action) === COMPRESSION_RECOVERY_ACTION_START_FOCUSED ? recovery : null
+}
+
 export const SIDEBAR_HEAVY_METADATA_FIELDS = ['compression_anchor_summary', 'compression_anchor_details', 'context_engine_state', 'compression_recovery', 'gateway_routing_history', 'composer_draft', 'process_wakeup_pause', 'share_token'] as const
 
 export function stripSidebarHeavyMetadata(row: Record<string, unknown>): Record<string, unknown> {

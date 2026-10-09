@@ -114,6 +114,7 @@ export const sessionsRouter = os.router({
       }
       return ctx.deps.sessions.search(input.q ?? '', opts) as { sessions: Record<string, unknown>[]; all_profiles: boolean; active_profile: string; query?: string; count?: number }
     })),
+    cleanup: os.sessions.cleanup.handler(({ context: { ctx } }) => run(() => ctx.deps.sessions.cleanup(false) as { ok: true; cleaned: number })),
     cleanupZeroMessage: os.sessions.cleanupZeroMessage.handler(({ context: { ctx } }) => run(() => ctx.deps.sessions.cleanup(true) as { ok: true; cleaned: number })),
     // TAL-627: each id runs the single-session route's own guards, lock and cleanup, one at a time; a failure becomes
     // that id's result and the rest still run.
@@ -277,6 +278,19 @@ export const sessionsRouter = os.router({
       if (!generated.title) throw new HttpError(422, `Could not generate a better title (${generated.status || 'empty'})`)
       const current = await ctx.deps.sessions.persistGeneratedTitle(sid, generated.title, 'session_title_regenerate')
       return { session: ctx.deps.sessions.wireRow(current), title: current.title, status: generated.status, raw_preview: generated.rawPreview.slice(0, 240) }
+    })),
+    lineageReport: os.session.lineageReport.handler(({ input, context: { ctx } }) => run(() => {
+      const sid = input.session_id ?? ''
+      if (!sid) throw new HttpError(400, 'session_id required')
+      const report = ctx.deps.sessions.lineageReport(sid)
+      if (!report.found) throw new HttpError(404, 'Session not found')
+      return report as { found: true }
+    })),
+    compressionRecoveryStart: os.session.compressionRecoveryStart.handler(({ input, context: { ctx } }) => run(() => {
+      requireFields(input, 'session_id')
+      const sid = str(input.session_id).trim()
+      if (!sid) throw new HttpError(400, 'session_id is required')
+      return ctx.deps.sessions.compressionRecoveryStart(sid) as Promise<{ ok: true }>
     })),
     // TAL-255: the iOS `/compress` route joins or starts the session's compression job and answers with its result.
     compress: os.session.compress.handler(({ input, context: { ctx } }) => run(async () => {

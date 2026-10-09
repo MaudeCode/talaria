@@ -14,11 +14,11 @@ import { DraftVersionConflict, normalizeDraftVersion } from './drafts.js'
 import type { SessionEventBus } from './events.js'
 import { allSessions, buildSessionListPayload, CLI_IDENTITY_FIELDS, isClaimableCliSource, isMessagingSessionRecord, withOwnerLocks, withSessionWireFlags, lineageRootId, mergeCliSidebarMetadata, sessionListResponse, sessionSearchMatches, sessionSearchMessageText, sessionSearchPreview, sessionSearchTerms, type ListParams, type ListResponse, type Row, type RuntimeOverlay } from './list.js'
 import { anchorSceneIntOrNull, fullToolResult, hydrateAnchorActivityScenes, normalizeAnchorSceneMessageRef, readAnchorSceneRows, storeAnchorScene, withTurnIds } from './anchor.js'
-import { isSafeSessionId, lastMessageTimestamp, Session, sharePath, stripAttachedFilesMarker, titleFrom, type Message } from './session.js'
+import { COMPRESSION_RECOVERY_ACTION_START_FOCUSED, compressionRecoveryPayload, isSafeSessionId, lastMessageTimestamp, Session, sharePath, stripAttachedFilesMarker, titleFrom, type Message } from './session.js'
 import { SessionBusy, SessionNotFound, statSignature, type SessionStore } from './store.js'
 import { UNSETTLED_TODO_KEY, attachTodoState } from './todo.js'
 import { isClaudeCodeSessionId, type ClaudeCodeSessionSource } from './claude-code.js'
-import { stateDbCompressionLineage, stateDbSessionMessages, stateDbSessionRead, stateDbSessionRow, stateDbSessionSources, type StateDbRead } from './state-db.js'
+import { stateDbCompressionLineage, stateDbLineageReport, stateDbSessionMessages, stateDbSessionRead, stateDbSessionRow, stateDbSessionSources, type StateDbRead } from './state-db.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, compressionReference, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { SidecarError, type SidecarLike } from '../sidecar/client.js'
 import { agentSteerText, attachedFilesPrompt, attachmentObjects, dedupeContext, isContextCompressionMarker, journalOutputRows, looksLikeCurrentUserTurn, stoppedTurnContext, workspaceContextPrefix, mergeSessionMessagesAppendOnly, messageIdentity, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, type ToolResultView } from './merge.js'
@@ -1340,6 +1340,72 @@ export class SessionService {
       this.publish('session_branch', branch.profile, branch.session_id)
     }
     return { session_id: branch.session_id, title, parent_session_id: source.session_id }
+  }
+
+  /** Python `read_session_lineage_report` on the active profile's state.db. */
+  lineageReport(sid: string): Record<string, unknown> {
+    return stateDbLineageReport(this.stateDbPath(null), sid)
+  }
+
+  /**
+   * Python `_handle_session_compression_recovery_start`: open a compression-exhausted session's focused continuation, an
+   * empty fork keeping its workspace, model, profile, toolsets and worktree. A retry opens the oldest continuation
+   * already started from it in the same profile; the source's lock makes concurrent starts converge on one child.
+   */
+  async compressionRecoveryStart(sid: string): Promise<Record<string, unknown>> {
+    if (this.isSubagentViewOnly(sid)) throw new HttpFailure(400, 'Subagent sessions are view-only and cannot start compression recovery from WebUI')
+    const action = COMPRESSION_RECOVERY_ACTION_START_FOCUSED
+    let created = false
+    const child = await this.store.withLock(sid, () => {
+      // Validated under the lock: a delete that won it leaves no source to fork.
+      const source = this.store.get(sid)
+      if (!this.visibleToActiveProfile(source.profile)) throw new HttpFailure(404, 'Session not found')
+      if (!compressionRecoveryPayload(source)) throw new HttpFailure(409, 'Session does not have a compression recovery action.')
+      const existing = this.compressionRecoveryChild(sid, action, source.profile)
+      if (existing) return existing
+      const base = (source.title || 'Untitled').trim() || 'Untitled'
+      const fresh = new Session(
+        {
+          title: base.endsWith(' (focused continuation)') ? base : `${base} (focused continuation)`, workspace: source.workspace, model: source.model, model_provider: source.model_provider,
+          project_id: source.project_id, profile: source.profile, session_source: 'fork', personality: source.personality, enabled_toolsets: copyJson(source.enabled_toolsets),
+          context_length: source.context_length, threshold_tokens: source.threshold_tokens, gateway_routing: copyJson(source.gateway_routing), gateway_routing_history: copyJson(source.gateway_routing_history),
+          parent_session_id: source.session_id, worktree_path: source.worktree_path, worktree_branch: source.worktree_branch, worktree_repo_root: source.worktree_repo_root, worktree_created_at: source.worktree_created_at,
+          compression_recovery_source_session_id: sid, compression_recovery_action: action,
+          // An empty model-facing transcript: the focused follow-up must not replay the exhausted context.
+          messages: [], context_messages: [], composer_draft: { text: '', files: [] },
+        },
+        { workspace: source.workspace, model: source.model },
+      )
+      try {
+        this.store.save(fresh)
+      } catch (error) {
+        throw new HttpFailure(500, `Failed to start compression recovery: ${sanitizePaths(error)}`)
+      }
+      this.store.touch(fresh)
+      created = true
+      return fresh
+    })
+    if (created) this.publish('session_compression_recovery', child.profile, child.session_id)
+    return {
+      ok: true, session: this.publicSession(child), source_session_id: sid, recommended_recovery_action: action,
+      message: created ? 'Started a focused continuation. Describe the next narrow task to continue.' : 'Opened the existing focused continuation for this exhausted session.',
+    }
+  }
+
+  /** Python `find_compression_recovery_session`: the oldest same-profile continuation started from `sid`, cached or persisted. */
+  private compressionRecoveryChild(sid: string, action: string, profile: string | null): Session | null {
+    const matches = (s: Session): boolean => s.compression_recovery_source_session_id === sid && s.compression_recovery_action === action && this.deps.profilesMatch(s.profile, profile)
+    const found = new Map<string, Session>()
+    for (const s of this.store.sessions.values()) if (matches(s)) found.set(s.session_id, s)
+    for (const id of this.store.persistedIds()) {
+      if (found.has(id) || this.store.sessions.has(id)) continue
+      try {
+        const meta = this.store.get(id, { metadataOnly: true, promote: false, cacheOnMiss: false })
+        if (matches(meta)) found.set(id, meta)
+      } catch { /* unreadable: not a match */ }
+    }
+    const [oldest] = [...found.values()].sort((a, b) => (a.created_at || 0) - (b.created_at || 0) || (a.updated_at || 0) - (b.updated_at || 0) || (a.session_id < b.session_id ? -1 : 1))
+    return oldest ? this.store.get(oldest.session_id) : null
   }
 
   /** The run that keeps `delete` answering 409, if any; stream status reports it so a draining client can wait on it (TAL-622). */

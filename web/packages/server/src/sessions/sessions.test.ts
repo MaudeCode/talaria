@@ -1,10 +1,11 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { readMetadataJsonPrefixWithSignature, statSignature } from './store.js'
-import type { Session } from './session.js'
+import { Session } from './session.js'
+import { stampCompressionExhaustedRecovery } from './turn.js'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SidecarResult } from '@maudecode/talaria-web-contracts'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { FakeSidecar } from '../sidecar/fake.js'
@@ -2318,5 +2319,165 @@ describe('session toolsets (TAL-631)', () => {
     } finally {
       await s.close()
     }
+  })
+})
+
+describe('compression recovery start (TAL-257)', () => {
+  let s: TestServer
+  beforeAll(async () => { s = await bootTestServer() })
+  afterAll(() => s.close())
+
+  /** A persisted session whose last turn exhausted compression (`stampCompressionExhaustedRecovery`). */
+  async function exhausted(fields: Partial<Session> = {}): Promise<string> {
+    const sid = String((await newSession(s)).session_id)
+    const stored = s.deps.sessionStore.get(sid)
+    Object.assign(stored, { title: 'Long task', messages: [{ role: 'user', content: 'long task' }, { role: 'assistant', content: 'compression exhausted' }], ...fields })
+    stampCompressionExhaustedRecovery(stored, 'Context length exceeded.', '')
+    s.deps.sessionStore.save(stored)
+    return sid
+  }
+  const start = (sid: unknown): Promise<Response> => post(s, '/api/session/compression-recovery/start', { session_id: sid })
+  const childFiles = (sid: string): Json[] => readdirSync(s.deps.sessionStore.sessionDir).filter((n) => n.endsWith('.json') && !n.startsWith('_'))
+    .map((n) => JSON.parse(readFileSync(join(s.deps.sessionStore.sessionDir, n), 'utf8')) as Json).filter((d) => d.compression_recovery_source_session_id === sid)
+
+  it('creates a focused continuation linked to the source with an empty transcript', async () => {
+    const sid = await exhausted({ model: 'gpt-4o', model_provider: 'openai', project_id: 'proj_1', enabled_toolsets: ['web'], context_messages: [{ role: 'user', content: 'large context' }] })
+    const source = s.deps.sessionStore.get(sid)
+    const res = await start(sid)
+    expect(res.status).toBe(200)
+    const body = await json(res)
+    expect(body).toMatchObject({ ok: true, source_session_id: sid, recommended_recovery_action: 'start_focused_continuation', message: 'Started a focused continuation. Describe the next narrow task to continue.' })
+    const child = body.session as Json
+    expect(child.session_id).not.toBe(sid)
+    expect(child).toMatchObject({ title: 'Long task (focused continuation)', parent_session_id: sid, workspace: source.workspace, model: 'gpt-4o', model_provider: 'openai', project_id: 'proj_1', profile: source.profile, session_source: 'fork', enabled_toolsets: ['web'], messages: [] })
+    const saved = JSON.parse(readFileSync(join(s.deps.sessionStore.sessionDir, `${String(child.session_id)}.json`), 'utf8')) as Json
+    expect(saved).toMatchObject({ parent_session_id: sid, session_source: 'fork', context_messages: [], compression_recovery_source_session_id: sid, compression_recovery_action: 'start_focused_continuation' })
+    // The source keeps its recovery action.
+    expect(s.deps.sessionStore.get(sid).compression_recovery.recommended_action).toBe('start_focused_continuation')
+  })
+
+  it('does not merge the parent transcript into the child', async () => {
+    const sid = await exhausted()
+    const child = (await json(await start(sid))).session as Json
+    const detail = (await json(await s.get(`/api/session?session_id=${String(child.session_id)}`))).session as Json
+    expect(detail.messages).toEqual([])
+    expect(s.deps.sessionStore.get(String(child.session_id)).messages).toEqual([])
+  })
+
+  it('reuses the existing continuation, from the cache or from disk', async () => {
+    const sid = await exhausted()
+    const first = String(((await json(await start(sid))).session as Json).session_id)
+    const second = await json(await start(sid))
+    expect((second.session as Json).session_id).toBe(first)
+    expect(String(second.message)).toMatch(/^Opened the existing/)
+    s.deps.sessionStore.sessions.clear()
+    const third = await start(sid)
+    expect(third.status).toBe(200)
+    expect(((await json(third)).session as Json).session_id).toBe(first)
+    expect(childFiles(sid)).toHaveLength(1)
+  })
+
+  it('creates one continuation for concurrent starts', async () => {
+    const sid = await exhausted()
+    const bodies = await Promise.all(Array.from({ length: 5 }, async () => json(await start(sid))))
+    expect(new Set(bodies.map((b) => (b.session as Json).session_id)).size).toBe(1)
+    expect(bodies.filter((b) => String(b.message).startsWith('Started'))).toHaveLength(1)
+    expect(childFiles(sid)).toHaveLength(1)
+  })
+
+  it('answers 404 without a child when a delete wins the source lock', async () => {
+    const sid = await exhausted()
+    let release!: () => void
+    const held = s.deps.sessionStore.withLock(sid, () => new Promise<void>((resolve) => { release = resolve }))
+    const pending = start(sid)
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    s.deps.sessionStore.deleteFiles(sid)
+    release()
+    await held
+    const res = await pending
+    expect([res.status, (await json(res)).error]).toEqual([404, 'Session not found'])
+    expect(childFiles(sid)).toEqual([])
+  })
+
+  it('ignores an existing continuation from another profile', async () => {
+    const sid = await exhausted()
+    const foreign = new Session({ session_id: 'foreignchild1', title: 'Foreign focused continuation', profile: 'other-profile', parent_session_id: sid, compression_recovery_source_session_id: sid, compression_recovery_action: 'start_focused_continuation' }, { workspace: s.state, model: null })
+    s.deps.sessionStore.save(foreign)
+    s.deps.sessionStore.sessions.clear()
+    const body = await json(await start(sid))
+    expect((body.session as Json).session_id).not.toBe('foreignchild1')
+    expect((body.session as Json).profile).toBe(s.deps.sessionStore.get(sid).profile)
+    expect(new Set(childFiles(sid).map((c) => c.profile))).toEqual(new Set([s.deps.sessionStore.get(sid).profile, 'other-profile']))
+  })
+
+  it('answers 400, 404 and 409 like the Python route', async () => {
+    const plain = String((await newSession(s)).session_id)
+    writeMessages(s, plain, [{ role: 'user', content: 'hi' }])
+    const subagent = await exhausted({ source_tag: 'subagent' })
+    const foreign = new Session({ session_id: 'recoveryforeign', title: 'x', profile: 'other-profile', messages: [{ role: 'user', content: 'hi' }] }, { workspace: s.state, model: null })
+    stampCompressionExhaustedRecovery(foreign, '', '')
+    s.deps.sessionStore.save(foreign)
+    const cases: [unknown, number, string][] = [
+      [undefined, 400, 'Missing required field(s): session_id'],
+      ['   ', 400, 'session_id is required'],
+      [subagent, 400, 'Subagent sessions are view-only and cannot start compression recovery from WebUI'],
+      ['recoverymissing', 404, 'Session not found'],
+      ['recoveryforeign', 404, 'Session not found'],
+      [plain, 409, 'Session does not have a compression recovery action.'],
+    ]
+    for (const [sid, status, error] of cases) {
+      const res = await start(sid)
+      expect([sid, res.status, (await json(res)).error]).toEqual([sid, status, error])
+    }
+    expect(childFiles('recoveryforeign')).toEqual([])
+  })
+})
+
+describe('POST /api/sessions/cleanup (TAL-257)', () => {
+  let s: TestServer
+  beforeEach(async () => { s = await bootTestServer() })
+  afterEach(() => s.close())
+
+  const dir = (): string => s.deps.sessionStore.sessionDir
+  const file = (sid: string, title: string, messages: Json[] = [{ role: 'user', content: 'hi' }]): void => {
+    mkdirSync(dir(), { recursive: true })
+    writeFileSync(join(dir(), `${sid}.json`), JSON.stringify({ session_id: sid, title, messages, created_at: 1, updated_at: 1 }))
+  }
+  const index = (rows: Json[]): void => { mkdirSync(dir(), { recursive: true }); writeFileSync(s.deps.sessionStore.indexFile, JSON.stringify(rows)) }
+  const indexIds = (): string[] => (JSON.parse(readFileSync(s.deps.sessionStore.indexFile, 'utf8')) as Json[]).map((e) => String(e.session_id))
+  const cleanup = async (): Promise<Json> => { const res = await post(s, '/api/sessions/cleanup', {}); expect(res.status).toBe(200); return json(res) }
+
+  it('deletes empty Untitled sessions and index-only ghosts, keeping file-backed and in-memory rows', async () => {
+    file('sess-a', 'Legit')
+    file('sess-b', 'Untitled')
+    file('sess-zero', 'Untitled', [])
+    file('sess-titled-empty', 'Named', [])
+    const live = String((await newSession(s)).session_id)
+    index([{ session_id: 'sess-a' }, { session_id: 'sess-b' }, { session_id: 'sess-zero' }, { session_id: 'sess-titled-empty' }, { session_id: live }, { session_id: 'sess-ghost-a', title: 'Untitled', message_count: 5 }, { session_id: 'sess-ghost-b', title: 'Something' }])
+    expect(await cleanup()).toEqual({ ok: true, cleaned: 3 })
+    expect(existsSync(join(dir(), 'sess-zero.json'))).toBe(false)
+    expect(existsSync(join(dir(), 'sess-titled-empty.json'))).toBe(true)
+    expect(indexIds().sort()).toEqual(['sess-a', 'sess-b', 'sess-titled-empty', live].sort())
+  })
+
+  it('tolerates a missing, empty, or corrupt index and an entry without an id', async () => {
+    expect(await cleanup()).toEqual({ ok: true, cleaned: 0 })
+    index([])
+    expect(await cleanup()).toEqual({ ok: true, cleaned: 0 })
+    file('sess-real', 'Real')
+    index([{ session_id: 'sess-real' }, { title: 'NoId' }])
+    expect(await cleanup()).toEqual({ ok: true, cleaned: 0 })
+    expect(JSON.parse(readFileSync(s.deps.sessionStore.indexFile, 'utf8'))).toHaveLength(2)
+    writeFileSync(s.deps.sessionStore.indexFile, 'not valid json')
+    expect(await cleanup()).toEqual({ ok: true, cleaned: 0 })
+    expect(readFileSync(s.deps.sessionStore.indexFile, 'utf8')).toBe('not valid json')
+  })
+
+  it('rebuilds a corrupt index when it removed session files', async () => {
+    file('sess-orphan', 'Untitled', [])
+    file('sess-keep', 'Keep')
+    writeFileSync(s.deps.sessionStore.indexFile, 'corrupt json')
+    expect(await cleanup()).toEqual({ ok: true, cleaned: 1 })
+    expect(indexIds()).toEqual(['sess-keep'])
   })
 })
