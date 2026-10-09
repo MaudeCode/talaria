@@ -125,6 +125,7 @@ commented template.
 | `HERMES_WEBUI_SESSION_TTL`, `HERMES_WEBUI_SESSION_SLIDING`, `HERMES_WEBUI_SECURE`, `HERMES_WEBUI_COOKIE_NAME`, `HERMES_WEBUI_PROFILE_COOKIE_NAME` | 30 d, on, auto | Login cookie policy |
 | `HERMES_WEBUI_GATEWAY_BASE_URL` / `HERMES_WEBUI_GATEWAY_API_KEY` | `http://127.0.0.1:8642` | Hermes gateway API used by health probes and the gateway chat backend |
 | `HERMES_WEBUI_MAX_UPLOAD_MB`, `HERMES_WEBUI_FOLDER_ZIP_MAX_MB`, `HERMES_WEBUI_FOLDER_ZIP_MAX_FILES` | 20, 1024, 50000 | Upload and folder-download limits; the folder archive is plain ZIP32, so the last two are clamped to 4000 MB and 65535 entries |
+| `HERMES_WEBUI_MAX_EXTRACTED_MB` | 10 × upload limit | Total bytes one archive upload may extract (zip, tar, gzip, bzip2, xz); archives also stop at 10,000 files |
 | `HERMES_WEBUI_MAX_SSE_CLIENTS` | 8 per client | Concurrent stream cap per client identity |
 | `HERMES_WEBUI_EXTENSION_DIR`, `HERMES_WEBUI_EXTENSION_MANIFEST` | unset | Local extensions ([docs](docs/EXTENSIONS.md)) |
 | `HERMES_WEBUI_EXTERNAL_NOTES_SOURCES` | unset | Notes drawer sources |

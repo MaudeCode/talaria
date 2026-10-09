@@ -60,7 +60,7 @@ describe('.env loading', () => {
       // Anything else the server reads (the terminal shell, extra media roots, endpoints) or may read later.
       'SHELL', 'MEDIA_ALLOWED_ROOTS', 'TERMINAL_CWD', 'OPENAI_BASE_URL', 'SOME_AGENT_SETTING',
     ]
-    const allowed = { OPENAI_API_KEY: 'sk-profile', TELEGRAM_BOT_TOKEN: 't', AWS_SECRET: 's', HERMES_MODEL: 'm', HERMES_WEBUI_MAX_UPLOAD_MB: '50' }
+    const allowed = { OPENAI_API_KEY: 'sk-profile', TELEGRAM_BOT_TOKEN: 't', AWS_SECRET: 's', HERMES_MODEL: 'm', HERMES_WEBUI_MAX_UPLOAD_MB: '50', HERMES_WEBUI_MAX_EXTRACTED_MB: '500' }
     writeFileSync(join(dir, 'hermes.env'), [...protectedKeys.map((k) => `${k}=from-profile`), ...Object.entries(allowed).map(([k, v]) => `${k}=${v}`)].join('\n'))
     const env: Record<string, string | undefined> = { HERMES_WEBUI_ISOLATED_PROFILE: '1' }
     const logs: string[] = []

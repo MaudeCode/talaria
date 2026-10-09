@@ -1,5 +1,5 @@
 /** Minimal zip reader (central directory; stored and deflate members) for gallery extension installs. */
-import { inflateRawSync } from 'node:zlib'
+import { crc32, inflateRawSync } from 'node:zlib'
 
 export interface ZipEntry { name: string; size: number; isDir: boolean; read: () => Buffer }
 
@@ -16,6 +16,7 @@ export function readZip(buf: Buffer): ZipEntry[] {
   for (let i = 0; i < count; i += 1) {
     if (offset + 46 > buf.length || buf.readUInt32LE(offset) !== 0x02014b50) throw new BadZipError('central directory corrupt')
     const method = buf.readUInt16LE(offset + 10)
+    const crc = buf.readUInt32LE(offset + 16)
     const compressed = buf.readUInt32LE(offset + 20)
     const size = buf.readUInt32LE(offset + 24)
     const nameLen = buf.readUInt16LE(offset + 28)
@@ -39,6 +40,7 @@ export function readZip(buf: Buffer): ZipEntry[] {
           try { out = inflateRawSync(raw, { maxOutputLength: Math.max(1, size) }) } catch (error) { throw new BadZipError(`member ${name} inflates past its declared size: ${(error as Error).message}`) }
         } else throw new BadZipError(`unsupported compression method ${String(method)}`)
         if (out.length !== size) throw new BadZipError(`member ${name} is ${String(out.length)} bytes but declares ${String(size)}`)
+        if (crc32(out) !== crc) throw new BadZipError(`Bad CRC-32 for file ${name}`)
         return out
       },
     })

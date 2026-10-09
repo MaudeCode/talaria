@@ -29,6 +29,7 @@ export const workspacesContract = {
     rename: oc.route({ method: 'POST', path: '/api/file/rename', tags: ['files'] }).input(SessionPath.extend({ new_name: z.string() })).output(z.object({ ok: z.literal(true), old_path: z.string(), new_path: z.string() })),
     move: oc.route({ method: 'POST', path: '/api/file/move', tags: ['files'] }).input(SessionPath.extend({ dest_dir: z.string().optional(), destination: z.string().optional() })).output(z.object({ ok: z.literal(true), old_path: z.string(), new_path: z.string() })),
     reveal: oc.route({ method: 'POST', path: '/api/file/reveal', tags: ['files'] }).input(SessionPath).output(OkPath),
+    path: oc.route({ method: 'POST', path: '/api/file/path', tags: ['files'], summary: 'Absolute on-disk path of a workspace-relative path; the file need not exist.' }).input(SessionPath).output(OkPath),
     openVsCode: oc.route({ method: 'POST', path: '/api/file/open-vscode', tags: ['files'] }).input(SessionPath).output(OkPath),
   },
 }

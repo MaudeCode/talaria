@@ -3,7 +3,7 @@
  * ZIPs, transcript exports, and multipart uploads. Each mirrors its Python
  * handler and reuses the anchored file helpers.
  */
-import { closeSync, createReadStream, existsSync, readdirSync, statSync, realpathSync } from 'node:fs'
+import { closeSync, createReadStream, existsSync, mkdirSync, readdirSync, statSync, realpathSync } from 'node:fs'
 import { Readable } from 'node:stream'
 import { basename, join, relative } from 'node:path'
 import type { RequestContext } from '../http/context.js'
@@ -11,15 +11,18 @@ import { HttpError } from './router.js'
 import { fileOpsSession } from './sessions-router.js'
 import { HttpFailure } from '../sessions/service.js'
 import { SessionNotFound } from '../sessions/store.js'
-import { openAnchoredFd, safeResolve } from '../workspace/fs.js'
+import { FileExistsError, makeAnchoredDir, openAnchoredCreateFd, openAnchoredFd, rmtreeAnchored, safeResolve, safeResolveWs, unlinkAnchored } from '../workspace/fs.js'
 import { isWithin, resolvePathLikePython } from '../workspace/paths.js'
 import { isLoopback } from '../http/origin.js'
 import { truthy } from '../config.js'
 import { AUDIO_VIDEO_PDF_TYPES, contentDispositionValue, INLINE_IMAGE_TYPES, isValidDigest, mediaAnchorRoot, mediaTarget, mimeFor, serveFileBytes, serveInlineHtmlPreview, snapshotPathForDigest, snapshotServableForPath } from '../workspace/media.js'
 import { PREVIEW_PREFIX, previewGrantRoot } from '../workspace/preview.js'
 import { REMOTE_WORKSPACE_UNSUPPORTED_CODE, REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE } from '../workspace/workspaces.js'
+import { WORKSPACE_BUSY_MESSAGE } from '../workspace/git.js'
 import { ZipWriter } from '../workspace/zip.js'
-import { parseMultipart, UploadConflict, UploadRejected } from '../workspace/upload.js'
+import { guessMime, parseMultipart, sanitizeUploadName, uploadDestination, UploadConflict, UploadRejected, type MultipartResult } from '../workspace/upload.js'
+import { ArchiveRejected, CorruptArchive, extractArchive, isArchiveName } from '../workspace/extract.js'
+import { writeFully } from '../fs/atomic.js'
 import { pythonPrettyJson, renderSessionHtml } from '../sessions/export.js'
 import type { Session } from '../sessions/session.js'
 import { handleCspReport, handleTranscribe, handleTts } from './tools-raw.js'
@@ -43,6 +46,8 @@ export const RAW_GET_ROUTES: Record<string, RawHandler> = {
 
 export const RAW_POST_ROUTES: Record<string, RawHandler> = {
   '/api/upload': handleUpload,
+  '/api/upload/extract': handleUploadExtract,
+  '/api/workspace/upload': handleWorkspaceUpload,
   '/api/transcribe': handleTranscribe,
   '/api/tts': handleTts,
   '/api/csp-report': handleCspReport,
@@ -361,13 +366,14 @@ function handleSessionExport(ctx: RequestContext): void {
   ctx.send({ status: 200, headers: { 'Content-Type': contentType, 'Content-Disposition': `attachment; filename="hermes-${sid}.${ext}"`, 'Cache-Control': 'no-store' }, body: Buffer.from(payload, 'utf8') })
 }
 
-async function handleUpload(ctx: RequestContext): Promise<void> {
+/** The shared upload preamble: the declared-size gate, the bounded body read, and the multipart parse (answers on failure). */
+async function readUploadForm(ctx: RequestContext): Promise<MultipartResult | null> {
   const maxBytes = ctx.deps.config.maxUploadBytes
   const contentType = ctx.header('content-type') ?? ''
   const contentLength = Number.parseInt(ctx.header('content-length') ?? '0', 10) || 0
   if (contentLength > maxBytes) {
     ctx.json({ error: `File too large (max ${String(Math.floor(maxBytes / 1024 / 1024))}MB)` }, { status: 413 })
-    return
+    return null
   }
   let raw: Buffer
   try {
@@ -375,36 +381,52 @@ async function handleUpload(ctx: RequestContext): Promise<void> {
   } catch {
     // Node's parser already answers a garbage or negative Content-Length with 400 before this handler runs.
     ctx.json({ error: `Upload too large (max ${String(maxBytes)} bytes)` }, { status: 400 })
-    return
+    return null
   }
-  let parsed
   try {
-    parsed = parseMultipart(raw, contentType)
+    return parseMultipart(raw, contentType)
   } catch (error) {
     ctx.json({ error: (error as Error).message }, { status: 400 })
-    return
+    return null
   }
-  const sessionId = parsed.fields.session_id ?? ctx.query.get('session_id') ?? ''
-  const file = parsed.files.file
+}
+
+/** The single `file` part of a chat upload, or null after answering 400. */
+function uploadFile(ctx: RequestContext, form: MultipartResult): { filename: string; body: Buffer } | null {
+  const file = form.files.file
   if (!file) {
     ctx.json({ error: 'No file field in request' }, { status: 400 })
-    return
+    return null
   }
   if (!file.filename) {
     ctx.json({ error: 'No filename in upload' }, { status: 400 })
-    return
+    return null
   }
+  return file
+}
+
+/** An unknown session and another profile's session both answer 404 before anything is written. */
+function uploadSessionVisible(ctx: RequestContext, sessionId: string): boolean {
   let session: Session
   try {
     session = ctx.deps.sessionStore.get(sessionId, { metadataOnly: true })
   } catch {
     ctx.json({ error: 'Session not found' }, { status: 404 })
-    return
+    return false
   }
   if (!ctx.deps.profilesMatch(session.profile, ctx.deps.activeProfile())) {
     ctx.json({ error: 'Session not found' }, { status: 404 })
-    return
+    return false
   }
+  return true
+}
+
+async function handleUpload(ctx: RequestContext): Promise<void> {
+  const form = await readUploadForm(ctx)
+  if (!form) return
+  const sessionId = form.fields.session_id ?? ctx.query.get('session_id') ?? ''
+  const file = uploadFile(ctx, form)
+  if (!file || !uploadSessionVisible(ctx, sessionId)) return
   try {
     ctx.json(ctx.deps.uploads.store(sessionId, file.filename, file.body))
   } catch (error) {
@@ -414,4 +436,114 @@ async function handleUpload(ctx: RequestContext): Promise<void> {
     ctx.deps.log(`[webui] upload error: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`)
     ctx.json({ error: 'Upload failed' }, { status: 500 })
   }
+}
+
+/** Python `handle_upload_extract`: unpack an archive into `<session inbox>/<stem>` with a directory rollback receipt. */
+async function handleUploadExtract(ctx: RequestContext): Promise<void> {
+  const form = await readUploadForm(ctx)
+  if (!form) return
+  const sessionId = form.fields.session_id ?? ''
+  const file = uploadFile(ctx, form)
+  if (!file || !uploadSessionVisible(ctx, sessionId)) return
+  const { uploads } = ctx.deps
+  try {
+    const inbox = uploads.sessionDir(sessionId)
+    mkdirSync(inbox, { recursive: true })
+    const result = await extractArchive(file.body, file.filename, inbox, inbox, ctx.deps.config.maxExtractedBytes)
+    let token: string
+    try {
+      token = uploads.registerReceipt(sessionId, result.dest, true)
+    } catch (error) {
+      try { rmtreeAnchored(inbox, result.dest) } catch { /* ignore */ }
+      throw error
+    }
+    ctx.json({ ok: true, ...result, rollback_token: token })
+  } catch (error) {
+    if (error instanceof ArchiveRejected) { ctx.json({ error: error.message }, { status: 400 }); return }
+    ctx.deps.log(`[webui] upload extract error: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`)
+    ctx.json({ error: 'Archive extraction failed' }, { status: 500 })
+  }
+}
+
+type WorkspaceUploadResult = Record<string, unknown>
+
+/**
+ * Python `handle_workspace_upload`: store each multipart file under `<workspace>/<path>` (deduplicated `-1`...`-999`);
+ * an archive is extracted into `<path>/<stem>` and removed, and a failed extraction is reported on that file.
+ */
+async function handleWorkspaceUpload(ctx: RequestContext): Promise<void> {
+  const form = await readUploadForm(ctx)
+  if (!form) return
+  const sessionId = form.fields.session_id ?? ''
+  const subpath = form.fields.path ?? ''
+  if (!sessionId) throw new HttpError(400, 'Missing session_id')
+  if (!form.parts.length) throw new HttpError(400, 'No file field in request')
+  let workspace: string
+  try {
+    workspace = fileOpsSession(ctx, sessionId, { strictWorkspace: true }).workspace
+  } catch (error) {
+    if (error instanceof HttpError && error.message === REMOTE_WORKSPACE_UNSUPPORTED_CODE) throw new HttpError(400, REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE, { code: REMOTE_WORKSPACE_UNSUPPORTED_CODE })
+    throw error
+  }
+  workspace = resolvePathLikePython(workspace)
+  if (ctx.deps.git.workspaceBusy(workspace)) throw new HttpError(409, WORKSPACE_BUSY_MESSAGE)
+  let targetDir: string
+  try {
+    targetDir = subpath ? safeResolveWs(workspace, subpath) : workspace
+  } catch (error) {
+    throw new HttpError(400, (error as Error).message)
+  }
+  try {
+    makeAnchoredDir(workspace, targetDir)
+  } catch {
+    throw new HttpError(403, 'Upload target escapes workspace')
+  }
+  const results: WorkspaceUploadResult[] = []
+  try {
+    // Held for the whole upload, extraction included, so a Git operation cannot start in this workspace meanwhile.
+    await ctx.deps.git.holdWrite(workspace, async () => {
+      for (const file of form.parts) {
+        if (!file.filename) continue
+        const safeName = sanitizeUploadName(file.filename)
+        let dest: string
+        try {
+          dest = uploadDestination(targetDir, safeName)
+        } catch (error) {
+          if (error instanceof UploadRejected) throw new HttpError(400, error.message)
+          throw error
+        }
+        let fd: number
+        try {
+          fd = openAnchoredCreateFd(workspace, dest)
+        } catch (error) {
+          if (error instanceof FileExistsError) throw new HttpError(409, `Upload destination already exists: ${safeName}`)
+          throw new HttpError(403, `Path traversal blocked: ${safeName}`)
+        }
+        try { writeFully(fd, file.body) } finally { closeSync(fd) }
+        const mime = guessMime(safeName)
+        if (isArchiveName(safeName)) {
+          let outcome: WorkspaceUploadResult
+          try {
+            const extraction = await extractArchive(file.body, safeName, workspace, targetDir, ctx.deps.config.maxExtractedBytes)
+            outcome = { filename: safeName, path: extraction.dest, size: file.body.length, is_image: false, extracted: true, extracted_files: extraction.files, extracted_count: extraction.extracted }
+          } catch (error) {
+            const reason = error instanceof ArchiveRejected || error instanceof CorruptArchive ? error.message : null
+            ctx.deps.log(`[webui] workspace upload extract error: ${reason ?? (error instanceof Error ? (error.stack ?? error.message) : String(error))}`)
+            outcome = { filename: safeName, path: targetDir, size: file.body.length, mime, is_image: false, extracted: false, extract_error: reason || 'Archive extraction failed' }
+          }
+          // The archive itself never stays behind, whether or not it extracted.
+          try { unlinkAnchored(workspace, dest) } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
+          results.push(outcome)
+          continue
+        }
+        results.push({ filename: basename(dest), path: dest, size: file.body.length, mime, is_image: mime.startsWith('image/'), extracted: false })
+      }
+    })
+  } catch (error) {
+    if (error instanceof HttpError) throw error
+    if (error instanceof Error && error.message === 'Invalid filename') throw new HttpError(400, error.message)
+    ctx.deps.log(`[webui] workspace upload error: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`)
+    throw new HttpError(500, 'Upload failed')
+  }
+  ctx.json(results.length === 1 ? results[0] : { files: results, count: results.length })
 }

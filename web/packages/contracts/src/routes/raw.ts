@@ -125,4 +125,14 @@ export const RAW_ROUTES: readonly RawRoute[] = [
     requestBody: { contentType: 'multipart/form-data', description: 'Fields `session_id` and `file`.' },
     responses: { 200: { description: 'Upload metadata.', contentType: 'application/json' }, 400: { description: 'No file or invalid name.', contentType: 'application/json' }, 409: { description: 'Destination already exists.', contentType: 'application/json' }, 413: { description: 'Body exceeds the upload cap.', contentType: 'application/json' } },
   },
+  {
+    method: 'POST', path: '/api/upload/extract', summary: 'Extract one archive (.zip, .tar, .tar.gz/.tgz, .tar.bz2/.tbz2, .tar.xz/.txz) into `<session inbox>/<stem>` and return a directory rollback receipt.', tags: ['files'],
+    requestBody: { contentType: 'multipart/form-data', description: 'Fields `session_id` and `file`.' },
+    responses: { 200: { description: '`{ok, extracted, files, dest, rollback_token}`.', contentType: 'application/json' }, 400: { description: 'No file, unsupported format, slip, member count over 10,000, or extracted bytes over `HERMES_WEBUI_MAX_EXTRACTED_MB`.', contentType: 'application/json' }, 404: { description: 'Unknown session or another profile\'s session.', contentType: 'application/json' }, 413: { description: 'Body exceeds the upload cap.', contentType: 'application/json' }, 500: { description: 'Unreadable archive or extraction failure.', contentType: 'application/json' } },
+  },
+  {
+    method: 'POST', path: '/api/workspace/upload', summary: 'Store files in the session workspace under `path`; archives are extracted into `path/<stem>` and removed. One file answers its object, several answer `{files, count}`.', tags: ['files'],
+    requestBody: { contentType: 'multipart/form-data', description: 'Field `session_id`, optional `path`, and one or more file parts.' },
+    responses: { 200: { description: 'Per-file `{filename, path, size, mime, is_image, extracted}`; an archive adds `extracted_files`/`extracted_count`, or `extract_error` when extraction failed.', contentType: 'application/json' }, 400: { description: 'Missing `session_id`, no files, invalid path or name, too many duplicates, or a remote workspace (`code: remote_workspace_unsupported`).', contentType: 'application/json' }, 403: { description: 'Upload target escapes the workspace.', contentType: 'application/json' }, 404: { description: 'Unknown session, another profile\'s session, or an untrusted workspace.', contentType: 'application/json' }, 409: { description: 'Destination already exists or a Git operation is running.', contentType: 'application/json' }, 413: { description: 'Body exceeds the upload cap.', contentType: 'application/json' } },
+  },
 ]

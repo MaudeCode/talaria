@@ -25,6 +25,8 @@ export interface ServerConfig {
   distRoot: string
   defaultWorkspace: string
   maxUploadBytes: number
+  /** Total bytes one archive upload may extract (zip/tar-bomb guard). */
+  maxExtractedBytes: number
   botName: string
   env: Env
   /** The user's home directory (tests pass a temp dir). */
@@ -108,6 +110,9 @@ export function loadConfig(opts: LoadConfigOptions): ServerConfig {
   const port = Number.parseInt(env.HERMES_WEBUI_PORT ?? '8787', 10)
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error(`Invalid HERMES_WEBUI_PORT=${JSON.stringify(env.HERMES_WEBUI_PORT)}`)
   const staticRoot = resolve(opts.webRoot, 'static')
+  const maxUploadBytes = envMbBytes(env.HERMES_WEBUI_MAX_UPLOAD_MB, 20, warn, 'HERMES_WEBUI_MAX_UPLOAD_MB')
+  // Python `_max_extracted_bytes`: a positive (fractional) MB value, else ten times the upload cap.
+  const extractedMb = Number((env.HERMES_WEBUI_MAX_EXTRACTED_MB ?? '').trim() || Number.NaN)
   return {
     host: env.HERMES_WEBUI_HOST ?? '127.0.0.1',
     port,
@@ -121,7 +126,8 @@ export function loadConfig(opts: LoadConfigOptions): ServerConfig {
     staticRoot,
     distRoot: resolve(staticRoot, 'dist'),
     defaultWorkspace: resolveDefaultWorkspace(null, { env, stateDir, home }),
-    maxUploadBytes: envMbBytes(env.HERMES_WEBUI_MAX_UPLOAD_MB, 20, warn, 'HERMES_WEBUI_MAX_UPLOAD_MB'),
+    maxUploadBytes,
+    maxExtractedBytes: Number.isFinite(extractedMb) && extractedMb > 0 ? Math.floor(extractedMb * 1024 * 1024) : 10 * maxUploadBytes,
     botName: env.HERMES_WEBUI_BOT_NAME ?? 'Hermes',
     homeDir: home,
     env,

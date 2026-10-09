@@ -704,6 +704,15 @@ export const sessionsRouter = os.router({
         throw fileError(error)
       }
     })),
+    path: os.files.path.handler(({ input, context: { ctx } }) => run(() => {
+      requireFields(input, 'session_id', 'path')
+      const s = fileOpsSession(ctx, input.session_id)
+      try {
+        return { ok: true as const, path: safeResolve(s.workspace, input.path) }
+      } catch (error) {
+        throw fileError(error)
+      }
+    })),
     openVsCode: os.files.openVsCode.handler(({ input, context: { ctx } }) => run(async () => {
       requireFields(input, 'session_id', 'path')
       const s = fileOpsSession(ctx, input.session_id)
