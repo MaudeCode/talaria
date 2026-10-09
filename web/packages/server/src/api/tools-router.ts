@@ -10,10 +10,11 @@ import { activeProfileName, ensureTrustedAuthSession, sessionCanManageServer } f
 import { HttpFailure } from '../sessions/service.js'
 import { SessionNotFound } from '../sessions/store.js'
 import { insightsSessionRows } from '../sessions/state-db.js'
-import { ConfigUnavailable, type Dict } from '../config/agent-config.js'
+import { ConfigUnavailable, type Config, type Dict } from '../config/agent-config.js'
 import { SidecarError } from '../sidecar/client.js'
 import { createPrompt, deletePrompt, externalNotesEnabled, loadPrompts, readMemory, writeMemory } from '../tools/memory.js'
-import { notesSources } from '../tools/mcp.js'
+import { JoplinError, joplinNote, joplinSearch, notesSources, type JoplinDeps } from '../tools/mcp.js'
+import { resolveWikiLocation, wikiPages, type WikiLocation } from '../tools/wiki.js'
 import { buildInsights } from '../tools/insights.js'
 import { commandCatalog } from '../tools/commands.js'
 import { agentHealth, dashboardStatus, readLogTail, systemHealth } from '../tools/health.js'
@@ -174,6 +175,33 @@ function memoryWorkspace(ctx: RequestContext, sessionId: string, workspace: stri
   try { return ctx.deps.workspaces.resolveTrusted(raw, profile) } catch { return null }
 }
 
+/** The external notes drawer's Joplin access; 404 while the drawer is disabled. */
+async function joplinDeps(ctx: RequestContext, disabled: Dict): Promise<JoplinDeps> {
+  const config = await ctx.deps.agentConfig.read(home(ctx))
+  if (!externalNotesEnabled(ctx.deps.config.env, config)) throw new HttpError(404, 'External notes sources are disabled.', { source: 'disabled', ...disabled })
+  return { config, env: ctx.deps.config.env, fetch: ctx.deps.fetch, redact: ctx.deps.sessions.deps.redactEnabled() }
+}
+
+/** A Joplin failure answers 502 with its fixed message. */
+async function joplin<T>(extra: Dict, fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn()
+  } catch (error) {
+    if (error instanceof JoplinError) throw new HttpError(502, error.message, { source: 'joplin', ...extra })
+    throw error
+  }
+}
+
+/** Python `int(limit or 20)`, falling back to 20 for anything unparseable or zero. */
+const notesLimit = (raw: string | undefined): number => (/^\s*[+-]?\d+\s*$/.test(raw ?? '') ? Number.parseInt(String(raw).trim(), 10) : 0) || 20
+
+/** The wiki root for the active profile; an unreadable config.yaml falls through to the default. */
+async function wikiLocation(ctx: RequestContext): Promise<WikiLocation> {
+  const profileHome = home(ctx)
+  const config: Config = await ctx.deps.agentConfig.read(profileHome).catch(() => ({}))
+  return resolveWikiLocation(ctx.deps.config.env, profileHome, config, ctx.deps.config.homeDir)
+}
+
 export const toolsRouter = os.router({
   skills: {
     list: os.skills.list.handler(({ input, context: { ctx } }) => run(async () => ({ skills: await ctx.deps.skills.list(home(ctx), str(input.category).trim() || null) }))),
@@ -246,11 +274,23 @@ export const toolsRouter = os.router({
       return notesSources(config, externalNotesEnabled(ctx.deps.config.env, config)) as never
     })),
     search: os.notes.search.handler(({ input, context: { ctx } }) => run(async () => {
-      const config = await ctx.deps.agentConfig.read(home(ctx))
-      if (!externalNotesEnabled(ctx.deps.config.env, config)) throw new HttpError(404, 'External notes sources are disabled.', { source: 'disabled', results: [] })
-      const source = str(input.source ?? 'joplin').trim().toLowerCase() || 'joplin'
-      throw new HttpError(source === 'joplin' ? 502 : 400, source === 'joplin' ? 'Joplin search is not available in this release.' : 'Search is currently implemented for Joplin sources only.', { source, results: [] })
+      const deps = await joplinDeps(ctx, { results: [] })
+      const source = str(input.source).trim().toLowerCase() || 'joplin'
+      const query = str(input.q).trim()
+      if (source !== 'joplin') throw new HttpError(400, 'Search is currently implemented for Joplin sources only.', { source, results: [] })
+      return { source: 'joplin' as const, query, results: await joplin({ query, results: [] }, () => joplinSearch(deps, query, notesLimit(input.limit))) }
     })),
+    item: os.notes.item.handler(({ input, context: { ctx } }) => run(async () => {
+      const deps = await joplinDeps(ctx, {})
+      const source = str(input.source).trim().toLowerCase() || 'joplin'
+      if (source !== 'joplin') throw new HttpError(400, 'Preview is currently implemented for Joplin sources only.', { source })
+      return { source: 'joplin' as const, note: await joplin({}, () => joplinNote(deps, str(input.id))) }
+    })),
+  },
+  wiki: {
+    status: os.wiki.status.handler(({ context: { ctx } }) => run(async () => wikiPages.status(await wikiLocation(ctx)))),
+    browse: os.wiki.browse.handler(({ context: { ctx } }) => run(async () => wikiPages.browse(await wikiLocation(ctx)))),
+    page: os.wiki.page.handler(({ input, context: { ctx } }) => run(async () => wikiPages.page(await wikiLocation(ctx), str(input.path)))),
   },
   insights: os.insights.handler(({ input, context: { ctx } }) => run(() => {
     let entries: Dict[] = []

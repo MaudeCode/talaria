@@ -128,7 +128,8 @@ commented template.
 | `HERMES_WEBUI_MAX_EXTRACTED_MB` | 10 × upload limit | Total bytes one archive upload may extract (zip, tar, gzip, bzip2, xz); archives also stop at 10,000 files |
 | `HERMES_WEBUI_MAX_SSE_CLIENTS` | 8 per client | Concurrent stream cap per client identity |
 | `HERMES_WEBUI_EXTENSION_DIR`, `HERMES_WEBUI_EXTENSION_MANIFEST` | unset | Local extensions ([docs](docs/EXTENSIONS.md)) |
-| `HERMES_WEBUI_EXTERNAL_NOTES_SOURCES` | unset | Notes drawer sources |
+| `HERMES_WEBUI_EXTERNAL_NOTES_SOURCES` | unset | Notes drawer sources; Joplin search and preview read `JOPLIN_URL` (default `http://127.0.0.1:41184`) and `JOPLIN_TOKEN` from the `joplin` MCP server's `env`, then the environment |
+| `WIKI_PATH` | `~/wiki` | LLM wiki root for `/api/wiki/*`; also read from the profile `.env`, then `skills.config.wiki.path` or `wiki.path` in config.yaml |
 | `HERMES_WEBUI_LOG_FILE`, `HERMES_WEBUI_LOG_MAX_BYTES` | detached log, 32 MiB | Size-bounded server log |
 | `HERMES_WEBUI_RUN_JOURNAL_RETENTION_DAYS`, `HERMES_WEBUI_RUN_JOURNAL_KEEP_RECENT`, `HERMES_WEBUI_RUN_JOURNAL_FSYNC` | 14, 3, auto | Run journal retention |
 | `HERMES_WEBUI_SESSIONS_MAX` | 100 | Session cache size (prefer `webui.sessions_cache_max` in `config.yaml`) |

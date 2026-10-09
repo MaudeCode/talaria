@@ -2,6 +2,7 @@
 import type { SidecarLike } from '../sidecar/client.js'
 import { dict, isDict, type AgentConfig, type Config, type Dict } from '../config/agent-config.js'
 import { HttpFailure } from '../sessions/service.js'
+import { readCapped } from '../http/capped.js'
 import { redactString } from '../redact.js'
 import { str } from '../util.js'
 import type { McpHealthProber } from './mcp-health.js'
@@ -243,4 +244,81 @@ export function notesSources(config: Config, enabled: boolean): Dict {
   const hints = new Set(['joplin', 'obsidian', 'notion', 'llm-wiki', 'llmwiki', 'wiki', 'notes', 'note', 'knowledge', 'kb', 'readwise', 'logseq'])
   const sources = Object.entries(dict(config.mcp_servers)).filter(([name]) => [...hints].some((h) => name.toLowerCase().includes(h))).map(([name, cfg]) => ({ id: name, name, kind: 'mcp', enabled: isDict(cfg) ? parseEnabled(cfg.enabled) : false, tools: [] }))
   return { enabled: true, sources, source: sources.length ? 'config' : 'none', inventory_scope: 'already_known_runtime_only', attach_supported: false, automatic_recall_unchanged: true, recent_ai_notes: [] }
+}
+
+/** A Joplin call that failed; its message is fixed text safe to return to the client (Python `ValueError`). */
+export class JoplinError extends Error {}
+
+/** Python `_joplin_connection_from_config`: the `joplin` MCP server's env (name matched case-insensitively), then the process env. */
+function joplinConnection(config: Config, env: Record<string, string | undefined>): { url: string; token: string } {
+  const server = Object.entries(dict(config.mcp_servers)).find(([name]) => name.trim().toLowerCase() === 'joplin')?.[1]
+  const serverEnv = dict(dict(server).env)
+  return { url: (str(serverEnv.JOPLIN_URL) || env.JOPLIN_URL || 'http://127.0.0.1:41184').replace(/\/+$/, ''), token: str(serverEnv.JOPLIN_TOKEN) || env.JOPLIN_TOKEN || '' }
+}
+
+/**
+ * Python `_joplin_api_get`: the token rides in the `Authorization` header, and in the query only for `/search`, which
+ * some Web Clipper builds refuse without it. 8 s timeout, 2,000,000-byte read cap; failures carry no URL or token.
+ */
+async function joplinGet(config: Config, env: Record<string, string | undefined>, fetchImpl: typeof fetch, path: string, params: Record<string, string | number>): Promise<Dict> {
+  const { url, token } = joplinConnection(config, env)
+  if (!token) throw new JoplinError('Joplin token is not configured')
+  const safePath = '/' + path.replace(/^\/+/, '')
+  const query = new URLSearchParams(Object.entries(params).map(([k, v]): [string, string] => [k, String(v)]))
+  if (safePath === '/search') query.set('token', token)
+  let raw: Buffer | null
+  try {
+    const res = await fetchImpl(`${url}${safePath}?${query.toString()}`, { headers: { Authorization: `token ${token}` }, signal: AbortSignal.timeout(8000) })
+    if (!res.ok) {
+      await res.body?.cancel()
+      throw new JoplinError(`Joplin API returned HTTP ${String(res.status)}`)
+    }
+    raw = await readCapped(res, 2_000_000)
+  } catch (error) {
+    if (error instanceof JoplinError) throw error
+    throw new JoplinError('Joplin API is not reachable')
+  }
+  let data: unknown
+  try { data = JSON.parse(raw?.toString('utf8') ?? '') } catch { throw new JoplinError('Joplin API returned invalid JSON') }
+  return isDict(data) ? data : {}
+}
+
+/** Python `_note_snippet`: whitespace collapsed, started near the first match, cut at `limit`. */
+function noteSnippet(body: string, query: string, limit = 220): string {
+  let text = body.replace(/\s+/g, ' ').trim()
+  if (!text) return ''
+  const q = query.trim().toLowerCase()
+  if (q) {
+    const idx = text.toLowerCase().indexOf(q)
+    if (idx > 40) text = '…' + text.slice(Math.max(0, idx - 60))
+  }
+  return text.length > limit ? text.slice(0, limit).trimEnd() + '…' : text
+}
+
+export interface JoplinDeps { config: Config; env: Record<string, string | undefined>; fetch: typeof fetch; redact: boolean }
+
+/** Python `_joplin_search_notes`: up to `limit` (1-50) notes; an empty query asks Joplin nothing. */
+export async function joplinSearch(deps: JoplinDeps, rawQuery: string, limit: number): Promise<Dict[]> {
+  const query = rawQuery.trim()
+  if (!query) return []
+  const data = await joplinGet(deps.config, deps.env, deps.fetch, '/search', { query, type: 'note', fields: 'id,title,body,parent_id,updated_time', limit: Math.max(1, Math.min(limit, 50)) })
+  const results: Dict[] = []
+  for (const row of Array.isArray(data.items) ? data.items : []) {
+    if (!isDict(row)) continue
+    const id = safeText(row.id, 64)
+    if (!id) continue
+    results.push({ id, title: safeText(row.title || 'Untitled', 180), snippet: safeText(noteSnippet(str(row.body), query), 260), parent_id: safeText(row.parent_id, 64), updated_time: row.updated_time ?? null, source: 'joplin' })
+  }
+  return results
+}
+
+/** Python `_joplin_get_note`: the id is checked before it reaches the URL; the body is cut at 50,000 characters, then redacted. */
+export async function joplinNote(deps: JoplinDeps, rawId: string): Promise<Dict> {
+  const id = rawId.trim()
+  if (!/^[A-Za-z0-9]{16,64}$/.test(id)) throw new JoplinError('Invalid Joplin note id')
+  const data = await joplinGet(deps.config, deps.env, deps.fetch, `/notes/${id}`, { fields: 'id,title,body,parent_id,updated_time,created_time' })
+  if (!data.id) throw new JoplinError('Joplin note not found')
+  let body = str(data.body)
+  if (body.length > 50_000) body = body.slice(0, 50_000).trimEnd() + '\n\n[Preview truncated at 50,000 characters]'
+  return { id: safeText(data.id, 64), title: safeText(data.title || 'Untitled', 180), body: redactString(body, deps.redact), parent_id: safeText(data.parent_id, 64), updated_time: data.updated_time ?? null, created_time: data.created_time ?? null, source: 'joplin' }
 }
