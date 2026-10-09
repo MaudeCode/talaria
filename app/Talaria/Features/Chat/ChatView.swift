@@ -1764,15 +1764,16 @@ struct ChatView: View {
 
     /// Sends the draft; `command` (a side question or background task from Send's long-press menu) sends it
     /// as that slash command. During a reply it sends with `behavior` (Ctrl+Return's alternate or the menu's
-    /// choice), or else the stored setting.
+    /// choice), or else the stored setting; a chosen behavior sends a slash-led draft as text rather than running it.
     private func sendDraftMessage(as command: String? = nil, behavior: StreamingSendBehavior? = nil) async {
         guard viewModel.clarificationPrompt == nil else { return }
         let submittedDraft = draftMessage
         let submittedDraftRevision = draftRevision
         let shouldRestoreFocusAfterSend = composerIsFocused
         let commandText = command.map { "/\($0) \(submittedDraft)" } ?? submittedDraft
+        let sendsWithChosenBehavior = behavior != nil && viewModel.activeStreamID != nil
 
-        if commandText.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("/") {
+        if !sendsWithChosenBehavior, commandText.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("/") {
             let parsedCommand = SlashCommandExecutor.parse(commandText, catalog: viewModel.agentCommands)?.command
             let result = await SlashCommandExecutor.execute(text: commandText, viewModel: viewModel)
             handleSlashExecutionResult(

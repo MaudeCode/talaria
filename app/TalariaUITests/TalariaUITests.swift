@@ -3690,6 +3690,15 @@ final class QueuedMessagesChipUITests: ChatUITestCase {
         tapCenter(of: backgroundOption)
         XCTAssertTrue(element(labelContaining: "did not return a background task").awaitExistence(timeout: 5))
         XCTAssertEqual(composerInput.value as? String, "First queued message", "A failed menu send cleared the draft")
+
+        // A menu choice sends the draft that way even when it reads as a slash command (TAL-445).
+        composerInput.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: "First queued message".count))
+        composerInput.typeText("/status of the build")
+        app.buttons["Send"].press(forDuration: 1)
+        let slashQueueOption = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Queue")).firstMatch
+        XCTAssertTrue(slashQueueOption.awaitExistence(timeout: 5), "Long-pressing Send did not open the send menu")
+        tapCenter(of: slashQueueOption)
+        XCTAssertTrue(app.buttons["1 queued"].awaitExistence(timeout: 5), "Queue ran the slash command instead of queuing the draft")
     }
 }
 
