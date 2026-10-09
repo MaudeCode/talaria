@@ -185,7 +185,7 @@
 		C12800000000000000000001 /* ToolActivityGroupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C12800000000000000000002 /* ToolActivityGroupView.swift */; };
 		1A2B3C4D5E6F7000000000E0 /* ToolCallCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000E1 /* ToolCallCardView.swift */; };
 		C12800000000000000000003 /* ChatTimelineAccessorySurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = C12800000000000000000004 /* ChatTimelineAccessorySurface.swift */; };
-		C12900000000000000000001 /* StatusChip+RunStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = C12900000000000000000002 /* StatusChip+RunStatus.swift */; };
+		C12900000000000000000001 /* RunStatusChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = C12900000000000000000002 /* RunStatusChip.swift */; };
 		1A2B3C4D5E6F7000000000E2 /* ReasoningBlockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000E3 /* ReasoningBlockView.swift */; };
 		1A2B3C4D5E6F7000000000E4 /* FileBrowserView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000E5 /* FileBrowserView.swift */; };
 		1A2B3C4D5E6F7000000000E8 /* FilePreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000E9 /* FilePreviewView.swift */; };
@@ -618,7 +618,7 @@
 		C12800000000000000000002 /* ToolActivityGroupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolActivityGroupView.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000E1 /* ToolCallCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolCallCardView.swift; sourceTree = "<group>"; };
 		C12800000000000000000004 /* ChatTimelineAccessorySurface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTimelineAccessorySurface.swift; sourceTree = "<group>"; };
-		C12900000000000000000002 /* StatusChip+RunStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StatusChip+RunStatus.swift"; sourceTree = "<group>"; };
+		C12900000000000000000002 /* RunStatusChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RunStatusChip.swift"; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000E3 /* ReasoningBlockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReasoningBlockView.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000E5 /* FileBrowserView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileBrowserView.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000E9 /* FilePreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilePreviewView.swift; sourceTree = "<group>"; };
@@ -1200,7 +1200,7 @@
 				C12800000000000000000002 /* ToolActivityGroupView.swift */,
 				1A2B3C4D5E6F7000000000E1 /* ToolCallCardView.swift */,
 				C12800000000000000000004 /* ChatTimelineAccessorySurface.swift */,
-				C12900000000000000000002 /* StatusChip+RunStatus.swift */,
+				C12900000000000000000002 /* RunStatusChip.swift */,
 				1A2B3C4D5E6F7000000000E3 /* ReasoningBlockView.swift */,
 				B5A220000000000000000004 /* MarkerMessageCardView.swift */,
 				1A2B3C4D5E6F7000000000DB /* MarkdownRenderer.swift */,
@@ -1918,7 +1918,7 @@
 				C12800000000000000000001 /* ToolActivityGroupView.swift in Sources */,
 				1A2B3C4D5E6F7000000000E0 /* ToolCallCardView.swift in Sources */,
 				C12800000000000000000003 /* ChatTimelineAccessorySurface.swift in Sources */,
-				C12900000000000000000001 /* StatusChip+RunStatus.swift in Sources */,
+				C12900000000000000000001 /* RunStatusChip.swift in Sources */,
 				1A2B3C4D5E6F7000000000E2 /* ReasoningBlockView.swift in Sources */,
 				B5A220000000000000000003 /* MarkerMessageCardView.swift in Sources */,
 				1A2B3C4D5E6F7000000000E4 /* FileBrowserView.swift in Sources */,

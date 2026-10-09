@@ -70,6 +70,7 @@ public final class ChatViewModel {
     /// The running turn was started by a background result, not by the user.
     public var isBackgroundTurnActive: Bool { backgroundTurnStreamID != nil && backgroundTurnStreamID == activeStreamID }
     public var activeStreamRecoveryState: ActiveStreamRecoveryState { streamCoordinator.recoveryState }
+    public var activeRunStartedAt: Date? { streamCoordinator.activeRunStartedAt }
     public var liveTokensPerSecond: Double? { streamCoordinator.liveTokensPerSecond }
     public private(set) var errorMessage: String?
     public private(set) var sendErrorMessage: String? {

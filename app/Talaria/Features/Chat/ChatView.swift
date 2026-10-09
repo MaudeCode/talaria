@@ -1180,7 +1180,7 @@ struct ChatView: View {
             if showsScrollToBottomButton {
                 scrollToBottomChip(isVisible: scrollChipLeads)
             }
-            StatusChip(presentation, agentName: viewModel.assistantName)
+            RunStatusChip(presentation, agentName: viewModel.assistantName)
                 .allowsHitTesting(false)
             if showsScrollToBottomButton {
                 scrollToBottomChip(isVisible: !scrollChipLeads)
@@ -1477,6 +1477,7 @@ struct ChatView: View {
             isCancellingStream: viewModel.isCancellingStream,
             isSyncingTranscript: showsSyncingPill,
             isBackgroundTurn: viewModel.isBackgroundTurnActive,
+            activeRunStartedAt: viewModel.activeRunStartedAt,
             isScrolledNearBottom: isScrolledNearBottom
         )
     }

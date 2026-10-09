@@ -854,6 +854,9 @@ final class StreamLifecycleUITests: StreamLifecycleUITestCase {
 
         let reconnecting = element(label: "Hermes is reconnecting the response stream")
         XCTAssertTrue(reconnecting.awaitExistence(timeout: 15), "A dropped stream did not show it was reconnecting")
+        // The pill keeps timing the run it reconnects to (TAL-446).
+        let elapsed = reconnecting.value as? String ?? ""
+        XCTAssertTrue(elapsed.hasPrefix("running for "), "The reconnecting pill had no elapsed run time: \(elapsed)")
         attachScreenshot(named: "Reconnecting while unreachable")
         XCTAssertTrue(reconnecting.awaitNonExistence(timeout: 40), "The chat never reconnected once the server was reachable")
         XCTAssertFalse(app.secureTextFields["ReauthenticatePassword"].exists, "An unreachable server asked the user to sign in")

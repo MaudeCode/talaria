@@ -56,22 +56,32 @@ public enum ChatActiveRunStatusKind: Equatable {
 
 public struct ChatActiveRunStatusPresentation: Equatable {
     let kind: ChatActiveRunStatusKind
+    /// When the run started, for the elapsed time after the label (TAL-446). Nil when the
+    /// start is unknown or the status is not about a run in progress.
+    public let runStartedAt: Date?
 
-    public init(kind: ChatActiveRunStatusKind) {
+    /// `runStartedAt` is the stream's run start, seeded from the server's `pending_started_at`.
+    public init(kind: ChatActiveRunStatusKind, runStartedAt: Date? = nil) {
         self.kind = kind
+        switch kind {
+        case .active, .checking, .reconnecting:
+            self.runStartedAt = runStartedAt
+        case .starting, .background, .waitingForNetwork, .stopping, .syncing:
+            self.runStartedAt = nil
+        }
     }
 
     /// The status for a stream recovery state; nil while the stream is healthy.
-    public init?(recoveryState: ActiveStreamRecoveryState) {
+    public init?(recoveryState: ActiveStreamRecoveryState, runStartedAt: Date? = nil) {
         switch recoveryState {
         case .idle:
             return nil
         case .checking:
-            self.init(kind: .checking)
+            self.init(kind: .checking, runStartedAt: runStartedAt)
         case .reconnecting:
-            self.init(kind: .reconnecting)
+            self.init(kind: .reconnecting, runStartedAt: runStartedAt)
         case .waitingForNetwork:
-            self.init(kind: .waitingForNetwork)
+            self.init(kind: .waitingForNetwork, runStartedAt: runStartedAt)
         }
     }
 
@@ -82,6 +92,16 @@ public struct ChatActiveRunStatusPresentation: Equatable {
 
     public func accessibilityLabel(agentName: String) -> String {
         kind.accessibilityLabel(agentName: agentName)
+    }
+
+    /// How long the run has gone on as of `now`, read after the label: "running for 1 minute,
+    /// 23 seconds". Nil when the chip shows no elapsed time.
+    public func accessibilityElapsedTime(now: Date, locale: Locale = .autoupdatingCurrent) -> String? {
+        guard let runStartedAt else { return nil }
+        let seconds = max(0, Int(now.timeIntervalSince(runStartedAt)))
+        let duration = Duration.seconds(seconds)
+            .formatted(.units(allowed: [.hours, .minutes, .seconds], width: .wide).locale(locale))
+        return String(localized: "running for \(duration)")
     }
 
     /// Whether this is the "Syncing messages" pill (TAL-436).
@@ -104,6 +124,7 @@ public enum ChatActiveRunStatusPolicy {
         isCancellingStream: Bool,
         isSyncingTranscript: Bool = false,
         isBackgroundTurn: Bool = false,
+        activeRunStartedAt: Date? = nil,
         isScrolledNearBottom: Bool
     ) -> ChatActiveRunStatusPresentation? {
         if !isScrolledNearBottom {
@@ -122,13 +143,19 @@ public enum ChatActiveRunStatusPolicy {
         }
 
         // Stream recovery never shows in the transcript, so it floats at any scroll position (TAL-449).
-        if let recovery = ChatActiveRunStatusPresentation(recoveryState: activeStreamRecoveryState) {
+        if let recovery = ChatActiveRunStatusPresentation(
+            recoveryState: activeStreamRecoveryState,
+            runStartedAt: activeRunStartedAt
+        ) {
             return recovery
         }
 
         guard !isScrolledNearBottom else { return nil }
 
         guard hasActiveStream else { return nil }
-        return ChatActiveRunStatusPresentation(kind: isBackgroundTurn ? .background : .active)
+        return ChatActiveRunStatusPresentation(
+            kind: isBackgroundTurn ? .background : .active,
+            runStartedAt: activeRunStartedAt
+        )
     }
 }

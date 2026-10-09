@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "The status pill above the composer shows how long the agent's response has been running, counting from when the run started on the server.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}
