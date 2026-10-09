@@ -89,6 +89,34 @@ export const LineageReportSchema = z.object({
 /** `POST /api/session/compression-recovery/start`: the focused continuation opened for `source_session_id`, new or reused. */
 export const CompressionRecoveryStartSchema = z.object({ ok: z.literal(true), session: SessionSchema, source_session_id: z.string(), recommended_recovery_action: z.string(), message: z.string() })
 
+/**
+ * One recovery finding. `repairable` findings are what `repair-safe` fixes (or, for `turn_journal_pending_turn`, only
+ * reports); `unsafe_to_repair` ones need an operator. Message counts are -1 when the file is missing or unreadable.
+ */
+export const RecoveryAuditItemSchema = z.object({
+  session_id: z.string(),
+  kind: z.enum(['shrunken_live', 'unstamped_legacy_backup', 'malformed_orphan_backup', 'orphan_backup', 'orphan_backup_without_state_row', 'state_db_deleted_webui_tombstone', 'index_unreadable', 'index_missing_file', 'index_missing_entry', 'state_db_orphan_webui_row', 'state_db_missing_sidecar', 'state_db_unreadable', 'turn_journal_pending_turn']),
+  category: z.enum(['repairable', 'unsafe_to_repair']),
+  recommendation: z.enum(['restore_from_bak', 'manual_review', 'deleted_session_skipped', 'rebuild_index', 'materialize_from_state_db', 'audit_only_pending_turn_journal']),
+  live_messages: z.number().int(), bak_messages: z.number().int(), turn_id: z.string().optional(), event: z.string().optional(),
+})
+/** `GET /api/session/recovery/audit`: every session's backup, index, state.db, and turn-journal recovery findings; read-only. */
+export const RecoveryAuditSchema = z.object({
+  status: z.enum(['ok', 'warn', 'needs_manual_review']),
+  summary: z.object({ ok: z.number().int(), repairable: z.number().int(), unsafe_to_repair: z.number().int() }),
+  items: z.array(RecoveryAuditItemSchema),
+})
+/** `POST /api/session/recovery/repair-safe`: the audits before and after the repairs; 200 when `clean`, else 409 with this body. */
+export const RecoveryRepairSchema = z.object({
+  clean: z.boolean(), ok: z.boolean(), repaired: z.number().int(), before: RecoveryAuditSchema,
+  backup_repair: z.object({ scanned: z.number().int(), restored: z.number().int(), orphaned_backups: z.number().int(), details: z.array(z.object({ session_id: z.string(), restored: z.boolean(), live_messages: z.number().int().optional(), bak_messages: z.number().int().optional(), skipped: z.string().optional(), error: z.string().optional() })) }),
+  sidecar_repair: z.object({ scanned: z.number().int(), materialized: z.number().int(), details: z.array(z.object({ session_id: z.string(), materialized: z.boolean(), messages: z.number().int().optional(), skipped: z.string().optional(), error: z.string().optional() })) }),
+  after: RecoveryAuditSchema,
+})
+export type RecoveryAuditItem = z.infer<typeof RecoveryAuditItemSchema>
+export type RecoveryAudit = z.infer<typeof RecoveryAuditSchema>
+export type RecoveryRepair = z.infer<typeof RecoveryRepairSchema>
+
 export const sessionsContract = {
   sessions: {
     list: oc.route({ method: 'GET', path: '/api/sessions', tags, summary: 'Sidebar rows for the active profile.' }).input(SessionsListQuerySchema).output(SessionsListSchema),
@@ -120,6 +148,8 @@ export const sessionsContract = {
     yoloSet: oc.route({ method: 'POST', path: '/api/session/yolo', tags }).input(z.object({ session_id: z.string(), enabled: Json.optional() })).output(z.object({ ok: z.literal(true), yolo_enabled: z.boolean(), stale_cleared: z.boolean().optional() })),
     import: oc.route({ method: 'POST', path: '/api/session/import', tags }).input(z.object({ messages: Json.optional(), tool_calls: Json.optional(), title: z.string().optional(), workspace: z.string().optional(), model: z.string().optional(), pinned: z.boolean().optional() }).catchall(Json)).output(OkSchema.extend({ session: SessionRowSchema })),
     regenerateTitle: oc.route({ method: 'POST', path: '/api/session/title/regenerate', tags, summary: 'Generate a title from the first (or latest) complete exchange through the auxiliary model and persist it.' }).input(SessionBody.extend({ prefer_latest: z.boolean().optional() })).output(z.looseObject({ session: SessionRowSchema, title: z.string(), status: z.string(), raw_preview: z.string() })),
+    recoveryAudit: oc.route({ method: 'GET', path: '/api/session/recovery/audit', tags, summary: 'Owner only. Read-only audit of session backups, the index, state.db rows without a sidecar, and pending turn journals.' }).input(z.object({})).output(RecoveryAuditSchema),
+    recoveryRepairSafe: oc.route({ method: 'POST', path: '/api/session/recovery/repair-safe', tags, summary: 'Owner only. Apply the repairable findings and audit again; 409 with the same body unless the result is clean.' }).input(z.object({}).catchall(Json)).output(RecoveryRepairSchema),
     lineageReport: oc.route({ method: 'GET', path: '/api/session/lineage/report', tags, summary: 'Read-only compression lineage of a state.db session; 404 when the active profile\'s state.db lacks it.' }).input(z.object({ session_id: z.string().optional() })).output(LineageReportSchema),
     compressionRecoveryStart: oc.route({ method: 'POST', path: '/api/session/compression-recovery/start', tags, summary: 'Open the focused continuation of a compression-exhausted session; a retry reuses the existing one.' }).input(z.object({ session_id: z.string().optional() })).output(CompressionRecoveryStartSchema),
     compress: oc.route({ method: 'POST', path: '/api/session/compress', tags, summary: 'Compress the session\'s model context now (iOS `/compress`). `focus_topic` (alias `topic`) is capped at 500 characters.' }).input(CompressInputSchema).output(CompressResultSchema),

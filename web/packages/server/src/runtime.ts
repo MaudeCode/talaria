@@ -33,6 +33,7 @@ import { DraftStore } from './sessions/drafts.js'
 import { SessionEventBus } from './sessions/events.js'
 import { ShareStore } from './sessions/shares.js'
 import { SessionService } from './sessions/service.js'
+import { recoveryStampingSince } from './sessions/recovery.js'
 import { ProjectStore } from './projects.js'
 import { WorkspaceRegistry } from './workspace/workspaces.js'
 import { resolvePathLikePython } from './workspace/paths.js'
@@ -267,7 +268,10 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   }
   const mediaPolicy: MediaPolicyDeps = { home, hermesHome: config.hermesHome, stateDir: config.stateDir, snapshotDir, activeWorkspace: mediaActiveWorkspace }
   const mediaAccess: MediaAccessDeps = { home: config.homeDir, hermesHome: config.hermesHome, extraRoots: env.MEDIA_ALLOWED_ROOTS ?? '', activeWorkspace: mediaActiveWorkspace, policy: mediaPolicy }
+  // TAL-259: record when this server started stamping deliberate shrinks; older backups go to manual review.
+  try { recoveryStampingSince(config.stateDir) } catch (error) { log(`[webui] WARNING: could not record recovery_stamping_since: ${(error as Error).message}`) }
   const sessions = new SessionService({
+    recoveryStampingSince: () => recoveryStampingSince(config.stateDir),
     sidecar: () => sidecar,
     media: { access: mediaAccess, localIo: (profile) => workspaces.profileSupportsLocalIo(profile) },
     profileActivity,

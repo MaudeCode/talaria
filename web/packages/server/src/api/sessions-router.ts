@@ -10,7 +10,7 @@ import { platform } from 'node:os'
 import { spawn } from 'node:child_process'
 import { ifNoneMatchMatches, type RequestContext } from '../http/context.js'
 import { SidecarError } from '../sidecar/client.js'
-import { HttpError, requireFields, type ApiContext } from './router.js'
+import { HttpError, RawResponse, requireFields, type ApiContext } from './router.js'
 import { GitWorkspaceError, WORKSPACE_BUSY_MESSAGE } from '../workspace/git.js'
 import { requestSessionIdGuard } from './session-visibility.js'
 import { HttpFailure, sanitizePaths } from '../sessions/service.js'
@@ -296,6 +296,12 @@ export const sessionsRouter = os.router({
       if (!generated.title) throw new HttpError(422, `Could not generate a better title (${generated.status || 'empty'})`)
       const current = await ctx.deps.sessions.persistGeneratedTitle(sid, generated.title, 'session_title_regenerate')
       return { session: ctx.deps.sessions.wireRow(current), title: current.title, status: generated.status, raw_preview: generated.rawPreview.slice(0, 240) }
+    })),
+    recoveryAudit: os.session.recoveryAudit.handler(({ context: { ctx } }) => run(() => ctx.deps.sessions.recoveryAudit())),
+    recoveryRepairSafe: os.session.recoveryRepairSafe.handler(({ context: { ctx } }) => run(async () => {
+      const result = await ctx.deps.sessions.recoveryRepairSafe()
+      if (!result.clean) throw new RawResponse(409, result)
+      return result
     })),
     lineageReport: os.session.lineageReport.handler(({ input, context: { ctx } }) => run(() => {
       const sid = input.session_id ?? ''

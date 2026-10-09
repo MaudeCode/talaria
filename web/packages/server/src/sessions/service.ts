@@ -3,7 +3,7 @@
  * detail payload, list and search, and every mutation with its guards.
  * Runtime concerns owned by other domains arrive through `SessionServiceDeps`.
  */
-import type { PendingSteer } from '@maudecode/talaria-web-contracts'
+import type { PendingSteer, RecoveryAudit, RecoveryRepair } from '@maudecode/talaria-web-contracts'
 import type { RunJournal } from './journal.js'
 import { str } from '../util.js'
 import { randomUUID } from 'node:crypto'
@@ -18,6 +18,7 @@ import { COMPRESSION_RECOVERY_ACTION_START_FOCUSED, compressionRecoveryPayload, 
 import { SessionBusy, SessionNotFound, statSignature, type SessionStore } from './store.js'
 import { UNSETTLED_TODO_KEY, attachTodoState } from './todo.js'
 import { isClaudeCodeSessionId, type ClaudeCodeSessionSource } from './claude-code.js'
+import { auditSessionRecovery, repairSafeSessionRecovery, type RecoveryDeps } from './recovery.js'
 import { CONVERSATION_ROUND_THRESHOLD, countConversationRounds, stateDbCompressionLineage, stateDbTailToolContent, stateDbLineageReport, stateDbSessionMessages, stateDbSessionRead, stateDbSessionRow, stateDbSessionSources, stateDbTimestampSeconds, type StateDbRead } from './state-db.js'
 import { completionIncomplete, fallbackHandoffSummary, HANDOFF_SYSTEM_PROMPT, handoffMarker, handoffPayload, handoffTranscript, messageHandoffPayload, sameHandoff } from './handoff.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, compressionReference, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
@@ -60,6 +61,8 @@ function staleRuntimeFailure(error: SidecarError): HttpFailure {
 }
 
 export interface SessionServiceDeps {
+  /** TAL-259: epoch seconds of the state directory's `recovery_stamping_since` marker. */
+  recoveryStampingSince: () => number
   /** TAL-255: the Agent sidecar for manual compression (`chat.compress`); null while it is down. */
   sidecar?: () => SidecarLike | null
   /** Detached sidecar work for a profile: deletion waits for the returned release, so the home outlives the work. */
@@ -1449,6 +1452,19 @@ export class SessionService {
   /** Python `read_session_lineage_report` on the active profile's state.db. */
   lineageReport(sid: string): Record<string, unknown> {
     return stateDbLineageReport(this.stateDbPath(null), sid)
+  }
+
+  /** TAL-259: recovery reads the active profile's state.db, and a recovered sidecar joins that profile. */
+  private recoveryDeps(): RecoveryDeps {
+    return { store: this.store, stateDbPath: this.stateDbPath(null), profile: this.deps.activeProfile(), stampingSince: this.deps.recoveryStampingSince(), log: this.deps.log }
+  }
+
+  recoveryAudit(): RecoveryAudit {
+    return auditSessionRecovery(this.recoveryDeps())
+  }
+
+  recoveryRepairSafe(): Promise<RecoveryRepair> {
+    return repairSafeSessionRecovery(this.recoveryDeps())
   }
 
   /**
