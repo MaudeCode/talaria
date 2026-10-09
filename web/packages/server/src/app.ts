@@ -177,14 +177,21 @@ export interface CreateAppOptions {
 }
 
 const ORPC_MAX_BODY_BYTES = 20 * 1024 * 1024
+/** Python `_read_json_request_body(max_bytes=4096)`: routes with their own smaller cap answer 400, as that reader did. */
+const ROUTE_BODY_CAPS: Record<string, number> = { '/api/escape/authorize': 4096 }
+
+function bodyCap(path: string): { bytes: number; status: number } {
+  const bytes = ROUTE_BODY_CAPS[path]
+  return bytes === undefined ? { bytes: ORPC_MAX_BODY_BYTES, status: 413 } : { bytes, status: 400 }
+}
 const GZIP_MIN_BYTES = 1024
 
 /**
  * Cap the bytes oRPC may buffer from a request body: a chunked body carries no `Content-Length`, so the declared-size
  * check cannot bound it. Counting in `emit` keeps the stream in whatever mode oRPC's reader puts it; once over the
- * limit the reader sees a `BodyError` (mapped to 413 by the root interceptor) and the rest of the body is dropped.
+ * limit the reader sees a `BodyError` (answered with its status by the root interceptor) and the rest of the body is dropped.
  */
-function boundRequestBody(req: IncomingMessage, maxBytes: number): () => void {
+function boundRequestBody(req: IncomingMessage, cap: { bytes: number; status: number }): () => void {
   if (req.method === 'GET' || req.method === 'HEAD') return () => undefined
   const originalEmit = req.emit.bind(req)
   let total = 0
@@ -192,9 +199,9 @@ function boundRequestBody(req: IncomingMessage, maxBytes: number): () => void {
   req.emit = ((event: string, ...args: unknown[]): boolean => {
     if (event === 'data' && !tripped) {
       total += (args[0] as Buffer).length
-      if (total > maxBytes) {
+      if (total > cap.bytes) {
         tripped = true
-        return originalEmit('error', new BodyError(`Request body too large (${String(total)} bytes, max ${String(maxBytes)})`))
+        return originalEmit('error', new BodyError(`Request body too large (${String(total)} bytes, max ${String(cap.bytes)})`, cap.status))
       }
     }
     if (tripped && (event === 'data' || event === 'end')) return false
@@ -246,7 +253,7 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
     // handler, so the node response is wrapped here.
     adapterInterceptors: [
       async (options) => {
-        const unbind = boundRequestBody(options.request as IncomingMessage, ORPC_MAX_BODY_BYTES)
+        const unbind = boundRequestBody(options.request as IncomingMessage, bodyCap(options.context.ctx.path))
         gzipJsonResponse(options.request, options.response as ServerResponse)
         try {
           return await options.next()
@@ -268,7 +275,7 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
           try {
             return await readBody()
           } catch (error) {
-            if (error instanceof BodyError) throw new HttpError(413, error.message)
+            if (error instanceof BodyError) throw new HttpError(error.status, error.message)
             throw error
           }
         }
@@ -427,8 +434,9 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
       }
       // Python `read_body` refused any declared body over 20 MiB before reading it (`handle_post` → 413).
       const declared = Number(ctx.header('content-length') ?? '0')
-      if (ctx.method !== 'GET' && ctx.method !== 'HEAD' && Number.isFinite(declared) && declared > ORPC_MAX_BODY_BYTES) {
-        ctx.json({ error: `Request body too large (${String(declared)} bytes, max ${String(ORPC_MAX_BODY_BYTES)})` }, { status: 413 })
+      const cap = bodyCap(path)
+      if (ctx.method !== 'GET' && ctx.method !== 'HEAD' && Number.isFinite(declared) && declared > cap.bytes) {
+        ctx.json({ error: `Request body too large (${String(declared)} bytes, max ${String(cap.bytes)})` }, { status: cap.status })
         return
       }
       const { matched } = await orpc.handle(req, res, { context: { ctx } })

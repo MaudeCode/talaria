@@ -116,6 +116,33 @@ function openChildDir(dir: DirHandle, name: string, opts: { createMissing?: bool
   return new DirHandle(fd, join(dir.path, name))
 }
 
+/** A root whose pathname the caller validated earlier (escape grants): opening it must still yield that inode. */
+let pinnedRoot: { path: string; dev: number; ino: number } | null = null
+
+/** Run `fn` with every anchored open of `root` refused unless the root is still the inode `id`. */
+export function withPinnedRoot<T>(root: string, id: { dev: number; ino: number }, fn: () => T): T {
+  const previous = pinnedRoot
+  pinnedRoot = { path: root, dev: id.dev, ino: id.ino }
+  try {
+    return fn()
+  } finally {
+    pinnedRoot = previous
+  }
+}
+
+function openRoot(root: string, rootResolved: string, target: string): number {
+  let fd: number
+  try { fd = openSync(rootResolved, constants.O_RDONLY | O_DIRECTORY | O_NOFOLLOW) } catch { throw new NotFoundError(`Not found: ${target}`) }
+  if (pinnedRoot?.path === root) {
+    const st = fstatSync(fd)
+    if (st.dev !== pinnedRoot.dev || st.ino !== pinnedRoot.ino) {
+      closeSync(fd)
+      throw new NotFoundError(`Not found: ${target}`)
+    }
+  }
+  return fd
+}
+
 /** Walk from the root to the parent of the leaf, one descriptor at a time. Caller closes the returned handle. */
 function openAnchoredParent(root: string, target: string, opts: { createMissingDirs?: boolean } = {}): { dir: DirHandle; leaf: string } {
   const rootResolved = resolvePathLikePython(root)
@@ -123,9 +150,7 @@ function openAnchoredParent(root: string, target: string, opts: { createMissingD
   if (!parts.length) throw new PathTraversalError(`Invalid target: ${target}`)
   const leaf = parts[parts.length - 1] ?? ''
   if (!leaf || leaf === '.' || leaf === '..') throw new PathTraversalError(`Invalid target: ${target}`)
-  let fd: number
-  try { fd = openSync(rootResolved, constants.O_RDONLY | O_DIRECTORY | O_NOFOLLOW) } catch { throw new NotFoundError(`Not found: ${target}`) }
-  let dir = new DirHandle(fd, rootResolved)
+  let dir = new DirHandle(openRoot(root, rootResolved, target), rootResolved)
   try {
     for (const part of parts.slice(0, -1)) {
       if (!part || part === '.' || part === '..') throw new PathTraversalError(`Path traversal blocked: ${target}`)
@@ -145,7 +170,7 @@ export function openAnchoredFd(root: string, target: string, opts: { wantDir: bo
   const rootResolved = resolvePathLikePython(root)
   if (relParts(rootResolved, target).length === 0) {
     if (!opts.wantDir) throw new NotFoundError(`Not found: ${target}`)
-    try { return openSync(rootResolved, constants.O_RDONLY | O_DIRECTORY | O_NOFOLLOW) } catch { throw new NotFoundError(`Not found: ${target}`) }
+    return openRoot(root, rootResolved, target)
   }
   const { dir, leaf } = openAnchoredParent(root, target)
   try {

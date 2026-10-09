@@ -60,9 +60,22 @@ import type { PasskeyStore } from '../auth/passkeys.js'
 import type { UpdateService } from '../tools/updates.js'
 import type { UpdateNotificationStore } from '../tools/update-notifications.js'
 
-/** A request target fit for logs: `token` query values (escape grants, media tokens) are masked. */
+/**
+ * A request target fit for logs: `token` query values (escape grants, media tokens) are masked. Keys are compared
+ * decoded, as the query parser reads them, so `tok%65n=` cannot carry a token past the mask.
+ */
 export function loggedUrl(url: string | undefined): string {
-  return (url ?? '').replace(/([?&]token=)[^&#]*/gi, '$1***')
+  const target = url ?? ''
+  const q = target.indexOf('?')
+  if (q < 0) return target
+  const query = target.slice(q + 1).split('&').map((part) => {
+    const eq = part.indexOf('=')
+    const key = eq < 0 ? part : part.slice(0, eq)
+    let name = key
+    try { name = decodeURIComponent(key.replaceAll('+', ' ')) } catch { /* malformed escapes stay raw */ }
+    return name.trim().toLowerCase() === 'token' ? `${key}=***` : part
+  })
+  return `${target.slice(0, q + 1)}${query.join('&')}`
 }
 
 export interface AppDeps {
@@ -474,7 +487,9 @@ export class RequestContext {
   }
 }
 
-export class BodyError extends Error {}
+export class BodyError extends Error {
+  constructor(message: string, readonly status = 413) { super(message) }
+}
 
 /** RFC 7232 3.2 weak comparison; `W/` prefixes are ignored on both sides. */
 export function ifNoneMatchMatches(headerValue: string, etag: string): boolean {

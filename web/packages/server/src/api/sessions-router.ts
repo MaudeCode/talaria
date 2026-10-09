@@ -732,8 +732,6 @@ export const sessionsRouter = os.router({
     escapeAuthorize: os.files.escapeAuthorize.handler(({ input, context: { ctx } }) => run(() => {
       // A Referer alone is not a browser fetch: Python required `Origin`, which the global CSRF check has already matched.
       if (!ctx.header('origin')) throw new HttpError(403, 'browser origin required')
-      const declared = Number(ctx.header('content-length') ?? '0')
-      if (declared > ESCAPE_AUTHORIZE_MAX_BODY_BYTES) throw new HttpError(400, `Request body too large (${String(declared)} bytes, max ${String(ESCAPE_AUTHORIZE_MAX_BODY_BYTES)})`)
       if (input.token?.trim()) throw new HttpError(400, 'token must not be provided')
       const sid = (input.session_id ?? '').trim()
       const rel = (input.path ?? '').trim()
@@ -767,8 +765,6 @@ export const sessionsRouter = os.router({
     })),
   },
 })
-
-const ESCAPE_AUTHORIZE_MAX_BODY_BYTES = 4096
 
 /** The escape routes' shared front half: required ids, the session, and the grant re-check (403 when it fails). */
 export function escapeRequest(ctx: RequestContext, sid: string | undefined, token: string | undefined, rel: string): EscapeRequest {

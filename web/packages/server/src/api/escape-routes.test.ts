@@ -3,11 +3,13 @@
  * short-lived token scoped to that one link. File grants never reach siblings, nested escaping links stay
  * display-only, and a grant dies when its link is retargeted, its clock runs out, or another session presents it.
  */
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { closeSync, mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
+import { anchoredAt, EscapeGrantExpired, EscapeGrants, type EscapeRequest } from '../workspace/escape.js'
+import { NotFoundError, openAnchoredFd } from '../workspace/fs.js'
 
 type Json = Record<string, unknown>
 
@@ -228,6 +230,11 @@ describe('escape grants', () => {
     const big = await post('/api/escape/authorize', { session_id: sid, path: 'x'.repeat(5000) })
     expect(big.status).toBe(400)
     expect(String(big.body.error)).toMatch(/^Request body too large \(\d+ bytes, max 4096\)$/)
+    // A chunked body declares no length, so the cap counts the bytes actually read.
+    const padded = new TextEncoder().encode(JSON.stringify({ session_id: sid, path: 'plain.txt', pad: 'x'.repeat(5000) }))
+    const chunked = await s.get('/api/escape/authorize', { method: 'POST', headers: { 'content-type': 'application/json', origin: s.base }, body: new ReadableStream({ start(c) { c.enqueue(padded); c.close() } }), duplex: 'half' })
+    expect(chunked.status).toBe(400)
+    expect(String(((await chunked.json()) as Json).error)).toMatch(/^Request body too large \(\d+ bytes, max 4096\)$/)
     expect((await post('/api/escape/authorize', { session_id: 'deadbeef0000', path: 'plain.txt' })).status).toBe(404)
     expect(await authorize('plain.txt')).toEqual({ status: 404, body: { error: 'Path is not an escape-target symlink: plain.txt' } })
     expect(await authorize('inside-link')).toEqual({ status: 404, body: { error: 'Path does not escape workspace: inside-link' } })
@@ -271,6 +278,54 @@ describe('escape grants', () => {
 
     const read = await getJson(`/api/escape/file/read?${qs({ session_id: sid, token: t, path: 'escape-raw/page.html' })}`)
     expect(read.body).toMatchObject({ preview: 'html', preview_url: `api/escape/file/raw?${qs({ session_id: sid, token: t, path: 'escape-raw/page.html', inline: '1' })}` })
+    // The query parser decodes keys, so an encoded `token` key still authorizes and must still be masked.
+    expect((await s.get(`/api/escape/file/raw?session_id=${sid}&tok%65n=${t}&path=escape-raw/page.html`)).status).toBe(200)
     expect(s.logs.join('\n')).not.toContain(t)
+  })
+})
+
+/** The per-use re-check and the read are separate steps: a root swapped between them must not redirect the read. */
+describe('EscapeGrants root pinning', () => {
+  let base: string
+  let ws: string
+  let dir: string
+  let other: string
+
+  beforeEach(() => {
+    base = realpathSync(mkdtempSync(join(tmpdir(), 'talaria-escape-pin-')))
+    ws = join(base, 'ws')
+    dir = join(base, 'outside')
+    other = join(base, 'other')
+    mkdirSync(ws)
+    mkdirSync(dir)
+    mkdirSync(other)
+    writeFileSync(join(dir, 'note.txt'), 'granted')
+    writeFileSync(join(other, 'note.txt'), 'OTHER-TREE')
+    symlinkSync(dir, join(ws, 'escape'))
+  })
+  afterEach(() => { rmSync(base, { recursive: true, force: true }) })
+
+  const grantFor = (rel: string): [EscapeGrants, EscapeRequest] => {
+    const grants = new EscapeGrants(() => Date.now() / 1000)
+    const { token } = grants.authorize(ws, 'sid', null, 'escape')
+    return [grants, grants.resolve(ws, 'sid', null, token, rel)]
+  }
+
+  it('refuses list, read, and raw once the granted root is swapped for a symlink after the re-check', () => {
+    const [grants, listReq] = grantFor('escape')
+    const readReq = grants.resolve(ws, 'sid', null, grants.authorize(ws, 'sid', null, 'escape').token, 'escape/note.txt')
+    renameSync(dir, join(base, 'moved'))
+    symlinkSync(other, dir)
+    expect(() => grants.list(listReq)).toThrow(NotFoundError)
+    expect(() => grants.read(readReq)).toThrow(NotFoundError)
+    expect(() => { anchoredAt(readReq, () => { closeSync(openAnchoredFd(readReq.externalRoot, grants.rawTarget(readReq), { wantDir: false })) }) }).toThrow(NotFoundError)
+  })
+
+  it('expires the grant when the root is replaced before the re-check', () => {
+    const grants = new EscapeGrants(() => Date.now() / 1000)
+    const { token } = grants.authorize(ws, 'sid', null, 'escape')
+    renameSync(dir, join(base, 'moved'))
+    mkdirSync(dir)
+    expect(() => grants.resolve(ws, 'sid', null, token, 'escape')).toThrow(EscapeGrantExpired)
   })
 })

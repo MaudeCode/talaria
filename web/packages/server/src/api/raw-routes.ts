@@ -20,6 +20,7 @@ import { PREVIEW_PREFIX, previewGrantRoot } from '../workspace/preview.js'
 import { REMOTE_WORKSPACE_UNSUPPORTED_CODE, REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE } from '../workspace/workspaces.js'
 import { WORKSPACE_BUSY_MESSAGE } from '../workspace/git.js'
 import { ZipWriter } from '../workspace/zip.js'
+import { anchoredAt } from '../workspace/escape.js'
 import { guessMime, parseMultipart, sanitizeUploadName, uploadDestination, UploadConflict, UploadRejected, type MultipartResult } from '../workspace/upload.js'
 import { ArchiveRejected, CorruptArchive, extractArchive, isArchiveName } from '../workspace/extract.js'
 import { writeFully } from '../fs/atomic.js'
@@ -153,7 +154,7 @@ function handleEscapeFileRaw(ctx: RequestContext): void {
     ctx.json({ error: 'not found' }, { status: 404 })
     return
   }
-  serveRawFile(ctx, req.externalRoot, target)
+  anchoredAt(req, () => { serveRawFile(ctx, req.externalRoot, target) })
 }
 
 /** The `/api/file/raw` response: MIME, attachment for dangerous types unless an inline HTML preview, sandbox CSP, no-store. */

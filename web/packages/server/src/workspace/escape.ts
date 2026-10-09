@@ -10,7 +10,7 @@ import { lstatSync, statSync } from 'node:fs'
 import { basename, dirname, join, posix, relative } from 'node:path'
 import { stripSurroundingQuotes, isBlockedSystemPath } from './workspaces.js'
 import { isWithin, resolvePathLikePython } from './paths.js'
-import { dirSignature, listDir, NotFoundError, PathTraversalError, safeResolveWs, type DirEntry } from './fs.js'
+import { dirSignature, listDir, NotFoundError, PathTraversalError, safeResolveWs, withPinnedRoot, type DirEntry } from './fs.js'
 import { readFilePreview, type FilePreview } from './preview.js'
 
 export const ESCAPE_GRANT_TTL_SECONDS = 300
@@ -26,12 +26,21 @@ interface EscapeGrant {
   workspaceRoot: string
   surfacePath: string
   externalRoot: string
+  /** The grant root's inode at mint: a root swapped after the per-use re-check fails closed. */
+  rootId: RootId
   externalEntryRel: string
   surfaceTarget: string
   expiresAt: number
 }
 
-export interface EscapeRequest { surfacePath: string; requestPath: string; externalRoot: string; externalRel: string }
+interface RootId { dev: number; ino: number }
+
+export interface EscapeRequest { surfacePath: string; requestPath: string; externalRoot: string; rootId: RootId; externalRel: string }
+
+/** Run `fn` with every anchored open of the grant root held to the inode the grant was minted for. */
+export function anchoredAt<T>(req: EscapeRequest, fn: () => T): T {
+  return withPinnedRoot(req.externalRoot, req.rootId, fn)
+}
 
 /** Python `_normalize_workspace_rel_path`: POSIX-normalised and workspace-relative; `..` and absolute paths fail. */
 export function normalizeWorkspaceRelPath(rel: string): string {
@@ -79,11 +88,13 @@ export class EscapeGrants {
     const workspaceRoot = resolvePathLikePython(workspace)
     const target = surfaceTarget(workspaceRoot, rel)
     const isDir = statSync(target).isDirectory()
+    const externalRoot = isDir ? target : dirname(target)
+    const { dev, ino } = statSync(externalRoot)
     const token = randomBytes(24).toString('base64url')
     const expiresAt = this.now() + ESCAPE_GRANT_TTL_SECONDS
     const surfacePath = normalizeWorkspaceRelPath(rel)
     this.prune()
-    this.grants.set(token, { sessionId, profile, workspaceRoot, surfacePath, externalRoot: isDir ? target : dirname(target), externalEntryRel: isDir ? '.' : basename(target), surfaceTarget: target, expiresAt })
+    this.grants.set(token, { sessionId, profile, workspaceRoot, surfacePath, externalRoot, rootId: { dev, ino }, externalEntryRel: isDir ? '.' : basename(target), surfaceTarget: target, expiresAt })
     return { token, path: surfacePath, is_dir: isDir, expires_at: expiresAt, expires_in: ESCAPE_GRANT_TTL_SECONDS, read_only: true }
   }
 
@@ -97,12 +108,12 @@ export class EscapeGrants {
     const under = grant.surfacePath === '.' ? requestPath : requestPath === grant.surfacePath ? '.' : requestPath.startsWith(`${grant.surfacePath}/`) ? requestPath.slice(grant.surfacePath.length + 1) : null
     if (under === null) throw new PathTraversalError(`Path traversal blocked: ${rel}`)
     const externalRel = grant.externalEntryRel === '.' ? under : under === '.' ? grant.externalEntryRel : `${grant.externalEntryRel}/${under}`
-    return { surfacePath: grant.surfacePath, requestPath, externalRoot: grant.externalRoot, externalRel }
+    return { surfacePath: grant.surfacePath, requestPath, externalRoot: grant.externalRoot, rootId: grant.rootId, externalRel }
   }
 
   /** Python `list_authorized_escape_dir`: entries re-pathed under the link; a target outside the grant root is dropped. */
   list(req: EscapeRequest): { path: string; entries: (DirEntry & { escape_read_only: true })[]; signature: string; virtual_root: string; read_only: true } {
-    const entries = listDir(req.externalRoot, req.externalRel).map((entry) => {
+    const entries = anchoredAt(req, () => listDir(req.externalRoot, req.externalRel)).map((entry) => {
       const out: DirEntry & { escape_read_only: true } = { ...entry, path: virtualPath(req.surfacePath, entry.path), escape_read_only: true }
       if (entry.target === undefined) return out
       delete out.target
@@ -114,7 +125,7 @@ export class EscapeGrants {
 
   /** Python `read_authorized_escape_file_content`, with the `/api/file` preview kind. */
   read(req: EscapeRequest): FilePreview & { escape_read_only: true } {
-    return { ...readFilePreview(req.externalRoot, req.externalRel), path: req.requestPath, escape_read_only: true }
+    return { ...anchoredAt(req, () => readFilePreview(req.externalRoot, req.externalRel)), path: req.requestPath, escape_read_only: true }
   }
 
   /** Python `raw_authorized_escape_target`: the file to serve, anchored at the grant root. */
@@ -122,13 +133,15 @@ export class EscapeGrants {
     return safeResolveWs(req.externalRoot, req.externalRel)
   }
 
-  /** Python `_escape_authorization_record`: the link must still escape to the same reachable, non-system target. */
+  /** Python `_escape_authorization_record`: the link must still escape to the same reachable, non-system target and root inode. */
   private check(workspace: string, sessionId: string, profile: string | null, token: string): EscapeGrant {
     this.prune()
     const grant = this.grants.get(token)
     if (grant?.sessionId !== sessionId || grant.profile !== profile || grant.workspaceRoot !== resolvePathLikePython(workspace)) throw new EscapeGrantExpired()
     try {
       if (surfaceTarget(grant.workspaceRoot, grant.surfacePath) !== grant.surfaceTarget) throw new EscapeGrantExpired()
+      const root = statSync(grant.externalRoot)
+      if (root.dev !== grant.rootId.dev || root.ino !== grant.rootId.ino) throw new EscapeGrantExpired()
     } catch {
       // A retargeted link kills the grant for good, even if it later points back.
       this.grants.delete(token)
