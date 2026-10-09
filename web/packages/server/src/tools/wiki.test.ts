@@ -49,6 +49,13 @@ describe('LLM wiki', () => {
       expect(uncached).toHaveBeenCalledTimes(2)
     })
 
+    it('stops walking after the file budget, counting entries that are not pages', () => {
+      for (let i = 0; i < 20; i++) write(join(wiki, 'entities', `asset-${String(i)}.txt`))
+      write(join(wiki, 'concepts', 'a.md'))
+      expect(new WikiPages({ maxFiles: 5 }).pageFilesUncached(wiki)).toEqual([])
+      expect(new WikiPages({ maxFiles: 50 }).pageFilesUncached(wiki)).toEqual([join(wiki, 'concepts', 'a.md')])
+    })
+
     it('expires after the TTL [py:test_wiki_page_files_cache_expires_after_ttl]', () => {
       write(join(wiki, 'concepts', 'one.md'))
       const ticks = [100_000, 100_500, 101_500]

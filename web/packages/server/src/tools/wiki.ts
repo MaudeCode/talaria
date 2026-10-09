@@ -72,14 +72,18 @@ function isoSeconds(ms: number): string {
   return `${base}${fraction ? `.${String(fraction).padStart(6, '0')}` : ''}Z`
 }
 
-/** Entries under `dir`, like `Path.rglob`: directory symlinks are not followed; dot directories (never listed) are skipped. */
-function* walk(dir: string): Generator<{ path: string; name: string; dir: boolean }> {
+/**
+ * Entries under `dir`, like `Path.rglob`: directory symlinks are not followed; dot directories (never listed) are
+ * skipped. Every entry spends one unit of `budget`, so a huge tree cannot hold the event loop.
+ */
+function* walk(dir: string, budget: { left: number }): Generator<{ path: string; name: string; dir: boolean }> {
   let names
   try { names = readdirSync(dir, { withFileTypes: true }) } catch { return }
   for (const d of names) {
+    if (budget.left-- <= 0) return
     const path = join(dir, d.name)
     yield { path, name: d.name, dir: d.isDirectory() }
-    if (d.isDirectory() && !d.name.startsWith('.')) yield* walk(path)
+    if (d.isDirectory() && !d.name.startsWith('.')) yield* walk(path, budget)
   }
 }
 
@@ -88,9 +92,7 @@ function countRawFiles(root: string): number {
   const real = realpath(root)
   if (!real || FORBIDDEN_ROOTS.has(real) || !stat(real)?.isDirectory()) return 0
   let count = 0
-  let seen = 0
-  for (const item of walk(root)) {
-    if (++seen > MAX_FILES) break
+  for (const item of walk(root, { left: MAX_FILES })) {
     if (!item.dir && !item.name.startsWith('.') && stat(item.path)?.isFile()) count++
   }
   return count
@@ -99,7 +101,7 @@ function countRawFiles(root: string): number {
 export class WikiPages {
   private readonly cache = new Map<string, { signature: string; expiresAt: number; files: string[] }>()
 
-  constructor(private readonly opts: { now?: () => number; ttlMs?: number } = {}) {}
+  constructor(private readonly opts: { now?: () => number; ttlMs?: number; maxFiles?: number } = {}) {}
 
   /** Change signature over the section directories only: `(dev, ino, mtime_ns)` each, or missing. */
   private signature(root: string): string {
@@ -113,16 +115,14 @@ export class WikiPages {
     const pages: string[] = []
     const rootReal = realpath(root)
     if (!rootReal || FORBIDDEN_ROOTS.has(rootReal)) return pages
-    let seen = 0
+    const budget = { left: this.opts.maxFiles ?? MAX_FILES }
     for (const name of SECTIONS) {
       const section = join(root, name)
       const sectionReal = realpath(section)
       // A symlinked section must still resolve under the wiki root, so it cannot expose an outside tree.
       if (!sectionReal || !stat(sectionReal)?.isDirectory() || !isWithin(sectionReal, rootReal)) continue
-      for (const item of walk(section)) {
-        if (!item.name.endsWith('.md')) continue
-        if (++seen > MAX_FILES) return pages
-        if (!isClean(relative(section, item.path))) continue
+      for (const item of walk(section, budget)) {
+        if (!item.name.endsWith('.md') || !isClean(relative(section, item.path))) continue
         try {
           // A hard link at a clean page name can carry any inode, and the identity check at read time cannot tell it apart.
           if (!statSync(item.path).isFile() || lstatSync(item.path).nlink > 1) continue
