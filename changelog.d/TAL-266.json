@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "The Web server again reports gateway status, lets the server owner start, stop, or restart the gateway, saves the Hermes dashboard link settings, and serves the Project OS dashboard.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

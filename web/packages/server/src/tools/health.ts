@@ -1,8 +1,9 @@
-/** Health, logs, dashboard probe, and diagnostics (Python `api/agent_health.py`, `api/system_health.py`, `api/dashboard_probe.py`, `_handle_logs`). */
+/** Health, gateway status, logs, dashboard probe and link settings, and diagnostics (Python `api/agent_health.py`, `api/system_health.py`, `api/dashboard_probe.py`, `_handle_logs`). */
 import { readCapped } from '../http/capped.js'
 import { existsSync, openSync, readSync, readFileSync, closeSync, statSync, statfsSync } from 'node:fs'
 import { cpus, loadavg, freemem, totalmem } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
+import type { GatewayStatus } from '@maudecode/talaria-web-contracts'
 import type { Config, Dict } from '../config/agent-config.js'
 import { dict } from '../config/agent-config.js'
 import { HttpFailure } from '../sessions/service.js'
@@ -191,6 +192,33 @@ export async function agentHealth(deps: AgentHealthDeps): Promise<Dict> {
   return { alive: null, checked_at: checked, details: { state: 'unknown', reason: 'gateway_not_configured' }, gateway_chat: gatewayChat }
 }
 
+const PLATFORM_LABELS: Record<string, string> = { telegram: 'Telegram', discord: 'Discord', slack: 'Slack', email: 'Email', web: 'Web', api: 'API' }
+const textOrNull = (v: unknown): string | null => (typeof v === 'string' ? v : null)
+const titleCase = (name: string): string => name.replace(/(^|[^a-z])([a-z])/g, (_, before: string, letter: string) => before + letter.toUpperCase())
+
+/**
+ * Python `_gateway_status_payload`: `health` (`agentHealth`) decides running and configured; when it is inconclusive
+ * (`alive` null), stale running metadata or any known gateway session marks the gateway configured, and sessions mean running.
+ */
+export function gatewayStatus(health: Dict, identity: ReadonlyMap<string, { raw_source: string; platform: string }>, sessionsPath: string): GatewayStatus {
+  const details = dict(health.details)
+  const state = textOrNull(details.state)
+  const reason = textOrNull(details.reason)
+  const gatewayState = textOrNull(details.gateway_state)
+  const hasSessions = identity.size > 0
+  const running = health.alive === true || (health.alive !== false && hasSessions)
+  const configured = health.alive === true || health.alive === false || reason === 'gateway_stale_running_state' || gatewayState === 'running' || hasSessions
+  const names = new Set<string>()
+  for (const meta of identity.values()) {
+    const name = (meta.raw_source || meta.platform).trim().toLowerCase()
+    if (name) names.add(name)
+  }
+  const platforms = [...names].map((name) => ({ name, label: PLATFORM_LABELS[name] ?? titleCase(name) })).sort((a, b) => (a.label < b.label ? -1 : a.label > b.label ? 1 : 0))
+  let lastActive = ''
+  if (running) { try { lastActive = statSync(sessionsPath).mtime.toISOString() } catch { lastActive = '' } }
+  return { running, configured, platforms, last_active: lastActive, session_count: identity.size, health: { state, reason, gateway_state: gatewayState } }
+}
+
 const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1'])
 const DASHBOARD_PORT = 9119
 
@@ -211,21 +239,62 @@ function normalizeDashboardUrl(raw: string): [string, number, string, string] | 
   return [host, port, scheme, baseUrl(host, port, scheme)]
 }
 
-function normalizeBrowserUrl(raw: string): string {
+/** Python `normalize_dashboard_browser_url`: an http(s) origin with no credentials, path, query, or fragment; 400 otherwise. */
+export function normalizeBrowserUrl(raw: string): string {
   const value = raw.trim()
   if (!value) return ''
-  const u = new URL(value)
-  if (!['http:', 'https:'].includes(u.protocol) || u.username || u.password || (u.pathname !== '/' && u.pathname !== '') || u.search || u.hash) throw new Error('invalid dashboard url')
+  let u: URL
+  try { u = new URL(value) } catch { throw new HttpFailure(400, 'invalid dashboard URL') }
+  if (!['http:', 'https:'].includes(u.protocol)) throw new HttpFailure(400, 'invalid dashboard URL scheme')
+  if (u.username || u.password) throw new HttpFailure(400, 'invalid dashboard URL credentials')
+  if ((u.pathname !== '/' && u.pathname !== '') || u.search || u.hash) throw new HttpFailure(400, 'invalid dashboard URL path')
   return `${u.protocol}//${u.host}`
+}
+
+const DASHBOARD_MODES = ['auto', 'always', 'never'] as const
+type DashboardMode = (typeof DASHBOARD_MODES)[number]
+
+/** Python `str(value or "auto").strip().lower()` checked against the known modes; null for anything else. */
+function dashboardMode(raw: unknown): DashboardMode | null {
+  const mode = (raw ? str(raw) : 'auto').trim().toLowerCase()
+  return (DASHBOARD_MODES as readonly string[]).includes(mode) ? (mode as DashboardMode) : null
+}
+
+/** The configured dashboard link: `url`, else the legacy `target`. */
+const dashboardLink = (cfg: Dict): string => str(cfg.url ?? cfg.target)
+
+/** Python `get_dashboard_config`: the profile's `webui.dashboard` link settings; 400 for an invalid stored URL. */
+export function dashboardConfig(config: Config): { enabled: DashboardMode; url: string } {
+  const cfg = dict(dict(config.webui).dashboard)
+  return { enabled: dashboardMode(cfg.enabled) ?? 'auto', url: normalizeBrowserUrl(dashboardLink(cfg)) }
+}
+
+/** Python `save_dashboard_config` validation: 400 for an unknown mode or an unsafe URL; an empty URL clears it. */
+export function parseDashboardConfig(body: { enabled?: unknown; url?: unknown }): { enabled: DashboardMode; url: string } {
+  const enabled = dashboardMode(body.enabled)
+  if (!enabled) throw new HttpFailure(400, 'invalid dashboard enabled mode')
+  return { enabled, url: normalizeBrowserUrl(body.url ? str(body.url) : '') }
+}
+
+/** Writes `next` to `webui.dashboard` in place, replacing a non-object `webui` or `dashboard`. */
+export function applyDashboardConfig(config: Config, next: { enabled: DashboardMode; url: string }): void {
+  if (!config.webui || typeof config.webui !== 'object' || Array.isArray(config.webui)) config.webui = {}
+  const webui = config.webui as Dict
+  if (!webui.dashboard || typeof webui.dashboard !== 'object' || Array.isArray(webui.dashboard)) webui.dashboard = {}
+  const dashboard = webui.dashboard as Dict
+  dashboard.enabled = next.enabled
+  // `url` replaces the legacy `target`, so clearing the URL clears the link.
+  Reflect.deleteProperty(dashboard, 'target')
+  if (next.url) dashboard.url = next.url
+  else Reflect.deleteProperty(dashboard, 'url')
 }
 
 /** Python `get_dashboard_status`: probe `hermes dashboard` on loopback only. */
 export async function dashboardStatus(config: Config, env: Record<string, string | undefined>, f: typeof fetch = fetch): Promise<Dict> {
   const cfg = dict(dict(config.webui).dashboard)
-  let enabled = str(cfg.enabled ?? 'auto').trim().toLowerCase() || 'auto'
-  if (!['auto', 'always', 'never'].includes(enabled)) enabled = 'auto'
+  const enabled = dashboardMode(cfg.enabled) ?? 'auto'
   if (enabled === 'never') return { running: false, enabled: 'never' }
-  const raw = str(cfg.url ?? cfg.target)
+  const raw = dashboardLink(cfg)
   let browserUrl = ''
   try { browserUrl = raw ? normalizeBrowserUrl(raw) : '' } catch { return { running: false, enabled, error: 'invalid dashboard url' } }
   let override: [string, number, string, string] | null = null

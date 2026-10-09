@@ -4207,6 +4207,39 @@
     ],
     "additionalProperties": false
   },
+  "gateway.control": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "status": {
+        "type": "string",
+        "enum": [
+          "completed",
+          "failed",
+          "busy"
+        ]
+      },
+      "message": {
+        "type": "string"
+      },
+      "detail": {
+        "type": "string"
+      },
+      "returncode": {
+        "type": "integer",
+        "minimum": -9007199254740991,
+        "maximum": 9007199254740991
+      },
+      "timed_out": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "status",
+      "message"
+    ],
+    "additionalProperties": false
+  },
   "gateway.restart": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
@@ -4229,6 +4262,9 @@
         "type": "integer",
         "minimum": -9007199254740991,
         "maximum": 9007199254740991
+      },
+      "timed_out": {
+        "type": "boolean"
       }
     },
     "required": [

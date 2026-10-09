@@ -397,6 +397,12 @@ export const CHAT_METHODS = {
   'approval.set_yolo': { params: z.object({ session_id: z.string().min(1), enabled: z.boolean() }), result: z.object({ yolo_enabled: z.boolean(), released: z.number().int() }) },
   'clarify.respond': { params: z.object({ stream_id: z.string().optional(), session_id: z.string().optional(), clarify_id: z.string().optional(), response: z.string().min(1) }), result: z.object({ ok: z.boolean(), clarify_id: z.string().optional() }) },
 } as const
+const GatewayActionParams = ProfileHomeParams.extend({ cli_profile: z.string().nullable().optional(), quick_timeout_seconds: z.number().optional(), background_wait_seconds: z.number().optional() })
+/** A lifecycle run of `hermes gateway <action>`. `busy` means another action holds the lock; `timed_out` marks a child killed after `background_wait_seconds`. `detail` is CLI output, never shown to a browser. */
+const GatewayActionResult = z.object({ status: z.enum(['completed', 'failed', 'busy']), message: z.string(), detail: z.string().optional(), returncode: z.number().int().optional(), timed_out: z.boolean().optional() })
+const GatewayActionStream = z.discriminatedUnion('event', [z.object({ event: z.literal('progress'), data: z.object({ phase: z.enum(['started', 'draining']) }) })])
+export const GATEWAY_ACTIONS = ['start', 'stop', 'restart'] as const
 export const GATEWAY_METHODS = {
-  'gateway.restart': { params: ProfileHomeParams.extend({ cli_profile: z.string().nullable().optional(), quick_timeout_seconds: z.number().optional(), background_wait_seconds: z.number().optional() }), result: z.object({ status: z.enum(['completed', 'failed', 'busy']), message: z.string(), detail: z.string().optional(), returncode: z.number().int().optional() }), stream: z.discriminatedUnion('event', [z.object({ event: z.literal('progress'), data: z.object({ phase: z.enum(['started', 'draining']) }) })]) },
+  'gateway.control': { params: GatewayActionParams.extend({ action: z.enum(GATEWAY_ACTIONS) }), result: GatewayActionResult, stream: GatewayActionStream },
+  'gateway.restart': { params: GatewayActionParams, result: GatewayActionResult, stream: GatewayActionStream },
 } as const

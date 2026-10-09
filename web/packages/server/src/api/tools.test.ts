@@ -6,6 +6,7 @@ import { FakeSidecar, loadSidecarFixtures } from '../sidecar/fake.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { sanitizeClientEvent, updateNotificationOwner, WindowLimiter } from './tools-router.js'
 import type { SessionInfo } from '../auth/store.js'
+import { gatewayStatus } from '../tools/health.js'
 import { buildInsights } from '../tools/insights.js'
 import { serverSummary, maskSecrets } from '../tools/mcp.js'
 import { readProjectContext } from '../tools/memory.js'
@@ -432,6 +433,124 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     s.deps.requestShutdown = original
   })
 
+  it('gateway status follows Agent health and the profile gateway sessions (TAL-266)', async () => {
+    let body = await json(await s.get('/api/gateway/status'))
+    expect(body).toEqual({ running: false, configured: false, platforms: [], last_active: '', session_count: 0, health: { state: 'unknown', reason: 'gateway_not_configured', gateway_state: null } })
+    const sessions = join(s.state, 'sessions', 'sessions.json')
+    mkdirSync(join(s.state, 'sessions'), { recursive: true })
+    writeFileSync(sessions, JSON.stringify({ a: { session_id: 'sa', origin: { platform: 'telegram' } }, b: { session_id: 'sb', platform: 'Discord' }, c: { session_id: 'sc' } }))
+    try {
+      body = await json(await s.get('/api/gateway/status'))
+      expect(body).toMatchObject({ running: true, configured: true, platforms: [{ name: 'discord', label: 'Discord' }, { name: 'telegram', label: 'Telegram' }], session_count: 3 })
+      expect(Date.parse(String(body.last_active))).toBeGreaterThan(0)
+      writeFileSync(join(s.state, 'gateway.pid'), String(process.pid))
+      expect(await json(await s.get('/api/gateway/status'))).toMatchObject({ running: true, configured: true, health: { state: 'alive' } })
+    } finally {
+      rmSync(join(s.state, 'sessions'), { recursive: true, force: true })
+      rmSync(join(s.state, 'gateway.pid'), { force: true })
+    }
+  })
+
+  it('gateway start, stop, and restart run sidecar gateway.control and never return CLI output (TAL-266)', async () => {
+    const calls: Json[] = []
+    let outcome: Json = {}
+    sidecar.respond('gateway.control', (params) => { calls.push(params); return outcome as never })
+    try {
+      outcome = { status: 'completed', message: 'Gateway service started successfully', detail: 'pid 4242 /srv/hermes secret' }
+      let res = await post(s, '/api/gateway/start', { name: 'telegram' })
+      let text = await res.text()
+      expect(res.status).toBe(200)
+      expect(text).not.toContain('4242')
+      expect(JSON.parse(text)).toMatchObject({ ok: true, action: 'start', message: 'Gateway start completed.', status: { running: false, configured: false, platforms: [] } })
+      expect(calls).toEqual([{ profile_home: s.state, action: 'start', background_wait_seconds: 60 }])
+      outcome = { status: 'failed', message: 'Stop failed: stop failed', detail: 'partial output', returncode: 7 }
+      res = await post(s, '/api/gateway/stop', {})
+      text = await res.text()
+      expect([res.status, JSON.parse(text)]).toEqual([500, { error: 'Gateway stop failed with exit code 7', ok: false, action: 'stop', returncode: 7 }])
+      outcome = { status: 'failed', message: 'Gateway restart process timed out after 60s and was terminated', timed_out: true }
+      res = await post(s, '/api/gateway/restart', {})
+      expect([res.status, await json(res)]).toEqual([504, { error: 'Gateway restart timed out after 60 seconds', ok: false, action: 'restart' }])
+      outcome = { status: 'busy', message: 'Another gateway action is already in progress. Please wait a moment and try again.' }
+      res = await post(s, '/api/gateway/restart', {})
+      expect([res.status, await json(res)]).toEqual([409, { error: 'Another gateway action is already in progress; try again shortly.', ok: false, action: 'restart' }])
+      outcome = { status: 'failed', message: 'Hermes CLI not found' }
+      res = await post(s, '/api/gateway/start', {})
+      expect([res.status, await json(res)]).toEqual([500, { error: 'Hermes CLI not found', ok: false, action: 'start' }])
+      expect(calls.map((c) => c.action)).toEqual(['start', 'stop', 'restart', 'restart', 'start'])
+    } finally {
+      sidecar.respond('gateway.control', undefined)
+    }
+  })
+
+  it('gateway actions are owner-only; status is not (TAL-266)', async () => {
+    const t = await bootTestServer({ env: { HERMES_WEBUI_TRUSTED_AUTH_HEADER: 'X-Remote-User', HERMES_WEBUI_TRUSTED_GROUPS_HEADER: 'X-Remote-Groups', HERMES_WEBUI_GROUP_PROFILE_MAP: '{"ops":"work"}' } })
+    try {
+      const headers = { 'X-Remote-User': 'kim', 'X-Remote-Groups': 'ops', 'content-type': 'application/json' }
+      for (const action of ['start', 'stop', 'restart']) {
+        const res = await t.get(`/api/gateway/${action}`, { method: 'POST', body: '{}', headers })
+        expect([res.status, await json(res)]).toEqual([403, { error: 'Owner session required' }])
+      }
+      expect(await json(await t.get('/api/gateway/status', { headers }))).not.toEqual({ error: 'Owner session required' })
+    } finally {
+      await t.close()
+    }
+  })
+
+  // Python test_dashboard_probe.py::test_dashboard_config_roundtrip_writes_profile_config_yaml
+  it('dashboard config round-trips through the profile config.yaml (TAL-266)', async () => {
+    const seed = structuredClone(configs.get(s.state))
+    const dashboard = (): unknown => ((configs.get(s.state)?.webui as Json | undefined)?.dashboard)
+    try {
+      expect(await json(await s.get('/api/dashboard/config'))).toEqual({ enabled: 'auto', url: '' })
+      expect(await json(await post(s, '/api/dashboard/config', { enabled: 'never', url: '' }))).toEqual({ enabled: 'never', url: '' })
+      expect(dashboard()).toEqual({ enabled: 'never' })
+      expect(await json(await post(s, '/api/dashboard/config', { enabled: 'auto', url: 'http://127.0.0.1:19119' }))).toEqual({ enabled: 'auto', url: 'http://127.0.0.1:19119' })
+      expect(dashboard()).toEqual({ enabled: 'auto', url: 'http://127.0.0.1:19119' })
+      expect(await json(await post(s, '/api/dashboard/config', { enabled: 'ALWAYS', url: ' https://Dashboard.example.test/ ' }))).toEqual({ enabled: 'always', url: 'https://dashboard.example.test' })
+      expect(await json(await s.get('/api/dashboard/config'))).toEqual({ enabled: 'always', url: 'https://dashboard.example.test' })
+      for (const [url, error] of [['https://example.com/path', 'invalid dashboard URL path'], ['https://user:pass@example.com', 'invalid dashboard URL credentials'], ['javascript:alert(1)', 'invalid dashboard URL scheme']]) {
+        const res = await post(s, '/api/dashboard/config', { enabled: 'auto', url })
+        expect([res.status, await json(res)]).toEqual([400, { error }])
+      }
+      const res = await post(s, '/api/dashboard/config', { enabled: 'sometimes' })
+      expect([res.status, await json(res)]).toEqual([400, { error: 'invalid dashboard enabled mode' }])
+      expect(dashboard()).toEqual({ enabled: 'always', url: 'https://dashboard.example.test' })
+      expect(await json(await post(s, '/api/dashboard/config', { enabled: 'auto', url: '' }))).toEqual({ enabled: 'auto', url: '' })
+      expect(dashboard()).toEqual({ enabled: 'auto' })
+      // A legacy `target` is the link until a save replaces or clears it.
+      configs.set(s.state, { ...structuredClone(seed), webui: { dashboard: { enabled: 'always', target: 'http://127.0.0.1:19200' } } })
+      s.deps.agentConfig.invalidate()
+      expect(await json(await s.get('/api/dashboard/config'))).toEqual({ enabled: 'always', url: 'http://127.0.0.1:19200' })
+      expect(await json(await post(s, '/api/dashboard/config', { enabled: 'always', url: '' }))).toEqual({ enabled: 'always', url: '' })
+      expect(dashboard()).toEqual({ enabled: 'always' })
+      expect(await json(await s.get('/api/dashboard/status'))).toMatchObject({ url: 'http://127.0.0.1:9119' })
+      configs.set(s.state, { ...structuredClone(seed), webui: { dashboard: { url: 'ftp://nope' } } })
+      s.deps.agentConfig.invalidate()
+      const stored = await s.get('/api/dashboard/config')
+      expect([stored.status, await json(stored)]).toEqual([400, { error: 'invalid dashboard URL scheme' }])
+    } finally {
+      configs.set(s.state, seed!)
+      s.deps.agentConfig.invalidate()
+    }
+  })
+
+  it('project-os dashboard reads the Project OS files of the last workspace (TAL-266)', async () => {
+    const repo = join(s.state, 'project-os-repo')
+    mkdirSync(join(repo, '.ax', 'status'), { recursive: true })
+    mkdirSync(join(repo, 'docs', 'project-os'), { recursive: true })
+    writeFileSync(join(repo, '.ax', 'status', 'heartbeat.json'), JSON.stringify({ phase: 'review' }))
+    writeFileSync(join(repo, 'docs', 'project-os', 'PROJECT.md'), '# P\nGateway parity\n')
+    const previous = s.deps.workspaces.lastWorkspace()
+    s.deps.workspaces.setLastWorkspace(repo)
+    try {
+      const body = await json(await s.get('/api/project-os/dashboard'))
+      expect(body).toMatchObject({ repo_root: repo, workspace: repo, selected_board_slug: null, heartbeat: { phase: 'review' }, handoff: null, goal_summary: 'Gateway parity', docs: { project: { path: 'docs/project-os/PROJECT.md' } } })
+    } finally {
+      s.deps.workspaces.setLastWorkspace(previous)
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
   it('owns update notification lifecycle through typed HTTP routes', async () => {
     let res = await s.get('/api/update-notifications')
     expect(res.status).toBe(200)
@@ -638,6 +757,31 @@ describe('tools helpers', () => {
 
     const legacy = (token: string): SessionInfo => ({ token, expiry: 2_000_000_000, auth_type: 'oidc', username: 'shared@example.test', bound_profile: 'work' })
     expect(updateNotificationOwner(legacy('legacy-a'))).not.toBe(updateNotificationOwner(legacy('legacy-b')))
+  })
+
+  // Python test_gateway_status_agent_health.py and test_issue3194_gateway_configured_banner.py.
+  it('gateway status maps every Agent health outcome like the Python payload (TAL-266)', () => {
+    const tg = { raw_source: 'telegram', platform: 'telegram' }
+    const ids = (...metas: { raw_source: string; platform: string }[]): Map<string, { raw_source: string; platform: string }> => new Map(metas.map((m, i) => [`s${String(i)}`, m]))
+    const status = (alive: boolean | null, identity = ids(), details: Json = {}): Json => gatewayStatus({ alive, details }, identity, '/nonexistent/sessions.json')
+    const flags = (body: Json): [unknown, unknown] => [body.running, body.configured]
+    // alive true: running and configured, whatever the sessions.
+    expect(status(true)).toEqual({ running: true, configured: true, platforms: [], last_active: '', session_count: 0, health: { state: null, reason: null, gateway_state: null } })
+    expect(status(true, ids(tg, { raw_source: 'discord', platform: 'discord' })).platforms).toEqual([{ name: 'discord', label: 'Discord' }, { name: 'telegram', label: 'Telegram' }])
+    expect(status(true, ids({ raw_source: '', platform: '' }, { raw_source: '', platform: '' }))).toMatchObject({ running: true, platforms: [], session_count: 2 })
+    // alive false: configured but down, platforms still listed.
+    expect(flags(status(false))).toEqual([false, true])
+    expect(status(false, ids(tg))).toMatchObject({ running: false, configured: true, platforms: [{ name: 'telegram', label: 'Telegram' }] })
+    // alive null: sessions mean running and configured; only stale running metadata marks configured without them.
+    expect(flags(status(null))).toEqual([false, false])
+    expect(flags(status(null, ids(tg)))).toEqual([true, true])
+    expect(flags(status(null, ids(tg), { state: 'unknown', reason: 'gateway_not_configured' }))).toEqual([true, true])
+    expect(flags(status(null, ids(), { state: 'unknown', reason: 'gateway_not_configured' }))).toEqual([false, false])
+    expect(status(null, ids(), { state: 'unknown', reason: 'gateway_stale_running_state', gateway_state: 'running' })).toMatchObject({ running: false, configured: true, health: { state: 'unknown', reason: 'gateway_stale_running_state', gateway_state: 'running' } })
+    expect(flags(status(null, ids(), { state: 'unknown', reason: 'cross_container_freshness', gateway_state: 'running' }))).toEqual([false, true])
+    expect(flags(status(null, ids(), { state: 'unknown', reason: 'gateway_stale_stopped_state', gateway_state: 'stopped' }))).toEqual([false, false])
+    // Unknown platforms are title-cased; a non-string gateway state is not passed through.
+    expect(status(true, ids({ raw_source: 'home_assistant', platform: 'home_assistant' }), { gateway_state: { nested: true } })).toMatchObject({ platforms: [{ name: 'home_assistant', label: 'Home_Assistant' }], health: { gateway_state: null } })
   })
 
   it('window limiter, toggle list, mcp summary, project context', () => {

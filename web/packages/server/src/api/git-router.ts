@@ -4,7 +4,7 @@ import { gitContract } from '@maudecode/talaria-web-contracts'
 import { HttpError, requireFields, type ApiContext } from './router.js'
 import { requestSessionIdGuard } from './session-visibility.js'
 import type { RequestContext } from '../http/context.js'
-import { cleanGeneratedCommitMessage, enclosingRepoRoot, GitWorkspaceError, WORKSPACE_BUSY_MESSAGE, WORKSPACE_GIT_DESTRUCTIVE_ENV, type GitStatus } from '../workspace/git.js'
+import { cleanGeneratedCommitMessage, enclosingRepoRoot, gitBadge, GitWorkspaceError, WORKSPACE_BUSY_MESSAGE, WORKSPACE_GIT_DESTRUCTIVE_ENV, type GitStatus } from '../workspace/git.js'
 import { REMOTE_WORKSPACE_UNSUPPORTED_CODE, REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE } from '../workspace/workspaces.js'
 import { removeWorktreeForSession, worktreeStatusForSession } from '../workspace/worktrees.js'
 import { isSafeSessionId, type Session } from '../sessions/session.js'
@@ -97,10 +97,7 @@ function rollbackError(error: unknown): HttpError {
 export const gitRouter = os.router({
   gitInfo: os.gitInfo.handler(({ input, context: { ctx } }) => guard(async () => {
     const { workspace } = gitSession(ctx, input.session_id)
-    const status = await ctx.deps.git.status(workspace, { useCache: true })
-    if (!status.is_git) return { git: null }
-    const totals = status.totals ?? { changed: 0, staged: 0, unstaged: 0, untracked: 0, conflicts: 0 }
-    return { git: { branch: status.branch ?? 'HEAD', dirty: totals.changed, modified: totals.staged + totals.unstaged, untracked: totals.untracked, ahead: status.ahead ?? 0, behind: status.behind ?? 0, is_git: true as const } }
+    return { git: gitBadge(await ctx.deps.git.status(workspace, { useCache: true })) }
   })),
   git: {
     status: os.git.status.handler(({ input, context: { ctx } }) => guard(async () => ({ git: asStatus(await ctx.deps.git.status(gitSession(ctx, input.session_id).workspace, { useCache: true })) }))),
