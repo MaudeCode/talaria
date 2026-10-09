@@ -220,6 +220,11 @@ if (( ${#ui_filters} )); then
     scripts/assert-no-skipped-ui-tests "$result_bundle"
 fi
 if (( ${#serial_ui_filters} )); then
+    # Xcode shuts the leased device down to clone it, so the notification journey would start from a
+    # fresh boot whose notification service can hang (TAL-651): it is booted and readied first (TAL-682).
+    if (( ${#ui_filters} )) && [[ "$simulator_disposable" == true ]]; then
+        scripts/ready-simulator-notifications "$simulator_id" || exit $?
+    fi
     run_tests ui-serial NO "${serial_ui_filters[@]}"
     scripts/assert-no-skipped-ui-tests "$result_bundle"
 fi
