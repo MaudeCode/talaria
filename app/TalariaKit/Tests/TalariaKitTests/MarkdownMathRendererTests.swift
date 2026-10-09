@@ -610,3 +610,40 @@ final class MathFenceLanguageTests: XCTestCase {
         XCTAssertFalse(MathFenceLanguage.matches("   "))
     }
 }
+
+final class MarkdownDiffLineKindTests: XCTestCase {
+    func testDiffAndPatchFencesColourLinesAndOtherFencesStayPlain() {
+        XCTAssertTrue(MarkdownDiffLineKind.applies(to: "diff"))
+        XCTAssertTrue(MarkdownDiffLineKind.applies(to: "PATCH"))
+        XCTAssertTrue(MarkdownDiffLineKind.applies(to: "diff title=change"))
+        XCTAssertFalse(MarkdownDiffLineKind.applies(to: "log"))
+        XCTAssertFalse(MarkdownDiffLineKind.applies(to: "text"))
+        XCTAssertFalse(MarkdownDiffLineKind.applies(to: "swift"))
+        XCTAssertFalse(MarkdownDiffLineKind.applies(to: nil))
+    }
+
+    func testLinePrefixRules() {
+        let cases: [(String, MarkdownDiffLineKind)] = [
+            ("diff --git a/App.swift b/App.swift", .fileHeader),
+            ("index 83db48f..bf269f4 100644", .fileHeader),
+            ("--- a/App.swift", .fileHeader),
+            ("+++ b/App.swift", .fileHeader),
+            ("--- /dev/null", .fileHeader),
+            ("@@ -1,3 +1,4 @@ struct App {", .hunkHeader),
+            ("+let added = true", .added),
+            ("-let removed = true", .removed),
+            ("+", .added),
+            ("-", .removed),
+            ("+++", .added),
+            ("----", .removed),
+            (" let unchanged = true", .context),
+            ("", .context),
+            ("\\ No newline at end of file", .context),
+            ("difference", .context),
+            ("indexed", .context),
+        ]
+        for (line, expected) in cases {
+            XCTAssertEqual(MarkdownDiffLineKind(line: line), expected, "line: \(line.debugDescription)")
+        }
+    }
+}

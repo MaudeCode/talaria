@@ -99,7 +99,11 @@ struct ChatCodeBlock: View {
         if let highlightedCode {
             HighlightedCodeBlockText(content: highlightedCode, wraps: wrapsCodeBlockLines)
         } else {
-            PlainCodeBlockText(content: content, wraps: wrapsCodeBlockLines)
+            PlainCodeBlockText(
+                content: content,
+                wraps: wrapsCodeBlockLines,
+                colorsDiffLines: MarkdownDiffLineKind.applies(to: language)
+            )
         }
     }
 

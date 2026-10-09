@@ -1,3 +1,4 @@
+import SwiftUI
 import UIKit
 import XCTest
 @testable import Talaria
@@ -144,5 +145,42 @@ final class ImagePreviewPerformanceTests: XCTestCase {
             }
         }
         return image.jpegData(compressionQuality: 0.9)
+    }
+}
+
+/// A 5,000-line `diff` block against the same block drawn plain (TAL-447).
+///
+/// Prefix tinting adds one prefix check, a background and an accessibility
+/// label per line on top of the plain path; the pair of budgets shows that
+/// cost directly, so a regression in either path is visible beside the other.
+final class DiffCodeBlockPerformanceTests: XCTestCase {
+    private static let content = (0..<5_000).map { index in
+        switch index % 5 {
+        case 0: "@@ -\(index),4 +\(index),4 @@"
+        case 1: "-let removed\(index) = \(index)"
+        case 2: "+let added\(index) = \(index)"
+        default: " let context\(index) = \(index)"
+        }
+    }.joined(separator: "\n")
+
+    @MainActor
+    func testPlainBlockLayout() {
+        measureLayout(colorsDiffLines: false)
+    }
+
+    @MainActor
+    func testDiffBlockLayout() {
+        measureLayout(colorsDiffLines: true)
+    }
+
+    @MainActor
+    private func measureLayout(colorsDiffLines: Bool) {
+        measure(metrics: [XCTClockMetric()], options: performanceOptions()) {
+            let host = UIHostingController(
+                rootView: PlainCodeBlockText(content: Self.content, colorsDiffLines: colorsDiffLines)
+            )
+            let size = host.sizeThatFits(in: CGSize(width: 390, height: CGFloat.greatestFiniteMagnitude))
+            XCTAssertGreaterThan(size.height, 5_000)
+        }
     }
 }

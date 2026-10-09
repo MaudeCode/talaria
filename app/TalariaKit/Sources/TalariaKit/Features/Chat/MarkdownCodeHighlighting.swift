@@ -77,6 +77,40 @@ public enum MarkdownPlainCodeFormatter {
     }
 }
 
+/// How a line of a `diff` or `patch` code block is tinted (TAL-447). The kind
+/// comes from the line's leading characters alone, so the pass is one O(lines)
+/// scan with no tokenizer.
+public enum MarkdownDiffLineKind: Equatable {
+    case added
+    case removed
+    case hunkHeader
+    case fileHeader
+    case context
+
+    private static let languages: Set<String> = ["diff", "patch"]
+
+    /// True when a fence language is `diff` or `patch`.
+    public static func applies(to language: String?) -> Bool {
+        MarkdownHighlightPolicy.normalizedLanguage(from: language).map(languages.contains) ?? false
+    }
+
+    /// File headers need git's trailing space, so a removed `--` line (`---`)
+    /// or an added `++` line (`+++`) still reads as a change.
+    public init(line: some StringProtocol) {
+        if line.hasPrefix("+++ ") || line.hasPrefix("--- ") || line.hasPrefix("diff ") || line.hasPrefix("index ") {
+            self = .fileHeader
+        } else if line.hasPrefix("@@") {
+            self = .hunkHeader
+        } else if line.hasPrefix("+") {
+            self = .added
+        } else if line.hasPrefix("-") {
+            self = .removed
+        } else {
+            self = .context
+        }
+    }
+}
+
 public enum MarkdownAttributedCodeFormatter {
     static let maxSegmentLength = MarkdownPlainCodeFormatter.maxSegmentLength
 
