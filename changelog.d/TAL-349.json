@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Each Talaria Web release is tested against three supported Hermes Agent releases, currently 0.21.3, 0.21.4 and 0.21.5.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

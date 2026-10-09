@@ -61,11 +61,35 @@ jobs:
           npm run fixtures -w packages/contracts
           git diff --exit-code -- sidecar/tests/fixtures/schemas.json
 
-  sidecar:
+  agent-releases:
     if: inputs.server
-    name: Sidecar pytest against the pinned Agent
+    name: Supported Agent releases
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      tags: ${{ steps.list.outputs.tags }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            scripts
+            web/sidecar
+
+      - name: Validate the support record and list its releases
+        id: list
+        working-directory: .
+        run: echo "tags=$(python3 scripts/check-agent-compatibility.py --list)" >> "$GITHUB_OUTPUT"
+
+  # Each supported Agent release runs the full sidecar suite. Unpromoted upstream releases are not in the record.
+  sidecar:
+    needs: agent-releases
+    name: Sidecar pytest against Agent ${{ matrix.release }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        release: ${{ fromJSON(needs.agent-releases.outputs.tags) }}
     steps:
       - uses: actions/checkout@v7
 
@@ -74,16 +98,27 @@ jobs:
         with:
           python-version: '3.13'
           cache: pip
-          cache-dependency-path: web/sidecar/agent_dependency.json
+          cache-dependency-path: web/sidecar/agent_support.json
 
       - name: Install uv (the Agent's locked dependency resolver)
         run: python3 -m pip install --disable-pip-version-check "uv==0.11.3"
 
-      - name: Provision the pinned Agent and run the sidecar suite
+      - name: Provision the Agent release and run the sidecar suite
         working-directory: .
         env:
-          HERMES_WEBUI_TEST_PYTHON: python3.13
-        run: python3 scripts/check-agent-compatibility.py --skip-docker
+          RELEASE: ${{ matrix.release }}
+          # Read-only, for the Agent release API's published-release check.
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 scripts/check-agent-compatibility.py --skip-docker --release "$RELEASE" --receipt "$RUNNER_TEMP/agent-compatibility/$RELEASE.json"
+
+      - name: Retain the Agent compatibility receipt
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: agent-compatibility-${{ matrix.release }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/agent-compatibility
+          retention-days: 7
+          if-no-files-found: ignore
 
   frontend-checks:
     if: inputs.frontend

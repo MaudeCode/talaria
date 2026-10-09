@@ -66,7 +66,8 @@ Classify every relevant change as exactly one of:
 Report sections: identity (candidate ref, SHA, kind, base SHA, compare link,
 commit count), findings per class (GitHub commit or blob link at the exact SHA
 plus a Talaria `path:line`), unresolved uncertainty, and the support-test result
-from `python3 scripts/check-agent-compatibility.py` if run for this identity
+from `python3 scripts/check-agent-compatibility.py --identity JSON` (a release)
+or `--main SHA` (a `main` canary) if run for this identity, citing its receipt
 (otherwise "not run"). Keep findings older than the base out of the classes;
 list them under uncertainty as outside the reviewed range.
 

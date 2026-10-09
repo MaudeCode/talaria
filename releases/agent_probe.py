@@ -27,7 +27,8 @@ from hermes_cli import __version__
 from hermes_state import SessionDB
 from talaria_sidecar.methods import state_db as sidecar_state_db
 
-assert __version__ == sys.argv[1], (__version__, sys.argv[1])
+# A release check names its exact package version; an Agent main canary has none to require.
+assert sys.argv[1:] in ([], [__version__]), (__version__, sys.argv[1:])
 database = home / "state.db"  # the canonical Agent database the sidecar writes through
 db = SessionDB(database)
 try:

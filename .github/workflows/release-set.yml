@@ -358,10 +358,21 @@ jobs:
       env:
         GH_TOKEN: ${{ github.token }}
       run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan'
-    - name: Verify recorded Web and Agent identity
+    - name: Verify recorded Web and Agent identity and every supported Agent release
+      env:
+        # Read-only, for the Agent release API's published-release check.
+        GITHUB_TOKEN: ${{ github.token }}
       run: |
         "$RELEASE_PYTHON" releases/cli.py gate --plan "$RUNNER_TEMP/release-plan/plan.json" --name agentCompatibility --output "$RUNNER_TEMP/agent-receipts/agentCompatibility.json" -- \
-          "$RELEASE_PYTHON" scripts/check-release-agent.py --plan "$RUNNER_TEMP/release-plan/plan.json"
+          "$RELEASE_PYTHON" scripts/check-release-agent.py --plan "$RUNNER_TEMP/release-plan/plan.json" --receipts "$RUNNER_TEMP/agent-compatibility"
+    - name: Retain Agent compatibility receipts
+      if: always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: agent-compatibility-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/agent-compatibility
+        retention-days: 30
+        if-no-files-found: ignore
     - name: Stage agent-receipts for other jobs
       id: store
       run: '"$RELEASE_PYTHON" releases/artifacts.py put agent-receipts "$RUNNER_TEMP/agent-receipts"'
