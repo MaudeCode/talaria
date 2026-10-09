@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Talaria Web can again count a chat's conversation rounds and write a catch-up summary of a long chat with its own model, saving the summary into the chat so it is there after switching from a messaging app.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

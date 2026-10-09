@@ -44,6 +44,17 @@ export const SessionsBulkResultSchema = z.object({
   results: z.array(z.object({ session_id: z.string(), ok: z.boolean(), status: z.number().int().optional(), error: z.string().optional(), state_db_cleanup_failed: z.boolean().optional() })),
 })
 
+/** TAL-258: the handoff dock's body. `since` is a unix time (a numeric string is accepted); only later messages count. */
+const HandoffInputSchema = z.object({ session_id: z.string().optional(), since: Json.optional() })
+/** A round is a user message (consecutive ones merge) answered by the assistant; the dock is offered from `threshold` rounds. */
+export const ConversationRoundsSchema = z.object({ ok: z.literal(true), rounds: z.number().int(), threshold: z.number().int(), should_show: z.boolean() })
+/**
+ * The summary the session's main model wrote of its last 50 messages, also appended to the transcript as a display-only
+ * `handoff_summary` tool row. `fallback` marks the deterministic local summary (no credential, a failed call, or output
+ * still cut off after the longer retry); `warning` says why a failed call fell back.
+ */
+export const HandoffSummarySchema = z.object({ ok: z.literal(true), summary: z.string(), message_count: z.number().int(), rounds: z.number().int(), fallback: z.boolean(), warning: z.string().optional() })
+
 const tags = ['sessions']
 /** The Agent's manual-compression feedback (`summarize_manual_compression`) plus the reference line stored as the anchor summary. */
 export const CompressionSummarySchema = z.looseObject({ headline: z.string().optional(), token_line: z.string().optional(), note: z.string().nullable().optional(), reference_message: z.string().nullable().optional() })
@@ -114,6 +125,8 @@ export const sessionsContract = {
     compress: oc.route({ method: 'POST', path: '/api/session/compress', tags, summary: 'Compress the session\'s model context now (iOS `/compress`). `focus_topic` (alias `topic`) is capped at 500 characters.' }).input(CompressInputSchema).output(CompressResultSchema),
     compressStart: oc.route({ method: 'POST', path: '/api/session/compress/start', tags, summary: 'Start (or join) the session\'s manual compression job; poll `compress/status`.' }).input(CompressInputSchema).output(CompressionStatusSchema),
     compressStatus: oc.route({ method: 'GET', path: '/api/session/compress/status', tags }).input(SessionQuery).output(CompressionStatusSchema),
+    conversationRounds: oc.route({ method: 'POST', path: '/api/session/conversation-rounds', tags, summary: 'Count the session\'s conversation rounds in state.db and whether the handoff dock is due.' }).input(HandoffInputSchema).output(ConversationRoundsSchema),
+    handoffSummary: oc.route({ method: 'POST', path: '/api/session/handoff-summary', tags, summary: 'Summarize the session\'s recent conversation for a handoff and append the summary card; needs the dock\'s round threshold.' }).input(HandoffInputSchema).output(HandoffSummarySchema),
     draftGet: oc.route({ method: 'GET', path: '/api/session/draft', tags }).input(SessionQuery).output(z.object({ draft: DraftSchema, draft_version: z.string().nullable() })),
     draftSave: oc.route({ method: 'POST', path: '/api/session/draft', tags }).input(z.object({ session_id: z.string(), text: Json.optional(), files: Json.optional(), draft_version: Json.optional() })).output(DraftResponseSchema),
     anchorSceneGet: oc.route({ method: 'GET', path: '/api/session/anchor-scene', tags }).input(z.object({ session_id: z.string(), message_ref: z.string().optional(), message_index: z.string().optional(), before: z.string().optional(), limit: z.string().optional() })).output(z.object({ scene_ref: z.string(), rows: z.array(ActivitySceneRowSchema), start: z.number().int(), end: z.number().int(), total: z.number().int(), complete: z.boolean() })),

@@ -65,6 +65,24 @@ function guardVisibility(ctx: RequestContext, sid: unknown): void {
   if (!ctx.deps.sessions.sessionIdVisible(sid)) throw new HttpError(404, 'Session not found')
 }
 
+/** Python `float(body["since"])` for the handoff dock: a unix time or numeric string; absent is null. */
+function handoffSince(value: unknown): number | null {
+  if (value === undefined || value === null) return null
+  const n = typeof value === 'number' ? value : typeof value === 'string' && value.trim() ? Number(value) : Number.NaN
+  if (Number.isNaN(n)) throw new HttpError(400, 'since must be a unix timestamp (number)')
+  return n
+}
+
+/** The handoff dock's session id and `since`, validated in the predecessor's order. */
+function handoffInput(ctx: RequestContext, input: { session_id?: string | undefined; since?: unknown }): { sid: string; since: number | null } {
+  requireFields(input, 'session_id')
+  const sid = str(input.session_id).trim()
+  if (!sid) throw new HttpError(400, 'session_id is required')
+  const since = handoffSince(input.since)
+  guardVisibility(ctx, sid)
+  return { sid, since }
+}
+
 function allProfilesEnabled(ctx: RequestContext, value: string | undefined): boolean {
   return queryFlag(value) && !ctx.deps.isolatedProfileMode()
 }
@@ -307,6 +325,15 @@ export const sessionsRouter = os.router({
       const sid = str(input.session_id).trim()
       guardVisibility(ctx, sid)
       return compressionStatusPayload(await ctx.deps.sessions.startCompression(sid, input.focus_topic || input.topic)) as { status: 'running' }
+    })),
+    // TAL-258: the handoff dock. Rounds decides when to offer it; the summary is generated and appended to the transcript.
+    conversationRounds: os.session.conversationRounds.handler(({ input, context: { ctx } }) => run(() => {
+      const { sid, since } = handoffInput(ctx, input)
+      return ctx.deps.sessions.conversationRounds(sid, since)
+    })),
+    handoffSummary: os.session.handoffSummary.handler(({ input, context: { ctx } }) => run(() => {
+      const { sid, since } = handoffInput(ctx, input)
+      return ctx.deps.sessions.handoffSummary(sid, since)
     })),
     compressStatus: os.session.compressStatus.handler(({ input, context: { ctx } }) => run(() => {
       const sid = input.session_id.trim()

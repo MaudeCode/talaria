@@ -18,7 +18,8 @@ import { COMPRESSION_RECOVERY_ACTION_START_FOCUSED, compressionRecoveryPayload, 
 import { SessionBusy, SessionNotFound, statSignature, type SessionStore } from './store.js'
 import { UNSETTLED_TODO_KEY, attachTodoState } from './todo.js'
 import { isClaudeCodeSessionId, type ClaudeCodeSessionSource } from './claude-code.js'
-import { stateDbCompressionLineage, stateDbLineageReport, stateDbSessionMessages, stateDbSessionRead, stateDbSessionRow, stateDbSessionSources, type StateDbRead } from './state-db.js'
+import { CONVERSATION_ROUND_THRESHOLD, countConversationRounds, stateDbCompressionLineage, stateDbTailToolContent, stateDbLineageReport, stateDbSessionMessages, stateDbSessionRead, stateDbSessionRow, stateDbSessionSources, stateDbTimestampSeconds, type StateDbRead } from './state-db.js'
+import { completionIncomplete, fallbackHandoffSummary, HANDOFF_SYSTEM_PROMPT, handoffMarker, handoffPayload, handoffTranscript, messageHandoffPayload, sameHandoff } from './handoff.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, compressionReference, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { SidecarError, type SidecarLike } from '../sidecar/client.js'
 import { agentSteerText, attachedFilesPrompt, attachmentObjects, dedupeContext, isContextCompressionMarker, journalOutputRows, looksLikeCurrentUserTurn, stoppedTurnContext, workspaceContextPrefix, mergeSessionMessagesAppendOnly, messageIdentity, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, type ToolResultView } from './merge.js'
@@ -377,6 +378,13 @@ export class SessionService {
     const context = structuredClone(this.modelContext(s))
     const pending = this.pendingTurn(s)
     return pending ? withPendingUserTurn(context, pending) : context
+  }
+
+  /** Python `_is_messaging_session_id`: from the WebUI metadata or the Agent's row. */
+  private isMessagingSession(sid: string): boolean {
+    try { if (isMessagingSessionRecord(this.store.get(sid, { metadataOnly: true }).compact())) return true } catch { /* absent */ }
+    const meta = this.lookupCliMeta(sid)
+    return meta !== null && isMessagingSessionRecord(meta)
   }
 
   /** Python `_lookup_cli_session_metadata`: the sidebar row for a state.db session in the active profile. */
@@ -1109,6 +1117,102 @@ export class SessionService {
     return { s, history }
   }
 
+  /** TAL-258: the session's WebUI record (absent for a CLI or gateway session) and the profile whose state.db holds its rows. */
+  private handoffTarget(sid: string): { local: Session | null; profile: string; dbPath: string } {
+    let local: Session | null = null
+    try { local = this.store.get(sid) } catch { /* a foreign session without a WebUI record */ }
+    const profile = local?.profile ?? this.deps.activeProfile()
+    return { local, profile, dbPath: this.stateDbPath(profile) }
+  }
+
+  /** Python `_handle_conversation_rounds` (TAL-258): the session's rounds and whether the handoff dock is due. */
+  conversationRounds(sid: string, since: number | null): { ok: true; rounds: number; threshold: number; should_show: boolean } {
+    const rounds = countConversationRounds(this.handoffTarget(sid).dbPath, sid, since)
+    return { ok: true, rounds, threshold: CONVERSATION_ROUND_THRESHOLD, should_show: rounds >= CONVERSATION_ROUND_THRESHOLD }
+  }
+
+  /**
+   * Python `_handle_handoff_summary` (TAL-258): the session's main model summarizes its last 50 state.db messages after
+   * `since`, and the summary is appended as a display-only `handoff_summary` tool row. A failed or cut-off answer falls
+   * back to a deterministic local summary rather than an error.
+   */
+  async handoffSummary(sid: string, since: number | null): Promise<{ ok: true; summary: string; message_count: number; rounds: number; fallback: boolean; warning?: string }> {
+    this.rejectSubagent(sid, 'summarized')
+    const { local, profile, dbPath } = this.handoffTarget(sid)
+    const rounds = countConversationRounds(dbPath, sid, since)
+    if (rounds < CONVERSATION_ROUND_THRESHOLD) throw new HttpFailure(400, 'Not enough conversation rounds to generate a summary.')
+    // A running turn settles the transcript it started from, which would drop a card appended meanwhile.
+    if (local?.active_stream_id) throw new HttpFailure(409, 'Session is still streaming; wait for the current turn to finish.')
+    const all = stateDbSessionMessages(dbPath, sid, { stitch: true })
+    const messages = (since === null ? all : all.filter((m) => { const ts = stateDbTimestampSeconds(m.timestamp); return ts !== null && ts > since })).slice(-50)
+    if (messages.length < 2) throw new HttpFailure(400, 'Not enough messages to summarize.')
+    const sidecar = this.deps.sidecar?.() ?? null
+    await ensureAgentRuntimeCurrent(sidecar)
+    const meta = local ? null : this.lookupCliMeta(sid)
+    const generated = await this.generateHandoffSummary(sidecar, profile, local, meta, messages)
+    const pick = (row: Record<string, unknown> | null, ...keys: string[]): string => { for (const key of keys) { const v = str(row?.[key]).trim(); if (v) return v } return '' }
+    // Python `get_cli_sessions` never listed WebUI's own state.db rows, so they name no channel.
+    const cliRow = meta ?? this.lookupCliMeta(sid)
+    const channel = pick(local as unknown as Record<string, unknown> | null, 'source_label', 'raw_source', 'source_tag', 'session_source') || (str(cliRow?.raw_source || cliRow?.source).trim().toLowerCase() === 'webui' ? '' : pick(cliRow, 'source_label', 'raw_source', 'source_tag', 'source')) || null
+    await this.persistHandoffMarker(sid, profile, handoffMarker(sid, generated.summary, channel, rounds, generated.fallback, this.deps.now()))
+    return { ok: true, summary: generated.summary, message_count: messages.length, rounds, fallback: generated.fallback, ...(generated.warning ? { warning: generated.warning } : {}) }
+  }
+
+  /** The main model's summary at 700 tokens, once more at 1400 when it was cut off, else the local fallback. */
+  private async generateHandoffSummary(sidecar: SidecarLike | null, profile: string, local: Session | null, meta: Row | null, messages: Message[]): Promise<{ summary: string; fallback: boolean; warning?: string }> {
+    const fallback = (warning?: string) => ({ summary: fallbackHandoffSummary(messages), fallback: true, ...(warning ? { warning: `Summary generation used local fallback: ${warning}` } : {}) })
+    if (!sidecar) return fallback('the Agent sidecar is not running')
+    const [model, provider] = local ? this.deps.modelStateFromRequest(local.model, local.model_provider, local.model_provider) : [str(meta?.model).trim() || null, null]
+    const prompt = [{ role: 'system', content: HANDOFF_SYSTEM_PROMPT }, { role: 'user', content: `Conversation transcript:\n${handoffTranscript(messages)}` }]
+    const ask = (maxTokens: number) => sidecar.call('aux.complete', { profile_home: this.deps.profileHome(profile), task: 'handoff_summary', messages: prompt, model: model ?? '', provider, max_tokens: maxTokens, temperature: 0.2 }, { timeoutMs: 60_000 })
+    try {
+      let result = await ask(700)
+      if (completionIncomplete(result)) result = await ask(1400)
+      return completionIncomplete(result) ? fallback() : { summary: result.text, fallback: false }
+    } catch (error) {
+      if (error instanceof SidecarError && error.condition === 'agent_runtime_stale') throw staleRuntimeFailure(error)
+      // No credential is not a failure: the predecessor answered with the local summary and no warning.
+      if (error instanceof SidecarError && error.condition === 'credential_missing') return fallback()
+      return fallback(sanitizePaths(error))
+    }
+  }
+
+  /**
+   * Python `_persist_handoff_summary`: a messaging session gets the marker in state.db and its WebUI record; any other
+   * session in its WebUI record, or in state.db when it has none. Each store skips a marker its tail already holds, and
+   * the session lock keeps two summaries from both passing that check. A card neither store saved answers 503.
+   */
+  private async persistHandoffMarker(sid: string, profile: string, marker: Message): Promise<void> {
+    const card = messageHandoffPayload(marker)
+    const toStateDb = async (): Promise<boolean> => {
+      if (sameHandoff(handoffPayload(stateDbTailToolContent(this.stateDbPath(profile), sid)), card)) return true
+      const sidecar = this.deps.sidecar?.()
+      if (!sidecar) return false
+      try {
+        return (await sidecar.call('state_db.append_message', { profile_home: this.deps.profileHome(profile), session_id: sid, role: 'tool', content: str(marker.content), tool_name: 'handoff_summary', timestamp: Number(marker.timestamp) })).ok
+      } catch {
+        return false
+      }
+    }
+    await this.store.withLock(sid, async () => {
+      let live: Session | null = null
+      try { live = this.store.get(sid) } catch { /* no WebUI record */ }
+      // A turn that started while the summary was generated would drop the card when it settles.
+      if (live?.active_stream_id) throw new HttpFailure(409, 'Session is still streaming; wait for the current turn to finish.')
+      const toLocal = (): boolean => {
+        if (!live) return false
+        if (sameHandoff(messageHandoffPayload(live.messages.at(-1)), card)) return true
+        live.messages.push(marker)
+        this.store.save(live)
+        return true
+      }
+      const messaging = this.isMessagingSession(sid)
+      const saved = messaging ? [await toStateDb(), toLocal()].some(Boolean) : toLocal() || await toStateDb()
+      // The caller may switch away on success, so a card saved nowhere is an error, not a summary.
+      if (!saved) throw new HttpFailure(503, 'The handoff summary could not be saved; please retry.')
+    })
+  }
+
   /** The session's compression job; a deleted session's finished result is dropped rather than served. */
   compressionJob(sid: string): CompressionJob | undefined {
     try { this.store.get(sid, { metadataOnly: true }) } catch { this.compressionJobs.delete(sid); throw new HttpFailure(404, 'Session not found') }
@@ -1431,7 +1535,7 @@ export class SessionService {
     let hadSidecar = true
     try { eventProfile = this.store.get(sid, { metadataOnly: true }).profile } catch { eventProfile = null; hadSidecar = false }
     // Python `_is_messaging_session_id`: decided before the JSON is gone, from WebUI metadata or the Agent's row.
-    const isMessaging = (() => { try { if (isMessagingSessionRecord(this.store.get(sid, { metadataOnly: true }).compact())) return true } catch { /* absent */ } const meta = this.lookupCliMeta(sid); return meta !== null && isMessagingSessionRecord(meta) })()
+    const isMessaging = this.isMessagingSession(sid)
     if (this.activeRunBlocking(sid)) throw new HttpFailure(409, 'Session has an active run; stop it before deleting')
     try {
       await this.store.withLock(sid, () => {

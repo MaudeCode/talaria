@@ -23340,6 +23340,135 @@
         }
       }
     },
+    "/api/session/conversation-rounds": {
+      "post": {
+        "operationId": "session.conversationRounds",
+        "summary": "Count the session's conversation rounds in state.db and whether the handoff dock is due.",
+        "tags": [
+          "sessions"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "session_id": {
+                    "type": "string"
+                  },
+                  "since": {}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    },
+                    "rounds": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "threshold": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "should_show": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "rounds",
+                    "threshold",
+                    "should_show"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/session/handoff-summary": {
+      "post": {
+        "operationId": "session.handoffSummary",
+        "summary": "Summarize the session's recent conversation for a handoff and append the summary card; needs the dock's round threshold.",
+        "tags": [
+          "sessions"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "session_id": {
+                    "type": "string"
+                  },
+                  "since": {}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    },
+                    "summary": {
+                      "type": "string"
+                    },
+                    "message_count": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "rounds": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "fallback": {
+                      "type": "boolean"
+                    },
+                    "warning": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "summary",
+                    "message_count",
+                    "rounds",
+                    "fallback"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/session/draft": {
       "get": {
         "operationId": "session.draftGet",

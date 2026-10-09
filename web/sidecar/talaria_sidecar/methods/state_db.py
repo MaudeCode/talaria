@@ -118,6 +118,22 @@ def sync_session_title(home: Path, session_id: str, title: str) -> bool:
         _close(db)
 
 
+def append_message(home: Path, session_id: str, *, role: str, content: str, tool_name=None, timestamp=None) -> bool:
+    """TAL-258 (predecessor ``_persist_handoff_summary_to_state_db``): one row through ``SessionDB.append_message``,
+    which also bumps the session's ``message_count``. False without a state.db or when the write fails."""
+    db = _session_db(home)
+    if not db:
+        return False
+    try:
+        db.append_message(session_id, role, content=content, tool_name=tool_name or None, timestamp=timestamp)
+        return True
+    except Exception:  # noqa: BLE001
+        log.warning("Failed to append a %s row to state.db for %s", role, session_id, exc_info=True)
+        return False
+    finally:
+        _close(db)
+
+
 def _close(db) -> None:
     try:
         db.close()
@@ -409,6 +425,16 @@ def register(registry) -> None:
     @registry.method("state_db.sync_title")
     def title(ctx: CallContext, params: dict) -> dict:
         return {"ok": sync_session_title(profile_home_param(params), _session_id(params), str(params.get("title") or ""))}
+
+    @registry.method("state_db.append_message")
+    def append(ctx: CallContext, params: dict) -> dict:
+        role = str(params.get("role") or "").strip()
+        if not role:
+            raise InvalidParams("role is required")
+        content = params.get("content")
+        if not isinstance(content, str):
+            raise InvalidParams("content must be a string")
+        return {"ok": append_message(profile_home_param(params), _session_id(params), role=role, content=content, tool_name=params.get("tool_name"), timestamp=params.get("timestamp"))}
 
     @registry.method("state_db.delete_cli_session")
     def delete(ctx: CallContext, params: dict) -> dict:

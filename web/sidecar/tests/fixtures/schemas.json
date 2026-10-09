@@ -1836,6 +1836,19 @@
     ],
     "additionalProperties": false
   },
+  "state_db.append_message": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "ok": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "ok"
+    ],
+    "additionalProperties": false
+  },
   "profiles.list": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
@@ -3366,12 +3379,20 @@
             "type": "null"
           }
         ]
+      },
+      "finish_reason": {
+        "default": null,
+        "type": [
+          "string",
+          "null"
+        ]
       }
     },
     "required": [
       "model",
       "text",
-      "usage"
+      "usage",
+      "finish_reason"
     ],
     "additionalProperties": false
   },
