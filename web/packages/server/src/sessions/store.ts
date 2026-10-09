@@ -496,26 +496,35 @@ export class SessionStore {
     }
   }
 
+  /**
+   * Rebuild `_index.json` from scratch. Resident sessions without a sidecar join it unless `diskOnly` (TAL-259: a recovery
+   * rebuild lists only persisted sessions, so an unsaved shell never reads as index drift).
+   */
+  rebuildIndex(opts: { diskOnly?: boolean } = {}): void {
+    mkdirSync(this.sessionDir, { recursive: true })
+    this.cleanupStaleTmpFiles()
+    const entryMap = new Map<string, Record<string, unknown>>()
+    for (const name of readdirSync(this.sessionDir)) {
+      if (!name.endsWith('.json') || name.startsWith('_')) continue
+      const s = this.loadSessionFromPath(join(this.sessionDir, name))
+      if (!s) continue
+      const c = s.compact()
+      const sid = str(c.session_id)
+      if (!sid) continue
+      const existing = entryMap.get(sid)
+      if (!existing || Number(c.message_count ?? 0) > Number(existing.message_count ?? 0)) entryMap.set(sid, c)
+    }
+    const entries = [...entryMap.values()]
+    if (!opts.diskOnly) for (const s of this.sessions.values()) if (!entryMap.has(s.session_id)) entries.push(s.compact())
+    entries.sort((a, b) => Number(b.updated_at ?? 0) - Number(a.updated_at ?? 0))
+    this.writeIndexPayload(entries)
+  }
+
   /** Rebuild or patch `_index.json` (Python `_write_session_index`). */
   writeIndex(updates?: (Session | Record<string, unknown>)[]): void {
     mkdirSync(this.sessionDir, { recursive: true })
     if (!updates || !existsSync(this.indexFile)) {
-      this.cleanupStaleTmpFiles()
-      const entryMap = new Map<string, Record<string, unknown>>()
-      for (const name of readdirSync(this.sessionDir)) {
-        if (!name.endsWith('.json') || name.startsWith('_')) continue
-        const s = this.loadSessionFromPath(join(this.sessionDir, name))
-        if (!s) continue
-        const c = s.compact()
-        const sid = str(c.session_id)
-        if (!sid) continue
-        const existing = entryMap.get(sid)
-        if (!existing || Number(c.message_count ?? 0) > Number(existing.message_count ?? 0)) entryMap.set(sid, c)
-      }
-      const entries = [...entryMap.values()]
-      for (const s of this.sessions.values()) if (!entryMap.has(s.session_id)) entries.push(s.compact())
-      entries.sort((a, b) => Number(b.updated_at ?? 0) - Number(a.updated_at ?? 0))
-      this.writeIndexPayload(entries)
+      this.rebuildIndex()
       return
     }
     try {

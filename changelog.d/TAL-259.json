@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Talaria Web again offers the owner-only session recovery audit and safe repair, and safe repair never restores messages removed by truncate, retry, undo, clear, or compression.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

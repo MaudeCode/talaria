@@ -15479,6 +15479,527 @@
         }
       }
     },
+    "/api/session/recovery/audit": {
+      "get": {
+        "operationId": "session.recoveryAudit",
+        "summary": "Owner only. Read-only audit of session backups, the index, state.db rows without a sidecar, and pending turn journals.",
+        "tags": [
+          "sessions"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "enum": [
+                        "ok",
+                        "warn",
+                        "needs_manual_review"
+                      ],
+                      "type": "string"
+                    },
+                    "summary": {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "repairable": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "unsafe_to_repair": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "repairable",
+                        "unsafe_to_repair"
+                      ]
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "session_id": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "enum": [
+                              "shrunken_live",
+                              "unstamped_legacy_backup",
+                              "malformed_orphan_backup",
+                              "orphan_backup",
+                              "orphan_backup_without_state_row",
+                              "state_db_deleted_webui_tombstone",
+                              "index_missing_file",
+                              "index_missing_entry",
+                              "state_db_orphan_webui_row",
+                              "state_db_missing_sidecar",
+                              "state_db_unreadable",
+                              "turn_journal_pending_turn"
+                            ],
+                            "type": "string"
+                          },
+                          "category": {
+                            "enum": [
+                              "repairable",
+                              "unsafe_to_repair"
+                            ],
+                            "type": "string"
+                          },
+                          "recommendation": {
+                            "enum": [
+                              "restore_from_bak",
+                              "manual_review",
+                              "deleted_session_skipped",
+                              "rebuild_index",
+                              "materialize_from_state_db",
+                              "audit_only_pending_turn_journal"
+                            ],
+                            "type": "string"
+                          },
+                          "live_messages": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "bak_messages": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "turn_id": {
+                            "type": "string"
+                          },
+                          "event": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "session_id",
+                          "kind",
+                          "category",
+                          "recommendation",
+                          "live_messages",
+                          "bak_messages"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "summary",
+                    "items"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/session/recovery/repair-safe": {
+      "post": {
+        "operationId": "session.recoveryRepairSafe",
+        "summary": "Owner only. Apply the repairable findings and audit again; 409 with the same body unless the result is clean.",
+        "tags": [
+          "sessions"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "clean": {
+                      "type": "boolean"
+                    },
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "repaired": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "before": {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "enum": [
+                            "ok",
+                            "warn",
+                            "needs_manual_review"
+                          ],
+                          "type": "string"
+                        },
+                        "summary": {
+                          "type": "object",
+                          "properties": {
+                            "ok": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "repairable": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "unsafe_to_repair": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "ok",
+                            "repairable",
+                            "unsafe_to_repair"
+                          ]
+                        },
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "session_id": {
+                                "type": "string"
+                              },
+                              "kind": {
+                                "enum": [
+                                  "shrunken_live",
+                                  "unstamped_legacy_backup",
+                                  "malformed_orphan_backup",
+                                  "orphan_backup",
+                                  "orphan_backup_without_state_row",
+                                  "state_db_deleted_webui_tombstone",
+                                  "index_missing_file",
+                                  "index_missing_entry",
+                                  "state_db_orphan_webui_row",
+                                  "state_db_missing_sidecar",
+                                  "state_db_unreadable",
+                                  "turn_journal_pending_turn"
+                                ],
+                                "type": "string"
+                              },
+                              "category": {
+                                "enum": [
+                                  "repairable",
+                                  "unsafe_to_repair"
+                                ],
+                                "type": "string"
+                              },
+                              "recommendation": {
+                                "enum": [
+                                  "restore_from_bak",
+                                  "manual_review",
+                                  "deleted_session_skipped",
+                                  "rebuild_index",
+                                  "materialize_from_state_db",
+                                  "audit_only_pending_turn_journal"
+                                ],
+                                "type": "string"
+                              },
+                              "live_messages": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "bak_messages": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "turn_id": {
+                                "type": "string"
+                              },
+                              "event": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "session_id",
+                              "kind",
+                              "category",
+                              "recommendation",
+                              "live_messages",
+                              "bak_messages"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "status",
+                        "summary",
+                        "items"
+                      ]
+                    },
+                    "backup_repair": {
+                      "type": "object",
+                      "properties": {
+                        "scanned": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "restored": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "orphaned_backups": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "details": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "session_id": {
+                                "type": "string"
+                              },
+                              "restored": {
+                                "type": "boolean"
+                              },
+                              "live_messages": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "bak_messages": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "skipped": {
+                                "type": "string"
+                              },
+                              "error": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "session_id",
+                              "restored"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "scanned",
+                        "restored",
+                        "orphaned_backups",
+                        "details"
+                      ]
+                    },
+                    "sidecar_repair": {
+                      "type": "object",
+                      "properties": {
+                        "scanned": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "materialized": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "details": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "session_id": {
+                                "type": "string"
+                              },
+                              "materialized": {
+                                "type": "boolean"
+                              },
+                              "messages": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "skipped": {
+                                "type": "string"
+                              },
+                              "error": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "session_id",
+                              "materialized"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "scanned",
+                        "materialized",
+                        "details"
+                      ]
+                    },
+                    "after": {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "enum": [
+                            "ok",
+                            "warn",
+                            "needs_manual_review"
+                          ],
+                          "type": "string"
+                        },
+                        "summary": {
+                          "type": "object",
+                          "properties": {
+                            "ok": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "repairable": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "unsafe_to_repair": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "ok",
+                            "repairable",
+                            "unsafe_to_repair"
+                          ]
+                        },
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "session_id": {
+                                "type": "string"
+                              },
+                              "kind": {
+                                "enum": [
+                                  "shrunken_live",
+                                  "unstamped_legacy_backup",
+                                  "malformed_orphan_backup",
+                                  "orphan_backup",
+                                  "orphan_backup_without_state_row",
+                                  "state_db_deleted_webui_tombstone",
+                                  "index_missing_file",
+                                  "index_missing_entry",
+                                  "state_db_orphan_webui_row",
+                                  "state_db_missing_sidecar",
+                                  "state_db_unreadable",
+                                  "turn_journal_pending_turn"
+                                ],
+                                "type": "string"
+                              },
+                              "category": {
+                                "enum": [
+                                  "repairable",
+                                  "unsafe_to_repair"
+                                ],
+                                "type": "string"
+                              },
+                              "recommendation": {
+                                "enum": [
+                                  "restore_from_bak",
+                                  "manual_review",
+                                  "deleted_session_skipped",
+                                  "rebuild_index",
+                                  "materialize_from_state_db",
+                                  "audit_only_pending_turn_journal"
+                                ],
+                                "type": "string"
+                              },
+                              "live_messages": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "bak_messages": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "turn_id": {
+                                "type": "string"
+                              },
+                              "event": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "session_id",
+                              "kind",
+                              "category",
+                              "recommendation",
+                              "live_messages",
+                              "bak_messages"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "status",
+                        "summary",
+                        "items"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "clean",
+                    "ok",
+                    "repaired",
+                    "before",
+                    "backup_repair",
+                    "sidecar_repair",
+                    "after"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/session/lineage/report": {
       "get": {
         "operationId": "session.lineageReport",
