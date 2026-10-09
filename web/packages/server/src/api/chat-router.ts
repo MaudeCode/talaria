@@ -9,7 +9,7 @@ import type { RequestContext } from '../http/context.js'
 import { ensureAgentRuntimeCurrent, HttpFailure } from '../sessions/service.js'
 import { SessionNotFound } from '../sessions/store.js'
 import type { Session } from '../sessions/session.js'
-import { isSafeSessionId } from '../sessions/session.js'
+import { compressionRecoveryPayload, isSafeSessionId } from '../sessions/session.js'
 import { str } from '../util.js'
 import type { TurnRunner } from '../sessions/turn.js'
 
@@ -150,9 +150,7 @@ async function startChat(ctx: RequestContext, body: Record<string, unknown>): Pr
     s = ctx.deps.sessionStore.get(sid)
   }
   // Python `compression_recovery_payload_for_session` + `is_generic_continuation_intent`.
-  const recovery = s.compression_recovery
-  const recoveryLive = recovery.terminal_state === 'compression_exhausted' && str(recovery.recommended_action || s.recommended_recovery_action) === 'start_focused_continuation'
-  if (recoveryLive && !attachments.length && isGenericContinuationIntent(msg)) {
+  if (compressionRecoveryPayload(s) && !attachments.length && isGenericContinuationIntent(msg)) {
     throw new HttpError(409, 'This session exhausted context compression. Start a focused continuation, then describe the next narrow task.', { type: 'compression_recovery_required', compression_recovery: s.compression_recovery, session_id: s.session_id })
   }
   const workspace = resolveWorkspace(ctx, s, body.workspace)

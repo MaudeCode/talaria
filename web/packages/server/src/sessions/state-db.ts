@@ -611,6 +611,76 @@ export function stateDbCompressionLineage(dbPath: string, sid: string): string[]
   }
 }
 
+function lineageReportRow(row: Dict, role: 'tip' | 'hidden_segment' | 'child_session'): Dict {
+  const ended = row.ended_at ?? null
+  return {
+    session_id: row.id, role, title: row.title ?? null, source: row.source ?? null, started_at: row.started_at ?? null, updated_at: ended ?? row.started_at ?? null,
+    end_reason: row.end_reason ?? null, active: ended === null, archived: false,
+  }
+}
+
+const emptyLineageReport = (sid: string): Dict => ({
+  mutation: false, found: false, session_id: sid, lineage_key: sid, tip_session_id: sid, total_segments: 0, materialized_segments: 0, segments: [], children: [], manual_review: false,
+})
+
+/**
+ * Python `read_session_lineage_report`: a read-only report of `sid`'s compression lineage. The walk follows up to
+ * `maxHops` continuation parents (the tip first, the root last), then lists each segment's non-continuation children,
+ * newest first. A cycle, a hop limit hit, or a continuation off the walked path marks `manual_review`. A missing,
+ * unreadable, or too-old database, or an unknown id, answers `found: false`.
+ */
+export function stateDbLineageReport(dbPath: string, rawSid: string, maxHops = 20): Dict {
+  const sid = rawSid.trim()
+  if (!sid || !existsSync(dbPath)) return emptyLineageReport(sid)
+  let db: DatabaseSync
+  try { db = openStateDbReadonly(dbPath) } catch { return emptyLineageReport(sid) }
+  try {
+    const cols = tableColumns(db, 'sessions')
+    if (!['id', 'parent_session_id', 'end_reason'].every((c) => cols.has(c))) return emptyLineageReport(sid)
+    const col = (name: string, fallback = 'NULL'): string => (cols.has(name) ? `s.${name}` : `${fallback} AS ${name}`)
+    const select = `SELECT s.id, ${col('source')}, ${col('session_source')}, ${col('title')}, ${col('started_at', '0')}, s.parent_session_id, ${col('ended_at')}, s.end_reason FROM sessions s`
+    const byId = db.prepare(`${select} WHERE s.id = ?`)
+    const fetch = (id: unknown): Dict | null => (id ? (byId.get(str(id)) as Dict | undefined) ?? null : null)
+    const target = fetch(sid)
+    if (!target) return emptyLineageReport(sid)
+    const segments = [target]
+    const seen = new Set([sid])
+    let manualReview = true
+    for (let hop = 0; hop < maxHops; hop += 1) {
+      const current = segments[segments.length - 1]!
+      const parentId = str(current.parent_session_id)
+      const parent = fetch(parentId)
+      if (!parent || seen.has(parentId)) { manualReview = Boolean(parentId && seen.has(parentId)); break }
+      if (!isContinuationSession(parent, current)) { manualReview = false; break }
+      segments.push(parent)
+      seen.add(parentId)
+    }
+    const segmentIds = segments.map((row) => str(row.id))
+    const children = (db.prepare(`${select} WHERE s.parent_session_id IN (${segmentIds.map(() => '?').join(', ')})`).all(...segmentIds) as Dict[])
+    const childRows: Dict[] = []
+    for (const parent of segments) {
+      const own = children.filter((child) => str(child.parent_session_id) === str(parent.id) && !seen.has(str(child.id)))
+      own.sort((a, b) => (Number(b.started_at) || 0) - (Number(a.started_at) || 0))
+      for (const child of own) {
+        // A continuation off the walked path means a branched lineage or an older selected segment: flag it, list nothing.
+        if (isContinuationSession(parent, child)) manualReview = true
+        else childRows.push(child)
+      }
+    }
+    return {
+      mutation: false, found: true, session_id: sid, lineage_key: segments[segments.length - 1]!.id, tip_session_id: segments[0]!.id,
+      total_segments: segments.length, materialized_segments: segments.length,
+      segments: segments.map((row, idx) => lineageReportRow(row, idx === 0 ? 'tip' : 'hidden_segment')),
+      children: childRows.map((row) => lineageReportRow(row, 'child_session')),
+      manual_review: manualReview,
+    }
+  } catch {
+    return emptyLineageReport(sid)
+  } finally {
+    db.close()
+  }
+}
+
 /** The `sessions` row for `sid` (source and lifecycle columns), or null. */
 export function stateDbSessionRow(dbPath: string, sid: string): Dict | null {
   const id = sid.trim()

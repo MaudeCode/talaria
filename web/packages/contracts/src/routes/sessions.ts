@@ -62,11 +62,28 @@ export const CompressionStatusSchema = z.looseObject({
   started_at: z.number().optional(), updated_at: z.number().optional(),
 })
 
+/** One `state.db` session in a lineage report: the walked tip, a hidden compression segment, or a separate child session. */
+export const LineageReportRowSchema = z.object({
+  session_id: z.string(), role: z.enum(['tip', 'hidden_segment', 'child_session']), title: z.string().nullable(), source: z.string().nullable(),
+  started_at: z.number().nullable(), updated_at: z.number().nullable(), end_reason: z.string().nullable(), active: z.boolean(), archived: z.boolean(),
+})
+/**
+ * `GET /api/session/lineage/report`: a read-only walk of up to 20 compression-continuation parents (`segments`, tip first)
+ * and their non-continuation `children`, newest first. `manual_review` flags a cycle, the hop limit, or a branched lineage.
+ */
+export const LineageReportSchema = z.object({
+  mutation: z.literal(false), found: z.literal(true), session_id: z.string(), lineage_key: z.string(), tip_session_id: z.string(),
+  total_segments: z.number().int(), materialized_segments: z.number().int(), segments: z.array(LineageReportRowSchema), children: z.array(LineageReportRowSchema), manual_review: z.boolean(),
+})
+/** `POST /api/session/compression-recovery/start`: the focused continuation opened for `source_session_id`, new or reused. */
+export const CompressionRecoveryStartSchema = z.object({ ok: z.literal(true), session: SessionSchema, source_session_id: z.string(), recommended_recovery_action: z.string(), message: z.string() })
+
 export const sessionsContract = {
   sessions: {
     list: oc.route({ method: 'GET', path: '/api/sessions', tags, summary: 'Sidebar rows for the active profile.' }).input(SessionsListQuerySchema).output(SessionsListSchema),
     search: oc.route({ method: 'GET', path: '/api/sessions/search', tags, summary: 'Title, metadata and content matches; any sidebar filter answers from the /api/sessions rows, in their order.' }).input(SessionsSearchQuerySchema).output(z.looseObject({ sessions: z.array(SessionRowSchema), query: z.string().optional(), count: z.number().int().optional(), all_profiles: z.boolean(), active_profile: z.string(), sidebar_filtered: z.boolean().optional() })),
     bulk: oc.route({ method: 'POST', path: '/api/sessions/bulk', tags, summary: 'Archive, unarchive or delete up to 200 sessions, one ordered result per id.' }).input(SessionsBulkRequestSchema).output(SessionsBulkResultSchema),
+    cleanup: oc.route({ method: 'POST', path: '/api/sessions/cleanup', tags, summary: 'Delete empty Untitled sessions and index rows with no session file.' }).input(z.object({}).catchall(Json)).output(z.object({ ok: z.literal(true), cleaned: z.number().int() })),
     cleanupZeroMessage: oc.route({ method: 'POST', path: '/api/sessions/cleanup_zero_message', tags }).input(z.object({}).catchall(Json)).output(z.object({ ok: z.literal(true), cleaned: z.number().int() })),
   },
   session: {
@@ -92,6 +109,8 @@ export const sessionsContract = {
     yoloSet: oc.route({ method: 'POST', path: '/api/session/yolo', tags }).input(z.object({ session_id: z.string(), enabled: Json.optional() })).output(z.object({ ok: z.literal(true), yolo_enabled: z.boolean(), stale_cleared: z.boolean().optional() })),
     import: oc.route({ method: 'POST', path: '/api/session/import', tags }).input(z.object({ messages: Json.optional(), tool_calls: Json.optional(), title: z.string().optional(), workspace: z.string().optional(), model: z.string().optional(), pinned: z.boolean().optional() }).catchall(Json)).output(OkSchema.extend({ session: SessionRowSchema })),
     regenerateTitle: oc.route({ method: 'POST', path: '/api/session/title/regenerate', tags, summary: 'Generate a title from the first (or latest) complete exchange through the auxiliary model and persist it.' }).input(SessionBody.extend({ prefer_latest: z.boolean().optional() })).output(z.looseObject({ session: SessionRowSchema, title: z.string(), status: z.string(), raw_preview: z.string() })),
+    lineageReport: oc.route({ method: 'GET', path: '/api/session/lineage/report', tags, summary: 'Read-only compression lineage of a state.db session; 404 when the active profile\'s state.db lacks it.' }).input(z.object({ session_id: z.string().optional() })).output(LineageReportSchema),
+    compressionRecoveryStart: oc.route({ method: 'POST', path: '/api/session/compression-recovery/start', tags, summary: 'Open the focused continuation of a compression-exhausted session; a retry reuses the existing one.' }).input(z.object({ session_id: z.string().optional() })).output(CompressionRecoveryStartSchema),
     compress: oc.route({ method: 'POST', path: '/api/session/compress', tags, summary: 'Compress the session\'s model context now (iOS `/compress`). `focus_topic` (alias `topic`) is capped at 500 characters.' }).input(CompressInputSchema).output(CompressResultSchema),
     compressStart: oc.route({ method: 'POST', path: '/api/session/compress/start', tags, summary: 'Start (or join) the session\'s manual compression job; poll `compress/status`.' }).input(CompressInputSchema).output(CompressionStatusSchema),
     compressStatus: oc.route({ method: 'GET', path: '/api/session/compress/status', tags }).input(SessionQuery).output(CompressionStatusSchema),

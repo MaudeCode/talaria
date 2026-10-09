@@ -19,7 +19,7 @@ import { StreamRegistry, SessionChannels, type StreamChannel } from './streams.j
 import { ChatUsageSchema, type ClarifyAnswers, type PendingSteer, type SidecarResult, type SteerWithdrawn, type SteerWithdrawRequest } from '@maudecode/talaria-web-contracts'
 import { PendingPrompts, clarifyReply } from './pending.js'
 import { RunJournal, type RunJournalWriter } from './journal.js'
-import { CONTEXT_USAGE_FIELDS, Session, contextUsage, titleFrom, type Message } from './session.js'
+import { COMPRESSION_RECOVERY_ACTION_START_FOCUSED, COMPRESSION_RECOVERY_TERMINAL_STATE, CONTEXT_USAGE_FIELDS, Session, contextUsage, titleFrom, type Message } from './session.js'
 import { anchorMessageKey, compressionReference, markerSummary, visibleMessagesForAnchor } from './compress.js'
 import { buildActiveTurnToken, completedToolIndex, publicToolFrame, redactNestedMessageContainers, redactSessionData, redactString, withToolId } from '../redact.js'
 import { dict, type Config } from '../config/agent-config.js'
@@ -196,9 +196,6 @@ export function sniffImageMime(bytes: Buffer, declared = ''): string | null {
   if (bytes.length >= 2 && bytes.subarray(0, 2).toString('latin1') === 'BM') return 'image/bmp'
   return null
 }
-
-const COMPRESSION_RECOVERY_TERMINAL_STATE = 'compression_exhausted'
-const COMPRESSION_RECOVERY_ACTION_START_FOCUSED = 'start_focused_continuation'
 
 /** Python `build_compression_recovery_payload` + `stamp_compression_exhausted_recovery`. */
 export function stampCompressionExhaustedRecovery(s: Session, message: string, details: string): Record<string, unknown> {
