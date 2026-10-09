@@ -80,7 +80,7 @@ private struct DiffLineStyle: ViewModifier {
 
     /// The tint bleeds into the block's padding and the line spacing so
     /// consecutive changed lines form one band, as in the workspace diff.
-    private func changed(_ content: Content, tint: Color, label: Text) -> some View {
+    private func changed(_ content: Content, tint: SwiftUI.Color, label: Text) -> some View {
         content
             .frame(maxWidth: .infinity, alignment: .leading)
             .background {
