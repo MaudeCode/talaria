@@ -5,16 +5,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Dict } from '../config/agent-config.js'
 import { projectOsDashboard, type ProjectOsDeps } from './project-os.js'
 
-// Runs once right after `readdirSync` lists `dir`, so a test can swap a listed directory before the scan dequeues it.
-const afterListing = vi.hoisted(() => ({ dir: '', run: null as null | (() => void) }))
+// Runs once right after `fn` answers for `path`, so a test can swap a directory between a check and its use.
+const afterFs = vi.hoisted(() => ({ fn: '', path: '', run: null as null | (() => void) }))
 vi.mock('node:fs', async (importOriginal) => {
   const fs = await importOriginal<typeof import('node:fs')>()
-  const readdirSync = ((...args: Parameters<typeof fs.readdirSync>) => {
-    const listed = fs.readdirSync(...args)
-    if (afterListing.run && String(args[0]) === afterListing.dir) { const run = afterListing.run; afterListing.run = null; run() }
-    return listed
-  }) as typeof fs.readdirSync
-  return { ...fs, default: { ...fs, readdirSync }, readdirSync }
+  const hooked = <F extends (...args: never[]) => unknown>(name: string, real: F): F => ((...args: Parameters<F>) => {
+    const out = real(...args)
+    if (afterFs.run && afterFs.fn === name && String(args[0]) === afterFs.path) { const run = afterFs.run; afterFs.run = null; run() }
+    return out
+  }) as F
+  const readdirSync = hooked('readdirSync', fs.readdirSync)
+  const existsSync = hooked('existsSync', fs.existsSync)
+  return { ...fs, default: { ...fs, readdirSync, existsSync }, readdirSync, existsSync }
 })
 
 const EMPTY = { workspace: null, repo_root: null, git: null, docs: {}, handoff: null, active: null, heartbeat: null, goal_summary: '' }
@@ -95,14 +97,32 @@ describe('project-os dashboard (TAL-266)', () => {
       mkdirSync(join(outside, '.ax', 'status'), { recursive: true })
       writeFileSync(join(outside, '.ax', 'status', 'active.json'), JSON.stringify({ board: 'ops', secret: 'outside truth' }))
       mkdirSync(join(root, 'apps'))
-      afterListing.dir = root
-      afterListing.run = () => { rmSync(join(root, 'apps'), { recursive: true }); symlinkSync(outside, join(root, 'apps')) }
+      Object.assign(afterFs, { fn: 'readdirSync', path: root })
+      afterFs.run = () => { rmSync(join(root, 'apps'), { recursive: true }); symlinkSync(outside, join(root, 'apps')) }
       const body = await projectOsDashboard('ops', deps())
-      expect(afterListing.run).toBeNull()
+      expect(afterFs.run).toBeNull()
       expect(body.repo_root).toBe(root)
       expect(JSON.stringify(body)).not.toContain('outside truth')
     } finally {
-      afterListing.run = null
+      afterFs.run = null
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
+  it('does not re-resolve an active.json that points back at a scanned repo swapped for an outside symlink', async () => {
+    const outside = realpathSync(mkdtempSync(join(tmpdir(), 'project-os-outside-')))
+    try {
+      mkdirSync(join(outside, '.ax', 'status'), { recursive: true })
+      writeFileSync(join(outside, '.ax', 'status', 'active.json'), JSON.stringify({ board: 'ops', secret: 'outside truth' }))
+      write('apps/.ax/status/active.json', { board: 'ops', repo_root: join(root, 'apps') })
+      Object.assign(afterFs, { fn: 'existsSync', path: join(root, 'apps') })
+      afterFs.run = () => { rmSync(join(root, 'apps'), { recursive: true }); symlinkSync(outside, join(root, 'apps')) }
+      const body = await projectOsDashboard('ops', deps())
+      expect(afterFs.run).toBeNull()
+      expect(body.repo_root).toBe(join(root, 'apps'))
+      expect(JSON.stringify(body)).not.toContain('outside truth')
+    } finally {
+      afterFs.run = null
       rmSync(outside, { recursive: true, force: true })
     }
   })

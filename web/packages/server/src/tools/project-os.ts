@@ -3,7 +3,7 @@
  * then reads its `.ax` handoff/status JSON and `docs/project-os` Markdown through the workspace file reader.
  */
 import { existsSync, readdirSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { ProjectOsDashboard } from '@maudecode/talaria-web-contracts'
 import type { Dict } from '../config/agent-config.js'
 import { readFileContent, type FileContent } from '../workspace/fs.js'
@@ -146,6 +146,18 @@ function onboardingContext(root: string, project: Doc | null, plan: Doc | null, 
   }
 }
 
+/**
+ * The repo `active.json` names. A target inside the current anchor keeps reading through that anchor, compared by
+ * path rather than re-resolved, so a directory swapped for a symlink in between cannot move the reads out of it.
+ * Any other target is the explicit external root Python followed.
+ */
+function redirect(from: Repo, target: string): Repo {
+  const rel = relative(from.anchor, resolve(expandHome(target))).split(sep).join('/')
+  if (rel === '') return ownRoot(from.anchor)
+  if (rel !== '..' && !rel.startsWith('../') && !isAbsolute(rel)) return { path: join(from.anchor, rel), anchor: from.anchor, rel }
+  return ownRoot(resolvePathLikePython(target))
+}
+
 function readRepo(repo: Repo): { handoff: Dict | null; active: Dict | null; heartbeat: Dict | null; docs: Record<'project' | 'plan' | 'status' | 'blocker_resolver', Doc | null>; onboarding: Dict } {
   const docs = {
     project: readDoc(repo, 'docs/project-os/PROJECT.md'),
@@ -186,8 +198,8 @@ export async function projectOsDashboard(requestedBoard: string, deps: ProjectOs
   // `.ax/status/active.json` may point at the real repo root; read everything again from there.
   const activeRoot = text(repo.active?.repo_root)
   if (activeRoot && existsSync(expandHome(activeRoot))) {
-    const moved = resolvePathLikePython(activeRoot)
-    if (moved !== found.path) { found = ownRoot(moved); repo = readRepo(found) }
+    const moved = redirect(found, activeRoot)
+    if (moved.path !== found.path) { found = moved; repo = readRepo(found) }
   }
   let git: ProjectOsDashboard['git'] = null
   try { git = await deps.git(found.path) } catch { git = null }
