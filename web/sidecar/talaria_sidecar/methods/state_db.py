@@ -96,7 +96,7 @@ def sync_session_usage(home: Path, session_id: str, *, input_tokens=0, output_to
 
 
 def sync_session_title(home: Path, session_id: str, title: str, *, manual: bool = False) -> bool:
-    """A manual rename lands with ``user`` provenance; a generated title is ``llm`` and never replaces a user name."""
+    """A manual (user-requested) title lands with ``user`` provenance; an auto title is ``llm`` and never replaces a user name."""
     if not title:
         return False
     db = _session_db(home)

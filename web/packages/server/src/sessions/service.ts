@@ -106,7 +106,7 @@ export interface SessionServiceDeps {
   journal?: RunJournal
   hermesHome: string
   home: string
-  /** Sync title-only metadata to state.db when `sync_to_insights` is on; `manual` marks a user rename. */
+  /** Sync title-only metadata to state.db when `sync_to_insights` is on; `manual` marks a user-requested title (rename or regenerate). */
   syncTitle: (session: Session, manual?: boolean) => Promise<void>
   /** Context length lookup for a model (checkpoint 7 wires the catalog). */
   contextLengthFor: (model: string | null, provider: string | null) => number | null
@@ -943,7 +943,8 @@ export class SessionService {
       markSessionTitleGenerated(current)
       this.store.save(current, { touchUpdatedAt: false })
     })
-    await this.deps.syncTitle(current)
+    // An explicit regenerate is user-requested, so state.db takes it over a manual name.
+    await this.deps.syncTitle(current, true)
     this.publish(eventReason, current.profile, current.session_id)
     return current
   }

@@ -31,5 +31,8 @@ def test_a_manual_rename_replaces_a_generated_title(hermes_home) -> None:
         # A later generated title never overwrites the user's name.
         assert proc.result("state_db.sync_title", {**params, "title": "Generated again"}) == {"ok": True}
         assert _title(hermes_home, "webui-1") == ("Renamed", "user")
+        # An explicit regeneration is user-requested, so it replaces the manual name.
+        assert proc.result("state_db.sync_title", {**params, "title": "Regenerated", "manual": True}) == {"ok": True}
+        assert _title(hermes_home, "webui-1") == ("Regenerated", "user")
     finally:
         proc.close()
