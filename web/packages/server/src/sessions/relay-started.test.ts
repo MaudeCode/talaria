@@ -132,3 +132,13 @@ it('keeps observing new sessions while the relay is slow', async () => {
   await p.publishStarted()
   expect(started().map((s) => s.body.sessionId)).toEqual(['web-1', 'web-2'])
 })
+
+it('announces the chat whose change wakes the first pass after an upgrade', async () => {
+  // Tracking starts when the publisher starts, not when its first pass runs after that chat began.
+  const p = publisher()
+  clock += 1
+  index = [{ session_id: 'web-first', created_at: clock, message_count: 1, profile: null }]
+  clock += 1
+  await p.publishStarted()
+  expect(started().map((s) => s.body.sessionId)).toEqual(['web-first'])
+})

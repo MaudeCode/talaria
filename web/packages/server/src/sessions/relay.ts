@@ -200,6 +200,11 @@ export class RelayPublisher {
     this.key = loadKey(config.private_key_path)
     this.revisionPath = join(dirname(config.private_key_path), 'talaria-relay-revision')
     this.startedPath = join(dirname(config.private_key_path), 'talaria-relay-started.json')
+    // Tracking starts now, before any session event can wake the first pass, so the chat that wakes it is announced.
+    try {
+      const ledger = this.loadStarted()
+      if (this.trackProfiles(ledger)) this.saveStarted(ledger)
+    } catch { /* the first pass starts tracking instead */ }
     try { this.lastRevision = Number.parseInt(readFileSync(this.revisionPath, 'utf8'), 10) || 0 } catch { this.lastRevision = 0 }
   }
 
@@ -391,17 +396,28 @@ export class RelayPublisher {
     atomicWriteText(this.startedPath, JSON.stringify({ version: 1, profiles }) + '\n')
   }
 
+  /** Give each enrolled profile without a ledger entry a floor of now; true when the ledger changed. */
+  private trackProfiles(ledger: StartedLedger): boolean {
+    const nowMs = Math.floor(this.deps.now() * 1000)
+    let changed = false
+    for (const cfg of Object.values(this.config.profiles)) {
+      if (ledger.has(cfg.profile_id)) continue
+      ledger.set(cfg.profile_id, { floor: nowMs, sessions: new Map() })
+      changed = true
+    }
+    return changed
+  }
+
   /** Record every messageful Web or Agent session that started in an enrolled profile since tracking began. */
   private observeStarted(): StartedLedger {
     const ledger = this.loadStarted()
     const nowMs = Math.floor(this.deps.now() * 1000)
-    let changed = false
+    let changed = this.trackProfiles(ledger)
     let index: Record<string, unknown>[] = []
     try { index = this.deps.store.readIndexEntries() } catch { index = [] }
     for (const [profile, cfg] of Object.entries(this.config.profiles)) {
       if (!this.publishes(profile, cfg)) continue
-      let entry = ledger.get(cfg.profile_id)
-      if (!entry) { entry = { floor: nowMs, sessions: new Map() }; ledger.set(cfg.profile_id, entry); changed = true }
+      const entry = ledger.get(cfg.profile_id)!
       const floor = Math.max(entry.floor, nowMs - STARTED_WINDOW_MS)
       for (const [sid, e] of entry.sessions) if (e.startedAt < floor) { entry.sessions.delete(sid); changed = true }
       // A compressed Agent chat keeps its lineage root's id and start, so later segments are not new sessions.
