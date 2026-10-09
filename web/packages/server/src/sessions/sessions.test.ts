@@ -360,6 +360,17 @@ describe('session lifecycle over HTTP', () => {
     // A deleted parent can no longer be opened.
     expect((await post(s, '/api/session/delete', { session_id: sid })).status).toBe(200)
     expect((await detail(branch.session_id)).branched_from).toBeNull()
+ 
+    // A cron run lives only in state.db; a branch of it links to it there.
+    const cron = 'cron_tal454_run'
+    const db = new DatabaseSync(join(s.state, 'state.db'))
+    db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, title TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
+    db.prepare('INSERT INTO sessions (id, source, title, started_at) VALUES (?, ?, ?, ?)').run(cron, 'cron', 'Nightly report', 100)
+    db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(cron, 'assistant', 'All green.', 101)
+    db.close()
+    const cronBranch = await post(s, '/api/session/branch', { session_id: cron })
+    expect(cronBranch.status).toBe(200)
+    expect((await detail((await json(cronBranch)).session_id)).branched_from).toEqual({ session_id: cron, title: 'Nightly report' })
   })
 
   it('serves the shared branched example as the contract fixture records it (TAL-454)', async () => {
