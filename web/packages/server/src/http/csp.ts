@@ -37,11 +37,12 @@ export function cspExtras(env: Env, warn: (line: string) => void = () => undefin
   }
 }
 
-export function buildCspEnforcedPolicy(extras: CspExtras): string {
+/** `frameAncestors: "'self'"` is only for a sandboxed document the app frames itself (an extension or plugin panel). */
+export function buildCspEnforcedPolicy(extras: CspExtras, frameAncestors = "'none'"): string {
   return (
     "default-src 'self' https://*.cloudflareaccess.com; " +
     "object-src 'none'; " +
-    "frame-ancestors 'none'; " +
+    `frame-ancestors ${frameAncestors}; ` +
     "script-src 'self' https://static.cloudflareinsights.com; " +
     "worker-src 'self' blob:; " +
     "style-src 'self' 'unsafe-inline'; " +

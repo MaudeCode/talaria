@@ -18,7 +18,7 @@ import { chatRouter } from './api/chat-router.js'
 import { settingsRouter } from './api/settings-router.js'
 import { toolsRouter } from './api/tools-router.js'
 import { automationRouter } from './api/automation-router.js'
-import { handleExtensionSidecarProxy, handleExtensionStatic, handleKanbanEventsStream, handleTerminalOutput, matchSidecarProxy } from './api/automation-raw.js'
+import { handleDashboardPlugin, handleExtensionSidecarProxy, handleExtensionStatic, handleKanbanEventsStream, handleTerminalOutput, matchSidecarProxy } from './api/automation-raw.js'
 import { handleApprovalStream, handleChatStream, handleClarifyStream, handleGatewayStream, handleSessionEvents, handleSessionJournalStream, handleSessionStream, sessionEventsPathSessionId } from './api/sse-routes.js'
 import { BodyError, RequestContext, acceptsEncoding, loggedUrl, type AppDeps, type HeaderMap } from './http/context.js'
 import { activeProfileName, checkAuth, checkCsrf, csrfError, getProfileCookie, isCsrfExemptPath, isPublicPath } from './auth/gate.js'
@@ -399,6 +399,7 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
           serveFavicon(ctx)
           return
         }
+        if (handleDashboardPlugin(ctx)) return
         const raw = RAW_GET_ROUTES[path]
         if (raw) {
           await runRaw(ctx, raw)

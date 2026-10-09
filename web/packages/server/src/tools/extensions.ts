@@ -76,6 +76,29 @@ function isSafeAssetUrl(value: string): boolean {
 }
 
 /**
+ * Read `<root>/<rel>` for a static route: `rel` must be a clean relative path (no dot segments or dotfiles), and the
+ * read is an anchored, symlink-free open, so a link inside the root cannot expose its target. Python
+ * `(root / rel).resolve()`: a symlinked file is served when its target stays inside the root, never otherwise.
+ */
+export function readContainedFile(root: string, rel: string): { body: Buffer; file: string } | null {
+  if (!isSafeRelativePath(rel)) return null
+  const anchor = resolvePathLikePython(root)
+  let file = resolve(anchor, rel)
+  if (!file.startsWith(anchor + sep)) return null
+  const real = resolvePathLikePython(file)
+  if (real !== file) { if (!real.startsWith(anchor + sep)) return null; file = real }
+  let fd: number
+  try { fd = openAnchoredFd(anchor, file, { wantDir: false }) } catch { return null }
+  try {
+    return fstatSync(fd).isFile() ? { body: readFileSync(fd), file } : null
+  } catch {
+    return null
+  } finally {
+    closeSync(fd)
+  }
+}
+
+/**
  * Python `_normalize_loopback_sidecar_origin` (`urlsplit`, not WHATWG): scheme + literal loopback host + optional
  * numeric port, nothing else — no path (not even `/`), no query, no fragment, no userinfo, no host aliases.
  */
@@ -125,7 +148,7 @@ export function normalizeProxyPath(value: unknown): string | null {
   return segments.length && segments.every((s) => s && s !== '.' && s !== '..') ? candidate : null
 }
 
-const text = (v: unknown, max = 160): string => (typeof v === 'string' ? v.replaceAll(/[\x00-\x1f\x7f]/g, '').trim().slice(0, max) : '')
+export const text = (v: unknown, max = 160): string => (typeof v === 'string' ? v.replaceAll(/[\x00-\x1f\x7f]/g, '').trim().slice(0, max) : '')
 const entryText = (e: Dict, k: string): string => (typeof e[k] === 'string' ? e[k].trim() : '')
 const storageOwned = (e: Dict): boolean => isDict(e.permissions) && isDict(e.permissions.storage) && e.permissions.storage.owned === true
 
@@ -712,29 +735,14 @@ export class ExtensionService {
   /** Python `serve_extension_static`: bytes, MIME, sandbox CSP for HTML; null means 404. */
   staticFile(rel: string): { body: Buffer; contentType: string; html: boolean } | null {
     const root = this.root()
-    if (!root || !isSafeRelativePath(rel)) return null
-    // Python `serve_extension_static`: an anchored, symlink-free open so a link inside the extension dir cannot expose its target.
-    const anchor = resolvePathLikePython(root)
-    let file = resolve(anchor, rel)
-    if (!file.startsWith(anchor + sep)) return null
-    // Python `(root / rel).resolve()`: a symlinked asset is served when its target stays inside the root, never otherwise.
-    const real = resolvePathLikePython(file)
-    if (real !== file) { if (!real.startsWith(anchor + sep)) return null; file = real }
-    let fd: number
-    try { fd = openAnchoredFd(anchor, file, { wantDir: false }) } catch { return null }
-    try {
-      if (!fstatSync(fd).isFile()) return null
-      const ext = file.slice(file.lastIndexOf('.') + 1).toLowerCase()
-      const ct = EXTENSION_MIME[ext] ?? 'text/plain'
-      return { body: readFileSync(fd), contentType: TEXT_MIME.has(ct) ? `${ct}; charset=utf-8` : ct, html: ct === 'text/html' }
-    } catch {
-      return null
-    } finally {
-      closeSync(fd)
-    }
+    const found = root ? readContainedFile(root, rel) : null
+    if (!found) return null
+    const ext = found.file.slice(found.file.lastIndexOf('.') + 1).toLowerCase()
+    const ct = EXTENSION_MIME[ext] ?? 'text/plain'
+    return { body: found.body, contentType: TEXT_MIME.has(ct) ? `${ct}; charset=utf-8` : ct, html: ct === 'text/html' }
   }
 
-  /** Python `api/extension_manifests.build_manifests` (extension entries only; dashboard plugins were dropped). */
+  /** Python `api/extension_manifests.build_manifests` extension entries (the manifests route appends dashboard plugins). */
   async manifests(): Promise<{ protocol_version: 1; manifests: Dict[] }> {
     const status = await this.status()
     const manifests: Dict[] = []

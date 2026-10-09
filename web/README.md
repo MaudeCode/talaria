@@ -128,6 +128,7 @@ commented template.
 | `HERMES_WEBUI_MAX_EXTRACTED_MB` | 10 × upload limit | Total bytes one archive upload may extract (zip, tar, gzip, bzip2, xz); archives also stop at 10,000 files |
 | `HERMES_WEBUI_MAX_SSE_CLIENTS` | 8 per client | Concurrent stream cap per client identity |
 | `HERMES_WEBUI_EXTENSION_DIR`, `HERMES_WEBUI_EXTENSION_MANIFEST` | unset | Local extensions ([docs](docs/EXTENSIONS.md)) |
+| `HERMES_WEBUI_PLUGINS_DIR` | `$HERMES_HOME/plugins` | Dashboard plugins (`<name>/dashboard/manifest.json`), each off until enabled under `dashboard_plugins` in settings.json ([docs](docs/architecture/extension-migration-guide.md#8-dashboard-plugins)) |
 | `HERMES_WEBUI_EXTERNAL_NOTES_SOURCES` | unset | Notes drawer sources; Joplin search and preview read `JOPLIN_URL` (default `http://127.0.0.1:41184`) and `JOPLIN_TOKEN` from the `joplin` MCP server's `env`, then the environment |
 | `WIKI_PATH` | `~/wiki` | LLM wiki root for `/api/wiki/*`; also read from the profile `.env`, then `skills.config.wiki.path` or `wiki.path` in config.yaml |
 | `HERMES_WEBUI_LOG_FILE`, `HERMES_WEBUI_LOG_MAX_BYTES` | detached log, 32 MiB | Size-bounded server log |

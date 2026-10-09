@@ -47,6 +47,7 @@ import type { McpService } from '../tools/mcp.js'
 import type { WindowLimiter } from '../api/tools-router.js'
 import type { CronService } from '../tools/crons.js'
 import type { KanbanService } from '../tools/kanban.js'
+import type { DashboardPlugins } from '../tools/dashboard-plugins.js'
 import type { ExtensionService } from '../tools/extensions.js'
 import type { TerminalRegistry } from '../tools/terminal.js'
 import type { OidcService } from '../auth/oidc.js'
@@ -189,6 +190,7 @@ export interface AppDeps {
   crons: CronService
   kanban: KanbanService
   extensions: ExtensionService
+  dashboardPlugins: DashboardPlugins
   terminals: TerminalRegistry
 }
 
@@ -326,12 +328,13 @@ export class RequestContext {
     return parts.join('; ')
   }
 
-  securityHeaders(): HeaderMap {
+  /** `frameable`: the same-origin app may frame this response (a sandboxed panel document). */
+  securityHeaders(opts: { frameable?: boolean } = {}): HeaderMap {
     return {
       'X-Content-Type-Options': 'nosniff',
-      'X-Frame-Options': 'DENY',
+      'X-Frame-Options': opts.frameable ? 'SAMEORIGIN' : 'DENY',
       'Referrer-Policy': 'same-origin',
-      'Content-Security-Policy': buildCspEnforcedPolicy(this.cspExtras),
+      'Content-Security-Policy': buildCspEnforcedPolicy(this.cspExtras, opts.frameable ? "'self'" : "'none'"),
       'Permissions-Policy': 'camera=(), microphone=(self), geolocation=(), clipboard-write=(self)',
     }
   }

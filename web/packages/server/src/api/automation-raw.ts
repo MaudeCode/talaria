@@ -3,6 +3,8 @@ import type { RequestContext } from '../http/context.js'
 import { HttpError } from './router.js'
 import { activeProfileName } from '../auth/gate.js'
 import { claimOrReject, SSE_HEARTBEAT_INTERVAL_MS } from './sse-routes.js'
+import { DashboardPlugins, type PluginFile } from '../tools/dashboard-plugins.js'
+import { isServerOwned } from '../spa.js'
 import { ExtensionError, EXTENSION_PANEL_SANDBOX_CSP, EXTENSION_ROUTE_PREFIX, normalizeProxyPath, validId } from '../tools/extensions.js'
 import { kanbanFailure } from '../tools/kanban.js'
 import { HttpFailure } from '../sessions/service.js'
@@ -128,14 +130,52 @@ export function handleExtensionStatic(ctx: RequestContext): void {
   try { rel = decodeURIComponent(ctx.path.slice(EXTENSION_ROUTE_PREFIX.length)) } catch { ctx.json({ error: 'not found' }, { status: 404 }); return }
   const file = ctx.deps.extensions.staticFile(rel)
   if (!file) { ctx.json({ error: 'not found' }, { status: 404 }); return }
+  sendPanelFile(ctx, file, file.html)
+}
+
+/**
+ * Extension- or plugin-controlled bytes from the WebUI's own origin: a sandboxed response gets the sandbox CSP (opaque
+ * origin, so its HTML or SVG opened directly runs no privileged same-origin script).
+ */
+function sendPanelFile(ctx: RequestContext, file: { body: Buffer; contentType: string }, sandbox: boolean): void {
   const headers: Record<string, string | string[]> = { 'Content-Type': file.contentType, 'Cache-Control': 'no-store' }
-  if (file.html) {
-    // HWEB-100: the page policy stays and a second CSP header adds the sandbox, so a panel opened directly is isolated.
-    const page = ctx.securityHeaders()['Content-Security-Policy']
-    headers['Content-Security-Policy'] = [...(typeof page === 'string' ? [page] : Array.isArray(page) ? page : []), EXTENSION_PANEL_SANDBOX_CSP]
-    headers['X-Frame-Options'] = 'SAMEORIGIN'
+  if (!sandbox) { ctx.send({ status: 200, headers, body: file.body, security: true }); return }
+  // HWEB-100: the page policy stays and a second CSP header adds the sandbox, so a panel opened directly is isolated.
+  // Both allow framing by the app itself; the report-only twin (`frame-ancestors 'none'`) is left off, or every
+  // in-app panel would report a violation.
+  const security = ctx.securityHeaders({ frameable: true })
+  const page = security['Content-Security-Policy']
+  headers['Content-Security-Policy'] = [...(typeof page === 'string' ? [page] : []), EXTENSION_PANEL_SANDBOX_CSP]
+  ctx.send({ status: 200, headers: { ...security, ...headers }, body: file.body, security: false })
+}
+
+/**
+ * Python dashboard-plugin routes: `/plugins/plugin.css`, `/dashboard-plugins/<name>/index.html` (panel),
+ * `/dashboard-plugins/<name>/<rel>` (built assets), and each plugin's tab page. Returns false when `path` is none
+ * of them; a disabled or unknown plugin answers 404 on every surface.
+ */
+export function handleDashboardPlugin(ctx: RequestContext): boolean {
+  const plugins = ctx.deps.dashboardPlugins
+  const path = ctx.path
+  let file: PluginFile | null
+  if (path.startsWith('/plugins/')) {
+    const css = plugins.sharedAsset(path.slice('/plugins/'.length))
+    if (css) sendPanelFile(ctx, css, false)
+    else ctx.json({ error: 'not found' }, { status: 404 })
+    return true
   }
-  ctx.send({ status: 200, headers, body: file.body, security: true })
+  if (path.startsWith('/dashboard-plugins/')) {
+    const panel = DashboardPlugins.panelName(path)
+    const [name = '', ...rest] = path.slice('/dashboard-plugins/'.length).split('/')
+    file = panel === null ? plugins.asset(name, rest.join('/')) : plugins.panel(panel)
+  } else {
+    // Tab paths never claim a server-owned path, so API traffic skips the plugin scan.
+    file = isServerOwned(path) ? null : plugins.tabPage(path)
+    if (!file) return false
+  }
+  if (file) sendPanelFile(ctx, file, true)
+  else ctx.json({ error: 'not found' }, { status: 404 })
+  return true
 }
 
 /**

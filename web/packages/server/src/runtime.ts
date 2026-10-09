@@ -60,6 +60,7 @@ import { McpService } from './tools/mcp.js'
 import { WindowLimiter } from './api/tools-router.js'
 import { CronService } from './tools/crons.js'
 import { KanbanService } from './tools/kanban.js'
+import { DashboardPlugins } from './tools/dashboard-plugins.js'
 import { ExtensionService } from './tools/extensions.js'
 import { dashboardStatus } from './tools/health.js'
 import { TerminalRegistry } from './tools/terminal.js'
@@ -646,6 +647,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     }),
     kanban: new KanbanService({ sidecar: () => sidecar, config: agentConfig }),
     extensions: new ExtensionService({ env, stateDir: config.stateDir, isAuthEnabled: () => auth.isAuthEnabled(), fetch: lazyFetch, log }),
+    dashboardPlugins: new DashboardPlugins({ env, hermesHome: config.hermesHome, settings: () => settings.load() }),
     terminals,
     commitMessage: async (session, systemPrompt, userPrompt) => {
       if (!sidecar) throw new GitWorkspaceError('Commit message generation needs the Agent sidecar, which is not running', 'aux_unavailable')
