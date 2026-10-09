@@ -33,6 +33,11 @@ struct TranscriptLinkPreviewView: View {
     @MainActor
     private func loadMetadataIfNeeded() async {
         guard snapshot == nil, !didFail, !isLoading else { return }
+        #if DEBUG
+        // A fixture launch keeps the host card: the live fetch starts in-app WebKit, whose teardown can abort
+        // the accessibility-active app under XCTest (TAL-694), and tests own no live network.
+        if ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.launchArgument) { return }
+        #endif
 
         if let cachedSnapshot = await TranscriptLinkPreviewCache.shared.snapshot(for: url) {
             apply(cachedSnapshot)
