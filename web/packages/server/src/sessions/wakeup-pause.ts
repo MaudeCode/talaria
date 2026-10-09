@@ -68,7 +68,7 @@ export function poolRecovery(entries: readonly { status: string; retry_after: st
 /** A wakeup held while its session is paused. */
 export interface HeldWakeup { process_id: string; wakeup_prompt: string; event?: Record<string, unknown> }
 
-const heldKey = (e: HeldWakeup): string => e.process_id || e.wakeup_prompt
+export const heldKey = (e: HeldWakeup): string => e.process_id || e.wakeup_prompt
 const isHeld = (e: unknown): e is HeldWakeup => isDict(e) && typeof e.wakeup_prompt === 'string' && typeof e.process_id === 'string'
 
 /** Adds entries not held yet, so held and in-memory copies of one wakeup merge into one. */
@@ -92,7 +92,10 @@ export class HeldWakeups {
     const raw = JSON.parse(text) as unknown
     if (!isDict(raw)) throw new Error(`${this.path} is not a held wakeup map`)
     const out: Record<string, HeldWakeup[]> = {}
-    for (const [sid, entries] of Object.entries(raw)) if (Array.isArray(entries)) out[sid] = entries.filter(isHeld)
+    for (const [sid, entries] of Object.entries(raw)) {
+      if (!Array.isArray(entries) || !entries.every(isHeld)) throw new Error(`${this.path} holds a malformed entry for session ${sid}`)
+      out[sid] = entries
+    }
     return out
   }
 

@@ -17,7 +17,7 @@ import { str } from '../util.js'
 import { isDict } from './merge.js'
 import { batchUpdate, recordBackgroundUpdate } from './background-updates.js'
 import type { BackgroundActivity } from './background-tasks.js'
-import { HeldWakeups, mergeWakeups, poolRecovery, wakeupPaused, type HeldWakeup } from './wakeup-pause.js'
+import { HeldWakeups, heldKey, mergeWakeups, poolRecovery, wakeupPaused, type HeldWakeup } from './wakeup-pause.js'
 
 type Dict = Record<string, unknown>
 export const COMPLETION_POLL_MS = 1000
@@ -89,6 +89,8 @@ export class CompletionDrain {
   private lastDrainError: string | null = null
   private heldResumed = false
   private readonly drains = new Map<string, Promise<number>>()
+  /** Admitted wakeups whose release could not be written: never delivered again, and the release is retried. */
+  private readonly unreleased = new Map<string, Deferred[]>()
   /** TAL-576: wakeups held while their session is paused. */
   private readonly heldWakeups: HeldWakeups
 
@@ -334,7 +336,9 @@ export class CompletionDrain {
   }
 
   private held(sid: string): Deferred[] {
-    try { return this.heldWakeups.get(sid) } catch (error) {
+    if (this.unreleased.has(sid)) this.release(sid, [])
+    const done = new Set((this.unreleased.get(sid) ?? []).map(heldKey))
+    try { return this.heldWakeups.get(sid).filter((e) => !done.has(heldKey(e))) } catch (error) {
       // An unreadable store is unknown, not empty: recheck later rather than leave the session dormant.
       this.scheduleDrain(sid, HELD_RECHECK_SECONDS)
       this.deps.log(`[webui] WARNING: held wakeups unreadable for session ${sid}; retrying: ${(error as Error).message}`)
@@ -349,7 +353,15 @@ export class CompletionDrain {
 
   /** Admitted or settled wakeups (every one, with none given) leave the held file. */
   private release(sid: string, entries?: Deferred[]): void {
-    try { this.heldWakeups.release(sid, entries) } catch (error) { this.deps.log(`[webui] WARNING: failed to release held wakeups for session ${sid}: ${(error as Error).message}`) }
+    // Earlier releases that could not be written go with this one.
+    const batch = entries ? mergeWakeups([...(this.unreleased.get(sid) ?? [])], entries) : undefined
+    try {
+      this.heldWakeups.release(sid, batch)
+      this.unreleased.delete(sid)
+    } catch (error) {
+      if (batch) this.unreleased.set(sid, batch)
+      this.deps.log(`[webui] WARNING: failed to release held wakeups for session ${sid}; they are not delivered again: ${(error as Error).message}`)
+    }
   }
 
   private saveSession(sid: string, session: Session): void {

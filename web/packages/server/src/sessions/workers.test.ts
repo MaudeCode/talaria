@@ -685,6 +685,36 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
     expect(heldIndex()).not.toContain(sid)
   })
 
+  it('never redelivers an admitted wakeup whose release could not be written', async () => {
+    const path = join(s.deps.sessionStore.sessionDir, '_wakeup_held.json')
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    writeFileSync(path, JSON.stringify({ [sid]: [{ process_id: `${sid}_n`, wakeup_prompt: '[IMPORTANT: notice]', event: { type: 'watch_disabled' } }] }))
+    const prompts: string[] = []
+    const drain = standalone((prompt) => { prompts.push(prompt); return { stream_id: `n${String(prompts.length)}` } })
+    const store = (drain as unknown as { heldWakeups: { release: (...args: unknown[]) => void } }).heldWakeups
+    const release = vi.spyOn(store, 'release').mockImplementation(() => { throw new Error('EACCES') })
+    await drain.drainDeferred(sid)
+    await drain.drainDeferred(sid)
+    expect(prompts, 'the admitted wakeup is not delivered again').toEqual(['[IMPORTANT: notice]'])
+    // The release is retried and succeeds once the file is writable again.
+    release.mockRestore()
+    await drain.drainDeferred(sid)
+    drain.stop()
+    expect(prompts).toHaveLength(1)
+    expect(heldIndex()).not.toContain(sid)
+  })
+
+  it('never rewrites a held file with a malformed entry', async () => {
+    const path = join(s.deps.sessionStore.sessionDir, '_wakeup_held.json')
+    const sid = await pausedSession()
+    const malformed = JSON.stringify({ other: [{ process_id: 1, wakeup_prompt: 'kept' }] })
+    writeFileSync(path, malformed)
+    await complete(sid, `${sid}_2`)
+    expect(readFileSync(path, 'utf8')).toBe(malformed)
+    expect(s.deps.completions.deferredCount(sid)).toBe(1)
+    rmSync(path)
+  })
+
   it('drops the held wakeups of a deleted session', async () => {
     const sid = await pausedSession()
     await complete(sid, `${sid}_2`)
