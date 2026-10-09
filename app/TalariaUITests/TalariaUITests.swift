@@ -3273,9 +3273,11 @@ extension TalariaUITestCase {
         let viewportTop = app.navigationBars["Chats"].frame.maxY
         // iOS 27 swaps the minimized search between its field and its toolbar button at any moment, so its frame is
         // read by a snapshot of whichever is there rather than from an element found a moment earlier (TAL-667).
+        // Each control is read at most once per pass: a lazy compactMap reads twice and crashes if the swap lands
+        // between the reads (TAL-683).
         var searchFrame: CGRect?
         XCTAssertTrue(poll(timeout: 5) {
-            searchFrame = [sessionSearchField, app.buttons["Search"]].lazy.compactMap { try? $0.snapshot().frame }.first
+            searchFrame = (try? sessionSearchField.snapshot().frame) ?? (try? app.buttons["Search"].snapshot().frame)
             return searchFrame != nil
         }, "Missing the session search control")
         let viewportBottom = searchFrame?.minY ?? 0
