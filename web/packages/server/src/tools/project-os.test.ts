@@ -127,6 +127,22 @@ describe('project-os dashboard (TAL-266)', () => {
     }
   })
 
+  it('drops the git badge of a scanned repo swapped for an outside symlink', async () => {
+    const outside = realpathSync(mkdtempSync(join(tmpdir(), 'project-os-outside-')))
+    try {
+      write('apps/.ax/status/active.json', { board: 'ops' })
+      Object.assign(afterFs, { fn: 'existsSync', path: join(root, 'apps', '.git') })
+      afterFs.run = () => { rmSync(join(root, 'apps'), { recursive: true }); symlinkSync(outside, join(root, 'apps')) }
+      const badge = { branch: 'outside-branch', dirty: 3, modified: 3, untracked: 0, ahead: 0, behind: 0, is_git: true as const }
+      const body = await projectOsDashboard('ops', deps({ git: () => Promise.resolve(badge) }))
+      expect(afterFs.run).toBeNull()
+      expect([body.repo_root, body.git]).toEqual([join(root, 'apps'), null])
+    } finally {
+      afterFs.run = null
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
   it("starts from the board's default workdir and follows active.json to the real repo root", async () => {
     write('work/.ax/status/active.json', { repo_root: join(root, 'real') })
     write('real/.ax/status/active.json', { repo_root: join(root, 'real'), phase: 'build' })

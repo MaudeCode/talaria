@@ -2,7 +2,7 @@
  * Project OS dashboard (Python `_handle_project_os_dashboard`): finds the repo for the last workspace or a kanban board,
  * then reads its `.ax` handoff/status JSON and `docs/project-os` Markdown through the workspace file reader.
  */
-import { existsSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { ProjectOsDashboard } from '@maudecode/talaria-web-contracts'
 import type { Dict } from '../config/agent-config.js'
@@ -158,6 +158,16 @@ function redirect(from: Repo, target: string): Repo {
   return ownRoot(resolvePathLikePython(target))
 }
 
+/** The repo's real directory for a git lookup: null when a repo read through an anchor has been moved out of it. */
+function pinnedDir(repo: Repo): string | null {
+  if (!repo.rel) return repo.path
+  try {
+    const anchor = realpathSync(repo.anchor)
+    const real = realpathSync(repo.path)
+    return real.startsWith(anchor + sep) ? real : null
+  } catch { return null }
+}
+
 function readRepo(repo: Repo): { handoff: Dict | null; active: Dict | null; heartbeat: Dict | null; docs: Record<'project' | 'plan' | 'status' | 'blocker_resolver', Doc | null>; onboarding: Dict } {
   const docs = {
     project: readDoc(repo, 'docs/project-os/PROJECT.md'),
@@ -202,7 +212,14 @@ export async function projectOsDashboard(requestedBoard: string, deps: ProjectOs
     if (moved.path !== found.path) { found = moved; repo = readRepo(found) }
   }
   let git: ProjectOsDashboard['git'] = null
-  try { git = await deps.git(found.path) } catch { git = null }
+  const dir = pinnedDir(found)
+  if (dir !== null) {
+    try {
+      const badge = await deps.git(dir)
+      // A repo that left its anchor while git ran reports no badge.
+      git = pinnedDir(found) === dir ? badge : null
+    } catch { git = null }
+  }
   let boardName: unknown = null
   let boardDesc: unknown = null
   if (repo.handoff) {
