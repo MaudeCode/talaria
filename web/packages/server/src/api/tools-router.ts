@@ -290,9 +290,9 @@ export const toolsRouter = os.router({
         return commandFailure(error, 'bundle_not_found', 'Bundle command not found')
       }
     })),
-    resolveMoa: os.commands.resolveMoa.handler(({ context: { ctx } }) => run(async () => {
+    resolveMoa: os.commands.resolveMoa.handler(({ input, context: { ctx } }) => run(async () => {
       try {
-        return (await runningSidecar(ctx).call('commands.moa_preset', { profile_home: home(ctx) })).moa
+        return (await runningSidecar(ctx).call('commands.moa_preset', { profile_home: home(ctx), preset: str(input.preset).trim() || null })).moa
       } catch (error) {
         if (error instanceof SidecarError && error.condition === 'moa_unavailable') throw new HttpError(503, error.message)
         throw error

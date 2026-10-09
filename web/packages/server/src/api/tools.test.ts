@@ -217,7 +217,9 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     expect(body).toMatchObject({ default_preset: 'default', preset: 'default' })
     expect(typeof body.usage).toBe('string')
     expect(Array.isArray(body.reference_models)).toBe(true)
-    expect(sidecar.calls.at(-1)).toEqual({ method: 'commands.moa_preset', params: { profile_home: s.deps.profileHome('default') } })
+    expect(sidecar.calls.at(-1)).toEqual({ method: 'commands.moa_preset', params: { profile_home: s.deps.profileHome('default'), preset: null } })
+    expect((await s.get('/api/commands/moa/resolve?preset=Frontier%20Tuned')).status).toBe(200)
+    expect(sidecar.calls.at(-1)).toEqual({ method: 'commands.moa_preset', params: { profile_home: s.deps.profileHome('default'), preset: 'Frontier Tuned' } })
     const { SidecarError } = await import('../sidecar/client.js')
     sidecar.respond('commands.moa_preset', () => { throw new SidecarError('MoA runtime unavailable (hermes-agent not installed or too old)', { condition: 'moa_unavailable' }) })
     try {

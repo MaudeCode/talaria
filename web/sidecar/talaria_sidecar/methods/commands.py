@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from contextlib import contextmanager
 from typing import Any
 
 from ..errors import InvalidParams, RpcError
@@ -245,16 +246,28 @@ def execute_plugin_command(command: str) -> str | None:
         return f"Plugin command error: {type(exc).__name__}"
 
 
+@contextmanager
+def _profile_bundles(skill_bundles):
+    """Scan the scoped profile's bundles into the Agent's cache for this call only.
+
+    The Agent caches one profile's bundles for the whole process, keyed only by mtime, and other callers (cron jobs)
+    read it without this lock. Emptying it afterwards makes each of them rescan its own profile's bundles."""
+    with _BUNDLES_LOCK:
+        try:
+            yield skill_bundles.scan_bundles()
+        finally:
+            skill_bundles._bundles_cache, skill_bundles._bundles_cache_mtime = {}, None
+
+
 def list_command_bundles() -> list[dict[str, Any]]:
     """The profile's skill bundles as slash-command rows; [] when the bundle runtime is missing or fails."""
     try:
-        from agent.skill_bundles import scan_bundles
+        import agent.skill_bundles as skill_bundles
     except ImportError:
         return []
     try:
-        # The Agent caches one profile's bundles process-wide; rescan under the lock so a call never reads another profile's.
-        with _BUNDLES_LOCK:
-            bundles = sorted(scan_bundles().values(), key=lambda b: b["slug"])
+        with _profile_bundles(skill_bundles) as found:
+            bundles = sorted(found.values(), key=lambda b: b["slug"])
     except Exception:  # noqa: BLE001
         log.warning("Failed to list skill bundles", exc_info=True)
         return []
@@ -266,14 +279,13 @@ def resolve_bundle_command(command: str) -> dict[str, Any]:
     """Expand ``/<bundle> [instruction]`` into the user message that loads the bundle's skills."""
     name, instruction = parse_slash_command(command)
     try:
-        from agent.skill_bundles import build_bundle_invocation_message, resolve_bundle_command_key, scan_bundles
+        import agent.skill_bundles as skill_bundles
     except ImportError as exc:
         raise RpcError("Skill bundle runtime unavailable", condition="bundle_unavailable") from exc
     try:
-        with _BUNDLES_LOCK:
-            scan_bundles()
-            key = resolve_bundle_command_key(name)
-            result = build_bundle_invocation_message(key, instruction) if key else None
+        with _profile_bundles(skill_bundles):
+            key = skill_bundles.resolve_bundle_command_key(name)
+            result = skill_bundles.build_bundle_invocation_message(key, instruction) if key else None
     except KeyError:
         key = None
     except ValueError as exc:

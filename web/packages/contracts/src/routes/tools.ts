@@ -37,7 +37,7 @@ export const toolsContract = {
     exec: oc.route({ method: 'POST', path: '/api/commands/exec', tags }).input(z.object({ command: z.string().optional(), session_id: z.string().optional() })).output(z.object({ output: z.string() })),
     bundles: oc.route({ method: 'GET', path: '/api/commands/bundles', tags, summary: "The active profile's skill bundles; empty when the Agent is unavailable." }).output(z.object({ bundles: z.array(CommandBundleSchema) })),
     resolveBundle: oc.route({ method: 'POST', path: '/api/commands/bundles/resolve', tags, summary: 'Expands `/<bundle> [instruction]` into the user message that loads its skills. 404 for an unknown bundle.' }).input(z.object({ command: z.string().optional() })).output(CommandBundleInvocationSchema),
-    resolveMoa: oc.route({ method: 'GET', path: '/api/commands/moa/resolve', tags, summary: "The active profile's normalized MoA config merged with its default preset. 503 when the Agent has no MoA." }).output(z.looseObject({ preset: z.string(), usage: z.string() })),
+    resolveMoa: oc.route({ method: 'GET', path: '/api/commands/moa/resolve', tags, summary: "The active profile's normalized MoA config merged with `preset`, or its default preset when that is absent or unknown. 503 when the Agent has no MoA." }).input(z.object({ preset: z.string().optional() })).output(z.looseObject({ preset: z.string(), usage: z.string() })),
   },
   notes: {
     sources: oc.route({ method: 'GET', path: '/api/notes/sources', tags }).output(NotesSourcesSchema),

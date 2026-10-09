@@ -44412,9 +44412,20 @@
     "/api/commands/moa/resolve": {
       "get": {
         "operationId": "commands.resolveMoa",
-        "summary": "The active profile's normalized MoA config merged with its default preset. 503 when the Agent has no MoA.",
+        "summary": "The active profile's normalized MoA config merged with `preset`, or its default preset when that is absent or unknown. 503 when the Agent has no MoA.",
         "tags": [
           "tools"
+        ],
+        "parameters": [
+          {
+            "name": "preset",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
         ],
         "responses": {
           "200": {
