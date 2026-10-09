@@ -43,6 +43,8 @@ struct UITestFixtureEnvironment {
     nonisolated static let longBodiesArgument = "--ui-test-long-bodies"
     /// Serves a long pasted prompt the server marked `_collapsible` (TAL-452).
     nonisolated static let longPromptArgument = "--ui-test-long-prompt"
+    /// Serves a reply with `diff`, `patch`, `log` and `text` code blocks (TAL-447).
+    nonisolated static let diffBlocksArgument = "--ui-test-diff-blocks"
     /// Serves a reply whose media references the server rewrote for display (TAL-186), and the media bytes.
     nonisolated static let transcriptMediaArgument = "--ui-test-transcript-media"
     /// Serves a transcript with automatic background wakeups in the server's `_background_update` shape (TAL-371).
@@ -126,6 +128,9 @@ struct UITestFixtureEnvironment {
     }
     nonisolated static var hasLongPrompt: Bool {
         ProcessInfo.processInfo.arguments.contains(longPromptArgument)
+    }
+    nonisolated static var hasDiffBlocks: Bool {
+        ProcessInfo.processInfo.arguments.contains(diffBlocksArgument)
     }
     nonisolated static var hasTranscriptMedia: Bool {
         ProcessInfo.processInfo.arguments.contains(transcriptMediaArgument)
@@ -987,6 +992,11 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             detail["messages"] = longPromptMessages
             return json(["session": detail])
         }
+        if UITestFixtureEnvironment.hasDiffBlocks {
+            var detail = session(id: sessionID, title: sessionTitle)
+            detail["messages"] = diffBlockMessages
+            return json(["session": detail])
+        }
         if UITestFixtureEnvironment.hasTranscriptMedia {
             var detail = session(id: sessionID, title: sessionTitle)
             detail["messages"] = transcriptMediaMessages
@@ -1123,6 +1133,44 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             "_display_truncated": true, "_display_excerpt": String(content.prefix(2_900))
         ]
     }
+
+    /// A `diff` and a `patch` block whose lines are tinted by prefix, and `log` and `text` blocks with
+    /// the same prefixes that stay plain (TAL-447).
+    private static let diffBlockMessages: [[String: Any]] = [
+        ["role": "user", "content": "Show the change.", "message_id": "diff-blocks-user", "_ts": 2_000_000_000],
+        [
+            "role": "assistant",
+            "content": """
+            ```diff
+            diff --git a/Fixture.swift b/Fixture.swift
+            index 83db48f..bf269f4 100644
+            --- a/Fixture.swift
+            +++ b/Fixture.swift
+            @@ -1,2 +1,3 @@ struct Fixture {
+             let unchanged = true
+            -let fixtureRemoved = 1
+            +let fixtureAdded = 2
+            +
+            ```
+
+            ```patch
+            @@ -4 +4 @@
+            -patch fixture removed
+            +patch fixture added
+            ```
+
+            ```log
+            +log fixture line
+            -log fixture line
+            ```
+
+            ```text
+            +text fixture line
+            ```
+            """,
+            "message_id": "diff-blocks-reply", "_ts": 2_000_000_001
+        ]
+    ]
 
     /// A 24-line pasted prompt the server folds (TAL-452), between short replies.
     private static let longPromptMessages: [[String: Any]] = [

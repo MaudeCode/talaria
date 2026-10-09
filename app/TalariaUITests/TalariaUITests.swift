@@ -267,6 +267,36 @@ final class LongPromptFoldUITests: ChatUITestCase {
     }
 }
 
+/// `diff` and `patch` blocks tint added and removed lines and announce them; `log` and `text`
+/// blocks with the same prefixes stay plain (TAL-447).
+final class DiffCodeBlockUITests: ChatUITestCase {
+    func testDiffAndPatchBlocksMarkChangedLinesInLightAndDark() throws {
+        for theme in ["light", "dark"] {
+            launchFixture(additionalArguments: ["--ui-test-diff-blocks", "-appTheme", theme])
+            let session = fixtureSessionButton
+            XCTAssertTrue(session.awaitExistence(timeout: 15), "Missing deterministic session fixture")
+            tapFixtureSession(session)
+            XCTAssertNotNil(waitForComposer(timeout: 30), "The diff-blocks session never opened")
+
+            for label in [
+                "Removed: -let fixtureRemoved = 1",
+                "Added: +let fixtureAdded = 2",
+                "Added: +",
+                "Removed: -patch fixture removed",
+                "Added: +patch fixture added"
+            ] {
+                XCTAssertTrue(app.staticTexts[label].awaitExistence(timeout: 15), "Missing \(label) in \(theme)")
+            }
+            XCTAssertTrue(app.staticTexts["+log fixture line"].exists, "The log block lost its line")
+            XCTAssertFalse(app.staticTexts["Added: +log fixture line"].exists, "A log block was tinted")
+            XCTAssertFalse(app.staticTexts["Added: +text fixture line"].exists, "A text block was tinted")
+            XCTAssertFalse(app.staticTexts["Added: +++ b/Fixture.swift"].exists, "A file header read as an added line")
+            attachScreenshot(named: "diff-blocks-\(theme)")
+            app.terminate()
+        }
+    }
+}
+
 /// Opening a chat from the list, then what the opened chat offers: its idle composer, which
 /// expands for typing, and long-press isolation between a message's links and its own actions
 /// (TAL-49).

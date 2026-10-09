@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Diff and patch code blocks in chat tint added and removed lines, and VoiceOver announces each change.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

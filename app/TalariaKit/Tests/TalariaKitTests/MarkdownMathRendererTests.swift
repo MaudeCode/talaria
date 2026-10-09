@@ -610,3 +610,77 @@ final class MathFenceLanguageTests: XCTestCase {
         XCTAssertFalse(MathFenceLanguage.matches("   "))
     }
 }
+
+final class MarkdownDiffLineKindTests: XCTestCase {
+    func testDiffAndPatchFencesColourLinesAndOtherFencesStayPlain() {
+        XCTAssertTrue(MarkdownDiffLineKind.applies(to: "diff"))
+        XCTAssertTrue(MarkdownDiffLineKind.applies(to: "PATCH"))
+        XCTAssertTrue(MarkdownDiffLineKind.applies(to: "diff title=change"))
+        XCTAssertFalse(MarkdownDiffLineKind.applies(to: "log"))
+        XCTAssertFalse(MarkdownDiffLineKind.applies(to: "text"))
+        XCTAssertFalse(MarkdownDiffLineKind.applies(to: "swift"))
+        XCTAssertFalse(MarkdownDiffLineKind.applies(to: nil))
+    }
+
+    func testLinePrefixRules() {
+        let cases: [(String, MarkdownDiffLineKind)] = [
+            ("diff --git a/App.swift b/App.swift", .fileHeader),
+            ("index 83db48f..bf269f4 100644", .fileHeader),
+            ("--- a/App.swift", .fileHeader),
+            ("+++ b/App.swift", .fileHeader),
+            // Overstated counts: the next `diff ` line still ends the hunk.
+            ("@@ -1,4 +1,4 @@ struct App {", .hunkHeader),
+            (" let unchanged = true", .context),
+            ("-let removed = true", .removed),
+            ("+let added = true", .added),
+            ("+", .added),
+            ("diff --git a/New.swift b/New.swift", .fileHeader),
+            ("--- /dev/null", .fileHeader),
+            ("+++ b/New.swift", .fileHeader),
+            ("@@ -0,0 +1 @@", .hunkHeader),
+            ("+let created = true", .added),
+            ("\\ No newline at end of file", .context),
+        ]
+        assertKinds(cases)
+    }
+
+    /// Inside a counted hunk, removing `-- note` or adding `++ note` keeps the
+    /// change kind even though the line starts with a file-header prefix.
+    func testTripleSignLinesInsideAHunkAreChanges() {
+        assertKinds([
+            ("--- a/query.sql", .fileHeader),
+            ("+++ b/query.sql", .fileHeader),
+            ("@@ -1,2 +1,2 @@", .hunkHeader),
+            ("--- explain the join", .removed),
+            ("+++ counter", .added),
+            (" SELECT 1;", .context),
+            ("-- not part of the hunk", .removed),
+        ])
+    }
+
+    /// A hand-written hunk without line counts still reads a lone `--- ` or
+    /// `+++ ` as a change; only a `--- ` / `+++ ` pair is a file header.
+    func testUncountedHunkNeedsAHeaderPair() {
+        assertKinds([
+            ("@@", .hunkHeader),
+            ("--- removed comment", .removed),
+            (" kept", .context),
+            ("+++ added counter", .added),
+            ("--- a/Other.swift", .fileHeader),
+            ("+++ b/Other.swift", .fileHeader),
+            ("-----", .removed),
+            ("+++", .added),
+            ("difference", .context),
+            ("indexed", .context),
+            ("", .context),
+        ])
+    }
+
+    private func assertKinds(_ cases: [(String, MarkdownDiffLineKind)], file: StaticString = #filePath, line: UInt = #line) {
+        let kinds = MarkdownDiffLineKind.kinds(forLines: cases.map(\.0))
+        XCTAssertEqual(kinds.count, cases.count, file: file, line: line)
+        for (index, (text, expected)) in cases.enumerated() where index < kinds.count {
+            XCTAssertEqual(kinds[index], expected, "line \(index): \(text.debugDescription)", file: file, line: line)
+        }
+    }
+}

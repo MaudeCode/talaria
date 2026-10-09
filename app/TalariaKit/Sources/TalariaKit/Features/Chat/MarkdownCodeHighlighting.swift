@@ -77,6 +77,97 @@ public enum MarkdownPlainCodeFormatter {
     }
 }
 
+/// How a line of a `diff` or `patch` code block is tinted (TAL-447). Kinds
+/// come from each line's leading characters in one O(lines) pass with no
+/// tokenizer; the only state is the open hunk's remaining line counts.
+public enum MarkdownDiffLineKind: Equatable {
+    case added
+    case removed
+    case hunkHeader
+    case fileHeader
+    case context
+
+    private static let languages: Set<String> = ["diff", "patch"]
+
+    /// True when a fence language is `diff` or `patch`.
+    public static func applies(to language: String?) -> Bool {
+        MarkdownHighlightPolicy.normalizedLanguage(from: language).map(languages.contains) ?? false
+    }
+
+    /// Inside a hunk whose `@@ -a,b +c,d @@` header gives line counts, every
+    /// line is a change or context until both counts run out, so removing
+    /// `-- note` (`--- note`) stays a removal. Elsewhere, `--- ` is a file
+    /// header only when `+++ ` follows it, as git writes them.
+    public static func kinds(forLines lines: [String]) -> [MarkdownDiffLineKind] {
+        var kinds: [MarkdownDiffLineKind] = []
+        kinds.reserveCapacity(lines.count)
+        var oldRemaining = 0
+        var newRemaining = 0
+
+        for (index, line) in lines.enumerated() {
+            if oldRemaining > 0 || newRemaining > 0, isHunkBody(line) {
+                if line.hasPrefix("-") {
+                    oldRemaining -= 1
+                    kinds.append(.removed)
+                } else if line.hasPrefix("+") {
+                    newRemaining -= 1
+                    kinds.append(.added)
+                } else {
+                    // `\ No newline at end of file` belongs to the previous line.
+                    if !line.hasPrefix("\\") {
+                        oldRemaining -= 1
+                        newRemaining -= 1
+                    }
+                    kinds.append(.context)
+                }
+                continue
+            }
+
+            oldRemaining = 0
+            newRemaining = 0
+            if line.hasPrefix("@@") {
+                (oldRemaining, newRemaining) = hunkLineCounts(line)
+                kinds.append(.hunkHeader)
+            } else if line.hasPrefix("diff ") || line.hasPrefix("index ") {
+                kinds.append(.fileHeader)
+            } else if line.hasPrefix("--- "), index + 1 < lines.count, lines[index + 1].hasPrefix("+++ ") {
+                kinds.append(.fileHeader)
+            } else if line.hasPrefix("+++ "), kinds.last == .fileHeader, lines[index - 1].hasPrefix("--- ") {
+                kinds.append(.fileHeader)
+            } else if line.hasPrefix("+") {
+                kinds.append(.added)
+            } else if line.hasPrefix("-") {
+                kinds.append(.removed)
+            } else {
+                kinds.append(.context)
+            }
+        }
+        return kinds
+    }
+
+    /// Hunk lines start with a space, `+`, `-` or `\\`; a blank line is a
+    /// context line whose space was trimmed. Anything else, such as the next
+    /// `diff ` line under a header that overstated its counts, ends the hunk.
+    private static func isHunkBody(_ line: String) -> Bool {
+        guard let first = line.first else { return true }
+        return first == " " || first == "+" || first == "-" || first == "\\"
+    }
+
+    /// The old and new line counts of `@@ -a[,b] +c[,d] @@`; an omitted count
+    /// is 1. A header without parseable ranges opens no counted hunk.
+    private static func hunkLineCounts(_ header: String) -> (old: Int, new: Int) {
+        let tokens = header.split(separator: " ")
+        guard tokens.count >= 3, tokens[1].hasPrefix("-"), tokens[2].hasPrefix("+") else { return (0, 0) }
+        func count(_ range: Substring) -> Int? {
+            let parts = range.dropFirst().split(separator: ",", omittingEmptySubsequences: false)
+            guard parts.count <= 2, Int(parts[0]) != nil else { return nil }
+            return parts.count == 2 ? Int(parts[1]) : 1
+        }
+        guard let old = count(tokens[1]), let new = count(tokens[2]) else { return (0, 0) }
+        return (old, new)
+    }
+}
+
 public enum MarkdownAttributedCodeFormatter {
     static let maxSegmentLength = MarkdownPlainCodeFormatter.maxSegmentLength
 
