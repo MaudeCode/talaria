@@ -44,6 +44,7 @@ import type { Session } from './sessions/session.js'
 import { GitRunner, GitWorkspaceError, pathsOverlap } from './workspace/git.js'
 import { RollbackStore } from './workspace/rollback.js'
 import { UploadInbox } from './workspace/upload.js'
+import { EscapeGrants } from './workspace/escape.js'
 import type { SidecarLike } from './sidecar/client.js'
 import { TurnRunner } from './sessions/turn.js'
 import { SessionChannels, StreamRegistry } from './sessions/streams.js'
@@ -576,6 +577,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     git,
     rollback,
     uploads,
+    escapeGrants: new EscapeGrants(now),
     mediaPolicy,
     mediaAccess,
     worktreeLocks: { lockedByStream: (s) => Boolean(s.active_stream_id && activeStreamIds.has(s.active_stream_id)), lockedByTerminal: (sid, worktreePath) => { const term = deps.terminals.get(sid); return Boolean(term?.isAlive) && resolvePathLikePython(term?.workspace ?? '') === resolvePathLikePython(worktreePath) } },

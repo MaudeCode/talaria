@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "The Web server again opens workspace symlinks that point outside the workspace, read-only, through a five-minute grant scoped to that one link.",
+      "highlight": false,
+      "components": ["web"]
+    },
+    {
+      "category": "Security",
+      "summary": "Request logs mask token query values, so grant and media tokens no longer appear in server logs.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
