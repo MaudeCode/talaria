@@ -384,7 +384,7 @@ export class CompletionDrain {
     try { session = this.deps.store.get(sid) } catch (error) {
       // A deleted session owns no turn: its wakeups, held ones included, go with it.
       if (this.deleted(sid, error)) { this.release(sid); this.deps.log(`[webui] server-side wakeup dropped for deleted session ${sid}`); return false }
-      redefer(batched); this.deps.log(`[webui] WARNING: server-side wakeup retained for session ${sid}: session unavailable`); return false
+      redefer(batched); this.scheduleRetry(sid); this.deps.log(`[webui] WARNING: server-side wakeup retained for session ${sid}: session unavailable; retrying`); return false
     }
     if (session.pre_compression_snapshot) { redefer(batched); this.deps.log(`[webui] WARNING: automatic wakeup retained: sealed snapshot ${sid} cannot own a turn`); return false }
     // TAL-534: the delegation's ledger row lives in the session's own profile, whichever profile is active now.

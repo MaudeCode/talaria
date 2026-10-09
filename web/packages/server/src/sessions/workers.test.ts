@@ -604,6 +604,11 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
     load.mockRestore()
     expect(prompts).toEqual([])
     expect(heldIds(sid)).toEqual([`${sid}_2`])
+    // The failed load arms the standard timed retry; firing it now stands in for the 30 s wait.
+    const timers = (resumed as unknown as { retryTimers: Map<string, NodeJS.Timeout> }).retryTimers
+    expect(timers.has(sid), 'a retry is scheduled').toBe(true)
+    clearTimeout(timers.get(sid))
+    timers.delete(sid)
     await resumed.drainDeferred(sid)
     for (let i = 0; i < 50 && !prompts.length; i += 1) await new Promise((r) => setTimeout(r, 20))
     await new Promise((r) => setTimeout(r, 50))
