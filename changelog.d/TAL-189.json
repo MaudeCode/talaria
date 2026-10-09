@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The Copy button on code blocks shows its checkmark for 2 seconds, then returns so you can copy again.",
+      "highlight": false
+    }
+  ]
+}
