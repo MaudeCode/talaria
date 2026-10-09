@@ -95,7 +95,8 @@ def sync_session_usage(home: Path, session_id: str, *, input_tokens=0, output_to
         _close(db)
 
 
-def sync_session_title(home: Path, session_id: str, title: str) -> bool:
+def sync_session_title(home: Path, session_id: str, title: str, *, manual: bool = False) -> bool:
+    """A manual rename lands with ``user`` provenance; a generated title is ``llm`` and never replaces a user name."""
     if not title:
         return False
     db = _session_db(home)
@@ -104,15 +105,22 @@ def sync_session_title(home: Path, session_id: str, title: str) -> bool:
     try:
         db.ensure_session(session_id=session_id, source="webui")
         source = getattr(db, "TITLE_SOURCE_LLM", "llm")
+
+        def write(value: str) -> None:
+            if manual:
+                db.set_session_title(session_id, value)
+            else:
+                db.set_auto_title(session_id, value, source=source)
+
         try:
-            db.set_auto_title(session_id, title, source=source)
+            write(title)
         except ValueError:
             alt = db.get_next_title_in_lineage(title)
             if alt and alt != title:
-                db.set_auto_title(session_id, alt, source=source)
+                write(alt)
         return True
     except Exception:  # noqa: BLE001
-        log.debug("Failed to sync auto title", exc_info=True)
+        log.debug("Failed to sync session title", exc_info=True)
         return False
     finally:
         _close(db)
@@ -424,7 +432,7 @@ def register(registry) -> None:
 
     @registry.method("state_db.sync_title")
     def title(ctx: CallContext, params: dict) -> dict:
-        return {"ok": sync_session_title(profile_home_param(params), _session_id(params), str(params.get("title") or ""))}
+        return {"ok": sync_session_title(profile_home_param(params), _session_id(params), str(params.get("title") or ""), manual=params.get("manual") is True)}
 
     @registry.method("state_db.append_message")
     def append(ctx: CallContext, params: dict) -> dict:

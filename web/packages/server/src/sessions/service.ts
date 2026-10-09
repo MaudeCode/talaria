@@ -106,8 +106,8 @@ export interface SessionServiceDeps {
   journal?: RunJournal
   hermesHome: string
   home: string
-  /** Sync title-only metadata to state.db when `sync_to_insights` is on. */
-  syncTitle: (session: Session) => Promise<void>
+  /** Sync title-only metadata to state.db when `sync_to_insights` is on; `manual` marks a user rename. */
+  syncTitle: (session: Session, manual?: boolean) => Promise<void>
   /** Context length lookup for a model (checkpoint 7 wires the catalog). */
   contextLengthFor: (model: string | null, provider: string | null) => number | null
   /** TAL-301: the catalog entry id a stored `(model, provider)` pair selects (null when none or not yet known). */
@@ -954,7 +954,7 @@ export class SessionService {
       applySessionTitleRename(s, rawTitle)
       this.store.save(s)
     })
-    await this.deps.syncTitle(s)
+    await this.deps.syncTitle(s, true)
     this.publish('session_rename', s.profile, s.session_id)
     return { session: this.wireRow(s) }
   }
