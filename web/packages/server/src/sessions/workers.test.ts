@@ -656,6 +656,35 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
     expect(heldIndex()).not.toContain(sid)
   })
 
+  const standalone = (startTurn: (prompt: string) => { _status?: number; stream_id?: string }): CompletionDrain => new CompletionDrain({
+    sidecar: () => sidecar, baseHome: s.state, profileHome: () => s.state, activeProfile: () => 'default', store: s.deps.sessionStore, channels: s.deps.channels, registry: s.deps.registry,
+    startTurn: (_session, prompt) => startTurn(prompt), now: () => Date.now() / 1000, log: () => undefined,
+  })
+
+  it('rechecks later when the held store is unreadable', async () => {
+    const path = join(s.deps.sessionStore.sessionDir, '_wakeup_held.json')
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    writeFileSync(path, '{"partial": ')
+    const drain = standalone(() => ({ stream_id: 'x' }))
+    await drain.drainDeferred(sid)
+    const timers = (drain as unknown as { retryTimers: Map<string, NodeJS.Timeout> }).retryTimers
+    expect(timers.has(sid), 'an unreadable store is retried, not read as empty').toBe(true)
+    drain.stop()
+    rmSync(path)
+  })
+
+  it('serializes concurrent drains so a held wakeup is delivered once', async () => {
+    const path = join(s.deps.sessionStore.sessionDir, '_wakeup_held.json')
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    writeFileSync(path, JSON.stringify({ [sid]: [{ process_id: `${sid}_w`, wakeup_prompt: '[IMPORTANT: watch matched]', event: { type: 'watch_match' } }] }))
+    const prompts: string[] = []
+    const drain = standalone((prompt) => { prompts.push(prompt); return { stream_id: `w${String(prompts.length)}` } })
+    await Promise.all([drain.drainDeferred(sid), drain.drainDeferred(sid)])
+    drain.stop()
+    expect(prompts).toEqual(['[IMPORTANT: watch matched]'])
+    expect(heldIndex()).not.toContain(sid)
+  })
+
   it('drops the held wakeups of a deleted session', async () => {
     const sid = await pausedSession()
     await complete(sid, `${sid}_2`)

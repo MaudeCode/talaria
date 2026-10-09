@@ -88,6 +88,7 @@ export class CompletionDrain {
   private recoveryWarnedFor: unknown = null
   private lastDrainError: string | null = null
   private heldResumed = false
+  private readonly drains = new Map<string, Promise<number>>()
   /** TAL-576: wakeups held while their session is paused. */
   private readonly heldWakeups: HeldWakeups
 
@@ -333,7 +334,12 @@ export class CompletionDrain {
   }
 
   private held(sid: string): Deferred[] {
-    try { return this.heldWakeups.get(sid) } catch (error) { this.deps.log(`[webui] WARNING: held wakeups unreadable for session ${sid}: ${(error as Error).message}`); return [] }
+    try { return this.heldWakeups.get(sid) } catch (error) {
+      // An unreadable store is unknown, not empty: recheck later rather than leave the session dormant.
+      this.scheduleDrain(sid, HELD_RECHECK_SECONDS)
+      this.deps.log(`[webui] WARNING: held wakeups unreadable for session ${sid}; retrying: ${(error as Error).message}`)
+      return []
+    }
   }
 
   /** A session whose file is gone was deleted; any other load failure keeps its wakeups. */
@@ -433,8 +439,18 @@ export class CompletionDrain {
     try { const { consumed } = await sidecar.call('process.consumed', { process_ids: completions.map((e) => e.process_id) }); return new Set(completions.filter((e) => consumed.includes(e.process_id))) } catch { return new Set() }
   }
 
-  /** Python `drain_deferred_wakeups_for_session`: turn-teardown idle hook; only the last active stream's teardown fires. */
-  async drainDeferred(sid: string): Promise<number> {
+  /**
+   * Python `drain_deferred_wakeups_for_session`: turn-teardown idle hook; only the last active stream's teardown fires.
+   * TAL-576: one drain per session at a time, so two never copy the same held wakeups before either admits them.
+   */
+  drainDeferred(sid: string): Promise<number> {
+    const run = (this.drains.get(sid) ?? Promise.resolve(0)).catch(() => 0).then(() => this.drainDeferredNow(sid))
+    this.drains.set(sid, run)
+    void run.finally(() => { if (this.drains.get(sid) === run) this.drains.delete(sid) }).catch(() => undefined)
+    return run
+  }
+
+  private async drainDeferredNow(sid: string): Promise<number> {
     if (!sid || this.hasActiveTurn(sid)) return 0
     const entries = mergeWakeups([...(this.deferred.get(sid) ?? [])], this.held(sid))
     if (!entries.length) return 0
