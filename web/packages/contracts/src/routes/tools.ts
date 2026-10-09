@@ -1,6 +1,6 @@
 import { oc } from '@orpc/contract'
 import { z } from 'zod'
-import { SkillsSchema, SkillContentSchema, SkillsUsageSchema, MemorySchema, PromptSchema, PromptsSchema, CommandsSchema, LogsSchema, InsightsSchema, AgentHealthSchema, SystemHealthSchema, McpServerSchema, McpServersSchema, McpToolsSchema, PluginsSchema, UpdatesCheckSchema, UpdatesSummarySchema, UpdateApplySchema, UpdateNotificationsSchema, UpdateNotificationSchema, TabIdSchema, FrontendBuildIdSchema, NotesSourcesSchema, NotesSearchSchema, NoteItemSchema, WikiStatusSchema, WikiBrowseSchema, WikiPageSchema, DashboardStatusSchema, TranscribeCapabilitySchema } from '../views.js'
+import { SkillsSchema, SkillContentSchema, SkillsUsageSchema, MemorySchema, PromptSchema, PromptsSchema, CommandsSchema, LogsSchema, InsightsSchema, AgentHealthSchema, SystemHealthSchema, McpServerSchema, McpServersSchema, McpToolsSchema, PluginsSchema, UpdatesCheckSchema, UpdatesSummarySchema, UpdateApplySchema, UpdateNotificationsSchema, UpdateNotificationSchema, TabIdSchema, FrontendBuildIdSchema, NotesSourcesSchema, NotesSearchSchema, NoteItemSchema, WikiStatusSchema, WikiBrowseSchema, WikiPageSchema, DashboardStatusSchema, DashboardConfigSchema, GatewayStatusSchema, GatewayActionSchema, ProjectOsDashboardSchema, TranscribeCapabilitySchema } from '../views.js'
 import { CommandBundleInvocationSchema, CommandBundleSchema } from '../sidecar/namespaces.js'
 
 /** Skills, memory, prompts, commands, notes, insights, logs, health, MCP, plugins, updates, and diagnostics. */
@@ -56,7 +56,16 @@ export const toolsContract = {
     system: oc.route({ method: 'GET', path: '/api/system/health', tags }).output(SystemHealthSchema),
     restart: oc.route({ method: 'POST', path: '/api/health/restart', tags, summary: 'Restart the Hermes gateway for the active profile (operator only).' }).input(Loose.optional()).output(z.object({ ok: z.literal(true), message: z.string() })),
     dashboard: oc.route({ method: 'GET', path: '/api/dashboard/status', tags }).output(DashboardStatusSchema),
+    dashboardConfig: oc.route({ method: 'GET', path: '/api/dashboard/config', tags, summary: "The active profile's `webui.dashboard` link settings. 400 when the stored URL is invalid." }).output(DashboardConfigSchema),
+    saveDashboardConfig: oc.route({ method: 'POST', path: '/api/dashboard/config', tags, summary: "Writes `webui.dashboard.{enabled,url}` to the active profile's config.yaml; an empty `url` removes it. 400 for an invalid mode or URL." }).input(z.object({ enabled: Json.optional(), url: Json.optional() })).output(DashboardConfigSchema),
+    projectOs: oc.route({ method: 'GET', path: '/api/project-os/dashboard', tags, summary: 'Project OS handoff, status, and docs for the current repo. Always 200.' }).input(z.object({ board: z.string().optional() })).output(ProjectOsDashboardSchema),
     shutdown: oc.route({ method: 'POST', path: '/api/shutdown', tags, summary: 'Stop the server process (operator only).' }).input(Loose.optional()).output(z.object({ status: z.literal('shutting_down') })),
+  },
+  gateway: {
+    status: oc.route({ method: 'GET', path: '/api/gateway/status', tags }).output(GatewayStatusSchema),
+    start: oc.route({ method: 'POST', path: '/api/gateway/start', tags, summary: 'Run `hermes gateway start` for the active profile (operator only). 409 while another gateway action runs, 500 on failure, 504 after 60 seconds.' }).input(Loose.optional()).output(GatewayActionSchema),
+    stop: oc.route({ method: 'POST', path: '/api/gateway/stop', tags, summary: 'Run `hermes gateway stop` for the active profile (operator only). 409 while another gateway action runs, 500 on failure, 504 after 60 seconds.' }).input(Loose.optional()).output(GatewayActionSchema),
+    restart: oc.route({ method: 'POST', path: '/api/gateway/restart', tags, summary: 'Run `hermes gateway restart` for the active profile (operator only). 409 while another gateway action runs, 500 on failure, 504 after 60 seconds.' }).input(Loose.optional()).output(GatewayActionSchema),
   },
   mcp: {
     servers: oc.route({ method: 'GET', path: '/api/mcp/servers', tags }).output(McpServersSchema),

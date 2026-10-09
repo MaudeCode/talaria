@@ -2,7 +2,7 @@
 import { implement } from '@orpc/server'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
-import { toolsContract } from '@maudecode/talaria-web-contracts'
+import { toolsContract, type GatewayStatus } from '@maudecode/talaria-web-contracts'
 import { HttpError, requireFields, type ApiContext } from './router.js'
 import { requestSessionIdGuard } from './session-visibility.js'
 import type { RequestContext } from '../http/context.js'
@@ -17,7 +17,11 @@ import { JoplinError, joplinNote, joplinSearch, notesSources, type JoplinDeps } 
 import { resolveWikiLocation, wikiPages, type WikiLocation } from '../tools/wiki.js'
 import { buildInsights } from '../tools/insights.js'
 import { commandCatalog } from '../tools/commands.js'
-import { agentHealth, dashboardStatus, readLogTail, systemHealth } from '../tools/health.js'
+import { agentHealth, applyDashboardConfig, dashboardConfig, dashboardStatus, gatewayStatus, parseDashboardConfig, readLogTail, systemHealth } from '../tools/health.js'
+import { projectOsDashboard } from '../tools/project-os.js'
+import { loadGatewaySessionIdentityMap } from '../sessions/list.js'
+import { gitBadge } from '../workspace/git.js'
+import { sanitizeError } from '../workspace/media.js'
 import { normalizeChannel, updatesCheckView } from '../tools/updates.js'
 import { pyBool } from '../settings.js'
 import { str } from '../util.js'
@@ -57,6 +61,33 @@ function commandFailure(error: unknown, notFound: string, message: string): neve
   if (error instanceof SidecarError && error.condition === notFound) throw new HttpError(404, message)
   if (error instanceof SidecarError && (error.condition === 'invalid_params' || error.code === -32602)) throw new HttpError(400, error.message)
   return failure(error)
+}
+
+const health = (ctx: RequestContext): Promise<Dict> => agentHealth({ env: ctx.deps.config.env, hermesHome: ctx.deps.config.hermesHome, profileHome: () => home(ctx), fetch: () => ctx.deps.fetch, now: ctx.deps.nowSeconds })
+
+/** Python `_gateway_status_payload` for the active profile. */
+async function currentGatewayStatus(ctx: RequestContext): Promise<GatewayStatus> {
+  const sessionsPath = join(home(ctx), 'sessions', 'sessions.json')
+  return gatewayStatus(await health(ctx), loadGatewaySessionIdentityMap(sessionsPath), sessionsPath)
+}
+
+const GATEWAY_ACTION_TIMEOUT_S = 60
+
+/** Python `_handle_gateway_lifecycle` through sidecar `gateway.control`: 409 busy, 504 timeout, 500 failure; CLI output never leaves the server. */
+async function gatewayAction(ctx: RequestContext, action: 'start' | 'stop' | 'restart'): Promise<Dict> {
+  const sidecar = ctx.deps.sidecar()
+  if (!sidecar) throw new HttpError(500, 'Hermes Agent sidecar is not running', { ok: false, action })
+  let outcome
+  try {
+    outcome = await sidecar.call('gateway.control', { profile_home: home(ctx), action, background_wait_seconds: GATEWAY_ACTION_TIMEOUT_S }, { timeoutMs: 300_000 })
+  } catch (error) {
+    throw new HttpError(500, sanitizeError(error), { ok: false, action })
+  }
+  if (outcome.status === 'busy') throw new HttpError(409, 'Another gateway action is already in progress; try again shortly.', { ok: false, action })
+  if (outcome.timed_out) throw new HttpError(504, `Gateway ${action} timed out after ${String(GATEWAY_ACTION_TIMEOUT_S)} seconds`, { ok: false, action })
+  if (outcome.status === 'failed' && outcome.returncode !== undefined) throw new HttpError(500, `Gateway ${action} failed with exit code ${String(outcome.returncode)}`, { ok: false, action, returncode: outcome.returncode })
+  if (outcome.status === 'failed') throw new HttpError(500, outcome.message, { ok: false, action })
+  return { ok: true, action, message: `Gateway ${action} completed.`, status: await currentGatewayStatus(ctx) }
 }
 
 const principalHash = (...parts: string[]): string => createHash('sha256').update(JSON.stringify(parts), 'utf8').digest('hex')
@@ -330,7 +361,7 @@ export const toolsRouter = os.router({
   })),
   logs: os.logs.handler(({ input, context: { ctx } }) => run(() => readLogTail(home(ctx), input.file, input.tail) as never)),
   ops: {
-    agent: os.ops.agent.handler(({ context: { ctx } }) => run(() => agentHealth({ env: ctx.deps.config.env, hermesHome: ctx.deps.config.hermesHome, profileHome: () => ctx.deps.profileHome(ctx.deps.activeProfile()), fetch: () => ctx.deps.fetch, now: ctx.deps.nowSeconds }) as Promise<never>)),
+    agent: os.ops.agent.handler(({ context: { ctx } }) => run(() => health(ctx))),
     system: os.ops.system.handler(({ context: { ctx } }) => run(() => systemHealth(ctx.deps.config.homeDir, ctx.deps.runtimeDiagnostics()) as never)),
     restart: os.ops.restart.handler(({ context: { ctx } }) => run(async () => {
       const sidecar = ctx.deps.sidecar()
@@ -341,11 +372,33 @@ export const toolsRouter = os.router({
       throw new HttpError(500, outcome.message || 'Internal error running restart')
     })),
     dashboard: os.ops.dashboard.handler(({ context: { ctx } }) => run(async () => { const config: Dict = await ctx.deps.agentConfig.read(home(ctx)).catch(() => ({})); return dashboardStatus(config, ctx.deps.config.env, ctx.deps.fetch) as Promise<never> })),
+    dashboardConfig: os.ops.dashboardConfig.handler(({ context: { ctx } }) => run(async () => dashboardConfig(await ctx.deps.agentConfig.read(home(ctx)).catch(() => ({}))))),
+    saveDashboardConfig: os.ops.saveDashboardConfig.handler(({ input, context: { ctx } }) => run(async () => {
+      const next = parseDashboardConfig(input)
+      await ctx.deps.agentConfig.update(home(ctx), (config) => { applyDashboardConfig(config, next) })
+      return next
+    })),
+    projectOs: os.ops.projectOs.handler(({ input, context: { ctx } }) => run(() => {
+      const profile = activeProfileName(ctx)
+      return projectOsDashboard(str(input.board), {
+        localIo: ctx.deps.workspaces.profileSupportsLocalIo(profile),
+        lastWorkspace: ctx.deps.workspaces.lastWorkspace(profile),
+        boards: async () => (await runningSidecar(ctx).call('kanban.boards', { profile_home: home(ctx), include_archived: true })).boards,
+        git: async (repoRoot) => gitBadge(await ctx.deps.git.status(repoRoot, { useCache: true })),
+        cwd: process.cwd(),
+      })
+    })),
     shutdown: os.ops.shutdown.handler(({ context: { ctx } }) => run(() => {
       ctx.deps.log(`[shutdown-request] remote=${ctx.peer || 'unknown'} method=${ctx.method} path=${ctx.path.slice(0, 240)} ua=${(ctx.header('user-agent') ?? 'no-ua').replace(/[\x00-\x1f\x7f]+/g, '?').slice(0, 240)}`)
       ctx.deps.requestShutdown()
       return { status: 'shutting_down' as const }
     })),
+  },
+  gateway: {
+    status: os.gateway.status.handler(({ context: { ctx } }) => run(() => currentGatewayStatus(ctx))),
+    start: os.gateway.start.handler(({ context: { ctx } }) => run(() => gatewayAction(ctx, 'start'))),
+    stop: os.gateway.stop.handler(({ context: { ctx } }) => run(() => gatewayAction(ctx, 'stop'))),
+    restart: os.gateway.restart.handler(({ context: { ctx } }) => run(() => gatewayAction(ctx, 'restart'))),
   },
   mcp: {
     servers: os.mcp.servers.handler(({ context: { ctx } }) => run(() => ctx.deps.mcp.servers(home(ctx)) as Promise<never>)),

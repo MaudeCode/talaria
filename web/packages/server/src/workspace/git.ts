@@ -64,6 +64,12 @@ export interface GitStatus {
   is_git: boolean; branch?: string; upstream?: string; ahead?: number; behind?: number; totals?: GitTotals; files?: GitFile[]; truncated?: boolean
   noise_filtering?: { filemode_only: number; crlf_only: number; active: boolean }
 }
+/** Python `git_info_for_workspace`: the branch badge for a status, null outside a repo. */
+export function gitBadge(status: GitStatus): { branch: string; dirty: number; modified: number; untracked: number; ahead: number; behind: number; is_git: true } | null {
+  if (!status.is_git) return null
+  const totals = status.totals ?? { changed: 0, staged: 0, unstaged: 0, untracked: 0, conflicts: 0 }
+  return { branch: status.branch ?? 'HEAD', dirty: totals.changed, modified: totals.staged + totals.unstaged, untracked: totals.untracked, ahead: status.ahead ?? 0, behind: status.behind ?? 0, is_git: true }
+}
 export interface GitRef { name: string; sha: string; updated: number; updated_relative: string; author: string; subject: string; upstream: string; ahead: number; behind: number }
 export interface GitBranches { is_git: true; current: string; detached: boolean; head: string; local: GitRef[]; remote: GitRef[]; upstream: string; ahead: number; behind: number }
 export interface GitDiff { path: string; kind: string; binary: boolean; too_large: boolean; additions: number; deletions: number; diff: string }

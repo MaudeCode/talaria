@@ -45376,6 +45376,531 @@
         }
       }
     },
+    "/api/dashboard/config": {
+      "get": {
+        "operationId": "ops.dashboardConfig",
+        "summary": "The active profile's `webui.dashboard` link settings. 400 when the stored URL is invalid.",
+        "tags": [
+          "tools"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "enabled": {
+                      "enum": [
+                        "auto",
+                        "always",
+                        "never"
+                      ],
+                      "type": "string"
+                    },
+                    "url": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "enabled",
+                    "url"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "ops.saveDashboardConfig",
+        "summary": "Writes `webui.dashboard.{enabled,url}` to the active profile's config.yaml; an empty `url` removes it. 400 for an invalid mode or URL.",
+        "tags": [
+          "tools"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "enabled": {},
+                  "url": {}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "enabled": {
+                      "enum": [
+                        "auto",
+                        "always",
+                        "never"
+                      ],
+                      "type": "string"
+                    },
+                    "url": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "enabled",
+                    "url"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/project-os/dashboard": {
+      "get": {
+        "operationId": "ops.projectOs",
+        "summary": "Project OS handoff, status, and docs for the current repo. Always 200.",
+        "tags": [
+          "tools"
+        ],
+        "parameters": [
+          {
+            "name": "board",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "workspace": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "repo_root": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "selected_board_slug": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "git": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "is_git": {
+                              "type": "boolean"
+                            },
+                            "branch": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "dirty": {
+                              "type": "number"
+                            },
+                            "modified": {
+                              "type": "number"
+                            },
+                            "untracked": {
+                              "type": "number"
+                            },
+                            "ahead": {
+                              "type": "number"
+                            },
+                            "behind": {
+                              "type": "number"
+                            }
+                          },
+                          "additionalProperties": {}
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "docs": {
+                      "type": "object",
+                      "properties": {
+                        "project": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "path": {
+                                  "type": "string"
+                                },
+                                "content": {
+                                  "type": "string"
+                                },
+                                "lines": {
+                                  "type": "number"
+                                },
+                                "size": {
+                                  "type": "number"
+                                },
+                                "truncated": {
+                                  "type": "boolean"
+                                },
+                                "binary": {
+                                  "type": "boolean"
+                                },
+                                "mime": {
+                                  "type": "string"
+                                },
+                                "preview": {
+                                  "enum": [
+                                    "text",
+                                    "markdown",
+                                    "csv",
+                                    "html",
+                                    "image",
+                                    "pdf",
+                                    "audio",
+                                    "video",
+                                    "binary"
+                                  ],
+                                  "type": "string"
+                                },
+                                "table": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  }
+                                },
+                                "table_truncated": {
+                                  "type": "boolean"
+                                },
+                                "preview_url": {
+                                  "type": "string"
+                                }
+                              },
+                              "additionalProperties": {}
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "plan": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "path": {
+                                  "type": "string"
+                                },
+                                "content": {
+                                  "type": "string"
+                                },
+                                "lines": {
+                                  "type": "number"
+                                },
+                                "size": {
+                                  "type": "number"
+                                },
+                                "truncated": {
+                                  "type": "boolean"
+                                },
+                                "binary": {
+                                  "type": "boolean"
+                                },
+                                "mime": {
+                                  "type": "string"
+                                },
+                                "preview": {
+                                  "enum": [
+                                    "text",
+                                    "markdown",
+                                    "csv",
+                                    "html",
+                                    "image",
+                                    "pdf",
+                                    "audio",
+                                    "video",
+                                    "binary"
+                                  ],
+                                  "type": "string"
+                                },
+                                "table": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  }
+                                },
+                                "table_truncated": {
+                                  "type": "boolean"
+                                },
+                                "preview_url": {
+                                  "type": "string"
+                                }
+                              },
+                              "additionalProperties": {}
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "status": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "path": {
+                                  "type": "string"
+                                },
+                                "content": {
+                                  "type": "string"
+                                },
+                                "lines": {
+                                  "type": "number"
+                                },
+                                "size": {
+                                  "type": "number"
+                                },
+                                "truncated": {
+                                  "type": "boolean"
+                                },
+                                "binary": {
+                                  "type": "boolean"
+                                },
+                                "mime": {
+                                  "type": "string"
+                                },
+                                "preview": {
+                                  "enum": [
+                                    "text",
+                                    "markdown",
+                                    "csv",
+                                    "html",
+                                    "image",
+                                    "pdf",
+                                    "audio",
+                                    "video",
+                                    "binary"
+                                  ],
+                                  "type": "string"
+                                },
+                                "table": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  }
+                                },
+                                "table_truncated": {
+                                  "type": "boolean"
+                                },
+                                "preview_url": {
+                                  "type": "string"
+                                }
+                              },
+                              "additionalProperties": {}
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "blocker_resolver": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "path": {
+                                  "type": "string"
+                                },
+                                "content": {
+                                  "type": "string"
+                                },
+                                "lines": {
+                                  "type": "number"
+                                },
+                                "size": {
+                                  "type": "number"
+                                },
+                                "truncated": {
+                                  "type": "boolean"
+                                },
+                                "binary": {
+                                  "type": "boolean"
+                                },
+                                "mime": {
+                                  "type": "string"
+                                },
+                                "preview": {
+                                  "enum": [
+                                    "text",
+                                    "markdown",
+                                    "csv",
+                                    "html",
+                                    "image",
+                                    "pdf",
+                                    "audio",
+                                    "video",
+                                    "binary"
+                                  ],
+                                  "type": "string"
+                                },
+                                "table": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  }
+                                },
+                                "table_truncated": {
+                                  "type": "boolean"
+                                },
+                                "preview_url": {
+                                  "type": "string"
+                                }
+                              },
+                              "additionalProperties": {}
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "handoff": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {}
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "active": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {}
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "heartbeat": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {}
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "onboarding": {
+                      "type": "object",
+                      "properties": {
+                        "active": {
+                          "type": "boolean"
+                        },
+                        "doc_source": {
+                          "enum": [
+                            "project-os",
+                            "root"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "active",
+                        "doc_source"
+                      ],
+                      "additionalProperties": {}
+                    },
+                    "goal_summary": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "workspace",
+                    "repo_root",
+                    "git",
+                    "docs",
+                    "handoff",
+                    "active",
+                    "heartbeat",
+                    "goal_summary"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/shutdown": {
       "post": {
         "operationId": "ops.shutdown",
@@ -45410,6 +45935,534 @@
                     }
                   },
                   "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/gateway/status": {
+      "get": {
+        "operationId": "gateway.status",
+        "tags": [
+          "tools"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "running": {
+                      "type": "boolean"
+                    },
+                    "configured": {
+                      "type": "boolean"
+                    },
+                    "platforms": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "label"
+                        ]
+                      }
+                    },
+                    "last_active": {
+                      "type": "string"
+                    },
+                    "session_count": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "health": {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "reason": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "gateway_state": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "reason",
+                        "gateway_state"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "running",
+                    "configured",
+                    "platforms",
+                    "last_active",
+                    "session_count",
+                    "health"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/gateway/start": {
+      "post": {
+        "operationId": "gateway.start",
+        "summary": "Run `hermes gateway start` for the active profile (operator only). 409 while another gateway action runs, 500 on failure, 504 after 60 seconds.",
+        "tags": [
+          "tools"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    },
+                    "action": {
+                      "enum": [
+                        "start",
+                        "stop",
+                        "restart"
+                      ],
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "object",
+                      "properties": {
+                        "running": {
+                          "type": "boolean"
+                        },
+                        "configured": {
+                          "type": "boolean"
+                        },
+                        "platforms": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "label"
+                            ]
+                          }
+                        },
+                        "last_active": {
+                          "type": "string"
+                        },
+                        "session_count": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "health": {
+                          "type": "object",
+                          "properties": {
+                            "state": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "reason": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "gateway_state": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "state",
+                            "reason",
+                            "gateway_state"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "running",
+                        "configured",
+                        "platforms",
+                        "last_active",
+                        "session_count",
+                        "health"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "action",
+                    "message",
+                    "status"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/gateway/stop": {
+      "post": {
+        "operationId": "gateway.stop",
+        "summary": "Run `hermes gateway stop` for the active profile (operator only). 409 while another gateway action runs, 500 on failure, 504 after 60 seconds.",
+        "tags": [
+          "tools"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    },
+                    "action": {
+                      "enum": [
+                        "start",
+                        "stop",
+                        "restart"
+                      ],
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "object",
+                      "properties": {
+                        "running": {
+                          "type": "boolean"
+                        },
+                        "configured": {
+                          "type": "boolean"
+                        },
+                        "platforms": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "label"
+                            ]
+                          }
+                        },
+                        "last_active": {
+                          "type": "string"
+                        },
+                        "session_count": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "health": {
+                          "type": "object",
+                          "properties": {
+                            "state": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "reason": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "gateway_state": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "state",
+                            "reason",
+                            "gateway_state"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "running",
+                        "configured",
+                        "platforms",
+                        "last_active",
+                        "session_count",
+                        "health"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "action",
+                    "message",
+                    "status"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/gateway/restart": {
+      "post": {
+        "operationId": "gateway.restart",
+        "summary": "Run `hermes gateway restart` for the active profile (operator only). 409 while another gateway action runs, 500 on failure, 504 after 60 seconds.",
+        "tags": [
+          "tools"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    },
+                    "action": {
+                      "enum": [
+                        "start",
+                        "stop",
+                        "restart"
+                      ],
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "object",
+                      "properties": {
+                        "running": {
+                          "type": "boolean"
+                        },
+                        "configured": {
+                          "type": "boolean"
+                        },
+                        "platforms": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "label"
+                            ]
+                          }
+                        },
+                        "last_active": {
+                          "type": "string"
+                        },
+                        "session_count": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "health": {
+                          "type": "object",
+                          "properties": {
+                            "state": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "reason": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "gateway_state": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "state",
+                            "reason",
+                            "gateway_state"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "running",
+                        "configured",
+                        "platforms",
+                        "last_active",
+                        "session_count",
+                        "health"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "action",
+                    "message",
                     "status"
                   ]
                 }

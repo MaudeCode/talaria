@@ -605,7 +605,8 @@ export const FileContentSchema = z.looseObject({
   preview: FilePreviewKindSchema.optional(), table: z.array(z.array(z.string())).optional(), table_truncated: z.boolean().optional(),
   preview_url: z.string().optional(),
 })
-export const GitInfoSchema = z.looseObject({ git: z.looseObject({ is_git: z.boolean().optional(), branch: NullableString.optional(), dirty: z.number().optional(), modified: z.number().optional(), untracked: z.number().optional(), ahead: z.number().optional(), behind: z.number().optional() }).nullable().optional() })
+const GitBadgeSchema = z.looseObject({ is_git: z.boolean().optional(), branch: NullableString.optional(), dirty: z.number().optional(), modified: z.number().optional(), untracked: z.number().optional(), ahead: z.number().optional(), behind: z.number().optional() })
+export const GitInfoSchema = z.looseObject({ git: GitBadgeSchema.nullable().optional() })
 
 // ── tools ────────────────────────────────────────────────────────────────
 
@@ -648,6 +649,30 @@ export const InsightsSchema = z.looseObject({
 })
 export type Insights = z.infer<typeof InsightsSchema>
 export const DashboardStatusSchema = z.looseObject({ running: z.boolean(), enabled: z.string().optional(), url: z.string().optional(), browser_url: z.string().optional(), host: z.string().optional(), port: z.number().int().optional(), version: z.string().optional(), error: z.string().optional() })
+/**
+ * Gateway status for the Settings banner (TAL-266). `running` and `configured` come from the Agent health probe; when it
+ * is inconclusive, stale running metadata or known gateway sessions mark the gateway configured. `platforms` are the
+ * messaging platforms of known gateway sessions; `last_active` is the gateway session index's ISO mtime while running, else "".
+ */
+export const GatewayStatusSchema = z.object({
+  running: z.boolean(), configured: z.boolean(), platforms: z.array(z.object({ name: z.string(), label: z.string() })), last_active: z.string(), session_count: z.number().int(),
+  health: z.object({ state: NullableString, reason: NullableString, gateway_state: NullableString }),
+})
+export type GatewayStatus = z.infer<typeof GatewayStatusSchema>
+export const GatewayActionSchema = z.object({ ok: z.literal(true), action: z.enum(['start', 'stop', 'restart']), message: z.string(), status: GatewayStatusSchema })
+export const DashboardConfigSchema = z.object({ enabled: z.enum(['auto', 'always', 'never']), url: z.string() })
+/**
+ * Project OS dashboard for a repo found from the last workspace or the `board`'s default workdir (TAL-266). Every field is
+ * null or empty when the profile has no local workspace I/O or no repo is found. `onboarding.active` means the docs came
+ * from the repo root's `PROJECT.md`/`PLAN.md`/`STATUS.md` instead of `docs/project-os/`.
+ */
+export const ProjectOsDashboardSchema = z.object({
+  workspace: NullableString, repo_root: NullableString, selected_board_slug: NullableString.optional(), git: GitBadgeSchema.nullable(),
+  docs: z.object({ project: FileContentSchema.nullable(), plan: FileContentSchema.nullable(), status: FileContentSchema.nullable(), blocker_resolver: FileContentSchema.nullable() }).partial(),
+  handoff: z.record(z.string(), Json).nullable(), active: z.record(z.string(), Json).nullable(), heartbeat: z.record(z.string(), Json).nullable(),
+  onboarding: z.looseObject({ active: z.boolean(), doc_source: z.enum(['project-os', 'root']) }).optional(), goal_summary: z.string(),
+})
+export type ProjectOsDashboard = z.infer<typeof ProjectOsDashboardSchema>
 export const AgentHealthSchema = z.looseObject({ alive: z.boolean().nullable().optional(), checked_at: z.string().optional(), details: z.looseObject({ state: z.string().optional(), reason: z.string().optional() }).optional(), gateway_chat: z.looseObject({ enabled: z.boolean().optional(), backend: z.string().optional(), base_url_configured: z.boolean().optional(), api_key_configured: z.boolean().optional() }).optional(), error: z.string().optional() })
 export const SystemHealthSchema = z.looseObject({
   available: z.boolean().optional(), status: z.string().optional(), checked_at: z.string().optional(), cpu: Json.nullable().optional(), memory: Json.nullable().optional(), disk: z.looseObject({ percent: z.number().optional(), total_bytes: z.number().optional(), used_bytes: z.number().optional() }).nullable().optional(),
