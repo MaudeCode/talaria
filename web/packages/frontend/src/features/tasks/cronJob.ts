@@ -72,11 +72,3 @@ export function usageStrip(usage: z.infer<typeof CronRunUsageSchema> | undefined
   if (usage.model) parts.push(usage.model)
   return parts.join(' · ')
 }
-
-/** The agent's reply from a run file: everything after the `## Response` heading, else the whole text. */
-export function runResponse(content: string): string {
-  const idx = content.search(/^#{1,2} Response\s*$/m)
-  if (idx < 0) return content.trim()
-  const afterHeading = content.indexOf('\n', idx)
-  return afterHeading < 0 ? '' : content.slice(afterHeading + 1).trim()
-}

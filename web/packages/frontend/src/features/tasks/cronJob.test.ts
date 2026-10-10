@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { CronJobSchema, type CronJob } from '../../contracts'
-import { cronDiagnostics, cronState, runResponse, usageStrip } from './cronJob'
+import { cronDiagnostics, cronState, usageStrip } from './cronJob'
 
 // Persisted shape from cron.jobs.create_job with the WebUI projections applied.
 const recurring: CronJob = {
-  id: 'ab12cd34ef56', name: 'Digest', prompt: 'Summarise the inbox', schedule: { kind: 'cron', expr: '0 9 * * *', display: '0 9 * * *' }, schedule_display: '0 9 * * *', schedule_input: '0 9 * * *',
+  id: 'ab12cd34ef56', name: 'Digest', prompt: 'Summarise the inbox', schedule: { kind: 'cron', expr: '0 9 * * *', display: '0 9 * * *' }, schedule_display: '0 9 * * *', schedule_input: '0 9 * * *', attention_hint: null,
   repeat: { times: null, completed: 12 }, enabled: true, state: 'scheduled', next_run_at: '2026-09-18T09:00:00+02:00', last_run_at: '2026-09-17T09:00:00+02:00',
   last_status: 'ok', last_error: null, last_delivery_error: null, deliver: 'local', origin: { secret: 'never-copied' },
 }
@@ -35,12 +35,5 @@ describe('usageStrip', () => {
     expect(usageStrip({ input_tokens: 1_240, output_tokens: 830, estimated_cost_usd: 0.0042, model: 'gpt-5.4' })).toBe('1.2k in · 830 out · $0.0042 · gpt-5.4')
     expect(usageStrip({ total_tokens: 2_000_000 })).toBe('2M tokens')
     expect(usageStrip(undefined)).toBe('')
-  })
-})
-
-describe('runResponse', () => {
-  it('drops the run file front-matter and keeps the reply verbatim', () => {
-    expect(runResponse('# Cron run: x\n\n**Model:** m\n\n## Response\n\n# Title\n\n| a |\n')).toBe('# Title\n\n| a |')
-    expect(runResponse('plain stdout\n')).toBe('plain stdout')
   })
 })

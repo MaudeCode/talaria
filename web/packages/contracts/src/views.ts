@@ -817,6 +817,8 @@ export const CronJobViewSchema = z.looseObject({
   context_from: z.union([z.array(z.string()), z.string(), z.null()]).optional(), reasoning_effort: NullableString.optional(), toast_notifications: z.boolean().optional(), running: z.boolean().optional(),
   /** Server-derived (TAL-296): the job's status, whether it needs attention, and whether its primary action is Resume. Live runs overlay it. */
   derived_state: CronDerivedStateSchema.optional(), needs_attention: z.boolean().optional(), resumable: z.boolean().optional(),
+  /** Server-derived (TAL-599): a known cause clients explain in the needs-attention banner. */
+  attention_hint: z.enum(['croniter_missing']).nullable(),
 })
 export type CronJob = z.infer<typeof CronJobViewSchema>
 export const CronsSchema = z.looseObject({ jobs: z.array(CronJobViewSchema), active_profile: z.string().optional(), all_profiles: z.boolean().optional(), other_profile_count: z.number().optional(), cron_unavailable: z.boolean().optional() })
@@ -835,7 +837,8 @@ export const CronRunUsageSchema = z.looseObject({ input_tokens: NullableNumber.o
 export const CronRunSummarySchema = z.looseObject({ filename: z.string(), size: z.number(), modified: z.number(), usage: CronRunUsageSchema.optional() })
 export const CronHistorySchema = z.looseObject({ job_id: z.string().optional(), runs: z.array(CronRunSummarySchema), total: z.number().optional(), offset: z.number().optional() })
 export type CronHistory = z.infer<typeof CronHistorySchema>
-export const CronRunSchema = z.looseObject({ content: z.string().optional(), snippet: z.string().optional(), usage: CronRunUsageSchema.optional(), error: z.string().optional() })
+/** `response` is server-extracted (TAL-599): the agent's reply after the run file's `## Response` heading, else the whole text. */
+export const CronRunSchema = z.looseObject({ content: z.string().optional(), snippet: z.string().optional(), response: z.string(), usage: CronRunUsageSchema.optional(), error: z.string().optional() })
 export const CronStatusSchema = z.looseObject({ running: z.union([z.boolean(), z.record(z.string(), z.number())]).optional() })
 /** Card actions the server offers for a task's current status (TAL-557); clients show exactly these. `move_to` lists the statuses a Move may target, in display order. */
 export const KanbanTaskActionsSchema = z.object({ block: z.boolean(), unblock: z.boolean(), complete: z.boolean(), archive: z.boolean(), move_to: z.array(z.string()) })

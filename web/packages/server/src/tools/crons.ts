@@ -50,9 +50,19 @@ export function jobForApi(job: Dict, running = false): Dict {
   payload.derived_state = state
   payload.needs_attention = state === 'needs_attention' || state === 'schedule_error'
   payload.resumable = payload.needs_attention || state === 'paused' || state === 'off'
+  // TAL-599: a stuck job whose error names croniter gets the "restart the Gateway with cron support" hint.
+  payload.attention_hint = payload.needs_attention && /croniter/i.test(str(job.last_error)) ? 'croniter_missing' : null
   payload.running = running || job.running === true
   Object.assign(payload, scheduleText(job))
   return payload
+}
+
+/** TAL-599: the agent's reply from a run file: everything after the `## Response` heading, else the whole text. */
+function runResponse(content: string): string {
+  const idx = content.search(/^#{1,2} Response\s*$/m)
+  if (idx < 0) return content.trim()
+  const afterHeading = content.indexOf('\n', idx)
+  return afterHeading < 0 ? '' : content.slice(afterHeading + 1).trim()
 }
 
 /** TAL-298: the schedule's display text and the editor's prefill, in the scheduler's own vocabulary (not localized copy). */
@@ -500,7 +510,8 @@ export class CronService {
     try {
       const detail = await this.sidecar().call('cron.run_detail', { profile_home: home, job_id: jobId, filename })
       // Leaked tool-call XML is removed from the run's text, as from a transcript reply (TAL-302).
-      return { ...detail, content: stripToolCallXml(detail.content), snippet: stripToolCallXml(detail.snippet) }
+      const content = stripToolCallXml(detail.content)
+      return { ...detail, content, snippet: stripToolCallXml(detail.snippet), response: runResponse(content) }
     } catch (error) {
       if (error instanceof SidecarError && error.condition === 'not_found') throw new HttpFailure(404, 'run not found')
       throw error

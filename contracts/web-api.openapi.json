@@ -51167,11 +51167,25 @@
                           },
                           "resumable": {
                             "type": "boolean"
+                          },
+                          "attention_hint": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "croniter_missing"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           }
                         },
                         "required": [
                           "schedule_display",
-                          "schedule_input"
+                          "schedule_input",
+                          "attention_hint"
                         ],
                         "additionalProperties": {}
                       }
@@ -51433,6 +51447,9 @@
                     "snippet": {
                       "type": "string"
                     },
+                    "response": {
+                      "type": "string"
+                    },
                     "usage": {
                       "type": "object",
                       "properties": {
@@ -51499,6 +51516,9 @@
                       "type": "string"
                     }
                   },
+                  "required": [
+                    "response"
+                  ],
                   "additionalProperties": {}
                 }
               }
@@ -51883,11 +51903,25 @@
                         },
                         "resumable": {
                           "type": "boolean"
+                        },
+                        "attention_hint": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "croniter_missing"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
                         "schedule_display",
-                        "schedule_input"
+                        "schedule_input",
+                        "attention_hint"
                       ],
                       "additionalProperties": {}
                     },
@@ -52484,11 +52518,25 @@
                         },
                         "resumable": {
                           "type": "boolean"
+                        },
+                        "attention_hint": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "croniter_missing"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
                         "schedule_display",
-                        "schedule_input"
+                        "schedule_input",
+                        "attention_hint"
                       ],
                       "additionalProperties": {}
                     },
@@ -52889,11 +52937,25 @@
                         },
                         "resumable": {
                           "type": "boolean"
+                        },
+                        "attention_hint": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "croniter_missing"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
                         "schedule_display",
-                        "schedule_input"
+                        "schedule_input",
+                        "attention_hint"
                       ],
                       "additionalProperties": {}
                     },
@@ -53295,11 +53357,25 @@
                         },
                         "resumable": {
                           "type": "boolean"
+                        },
+                        "attention_hint": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "croniter_missing"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
                         "schedule_display",
-                        "schedule_input"
+                        "schedule_input",
+                        "attention_hint"
                       ],
                       "additionalProperties": {}
                     },
@@ -53711,11 +53787,25 @@
                         },
                         "resumable": {
                           "type": "boolean"
+                        },
+                        "attention_hint": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "croniter_missing"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
                         "schedule_display",
-                        "schedule_input"
+                        "schedule_input",
+                        "attention_hint"
                       ],
                       "additionalProperties": {}
                     },
@@ -54117,11 +54207,25 @@
                         },
                         "resumable": {
                           "type": "boolean"
+                        },
+                        "attention_hint": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "croniter_missing"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
                         "schedule_display",
-                        "schedule_input"
+                        "schedule_input",
+                        "attention_hint"
                       ],
                       "additionalProperties": {}
                     },

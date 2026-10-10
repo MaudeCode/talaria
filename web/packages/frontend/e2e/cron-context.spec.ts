@@ -24,3 +24,23 @@ test('context choices follow the execution store', async ({ page }, testInfo) =>
   await expect(form.getByRole('checkbox', { name: 'Local source' })).toHaveCount(0)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
 })
+
+test('a stuck job shows the server hint and a run shows the server-extracted reply (TAL-599)', async ({ page }, testInfo) => {
+  const job = { id: 'stuck', name: 'Stuck digest', prompt: 'Synthetic task', schedule: '0 9 * * *', schedule_display: '0 9 * * *', schedule_input: '0 9 * * *', enabled: false, state: 'completed', next_run_at: null, last_error: "No module named 'croniter'", derived_state: 'needs_attention', needs_attention: true, resumable: true, attention_hint: 'croniter_missing', toast_notifications: true, read_only: false }
+  await page.route('**/api/crons', (route) => route.fulfill({ json: { jobs: [job], active_profile: 'default', all_profiles: false, other_profile_count: 0 } }))
+  await page.route('**/api/crons/status', (route) => route.fulfill({ json: { running: {} } }))
+  await page.route('**/api/crons/history?*', (route) => route.fulfill({ json: { runs: [{ filename: '2026-10-09_09-00-00.md', size: 120, modified: 1_791_536_400 }], total: 1, offset: 0 } }))
+  // The client renders `response` as sent; the raw `content` front-matter must never appear.
+  await page.route('**/api/crons/run?*', (route) => route.fulfill({ json: { content: '# Cron run\n**Model:** front-matter-model\n\n## Response\n# Morning digest\nAll quiet.', snippet: 'All quiet.', response: '# Morning digest\n\nAll quiet.', usage: {} } }))
+  await page.goto('/tasks?job=stuck')
+  const banner = page.getByTestId('cron-detail').getByRole('alert')
+  await expect(banner).toContainText('may be missing the croniter package')
+  await page.getByRole('region', { name: /^runs$/i }).getByRole('cell').first().click()
+  const output = page.getByTestId('cron-run-output')
+  await expect(output.getByRole('heading', { name: 'Morning digest' })).toBeVisible()
+  await expect(output).not.toContainText('front-matter-model')
+  await page.screenshot({ path: testInfo.outputPath('cron-hint-run.png') })
+  await banner.screenshot({ path: testInfo.outputPath('cron-hint.png') })
+  await output.screenshot({ path: testInfo.outputPath('cron-run.png') })
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+})
