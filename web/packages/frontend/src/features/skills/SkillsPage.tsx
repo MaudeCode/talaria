@@ -9,7 +9,7 @@ import { Button } from '../../ui/Button'
 import { Switch } from '../../ui/Field'
 import { Select } from '../../ui/Select'
 import { ConfirmDialog } from '../../ui/Dialog'
-import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
+import { EmptyState, ErrorState, LoadingState, formatBytes } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { cn } from '../../ui/cn'
 
@@ -125,7 +125,9 @@ function SkillFile({ name, file, onBack }: { name: string; file: string; onBack:
       {content.isSuccess && (
         <div className="flex flex-col gap-3">
           <div className="font-mono text-[11px] text-muted">{file}</div>
-          <pre className="w-full overflow-auto whitespace-pre-wrap rounded-md border border-border bg-code-bg p-3 font-mono text-[12.5px] text-pre-text">{content.data.content ?? ''}</pre>
+          {content.data.binary
+            ? <div className="text-xs text-muted">{m.ws_panel_binary({ size: formatBytes(content.data.size) })}</div>
+            : <pre className="w-full overflow-auto whitespace-pre-wrap rounded-md border border-border bg-code-bg p-3 font-mono text-[12.5px] text-pre-text">{content.data.content ?? ''}</pre>}
         </div>
       )}
     </HubPage>

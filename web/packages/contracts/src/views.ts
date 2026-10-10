@@ -654,8 +654,11 @@ export const GitInfoSchema = z.looseObject({ git: GitBadgeSchema.nullable().opti
 
 export const SkillSchema = z.looseObject({ name: z.string(), description: NullableString.optional(), category: NullableString.optional(), disabled: z.boolean().optional() })
 export const SkillsSchema = z.looseObject({ skills: z.array(SkillSchema), categories: z.array(Json).optional() })
-/** `linked_files` groups the skill directory's files by folder (`references`, `templates`, ...); open one with `?file=`. */
-export const SkillContentSchema = z.looseObject({ name: z.string().optional(), content: z.string().optional(), path: z.string().optional(), linked_files: z.record(z.string(), z.array(z.string())).optional(), success: z.boolean().optional(), message: z.string().optional(), ok: z.boolean().optional() })
+/**
+ * `linked_files` groups the skill directory's files by folder (`references`, `templates`, ...); open one with `?file=`.
+ * A linked file that is not UTF-8 text carries `binary: true` and its `size` instead of `content`.
+ */
+export const SkillContentSchema = z.looseObject({ name: z.string().optional(), content: z.string().optional(), path: z.string().optional(), linked_files: z.record(z.string(), z.array(z.string())).optional(), binary: z.literal(true).optional(), size: z.number().optional(), success: z.boolean().optional(), message: z.string().optional(), ok: z.boolean().optional() })
 export const SkillsUsageSchema = z.looseObject({ usage: z.record(z.string(), z.looseObject({ use_count: z.number().optional(), view_count: z.number().optional(), patch_count: z.number().optional() })), skill_names: z.array(z.string()).optional(), total_invocations: z.number().optional(), unique_skills_used: z.number().optional() })
 export const MemorySchema = z.looseObject({
   memory: z.string(), user: z.string(), soul: z.string(), project_context: z.string().optional(), memory_path: z.string().optional(), user_path: z.string().optional(), soul_path: z.string().optional(), project_context_path: z.string().optional(),

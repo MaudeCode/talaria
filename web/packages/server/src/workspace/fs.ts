@@ -519,6 +519,12 @@ export interface FileContent { path: string; size: number; content?: string; lin
 
 export class FileTooLargeError extends Error {}
 
+/** `raw` as UTF-8 text, or null for a binary file (a NUL byte, or bytes that do not round-trip). */
+export function decodeText(raw: Buffer): string | null {
+  const content = raw.toString('utf8')
+  return raw.includes(0) || (content.includes('\uFFFD') && !raw.equals(Buffer.from(content, 'utf8'))) ? null : content
+}
+
 /** Python `read_file_content` (office previews were dropped with TAL-245). */
 export function readFileContent(workspace: string, rel: string, opts: { statOnly?: boolean } = {}): FileContent {
   const target = safeResolveWs(workspace, rel)
@@ -543,8 +549,8 @@ export function readFileContent(workspace: string, rel: string, opts: { statOnly
       total += n
     }
     const raw = buf.subarray(0, total)
-    const content = raw.toString('utf8')
-    if (raw.includes(0) || (content.includes('\uFFFD') && !raw.equals(Buffer.from(content, 'utf8')))) return { path: rel, size: raw.length, binary: true }
+    const content = decodeText(raw)
+    if (content === null) return { path: rel, size: raw.length, binary: true }
     return { path: rel, content, size: raw.length, lines: (content.match(/\n/g)?.length ?? 0) + 1 }
   } finally {
     closeSync(fd)

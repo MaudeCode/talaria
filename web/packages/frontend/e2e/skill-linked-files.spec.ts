@@ -14,8 +14,9 @@ test('a skill lists its linked files and opens one', async ({ page }, testInfo) 
     const params = new URL(route.request().url()).searchParams
     const file = params.get('file')
     requests.push(`${params.get('name') ?? ''}:${file ?? ''}`)
+    if (file === 'assets/logo.png') return route.fulfill({ json: { path: file, size: 2048, binary: true } })
     if (file) return route.fulfill({ json: { content: FILES[file], path: file } })
-    return route.fulfill({ json: { success: true, name: SKILL.name, content: '---\nname: synthetic-skill\n---\nSkill body.', path: 'testing/synthetic-skill/SKILL.md', linked_files: { references: Object.keys(FILES) } } })
+    return route.fulfill({ json: { success: true, name: SKILL.name, content: '---\nname: synthetic-skill\n---\nSkill body.', path: 'testing/synthetic-skill/SKILL.md', linked_files: { assets: ['assets/logo.png'], references: Object.keys(FILES) } } })
   })
   await page.goto('/skills')
   await settle(page)
@@ -34,4 +35,8 @@ test('a skill lists its linked files and opens one', async ({ page }, testInfo) 
 
   await page.getByRole('button', { name: 'Back to synthetic-skill' }).click()
   await expect(page.getByLabel('Skill content')).toHaveValue(/Skill body\./)
+
+  // A binary asset shows its size, never decoded bytes.
+  await page.getByRole('button', { name: 'assets/logo.png' }).click()
+  await expect(page.getByText('Binary file (2.0 KB)')).toBeVisible()
 })

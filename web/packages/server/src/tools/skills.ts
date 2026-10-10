@@ -1,5 +1,5 @@
 /** Skills panel: list/view through the Agent (sidecar `skills.*`), file writes and config.yaml toggles here (Python `api/routes.py` skills section). */
-import { makeAnchoredDir, openAnchoredCreateFd, openAnchoredFd, openAnchoredWriteFd, rmtreeAnchored } from '../workspace/fs.js'
+import { decodeText, makeAnchoredDir, openAnchoredCreateFd, openAnchoredFd, openAnchoredWriteFd, rmtreeAnchored } from '../workspace/fs.js'
 import { resolvePathLikePython } from '../workspace/paths.js'
 import { closeSync, fstatSync, mkdirSync, lstatSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, relative, resolve, sep } from 'node:path'
@@ -55,8 +55,8 @@ export class SkillsService {
     return data
   }
 
-  /** `?file=` mode: one linked file inside the skill directory. */
-  async linkedFile(profileHome: string, name: string, file: string): Promise<{ content: string; path: string }> {
+  /** `?file=` mode: one linked file inside the skill directory; a binary file carries only its size. */
+  async linkedFile(profileHome: string, name: string, file: string): Promise<{ content: string; path: string } | { path: string; size: number; binary: true }> {
     if (/[*?[\]]/.test(name)) throw new HttpFailure(400, 'Invalid skill name')
     const found = await this.sidecar().call('skills.find', { profile_home: profileHome, name })
     if (!found.found || !found.skill_dir) throw new HttpFailure(404, 'Skill not found')
@@ -68,7 +68,9 @@ export class SkillsService {
     try { fd = openAnchoredFd(skillDir, target, { wantDir: false }) } catch { throw new HttpFailure(404, 'File not found') }
     try {
       if (!fstatSync(fd).isFile()) throw new HttpFailure(404, 'File not found')
-      return { content: readFileSync(fd, 'utf8'), path: file }
+      const raw = readFileSync(fd)
+      const content = decodeText(raw)
+      return content === null ? { path: file, size: raw.length, binary: true } : { content, path: file }
     } finally { closeSync(fd) }
   }
 
