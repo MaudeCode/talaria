@@ -212,8 +212,7 @@ final class ChatAttachmentCoordinator {
                 size: response.size,
                 isImage: response.isImage ?? false,
                 thumbnailData: await Self.thumbnailData(for: response, originalData: data, previewData: previewData),
-                draftFileName: draftFileName,
-                isNamedInPromptByServer: response.namedInPrompt == true
+                draftFileName: draftFileName
             )
         } catch {
             if reportsErrors {

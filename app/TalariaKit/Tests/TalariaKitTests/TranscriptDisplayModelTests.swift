@@ -414,17 +414,6 @@ final class ChatTranscriptDisplaySettingsTests: XCTestCase {
         )
     }
 
-    func testHidesAttachmentPathsKeyIsStableAndDistinct() {
-        XCTAssertEqual(
-            ChatTranscriptDisplaySettings.hidesAttachmentPathsKey,
-            "chatTranscript.hidesAttachmentPaths"
-        )
-        XCTAssertNotEqual(
-            ChatTranscriptDisplaySettings.hidesAttachmentPathsKey,
-            ChatTranscriptDisplaySettings.showsThinkingAndToolCardsKey
-        )
-    }
-
     func testAssistantTurnTimestampsKeyIsStableAndDistinct() {
         XCTAssertEqual(
             ChatTranscriptDisplaySettings.showsAssistantTurnTimestampsKey,
@@ -432,7 +421,7 @@ final class ChatTranscriptDisplaySettingsTests: XCTestCase {
         )
         XCTAssertNotEqual(
             ChatTranscriptDisplaySettings.showsAssistantTurnTimestampsKey,
-            ChatTranscriptDisplaySettings.hidesAttachmentPathsKey
+            ChatTranscriptDisplaySettings.showsThinkingAndToolCardsKey
         )
     }
 
@@ -529,122 +518,6 @@ final class ChatTranscriptDisplaySettingsTests: XCTestCase {
             hasTextContent: true,
             isEnabled: true
         ))
-    }
-
-    func testContentWithoutAttachedFilesMarkerStripsTrailingMarker() {
-        // The format the App appended before TAL-635; older stored messages still carry it.
-        let sent = "Analyze these files\n\n[Attached files: /tmp/workspace/sample.html, /tmp/workspace/image.jpg]"
-        XCTAssertEqual(
-            MessageAttachment.contentWithoutAttachedFilesMarker(in: sent),
-            "Analyze these files"
-        )
-    }
-
-    func testContentWithoutAttachedFilesMarkerReturnsEmptyForAttachmentOnlyMessage() {
-        // No typed draft: the whole content is just the appended marker.
-        let sent = "\n\n[Attached files: /tmp/workspace/image.jpg]"
-        XCTAssertEqual(MessageAttachment.contentWithoutAttachedFilesMarker(in: sent), "")
-    }
-
-    func testContentWithoutAttachedFilesMarkerPreservesInteriorNewlines() {
-        let sent = "line one\nline two\n\n[Attached files: /tmp/a.png]"
-        XCTAssertEqual(
-            MessageAttachment.contentWithoutAttachedFilesMarker(in: sent),
-            "line one\nline two"
-        )
-    }
-
-    func testContentWithoutAttachedFilesMarkerLeavesPlainMessageUnchanged() {
-        let plain = "Just a normal message with no attachments"
-        XCTAssertEqual(MessageAttachment.contentWithoutAttachedFilesMarker(in: plain), plain)
-    }
-
-    func testContentWithoutAttachedFilesMarkerIgnoresMarkerWithTrailingText() {
-        // The parser only treats the marker as a suffix; trailing prose means it
-        // is not a real attachment marker, so the content is left untouched.
-        let content = "hello\n\n[Attached files: /tmp/a.png] and then more text"
-        XCTAssertEqual(MessageAttachment.contentWithoutAttachedFilesMarker(in: content), content)
-    }
-
-    /// TAL-158: the server replays an attachment-only send as the synthesized
-    /// message, so the display transform has to hide it there too — its own
-    /// attachments are the evidence that it really is one.
-    func testContentWithoutAttachmentReferencesStripsReloadedSynthesizedMessage() {
-        // The synthesized text the App sent for a file-only message before TAL-635; older stored
-        // messages still carry it.
-        let sent = "I've uploaded 1 file(s): /tmp/workspace/notes.txt"
-        // The server commonly replays a bare filename as the path.
-        let reloaded = [MessageAttachment(name: "notes.txt", path: "notes.txt", mime: "text/plain", size: 4, isImage: false)]
-
-        XCTAssertEqual(MessageAttachment.contentWithoutAttachmentReferences(in: sent, attachments: reloaded), "")
-    }
-
-    /// Duplicate filenames get distinct server paths, and a filename may contain
-    /// a comma. Containment rather than a parse of the reference list keeps both
-    /// matching.
-    func testContentWithoutAttachmentReferencesStripsDuplicateAndCommaFilenames() {
-        let duplicates = "I've uploaded 2 file(s): /tmp/workspace/shot.jpg, /tmp/workspace/shot-2.jpg"
-        let duplicateAttachments = [
-            MessageAttachment(name: "shot.jpg", path: "/tmp/workspace/shot.jpg", mime: "image/jpeg", size: 4, isImage: true),
-            MessageAttachment(name: "shot.jpg", path: "/tmp/workspace/shot-2.jpg", mime: "image/jpeg", size: 4, isImage: true)
-        ]
-        let comma = "I've uploaded 1 file(s): /tmp/workspace/a, b.txt"
-        let commaAttachment = [MessageAttachment(name: "a, b.txt", path: "/tmp/workspace/a, b.txt", mime: "text/plain", size: 4, isImage: false)]
-
-        XCTAssertEqual(
-            MessageAttachment.contentWithoutAttachmentReferences(in: duplicates, attachments: duplicateAttachments),
-            ""
-        )
-        XCTAssertEqual(
-            MessageAttachment.contentWithoutAttachmentReferences(in: comma, attachments: commaAttachment),
-            ""
-        )
-    }
-
-    /// A voice note sends its bare transcript alongside the audio clip, so the
-    /// shape alone must not blank it: the transcript never names the clip.
-    func testContentWithoutAttachmentReferencesKeepsVoiceNoteTranscript() {
-        let transcript = "I've uploaded 2 file(s): the report, the notes"
-        let audioClip = [MessageAttachment(name: "voice-note.m4a", path: "/tmp/workspace/voice-note.m4a", mime: "audio/mp4", size: 4, isImage: false)]
-
-        XCTAssertEqual(
-            MessageAttachment.contentWithoutAttachmentReferences(in: transcript, attachments: audioClip),
-            transcript
-        )
-    }
-
-    /// Without attachments there is no evidence at all, so pasted prose in the
-    /// same shape survives — and is never turned into inferred chips.
-    func testContentWithoutAttachmentReferencesKeepsUnattachedLookalikeProse() {
-        let content = "I've uploaded 3 file(s): the report, the notes and the slides"
-
-        XCTAssertEqual(MessageAttachment.contentWithoutAttachmentReferences(in: content, attachments: nil), content)
-        XCTAssertEqual(MessageAttachment.contentWithoutAttachmentReferences(in: content, attachments: []), content)
-        XCTAssertNil(MessageAttachment.inferredFromAttachedFilesMarker(in: content))
-    }
-
-    /// The optimistic row carries the same text the server will store, marker
-    /// included, so a user who types the synthesized wording *and* attaches the
-    /// file they named still sees their own words — before and after a reload.
-    func testContentWithoutAttachmentReferencesKeepsTypedLookalikeNamingItsAttachment() {
-        let typed = "I've uploaded 1 file(s): report.pdf"
-        let attachments = [MessageAttachment(name: "report.pdf", path: "/tmp/workspace/report.pdf", mime: "application/pdf", size: 4, isImage: false)]
-        // An older stored message: the typed text plus the marker the App appended before TAL-635.
-        let sent = "\(typed)\n\n[Attached files: /tmp/workspace/report.pdf]"
-
-        XCTAssertEqual(MessageAttachment.contentWithoutAttachmentReferences(in: sent, attachments: attachments), typed)
-    }
-
-    /// A typed message that reads like the synthesized one still ends in a real
-    /// marker, so only the marker is stripped.
-    func testContentWithoutAttachmentReferencesKeepsLookalikeProseAheadOfMarker() {
-        let content = "I've uploaded 3 file(s): see below\n\n[Attached files: /tmp/a.png]"
-        let attachments = [MessageAttachment(name: "a.png", path: "/tmp/a.png", mime: "image/png", size: 4, isImage: true)]
-
-        XCTAssertEqual(
-            MessageAttachment.contentWithoutAttachmentReferences(in: content, attachments: attachments),
-            "I've uploaded 3 file(s): see below"
-        )
     }
 }
 

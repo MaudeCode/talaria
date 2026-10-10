@@ -6,7 +6,6 @@ struct MessageBubbleView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.pendingSteerControls) private var pendingSteerControls
-    @AppStorage(ChatTranscriptDisplaySettings.hidesAttachmentPathsKey) private var hidesAttachmentPaths = true
     @AppStorage(ChatTranscriptDisplaySettings.showsAssistantTurnTimestampsKey) private var showsAssistantTurnTimestamps = false
     @AppStorage(ChatTranscriptDisplaySettings.showsResponseSpeedKey) private var showsResponseSpeed = false
     /// Device-local disclosure for a body the server collapsed (TAL-456) or a prompt it folds (TAL-452).
@@ -517,16 +516,8 @@ struct MessageBubbleView: View {
         }
     }
 
-    /// The user bubble's text, with the appended attachment-path marker stripped
-    /// when the user has opted to hide it. Display-only: `message.content` and the
-    /// sent payload are untouched.
     private var userBubbleText: String {
-        let content = collapsedExcerpt ?? message.content ?? ""
-        guard hidesAttachmentPaths else { return content }
-        return MessageAttachment.contentWithoutAttachmentReferences(
-            in: content,
-            attachments: message.attachments
-        )
+        collapsedExcerpt ?? message.content ?? ""
     }
 
     private var hasVisibleUserBubbleText: Bool {

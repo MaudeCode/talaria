@@ -1533,9 +1533,10 @@ extension ChatViewModelSendTests {
                 "messages": [
                   {
                     "role": "user",
-                    "content": "Summarize it\\n\\n[Attached files: /tmp/workspace/photo.png]",
+                    "content": "Summarize it",
                     "timestamp": 1770000001,
-                    "message_id": "user-1"
+                    "message_id": "user-1",
+                    "attachments": [{"name": "photo.png", "path": "/tmp/workspace/photo.png", "mime": "image/png"}]
                   },
                   {
                     "role": "assistant",

@@ -250,9 +250,9 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(viewModel.messages.first?.attachments?.compactMap(\.path), startedAttachmentPaths)
     }
 
-    /// TAL-635: a server from before `named_in_prompt` does not name attached files in the prompt,
-    /// so the App still names them in the text for it.
-    func testSendNamesFilesInTheTextForAServerThatDoesNotNameThem() async throws {
+    /// TAL-602: the App never writes the attached-files line itself, even when the upload omits
+    /// `named_in_prompt`, so neither the request nor the bubble carries a generated path.
+    func testSendCarriesTheBareDraftWhenTheUploadOmitsNamedInPrompt() async throws {
         var startedMessage: String?
         let viewModel = try makeViewModel { request in
             switch request.url?.path {
@@ -282,7 +282,8 @@ extension ChatViewModelSendTests {
         let didStart = await viewModel.sendMessage("Summarize this")
 
         XCTAssertTrue(didStart)
-        XCTAssertEqual(startedMessage, "Summarize this\n\n[Attached files: /tmp/workspace/notes.txt]")
+        XCTAssertEqual(startedMessage, "Summarize this")
+        XCTAssertEqual(viewModel.messages.first?.content, "Summarize this")
     }
 
     /// TAL-635: the server keeps at most `max_attachments_per_message` on a message, so one more

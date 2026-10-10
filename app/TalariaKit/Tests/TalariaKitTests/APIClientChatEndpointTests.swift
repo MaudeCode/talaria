@@ -172,28 +172,6 @@ final class APIClientChatEndpointTests: APIClientTestCase {
         XCTAssertEqual(requestCount, 2)
     }
 
-    /// TAL-635: a server that names attached files in the prompt gets the bare draft; one that does
-    /// not still gets the files named in the text.
-    func testChatMessageTextIsTheBareDraftOnlyWhenTheServerNamesEveryFile() {
-        func file(_ name: String, named: Bool) -> PendingAttachment {
-            PendingAttachment(name: name, path: "/tmp/workspace/\(name)", mime: "text/plain", isImage: false, isNamedInPromptByServer: named)
-        }
-
-        XCTAssertEqual(
-            PendingAttachment.chatMessageText(draft: "Analyze these", attachments: [file("a.txt", named: true), file("b.txt", named: true)]),
-            "Analyze these"
-        )
-        XCTAssertEqual(PendingAttachment.chatMessageText(draft: "", attachments: [file("a.txt", named: true)]), "")
-        XCTAssertEqual(
-            PendingAttachment.chatMessageText(draft: "Analyze these", attachments: [file("a.txt", named: false)]),
-            "Analyze these\n\n[Attached files: /tmp/workspace/a.txt]"
-        )
-        XCTAssertEqual(
-            PendingAttachment.chatMessageText(draft: "", attachments: [file("a.txt", named: false)]),
-            "I've uploaded 1 file(s): /tmp/workspace/a.txt"
-        )
-    }
-
     func testChatAttachmentPreviewItemInfersImageMessageAttachment() {
         let item = ChatAttachmentPreviewItem(
             message: MessageAttachment(

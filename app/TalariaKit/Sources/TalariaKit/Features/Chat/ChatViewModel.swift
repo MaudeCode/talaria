@@ -2453,18 +2453,7 @@ public final class ChatViewModel {
     }
 
     nonisolated private static func normalizedUserMessageContent(_ message: ChatMessage) -> String {
-        guard let content = message.content else { return "" }
-
-        // Share the single parser with the display layer so the two can never
-        // disagree about what counts as an attachment reference — including the
-        // synthesized message, which an attachment-only send shows as an empty
-        // optimistic bubble while the server replays it as text. Its own
-        // attachments are the evidence, so an unattached message that merely
-        // reads like it is never collapsed into a match. Trim the result because
-        // this normalized form is compared for dedup equality.
-        return MessageAttachment
-            .contentWithoutAttachmentReferences(in: content, attachments: message.attachments)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        (message.content ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     nonisolated private static func attachmentKeys(for message: ChatMessage) -> Set<String> {
@@ -2499,13 +2488,11 @@ public final class ChatViewModel {
             return ChatSendOutcome(didStart: false)
         }
 
-        // A server that names attached files in the prompt (TAL-276) gets the bare draft, as Web
-        // sends it; adding an `[Attached files: …]` line there sent it to the agent twice
-        // (TAL-635). An older server still gets the files named in the text. A textless send is
-        // valid when it carries staged files: compose before `prepareForSend` consumes them.
-        let draftText = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        // The bare draft, as Web sends it: the server names attached files in the prompt (TAL-276),
+        // so adding an `[Attached files: …]` line sent it to the agent twice (TAL-635). A textless
+        // send is valid when it carries staged files: read them before `prepareForSend` consumes them.
+        let message = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         let attachmentsToSend = queuedAttachments ?? attachmentCoordinator.pendingAttachments
-        let message = PendingAttachment.chatMessageText(draft: draftText, attachments: attachmentsToSend)
         let hasSendableAttachments = attachmentsToSend.contains {
             !$0.path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
@@ -2628,8 +2615,8 @@ public final class ChatViewModel {
             isImage: pending.isImage
         )
         let localMessageID = "local-\(UUID().uuidString)"
-        // The API message text is the bare transcript — NOT chatMessageText(…),
-        // which would append a "[Attached files: <clip>.m4a]" suffix. That suffix
+        // The API message text is the bare transcript, never with a
+        // "[Attached files: <clip>.m4a]" suffix appended. That suffix
         // is the agent's only signal about a non-image attachment (the server
         // strips attachment metadata before the model call and never embeds audio),
         // so it makes the agent try to "inspect" / transcribe the clip itself
