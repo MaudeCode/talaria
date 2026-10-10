@@ -21,7 +21,7 @@ import { automationRouter } from './api/automation-router.js'
 import { handleDashboardPlugin, handleExtensionSidecarProxy, handleExtensionStatic, handleKanbanEventsStream, handleTerminalOutput, matchSidecarProxy } from './api/automation-raw.js'
 import { handleApprovalStream, handleChatStream, handleClarifyStream, handleGatewayStream, handleSessionEvents, handleSessionJournalStream, handleSessionStream, sessionEventsPathSessionId } from './api/sse-routes.js'
 import { BodyError, RequestContext, acceptsEncoding, loggedUrl, type AppDeps, type HeaderMap } from './http/context.js'
-import { activeProfileName, checkAuth, checkCsrf, csrfError, getProfileCookie, isCsrfExemptPath, isPublicPath } from './auth/gate.js'
+import { activeProfileName, checkAuth, checkCsrf, clearProfileCookieHeader, csrfError, getProfileCookie, isCsrfExemptPath, isPublicPath } from './auth/gate.js'
 import { guardQuerySessionId } from './api/session-visibility.js'
 import { checkSameOriginBrowserRequest } from './http/origin.js'
 import { coreRouter, HttpError, errorResponseBody, errorResponseHeaders, shellLanguage, startupUnavailable, type ApiContext } from './api/router.js'
@@ -341,8 +341,10 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
         preflight(ctx)
         return
       }
+      // A cookie naming a profile whose home now resolves outside the profiles root is dropped, like an invalid name.
       const profile = await getProfileCookie(ctx)
-      if (profile) ctx.requestProfile = profile
+      if (profile && deps.profiles.escapes(profile)) ctx.queueCookie(clearProfileCookieHeader(ctx))
+      else if (profile) ctx.requestProfile = profile
       const path = ctx.path
       if (path.startsWith('/api/') && (ctx.header('origin') ?? '').trim().toLowerCase() === 'null') {
         ctx.rawJson(403, { error: 'Sandboxed documents cannot call the API directly' })
@@ -363,6 +365,12 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
         return
       }
       if (path.startsWith('/api/') && !guardQuerySessionId(ctx)) return
+      // A bound or process-wide profile whose home resolves outside the profiles root is refused rather than served from
+      // the root home `profileHome` clamps it to; listing profiles and switching away stay open.
+      if (path.startsWith('/api/') && !isPublicPath(path) && path !== '/api/profile/switch' && path !== '/api/profiles' && deps.profiles.escapes(activeProfileName(ctx))) {
+        ctx.json({ error: escapedProfileMessage(activeProfileName(ctx)) }, { status: 400 })
+        return
+      }
       // A profile-scoped write racing that profile's deletion RPC could resurrect a partially populated home
       // (`config.set` recreates the parent): every unsafe request under a profile holds a write lease for its
       // lifetime — deletion waits for leases to drain, and a request arriving during deletion is refused (409).
@@ -379,10 +387,6 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
         }
         if (lease === 'unreadable') {
           ctx.json({ error: 'Profile deletion records are unreadable; retry in a moment.' }, { status: 503 })
-          return
-        }
-        if (lease === 'escaped') {
-          ctx.json({ error: escapedProfileMessage(activeProfileName(ctx)) }, { status: 400 })
           return
         }
         releaseWrite = lease

@@ -152,6 +152,33 @@ describe('isolation flag semantics', () => {
   })
 })
 
+describe('an escaped process-wide profile', () => {
+  it('refuses profile-scoped API requests instead of serving the root home, and leaves listing and switching away open', async () => {
+    const base = mkdtempSync(join(tmpdir(), 'talaria-escaped-'))
+    const outside = mkdtempSync(join(tmpdir(), 'talaria-escape-'))
+    mkdirSync(join(base, 'profiles'), { recursive: true })
+    symlinkSync(outside, join(base, 'profiles', 'rogue'))
+    writeFileSync(join(base, 'active_profile'), 'rogue\n')
+    writeFileSync(join(base, 'config.yaml'), '# seed\n')
+    const sidecar = new FakeSidecar()
+    sidecar.respond('profiles.list', () => ({ profiles: [row('default', { is_default: true, path: base })] as never[] }))
+    sidecar.respond('config.get', (params) => ({ path: join(params.profile_home, 'config.yaml'), exists: true, config: {} }))
+    const s = await bootTestServer({ sidecar, env: { HERMES_HOME: base } })
+    try {
+      expect(s.deps.activeProfile()).toBe('rogue')
+      const refused = await s.get('/api/profile/active')
+      expect(refused.status).toBe(400)
+      expect(await refused.text()).toContain('outside the profiles directory')
+      expect((await s.get('/api/profiles')).status).toBe(200)
+      expect((await post(s, '/api/profile/switch', { name: 'default' })).status).toBe(200)
+    } finally {
+      await s.close()
+      rmSync(base, { recursive: true, force: true })
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+})
+
 describe('profile home routing and root aliases', () => {
   let s: TestServer
   let sidecar: FakeSidecar
@@ -316,7 +343,7 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
         expect(created.status, name).toBe(400)
         expect(await created.text(), name).toContain('outside the profiles directory')
       }
-      expect(s.deps.profileHome('inside')).toBe(join(s.state, 'profiles', 'inside'))
+      expect(s.deps.profileHome('inside')).toBe(realpathSync(workHome))
       expect((await post(s, '/api/profile/switch', { name: 'inside' })).status).toBe(200)
     } finally {
       for (const name of ['escape', 'dangling', 'inside']) rmSync(join(s.state, 'profiles', name), { force: true })
@@ -324,7 +351,7 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     }
   })
 
-  it('a cookie for a profile whose home later escapes the profiles root cannot write under the root home', async () => {
+  it('a cookie for a profile whose home later escapes the profiles root is dropped, never served from the root home', async () => {
     const home = join(s.state, 'profiles', 'turncoat')
     mkdirSync(home, { recursive: true })
     writeFileSync(join(home, 'config.yaml'), '# seed\n')
@@ -335,9 +362,9 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     rmSync(home, { recursive: true, force: true })
     symlinkSync(outside, home)
     try {
-      const refused = await post(s, '/api/session/new', {}, { cookie })
-      expect(refused.status).toBe(400)
-      expect(await refused.text()).toContain('outside the profiles directory')
+      const res = await s.get('/api/profile/active', { headers: { cookie } })
+      expect(res.headers.get('set-cookie')).toMatch(/^hermes_profile=(""|);.*Max-Age=0/)
+      expect((await json(res)).name).toBe('default')
     } finally {
       rmSync(home, { force: true })
       rmSync(outside, { recursive: true, force: true })

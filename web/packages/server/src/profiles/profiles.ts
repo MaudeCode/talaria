@@ -19,17 +19,20 @@ export const PROFILE_ID_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/
 
 /**
  * Python `_resolve_named_profile_home`: `<base>/profiles/<name>`, or null when it resolves outside the resolved
- * profiles root (a symlink leading elsewhere, or dangling). A home not created yet stays valid.
+ * profiles root (a symlink leading elsewhere, or dangling). A home not created yet stays valid. A contained symlink
+ * answers its checked target, so retargeting the link afterwards cannot redirect callers.
  */
 export function containedProfileHome(baseHome: string, name: string): string | null {
   const root = join(baseHome, 'profiles')
   const home = join(root, name)
-  let real: string
-  try { real = realpathSync.native(home) } catch {
+  try {
+    const real = realpathSync.native(home)
+    if (!isWithin(real, resolvePathLikePython(root))) return null
+    return lstatSync(home).isSymbolicLink() ? real : home
+  } catch {
     try { lstatSync(home) } catch { return home }
     return null
   }
-  return isWithin(real, resolvePathLikePython(root)) ? home : null
 }
 
 export const escapedProfileMessage = (name: string): string => `Profile '${name}' resolves outside the profiles directory.`
@@ -127,7 +130,7 @@ export class ProfileService {
   }
 
   /** `profileHome` clamps a named home resolving outside the profiles root to the base home; such a name is refused instead. */
-  private escapes(name: string): boolean {
+  escapes(name: string): boolean {
     return !this.deps.isolatedProfileMode() && !this.isRootProfile(name) && PROFILE_ID_RE.test(name) && containedProfileHome(this.deps.baseHome, name) === null
   }
 
@@ -171,6 +174,7 @@ export class ProfileService {
     if (this.deps.isolatedProfileMode()) throw new ProfileError('Profile creation is not allowed in isolated profile mode.', 403)
     validateProfileName(opts.name)
     this.assertContained(opts.name)
+    if (opts.clone_from) this.assertContained(opts.clone_from)
     if (opts.clone_from && !this.isRootProfile(opts.clone_from)) validateProfileName(opts.clone_from)
     const [model, provider] = splitProviderModel(opts.default_model, opts.model_provider)
     if (model || provider) {
@@ -190,7 +194,6 @@ export class ProfileService {
       if (lease === 'deleting') throw new ProfileError(`Profile '${opts.clone_from}' is being deleted.`, 409)
       if (lease === 'missing') throw new ProfileError(`Profile '${opts.clone_from}' does not exist.`, 404)
       if (lease === 'unreadable') throw new ProfileError('Profile deletion records are unreadable; retry in a moment.', 503)
-      if (lease === 'escaped') throw new ProfileError(escapedProfileMessage(opts.clone_from), 400)
       releaseSource = lease
     }
     // Sidecar creation and the follow-up configuration writes are one lifecycle step: a delete of the same name
@@ -314,12 +317,10 @@ export class ProfileService {
    * Lease a profile-scoped write for a request's lifetime. `'deleting'` while the profile's deletion RPC runs (409);
    * `'missing'` for a profile this process deleted until a recreation fully succeeds (404) — a stale cookie must
    * never recreate it, not even while `profiles.create` is mid-flight. Profiles that merely never existed keep lazy
-   * creation (group-mapped trusted identities). `'escaped'` while its home resolves outside the profiles root (400):
-   * `profileHome` maps it to the base home, so a stale cookie's writes would land in the root profile.
+   * creation (group-mapped trusted identities).
    */
-  beginWrite(name: string): (() => void) | 'deleting' | 'missing' | 'unreadable' | 'escaped' {
+  beginWrite(name: string): (() => void) | 'deleting' | 'missing' | 'unreadable' {
     if (this.deleting.has(name)) return 'deleting'
-    if (this.escapes(name)) return 'escaped'
     // An unreadable tombstone record cannot vouch for any named profile: retry the load, else fail closed (the root
     // profile can never be deleted, so it stays writable).
     if (this.tombstoneLoadError !== null && !this.isRootProfile(name)) {
