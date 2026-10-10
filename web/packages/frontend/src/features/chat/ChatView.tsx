@@ -34,6 +34,7 @@ import { ErrorState, formatDate } from '../../ui/States'
 import { readPersisted, removePersisted, writePersisted } from '../../lib/persisted'
 import type { ActivityMode } from './blocks/Worklog'
 import { createSessionNow } from '../sessions/useNewChat'
+import { WorktreeRemoveDialog } from '../sessions/WorktreeRemoveDialog'
 import { beginDock, playDock, requestScroll } from './sendMotion'
 import { bindFirstSend, ownsFirstSend, useFirstSend } from './firstSend'
 
@@ -89,6 +90,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     return created
   }, [session, settings.data, bootstrap.profile, qc, navigate, pending])
 
+  const [removingWorktree, setRemovingWorktree] = useState(false)
   // TAL-605: a new conversation in its own git worktree of the chosen workspace; the server creates the worktree.
   const newWorktreeChat = useCallback(async (workspace: string | undefined) => {
     try {
@@ -367,7 +369,9 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
           onToggleTerminal={() => setTerminalOpen((t) => !t)}
           onModelChange={onModelChange}
           onWorkspaceChange={onWorkspaceChange}
-          onNewWorktreeChat={(ws) => { void newWorktreeChat(ws) }}
+          // The server refuses worktrees for a profile without local I/O (a remote terminal backend), so none is offered.
+          onNewWorktreeChat={bootstrap.features.terminal_remote_backend ? undefined : (ws) => { void newWorktreeChat(ws) }}
+          onRemoveWorktree={sessionId && session?.worktree_branch ? () => setRemovingWorktree(true) : undefined}
           onToolsetsChange={onToolsetsChange}
           onReasoningChange={setReasoning}
           reasoning={reasoning}
@@ -387,6 +391,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
         <span className="sr-only" aria-live="polite" id="a11yAnnouncer">{live?.status === 'done' ? m.done() : ''}</span>
       </div>
       {/* Always mounted beside main (its queries run only while open) so opening and closing animate and the edge tab is always there. */}
+      {sessionId && removingWorktree && <WorktreeRemoveDialog sessionId={sessionId} onClose={() => setRemovingWorktree(false)} />}
       {sessionId && <ChatSidePanel key={sessionId} sessionId={sessionId} workspace={workspace} open={sidePanelOpen} onToggle={toggleSidePanel} onClose={() => setSidePanelOpen(false)} />}
     </>
   )

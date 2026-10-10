@@ -20,7 +20,7 @@ export function Dialog({ open, onOpenChange, title, description, children, class
         <BaseDialog.Backdrop className="fixed inset-0 z-[1300] bg-black/50" />
         <BaseDialog.Popup className={cn('fixed left-1/2 top-1/2 z-[1301] w-[min(92vw,520px)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-surface p-5 text-text shadow-md outline-none', className)}>
           <BaseDialog.Title className="text-base font-semibold text-strong">{title}</BaseDialog.Title>
-          {description && <BaseDialog.Description className="mt-1 text-sm text-muted">{description}</BaseDialog.Description>}
+          {description && <BaseDialog.Description className="mt-1 text-sm text-muted [overflow-wrap:anywhere]">{description}</BaseDialog.Description>}
           <div className="mt-4">{children}</div>
         </BaseDialog.Popup>
       </BaseDialog.Portal>
