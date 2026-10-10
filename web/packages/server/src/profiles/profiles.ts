@@ -32,6 +32,8 @@ export function containedProfileHome(baseHome: string, name: string): string | n
   return isWithin(real, resolvePathLikePython(root)) ? home : null
 }
 
+export const escapedProfileMessage = (name: string): string => `Profile '${name}' resolves outside the profiles directory.`
+
 export class ProfileError extends Error {
   constructor(message: string, readonly status: number) {
     super(message)
@@ -124,9 +126,13 @@ export class ProfileService {
     return { name: active, path: this.deps.profileHome(active), is_default: this.isRootProfile(active), default_workspace: workspace }
   }
 
-  /** `profileHome` clamps a named home resolving outside the profiles root to the base home; refuse the name instead. */
+  /** `profileHome` clamps a named home resolving outside the profiles root to the base home; such a name is refused instead. */
+  private escapes(name: string): boolean {
+    return !this.deps.isolatedProfileMode() && !this.isRootProfile(name) && PROFILE_ID_RE.test(name) && containedProfileHome(this.deps.baseHome, name) === null
+  }
+
   private assertContained(name: string): void {
-    if (!this.deps.isolatedProfileMode() && !this.isRootProfile(name) && containedProfileHome(this.deps.baseHome, name) === null) throw new ProfileError(`Profile '${name}' resolves outside the profiles directory.`, 400)
+    if (this.escapes(name)) throw new ProfileError(escapedProfileMessage(name), 400)
   }
 
   /** Python `switch_profile(process_wide=False)`: validate, then answer the target's defaults. */
@@ -184,6 +190,7 @@ export class ProfileService {
       if (lease === 'deleting') throw new ProfileError(`Profile '${opts.clone_from}' is being deleted.`, 409)
       if (lease === 'missing') throw new ProfileError(`Profile '${opts.clone_from}' does not exist.`, 404)
       if (lease === 'unreadable') throw new ProfileError('Profile deletion records are unreadable; retry in a moment.', 503)
+      if (lease === 'escaped') throw new ProfileError(escapedProfileMessage(opts.clone_from), 400)
       releaseSource = lease
     }
     // Sidecar creation and the follow-up configuration writes are one lifecycle step: a delete of the same name
@@ -307,10 +314,12 @@ export class ProfileService {
    * Lease a profile-scoped write for a request's lifetime. `'deleting'` while the profile's deletion RPC runs (409);
    * `'missing'` for a profile this process deleted until a recreation fully succeeds (404) — a stale cookie must
    * never recreate it, not even while `profiles.create` is mid-flight. Profiles that merely never existed keep lazy
-   * creation (group-mapped trusted identities).
+   * creation (group-mapped trusted identities). `'escaped'` while its home resolves outside the profiles root (400):
+   * `profileHome` maps it to the base home, so a stale cookie's writes would land in the root profile.
    */
-  beginWrite(name: string): (() => void) | 'deleting' | 'missing' | 'unreadable' {
+  beginWrite(name: string): (() => void) | 'deleting' | 'missing' | 'unreadable' | 'escaped' {
     if (this.deleting.has(name)) return 'deleting'
+    if (this.escapes(name)) return 'escaped'
     // An unreadable tombstone record cannot vouch for any named profile: retry the load, else fail closed (the root
     // profile can never be deleted, so it stays writable).
     if (this.tombstoneLoadError !== null && !this.isRootProfile(name)) {

@@ -28,6 +28,7 @@ import { coreRouter, HttpError, errorResponseBody, errorResponseHeaders, shellLa
 import { isSpaPath } from './spa.js'
 import { buildCspReportOnlyPolicy, CSP_REPORT_TO } from './http/csp.js'
 import { STARTUP_IMMEDIATE_PATHS } from './startup.js'
+import { escapedProfileMessage } from './profiles/profiles.js'
 
 const SHELL_ERROR_HTML = `<!doctype html>
 <html lang="en">
@@ -378,6 +379,10 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
         }
         if (lease === 'unreadable') {
           ctx.json({ error: 'Profile deletion records are unreadable; retry in a moment.' }, { status: 503 })
+          return
+        }
+        if (lease === 'escaped') {
+          ctx.json({ error: escapedProfileMessage(activeProfileName(ctx)) }, { status: 400 })
           return
         }
         releaseWrite = lease

@@ -324,6 +324,26 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     }
   })
 
+  it('a cookie for a profile whose home later escapes the profiles root cannot write under the root home', async () => {
+    const home = join(s.state, 'profiles', 'turncoat')
+    mkdirSync(home, { recursive: true })
+    writeFileSync(join(home, 'config.yaml'), '# seed\n')
+    const switched = await post(s, '/api/profile/switch', { name: 'turncoat' })
+    const cookie = (switched.headers.get('set-cookie') ?? '').split(';')[0] ?? ''
+    expect(cookie).toMatch(/^hermes_profile=turncoat/)
+    const outside = mkdtempSync(join(tmpdir(), 'talaria-escape-'))
+    rmSync(home, { recursive: true, force: true })
+    symlinkSync(outside, home)
+    try {
+      const refused = await post(s, '/api/session/new', {}, { cookie })
+      expect(refused.status).toBe(400)
+      expect(await refused.text()).toContain('outside the profiles directory')
+    } finally {
+      rmSync(home, { force: true })
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
   it('foreign cron jobs are hidden by default and counted; all_profiles shows them read-only', async () => {
     cronJobs.clear()
     cronJobs.set(s.state, [{ id: 'd1', name: 'mine', profile: null, toast_notifications: true, monitor: '', continuity: false }])
