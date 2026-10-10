@@ -508,7 +508,12 @@ export function Composer(props: ComposerProps) {
   const hide = (k: string) => (!!clarify && MESSAGE_ONLY_CONTROLS.has(k)) || !!(settings as Record<string, unknown> | undefined)?.[k]
   const modelChoice = session?.model ? { model: session.model, optionId: session.model_option_id ?? null } : { model: pendingChoices?.model ?? null, optionId: pendingChoices?.model ?? null }
   const placeholder = clarify ? (clarify.step.choices.length ? m.clarify_composer_placeholder_choices() : m.clarify_composer_placeholder()) : busy ? (busyMode === 'queue' ? m.composer_placeholder_busy_queue() : busyMode === 'interrupt' ? m.composer_placeholder_busy_interrupt() : m.composer_placeholder_busy_steer()) : m.composer_placeholder()
-  const context: ContextFigures = { percent: session?.context_usage_percent, used: session?.context_used_tokens, window: session?.context_window_tokens, thresholdPercent: session?.context_threshold_percent }
+  const context: ContextFigures = {
+    percent: session?.context_usage_percent, used: session?.context_used_tokens, window: session?.context_window_tokens, thresholdPercent: session?.context_threshold_percent,
+    input: session?.input_tokens, output: session?.output_tokens, cacheRead: session?.cache_read_tokens, cacheWrite: session?.cache_write_tokens, cacheHitPercent: session?.cache_hit_percent, cost: session?.estimated_cost,
+    // The same manual compression `/compress` runs.
+    onCompress: sessionId ? () => { void onLocalCommand('compress', '') } : undefined, compressing: locked,
+  }
   const canSend = (text.trim() !== '' || files.some((f) => f.status === 'done')) && !sending && !locked
   // Phone composer at rest: one prompt row (UIUX guide), and the strip under it folds away too.
   const collapsed = phone && !text && files.length === 0 && !busy && !focusWithin && !configOpen && !dragOver

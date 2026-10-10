@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { Popover } from '@base-ui/react/popover'
 import { ChevronDown, Cpu, Brain, Wrench, FolderOpen, GitBranch } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import { useModelsQuery, useWorkspacesQuery } from '../../app/queries'
@@ -114,16 +115,36 @@ export function WorkspaceChip({ value, name, onChange, onNewWorktree, onRemoveWo
   )
 }
 
-/** The context ring's server figures (TAL-299): rendered as sent, nothing derived here. */
-export interface ContextFigures { percent: number | null | undefined; used: number | null | undefined; window: number | null | undefined; thresholdPercent?: number | null | undefined }
-
-function contextStats({ percent, used, window, thresholdPercent }: ContextFigures) {
-  if (percent == null || used == null || window == null) return null
-  const tone = percent >= 90 ? 'high' : percent >= 70 ? 'mid' : 'low'
-  const title = `${m.composer_context_usage()}: ${percent}% (${used.toLocaleString()} / ${window.toLocaleString()})${thresholdPercent != null ? ` · ${m.auto_compress_label()}: ${thresholdPercent}%` : ''}`
-  return { pct: percent, used, window, tone, title }
+/**
+ * The context ring's server figures (TAL-299) and the session's usage counters (TAL-614): rendered as sent, nothing
+ * derived here. `onCompress` runs the chat's manual compression; `compressing` disables it while a job runs.
+ */
+export interface ContextFigures {
+  percent: number | null | undefined; used: number | null | undefined; window: number | null | undefined; thresholdPercent?: number | null | undefined
+  input?: number | undefined; output?: number | undefined; cacheRead?: number | undefined; cacheWrite?: number | undefined; cacheHitPercent?: number | null | undefined; cost?: number | null | undefined
+  onCompress?: (() => void) | undefined; compressing?: boolean | undefined
 }
 
+function contextStats({ percent, used, window, thresholdPercent, input, output, cacheRead, cacheWrite, cacheHitPercent, cost }: ContextFigures) {
+  if (percent == null || used == null || window == null) return null
+  const tone = percent >= 90 ? 'high' : percent >= 70 ? 'mid' : 'low'
+  const threshold = thresholdPercent != null ? `${m.auto_compress_label()}: ${thresholdPercent}%` : null
+  const title = `${m.composer_context_usage()}: ${percent}% (${used.toLocaleString()} / ${window.toLocaleString()})${threshold ? ` · ${threshold}` : ''}`
+  // The popover's and phone row's detail lines, after the headline usage line.
+  const details = [
+    `${used.toLocaleString()} / ${window.toLocaleString()}`,
+    threshold,
+    input != null ? `${m.usage_input_tokens()}: ${input.toLocaleString()}` : null,
+    output != null ? `${m.usage_output_tokens()}: ${output.toLocaleString()}` : null,
+    cost ? `${m.usage_estimated_cost()}: ${cost.toLocaleString(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 4 })}` : null,
+    cacheHitPercent != null ? m.usage_cache_hit_detail({ a0: cacheHitPercent, a1: (cacheRead ?? 0).toLocaleString(), a2: (cacheWrite ?? 0).toLocaleString() }) : null,
+  ].filter((d) => d !== null)
+  return { pct: percent, tone, title, usage: `${m.composer_context_usage()}: ${percent}%`, details }
+}
+
+const COMPRESS_CLASS = 'self-start rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-fg outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring) disabled:opacity-60'
+
+/** The footer ring; a click opens the usage figures and Compress now, as legacy's ring did. */
 export function ContextRing(figures: ContextFigures) {
   const st = contextStats(figures)
   if (!st) return null
@@ -133,13 +154,24 @@ export function ContextRing(figures: ContextFigures) {
   const tone = t === 'high' ? 'text-error' : t === 'mid' ? 'text-warning' : 'text-accent'
   return (
     <div className="ctx-indicator-wrap relative flex items-center" id="ctxIndicatorWrap">
-      <button type="button" className={cn('ctx-indicator relative flex h-8 w-8 items-center justify-center rounded-full', tone)} aria-label={title} title={title} id="ctxIndicator">
-        <svg viewBox="0 0 24 24" className="h-6 w-6 -rotate-90" aria-hidden="true">
-          <circle cx="12" cy="12" r={r} fill="none" stroke="currentColor" strokeWidth="2" opacity="0.2" />
-          <circle cx="12" cy="12" r={r} fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray={c} strokeDashoffset={c - (c * pct) / 100} strokeLinecap="round" />
-        </svg>
-        <span className="absolute text-[8px] font-semibold tabular-nums" id="ctxPercent">{pct}</span>
-      </button>
+      <Popover.Root>
+        <Popover.Trigger className={cn('ctx-indicator relative flex h-8 w-8 items-center justify-center rounded-full', tone)} aria-label={title} title={title} id="ctxIndicator">
+          <svg viewBox="0 0 24 24" className="h-6 w-6 -rotate-90" aria-hidden="true">
+            <circle cx="12" cy="12" r={r} fill="none" stroke="currentColor" strokeWidth="2" opacity="0.2" />
+            <circle cx="12" cy="12" r={r} fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray={c} strokeDashoffset={c - (c * pct) / 100} strokeLinecap="round" />
+          </svg>
+          <span className="absolute text-[8px] font-semibold tabular-nums" id="ctxPercent">{pct}</span>
+        </Popover.Trigger>
+        <Popover.Portal>
+          <Popover.Positioner side="top" align="end" sideOffset={6} className="z-[1500]">
+            <Popover.Popup id="ctxPopup" aria-label={m.composer_context_usage()} className="flex max-w-[min(20rem,calc(100vw-2rem))] flex-col gap-0.5 rounded-md border border-border bg-surface px-3 py-2 text-xs leading-relaxed text-text shadow-md outline-none">
+              <span className="font-medium">{st.usage}</span>
+              {st.details.map((d) => <span key={d} className="tabular-nums text-muted">{d}</span>)}
+              {figures.onCompress && <Popover.Close className={cn(COMPRESS_CLASS, 'mt-1.5')} id="ctxCompressBtn" disabled={figures.compressing} onClick={figures.onCompress}>{m.ctx_compress_now()}</Popover.Close>}
+            </Popover.Popup>
+          </Popover.Positioner>
+        </Popover.Portal>
+      </Popover.Root>
     </div>
   )
 }
@@ -152,9 +184,9 @@ export function ContextRow(figures: ContextFigures) {
     <div className={cn('composer-mobile-config-action composer-mobile-context-action', st.tone === 'mid' && 'ctx-mid', st.tone === 'high' && 'ctx-high')} role="group" aria-label={m.composer_mobile_context()} id="composerMobileContextAction">
       <span className="composer-mobile-config-copy composer-mobile-context-copy">
         <span className="composer-mobile-config-kicker">{m.composer_mobile_context()}</span>
-        <span className="composer-mobile-config-value">{m.composer_context_usage()}: {st.pct}%</span>
-        <span className="composer-mobile-context-detail">{st.used.toLocaleString()} / {st.window.toLocaleString()}</span>
-        {figures.thresholdPercent != null ? <span className="composer-mobile-context-detail">{m.auto_compress_label()}: {figures.thresholdPercent}%</span> : null}
+        <span className="composer-mobile-config-value">{st.usage}</span>
+        {st.details.map((d) => <span key={d} className="composer-mobile-context-detail">{d}</span>)}
+        {figures.onCompress && <button type="button" className={cn(COMPRESS_CLASS, 'mt-1')} id="composerMobileCompressBtn" disabled={figures.compressing} onClick={figures.onCompress}>{m.ctx_compress_now()}</button>}
       </span>
     </div>
   )

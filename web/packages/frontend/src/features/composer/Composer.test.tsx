@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import { openChatStream, type ChatStreamCallbacks } from '../../api/sse'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -205,6 +205,22 @@ describe('Composer', () => {
     // A threshold under half a percent of a large window is the server's 0, still shown.
     renderComposer({ ...idle, context_used_tokens: 10_000, context_window_tokens: 1_000_000, context_usage_percent: 1, context_threshold_percent: 0 })
     expect(document.getElementById('ctxIndicator')?.getAttribute('aria-label')).toMatch(/ · .*: 0%$/)
+  })
+
+  it('opens the context ring into the server usage figures and a Compress now action (TAL-614)', async () => {
+    const onLocalCommand = vi.fn(() => Promise.resolve(true))
+    renderComposer({ ...writable, is_streaming: false, context_used_tokens: 10_347, context_window_tokens: 128_000, context_usage_percent: 8, context_threshold_percent: 78, input_tokens: 52_000, output_tokens: 3_400, cache_read_tokens: 40_000, cache_write_tokens: 2_000, cache_hit_percent: 77, estimated_cost: 0.1234 }, null, noop, undefined, undefined, onLocalCommand)
+    await userEvent.click(document.getElementById('ctxIndicator')!)
+    const popup = await screen.findByRole('dialog')
+    expect(popup).toHaveTextContent('Context window usage: 8%')
+    expect(popup).toHaveTextContent('10,347 / 128,000')
+    expect(popup).toHaveTextContent('Automatic compression: 78%')
+    expect(popup).toHaveTextContent('Input tokens: 52,000')
+    expect(popup).toHaveTextContent('Output tokens: 3,400')
+    expect(popup).toHaveTextContent('Estimated cost: $0.1234')
+    expect(popup).toHaveTextContent('Cache: 77% hit (40,000 read / 2,000 write)')
+    await userEvent.click(within(popup).getByRole('button', { name: 'Compress now' }))
+    expect(onLocalCommand).toHaveBeenCalledWith('compress', '')
   })
 
   it('keeps only Stop while a turn runs and the draft is empty', () => {
