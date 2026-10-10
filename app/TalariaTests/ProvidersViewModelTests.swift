@@ -939,8 +939,28 @@ final class ProvidersViewModelTests: APIClientTestCase {
         XCTAssertFalse(model.isLoading)
         XCTAssertEqual(model.providers.map(\.id), ["openai-codex", "anthropic", "custom:glmcode"])
         XCTAssertEqual(model.activeProviderID, "openai-codex")
-        XCTAssertTrue(model.isActive(model.providers[0]))
+        XCTAssertTrue(model.isActive(model.providers[0]), "a pre-TAL-603 server: exact id match")
         XCTAssertFalse(model.isActive(model.providers[1]))
+    }
+
+    @MainActor
+    func testActiveBadgeFollowsTheServersIsActive() async {
+        let client = makeClient { request in
+            apiTestJSONResponse("""
+            {
+              "active_provider": "openai-codex",
+              "providers": [
+                { "id": "openai-codex", "is_active": false },
+                { "id": "anthropic", "is_active": true }
+              ]
+            }
+            """, for: request)
+        }
+        let model = ProvidersViewModel(server: Self.serverURL, client: client)
+
+        await model.load()
+
+        XCTAssertEqual(model.providers.map { model.isActive($0) }, [false, true])
     }
 
     @MainActor
@@ -1050,7 +1070,7 @@ final class ProvidersViewModelTests: APIClientTestCase {
     }
 
     @MainActor
-    func testActiveProviderMatchingIsTrimmedAndCaseInsensitive() {
+    func testPreferenceProviderKeyIsTrimmedAndCaseInsensitive() {
         XCTAssertEqual(ProvidersViewModel.normalizedProviderID("  OpenAI-Codex \n"), "openai-codex")
         XCTAssertNil(ProvidersViewModel.normalizedProviderID("   "))
         XCTAssertNil(ProvidersViewModel.normalizedProviderID(nil))
@@ -1073,30 +1093,22 @@ final class ProvidersViewModelTests: APIClientTestCase {
     }
 
     @MainActor
-    func testKeySourceBadgeCollapsesUpstreamVocabulary() {
-        func badge(_ keySource: String?, hasKey: Bool? = true) -> String? {
+    func testKeySourceBadgeRendersTheServersKind() {
+        func badge(_ kind: String?, keySource: String? = "env_file") -> String? {
             ProvidersViewModel.keySourceBadge(
-                for: ProviderSummary(id: "p", hasKey: hasKey, keySource: keySource)
+                for: ProviderSummary(id: "p", hasKey: true, keySource: keySource, keySourceKind: kind)
             )
         }
 
-        XCTAssertEqual(badge("env_file"), "env")
-        XCTAssertEqual(badge("env_var"), "env")
         XCTAssertEqual(badge("env"), "env")
         XCTAssertEqual(badge("oauth"), "OAuth")
-        XCTAssertEqual(badge("token"), "OAuth")
-        XCTAssertEqual(badge("config_yaml"), "config")
         XCTAssertEqual(badge("config"), "config")
-        XCTAssertEqual(badge(" OAuth "), "OAuth")
+        XCTAssertEqual(badge("pool"), "pool")
+        XCTAssertEqual(badge("plugin"), "plugin")
+        XCTAssertEqual(badge("other", keySource: "keychain"), "keychain")
 
-        // Unknown future sources pass through instead of being hidden.
-        XCTAssertEqual(badge("keychain"), "keychain")
-
-        // No badge without a key, or when the source is missing/none.
-        XCTAssertNil(badge("none"))
+        // The server sends no kind without a credential; a pre-TAL-603 server sends none at all.
         XCTAssertNil(badge(nil))
-        XCTAssertNil(badge("oauth", hasKey: false))
-        XCTAssertNil(badge("oauth", hasKey: nil))
     }
 
     @MainActor
@@ -1150,6 +1162,14 @@ final class ProvidersViewModelTests: APIClientTestCase {
 
         let bare = ProviderSummary(id: "p")
         XCTAssertEqual(ProvidersViewModel.modelCount(for: bare), 0)
+
+        // A pre-TAL-603 server can report fewer than it lists; a current one owns the count.
+        let three = [ProviderModel(id: "a"), ProviderModel(id: "b"), ProviderModel(id: "c")]
+        XCTAssertEqual(ProvidersViewModel.modelCount(for: ProviderSummary(id: "nous", models: three, modelsTotal: 2)), 3)
+        XCTAssertEqual(
+            ProvidersViewModel.modelCount(for: ProviderSummary(id: "nous", isActive: false, models: three, modelsTotal: 396)),
+            396
+        )
         XCTAssertNil(ProvidersViewModel.truncatedModelInfo(for: bare))
     }
 

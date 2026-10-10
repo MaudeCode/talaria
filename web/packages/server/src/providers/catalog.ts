@@ -14,7 +14,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { atomicWriteText } from '../fs/atomic.js'
 import type { SidecarLike } from '../sidecar/client.js'
-import type { SidecarParams, SidecarResult } from '@maudecode/talaria-web-contracts'
+import type { KeySourceKind, SidecarParams, SidecarResult } from '@maudecode/talaria-web-contracts'
 import { str } from '../util.js'
 import { QUOTA_THRESHOLD_DEFAULTS, type QuotaThresholds } from '../settings.js'
 import { loadEnvFile } from './env-file.js'
@@ -171,6 +171,9 @@ const configuredBaseUrl = (pid: string, config: Config): string => {
   const cfg = dict(providers[pid] ?? providers[Object.keys(providers).find((k) => providerIdentity(k) === providerIdentity(pid)) ?? ''])
   return str(cfg.base_url).trim() || (activeProviderFromConfig(config) === pid ? str(modelSection(config).base_url).trim() : '')
 }
+/** TAL-603: the credential family a card's badge names; `null` when the card holds no credential. */
+const KEY_SOURCE_KINDS: Record<string, KeySourceKind> = { env_file: 'env', env_var: 'env', env: 'env', oauth: 'oauth', token: 'oauth', config_yaml: 'config', config: 'config', credential_pool: 'pool', plugin: 'plugin' }
+const keySourceKind = (row: Dict): KeySourceKind | null => row.has_key === true && row.key_source !== 'none' ? KEY_SOURCE_KINDS[str(row.key_source)] ?? 'other' : null
 /** TAL-570: Ollama and LM Studio run keyless, so a configured endpoint makes them ready the way a key does. */
 const selfHostedEndpoint = (pid: string, config: Config): boolean => SELF_HOSTED_PROVIDER_IDS.has(pid) && Boolean(configuredBaseUrl(pid, config))
 /** Python `_unqualified_model_id`: strip a picker routing hint (`@provider:`). */
@@ -785,17 +788,26 @@ export class ProviderCatalog {
       // Python: an `api_key: ${VAR}` reference counts when the variable resolves.
       const cpKey = str(cp.api_key).trim()
       const envRef = /^\$\{([^}]+)\}$/.exec(cpKey)?.[1] ?? ''
-      const hasKey = envRef ? Boolean((this.processEnv(envRef, profileHome) ?? '').trim()) : valueCountsAsApiKey(slug, cp.api_key) || Boolean(str(cp.key_env).trim() && this.processEnv(str(cp.key_env).trim(), profileHome))
+      const yamlKey = !envRef && valueCountsAsApiKey(slug, cp.api_key)
+      const hasKey = envRef ? Boolean((this.processEnv(envRef, profileHome) ?? '').trim()) : yamlKey || Boolean(str(cp.key_env).trim() && this.processEnv(str(cp.key_env).trim(), profileHome))
+      // TAL-603: a `${VAR}` reference or `key_env` credential comes from the environment.
+      const keySource = yamlKey ? 'config_yaml' : hasKey ? 'env_var' : cpKey ? 'config_yaml' : 'none'
       rows.push({
         id: slug, display_name: name, has_key: hasKey, configured: hasKey,
-        configurable: false, is_oauth: false, is_plugin_provider: false, is_self_hosted: false, is_custom: true, key_source: str(cp.api_key).trim() ? 'config_yaml' : 'none',
+        configurable: false, is_oauth: false, is_plugin_provider: false, is_self_hosted: false, is_custom: true, key_source: keySource,
         base_url: str(cp.base_url).trim() || null, auth_error: null, env_var: null, models: ids.map((id) => ({ id, label: labelForModel(id, []) })), models_total: ids.length,
       })
     }
     // Python `_provider_sort_key`: active first, then `custom:*`, then keyed providers, then the rest (alphabetical within).
     const rank = (p: Dict): number => (str(p.id) === active ? 0 : str(p.id).startsWith('custom:') ? 1 : p.has_key ? 2 : 3)
     rows.sort((a, b) => rank(a) - rank(b) || (str(a.id) < str(b.id) ? -1 : str(a.id) > str(b.id) ? 1 : 0))
-    for (const row of rows) row.models = stampModelEntries(row.models as ModelEntry[], str(row.id))
+    for (const row of rows) {
+      row.models = stampModelEntries(row.models as ModelEntry[], str(row.id))
+      // TAL-603: the server decides the Active badge, the key badge and the count; a featured list never outnumbers its total.
+      row.is_active = str(row.id) === active
+      row.key_source_kind = keySourceKind(row)
+      row.models_total = Math.max(Number(row.models_total), (row.models as ModelEntry[]).length)
+    }
     const entry = { at: this.deps.now(), key: cacheKey, payload: { providers: rows, active_provider: active }, pooled: pooledIds }
     this.providersCache.set(profileHome, entry)
     return entry

@@ -251,6 +251,8 @@ final class APIClientProvidersTests: APIClientTestCase {
                   "is_plugin_provider": false,
                   "is_oauth": true,
                   "key_source": "oauth",
+                  "key_source_kind": "oauth",
+                  "is_active": true,
                   "auth_error": null,
                   "models": [
                     { "id": "gpt-5.5", "label": "GPT 5.5" },
@@ -268,6 +270,8 @@ final class APIClientProvidersTests: APIClientTestCase {
                   "is_plugin_provider": false,
                   "is_oauth": true,
                   "key_source": "oauth",
+                  "key_source_kind": null,
+                  "is_active": false,
                   "auth_error": "OAuth token expired — run hermes auth login anthropic",
                   "models": [],
                   "models_total": 0
@@ -303,6 +307,8 @@ final class APIClientProvidersTests: APIClientTestCase {
         XCTAssertEqual(codex.isPluginProvider, false)
         XCTAssertEqual(codex.isOauth, true)
         XCTAssertEqual(codex.keySource, "oauth")
+        XCTAssertEqual(codex.keySourceKind, "oauth")
+        XCTAssertEqual(codex.isActive, true)
         XCTAssertNil(codex.authError)
         XCTAssertEqual(codex.models?.count, 2)
         XCTAssertEqual(codex.models?.first?.id, "gpt-5.5")
@@ -311,6 +317,8 @@ final class APIClientProvidersTests: APIClientTestCase {
 
         let anthropic = providers[1]
         XCTAssertEqual(anthropic.hasKey, false)
+        XCTAssertNil(anthropic.keySourceKind)
+        XCTAssertEqual(anthropic.isActive, false)
         XCTAssertEqual(anthropic.authError, "OAuth token expired — run hermes auth login anthropic")
         XCTAssertEqual(anthropic.models, [])
 
@@ -322,6 +330,8 @@ final class APIClientProvidersTests: APIClientTestCase {
         XCTAssertNil(custom.isOauth)
         XCTAssertNil(custom.authError)
         XCTAssertEqual(custom.keySource, "config_yaml")
+        XCTAssertNil(custom.keySourceKind, "a pre-TAL-603 server omits the kind")
+        XCTAssertNil(custom.isActive)
         XCTAssertEqual(custom.models?.first?.id, "glm-4.7")
         XCTAssertEqual(custom.models?.first?.label, "glm-4.7")
     }

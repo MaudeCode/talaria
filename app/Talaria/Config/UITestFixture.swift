@@ -803,7 +803,11 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
                     "id": "fixture-provider",
                     "display_name": "Fixture Provider",
                     "has_key": true,
-                    "models": []
+                    "is_active": true,
+                    "key_source": "env_file",
+                    "key_source_kind": "env",
+                    "models": [],
+                    "models_total": 0
                 ]]
             ])
         case "/api/provider/quotas":

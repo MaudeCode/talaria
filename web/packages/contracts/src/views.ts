@@ -509,10 +509,18 @@ export const ModelEntrySchema = z.looseObject({ id: z.string(), label: z.string(
 export const ModelGroupSchema = z.looseObject({ provider: z.string(), provider_id: z.string().optional(), models: z.array(ModelEntrySchema), extra_models: z.array(ModelEntrySchema).optional() })
 export const ModelsSchema = z.looseObject({ active_provider: NullableString.optional(), default_model: z.string().optional(), default_provider_id: NullableString.optional(), default_bare_id: z.string().optional(), default_option_id: NullableString.optional(), groups: z.array(ModelGroupSchema), aliases: z.record(z.string(), Json).optional(), configured_model_badges: z.record(z.string(), Json).optional() })
 export type Models = z.infer<typeof ModelsSchema>
-/** `has_key` reports a credential; `configured` (TAL-570) is the row's setup status, which a keyless Ollama or LM Studio endpoint also meets. */
+/** TAL-603: where a card's credential comes from; `other` is a source the server cannot name, shown as its raw `key_source`. */
+export const KeySourceKindSchema = z.enum(['env', 'oauth', 'config', 'pool', 'plugin', 'other'])
+export type KeySourceKind = z.infer<typeof KeySourceKindSchema>
+/**
+ * `has_key` reports a credential; `configured` (TAL-570) is the row's setup status, which a keyless Ollama or LM Studio endpoint also meets.
+ * TAL-603: `is_active` marks the active provider's card; `key_source_kind` is the key badge (`null` without a credential);
+ * `models_total` is the catalog size, never below `models.length`. `is_active` and `key_source_kind` are absent from older servers.
+ */
 export const ProviderSchema = z.looseObject({
   id: z.string(), display_name: z.string().optional(), has_key: z.boolean().optional(), configured: z.boolean().optional(), configurable: z.boolean().optional(), is_oauth: z.boolean().optional(), is_plugin_provider: z.boolean().optional(), is_self_hosted: z.boolean().optional(),
   is_custom: z.boolean().optional(), key_source: z.string().optional(), base_url: NullableString.optional(), auth_error: NullableString.optional(), env_var: NullableString.optional(), models: z.array(ModelEntrySchema).optional(), models_total: z.number().optional(),
+  is_active: z.boolean().optional(), key_source_kind: KeySourceKindSchema.nullable().optional(),
 })
 export const ProvidersSchema = z.looseObject({ providers: z.array(ProviderSchema), active_provider: NullableString.optional() })
 export const QuotaLevelSchema = z.enum(['healthy', 'warning', 'critical', 'stale', 'unavailable'])

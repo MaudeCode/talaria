@@ -156,9 +156,9 @@ public struct ProvidersResponse: Decodable, Equatable {
 }
 
 
-/// One provider entry from `GET /api/providers`. `keySource` vocabulary upstream:
-/// `env_file`, `env_var`, `config_yaml`, `oauth`, `none` — plus `env`, `config`,
-/// and `token` from the live-auth fallback probe. Unknown values are kept verbatim.
+/// One provider entry from `GET /api/providers`. The server decides the Active
+/// badge (`isActive`) and the key badge (`keySourceKind`, TAL-603); `keySource`
+/// is the raw source a `keySourceKind` of `other` shows.
 public struct ProviderSummary: Decodable, Equatable, Sendable {
     public let id: String?
     public let displayName: String?
@@ -170,10 +170,14 @@ public struct ProviderSummary: Decodable, Equatable, Sendable {
     let isOauth: Bool?
     let isCustom: Bool?
     public let keySource: String?
+    /// `env`, `oauth`, `config`, `pool`, `plugin` or `other`; nil without a credential or from an older server.
+    public let keySourceKind: String?
+    /// Nil from a pre-TAL-603 server.
+    public let isActive: Bool?
     public let authError: String?
     public let models: [ProviderModel]?
-    /// Size of the provider's complete catalog. May exceed `models.count` when the
-    /// server trims the list to a featured subset (e.g. large Nous Portal accounts).
+    /// Size of the provider's complete catalog, never below `models.count`. Exceeds it
+    /// when the server trims the list to a featured subset (e.g. large Nous Portal accounts).
     public let modelsTotal: Int?
 
     enum CodingKeys: String, CodingKey {
@@ -187,6 +191,8 @@ public struct ProviderSummary: Decodable, Equatable, Sendable {
         case isOauth
         case isCustom
         case keySource
+        case keySourceKind
+        case isActive
         case authError
         case models
         case modelsTotal
@@ -203,6 +209,8 @@ public struct ProviderSummary: Decodable, Equatable, Sendable {
         isOauth: Bool? = nil,
         isCustom: Bool? = nil,
         keySource: String? = nil,
+        keySourceKind: String? = nil,
+        isActive: Bool? = nil,
         authError: String? = nil,
         models: [ProviderModel]? = nil,
         modelsTotal: Int? = nil
@@ -217,6 +225,8 @@ public struct ProviderSummary: Decodable, Equatable, Sendable {
         self.isOauth = isOauth
         self.isCustom = isCustom
         self.keySource = keySource
+        self.keySourceKind = keySourceKind
+        self.isActive = isActive
         self.authError = authError
         self.models = models
         self.modelsTotal = modelsTotal
@@ -234,6 +244,8 @@ public struct ProviderSummary: Decodable, Equatable, Sendable {
         isOauth = container.decodeLossyBoolIfPresent(forKey: .isOauth)
         isCustom = container.decodeLossyBoolIfPresent(forKey: .isCustom)
         keySource = container.decodeLossyStringIfPresent(forKey: .keySource)
+        keySourceKind = container.decodeLossyStringIfPresent(forKey: .keySourceKind)
+        isActive = container.decodeLossyBoolIfPresent(forKey: .isActive)
         authError = container.decodeLossyStringIfPresent(forKey: .authError)
         models = try? container.decodeIfPresent([ProviderModel].self, forKey: .models)
         modelsTotal = container.decodeLossyIntIfPresent(forKey: .modelsTotal)

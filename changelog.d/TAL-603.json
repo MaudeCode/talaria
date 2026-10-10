@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Providers settings show the same Active provider, key source, and model count on iPhone and Web.",
+      "highlight": false,
+      "components": ["app", "web"]
+    }
+  ]
+}
