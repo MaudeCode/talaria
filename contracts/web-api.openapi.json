@@ -57621,7 +57621,7 @@
     },
     "/api/media": {
       "get": {
-        "summary": "Local media referenced by the chat (allow-listed roots, MEDIA: tokens, or an immutable snapshot).",
+        "summary": "Local media referenced by the chat (allow-listed roots or MEDIA: tokens).",
         "tags": [
           "files"
         ],
@@ -57652,15 +57652,6 @@
             "schema": {
               "type": "string"
             }
-          },
-          {
-            "name": "snap",
-            "in": "query",
-            "required": false,
-            "description": "SHA-256 digest of a message-level snapshot bound to the path.",
-            "schema": {
-              "type": "string"
-            }
           }
         ],
         "responses": {
@@ -57684,12 +57675,6 @@
           },
           "404": {
             "description": "Not found.",
-            "content": {
-              "application/json": {}
-            }
-          },
-          "410": {
-            "description": "Snapshot unavailable.",
             "content": {
               "application/json": {}
             }

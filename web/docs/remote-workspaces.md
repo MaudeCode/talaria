@@ -53,8 +53,7 @@ When it answers `false`:
   `remote_workspace_unsupported`; a worktree requested only by the profile's
   default is skipped and the session starts as a plain session;
 - the embedded terminal answers 400 `remote_terminal_backend_unsupported`;
-- project-context discovery, workspace suggestions, and media snapshot capture
-  return an empty result;
+- project-context discovery and workspace suggestions return an empty result;
 - `terminal_remote_backend` is `true` in the bootstrap `features` and the
   workspace list, so clients hide host-only controls.
 

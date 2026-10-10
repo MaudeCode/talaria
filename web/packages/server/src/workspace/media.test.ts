@@ -66,7 +66,7 @@ describe('mediaAnchorRoot session MEDIA scan (TAL-573)', () => {
       hermesHome,
       extraRoots: '',
       activeWorkspace: () => workspace,
-      policy: { home, hermesHome, stateDir: join(hermesHome, 'webui_state'), snapshotDir: () => join(hermesHome, 'media_snapshots'), activeWorkspace: () => workspace },
+      policy: { home, hermesHome, stateDir: join(hermesHome, 'webui_state'), activeWorkspace: () => workspace },
     }
   })
   afterEach(() => { rmSync(base, { recursive: true, force: true }) })
@@ -91,5 +91,14 @@ describe('mediaAnchorRoot session MEDIA scan (TAL-573)', () => {
     const { session, reads } = spySession(target)
     expect(mediaAnchorRoot(target, session, deps)).toBe(join(base, 'outside'))
     expect(reads()).toBe(1)
+  })
+
+  it('keeps a legacy custom snapshot store denied under an allowed root (TAL-587)', () => {
+    const store = join(base, 'ws', 'snaps')
+    mkdirSync(store)
+    writeFileSync(join(store, `${'a'.repeat(64)}.snap`), 'frozen')
+    deps.policy = { ...deps.policy, legacySnapshotDir: store }
+    expect(mediaAnchorRoot(join(store, `${'a'.repeat(64)}.snap`), null, deps)).toBeNull()
+    expect(mediaAnchorRoot(join(base, 'ws', 'a.png'), null, deps)).toBe(join(base, 'ws'))
   })
 })

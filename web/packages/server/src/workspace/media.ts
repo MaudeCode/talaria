@@ -1,9 +1,8 @@
 /**
  * Byte-serving helpers and the `/api/media` allow/deny model (Python
- * `_serve_file_bytes`, `_media_deny_reason`, `_session_media_token_allows_path`,
- * and the serve side of `api/media_snapshots.py`).
+ * `_serve_file_bytes`, `_media_deny_reason`, and `_session_media_token_allows_path`).
  */
-import { closeSync, createReadStream, fstatSync, openSync, readdirSync, readFileSync, readSync, realpathSync, statSync } from 'node:fs'
+import { closeSync, createReadStream, fstatSync, openSync, readdirSync, readSync, realpathSync, statSync } from 'node:fs'
 import { constants as fsConstants } from 'node:fs'
 import { basename, dirname, extname, join, resolve } from 'node:path'
 import { tmpdir, userInfo } from 'node:os'
@@ -299,7 +298,8 @@ export interface MediaPolicyDeps {
   home: string
   hermesHome: string
   stateDir: string
-  snapshotDir: () => string
+  /** `HERMES_WEBUI_MEDIA_SNAPSHOT_DIR` from the Python server: its leftover snapshot copies stay internal. */
+  legacySnapshotDir?: string | undefined
   /** The active workspace when local IO is supported, else null. */
   activeWorkspace: () => string | null
 }
@@ -321,7 +321,7 @@ export function mediaDenyReason(target: string, deps: MediaPolicyDeps): string |
   try {
     const st = statSync(target)
     if (st.isFile() && st.nlink > 1) return 'media file has multiple hard links'
-  } catch { /* missing paths stay eligible for snapshot replay */ }
+  } catch { /* a missing path is not a hard link */ }
   const roots: string[] = []
   for (const r of [deps.hermesHome, join(deps.home, '.hermes'), deps.stateDir]) {
     const resolved = norm(r)
@@ -343,8 +343,7 @@ export function mediaDenyReason(target: string, deps: MediaPolicyDeps): string |
   for (const root of roots) {
     for (const sub of DENY_SUBDIRS) denyDirs.push(join(root, sub), join(root, 'webui_state', sub))
   }
-  const snapStore = deps.snapshotDir()
-  if (snapStore && withinCi(target, snapStore)) return 'media snapshot store is internal'
+  if (deps.legacySnapshotDir && withinCi(target, deps.legacySnapshotDir)) return 'legacy media snapshot store is internal'
   const activeWorkspace = deps.activeWorkspace()
   const safeCarveout = (ws: string | null): boolean => {
     if (!ws) return false
@@ -410,31 +409,4 @@ export function mediaAnchorRoot(target: string, session: Session | null, deps: M
     if (target === resolvedRoot || isWithin(target, resolvedRoot)) return resolvedRoot
   }
   return sessionMediaTokenAllowsPath(session, target, SESSION_MEDIA_TOKEN_TYPES) ? dirname(target) : null
-}
-
-// ── snapshot store (serve side) ──────────────────────────────────────────────
-
-const DIGEST_RE = /^[0-9a-f]{64}$/
-
-export function isValidDigest(digest: unknown): boolean {
-  return typeof digest === 'string' && DIGEST_RE.test(digest) && !digest.includes('\n')
-}
-
-export function snapshotPathForDigest(snapshotDir: string, digest: string): string | null {
-  if (!isValidDigest(digest)) return null
-  const candidate = join(snapshotDir, `${digest}.snap`)
-  try { return statSync(candidate).isFile() ? candidate : null } catch { return null }
-}
-
-export function snapshotServableForPath(snapshotDir: string, digest: string, target: string): boolean {
-  if (!isValidDigest(digest)) return false
-  // Python `Path.resolve()` (non-strict): a source that was deleted since capture still binds to its recorded path —
-  // surviving deletion is the snapshot's purpose.
-  const want = resolvePathLikePython(target)
-  try {
-    const data = JSON.parse(readFileSync(join(snapshotDir, `${digest}.src.json`), 'utf8')) as { sources?: unknown }
-    return Array.isArray(data.sources) && data.sources.includes(want)
-  } catch {
-    return false
-  }
 }

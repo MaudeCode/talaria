@@ -73,9 +73,9 @@ export const RAW_ROUTES: readonly RawRoute[] = [
     responses: { 200: { description: 'File bytes with byte-range support, `Cache-Control: no-store`.', contentType: 'application/octet-stream' }, 206: { description: 'Partial content for a satisfiable Range header.' }, 400: { description: 'Missing session_id or token.', contentType: 'application/json' }, 403: { description: 'The grant expired, belongs to another session, or its symlink changed.', contentType: 'application/json' }, 404: { description: 'Path outside the granted symlink or missing.', contentType: 'application/json' }, 416: { description: 'Range not satisfiable.' } },
   },
   {
-    method: 'GET', path: '/api/media', summary: 'Local media referenced by the chat (allow-listed roots, MEDIA: tokens, or an immutable snapshot).', tags: ['files'],
-    query: { path: { description: 'Absolute local path.', required: true }, session_id: { description: 'Session whose assistant messages may grant the path.' }, inline: { description: '`1` allows inline audio, video, PDF, and sandboxed HTML.' }, snap: { description: 'SHA-256 digest of a message-level snapshot bound to the path.' } },
-    responses: { 200: { description: 'Media bytes.', contentType: 'application/octet-stream' }, 206: { description: 'Partial content.' }, 304: { description: 'ETag matched.' }, 403: { description: 'Path not in an allowed location.', contentType: 'application/json' }, 404: { description: 'Not found.', contentType: 'application/json' }, 410: { description: 'Snapshot unavailable.', contentType: 'application/json' } },
+    method: 'GET', path: '/api/media', summary: 'Local media referenced by the chat (allow-listed roots or MEDIA: tokens).', tags: ['files'],
+    query: { path: { description: 'Absolute local path.', required: true }, session_id: { description: 'Session whose assistant messages may grant the path.' }, inline: { description: '`1` allows inline audio, video, PDF, and sandboxed HTML.' } },
+    responses: { 200: { description: 'Media bytes.', contentType: 'application/octet-stream' }, 206: { description: 'Partial content.' }, 304: { description: 'ETag matched.' }, 403: { description: 'Path not in an allowed location.', contentType: 'application/json' }, 404: { description: 'Not found.', contentType: 'application/json' } },
   },
   {
     method: 'GET', path: '/api/folder/download', summary: 'ZIP of a workspace folder (symlinks escaping the workspace are skipped).', tags: ['files'],
