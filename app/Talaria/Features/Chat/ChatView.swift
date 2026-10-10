@@ -1578,7 +1578,9 @@ struct ChatView: View {
         await hydrateDraftIfNeeded()
         prepareInitialAppearance()
 
-        guard ChatInitialAppearancePolicy.shouldBeginAsyncWork(
+        // The appearance flip cancels this task and starts a fresh one; a cancelled task that
+        // went on would replace that task's Git probe with one whose load fails as cancelled.
+        guard !Task.isCancelled, ChatInitialAppearancePolicy.shouldBeginAsyncWork(
             hasCompletedAppearance: didCompleteInitialAppearance
         ) else {
             return

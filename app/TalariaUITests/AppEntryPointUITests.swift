@@ -398,6 +398,9 @@ final class ReauthenticationUITests: AppEntryPointUITestCase {
         _ = retry.settledFrame
         retry.tap()
         XCTAssertTrue(retry.awaitNonExistence(timeout: 15))
+        // The session can expire before the row's push finishes, leaving the sheet over the
+        // chat detail; the confirmed title is shown only on the list.
+        returnToSessionList()
         // This title is returned only by a new request carrying the repaired header.
         XCTAssertTrue(app.staticTexts["Header recovery confirmed"].awaitExistence(timeout: 10))
     }
@@ -435,7 +438,7 @@ final class ReauthenticationUITests: AppEntryPointUITestCase {
         password.typeText("fixture-password")
         app.buttons["ReauthenticateSignIn"].tap()
         XCTAssertTrue(password.awaitNonExistence(timeout: 15))
-        XCTAssertTrue(app.navigationBars["Chats"].exists)
+        returnToSessionList()
         XCTAssertTrue(row.awaitExistence(timeout: 10))
         XCTAssertTrue(row.isEnabled)
         row.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
