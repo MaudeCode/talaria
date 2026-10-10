@@ -39,3 +39,40 @@ test('a gallery extension with a panel gets a rail entry, Open, and Uninstall; a
     rmSync(join(state, 'extension-install-manifest.json'), { force: true })
   }
 })
+
+/** TAL-711: a gallery extension's theme arrives sanitized, so its skin is offered in Appearance and applies its tokens. */
+test('a gallery extension theme is offered in Appearance, applies only its allowlisted tokens, and clears when disabled', async ({ page }, testInfo) => {
+  const state = openServerState()
+  const root = join(state, 'extensions')
+  mkdirSync(join(root, 'dusk'), { recursive: true })
+  writeFileSync(join(root, 'dusk', 'manifest.json'), JSON.stringify({
+    name: 'Dusk', panel: 'index.html', capabilities: ['theme'],
+    theme: { key: 'dusk', name: 'Dusk', scheme: 'dark', colors: ['#2b1d3a', '#e07a5f'], tokens: { '--bg': '#2b1d3a', '--accent': '#e07a5f', '--evil': 'red', '--text': 'url(x)' } },
+  }))
+  writeFileSync(join(root, 'dusk', 'index.html'), '<!doctype html><p>dusk</p>')
+  writeFileSync(join(state, 'extension-install-manifest.json'), JSON.stringify({ version: 1, installed: { dusk: { version: '1.0.0', files: ['manifest.json', 'index.html'], installed_at: '2026-01-01T00:00:00Z' } } }))
+  try {
+    await page.goto('/settings/appearance')
+    await settle(page)
+    const pick = page.locator('[data-skin-val="dusk:dusk"]')
+    await expect(pick).toBeVisible()
+    await pick.click()
+    const html = page.locator('html')
+    await expect(html).toHaveAttribute('data-ext-skin', 'dusk:dusk')
+    await expect(html).toHaveAttribute('data-ext-skin-tokens', '--bg --accent')
+    expect(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--bg').trim())).toBe('#2b1d3a')
+    if (process.env.TAL711_SHOTS) await page.screenshot({ path: `${process.env.TAL711_SHOTS}/appearance-${testInfo.project.name}.png` })
+
+    // Disabling the extension (in-app, no reload) drops its skin from the live page and falls back to the built-in skin.
+    await page.evaluate(() => { history.pushState({}, '', '/settings/extensions'); dispatchEvent(new PopStateEvent('popstate')) })
+    await page.locator('[data-extension-id="dusk"]').getByRole('switch').click()
+    await expect(html).not.toHaveAttribute('data-ext-skin')
+    expect(await page.evaluate(() => document.documentElement.style.getPropertyValue('--bg'))).toBe('')
+    if (process.env.TAL711_SHOTS) await page.screenshot({ path: `${process.env.TAL711_SHOTS}/disabled-${testInfo.project.name}.png` })
+  } finally {
+    // The override lives in the shared server state; the next project starts from an enabled extension.
+    await page.request.post('/api/extensions/toggle', { data: { id: 'dusk', enabled: true } })
+    rmSync(root, { recursive: true, force: true })
+    rmSync(join(state, 'extension-install-manifest.json'), { force: true })
+  }
+})

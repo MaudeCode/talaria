@@ -39,7 +39,7 @@ export function applyExtensionSkin(decl: ThemeDeclaration | null, root: HTMLElem
   for (const name of Array.from(root.style)) if (name.startsWith('--') && root.dataset.extSkinTokens?.split(' ').includes(name)) root.style.removeProperty(name)
   if (!decl) { delete root.dataset.extSkinTokens; delete root.dataset.extSkin; return }
   const names: string[] = []
-  for (const [rawName, value] of Object.entries(decl.tokens)) { const name = SKIN_TOKEN_ALIASES[rawName] ?? rawName; root.style.setProperty(name, value); names.push(name) }
+  for (const [rawName, value] of Object.entries(decl.tokens)) { if (value === undefined) continue; const name = SKIN_TOKEN_ALIASES[rawName] ?? rawName; root.style.setProperty(name, value); names.push(name) }
   root.dataset.extSkinTokens = names.join(' ')
   root.dataset.extSkin = decl.key
   if (decl.scheme) root.classList.toggle('dark', decl.scheme === 'dark')

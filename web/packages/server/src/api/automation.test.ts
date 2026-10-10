@@ -1051,6 +1051,69 @@ describe('extension directory rows in /api/extensions/manifests (TAL-704)', () =
   })
 })
 
+describe('sanitized theme, tts, and sidecar in /api/extensions/manifests rows (TAL-711)', () => {
+  it('ships the allowlisted theme tokens, the tts engine, and the loopback sidecar with its saved consent; rejects what has nothing left', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'talaria-ext-'))
+    writeFileSync(join(root, 'manifest.json'), JSON.stringify({ extensions: [
+      {
+        id: 'deck', name: 'Deck', panel: 'deck/index.html', capabilities: ['theme', 'tts', 'sidecar'],
+        theme: { key: 'deck', name: 'Deck', scheme: 'dark', colors: ['#111', 'nope;', '#222', '#333', '#444'], tokens: { '--bg': '#101010', '--surface2': 'rgb(1, 2, 3)', '--evil': 'red', '--accent': 'url(x)' } },
+        tts: { id: 'voicebox', label: 'Voice Box' },
+        sidecar: { type: 'loopback', origin: 'http://127.0.0.1:4567', health_path: '/healthz' },
+      },
+      { id: 'bare', name: 'Bare', panel: 'bare/index.html', theme: { key: 'bare', name: 'Bare', tokens: { '--evil': 'red', '--bg': 'expression(alert(1))' } }, tts: { id: 'Bad Id', label: '' }, sidecar: { type: 'loopback', origin: 'http://example.com' } },
+      { id: 'nameless', name: 'Nameless', panel: 'n/index.html', theme: { key: 'Nope Key', name: 'X', tokens: { '--bg': '#000' } } },
+      // A headless skin keeps an entry with leftover legacy assets runnable; its key never collides with a built-in skin.
+      { id: 'headless', name: 'Headless', scripts: ['old.js'], theme: { key: 'default', name: 'Default Too', tokens: { '--bg': '#000' } } },
+      { id: 'token', name: 'Token', panel: 't/index.html', sidecar: { type: 'loopback', origin: 'http://127.0.0.1:4568', proxy_auth: 'token-v1' } },
+    ] }))
+    const s = await bootTestServer({ env: { HERMES_WEBUI_EXTENSION_DIR: root, HERMES_WEBUI_EXTENSION_MANIFEST: 'manifest.json' } })
+    try {
+      const row = async (id: string): Promise<Json | undefined> => ((await json(await s.get('/api/extensions/manifests'))).manifests as Json[]).find((m) => m.id === id)
+      expect(await row('deck')).toMatchObject({
+        theme: { key: 'deck:deck', name: 'Deck', scheme: 'dark', colors: ['#111', '#222', '#333'], tokens: { '--bg': '#101010', '--surface2': 'rgb(1, 2, 3)' } },
+        tts: { id: 'voicebox', label: 'Voice Box' },
+        sidecar: { origin: 'http://127.0.0.1:4567', health_path: '/healthz', consented: false },
+        warnings: [],
+      })
+      expect(Object.keys(((await row('deck'))?.theme as Json).tokens as Json)).toEqual(['--bg', '--surface2'])
+      expect(await row('bare')).toMatchObject({ theme: null, tts: null, sidecar: null, warnings: ['theme_rejected', 'tts_rejected'] })
+      expect(await row('nameless')).toMatchObject({ theme: null, warnings: ['theme_rejected'] })
+      expect(await row('headless')).toMatchObject({ enabled: true, can_toggle: true, legacy_injection: false, panel: null, theme: { key: 'headless:default' } })
+      // The proxy refuses token-v1 sidecars in this release, so the row ships none.
+      expect((await row('token'))?.sidecar).toBeNull()
+      // Consent comes from the same saved state the proxy enforces.
+      expect((await post(s, '/api/extensions/sidecar-proxy-consent', { id: 'deck', approved: true })).status).toBe(200)
+      expect((await row('deck'))?.sidecar).toEqual({ origin: 'http://127.0.0.1:4567', health_path: '/healthz', consented: true })
+      // A disabled extension's sidecar is unavailable to the proxy, so the row ships none.
+      expect((await post(s, '/api/extensions/toggle', { id: 'deck', enabled: false })).status).toBe(200)
+      expect((await row('deck'))?.sidecar).toBeNull()
+    } finally {
+      await s.close()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('ships theme and tts from a gallery-installed top-level manifest', async () => {
+    const s = await bootTestServer()
+    try {
+      mkdirSync(join(s.state, 'extensions', 'gal'), { recursive: true })
+      writeFileSync(join(s.state, 'extensions', 'gal', 'manifest.json'), JSON.stringify({ name: 'Gal', panel: 'index.html', capabilities: ['theme', 'tts'], theme: { key: 'gal', name: 'Gal', tokens: { '--accent': '#ff8800' } }, tts: { id: 'gal-voice', label: 'Gal Voice' } }))
+      writeFileSync(join(s.state, 'extension-install-manifest.json'), JSON.stringify({ version: 1, installed: { gal: { version: '1.0.0', files: ['manifest.json', 'index.html'], installed_at: '2026-01-01T00:00:00Z' } } }))
+      const rows = (await json(await s.get('/api/extensions/manifests'))).manifests as Json[]
+      expect(rows.find((m) => m.id === 'gal')).toMatchObject({ source: 'gallery', theme: { key: 'gal:gal', name: 'Gal', tokens: { '--accent': '#ff8800' } }, tts: { id: 'gal-voice', label: 'Gal Voice' }, sidecar: null })
+      // A headless skin-only gallery manifest is still an extension row.
+      mkdirSync(join(s.state, 'extensions', 'skin'), { recursive: true })
+      writeFileSync(join(s.state, 'extensions', 'skin', 'manifest.json'), JSON.stringify({ name: 'Skin', capabilities: ['theme'], theme: { key: 'skin', name: 'Skin', tokens: { '--bg': '#000' } } }))
+      writeFileSync(join(s.state, 'extension-install-manifest.json'), JSON.stringify({ version: 1, installed: { gal: { version: '1.0.0', files: ['manifest.json', 'index.html'], installed_at: '2026-01-01T00:00:00Z' }, skin: { version: '1.0.0', files: ['manifest.json'], installed_at: '2026-01-01T00:00:00Z' } } }))
+      const skin = ((await json(await s.get('/api/extensions/manifests'))).manifests as Json[]).find((m) => m.id === 'skin')
+      expect(skin).toMatchObject({ source: 'gallery', enabled: true, panel: null, theme: { key: 'skin:skin', tokens: { '--bg': '#000' } } })
+    } finally {
+      await s.close()
+    }
+  })
+})
+
 describe('extension state transactions (review round 41)', () => {
   it('a toggle that lands while a consent change awaits the auth probe is not overwritten by the consent write', async () => {
     const stateDir = mkdtempSync(join(tmpdir(), 'talaria-ext-'))

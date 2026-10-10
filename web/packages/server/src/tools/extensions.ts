@@ -9,6 +9,7 @@ import { atomicWriteText } from '../fs/atomic.js'
 import { readZip } from '../workspace/unzip.js'
 import { isDict, type Dict } from '../config/agent-config.js'
 import { str } from '../util.js'
+import { SKIN_TOKEN_NAMES, SKIN_VALUE_RE } from '@maudecode/talaria-web-contracts'
 
 export class ExtensionError extends Error {
   constructor(message: string, readonly status = 400) { super(message) }
@@ -32,6 +33,9 @@ const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1'])
 const ALLOWED_ASSET_PREFIXES = ['/extensions/', '/static/']
 const ALLOWED_DOTFILES = new Set(['.gitkeep', '.gitignore', '.gitattributes', '.env.example'])
 export const EXTENSION_MIME: Record<string, string> = { css: 'text/css', js: 'application/javascript', html: 'text/html', svg: 'image/svg+xml', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', ico: 'image/x-icon', gif: 'image/gif', webp: 'image/webp', woff: 'font/woff', woff2: 'font/woff2', ttf: 'font/ttf', otf: 'font/otf', wasm: 'application/wasm' }
+const SKIN_TOKENS = new Set<string>(SKIN_TOKEN_NAMES)
+/** Skin keys and TTS engine ids share the frontend contract's slug. */
+const DECLARATION_ID_RE = /^[a-z0-9][a-z0-9_-]{0,31}$/
 const TEXT_MIME = new Set(['text/css', 'application/javascript', 'text/html', 'image/svg+xml', 'text/plain'])
 
 export interface ExtensionDeps { env: Record<string, string | undefined>; stateDir: string; isAuthEnabled: () => Promise<boolean>; fetch: typeof fetch; log: (line: string) => void }
@@ -215,6 +219,25 @@ function sidecarFromEntry(entry: Dict, d: Diagnostics | null): Dict | null {
   return { id: entryText(entry, 'id'), name: entryText(entry, 'name'), type: 'loopback', origin, health_path: healthPath, health_url: `${origin}${healthPath}`, proxy_auth: proxyAuth }
 }
 
+/**
+ * A manifest `theme` reduced to the frontend skin contract: allowlisted tokens whose values pass the shared value check,
+ * keyed `<extension-id>:<key>` so it never collides with a built-in skin or another extension's skin.
+ */
+function themeFromEntry(raw: unknown, id: string): Dict | null {
+  if (!isDict(raw) || typeof raw.key !== 'string' || !DECLARATION_ID_RE.test(raw.key)) return null
+  const name = text(raw.name, 40)
+  const tokens = isDict(raw.tokens) ? Object.fromEntries(Object.entries(raw.tokens).filter(([k, v]) => SKIN_TOKENS.has(k) && typeof v === 'string' && SKIN_VALUE_RE.test(v))) : {}
+  if (!name || !Object.keys(tokens).length) return null
+  const colors = Array.isArray(raw.colors) ? raw.colors.filter((c): c is string => typeof c === 'string' && SKIN_VALUE_RE.test(c)).slice(0, 3) : null
+  return { key: `${id}:${raw.key}`, name, ...(raw.scheme === 'light' || raw.scheme === 'dark' ? { scheme: raw.scheme } : {}), ...(colors ? { colors } : {}), tokens }
+}
+
+function ttsFromEntry(raw: unknown): Dict | null {
+  if (!isDict(raw) || typeof raw.id !== 'string' || !DECLARATION_ID_RE.test(raw.id)) return null
+  const label = text(raw.label, 60)
+  return label ? { id: raw.id, label } : null
+}
+
 /** Entries the gallery loader read from `<root>/<id>/`, keyed by object so a manifest can never claim gallery provenance. */
 const galleryFolders = new WeakMap<Dict, string>()
 
@@ -358,8 +381,8 @@ export class ExtensionService {
       }
       if (isDict(manifest)) {
         const top: Dict = { id }
-        for (const key of ['name', 'enabled', 'version', 'description', 'panel', 'nav', 'capabilities', 'scripts', 'stylesheets', 'sidecar', 'permissions', 'settings_schema']) if (key in manifest) top[key] = manifest[key]
-        if (['panel', 'scripts', 'stylesheets', 'sidecar', 'permissions', 'settings_schema'].some((k) => k in top)) entries.push(withBase(top))
+        for (const key of ['name', 'enabled', 'version', 'description', 'panel', 'nav', 'capabilities', 'scripts', 'stylesheets', 'sidecar', 'theme', 'tts', 'permissions', 'settings_schema']) if (key in manifest) top[key] = manifest[key]
+        if (['panel', 'scripts', 'stylesheets', 'sidecar', 'theme', 'tts', 'permissions', 'settings_schema'].some((k) => k in top)) entries.push(withBase(top))
       }
       for (const entry of manifestEntries(manifest)) { const copy = withBase(entry); if (!validId(copy.id)) copy.id = id; entries.push(copy) }
     }
@@ -469,7 +492,7 @@ export class ExtensionService {
     return urls
   }
 
-  private async manifestUrls(manifest: unknown, status: Dict, disabled: Set<string>, state: State, d: Diagnostics | null): Promise<{ scripts: string[]; stylesheets: string[]; sidecars: Dict[] }> {
+  private async manifestUrls(manifest: unknown, status: Dict, disabled: Set<string>, state: State, d: Diagnostics | null): Promise<{ scripts: string[]; stylesheets: string[]; sidecars: Dict[]; sidecarsById: Map<string, Dict> }> {
     const scripts: string[] = []
     const stylesheets: string[] = []
     const base = str(status._asset_base)
@@ -483,9 +506,9 @@ export class ExtensionService {
       if (!scriptsFull) for (const v of Array.isArray(entry.scripts) ? entry.scripts : []) if (!this.appendUrl(scripts, this.assetUrl(v, base), 'manifest:scripts', d, true)) { scriptsFull = true; break }
       if (!stylesFull) for (const v of Array.isArray(entry.stylesheets) ? entry.stylesheets : []) if (!this.appendUrl(stylesheets, this.assetUrl(v, base), 'manifest:stylesheets', d, true)) { stylesFull = true; break }
     }
-    const { records } = await this.sidecarRecords(manifest, disabled, state, d)
+    const { records, byId } = await this.sidecarRecords(manifest, disabled, state, d)
     Object.assign(status, { loaded: true, status: str(status.status) || 'loaded', script_count: scripts.length, stylesheet_count: stylesheets.length, sidecar_count: records.length })
-    return { scripts, stylesheets, sidecars: records }
+    return { scripts, stylesheets, sidecars: records, sidecarsById: byId }
   }
 
   /** Python `get_extension_status`. */
@@ -499,8 +522,8 @@ export class ExtensionService {
     return (await this.snapshot()).status
   }
 
-  /** The status payload plus the manifest it was built from, so `manifests()` reads the raw entries of the same load. */
-  private async snapshot(): Promise<{ status: Dict; manifest: unknown; assetBase: string }> {
+  /** The status payload plus the manifest and sidecar records it was built from, so `manifests()` reads the same load. */
+  private async snapshot(): Promise<{ status: Dict; manifest: unknown; assetBase: string; sidecarsById: Map<string, Dict> }> {
     const d: Diagnostics = { warnings: [] }
     const envDir = (this.deps.env.HERMES_WEBUI_EXTENSION_DIR ?? '').trim()
     const root = this.root()
@@ -509,16 +532,16 @@ export class ExtensionService {
     const manifestConfigured = Boolean((this.deps.env.HERMES_WEBUI_EXTENSION_MANIFEST ?? '').trim())
     if (envDir && !root) warn(d, 'extension_dir_unavailable', 'extension_dir')
     if (!root) {
-      return { manifest: null, assetBase: '', status: { enabled: false, extension_dir_configured: true, extension_dir_valid: false, script_urls: [], stylesheet_urls: [], sidecars: [], counts: { script_urls: 0, stylesheet_urls: 0, sidecars: 0, manifest_extensions: 0, user_disabled: 0 }, manifest: { configured: manifestConfigured, loaded: false, status: manifestConfigured ? 'extension_disabled' : 'not_configured', entry_count: 0, script_count: 0, stylesheet_count: 0, sidecar_count: 0 }, extensions: [], warnings: d.warnings } }
+      return { manifest: null, assetBase: '', sidecarsById: new Map(), status: { enabled: false, extension_dir_configured: true, extension_dir_valid: false, script_urls: [], stylesheet_urls: [], sidecars: [], counts: { script_urls: 0, stylesheet_urls: 0, sidecars: 0, manifest_extensions: 0, user_disabled: 0 }, manifest: { configured: manifestConfigured, loaded: false, status: manifestConfigured ? 'extension_disabled' : 'not_configured', entry_count: 0, script_count: 0, stylesheet_count: 0, sidecar_count: 0 }, extensions: [], warnings: d.warnings } }
     }
     const [manifest, status] = this.loadManifest(root, d)
     const consentIds = new Set(Object.keys(state.sidecar_proxy_consents))
     const ext = manifest !== null ? this.extensionState(manifest, disabled, d, consentIds) : { extensions: [], knownIds: new Set<string>(), manifestDisabled: new Set<string>() }
-    const urls = manifest !== null ? await this.manifestUrls(manifest, status, disabled, state, d) : { scripts: [], stylesheets: [], sidecars: [] }
+    const urls = manifest !== null ? await this.manifestUrls(manifest, status, disabled, state, d) : { scripts: [], stylesheets: [], sidecars: [], sidecarsById: new Map<string, Dict>() }
     const scriptUrls = this.envUrls('HERMES_WEBUI_EXTENSION_SCRIPT_URLS', urls.scripts.length ? urls.scripts : null, d)
     const stylesheetUrls = this.envUrls('HERMES_WEBUI_EXTENSION_STYLESHEET_URLS', urls.stylesheets.length ? urls.stylesheets : null, d)
     const publicStatus = Object.fromEntries(Object.entries(status).filter(([k]) => !k.startsWith('_')))
-    return { manifest, assetBase: str(status._asset_base), status: {
+    return { manifest, assetBase: str(status._asset_base), sidecarsById: urls.sidecarsById, status: {
       enabled: true, extension_dir_configured: true, extension_dir_valid: true, script_urls: scriptUrls, stylesheet_urls: stylesheetUrls, sidecars: urls.sidecars,
       counts: { script_urls: scriptUrls.length, stylesheet_urls: stylesheetUrls.length, sidecars: urls.sidecars.length, manifest_extensions: ext.extensions.length, user_disabled: [...disabled].filter((id) => ext.knownIds.has(id)).length },
       manifest: publicStatus, extensions: ext.extensions, gallery_installed: this.loadInstallManifest().installed, warnings: d.warnings,
@@ -760,7 +783,7 @@ export class ExtensionService {
 
   /** Python `api/extension_manifests.build_manifests` extension entries (the manifests route appends dashboard plugins). */
   async manifests(): Promise<{ protocol_version: 1; manifests: Dict[] }> {
-    const { status, manifest, assetBase } = await this.snapshot()
+    const { status, manifest, assetBase, sidecarsById } = await this.snapshot()
     // Status rows carry only enable state; panel, nav, capabilities, assets, and metadata come from the first manifest entry per id.
     const rawById = new Map<string, Dict>()
     for (const e of manifestEntries(manifest)) { const id = entryText(e, 'id'); if (!rawById.has(id)) rawById.set(id, e) }
@@ -787,12 +810,24 @@ export class ExtensionService {
       }
       const scripts = Array.isArray(rawManifest.scripts) ? rawManifest.scripts : []
       const stylesheets = Array.isArray(rawManifest.stylesheets) ? rawManifest.stylesheets : []
-      const legacy = Boolean((scripts.length || stylesheets.length) && !panel)
+      const theme = themeFromEntry(rawManifest.theme, id)
+      if (!theme && rawManifest.theme != null) warnings.push('theme_rejected')
+      // A skin is the one declaration that works without a panel, so it keeps an entry with leftover assets runnable.
+      const legacy = Boolean((scripts.length || stylesheets.length) && !panel && !theme)
       const rawNav = isDict(rawManifest.nav) ? rawManifest.nav : {}
       const nav = panel ? { label: text(rawNav.label, 40) || text(entry.name, 40) || id, ...(text(rawNav.icon, 40) ? { icon: text(rawNav.icon, 40) } : {}) } : null
       const permissions = isDict(rawManifest.permissions) ? Object.fromEntries(Object.entries(rawManifest.permissions).filter(([k]) => k.length <= 64).map(([k, v]) => [k, Boolean(v)])) : {}
+      const tts = ttsFromEntry(rawManifest.tts)
+      if (!tts && rawManifest.tts != null) warnings.push('tts_rejected')
+      // The sidecar the proxy would serve: same record, availability, and saved consent `proxyTarget` enforces
+      // (which refuses token-v1 sidecars in this release).
+      const record = sidecarsById.get(str(entry.id))
+      const declared = isDict(record?.sidecar) && record.sidecar.proxy_auth !== 'token-v1' ? record.sidecar : null
+      const proxy = isDict(record?.proxy) ? record.proxy : null
+      const healthPath = declared ? str(declared.health_path) : ''
+      const sidecar = declared && proxy?.available === true ? { origin: str(declared.origin), ...(healthPath.length <= 200 ? { health_path: healthPath } : {}), consented: proxy.consented === true } : null
       const caps = (Array.isArray(rawManifest.capabilities) ? rawManifest.capabilities : []).filter((c): c is string => typeof c === 'string' && ['settings', 'storage', 'sidecar', 'lifecycle', 'theme', 'tts', 'navigate', 'toast', 'session'].includes(c))
-      manifests.push({ id, name: text(entry.name, 80) || id, version: text(rawManifest.version, 40), description: text(rawManifest.description, 300), source: galleryFolders.get(rawManifest) === id && Object.hasOwn(installed, id) ? 'gallery' : 'manifest', enabled: entry.effective_enabled === true && !legacy, can_toggle: entry.can_toggle !== false && !legacy, panel, nav, capabilities: [...new Set(caps)], permissions, settings_schema: Array.isArray(entry.settings_schema) ? entry.settings_schema : [], theme: null, tts: null, sidecar: null, legacy_injection: legacy, warnings })
+      manifests.push({ id, name: text(entry.name, 80) || id, version: text(rawManifest.version, 40), description: text(rawManifest.description, 300), source: galleryFolders.get(rawManifest) === id && Object.hasOwn(installed, id) ? 'gallery' : 'manifest', enabled: entry.effective_enabled === true && !legacy, can_toggle: entry.can_toggle !== false && !legacy, panel, nav, capabilities: [...new Set(caps)], permissions, settings_schema: Array.isArray(entry.settings_schema) ? entry.settings_schema : [], theme, tts, sidecar, legacy_injection: legacy, warnings })
     }
     return { protocol_version: 1, manifests }
   }

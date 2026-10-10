@@ -49,11 +49,19 @@ export function setSkin(skin: string): void {
   bump()
 }
 
-/** Re-apply a persisted extension skin once manifests are known (boot order: manifests load after first paint). */
+/**
+ * Re-apply a persisted extension skin once manifests are known (boot order: manifests load after first paint); when the
+ * applied extension skin is gone (disabled or uninstalled), clear its tokens and fall back to the built-in skin.
+ */
 export function reapplyExtensionSkin(): void {
   const key = (readPersisted('hermes-skin') ?? '').toLowerCase()
   const ext = extensionSkin(key)
   if (ext) { applyExtensionSkin(ext); document.documentElement.dataset.skin = ext.key; bump() }
+  else if (document.documentElement.dataset.extSkin) {
+    applyExtensionSkin(null)
+    applyAppearance(resolveAppearance(readPersisted('hermes-theme'), key, window.matchMedia('(prefers-color-scheme: dark)').matches))
+    bump()
+  }
 }
 export function setFontSize(size: FontSize): void {
   writePersisted('hermes-font-size', size)
