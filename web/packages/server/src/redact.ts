@@ -352,14 +352,76 @@ function splitTokenSpans(text: string, gaps: RegExp): [number, number, string][]
     spans.push([kept[i]!, kept[e - 1]! + 1, stripped.slice(i, e)])
     scanned = e
   }
+  return [...spans, ...payloadRunSpans(text, prefixStarts.map((i) => kept[i]!))]
+}
+
+/** `payloadRunSpan`'s spans from credential prefixes at these original indices, each run walked once. */
+function payloadRunSpans(text: string, starts: number[]): [number, number, string][] {
+  const spans: [number, number, string][] = []
   let walked = 0
-  for (const i of prefixStarts.sort((a, b) => a - b)) {
-    if (kept[i]! < walked) continue
-    const [span, reached] = payloadRunSpan(text, kept[i]!)
+  for (const start of starts.sort((a, b) => a - b)) {
+    if (start < walked) continue
+    const [span, reached] = payloadRunSpan(text, start)
     if (span) spans.push(span)
     walked = reached
   }
   return spans
+}
+
+/** A string sequence's terminator: BEL (OSC only), ST, or CAN or SUB cancelling it. */
+const STRING_END_RE = /(?:\x07|\x1b\\|\x9c|[\x18\x1a])$/
+
+/**
+ * Where a credential prefix starts whose pieces lie apart in a run of token characters and escape sequences, with a
+ * string payload between them taken whole or skipped (`g\x1b]0;x\x07h\x1b]0;p_\x07…`), so that no view holds it whole.
+ * Display token characters are mandatory and each payload's token characters optional. A piece starts at a display run
+ * after a gap or a non-token character, or at a payload's trailing token run, where `payloadRunSpan` can walk from it.
+ * Candidates live only while they can grow into a prefix, which bounds them and keeps the scan linear.
+ */
+function crossPayloadPrefixStarts(text: string): number[] {
+  const starts: number[] = []
+  if (!/[\x1b\x90\x98\x9d-\x9f]/.test(text)) return starts
+  // Each candidate string, with the original index of its earliest start.
+  let candidates = new Map<string, number>()
+  const grow = (into: Map<string, number>, candidate: string, start: number, chars: string): void => {
+    for (const ch of chars) {
+      candidate += ch
+      if (CRED_MARKERS.has(candidate)) return void starts.push(start)
+      if (!CRED_MARKER_STEMS.has(candidate)) return
+    }
+    const seen = into.get(candidate)
+    if (seen === undefined || start < seen) into.set(candidate, start)
+  }
+  let afterDisplay = false
+  for (let k = 0; k < text.length; ) {
+    ANSI_GAP_AT_RE.lastIndex = k
+    const gap = ANSI_GAP_AT_RE.exec(text)?.[0]
+    if (gap) {
+      const from = STRING_OPENER_RE.exec(gap)?.[0].length ?? gap.length
+      const next = new Map(candidates)
+      const payload = gap.slice(from).replace(/[^A-Za-z0-9_-]/g, '')
+      if (payload) for (const [candidate, start] of candidates) grow(next, candidate, start, payload)
+      const end = Math.max(from, gap.length - (STRING_END_RE.exec(gap)?.[0].length ?? 0))
+      let tail = end
+      while (tail > from && TOKEN_CHAR_RE.test(gap[tail - 1]!)) tail -= 1
+      if (tail < end) grow(next, '', k + tail, gap.slice(tail, end))
+      candidates = next
+      afterDisplay = false
+      k += gap.length
+    } else if (TOKEN_CHAR_RE.test(text[k]!)) {
+      const next = new Map<string, number>()
+      for (const [candidate, start] of candidates) grow(next, candidate, start, text[k]!)
+      if (!afterDisplay) grow(next, '', k, text[k]!)
+      candidates = next
+      afterDisplay = true
+      k += 1
+    } else {
+      candidates.clear()
+      afterDisplay = false
+      k += 1
+    }
+  }
+  return starts
 }
 
 /**
@@ -396,7 +458,7 @@ function payloadRunSpan(text: string, start: number): [[number, number, string] 
 
 /** Masks each union of the split-token spans every view finds, so no view masks a piece of a token another one joins. */
 function maskSplitTokens(text: string): string {
-  const spans = SPLIT_VIEWS.flatMap((gaps) => splitTokenSpans(text, gaps)).sort((a, b) => a[0] - b[0])
+  const spans = [...SPLIT_VIEWS.flatMap((gaps) => splitTokenSpans(text, gaps)), ...payloadRunSpans(text, crossPayloadPrefixStarts(text))].sort((a, b) => a[0] - b[0])
   let out = ''
   let last = 0
   for (let k = 0; k < spans.length; ) {
@@ -1601,6 +1663,9 @@ const CASE_MARKERS = [
   'gsk_', 'syt_', 'retaindb_', 'hsk-', 'mem0_', 'brv_', 'xapp-', 'xai-', 'ntn_', 'fw-', 'fw_', 'fpk_', 'glpat-', 'gloas-', 'gldt-', 'glrt-', 'glrtr-',
   'glcbt-', 'glptt-', 'glft-', 'glimt-', 'glagent-', 'glsoat-', 'glffct-', 'glwt-', 'GR1348941', 'pk-lf-', 'eyJ', '-----BEGIN',
 ]
+/** The literal prefixes of `CRED_RE` (`xapp-` stands for `xapp-1-`), and their proper prefixes. */
+const CRED_MARKERS = new Set(CASE_MARKERS.filter((m) => ((CRED_PREFIX_RUN_RE.lastIndex = 0), CRED_PREFIX_RUN_RE.test(`${m}0-`))))
+const CRED_MARKER_STEMS = new Set([...CRED_MARKERS].flatMap((m) => Array.from({ length: m.length - 1 }, (_, n) => m.slice(0, n + 1))))
 const LOWER_MARKERS = [
   'authorization: bearer ', 'authorization: bot ', 'private key', 'postgres://', 'postgresql://', 'mysql://', 'mongodb://', 'redis://', 'amqp://', '://',
   'access_token', 'refresh_token', 'id_token', 'api_key', 'apikey', 'client_secret', 'auth_token', 'raw_secret', 'secret_input', 'key_material',
@@ -1616,6 +1681,7 @@ export function mightContainSensitiveText(text: string): boolean {
   // redactor joins split tokens.
   const views = SPLIT_VIEWS.map((gaps) => text.replace(gaps, ''))
   if (CASE_MARKERS.some((m) => views.some((view) => view.includes(m)))) return true
+  if (crossPayloadPrefixStarts(text).length) return true
   const lower = text.toLowerCase()
   if (LOWER_MARKERS.some((m) => lower.includes(m))) return true
   if (CRED_KEY_NAME_RE.test(text)) return true

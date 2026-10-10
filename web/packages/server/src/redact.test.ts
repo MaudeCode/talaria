@@ -534,7 +534,7 @@ describe('redactSensitive cost', () => {
     // A quadratic scan takes seconds on these inputs; a linear one takes milliseconds.
     // Unquoted runs, and many credential keys inside one long quoted argument.
     // The Agent's ported families: env names, split tokens, JWT headers, phone numbers and bare URL userinfo.
-    for (const text of [...['abcdefghij-', 'a.b+c-', 'token_', '--password ', 'aB', 'aBcD_', 'ABCd', 'AB', 'PW', 'KEY_', 'a_pw', 'a_key_', 'ghp_a\x1b', 'ghp_a\x1b[1m', 'ghp_a\x1b]8;;a', '\x1b[1', 'ghp_a\x9b1m', '\x9d8;;a', 'ghp_a\x1bPa', '\x1b( ', '\x90a\x9d', '\x1b\x00\x00', 'ghp_a\x1b[\x07', '\x1b(\x00', 'ghp_ab\n', 'eyJaaaaaaaaaa.', '+1234567', 'https://aaaaaaaa', 'DB_PW="', "db_pw='a ", 'ghp_ab\nK=', 'a_key=x\\ ', 'a_key=,', '\nsk-a', 'sk-aaaaaaaaaaaa\n', '&a_key=x', 'sk-aaaaaaaaaa\nsk-b\n', '2', '1234 '].map((seg) => seg.repeat(Math.ceil(200_000 / seg.length))),
+    for (const text of [...['abcdefghij-', 'a.b+c-', 'token_', '--password ', 'aB', 'aBcD_', 'ABCd', 'AB', 'PW', 'KEY_', 'a_pw', 'a_key_', 'ghp_a\x1b', 'ghp_a\x1b[1m', 'ghp_a\x1b]8;;a', '\x1b[1', 'ghp_a\x9b1m', '\x9d8;;a', 'ghp_a\x1bPa', '\x1b( ', '\x90a\x9d', '\x1b\x00\x00', 'ghp_a\x1b[\x07', '\x1b(\x00', 'g\x1b]0;h\x07', 'x\x1b]0;a\x07', '\x1b]0;g\x07h', 'gh\x1b]0;p\x07\x1b]0;_\x07', 'ghp_ab\n', 'eyJaaaaaaaaaa.', '+1234567', 'https://aaaaaaaa', 'DB_PW="', "db_pw='a ", 'ghp_ab\nK=', 'a_key=x\\ ', 'a_key=,', '\nsk-a', 'sk-aaaaaaaaaaaa\n', '&a_key=x', 'sk-aaaaaaaaaa\nsk-b\n', '2', '1234 '].map((seg) => seg.repeat(Math.ceil(200_000 / seg.length))),
       ...['Authorization: x ', 'Authorization: *** ', 'secret sauce ', 'password=*** '].map((seg) => `"${seg.repeat(Math.ceil(200_000 / seg.length))}"`),
       // One huge identifier that does name a credential, and many long ones that are followed by a separator.
       `--${'aB'.repeat(100_000)}Password=x`, `${'2'.repeat(200_000)}:`, `ghp_a\x1b${'\x00'.repeat(200_000)}`, `${'a'.repeat(1_000)}= `.repeat(200), `${'a'.repeat(1_000)}://x:`.repeat(200),
@@ -946,10 +946,19 @@ describe('Agent redactor parity', () => {
       ['\x1b]8;;file:///tmp/ghp_tools\x1b\\ghp_tools\x1b]8;;\x1b\\', '\x1b]8;;file:///tmp/ghp_tools\x1b\\ghp_tools\x1b]8;;\x1b\\'],
       ['\x1b]0;ghp_abc\x07\x1b]0;junk\x07\x1b_def1234567890ABCDEF1234567890abcdef\x1b\\', '\x1b]0;ghp_ab...cdef\x1b\\'],
       ['ghp_abcdefghij\x1b_1234567890ABCDEF1234567890abcdef\x1b\\', 'ghp_ab...cdef\x1b\\'],
+      // A prefix split across string payloads, with junk payloads between its pieces, is in no view: the run is masked whole.
+      ['g\x1b]0;x\x07h\x1b]0;p_\x07abcdef1234567890ABCDEF1234567890abcdef', 'gxhp_a...cdef'],
+      ['\x1b]0;t;g\x07\x1b]0;x\x07hp_abcdef1234567890ABCDEF1234567890abcdef', '\x1b]0;t;gxhp_a...cdef'],
+      // A hyperlinked name with no prefix across payloads is no hidden token.
+      ['\x1b]8;;file:///tmp/notes\x1b\\notes\x1b]8;;\x1b\\', '\x1b]8;;file:///tmp/notes\x1b\\notes\x1b]8;;\x1b\\'],
     ]) {
       expect(redactText(input, true)).toBe(expected)
       expect(sanitizeShareMessage({ role: 'assistant', content: input }, [], [], '/nonexistent-home')?.content).toBe(expected)
     }
+  })
+
+  it('does not skip a prefix split across string payloads', () => {
+    expect(mightContainSensitiveText('g\x1b]0;x\x07h\x1b]0;p_\x07abcdef1234567890ABCDEF1234567890abcdef')).toBe(true)
   })
 
   it('masks a split token before a sentence period, and a spaced URL query value up to its fragment', () => {

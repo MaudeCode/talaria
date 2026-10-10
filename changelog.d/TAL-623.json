@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Chats, tool output, exports, and public share links mask tokens whose start is split across hidden terminal title text.",
+      "highlight": false
+    }
+  ]
+}
