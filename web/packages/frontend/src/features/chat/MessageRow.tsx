@@ -41,7 +41,7 @@ function AttachmentList({ message, sessionId }: { message: Message; sessionId: s
         {items.map(({ name, href, image }, i) => (
           <li key={`${name}-${i}`} className="attachment-chip rounded-md border border-border bg-surface px-2 py-1 text-[12px] text-text">
             {image !== undefined
-              ? <button type="button" aria-label={m.image_enlarge({ name })} className="block cursor-zoom-in" onClick={() => setEnlarged(image)}><img src={href} alt={name} className="max-h-48 rounded" loading="lazy" /></button>
+              ? <button type="button" aria-label={m.image_enlarge({ name })} className="flex min-h-11 min-w-11 cursor-zoom-in items-center justify-center" onClick={() => setEnlarged(image)}><img src={href} alt={name} className="max-h-48 rounded" loading="lazy" /></button>
               : href ? <a href={href} target="_blank" rel="noopener noreferrer" className="underline">{name}</a> : <span>{name}</span>}
           </li>
         ))}
