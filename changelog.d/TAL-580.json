@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Deleting a folder in Talaria Web never follows a link that appears inside it during the delete, so files outside the workspace stay untouched.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
