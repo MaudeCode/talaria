@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Installed extensions with a panel get their sidebar entry and Open link again, gallery extensions can be uninstalled from Settings, and extensions that still use injected scripts show the migration notice.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
