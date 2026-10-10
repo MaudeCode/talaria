@@ -1,0 +1,86 @@
+import { spawnSync } from 'node:child_process'
+import { existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { basename, join } from 'node:path'
+import type { Page } from '@playwright/test'
+import { expect, test } from './fixtures'
+
+test.use({ serviceWorkers: 'block' })
+
+const owned: string[] = []
+test.afterEach(() => { for (const path of owned.splice(0)) rmSync(path, { recursive: true, force: true }) })
+
+/** A phone's resting composer hides the workspace strip; a draft keeps it out (an empty draft collapses it on tap, TAL-698). */
+async function workspaceChip(page: Page) {
+  await page.locator('#msg').fill('draft')
+  return page.locator('#composerWorkspaceChip')
+}
+
+/** Desktop removes from the sidebar row's menu; touch layouts hide that menu, so mobile uses the composer's workspace menu. */
+async function openRemoveDialog(page: Page, sid: string, mobile: boolean) {
+  if (mobile) {
+    await (await workspaceChip(page)).click()
+  } else {
+    const item = page.locator(`.session-item[data-sid="${sid}"]`)
+    await item.hover()
+    await item.locator('.session-actions-trigger').click()
+  }
+  await expect(page.getByRole('menu')).toBeVisible()
+  await page.getByRole('menuitem', { name: 'Remove worktree' }).click()
+  return page.getByRole('dialog', { name: 'Remove worktree' })
+}
+
+/** TAL-605: a worktree chat is created from the workspace menu, badged in the sidebar, and removed behind the server's check. */
+test('a worktree chat is created, badged, and removed with force confirmation when unsafe', async ({ page, errors }, testInfo) => {
+  const mobile = testInfo.project.name === 'mobile'
+  const shot = (name: string) => process.env.TAL605_SHOTS ? page.screenshot({ path: `${process.env.TAL605_SHOTS}/${name}-${testInfo.project.name}.png` }) : Promise.resolve()
+  const repo = realpathSync(mkdtempSync(join(tmpdir(), 'tal605-')))
+  owned.push(repo)
+  const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.com', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.com', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' }
+  writeFileSync(join(repo, 'README.md'), 'synthetic\n')
+  for (const args of [['init', '-q', '-b', 'main'], ['add', '-A'], ['commit', '-q', '-m', 'initial']]) expect(spawnSync('git', args, { cwd: repo, env }).status).toBe(0)
+  expect((await page.request.post('/api/workspaces/add', { data: { path: repo } })).ok()).toBe(true)
+  const base = (await (await page.request.post('/api/session/new', { data: { workspace: repo } })).json()) as { session: { session_id: string } }
+
+  await page.goto(`/session/${base.session.session_id}`)
+  const chip = await workspaceChip(page)
+  await expect(chip).toContainText(basename(repo))
+  await chip.click()
+  const create = page.getByRole('menuitem', { name: /New conversation in worktree/ })
+  await expect(create).toBeVisible()
+  await shot('menu')
+  await create.click()
+  await expect(page.getByText('Worktree conversation created')).toBeVisible()
+  await expect(page).not.toHaveURL(new RegExp(base.session.session_id))
+  const sid = decodeURIComponent(new URL(page.url()).pathname.split('/').pop() ?? '')
+  const session = ((await (await page.request.get(`/api/session?session_id=${encodeURIComponent(sid)}`)).json()) as { session: { worktree_path: string; worktree_branch: string } }).session
+  expect(session.worktree_path).toBeTruthy()
+  owned.push(session.worktree_path)
+  expect(existsSync(session.worktree_path)).toBe(true)
+
+  if (mobile) await page.locator('#btnHamburger').click()
+  const badge = page.locator(`.session-item[data-sid="${sid}"]`).getByRole('img', { name: `Worktree: ${session.worktree_branch}` })
+  await expect(badge).toBeVisible()
+  await shot('badge')
+  // A phone's row tap closes the sidebar over the same chat.
+  if (mobile) await page.locator(`.session-item[data-sid="${sid}"]`).click()
+
+  // A clean worktree removes without force; cancel to keep it for the unsafe case.
+  let dialog = await openRemoveDialog(page, sid, mobile)
+  await expect(dialog).toContainText(session.worktree_path)
+  await expect(dialog.getByRole('button', { name: 'Remove', exact: true })).toBeEnabled()
+  await shot('remove-clean')
+  await dialog.getByRole('button', { name: 'Cancel' }).click()
+  await expect(dialog).toHaveCount(0)
+
+  // An untracked file makes removal unsafe: the dialog names the loss and asks for a forced removal.
+  writeFileSync(join(session.worktree_path, 'scratch.txt'), 'unsaved\n')
+  dialog = await openRemoveDialog(page, sid, mobile)
+  await expect(dialog.getByRole('listitem')).toHaveText(['WARNING: This worktree has uncommitted changes which will be lost.', '1 untracked file(s) will be permanently deleted.'])
+  await shot('remove-unsafe')
+  await dialog.getByRole('button', { name: 'Force remove' }).click()
+  await expect(page.getByText('Worktree removed.')).toBeVisible()
+  await expect(dialog).toHaveCount(0)
+  expect(existsSync(session.worktree_path)).toBe(false)
+  expect(errors).toEqual([])
+})

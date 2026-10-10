@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Start a conversation in its own git worktree from the workspace menu, spot worktree conversations by their branch icon in the sidebar, and remove a worktree from the conversation menu after seeing what removal would lose.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

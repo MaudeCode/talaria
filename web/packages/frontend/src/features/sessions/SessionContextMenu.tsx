@@ -13,9 +13,10 @@ import { Button, IconButton } from '../../ui/Button'
 import { TextInput } from '../../ui/Field'
 import { Select } from '../../ui/Select'
 import { showToast } from '../toast/toast'
+import { WorktreeRemoveDialog } from './WorktreeRemoveDialog'
 import { useQuery } from '@tanstack/react-query'
 
-type PendingDialog = { kind: 'rename' } | { kind: 'delete' } | { kind: 'move' } | { kind: 'revoke' } | null
+type PendingDialog = { kind: 'rename' } | { kind: 'delete' } | { kind: 'move' } | { kind: 'revoke' } | { kind: 'worktree' } | null
 
 /** Per-row conversation actions (legacy long-press / kebab menu). Every mutation invalidates the session list family. */
 export function SessionContextMenu({ row, active }: { row: SessionRow; active: boolean }) {
@@ -90,6 +91,7 @@ export function SessionContextMenu({ row, active }: { row: SessionRow; active: b
         <MenuItem onClick={() => exportAs('json')}>{m.session_export_json()}</MenuItem>
         <MenuItem onClick={() => exportAs('html')}>{m.session_export_html()}</MenuItem>
         <MenuSeparator />
+        {row.worktree_branch && !row.read_only && <MenuItem className="text-error" onClick={() => setDialog({ kind: 'worktree' })}>{m.session_worktree_remove()}</MenuItem>}
         {row.can_archive && <MenuItem onClick={() => archive.mutate()}>{row.archived ? m.session_unarchive() : m.session_archive()}</MenuItem>}
         {!row.read_only && <MenuItem className="text-error" onClick={() => setDialog({ kind: 'delete' })}>{m.session_delete()}</MenuItem>}
       </Menu>
@@ -112,6 +114,7 @@ export function SessionContextMenu({ row, active }: { row: SessionRow; active: b
           </form>
         </Dialog>
       )}
+      {dialog?.kind === 'worktree' && <WorktreeRemoveDialog sessionId={sid} onClose={() => setDialog(null)} />}
       <ConfirmDialog open={dialog?.kind === 'revoke'} onOpenChange={(o) => { if (!o) setDialog(null) }} title={m.session_share_revoke()} description={m.stop_sharing_session_confirm()} confirmLabel={m.session_share_revoke()} cancelLabel={m.cancel()} danger onConfirm={() => revoke.mutate()} />
       <ConfirmDialog open={dialog?.kind === 'delete'} onOpenChange={(o) => { if (!o) setDialog(null) }} title={m.session_delete_confirm()} description={row.worktree_branch ? m.session_delete_worktree_desc() : m.session_delete_desc()} confirmLabel={m.delete()} cancelLabel={m.cancel()} danger onConfirm={() => del.mutate()} />
     </>

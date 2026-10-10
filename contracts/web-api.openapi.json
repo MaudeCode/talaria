@@ -31681,10 +31681,83 @@
                   "properties": {
                     "status": {
                       "type": "object",
-                      "propertyNames": {
-                        "type": "string"
+                      "properties": {
+                        "path": {
+                          "type": "string"
+                        },
+                        "exists": {
+                          "type": "boolean"
+                        },
+                        "listed": {
+                          "type": "boolean"
+                        },
+                        "dirty": {
+                          "type": "boolean"
+                        },
+                        "untracked_count": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "ahead_behind": {
+                          "type": "object",
+                          "properties": {
+                            "ahead": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "behind": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "available": {
+                              "type": "boolean"
+                            },
+                            "upstream": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "ahead",
+                            "behind",
+                            "available",
+                            "upstream"
+                          ]
+                        },
+                        "locked_by_stream": {
+                          "type": "boolean"
+                        },
+                        "locked_by_terminal": {
+                          "type": "boolean"
+                        },
+                        "removable": {
+                          "type": "boolean"
+                        },
+                        "force_required": {
+                          "type": "boolean"
+                        }
                       },
-                      "additionalProperties": {}
+                      "required": [
+                        "path",
+                        "exists",
+                        "listed",
+                        "dirty",
+                        "untracked_count",
+                        "ahead_behind",
+                        "locked_by_stream",
+                        "locked_by_terminal",
+                        "removable",
+                        "force_required"
+                      ]
                     }
                   },
                   "required": [

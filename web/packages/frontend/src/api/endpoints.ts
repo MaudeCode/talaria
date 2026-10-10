@@ -162,6 +162,9 @@ export const fetchGitInfo = (sessionId: string) => orpc().gitInfo({ session_id: 
 export const fetchCheckpoints = (session_id: string) => orpc().rollback.list({ session_id })
 export const fetchCheckpointDiff = (session_id: string, checkpoint: string) => orpc().rollback.diff({ session_id, checkpoint })
 export const restoreCheckpoint = (session_id: string, checkpoint: string) => orpc().rollback.restore({ session_id, checkpoint })
+// TAL-605: a worktree chat's removal check, and the removal itself (`force` overrides the server's `force_required`).
+export const fetchWorktreeStatus = (session_id: string) => orpc().worktree.status({ session_id })
+export const removeWorktree = (session_id: string, force: boolean) => orpc().worktree.remove({ session_id, force })
 
 // Panels
 export const fetchSkills = (category?: string) => orpc().skills.list(category ? { category } : {})

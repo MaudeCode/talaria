@@ -26,6 +26,17 @@ export const GitErrorSchema = z.object({ error: z.string(), code: z.string() })
 /** One agent file checkpoint, newest first; `date_display` is the server's minute-precision rendering of `date`. */
 export const CheckpointSchema = z.object({ id: z.string(), commit: z.string(), message: z.string(), date: z.string(), date_display: z.string(), files: z.number().int(), path: z.string() })
 
+/**
+ * A worktree chat's removal check. `removable` is false while a stream or terminal holds the worktree; `force_required`
+ * is true when removal would lose uncommitted, untracked, or unpushed work and needs `force`.
+ */
+export const WorktreeStatusSchema = z.object({
+  path: z.string(), exists: z.boolean(), listed: z.boolean(), dirty: z.boolean(), untracked_count: z.number().int(),
+  ahead_behind: z.object({ ahead: z.number().int(), behind: z.number().int(), available: z.boolean(), upstream: z.string().nullable() }),
+  locked_by_stream: z.boolean(), locked_by_terminal: z.boolean(), removable: z.boolean(), force_required: z.boolean(),
+})
+export type WorktreeStatus = z.infer<typeof WorktreeStatusSchema>
+
 const SessionQuery = z.object({ session_id: z.string() })
 /** A checkpoint target: a configured workspace path, or a session, whose own workspace (a worktree chat's included) it names. */
 const RollbackTarget = z.object({ workspace: z.string().optional(), session_id: z.string().optional() })
@@ -61,7 +72,7 @@ export const gitContract = {
     restore: oc.route({ method: 'POST', path: '/api/rollback/restore', tags: ['rollback'] }).input(RollbackTarget.extend({ checkpoint: z.string().optional(), id: z.string().optional() }).catchall(Json)).output(z.object({ ok: z.literal(true), checkpoint: z.string(), workspace: z.string(), files_restored: z.array(z.string()), files_restored_count: z.number().int(), errors: z.array(z.object({ file: z.string(), error: z.string() })) })),
   },
   worktree: {
-    status: oc.route({ method: 'GET', path: '/api/session/worktree/status', tags: ['sessions'] }).input(SessionQuery).output(z.object({ status: Loose })),
+    status: oc.route({ method: 'GET', path: '/api/session/worktree/status', tags: ['sessions'] }).input(SessionQuery).output(z.object({ status: WorktreeStatusSchema })),
     remove: oc.route({ method: 'POST', path: '/api/session/worktree/remove', tags: ['sessions'] }).input(z.object({ session_id: Json.optional(), force: Json.optional() })).output(z.object({ ok: z.literal(true), removed_path: z.string(), warnings: z.array(z.string()).nullable() })),
   },
   upload: {

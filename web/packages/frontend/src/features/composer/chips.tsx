@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { ChevronDown, Cpu, Brain, Wrench, FolderOpen } from 'lucide-react'
+import { ChevronDown, Cpu, Brain, Wrench, FolderOpen, GitBranch } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import { useModelsQuery, useWorkspacesQuery } from '../../app/queries'
 import { HelpTip } from '../../ui/Field'
@@ -92,7 +92,7 @@ export function ToolsetsChip({ value, onChange, row }: { value: string[] | null;
 }
 
 /** `name` is the session's `workspace_name`; without a session the chip shows the chosen registry entry's name (TAL-303). */
-export function WorkspaceChip({ value, name, onChange, row }: { value: string | undefined; name?: string | null | undefined; onChange: (path: string) => void; row?: boolean | undefined }) {
+export function WorkspaceChip({ value, name, onChange, onNewWorktree, onRemoveWorktree, row }: { value: string | undefined; name?: string | null | undefined; onChange: (path: string) => void; onNewWorktree?: ((workspace: string | undefined) => void) | undefined; onRemoveWorktree?: (() => void) | undefined; row?: boolean | undefined }) {
   const ws = useWorkspacesQuery()
   const list = ws.data?.workspaces ?? []
   const label = (name !== undefined ? name : list.find((w) => w.path === value)?.name) || '—'
@@ -101,6 +101,15 @@ export function WorkspaceChip({ value, name, onChange, row }: { value: string | 
       <MenuRadioGroup value={value ?? ''} onValueChange={(v: string) => onChange(v)}>
         {list.map((w) => <MenuRadioItem key={w.path} value={w.path} className={RADIO_CLASS}><span className="flex min-w-0 flex-col"><span className="truncate">{w.name}</span><span className="truncate font-mono text-[10px] text-muted">{w.path}</span></span></MenuRadioItem>)}
       </MenuRadioGroup>
+      {(onNewWorktree ?? onRemoveWorktree) && <MenuSeparator />}
+      {onNewWorktree && (
+        <MenuItem onClick={() => onNewWorktree(value)} className="items-start gap-2">
+          <GitBranch size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+          <span className="flex min-w-0 flex-col"><span>{m.workspace_new_worktree_conversation()}</span><span className="text-[11px] text-muted">{m.workspace_new_worktree_conversation_meta()}</span></span>
+        </MenuItem>
+      )}
+      {/* A worktree chat's own removal, reachable on touch layouts that hide the sidebar row's menu. */}
+      {onRemoveWorktree && <MenuItem onClick={onRemoveWorktree} className="text-error">{m.session_worktree_remove()}</MenuItem>}
     </Menu>
   )
 }

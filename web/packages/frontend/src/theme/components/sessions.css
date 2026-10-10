@@ -59,6 +59,7 @@
 .project-chip.active{background:var(--project-chip-active-bg);color:var(--project-chip-active-fg);border-color:var(--project-chip-active-border);box-shadow:var(--project-chip-active-shadow);font-weight:var(--project-chip-active-weight)}
 .project-chip.no-project{border-style:dashed}
 .project-chip .color-dot{width:6px;height:6px;border-radius:50%;display:inline-block;flex-shrink:0}
+.session-worktree-badge{display:inline-flex;flex-shrink:0;color:var(--muted)}
 .session-project-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;display:inline-block}
 .session-item.cli-session{padding-right:6px}
 .session-item.cli-session[data-source-key="telegram"]{border-left-color:var(--source-telegram)}

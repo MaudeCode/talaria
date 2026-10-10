@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Archive, ArchiveRestore, Filter, Plus, Search, X } from 'lucide-react'
+import { Archive, ArchiveRestore, Filter, GitBranch, Plus, Search, X } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
@@ -234,6 +234,7 @@ export function SessionListPanel() {
                       <div className="session-text">
                         <div className="session-title-row">
                           <span className="session-title" title={row.title || m.untitled()}>{row.title || m.untitled()}</span>
+                          {row.worktree_branch && <span className="session-worktree-badge" role="img" aria-label={`${m.session_worktree_badge()}: ${row.worktree_branch}`} title={`${m.session_worktree_badge()}: ${row.worktree_branch}`}><GitBranch size={12} aria-hidden="true" /></span>}
                           {proj && <span className="session-project-dot" style={{ background: proj.color ?? 'var(--blue)' }} title={proj.name} />}
                           <span className="session-time">{relativeTime(row.sort_ts)}</span>
                         </div>

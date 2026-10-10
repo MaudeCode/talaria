@@ -640,7 +640,8 @@ export function capRecentCliSessions(rows: Row[], cap = CLI_VISIBLE_SESSION_CAP)
 }
 
 function sessionHasServerVisibleMessages(row: Row): boolean {
-  if (sidebarMessageCount(row) > 0) return true
+  // A worktree chat owns a directory on disk from creation; its row is where the user removes it (TAL-605).
+  if (sidebarMessageCount(row) > 0 || row.worktree_path) return true
   const attention = row.attention
   if (attention && typeof attention === 'object' && (attention as Row).kind && num((attention as Row).count) > 0) return true
   return Boolean(row.is_streaming || row.active_stream_id || row.pending_user_message || row.has_pending_user_message)

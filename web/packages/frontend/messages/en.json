@@ -644,6 +644,7 @@
 	"session_worktree_remove_confirm": "Remove git worktree from disk?\n\nPath: {path}\n\nThis will delete the entire worktree directory. Session data remains in WebUI.",
 	"session_worktree_remove_not_exists": "The worktree at {path} no longer exists on disk.",
 	"session_worktree_remove_confirm_label": "Remove",
+	"session_worktree_force_remove": "Force remove",
 	"session_worktree_removed": "Worktree removed.",
 	"session_worktree_remove_failed": "Failed to remove worktree: ",
 	"session_worktree_remove_status_failed": "Failed to read worktree status: ",

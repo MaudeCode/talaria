@@ -12,12 +12,17 @@ touches ``~/.hermes``, a model provider, or the network.
 
 The App probe's ``talaria contract fixture`` message also stages a single-question
 multi-select clarification after the approval is answered.
+
+``worktree.create`` adds a real git worktree under the repository's ``.worktrees/``,
+as the Agent's helper does, so worktree chats run end to end against a synthetic repo.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import subprocess
+import uuid
 import sys
 import threading
 from pathlib import Path
@@ -25,6 +30,7 @@ from pathlib import Path
 SIDECAR_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SIDECAR_ROOT))
 
+from talaria_sidecar.errors import RpcError  # noqa: E402
 from talaria_sidecar.rpc import RpcServer  # noqa: E402
 
 FIXTURES = SIDECAR_ROOT.parent / "packages" / "contracts" / "fixtures" / "sidecar"
@@ -94,6 +100,23 @@ def _clarify_respond(ctx, params: dict) -> dict:
     return {"ok": True}
 
 
+def _worktree_create(ctx, params: dict) -> dict:
+    def git(*args: str, cwd: str) -> subprocess.CompletedProcess:
+        return subprocess.run(["git", *args], cwd=cwd, text=True, capture_output=True, timeout=10, check=False)
+
+    repo_root = str(params.get("repo_root") or "")
+    probe = git("rev-parse", "--show-toplevel", cwd=repo_root) if Path(repo_root).is_dir() else None
+    if probe is None or probe.returncode != 0:
+        raise RpcError("Workspace is not inside a git repository", condition="not_a_repo")
+    root = str(Path(probe.stdout.strip()).resolve())
+    name = f"hermes-{uuid.uuid4().hex[:8]}"
+    path, branch = str(Path(root) / ".worktrees" / name), f"hermes/{name}"
+    added = git("worktree", "add", "-q", "-b", branch, path, "HEAD", cwd=root)
+    if added.returncode != 0:
+        raise RpcError(f"git worktree add failed: {added.stderr.strip()}", condition="worktree_failed")
+    return {"path": path, "branch": branch, "repo_root": root, "base": None}
+
+
 def _shutdown(ctx, params: dict) -> dict:
     ctx.server.request_shutdown(int(params.get("exit_code") or 0))
     return {"ok": True}
@@ -118,6 +141,7 @@ def build_methods() -> dict:
     methods["approval.set_yolo"] = lambda ctx, params: {"yolo_enabled": bool(params.get("enabled")), "released": 0}
     # Every settled turn asks the goal judge (TAL-396); the replay holds no goal, so it answers as the sidecar does then.
     methods["goals.evaluate"] = lambda ctx, params: {"status": None, "should_continue": False, "continuation_prompt": None, "verdict": "inactive", "reason": "no active goal", "message": ""}
+    methods["worktree.create"] = _worktree_create
     methods["runtime.shutdown"] = _shutdown
     return methods
 
