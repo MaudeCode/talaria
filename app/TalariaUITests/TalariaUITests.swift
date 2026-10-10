@@ -2357,6 +2357,8 @@ final class SidebarGestureUITests: SidebarUITestCase {
         assertSidebarCloses("over the Settings root")
         tapCenter(of: app.buttons["settings-user-profile"])
         XCTAssertTrue(app.navigationBars["User Profile"].awaitExistence(timeout: Self.navigationTimeout))
+        // The bar exists as the push starts; an edge swipe mid-transition is dropped (TAL-462).
+        _ = settledFrame(of: app.descendants(matching: .any)["Display Name"].firstMatch)
         swipe(rtl: rtl, from: 0.005, to: 0.75)
         XCTAssertTrue(app.navigationBars["Settings"].awaitExistence(timeout: 5), "The edge swipe did not return to Settings")
         XCTAssertFalse(app.navigationBars["User Profile"].exists, "The edge swipe did not return to Settings")
