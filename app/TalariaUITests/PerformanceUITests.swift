@@ -48,6 +48,13 @@ class PerformanceUITestCase: TalariaUITestCase {
         )).tap()
     }
 
+    /// A hosted dense-transcript push can keep Back from appearing for longer than
+    /// `returnToSessionList()` first waits, so wait for it here, outside any measured window.
+    func returnToDenseSessionList() {
+        XCTAssertTrue(app.buttons["BackButton"].awaitExistence(timeout: 60), "The dense transcript never showed Back")
+        returnToSessionList()
+    }
+
     func openDenseSession() {
         waitForSessionList()
         tapCentre(of: denseSessionRow)
@@ -126,8 +133,7 @@ final class TranscriptPerformanceUITests: PerformanceUITestCase {
             XCTAssertTrue(waitForComposer(timeout: 30) != nil, "The dense fixture session never opened")
             stopMeasuring()
 
-            app.navigationBars.buttons["BackButton"].firstMatch.tap()
-            XCTAssertTrue(app.navigationBars["Chats"].awaitExistence(timeout: 15))
+            returnToDenseSessionList()
         }
     }
 
@@ -147,8 +153,7 @@ final class TranscriptPerformanceUITests: PerformanceUITestCase {
             XCTAssertTrue(waitForComposer(timeout: 30) != nil, "The long-body fixture session never opened")
             stopMeasuring()
 
-            app.navigationBars.buttons["BackButton"].firstMatch.tap()
-            XCTAssertTrue(app.navigationBars["Chats"].awaitExistence(timeout: 15))
+            returnToDenseSessionList()
         }
     }
 
@@ -187,11 +192,7 @@ final class NavigationPerformanceUITests: PerformanceUITestCase {
             for _ in 0..<3 {
                 tapCentre(of: denseSessionRow)
                 XCTAssertTrue(waitForComposer(timeout: 30) != nil, "The dense fixture session never opened")
-                app.navigationBars.buttons["BackButton"].firstMatch.tap()
-                XCTAssertTrue(
-                    app.navigationBars["Chats"].awaitExistence(timeout: 15),
-                    "The transcript never dismissed back to the session list"
-                )
+                returnToDenseSessionList()
             }
         }
     }

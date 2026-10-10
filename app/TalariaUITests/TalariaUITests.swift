@@ -3251,6 +3251,12 @@ extension TalariaUITestCase {
             _ = chats.awaitExistence(timeout: 5)
         }
         XCTAssertTrue(chats.exists, "Did not return to the session list")
+        // `Chats` appears partway through the pop while the chat's Back chevron is still in the
+        // tree; a row tapped then lands mid-transition and wedges the stack (TAL-708).
+        XCTAssertTrue(
+            app.buttons["BackButton"].awaitNonExistence(timeout: Self.navigationTimeout),
+            "The chat never finished popping back to the session list"
+        )
     }
 
     func openSettings() {
