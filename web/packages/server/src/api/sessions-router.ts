@@ -26,6 +26,7 @@ import { pyOsError, pyRepr, str } from '../util.js'
 import { ensureTrustedAuthSession, sessionCanManageServer } from '../auth/gate.js'
 import { RelayPairingError } from '../sessions/relay.js'
 import { EscapeGrantExpired, type EscapeRequest } from '../workspace/escape.js'
+import { ProfileError } from '../profiles/profiles.js'
 
 const os = implement({ ...sessionsContract, ...workspacesContract }).$context<ApiContext>().use(requestSessionIdGuard)
 
@@ -33,6 +34,7 @@ const os = implement({ ...sessionsContract, ...workspacesContract }).$context<Ap
 export function failure(error: unknown): never {
   if (error instanceof HttpFailure) throw new HttpError(error.status, error.message, error.extra)
   if (error instanceof SessionNotFound) throw new HttpError(404, 'Session not found')
+  if (error instanceof ProfileError) throw new HttpError(error.status, error.message)
   throw error
 }
 
@@ -187,7 +189,8 @@ export const sessionsRouter = os.router({
       // Python: an invisible prev_session_id is ignored (the service drops it), never an error (#5420).
       const profile = input.profile || null
       // The middleware warms only the cookie profile's config; new-session defaults read the target's synchronously.
-      if (profile) await Promise.resolve().then(() => ctx.deps.agentConfig.read(ctx.deps.profileHome(profile))).catch(() => undefined)
+      // `profileHome` refuses a profile whose home escapes the profiles root (400) before any warm-up failure is swallowed.
+      if (profile) { const home = ctx.deps.profileHome(profile); await ctx.deps.agentConfig.read(home).catch(() => undefined) }
       let worktree: { path: string; branch: string; repo_root: string; created_at: number } | null = null
       let worktreeSkipped: string | null = null
       const explicit = 'worktree' in input

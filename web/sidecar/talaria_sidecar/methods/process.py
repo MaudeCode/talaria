@@ -415,10 +415,9 @@ def recover(base_home: Path) -> int:
     """TAL-533: re-adopt every profile's checkpointed processes when a sidecar starts, so a process in a profile nobody
     uses yet is watched (and its exit reported) from the start. Entering a home's scope recovers it once; a failed
     recovery fails the call, so the server retries."""
-    from hermes_cli.profiles import _PROFILE_ID_RE
+    from .profiles import named_profile_homes
 
-    profiles_root = base_home / "profiles"
-    named = sorted(p for p in profiles_root.iterdir() if p.is_dir() and _PROFILE_ID_RE.match(p.name)) if profiles_root.is_dir() else []
+    named = named_profile_homes(base_home)
     failed = []
     for home in [base_home, *named]:
         try:

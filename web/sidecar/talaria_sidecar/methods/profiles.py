@@ -170,18 +170,24 @@ def _row(home: Path, name: str, is_default: bool) -> dict:
     }
 
 
-def list_profiles(base_home: Path) -> list[dict]:
-    """Profile rows for the base Hermes home: the root profile plus ``profiles/*``."""
+def named_profile_homes(base_home: Path) -> list[Path]:
+    """The ``profiles/*`` directories named like profiles, skipping any that resolve outside the resolved profiles root
+    (a symlink leading elsewhere is never read as a profile; TAL-579)."""
     from hermes_cli.profiles import _PROFILE_ID_RE as UPSTREAM_ID_RE
 
+    profiles_root = base_home / "profiles"
+    if not profiles_root.is_dir():
+        return []
+    root = profiles_root.resolve()
+    return [p for p in sorted(profiles_root.iterdir()) if p.is_dir() and UPSTREAM_ID_RE.match(p.name) and p.resolve().is_relative_to(root)]
+
+
+def list_profiles(base_home: Path) -> list[dict]:
+    """Profile rows for the base Hermes home: the root profile plus ``profiles/*``."""
     rows = []
     if base_home.is_dir():
         rows.append(_row(base_home, "default", True))
-    profiles_root = base_home / "profiles"
-    if profiles_root.is_dir():
-        for entry in sorted(profiles_root.iterdir()):
-            if entry.is_dir() and UPSTREAM_ID_RE.match(entry.name):
-                rows.append(_row(entry, entry.name, False))
+    rows.extend(_row(entry, entry.name, False) for entry in named_profile_homes(base_home))
     return rows
 
 
