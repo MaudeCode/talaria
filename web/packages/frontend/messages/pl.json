@@ -477,7 +477,7 @@
 	"session_toolsets_applied": "Zaktualizowano zestawy narzędzi",
 	"session_toolsets_cleared": "Wyczyszczono zestawy narzędzi — używanie konfiguracji globalnej",
 	"session_toolsets_failed": "Nie udało się zaktualizować zestawów narzędzi: ",
-	"no_personalities": "Nie znaleziono żadnych osobowości (dodaj je do ~/.hermes/personalities/)",
+	"no_personalities": "Nie znaleziono żadnych osobowości (dodaj je do config.yaml → agent.personalities)",
 	"available_personalities": "Dostępne osobowości:",
 	"personality_switch_hint": "\n\nUżyj `/personality <nazwa>`, aby przełączyć, lub `/personality none`, aby wyczyścić.",
 	"personalities_load_failed": "Nie udało się załadować osobowości",

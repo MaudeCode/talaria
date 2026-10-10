@@ -464,7 +464,7 @@
 	"session_toolsets_applied": "工具集已更新",
 	"session_toolsets_cleared": "正在使用目前設定檔預設",
 	"session_toolsets_failed": "更新工具集失敗：",
-	"no_personalities": "找不到角色（可新增至 ~/.hermes/personalities/）",
+	"no_personalities": "找不到角色（可新增至 config.yaml → agent.personalities）",
 	"available_personalities": "可用角色：",
 	"personality_switch_hint": "\n\n使用 `/personality <name>` 切換，或使用 `/personality none` 清除。",
 	"personalities_load_failed": "載入角色失敗",

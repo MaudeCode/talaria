@@ -464,7 +464,7 @@
 	"session_toolsets_applied": "ツールセットを更新しました",
 	"session_toolsets_cleared": "アクティブプロファイルのデフォルトを使用しています",
 	"session_toolsets_failed": "ツールセット更新失敗: ",
-	"no_personalities": "パーソナリティが見つかりません (~/.hermes/personalities/ に追加してください)",
+	"no_personalities": "パーソナリティが見つかりません (config.yaml → agent.personalities に追加してください)",
 	"available_personalities": "利用可能なパーソナリティ:",
 	"personality_switch_hint": "\n\n`/personality <名前>` で切り替え、`/personality none` でクリアします。",
 	"personalities_load_failed": "パーソナリティの読み込みに失敗しました",

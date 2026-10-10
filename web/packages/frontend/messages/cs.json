@@ -483,7 +483,7 @@
 	"session_toolsets_applied": "Sady nástrojů byly aktualizovány",
 	"session_toolsets_cleared": "Použití výchozích hodnot aktivního profilu",
 	"session_toolsets_failed": "Aktualizace sad nástrojů se nezdařila:",
-	"no_personalities": "Nebyly nalezeny žádné osobnosti (přidejte je do ~/.hermes/personalities/)",
+	"no_personalities": "Nebyly nalezeny žádné osobnosti (přidejte je do config.yaml → agent.personalities)",
 	"available_personalities": "Dostupné osobnosti:",
 	"personality_switch_hint": "\n\nPoužijte `/personality <název>` pro přepnutí nebo `/personality none` pro vymazání.",
 	"personalities_load_failed": "Načtení osobností se nezdařilo",

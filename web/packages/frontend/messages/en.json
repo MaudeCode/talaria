@@ -463,7 +463,7 @@
 	"session_toolsets_applied": "Toolsets updated",
 	"session_toolsets_cleared": "Using active profile defaults",
 	"session_toolsets_failed": "Failed to update toolsets: ",
-	"no_personalities": "No personalities found (add them to ~/.hermes/personalities/)",
+	"no_personalities": "No personalities found (add them to config.yaml → agent.personalities)",
 	"available_personalities": "Available personalities:",
 	"personality_switch_hint": "\n\nUse `/personality <name>` to switch, or `/personality none` to clear.",
 	"personalities_load_failed": "Failed to load personalities",

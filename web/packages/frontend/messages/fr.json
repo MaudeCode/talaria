@@ -464,7 +464,7 @@
 	"session_toolsets_applied": "Jeux d'outils mis à jour",
 	"session_toolsets_cleared": "Utilisation des valeurs par défaut du profil actif",
 	"session_toolsets_failed": "Échec de la mise à jour des jeux d'outils : ",
-	"no_personalities": "Aucune personnalité trouvée (ajoutez-les dans ~/.hermes/personalities/)",
+	"no_personalities": "Aucune personnalité trouvée (ajoutez-les dans config.yaml → agent.personalities)",
 	"available_personalities": "Personnalités disponibles :",
 	"personality_switch_hint": "\n\nUtilisez `/personality <nom>` pour changer, ou `/personality none` pour effacer.",
 	"personalities_load_failed": "Échec du chargement des personnalités",

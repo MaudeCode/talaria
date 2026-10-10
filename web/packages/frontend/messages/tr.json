@@ -464,7 +464,7 @@
 	"session_toolsets_applied": "Araç setleri güncellendi",
 	"session_toolsets_cleared": "Etkin profil varsayılanları kullanılıyor",
 	"session_toolsets_failed": "Araç setleri güncellenemedi: ",
-	"no_personalities": "Hiç kişilik bulunamadı (onları ~/.hermes/personalities/ dosyasına ekleyin)",
+	"no_personalities": "Hiç kişilik bulunamadı (onları config.yaml → agent.personalities dosyasına ekleyin)",
 	"available_personalities": "Mevcut kişilikler:",
 	"personality_switch_hint": "Geçiş yapmak için `/kişilik <ad>` kullanın veya temizlemek için `/kişilik yok` kullanın.",
 	"personalities_load_failed": "Kişilikler yüklenemedi",

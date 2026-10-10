@@ -464,7 +464,7 @@
 	"session_toolsets_applied": "Đã cập nhật bộ công cụ",
 	"session_toolsets_cleared": "Đã xóa bộ công cụ — dùng cấu hình toàn cục",
 	"session_toolsets_failed": "Cập nhật bộ công cụ thất bại: ",
-	"no_personalities": "Không tìm thấy personality nào (thêm vào ~/.hermes/personalities/)",
+	"no_personalities": "Không tìm thấy personality nào (thêm vào config.yaml → agent.personalities)",
 	"available_personalities": "Các personality khả dụng:",
 	"personality_switch_hint": "\n\nDùng `/personality <name>` để chuyển hoặc `/personality none` để xóa.",
 	"personalities_load_failed": "Tải personality thất bại",
