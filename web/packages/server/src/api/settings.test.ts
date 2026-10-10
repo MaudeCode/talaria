@@ -209,9 +209,9 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     let body = await json(res)
     const providers = body.providers as { id: string; has_key: boolean; key_source: string; configurable: boolean; is_oauth: boolean; models_total: number }[]
     const anthropic = providers.find((p) => p.id === 'anthropic')
-    expect(anthropic).toMatchObject({ has_key: true, key_source: 'env_file', configurable: true, is_oauth: false })
-    expect(providers.find((p) => p.id === 'openai')).toMatchObject({ has_key: false, key_source: 'none' })
-    expect(providers.find((p) => p.id === 'openai-codex')).toMatchObject({ is_oauth: true, configurable: false, has_key: false, auth_error: 'not logged in' })
+    expect(anthropic).toMatchObject({ has_key: true, key_source: 'env_file', configurable: true, is_oauth: false, removable: true })
+    expect(providers.find((p) => p.id === 'openai')).toMatchObject({ has_key: false, key_source: 'none', removable: false })
+    expect(providers.find((p) => p.id === 'openai-codex')).toMatchObject({ is_oauth: true, configurable: false, has_key: false, auth_error: 'not logged in', removable: false })
     expect(body.active_provider).toBe('anthropic')
     res = await post(s, '/api/providers', { provider: 'deepseek', api_key: 'sk-deepseek-12345' })
     expect(await json(res)).toEqual({ ok: true, provider: 'deepseek', display_name: 'DeepSeek', action: 'updated' })
@@ -248,7 +248,8 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
       // A key supplied by the process environment itself still applies everywhere.
       env.DEEPSEEK_API_KEY = 'sk-deepseek-process-1234'
       s.deps.catalog.invalidate()
-      expect((await rows(cookie)).find((p) => p.id === 'deepseek')).toMatchObject({ has_key: true, key_source: 'env_var' })
+      // TAL-641: a process-environment key is not in .env, so the server offers no Remove for it.
+      expect((await rows(cookie)).find((p) => p.id === 'deepseek')).toMatchObject({ has_key: true, key_source: 'env_var', removable: false })
       // Removing the dotenv-owned key on the default profile clears the runtime copy and tells the sidecar.
       const before = sidecar.calls.length
       expect((await json(await post(s, '/api/providers/delete', { provider: 'openai' }))).action).toBe('removed')
@@ -512,7 +513,7 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
       }
       sidecar.respond('usage.pool_providers', () => ({ providers: ['zai'] }))
       s.deps.catalog.invalidate()
-      expect(await zai()).toMatchObject({ has_key: true, configured: true, key_source: 'credential_pool' })
+      expect(await zai()).toMatchObject({ has_key: true, configured: true, key_source: 'credential_pool', removable: false })
       const groups = (await json(await s.get('/api/models'))).groups as { provider_id: string }[]
       expect(groups.map((g) => g.provider_id)).toContain('zai')
     } finally {

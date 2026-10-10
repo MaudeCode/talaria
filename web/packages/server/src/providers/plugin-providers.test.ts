@@ -7,7 +7,7 @@ import { bootTestServer, type TestServer } from '../test/harness.js'
 import { writeEnvFile } from './env-file.js'
 
 type Json = Record<string, unknown>
-interface Row { id: string; display_name?: string; has_key?: boolean; is_plugin_provider?: boolean; configurable?: boolean; is_oauth?: boolean; key_source?: string; auth_error?: string | null; models?: { id: string }[]; models_total?: number }
+interface Row { id: string; display_name?: string; has_key?: boolean; is_plugin_provider?: boolean; configurable?: boolean; is_oauth?: boolean; key_source?: string; removable?: boolean; auth_error?: string | null; models?: { id: string }[]; models_total?: number }
 interface Group { provider: string; provider_id: string; models: { id: string }[] }
 const post = (s: TestServer, path: string, body: unknown, headers: Record<string, string> = {}): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json', ...headers } })
 const json = async (res: Response): Promise<Json> => (await res.json()) as Json
@@ -58,7 +58,7 @@ describe('installed model-provider plugins in the provider catalog', () => {
     const rows = cards.providers as Row[]
     expect(cards.active_provider).toBe('anthropic')
     expect(rows.find((p) => p.id === 'fake-sub')).toMatchObject({
-      display_name: 'Fake Subscription', is_plugin_provider: true, has_key: true, configurable: false, is_oauth: false, key_source: 'plugin', auth_error: null,
+      display_name: 'Fake Subscription', is_plugin_provider: true, has_key: true, configurable: false, is_oauth: false, key_source: 'plugin', removable: false, auth_error: null,
       models: [{ id: 'fake-opus' }, { id: 'claude-sonnet-4-6' }], models_total: 2,
     })
     expect(rows.find((p) => p.id === 'anthropic')).toMatchObject({ has_key: true, is_plugin_provider: false, key_source: 'env_file', models: [{ id: 'claude-opus-4-7' }, { id: 'claude-sonnet-4-6' }] })

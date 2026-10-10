@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Remove key appears only on provider keys Web can actually remove, not on keys from config.yaml, the environment, or the credential pool.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
