@@ -6,8 +6,10 @@ import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { useExtensionManifests } from '../../extensions/registry'
 import type { ExtensionManifest } from '../../contracts/extension'
+import { readExtensionSettings, writeExtensionSetting, type SettingValue } from '../../extensions/host'
 import { Button } from '../../ui/Button'
-import { Switch } from '../../ui/Field'
+import { FieldRow, Switch, TextInput } from '../../ui/Field'
+import { Select } from '../../ui/Select'
 import { ConfirmDialog } from '../../ui/Dialog'
 import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
 import { showToast } from '../toast/toast'
@@ -83,6 +85,7 @@ function ExtensionRow({ ext, canManage, onToggle, onConsent, onUninstall }: { ex
         {ext.capabilities.map((c) => <span key={c} className="rounded-full border border-border px-1.5">{c}</span>)}
         {perms.map((p) => <span key={p} className="rounded-full border border-warning px-1.5 text-warning">{p}</span>)}
       </div>
+      {ext.settings_schema.length > 0 && <ExtensionSettings ext={ext} />}
       {ext.sidecar && (
         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted">
           <span className="font-mono">{ext.sidecar.origin}</span>
@@ -96,5 +99,47 @@ function ExtensionRow({ ext, canManage, onToggle, onConsent, onUninstall }: { ex
       )}
       {ext.warnings.length > 0 && <ul className="mt-1 text-[11px] text-warning">{ext.warnings.map((w) => <li key={w}>{w}</li>)}</ul>}
     </li>
+  )
+}
+
+/** The extension's settings_schema as a form; each change saves to the browser-local settings the extension reads. */
+function ExtensionSettings({ ext }: { ext: ExtensionManifest }) {
+  const [values, setValues] = useState(() => readExtensionSettings(ext))
+  const save = (key: string, value: SettingValue) => {
+    try {
+      const saved = writeExtensionSetting(ext, key, value)
+      setValues((cur) => ({ ...cur, [key]: saved }))
+    } catch {
+      /* a value the schema rejects (a fraction in an integer field) keeps the saved one */
+    }
+  }
+  return (
+    <div className="mt-2 border-t border-border-subtle">
+      {ext.settings_schema.map((f) => {
+        const id = `ext-setting-${ext.id}-${f.key}`
+        const value = values[f.key]
+        return (
+          <FieldRow key={f.key} label={f.label} htmlFor={id} {...(f.description ? { hint: f.description } : {})} inline>
+            {f.type === 'boolean' ? <Switch id={id} checked={value === true} onCheckedChange={(checked) => save(f.key, checked)} />
+              : f.type === 'enum' ? <Select id={id} value={String(value ?? '')} onValueChange={(v) => save(f.key, v)}>{f.options?.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</Select>
+              : f.type === 'string' ? <div className="w-48 max-w-[50vw]"><TextInput id={id} maxLength={2000} value={String(value ?? '')} onChange={(e) => save(f.key, e.target.value)} /></div>
+              : <NumberSetting id={id} integer={f.type === 'integer'} value={value ?? null} onSave={(n) => save(f.key, n)} />}
+          </FieldRow>
+        )
+      })}
+    </div>
+  )
+}
+
+/** Holds the typed text while editing; a value the schema rejects (blank, or a fraction in an integer field) is flagged and shows the saved value again on blur. */
+function NumberSetting({ id, integer, value, onSave }: { id: string; integer: boolean; value: SettingValue; onSave: (n: number) => void }) {
+  const [draft, setDraft] = useState<string | null>(null)
+  const saved = String(value ?? '')
+  const invalid = draft !== null && (draft.trim() === '' || Number(draft) !== value)
+  return (
+    <div className="w-28">
+      <TextInput id={id} type="number" step={integer ? 1 : 'any'} aria-invalid={invalid || undefined} className="aria-invalid:border-error" value={draft ?? saved}
+        onChange={(e) => { setDraft(e.target.value); if (e.target.value.trim() !== '') onSave(Number(e.target.value)) }} onBlur={() => setDraft(null)} />
+    </div>
   )
 }

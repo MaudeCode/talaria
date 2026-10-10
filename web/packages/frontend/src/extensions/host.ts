@@ -31,16 +31,47 @@ export class ProtocolError extends Error {
   }
 }
 
+const SETTINGS_PREFIX = 'hermes.ext.settings.'
+const STORAGE_PREFIX = 'hermes.ext.storage.'
+const SettingsBlob = z.record(z.string(), z.union([z.boolean(), z.string(), z.number(), z.null()]))
+const StorageBlob = z.record(z.string(), z.string())
+export type SettingValue = boolean | string | number | null
+const settingsKey = (id: string): string => SETTINGS_PREFIX + encodeURIComponent(id)
+
+/** Browser-local settings over the schema defaults: what `settings.get` answers and Settings > Extensions shows. */
+export function readExtensionSettings(manifest: ExtensionManifest): Record<string, SettingValue> {
+  const stored = readPersistedJson(settingsKey(manifest.id), SettingsBlob) ?? {}
+  const out: Record<string, SettingValue> = {}
+  for (const f of manifest.settings_schema) out[f.key] = stored[f.key] ?? f.default ?? null
+  return out
+}
+
+function validateSetting(manifest: ExtensionManifest, key: string, value: unknown): SettingValue {
+  const field = manifest.settings_schema.find((f) => f.key === key)
+  if (!field) throw new ProtocolError('unknown_setting', `Unknown setting ${key}`)
+  if (value === null) return field.default ?? null
+  switch (field.type) {
+    case 'boolean': if (typeof value !== 'boolean') throw new ProtocolError('invalid_value', 'boolean expected'); return value
+    case 'string': if (typeof value !== 'string') throw new ProtocolError('invalid_value', 'string expected'); return value.slice(0, 2000)
+    case 'number': if (typeof value !== 'number' || !Number.isFinite(value)) throw new ProtocolError('invalid_value', 'number expected'); return value
+    case 'integer': if (typeof value !== 'number' || !Number.isInteger(value)) throw new ProtocolError('invalid_value', 'integer expected'); return value
+    case 'enum': if (typeof value !== 'string' || !field.options?.some((o) => o.value === value)) throw new ProtocolError('invalid_value', 'enum option expected'); return value
+  }
+}
+
+/** Validate one value against its schema field and persist it; throws ProtocolError on an unknown key or a wrong type. */
+export function writeExtensionSetting(manifest: ExtensionManifest, key: string, value: unknown): SettingValue {
+  const valid = validateSetting(manifest, key, value)
+  const stored = readPersistedJson(settingsKey(manifest.id), SettingsBlob) ?? {}
+  writePersistedJson(settingsKey(manifest.id), { ...stored, [key]: valid })
+  return valid
+}
+
 function nonce(): string {
   const bytes = new Uint8Array(24)
   crypto.getRandomValues(bytes)
   return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
-
-const SETTINGS_PREFIX = 'hermes.ext.settings.'
-const STORAGE_PREFIX = 'hermes.ext.storage.'
-const SettingsBlob = z.record(z.string(), z.union([z.boolean(), z.string(), z.number(), z.null()]))
-const StorageBlob = z.record(z.string(), z.string())
 
 export class ExtensionHost {
   readonly nonce = nonce()
@@ -150,29 +181,8 @@ export class ExtensionHost {
     return this.manifest.capabilities.includes(cap)
   }
 
-  private settingsKey(): string {
-    return SETTINGS_PREFIX + encodeURIComponent(this.manifest.id)
-  }
   private storageKey(): string {
     return STORAGE_PREFIX + encodeURIComponent(this.manifest.id)
-  }
-  private readSettings(): Record<string, boolean | string | number | null> {
-    const stored = readPersistedJson(this.settingsKey(), SettingsBlob) ?? {}
-    const out: Record<string, boolean | string | number | null> = {}
-    for (const f of this.manifest.settings_schema) out[f.key] = stored[f.key] ?? f.default ?? null
-    return out
-  }
-  private validateSetting(key: string, value: unknown): boolean | string | number | null {
-    const field = this.manifest.settings_schema.find((f) => f.key === key)
-    if (!field) throw new ProtocolError('unknown_setting', `Unknown setting ${key}`)
-    if (value === null) return field.default ?? null
-    switch (field.type) {
-      case 'boolean': if (typeof value !== 'boolean') throw new ProtocolError('invalid_value', 'boolean expected'); return value
-      case 'string': if (typeof value !== 'string') throw new ProtocolError('invalid_value', 'string expected'); return value.slice(0, 2000)
-      case 'number': if (typeof value !== 'number' || !Number.isFinite(value)) throw new ProtocolError('invalid_value', 'number expected'); return value
-      case 'integer': if (typeof value !== 'number' || !Number.isInteger(value)) throw new ProtocolError('invalid_value', 'integer expected'); return value
-      case 'enum': if (typeof value !== 'string' || !field.options?.some((o) => o.value === value)) throw new ProtocolError('invalid_value', 'enum option expected'); return value
-    }
   }
 
   private async dispatch(id: number, method: Method, params: unknown): Promise<void> {
@@ -191,19 +201,16 @@ export class ExtensionHost {
     switch (method) {
       case 'settings.get': {
         const p = SettingsGetParams.parse(params ?? {})
-        const all = this.readSettings()
+        const all = readExtensionSettings(this.manifest)
         return p.key ? { value: all[p.key] ?? null } : { values: all }
       }
       case 'settings.set': {
         const p = SettingsSetParams.parse(params)
-        const value = this.validateSetting(p.key, p.value)
-        const stored = readPersistedJson(this.settingsKey(), SettingsBlob) ?? {}
-        writePersistedJson(this.settingsKey(), { ...stored, [p.key]: value })
-        return { value }
+        return { value: writeExtensionSetting(this.manifest, p.key, p.value) }
       }
       case 'settings.reset':
-        removePersisted(this.settingsKey())
-        return { values: this.readSettings() }
+        removePersisted(settingsKey(this.manifest.id))
+        return { values: readExtensionSettings(this.manifest) }
       case 'storage.get': {
         const p = StorageKeyParams.parse(params)
         const blob = readPersistedJson(this.storageKey(), StorageBlob) ?? {}
