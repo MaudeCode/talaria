@@ -53,7 +53,7 @@ legacy shape:
   "id": "hello-panel",
   "name": "Hello Panel",
   "version": "1.0.0",
-  "panel": "hello-panel/index.html",
+  "panel": "index.html",
   "nav": { "label": "Hello" },
   "capabilities": ["settings", "storage", "toast", "session", "lifecycle"],
   "settings_schema": [{ "key": "greeting", "type": "string", "label": "Greeting", "default": "Hi" }],
