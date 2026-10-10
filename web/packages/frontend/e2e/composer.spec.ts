@@ -184,6 +184,33 @@ test('a manual compression shows in the top tab while it runs', async ({ page })
   await expect(page.locator('.composer-tab [data-notice="runtime:compressing"]')).toContainText('Compressing context…')
 })
 
+test('the context ring opens the usage figures and Compress now starts compression (TAL-614)', async ({ page }, testInfo) => {
+  const usage = { context_used_tokens: 96_000, context_window_tokens: 128_000, context_usage_percent: 75, context_threshold_percent: 50, input_tokens: 412_000, output_tokens: 18_500, cache_read_tokens: 300_000, cache_write_tokens: 12_000, cache_hit_percent: 72, estimated_cost: 1.2345, can_compress: true }
+  let started = 0
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'ring', title: 'Ring', messages: transcript('ring', 2), ...usage } } }))
+  await page.route('**/api/session/compress/start', (route) => { started += 1; return route.fulfill({ json: { status: 'running' } }) })
+  await page.route('**/api/session/compress/status?**', (route) => route.fulfill({ json: { status: 'running' } }))
+  await page.route('**/api/session/draft', (route) => route.fulfill({ json: { ok: true } }))
+  await page.goto('/session/ring')
+  // Phones hide the ring; the same figures and action sit in the composer's overflow panel, shown once the idle row expands.
+  const phone = testInfo.project.name === 'mobile'
+  if (phone) { await page.locator('#msg').focus(); await page.locator('#composerMobileConfigBtn').click() }
+  else await page.locator('#ctxIndicator').click()
+  const details = page.locator(phone ? '#composerMobileContextAction' : '#ctxPopup')
+  await expect(details).toContainText('Context window usage: 75%')
+  await expect(details).toContainText('96,000 / 128,000')
+  await expect(details).toContainText('Automatic compression: 50%')
+  await expect(details).toContainText('Input tokens: 412,000')
+  await expect(details).toContainText('Output tokens: 18,500')
+  await expect(details).toContainText('Estimated cost: $1.2345')
+  await expect(details).toContainText('Cache: 72% hit (300,000 read / 12,000 write)')
+  await page.screenshot({ path: testInfo.outputPath('context-details.png') })
+  await details.getByRole('button', { name: 'Compress now' }).click()
+  await expect(page.locator('.composer-tab [data-notice="runtime:compressing"]')).toContainText('Compressing context…')
+  await expect.poll(() => started).toBe(1)
+  if (!phone) await expect(page.locator('#ctxPopup')).toHaveCount(0)
+})
+
 for (const { name, settings } of [{ name: 'auto-follow on', settings: {} }, { name: 'auto-follow off', settings: { auto_scroll_follow: false } }]) {
   test(`a hand scroll flattens the composer until it is used again, without covering the end: ${name}`, async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'desktop', 'phones keep their own collapsed row')

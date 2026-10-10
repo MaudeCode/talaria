@@ -4708,6 +4708,10 @@
                             }
                           ]
                         },
+                        "can_compress": {
+                          "type": "boolean",
+                          "description": "TAL-614: a manual compression would start now: writable, no running turn, and at least four model-history messages. Only the full session detail carries it; absent means no."
+                        },
                         "source_label": {
                           "anyOf": [
                             {
@@ -7065,6 +7069,10 @@
                             }
                           ]
                         },
+                        "can_compress": {
+                          "type": "boolean",
+                          "description": "TAL-614: a manual compression would start now: writable, no running turn, and at least four model-history messages. Only the full session detail carries it; absent means no."
+                        },
                         "source_label": {
                           "anyOf": [
                             {
@@ -9167,6 +9175,10 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "can_compress": {
+                          "type": "boolean",
+                          "description": "TAL-614: a manual compression would start now: writable, no running turn, and at least four model-history messages. Only the full session detail carries it; absent means no."
                         },
                         "source_label": {
                           "anyOf": [
@@ -12469,6 +12481,10 @@
                             }
                           ]
                         },
+                        "can_compress": {
+                          "type": "boolean",
+                          "description": "TAL-614: a manual compression would start now: writable, no running turn, and at least four model-history messages. Only the full session detail carries it; absent means no."
+                        },
                         "source_label": {
                           "anyOf": [
                             {
@@ -15603,6 +15619,10 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "can_compress": {
+                          "type": "boolean",
+                          "description": "TAL-614: a manual compression would start now: writable, no running turn, and at least four model-history messages. Only the full session detail carries it; absent means no."
                         },
                         "source_label": {
                           "anyOf": [
@@ -19444,6 +19464,10 @@
                             }
                           ]
                         },
+                        "can_compress": {
+                          "type": "boolean",
+                          "description": "TAL-614: a manual compression would start now: writable, no running turn, and at least four model-history messages. Only the full session detail carries it; absent means no."
+                        },
                         "source_label": {
                           "anyOf": [
                             {
@@ -21571,6 +21595,10 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "can_compress": {
+                          "type": "boolean",
+                          "description": "TAL-614: a manual compression would start now: writable, no running turn, and at least four model-history messages. Only the full session detail carries it; absent means no."
                         },
                         "source_label": {
                           "anyOf": [
@@ -23762,6 +23790,10 @@
                             }
                           ]
                         },
+                        "can_compress": {
+                          "type": "boolean",
+                          "description": "TAL-614: a manual compression would start now: writable, no running turn, and at least four model-history messages. Only the full session detail carries it; absent means no."
+                        },
                         "source_label": {
                           "anyOf": [
                             {
@@ -25938,6 +25970,10 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "can_compress": {
+                          "type": "boolean",
+                          "description": "TAL-614: a manual compression would start now: writable, no running turn, and at least four model-history messages. Only the full session detail carries it; absent means no."
                         },
                         "source_label": {
                           "anyOf": [
@@ -35896,6 +35932,10 @@
                             }
                           ]
                         },
+                        "can_compress": {
+                          "type": "boolean",
+                          "description": "TAL-614: a manual compression would start now: writable, no running turn, and at least four model-history messages. Only the full session detail carries it; absent means no."
+                        },
                         "source_label": {
                           "anyOf": [
                             {
@@ -38165,6 +38205,10 @@
                             }
                           ]
                         },
+                        "can_compress": {
+                          "type": "boolean",
+                          "description": "TAL-614: a manual compression would start now: writable, no running turn, and at least four model-history messages. Only the full session detail carries it; absent means no."
+                        },
                         "source_label": {
                           "anyOf": [
                             {
@@ -40328,6 +40372,10 @@
                                   "type": "null"
                                 }
                               ]
+                            },
+                            "can_compress": {
+                              "type": "boolean",
+                              "description": "TAL-614: a manual compression would start now: writable, no running turn, and at least four model-history messages. Only the full session detail carries it; absent means no."
                             },
                             "source_label": {
                               "anyOf": [

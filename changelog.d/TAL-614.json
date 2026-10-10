@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Clicking the context ring in Web opens the chat's token usage, cost, and cache figures with a Compress now button; on phones the same details and button sit in the composer's overflow panel.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
