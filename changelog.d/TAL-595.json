@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A notification that Talaria has to resend after a slow connection replaces the first banner instead of showing a second copy.",
+      "highlight": false,
+      "components": ["relay"]
+    }
+  ]
+}
