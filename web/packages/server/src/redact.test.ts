@@ -951,6 +951,8 @@ describe('Agent redactor parity', () => {
       ['\x1b]0;t;g\x07\x1b]0;x\x07hp_abcdef1234567890ABCDEF1234567890abcdef', '\x1b]0;t;gxhp_a...cdef'],
       // A prefix with punctuation (`SG.`) split across payloads, and its body after the dot.
       ['S\x1b]0;x\x07\x1b]0;G\x07.abcdefghij1234567890', 'SxG.ab...7890'],
+      // An equals sign inside a `gAAAA` body continues the run.
+      ['g\x1b]0;x\x07AA\x1b]0;AA\x07=abcdefghijklmnopqrst', 'gxAAAA...qrst'],
       // A period is a credential boundary, on the display and inside a payload's trailing run.
       ['foo.g\x1b]0;x\x07h\x1b]0;p_\x07abcdef1234567890ABCDEF1234567890abcdef', 'foo.gxhp_a...cdef'],
       ['\x1b]0;x.g\x07\x1b]0;y\x07hp_abcdef1234567890ABCDEF1234567890abcdef', '\x1b]0;x.gyhp_a...cdef'],
