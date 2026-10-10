@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Chats with attached images load faster, and images always display exactly as sent.",
+      "highlight": false
+    }
+  ]
+}

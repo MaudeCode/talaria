@@ -1,3 +1,4 @@
+import { crc32 } from 'node:zlib'
 import { describe, expect, it } from 'vitest'
 import { mightContainSensitiveText, publicToolFrame, redactSensitive, redactSessionData, redactText } from './redact.js'
 import { sanitizeShareMessage } from './sessions/shares.js'
@@ -679,6 +680,56 @@ describe('redactSessionData', () => {
     expect(collapsible({ role: 'user', content: 'short', _collapsible: true })).toBeUndefined()
     expect(collapsible({ role: 'user', content: lines(40), _steer: { steer_id: 's2' }, _collapsible: true })).toBeUndefined()
   })
+
+  it('returns a user image part carrying a complete raster data URI byte-identical without scanning it (TAL-583)', () => {
+    // Structurally complete images whose bytes carry an AWS-key-shaped base64 run: text redaction would rewrite them.
+    const AWS = 'AKIAIOSFODNN7EXAMPLE'
+    const u32be = (n: number): Buffer => { const b = Buffer.alloc(4); b.writeUInt32BE(n); return b }
+    const u32le = (n: number): Buffer => { const b = Buffer.alloc(4); b.writeUInt32LE(n); return b }
+    const pngChunk = (type: string, data: Buffer): Buffer => Buffer.concat([u32be(data.length), Buffer.from(type, 'latin1'), data, u32be(crc32(Buffer.concat([Buffer.from(type, 'latin1'), data])))])
+    const riff = (type: string, data: Buffer): Buffer => Buffer.concat([Buffer.from(type, 'latin1'), u32le(data.length), data, Buffer.alloc(data.length & 1)])
+    const formats: Record<string, (body: Buffer) => Buffer> = {
+      'image/png': (body) => Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), pngChunk('IHDR', Buffer.from('00000001000000010800000000', 'hex')), pngChunk('IDAT', body), pngChunk('IEND', Buffer.alloc(0))]),
+      'image/jpeg': (body) => Buffer.concat([Buffer.from('ffd8ffc0000b080001000101011100ffda000801010000003f00', 'hex'), body, Buffer.from('ffd9', 'hex')]),
+      'image/gif': (body) => Buffer.concat([Buffer.from('GIF89a', 'latin1'), Buffer.from('01000100000000', 'hex'), Buffer.from('2c000000000100010000', 'hex'), Buffer.from([2, body.length]), body, Buffer.from('003b', 'hex')]),
+      'image/webp': (body) => { const chunks = riff('VP8L', Buffer.concat([Buffer.from('2f00000000', 'hex'), body])); return Buffer.concat([Buffer.from('RIFF', 'latin1'), u32le(chunks.length + 4), Buffer.from('WEBP', 'latin1'), chunks]) },
+      'image/bmp': (body) => { const dib = Buffer.concat([u32le(40), u32le(1), u32le(1), Buffer.from('01001800', 'hex'), Buffer.alloc(24)]); return Buffer.concat([Buffer.from('BM', 'latin1'), u32le(14 + dib.length + body.length), u32le(0), u32le(14 + dib.length), dib, body]) },
+    }
+    // The run sits at a 3-byte boundary so it survives base64 encoding intact.
+    const image = (mime: string, filler = 0): Buffer => {
+      const build = formats[mime]!
+      for (let pad = 0; pad < 3; pad++) {
+        const bytes = build(Buffer.concat([Buffer.alloc(pad), Buffer.from(AWS, 'base64'), Buffer.alloc(filler)]))
+        if (bytes.toString('base64').includes(AWS)) return bytes
+      }
+      throw new Error(mime)
+    }
+    const dataUri = (mime: string, bytes: Buffer): string => `data:${mime};base64,${bytes.toString('base64')}`
+    const imageUrl = (url: string, role = 'user'): unknown => (((redactSessionData({ messages: [{ role, content: [{ type: 'text', text: 'look' }, { type: 'image_url', image_url: { url, detail: 'auto' } }] }] }, true).messages as Record<string, unknown>[])[0]!.content as Record<string, unknown>[])[1]!.image_url as Record<string, unknown>).url
+
+    // Only the exempt path sees the 4 MB image: a full scan of it takes seconds on a CI runner.
+    const url = dataUri('image/png', image('image/png', 4 * 1024 * 1024))
+    const started = performance.now()
+    expect(imageUrl(url) === url, '4 MB PNG data URI returned byte-identical').toBe(true)
+    expect(performance.now() - started).toBeLessThan(150)
+    // MIME and scheme are case-insensitive; the exemption covers every raster type the composer embeds.
+    for (const [mime, bytes] of [['IMAGE/PNG', image('image/png')], ['image/jpg', image('image/jpeg')], ...Object.keys(formats).map((m) => [m, image(m)] as const)] as const) {
+      const raster = dataUri(mime, bytes)
+      expect(redactSensitive(raster) === raster, `${mime} fixture carries the run`).toBe(false)
+      expect(imageUrl(raster) === raster, mime).toBe(true)
+    }
+    // Anything else stays on the fail-closed path: a valid header followed by arbitrary bytes, a truncated or extended
+    // image, non-canonical base64, a mismatched or non-raster type, a non-user row.
+    const small = image('image/png')
+    const header = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), Buffer.alloc(1), Buffer.from(AWS, 'base64')])
+    for (const other of [dataUri('image/png', header), dataUri('image/png', small.subarray(0, -1)), dataUri('image/png', Buffer.concat([small, Buffer.from(AWS, 'base64')])), `${dataUri('image/png', small)} ${AWS}`, dataUri('image/png', small).replace(/=+$/, ''), dataUri('image/jpeg', small), dataUri('image/svg+xml', small), dataUri('text/plain', small)]) {
+      expect(imageUrl(other) === other, other.slice(0, 30)).toBe(false)
+    }
+    const smallUrl = dataUri('image/png', small)
+    expect(imageUrl(smallUrl, 'assistant') === smallUrl, 'assistant row').toBe(false)
+    const meta = redactSessionData({ messages: [{ role: 'user', content: 'x', meta: { image_url: { url: smallUrl } } }] }, true)
+    expect(JSON.stringify(meta).includes(AWS), 'image-shaped metadata').toBe(false)
+  }, 30_000)
 })
 
 /**
