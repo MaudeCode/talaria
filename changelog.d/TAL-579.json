@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Profile folders that link outside the profiles directory are refused instead of being used as a profile's home.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

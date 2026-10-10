@@ -53,7 +53,7 @@ import { RunJournal } from './sessions/journal.js'
 import { StreamSlots } from './api/sse-routes.js'
 import { AgentConfig, coerceProviderCostBudgetValue, dict as asDict, parseProviderQualifiedModel } from './config/agent-config.js'
 import { ProviderCatalog } from './providers/catalog.js'
-import { ProfileService } from './profiles/profiles.js'
+import { containedProfileHome, escapedProfileMessage, ProfileError, ProfileService } from './profiles/profiles.js'
 import { Onboarding } from './onboarding.js'
 import { SkillsService } from './tools/skills.js'
 import { McpService } from './tools/mcp.js'
@@ -155,9 +155,16 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     if (profile && !isRootProfile(profile)) return profile.charAt(0).toUpperCase() + profile.slice(1)
     try { return displayBotName(settings.load().bot_name) } catch { return displayBotName(null) }
   }
-  // Python `_resolve_profile_home_for_name`: root aliases and invalid names clamp to the base home.
-  // Isolated mode never resolves outside the pinned home, whatever name is asked for (Python `_resolve_profile_home_for_name`).
-  const profileHome = (name: string): string => (isolatedProfile === null && name && !isRootProfile(name) && PROFILE_RE.test(name) ? join(baseHome, 'profiles', name) : isolatedProfile === null ? baseHome : config.hermesHome)
+  // Python `_resolve_profile_home_for_name`: root aliases and invalid names clamp to the base home; a named home resolving
+  // outside the profiles root throws (Python `relative_to`), so no consumer runs it against the root or outside home.
+  // Isolated mode never resolves outside the pinned home, whatever name is asked for.
+  const profileHome = (name: string): string => {
+    if (isolatedProfile !== null) return config.hermesHome
+    if (!name || isRootProfile(name) || !PROFILE_RE.test(name)) return baseHome
+    const contained = containedProfileHome(baseHome, name)
+    if (contained === null) throw new ProfileError(escapedProfileMessage(name), 400)
+    return contained
+  }
   const attachmentRoot = (): string => {
     const override = (env.HERMES_WEBUI_ATTACHMENT_DIR ?? '').trim()
     return resolvePathLikePython(override ? override.replace(/^~(?=$|\/)/, home) : join(config.stateDir, 'attachments'))
@@ -166,7 +173,8 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   const agentConfig = new AgentConfig({ sidecar: () => sidecar, env })
   /** A profile's config.yaml `model` as [model, provider] as written; '' / null when unset or not yet read. */
   const profileDefaultModel = (profile: string | null): [string, string | null] => {
-    const cfg = agentConfig.peek(profileHome(profile ?? activeProfile()))
+    let cfg: ReturnType<typeof agentConfig.peek>
+    try { cfg = agentConfig.peek(profileHome(profile ?? activeProfile())) } catch { return ['', null] }
     if (typeof cfg?.model === 'string') return [cfg.model.trim(), null]
     const { default: d, provider: p } = asDict(cfg?.model)
     return [typeof d === 'string' ? d.trim() : '', typeof p === 'string' && p ? p : null]
@@ -289,7 +297,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
       let profile: string | null = null
       try { profile = store.get(sid, { metadataOnly: true }).profile ?? null } catch { profile = null }
       const release = profileActivity(profile)
-      void sidecar.call('chat.commit_memory', { profile_home: profileHome(profile ?? activeProfile()), session_id: sid })
+      void Promise.resolve().then(() => sidecar.call('chat.commit_memory', { profile_home: profileHome(profile ?? activeProfile()), session_id: sid }))
         .catch((error: unknown) => { log(`[webui] memory commit for ${sid} failed: ${(error as Error).message}`) })
         .finally(release)
     },
@@ -548,7 +556,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     const at = now()
     if (at - dashboardCheckedAt < 30) return
     dashboardCheckedAt = at
-    agentConfig.read(profileHome(activeProfile())).then((cfg) => dashboardStatus(cfg, env, lazyFetch)).then((status) => { dashboardRunning = status.running === true }).catch(() => { dashboardRunning = false })
+    Promise.resolve().then(() => agentConfig.read(profileHome(activeProfile()))).then((cfg) => dashboardStatus(cfg, env, lazyFetch)).then((status) => { dashboardRunning = status.running === true }).catch(() => { dashboardRunning = false })
   }
   const extensionsEnabled = (): boolean => { try { return deps.extensions.enabledSync() } catch { return false } }
   const deps: AppDeps = {

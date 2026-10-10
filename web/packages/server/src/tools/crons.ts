@@ -228,7 +228,8 @@ export class CronService {
 
   private async profileForHome(home: string): Promise<string> {
     const names = this.deps.isolatedProfileMode() ? (await this.deps.profileNames()).map((row) => row.name) : await this.availableProfileNames()
-    for (const profile of names) if (this.deps.profileHome(profile) === home) return profile
+    // A profile whose home escapes the profiles root (`profileHome` throws) owns no store.
+    for (const profile of names) { try { if (this.deps.profileHome(profile) === home) return profile } catch { /* skip */ } }
     throw new HttpFailure(403, 'Unknown cron profile home')
   }
 
@@ -238,10 +239,11 @@ export class CronService {
     const rows: StoredJob[] = []
     const seen = new Set<string>()
     for (const profile of await this.profileNames(active)) {
-      const home = this.deps.profileHome(profile)
+      const local = this.deps.profilesMatch(profile, active)
+      let home: string
+      try { home = this.deps.profileHome(profile) } catch (error) { if (local) throw error; continue }
       if (seen.has(home)) continue
       seen.add(home)
-      const local = this.deps.profilesMatch(profile, active)
       let jobs: Dict[]
       try { jobs = (await this.sidecar().call('cron.list', { profile_home: home })).jobs }
       catch (error) { if (local) throw error; continue }

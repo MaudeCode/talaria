@@ -1681,7 +1681,9 @@ export class SessionService {
     let stateDbCleanupFailed = false
     if (!isMessaging && !orphaned) {
       // TAL-529: the compression continuations go too, tip first; the Agent's delete keeps and detaches them otherwise.
-      for (const id of stateDbCompressionLineage(this.stateDbPath(eventProfile), sid).reverse()) {
+      let lineage: string[] = []
+      try { lineage = stateDbCompressionLineage(this.stateDbPath(eventProfile), sid) } catch { stateDbCleanupFailed = true }
+      for (const id of lineage.reverse()) {
         try { if (!(await this.deps.runtime.deleteCliSession(eventProfile, id))) stateDbCleanupFailed = true } catch { stateDbCleanupFailed = true }
       }
     }

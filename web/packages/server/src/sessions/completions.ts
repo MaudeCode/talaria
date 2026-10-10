@@ -142,7 +142,11 @@ export class CompletionDrain {
     }
     // TAL-576: whether or not every profile recovered, the sessions left holding wakeups resume once a sidecar answers.
     if (!this.heldResumed) this.resumeHeld()
-    const { events } = await sidecar.call('process.drain', { profile_home: this.deps.profileHome(this.deps.activeProfile()), max_events: 256 })
+    // The drain is sidecar-wide; an active profile whose home escapes the profiles root (`profileHome` throws) scopes it
+    // to the base home instead of stalling every other profile's completions.
+    let scope: string
+    try { scope = this.deps.profileHome(this.deps.activeProfile()) } catch { scope = this.deps.baseHome }
+    const { events } = await sidecar.call('process.drain', { profile_home: scope, max_events: 256 })
     let routed = 0
     const unrouted: Dict[] = []
     for (const evt of events) {
@@ -413,7 +417,8 @@ export class CompletionDrain {
     }
     if (session.pre_compression_snapshot) { redefer(batched); this.deps.log(`[webui] WARNING: automatic wakeup retained: sealed snapshot ${sid} cannot own a turn`); return false }
     // TAL-534: the delegation's ledger row lives in the session's own profile, whichever profile is active now.
-    const home = this.deps.profileHome(session.profile ?? this.deps.activeProfile())
+    let home: string
+    try { home = this.deps.profileHome(session.profile ?? this.deps.activeProfile()) } catch (error) { redefer(batched); this.deps.log(`[webui] WARNING: server-side wakeup retained for session ${sid}: ${(error as Error).message}`); return false }
     if (await this.holdWhilePaused(sid, session, home, batched)) return false
     const claimed = await this.claimBatch(home, batched)
     if (!claimed) { redefer(batched); this.scheduleRetry(sid); return false }

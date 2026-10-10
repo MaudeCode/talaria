@@ -152,6 +152,38 @@ describe('isolation flag semantics', () => {
   })
 })
 
+describe('an escaped process-wide profile', () => {
+  it('refuses profile-scoped API requests instead of serving the root home, and leaves listing and switching away open', async () => {
+    const base = mkdtempSync(join(tmpdir(), 'talaria-escaped-'))
+    const outside = mkdtempSync(join(tmpdir(), 'talaria-escape-'))
+    mkdirSync(join(base, 'profiles'), { recursive: true })
+    symlinkSync(outside, join(base, 'profiles', 'rogue'))
+    writeFileSync(join(base, 'active_profile'), 'rogue\n')
+    writeFileSync(join(base, 'config.yaml'), '# seed\n')
+    const sidecar = new FakeSidecar()
+    sidecar.respond('profiles.list', () => ({ profiles: [row('default', { is_default: true, path: base })] as never[] }))
+    sidecar.respond('config.get', (params) => ({ path: join(params.profile_home, 'config.yaml'), exists: true, config: {} }))
+    const s = await bootTestServer({ sidecar, env: { HERMES_HOME: base } })
+    try {
+      expect(s.deps.activeProfile()).toBe('rogue')
+      const refused = await s.get('/api/profile/active')
+      expect(refused.status).toBe(400)
+      expect(await refused.text()).toContain('outside the profiles directory')
+      expect((await s.get('/api/profiles')).status).toBe(200)
+      expect((await post(s, '/api/profile/switch', { name: 'default' })).status).toBe(200)
+      // The sidecar-wide completion drain still runs, scoped to the base home instead of failing on every tick.
+      const drained: string[] = []
+      sidecar.respond('process.drain', (params) => { drained.push(params.profile_home); return { events: [] } })
+      await s.deps.completions.drainOnce()
+      expect(drained).toEqual([base])
+    } finally {
+      await s.close()
+      rmSync(base, { recursive: true, force: true })
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+})
+
 describe('profile home routing and root aliases', () => {
   let s: TestServer
   let sidecar: FakeSidecar
@@ -297,6 +329,84 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
   it('the default profile row stays visible', async () => {
     const profiles = (await json(await s.get('/api/profiles'))).profiles as Json[]
     expect(profiles.find((p) => p.name === 'default')).toMatchObject({ visible: true, is_default: true })
+  })
+
+  it('a profiles/<name> symlink that escapes the profiles root is refused on switch and never used as a home', async () => {
+    const outside = mkdtempSync(join(tmpdir(), 'talaria-escape-'))
+    writeFileSync(join(outside, 'config.yaml'), '# outside\n')
+    symlinkSync(outside, join(s.state, 'profiles', 'escape'))
+    symlinkSync(join(outside, 'missing'), join(s.state, 'profiles', 'dangling'))
+    symlinkSync(workHome, join(s.state, 'profiles', 'inside'))
+    try {
+      for (const name of ['escape', 'dangling']) {
+        const res = await post(s, '/api/profile/switch', { name })
+        expect(res.status, name).toBe(400)
+        expect(await res.text(), name).toContain('outside the profiles directory')
+        expect(res.headers.get('set-cookie'), name).toBeNull()
+        expect(() => s.deps.profileHome(name), name).toThrow('outside the profiles directory')
+        const created = await post(s, '/api/profile/create', { name, base_url: 'https://example.invalid' })
+        expect(created.status, name).toBe(400)
+        expect(await created.text(), name).toContain('outside the profiles directory')
+        const session = await post(s, '/api/session/new', { profile: name, worktree: false })
+        expect(session.status, name).toBe(400)
+        expect(await session.text(), name).toContain('outside the profiles directory')
+      }
+      expect(s.deps.profileHome('inside')).toBe(realpathSync(workHome))
+      expect((await post(s, '/api/profile/switch', { name: 'inside' })).status).toBe(200)
+    } finally {
+      for (const name of ['escape', 'dangling', 'inside']) rmSync(join(s.state, 'profiles', name), { force: true })
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
+  it('a request under a cookie whose profile home later escapes is refused and the cookie cleared, never served from the root home', async () => {
+    const home = join(s.state, 'profiles', 'turncoat')
+    mkdirSync(home, { recursive: true })
+    writeFileSync(join(home, 'config.yaml'), '# seed\n')
+    const switched = await post(s, '/api/profile/switch', { name: 'turncoat' })
+    const cookie = (switched.headers.get('set-cookie') ?? '').split(';')[0] ?? ''
+    expect(cookie).toMatch(/^hermes_profile=turncoat/)
+    const outside = mkdtempSync(join(tmpdir(), 'talaria-escape-'))
+    rmSync(home, { recursive: true, force: true })
+    symlinkSync(outside, home)
+    try {
+      for (const res of [await s.get('/api/profile/active', { headers: { cookie } }), await post(s, '/api/session/new', {}, { cookie })]) {
+        expect(res.status).toBe(400)
+        expect(await res.text()).toContain('outside the profiles directory')
+        expect(res.headers.get('set-cookie')).toMatch(/^hermes_profile=(""|);.*Max-Age=0/)
+      }
+      expect((await json(await s.get('/api/profile/active'))).name).toBe('default')
+    } finally {
+      rmSync(home, { force: true })
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
+  it('a background wakeup for a session whose profile home later escapes is retained, never run against another home', async () => {
+    const home = join(s.state, 'profiles', 'drifter')
+    mkdirSync(home, { recursive: true })
+    writeFileSync(join(home, 'config.yaml'), '# seed\n')
+    const cookie = ((await post(s, '/api/profile/switch', { name: 'drifter' })).headers.get('set-cookie') ?? '').split(';')[0] ?? ''
+    const created = await post(s, '/api/session/new', {}, { cookie })
+    const session = (await json(created)).session as Json
+    expect(session.profile).toBe('drifter')
+    const sid = String(session.session_id)
+    const outside = mkdtempSync(join(tmpdir(), 'talaria-escape-'))
+    rmSync(home, { recursive: true, force: true })
+    symlinkSync(outside, home)
+    const homes: string[] = []
+    sidecar.respond('process.drain', () => ({ events: [] }))
+    sidecar.respond('process.claim_delivery', (params) => { homes.push(params.profile_home); return { claim_id: 'c1' } })
+    sidecar.respond('chat.start', (params) => { homes.push(params.profile_home); throw new Error('must not start') })
+    try {
+      await s.deps.completions.processOne({ process_id: 'drift_1', session_id: 'drift_1', type: 'completion', command: 'make', exit_code: 0, output: 'ok', session_key: sid, origin_ui_session_id: sid, consumed: false })
+      await new Promise((r) => setTimeout(r, 200))
+      expect(homes).toEqual([])
+      expect(s.logs.some((line) => line.includes(`wakeup retained for session ${sid}`) && line.includes('outside the profiles directory'))).toBe(true)
+    } finally {
+      rmSync(home, { force: true })
+      rmSync(outside, { recursive: true, force: true })
+    }
   })
 
   it('foreign cron jobs are hidden by default and counted; all_profiles shows them read-only', async () => {

@@ -21,13 +21,14 @@ import { automationRouter } from './api/automation-router.js'
 import { handleDashboardPlugin, handleExtensionSidecarProxy, handleExtensionStatic, handleKanbanEventsStream, handleTerminalOutput, matchSidecarProxy } from './api/automation-raw.js'
 import { handleApprovalStream, handleChatStream, handleClarifyStream, handleGatewayStream, handleSessionEvents, handleSessionJournalStream, handleSessionStream, sessionEventsPathSessionId } from './api/sse-routes.js'
 import { BodyError, RequestContext, acceptsEncoding, loggedUrl, type AppDeps, type HeaderMap } from './http/context.js'
-import { activeProfileName, checkAuth, checkCsrf, csrfError, getProfileCookie, isCsrfExemptPath, isPublicPath } from './auth/gate.js'
+import { activeProfileName, checkAuth, checkCsrf, clearProfileCookieHeader, csrfError, getProfileCookie, isCsrfExemptPath, isPublicPath } from './auth/gate.js'
 import { guardQuerySessionId } from './api/session-visibility.js'
 import { checkSameOriginBrowserRequest } from './http/origin.js'
 import { coreRouter, HttpError, errorResponseBody, errorResponseHeaders, shellLanguage, startupUnavailable, type ApiContext } from './api/router.js'
 import { isSpaPath } from './spa.js'
 import { buildCspReportOnlyPolicy, CSP_REPORT_TO } from './http/csp.js'
 import { STARTUP_IMMEDIATE_PATHS } from './startup.js'
+import { escapedProfileMessage } from './profiles/profiles.js'
 
 const SHELL_ERROR_HTML = `<!doctype html>
 <html lang="en">
@@ -362,6 +363,14 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
         return
       }
       if (path.startsWith('/api/') && !guardQuerySessionId(ctx)) return
+      // A request whose profile home resolves outside the profiles root is refused, never run against another home;
+      // listing profiles and switching away stay open. A cookie naming it is cleared in the refusal, so the next request
+      // falls back to the process profile.
+      if (path.startsWith('/api/') && !isPublicPath(path) && path !== '/api/profile/switch' && path !== '/api/profiles' && deps.profiles.escapes(activeProfileName(ctx))) {
+        if (profile !== null && ctx.requestProfile === profile) ctx.queueCookie(clearProfileCookieHeader(ctx))
+        ctx.json({ error: escapedProfileMessage(activeProfileName(ctx)) }, { status: 400 })
+        return
+      }
       // A profile-scoped write racing that profile's deletion RPC could resurrect a partially populated home
       // (`config.set` recreates the parent): every unsafe request under a profile holds a write lease for its
       // lifetime — deletion waits for leases to drain, and a request arriving during deletion is refused (409).
@@ -384,7 +393,7 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
       }
       // The synchronous local-I/O and workspace gates read the profile's last-known config and fail closed while it
       // is unresolved; settle it here (a cache hit is one stat) so an edited config.yaml costs one RPC, not a request.
-      if (path.startsWith('/api/')) await deps.agentConfig.read(deps.profileHome(deps.activeProfile())).catch(() => undefined)
+      if (path.startsWith('/api/')) await Promise.resolve().then(() => deps.agentConfig.read(deps.profileHome(deps.activeProfile()))).catch(() => undefined)
       if (ctx.method === 'GET' || ctx.method === 'HEAD') {
         if (handleSpa(ctx)) return
         if (path.startsWith('/extensions/')) {

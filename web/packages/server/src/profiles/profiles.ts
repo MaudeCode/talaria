@@ -4,7 +4,7 @@
  * `delete_profile_api`). Rows come from the sidecar (`profiles.*`, the Agent's
  * own per-profile readers); the per-request active profile stays a cookie.
  */
-import { existsSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { atomicWriteText } from '../fs/atomic.js'
 import { join, resolve } from 'node:path'
 import type { SidecarLike } from '../sidecar/client.js'
@@ -13,8 +13,29 @@ import { dict, modelSection, parseProviderQualifiedModel, providerIdentity } fro
 import { writeEnvFile } from '../providers/env-file.js'
 import { providerEnvVar, type ModelsCatalog } from '../providers/catalog.js'
 import { str } from '../util.js'
+import { isWithin, resolvePathLikePython } from '../workspace/paths.js'
 
 export const PROFILE_ID_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/
+
+/**
+ * Python `_resolve_named_profile_home`: `<base>/profiles/<name>`, or null when it resolves outside the resolved
+ * profiles root (a symlink leading elsewhere, or dangling). A home not created yet stays valid. A contained symlink
+ * answers its checked target, so retargeting the link afterwards cannot redirect callers.
+ */
+export function containedProfileHome(baseHome: string, name: string): string | null {
+  const root = join(baseHome, 'profiles')
+  const home = join(root, name)
+  try {
+    const real = realpathSync.native(home)
+    if (!isWithin(real, resolvePathLikePython(root))) return null
+    return lstatSync(home).isSymbolicLink() ? real : home
+  } catch {
+    try { lstatSync(home) } catch { return home }
+    return null
+  }
+}
+
+export const escapedProfileMessage = (name: string): string => `Profile '${name}' resolves outside the profiles directory.`
 
 export class ProfileError extends Error {
   constructor(message: string, readonly status: number) {
@@ -108,6 +129,15 @@ export class ProfileService {
     return { name: active, path: this.deps.profileHome(active), is_default: this.isRootProfile(active), default_workspace: workspace }
   }
 
+  /** `profileHome` clamps a named home resolving outside the profiles root to the base home; such a name is refused instead. */
+  escapes(name: string): boolean {
+    return !this.deps.isolatedProfileMode() && !this.isRootProfile(name) && PROFILE_ID_RE.test(name) && containedProfileHome(this.deps.baseHome, name) === null
+  }
+
+  private assertContained(name: string): void {
+    if (this.escapes(name)) throw new ProfileError(escapedProfileMessage(name), 400)
+  }
+
   /** Python `switch_profile(process_wide=False)`: validate, then answer the target's defaults. */
   async switch(name: string): Promise<Dict> {
     if (this.deps.isolatedProfileMode() && name !== this.deps.isolatedProfileName()) throw new ProfileError(`Profile switching is not allowed in isolated profile mode. Currently pinned to profile '${this.deps.isolatedProfileName()}'.`, 403)
@@ -118,6 +148,7 @@ export class ProfileService {
     // marker/directory are re-validated at the end for a deletion that completed before the chain was entered.
     const ensureTarget = (): void => {
       if (this.deleting.has(name)) throw new ProfileError(`Profile '${name}' is being deleted.`, 409)
+      this.assertContained(name)
       if (!this.isRootProfile(name) && !isDir(home)) throw new ProfileError(`Profile '${name}' does not exist.`, 404)
     }
     ensureTarget()
@@ -142,6 +173,8 @@ export class ProfileService {
   async create(opts: { name: string; clone_from?: string | null; clone_config?: boolean; base_url?: string | null; api_key?: string | null; default_model?: string | null; model_provider?: string | null }): Promise<Dict> {
     if (this.deps.isolatedProfileMode()) throw new ProfileError('Profile creation is not allowed in isolated profile mode.', 403)
     validateProfileName(opts.name)
+    this.assertContained(opts.name)
+    if (opts.clone_from) this.assertContained(opts.clone_from)
     if (opts.clone_from && !this.isRootProfile(opts.clone_from)) validateProfileName(opts.clone_from)
     const [model, provider] = splitProviderModel(opts.default_model, opts.model_provider)
     if (model || provider) {

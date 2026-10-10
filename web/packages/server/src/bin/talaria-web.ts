@@ -54,7 +54,7 @@ async function serve(args: string[]): Promise<number> {
   // Renamed root profiles and the active profile's config must be known before the first request (Python read both
   // synchronously at startup); until then local-I/O gates fail closed.
   await deps.profiles.warmRootAliases()
-  await deps.agentConfig.read(deps.profileHome(deps.activeProfile())).catch(() => undefined)
+  await Promise.resolve().then(() => deps.agentConfig.read(deps.profileHome(deps.activeProfile()))).catch(() => undefined)
   const app = createApp(deps)
   const running = await startServer(app, deps.config)
   deps.relay.start()
