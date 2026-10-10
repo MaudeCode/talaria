@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
@@ -25,9 +25,11 @@ export function retryDelay(failures: number): number {
  */
 interface Probe { health: AgentHealth | null; failures: number; failedAt: number }
 const PROBE_KEY = [...keys.health.agent, 'probe'] as const
+/** Probes in a row without an HTTP answer (about 3 s after the first) before Web says the server stopped. */
+export const STOPPED_AFTER = 3
 
 /** "Retrying in 8s", counting down to the next probe; a spinner while a probe is in flight. */
-function RetryCountdown({ at, busy }: { at: number; busy: boolean }) {
+export function RetryCountdown({ at, busy }: { at: number; busy: boolean }) {
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     if (busy) return
@@ -54,16 +56,13 @@ export function useOnline(): boolean {
 export interface Announcement { assertive: boolean; text: string }
 
 /**
- * Connection and runtime state as composer top-tab entries (legacy HWEB-11, moved into the tab by TAL-429): thread
- * error, unreachable Talaria server, offline, agent unavailable, provider failure, manual compression. A live turn's
- * reconnect is the live row's own label.
+ * The agent health poll doubles as the server probe: a request that never got an HTTP answer means this browser cannot
+ * reach the Talaria server. Those probes back off exponentially; an HTTP error keeps the healthy cadence. `failures`
+ * counts unanswered probes in a row, and is 0 while the browser is offline (that is its own notice).
  */
-export function useRuntimeNotices({ live, onRetry, compressing }: { live: LiveTurn | null; onRetry?: (() => void) | undefined; compressing: boolean }): { notices: ComposerNotice[]; announcement: Announcement | null } {
+export function useServerProbe() {
   const online = useOnline()
   const qc = useQueryClient()
-  const [dismissed, setDismissed] = useState<Set<string>>(new Set())
-  // The agent health poll doubles as the server probe: a request that never got an HTTP answer means this browser
-  // cannot reach the Talaria server. Those probes back off exponentially; an HTTP error keeps the healthy cadence.
   const probe = useQuery({
     queryKey: PROBE_KEY,
     queryFn: async (): Promise<Probe> => {
@@ -80,9 +79,33 @@ export function useRuntimeNotices({ live, onRetry, compressing }: { live: LiveTu
     retry: false,
     enabled: online,
   })
-  const failures = online ? (probe.data?.failures ?? 0) : 0
+  return { online, probe, failures: online ? (probe.data?.failures ?? 0) : 0, retry: () => { void probe.refetch() } }
+}
+
+/**
+ * Treat the server as stopped now (Stop server, or another tab said so); probes back off from there and the next answer
+ * clears it. A probe sent before the stop is cancelled first, so its late answer cannot clear the stop.
+ */
+export function markServerStopped(qc: QueryClient): void {
+  void qc.cancelQueries({ queryKey: PROBE_KEY }).then(() => {
+    qc.setQueryData<Probe>(PROBE_KEY, (last) => (last && last.failures >= STOPPED_AFTER ? last : { health: last?.health ?? null, failures: STOPPED_AFTER, failedAt: Date.now() }))
+  })
+}
+
+/** Probe now if the last probe went unanswered: another tab just reached the server. */
+export function recheckServer(qc: QueryClient): void {
+  if (qc.getQueryData<Probe>(PROBE_KEY)?.failures) void qc.refetchQueries({ queryKey: PROBE_KEY })
+}
+
+/**
+ * Connection and runtime state as composer top-tab entries (legacy HWEB-11, moved into the tab by TAL-429): thread
+ * error, unreachable Talaria server, offline, agent unavailable, provider failure, manual compression. A live turn's
+ * reconnect is the live row's own label.
+ */
+export function useRuntimeNotices({ live, onRetry, compressing }: { live: LiveTurn | null; onRetry?: (() => void) | undefined; compressing: boolean }): { notices: ComposerNotice[]; announcement: Announcement | null } {
+  const { online, probe, failures, retry } = useServerProbe()
+  const [dismissed, setDismissed] = useState<Set<string>>(new Set())
   const health = probe.data?.health
-  const retry = () => { void probe.refetch() }
   const list: Notice[] = []
   if (!online) list.push({ kind: 'offline', tone: 'warning', title: m.notice_offline_title(), detail: m.notice_offline_detail(), dismissible: true })
   if (failures > 0) list.push({ kind: 'server_unreachable', tone: 'warning', title: m.notice_server_title(), status: <RetryCountdown at={(probe.data?.failedAt ?? 0) + retryDelay(failures)} busy={probe.isFetching} />, action: { label: m.retry(), run: retry }, dismissible: false })
