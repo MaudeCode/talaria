@@ -3,10 +3,10 @@ import { useNavigate } from '@tanstack/react-router'
 import { toggleSidebarCollapsed } from './useShellState'
 import { useNewChat } from '../features/sessions/useNewChat'
 
-function inTextField(target: EventTarget | null): boolean {
+export function inTextField(target: EventTarget | null): boolean {
   const t = target as HTMLElement | null
   if (!t) return false
-  return t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable
+  return t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable
 }
 
 /** Legacy global shortcuts: Cmd/Ctrl+B sidebar, Cmd/Ctrl+/ composer, Cmd/Ctrl+K new chat, Cmd/Ctrl+, settings. */

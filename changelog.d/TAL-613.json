@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Press J or K in Web to open the next or previous chat in the sidebar; the keys type normally in text fields.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

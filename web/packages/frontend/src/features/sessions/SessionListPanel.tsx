@@ -13,6 +13,7 @@ import { useNewChat } from './useNewChat'
 import { SessionContextMenu } from './SessionContextMenu'
 import { ProjectChip } from './ProjectChip'
 import { closeMobileSidebar } from '../../shell/useShellState'
+import { inTextField } from '../../shell/useShortcuts'
 import { useLocale } from '../../i18n/useLocale'
 import { showToast } from '../toast/toast'
 
@@ -157,6 +158,20 @@ export function SessionListPanel() {
     onSuccess: () => { void qc.invalidateQueries({ queryKey: keys.projects }) },
   })
   const navigate = useNavigate()
+  // Legacy J/K: open the next or previous shown session in sidebar order, unless typing, modified, or inside a dialog or menu (TAL-613).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.key !== 'j' && e.key !== 'k') || e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented || inTextField(e.target) || (e.target as Element | null)?.closest?.('[role="dialog"],[role="alertdialog"],[role="menu"]')) return
+      const ids = groups.flatMap((g) => (collapsedGroups[g.id] ? [] : g.rows.map((r) => r.session_id)))
+      const i = activeId ? ids.indexOf(activeId) : -1
+      if (i < 0) return
+      e.preventDefault()
+      const next = ids[i + (e.key === 'j' ? 1 : -1)]
+      if (next) void navigate({ to: '/session/$sessionId', params: { sessionId: next } })
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [groups, collapsedGroups, activeId, navigate])
   const importInput = useRef<HTMLInputElement>(null)
   const importSession = useMutation({
     mutationFn: async (file: File) => {
