@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Click an image in a Web conversation to enlarge it, and step through the message's images with the arrow keys.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
