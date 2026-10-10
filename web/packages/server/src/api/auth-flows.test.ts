@@ -1,5 +1,5 @@
 import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, sign as cryptoSign } from 'node:crypto'
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
@@ -7,6 +7,9 @@ import { cborDecode } from '../auth/passkeys.js'
 import { canonicalJson, OidcService, safeNextPath } from '../auth/oidc.js'
 import { validatedRequestHost } from './auth-raw.js'
 import { SidecarClient } from '../sidecar/client.js'
+import { FakeSidecar } from '../sidecar/fake.js'
+import { ConfigUnavailable } from '../config/agent-config.js'
+import { tmpdir } from 'node:os'
 
 type Json = Record<string, unknown>
 const b64u = (b: Buffer): string => b.toString('base64url')
@@ -683,5 +686,59 @@ describe('OIDC operator config availability', () => {
       clock += 10
       expect((await s.get('/api/sessions')).status).toBe(200)
     } finally { await s.close() }
+  })
+
+  const OIDC_POLICY = { webui_oidc: { issuer: ISSUER, client_id: 'web-client', allow_claim: 'groups', allow_values: ['admins'], trusted_private_hosts: ['idp.example'] } }
+  /** A sidecar whose `config.get` reads the JSON file it is asked for, so file permissions reach the reader. */
+  const fileSidecar = (): FakeSidecar => {
+    const sidecar = new FakeSidecar()
+    sidecar.respond('config.get', (params) => ({ path: params.config_path, exists: true, config: JSON.parse(readFileSync(params.config_path, 'utf8')) as Json }))
+    return sidecar
+  }
+
+  it('reads the policy from the base home config when HERMES_HOME is a profile directory', async () => {
+    const base = mkdtempSync(join(tmpdir(), 'talaria-oidc-base-'))
+    const profile = join(base, 'profiles', 'work')
+    mkdirSync(profile, { recursive: true })
+    writeFileSync(join(base, 'config.yaml'), JSON.stringify(OIDC_POLICY))
+    writeFileSync(join(profile, 'config.yaml'), JSON.stringify({ webui_oidc: {} }))
+    const s = await bootTestServer({ env: { HERMES_HOME: profile }, sidecar: fileSidecar() })
+    try {
+      s.deps.fetch = fakeIdp(() => Date.now() / 1000).fetch
+      expect(await json(await s.get('/api/auth/status'))).toMatchObject({ oidc_enabled: true, oidc_unavailable: false })
+      expect((await s.get('/api/auth/oidc/start')).status).toBe(302)
+    } finally { await s.close(); rmSync(base, { recursive: true, force: true }) }
+  })
+
+  it.skipIf(process.getuid?.() === 0)('a cached operator config is not trusted once the file becomes unreadable', async () => {
+    let clock = 1_700_000_000
+    const s = await bootTestServer({ now: () => clock, sidecar: fileSidecar(), deps: (deps) => { writeFileSync(join(deps.config.hermesHome, 'config.yaml'), JSON.stringify(OIDC_POLICY)) } })
+    const file = join(s.state, 'config.yaml')
+    try {
+      s.deps.fetch = fakeIdp(() => Date.now() / 1000).fetch
+      expect((await s.get('/api/auth/oidc/start')).status).toBe(302)
+      chmodSync(file, 0o000)
+      clock += 10
+      const start = await s.get('/api/auth/oidc/start')
+      expect(start.status).toBe(404)
+      expect(String((await json(start)).error)).toContain('operator config could not be resolved')
+      expect(await json(await s.get('/api/auth/status'))).toMatchObject({ auth_enabled: true, oidc_enabled: false, oidc_unavailable: true })
+    } finally { chmodSync(file, 0o600); await s.close() }
+  })
+
+  it('an operator config that becomes unavailable denies OIDC login instead of reusing the last policy', async () => {
+    let clock = 1_700_000_000
+    let available = true
+    const oidc = new OidcService({
+      env: {}, operatorConfig: () => (available ? Promise.resolve(OIDC_POLICY) : Promise.reject(new ConfigUnavailable('sidecar down'))), profileHome: () => '', fetch: () => fetch,
+      pinned: () => { throw new Error('unused') }, now: () => clock, log: () => undefined,
+    })
+    expect(await oidc.enabled()).toBe(true)
+    expect(oidc.availableSync()).toBe(true)
+    available = false
+    clock += 10
+    expect((await oidc.resolve()).config_read_failed).toBe(true)
+    expect(oidc.availableSync()).toBe(false)
+    expect(oidc.enabledSync()).toBe(true)
   })
 })

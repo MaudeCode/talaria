@@ -173,11 +173,10 @@ export class OidcService {
       if (isDict(value)) raw = this.expandEnv(value) as Dict
       else if (value !== null && value !== undefined) throw new OidcConfigError('webui_oidc must be a mapping')
     } catch (error) {
-      if (error instanceof ConfigUnavailable && this.lastConfig) return this.lastConfig
-      // No last-known config to fall back on: the auth policy is unknown, so the gate stays closed (config_read_failed
+      // The auth policy is unknown, and an earlier snapshot is not authority: the gate stays closed (config_read_failed
       // reports OIDC as enabled and refuses login) until the operator config can be read; the 5 s cache retries.
       readFailed = true
-      if (error instanceof ConfigUnavailable) this.deps.log('[oidc] operator config unavailable while the sidecar is down; failing closed until it is readable')
+      if (error instanceof ConfigUnavailable) this.deps.log('[oidc] operator config unavailable; failing closed until it is readable')
     }
     const pick = (name: string, envName: string): unknown => (env[envName] ?? raw[name])
     const scopesRaw = textList(pick('scopes', 'HERMES_WEBUI_OIDC_SCOPES'))
