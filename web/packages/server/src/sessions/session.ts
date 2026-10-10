@@ -12,6 +12,24 @@ import { turnOrigin } from './background-updates.js'
 export type Message = Record<string, unknown>
 export type ToolCall = Record<string, unknown>
 
+/**
+ * TAL-709: rows an earlier release appended from the Agent's in-place compaction copies. A row read from state.db that is
+ * no turn's own repeats an earlier row's role, timestamp, and tool call: the same message, with pruned or tagged content.
+ */
+function withoutCompactionCopies(messages: Message[]): Message[] {
+  const seen = new Map<string, string>()
+  // A tool result is its call; any other row is the same message only with the same text (a compaction re-insert tags the
+  // prompt with the workspace), so an edit that kept its timestamp stays.
+  const sameAs = (m: Message): string => (m.tool_call_id ? '' : stripWorkspacePrefix(typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? null)))
+  return messages.filter((m) => {
+    const key = m && typeof m === 'object' && m.timestamp !== null && m.timestamp !== undefined ? JSON.stringify([m.role, m.timestamp, m.tool_call_id ?? null]) : null
+    if (key === null) return true
+    if (seen.get(key) === sameAs(m) && m._state_db_row_id !== undefined && m._turn_id === undefined) return false
+    if (!seen.has(key)) seen.set(key, sameAs(m))
+    return true
+  })
+}
+
 export const METADATA_FIELDS = [
   'session_id', 'title', 'workspace', 'created_workspace', 'model', 'model_provider', 'model_explicit_pick_signature', 'created_at', 'updated_at',
   'pinned', 'archived', 'project_id', 'profile',
@@ -306,7 +324,7 @@ export class Session {
     const sig = take('model_explicit_pick_signature', null)
     this.model_explicit_pick_signature = sig ? str(sig) : null
     const messages = take('messages', null)
-    this.messages = isList(messages) ? (messages as Message[]) : []
+    this.messages = isList(messages) ? withoutCompactionCopies(messages as Message[]) : []
     const toolCalls = take('tool_calls', null)
     this.tool_calls = isList(toolCalls) ? (toolCalls as ToolCall[]) : []
     const createdAt = take('created_at', null)
@@ -334,7 +352,7 @@ export class Session {
     const pendingSource = take('pending_user_source', null)
     this.pending_user_source = pendingSource ? str(pendingSource) : null
     const context = take('context_messages', null)
-    this.context_messages = isList(context) ? (context as Message[]) : []
+    this.context_messages = isList(context) ? withoutCompactionCopies(context as Message[]) : []
     this.compression_anchor_visible_idx = take('compression_anchor_visible_idx', null)
     this.compression_anchor_message_key = take('compression_anchor_message_key', null)
     this.compression_anchor_summary = take('compression_anchor_summary', null)
@@ -548,6 +566,16 @@ export function titleFrom(messages: unknown[], fallback = 'Untitled'): string {
 const ATTACHED_FILES_RE = /\n\n\[Attached files: (?:\\.|[^\]\\])+\]$/
 export function stripAttachedFilesMarker(text: string): string {
   return text.replace(ATTACHED_FILES_RE, '').trim()
+}
+
+export const WORKSPACE_PREFIX_RE = /^\s*\[Workspace::v1:\s*(?:\\.|[^\]\\])+\]\s*/
+const LEGACY_WORKSPACE_PREFIX_RE = /^\s*\[Workspace:[^\]]+\]\s*/
+
+export function stripWorkspacePrefix(text: string, includeLegacy = false): string {
+  const value = str(text)
+  let stripped = value.replace(WORKSPACE_PREFIX_RE, '')
+  if (includeLegacy && stripped === value) stripped = value.replace(LEGACY_WORKSPACE_PREFIX_RE, '')
+  return stripped.trim()
 }
 
 /** Python `_collapse_adjacent_duplicate_partials`. */

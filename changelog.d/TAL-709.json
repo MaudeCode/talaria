@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A reply no longer seems to vanish after the Agent compacts a long chat. Stray tool rows and a duplicate of your message no longer appear below it, and chats that already have them are cleaned up when they load.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

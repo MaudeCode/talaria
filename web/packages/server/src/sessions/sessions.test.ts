@@ -1223,6 +1223,92 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     expect(sent(sid)).toEqual(['u1', 'a1', 'u2', 'a2'])
   })
 
+  function ensureAgentColumns(db: DatabaseSync): void {
+    const cols = new Set((db.prepare('PRAGMA table_info(messages)').all() as { name: string }[]).map((c) => c.name))
+    if (!cols.has('active')) db.exec('ALTER TABLE messages ADD COLUMN active INTEGER DEFAULT 1')
+    if (!cols.has('compacted')) db.exec('ALTER TABLE messages ADD COLUMN compacted INTEGER DEFAULT 0')
+    if (!cols.has('tool_call_id')) db.exec('ALTER TABLE messages ADD COLUMN tool_call_id TEXT')
+  }
+
+  /**
+   * The Agent's in-place compaction: archive every live row (`compacted = 1`; the carried tail, here the tool results,
+   * `compacted = 0`) and re-insert each as a copy that keeps its role, timestamp and tool call.
+   */
+  function compactInPlace(sid: string, rewrite: (content: string) => string): void {
+    const db = new DatabaseSync(join(s.state, 'state.db'))
+    try {
+      ensureAgentColumns(db)
+      const live = db.prepare('SELECT role, content, timestamp, tool_call_id FROM messages WHERE session_id = ? AND (active IS NULL OR active != 0) ORDER BY id').all(sid) as { role: string; content: string; timestamp: number; tool_call_id: string | null }[]
+      db.prepare('UPDATE messages SET active = 0, compacted = CASE WHEN tool_call_id IS NULL THEN 1 ELSE 0 END WHERE session_id = ? AND (active IS NULL OR active != 0)').run(sid)
+      for (const row of live) db.prepare('INSERT INTO messages (session_id, role, content, timestamp, tool_call_id) VALUES (?, ?, ?, ?, ?)').run(sid, row.role, rewrite(row.content), row.timestamp, row.tool_call_id)
+    } finally { db.close() }
+  }
+
+  it('an in-place compaction during a turn adds no rows to the transcript (TAL-709)', async () => {
+    const sid = await seeded([['user', 'u1', 100], ['assistant', 'a1 bulky tool output', 101], ['user', 'u2', 102], ['assistant', 'a2', 103]])
+    const db = new DatabaseSync(join(s.state, 'state.db'))
+    try {
+      ensureAgentColumns(db)
+      db.prepare('INSERT INTO messages (session_id, role, content, timestamp, tool_call_id) VALUES (?, ?, ?, ?, ?)').run(sid, 'tool', 'bulky tool result', 150, 'call_1')
+    } finally { db.close() }
+    await turn(sid, 'status')
+    const before = await served(sid)
+    sidecar.respond('chat.start', (params) => {
+      // A CLI row lands mid-turn, before the compaction copies it.
+      commit(sid, [['user', 'status', 300], ['user', 'CLI meanwhile', 300.5]])
+      // The Agent prunes bulky output and re-inserts this turn's prompt with the bytes it sent.
+      compactInPlace(sid, (content) => (content === 'a1 bulky tool output' || content === 'bulky tool result' ? '[Duplicate tool output — same content as a more recent call]' : content === 'status' ? '[Workspace::v1: /w]\nstatus' : content))
+      commit(sid, [['assistant', 'status again answered', 301]])
+      return completedTurn([...params.conversation_history, { role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'status again answered' }])
+    })
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'status' }))
+    const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    const settled = await served(sid)
+    expect(settled).toEqual([...before, 'status', 'status again answered', 'CLI meanwhile'])
+    expect(((frames.find((f) => f.event === 'done')?.data as Json).session as Json).message_count).toBe(settled.length)
+    s.deps.sessionStore.sessions.delete(sid)
+    expect(await served(sid)).toEqual(settled)
+    // A CLI row committed after the compaction still arrives.
+    commit(sid, [['user', 'late CLI', 400]])
+    expect((await served(sid)).slice(-2)).toEqual(['CLI meanwhile', 'late CLI'])
+  })
+
+  it('a CLI edit that keeps its timestamp after a rewind is not mistaken for a compaction copy (TAL-709)', async () => {
+    const sid = await seeded([['user', 'u1', 100], ['assistant', 'a1', 101]])
+    await turn(sid, 'first')
+    commit(sid, [['user', 'typo', 150]])
+    // A settled turn covers the CLI row.
+    await turn(sid, 'second')
+    expect(await served(sid)).toContain('typo')
+    // The CLI rewinds the row (`active = 0, compacted = 0`) and re-inserts the edited text under the same timestamp.
+    const db = new DatabaseSync(join(s.state, 'state.db'))
+    try {
+      ensureAgentColumns(db)
+      db.prepare("UPDATE messages SET active = 0, compacted = 0 WHERE session_id = ? AND content = 'typo'").run(sid)
+    } finally { db.close() }
+    commit(sid, [['user', 'fixed typo', 150]])
+    expect(await served(sid)).toContain('fixed typo')
+  })
+
+  it('drops rows a compaction copy appended to a saved transcript, keeping other state.db rows (TAL-709)', async () => {
+    const sid = String((await newSession(s)).session_id)
+    writeMessages(s, sid, [
+      { role: 'user', content: 'u1', timestamp: 100, _turn_id: 't1' },
+      { role: 'tool', content: 'full output', timestamp: 101, tool_call_id: 'call_1', _turn_id: 't1' },
+      { role: 'assistant', content: 'a1', timestamp: 102, _turn_id: 't1' },
+      { role: 'user', content: 'from CLI', timestamp: 103, _state_db_row_id: 4 },
+      { role: 'tool', content: '[Duplicate tool output — same content as a more recent call]', timestamp: 101, tool_call_id: 'call_1', _state_db_row_id: 9 },
+      { role: 'user', content: '[Workspace::v1: /w]\nu1', timestamp: 100, _state_db_row_id: 10 },
+      // An edit that kept the CLI row's timestamp is a different message.
+      { role: 'user', content: 'from CLI, edited', timestamp: 103, _state_db_row_id: 11 },
+    ])
+    s.deps.sessionStore.sessions.delete(sid)
+    expect(await served(sid)).toEqual(['u1', 'full output', 'a1', 'from CLI', 'from CLI, edited'])
+    s.deps.sessionStore.save(s.deps.sessionStore.get(sid))
+    s.deps.sessionStore.sessions.delete(sid)
+    expect(await served(sid)).toEqual(['u1', 'full output', 'a1', 'from CLI', 'from CLI, edited'])
+  })
+
   it('a settlement whose state.db read fails keeps the marker', async () => {
     const sid = await seeded(FOUR)
     expect((await post(s, '/api/session/truncate', { session_id: sid, keep_count: 2 })).status).toBe(200)

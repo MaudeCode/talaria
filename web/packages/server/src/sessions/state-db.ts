@@ -566,6 +566,23 @@ export function stateDbSessionRead(dbPath: string, sid: string, opts: { stitch?:
     const order = hasId ? 'id' : 'timestamp'
     const rows = db.prepare(`SELECT ${selected.join(', ')}, session_id FROM messages WHERE session_id IN (${chain.map(() => '?').join(', ')})${activeClause} ORDER BY ${order} ASC`).all(...chain) as Dict[]
     const projected = rows.map((row) => projectStateDbMessage(row, hasId))
+    // TAL-709: an in-place compaction archives the live rows and re-inserts each as a copy that keeps its role and timestamp
+    // (content may be pruned). A copy takes the id of the oldest archived row it copies, so the merge sees a row it has
+    // already read instead of a new one. Only a compaction archive (`compacted = 1`) vouches for a changed copy: a rewound
+    // row (`compacted = 0`, also the compaction's carried tail) counts only for the same tool call or the same content, so
+    // an edit that kept its timestamp stays new.
+    if (hasId && available.has('active')) {
+      // One indexed lookup per live row ((session_id, active, timestamp)): the archive is never loaded, however many
+      // compactions it holds.
+      const sameCall = available.has('tool_call_id') ? " AND COALESCE(a.tool_call_id, '') = COALESCE(m.tool_call_id, '')" : ''
+      const vouched = [available.has('compacted') ? 'a.compacted = 1' : '', available.has('tool_call_id') ? 'm.tool_call_id IS NOT NULL' : '', 'a.content = m.content'].filter(Boolean).join(' OR ')
+      const twins = db.prepare(`SELECT m.id AS id, MIN(a.id) AS twin FROM messages m JOIN messages a ON a.session_id = m.session_id AND a.active = 0 AND a.role = m.role AND a.timestamp = m.timestamp AND a.id < m.id${sameCall} WHERE m.session_id IN (${chain.map(() => '?').join(', ')}) AND (m.active IS NULL OR m.active != 0) AND (${vouched}) GROUP BY m.id`).all(...chain) as Dict[]
+      const twinOf = new Map(twins.map((row) => [row.id, row.twin]))
+      for (const [i, row] of rows.entries()) {
+        const twin = twinOf.get(row.id)
+        if (typeof twin === 'number') projected[i]!._state_db_row_id = twin
+      }
+    }
     // TAL-493: the database file's identity, so a marker taken in a replaced state.db is never applied to its successor.
     if (hasId) {
       const generation = stateDbGeneration(dbPath)

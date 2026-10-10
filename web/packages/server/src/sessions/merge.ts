@@ -6,12 +6,12 @@
 import { buildActiveTurnToken, completedToolIndex } from '../redact.js'
 import { RunJournal, type JournalEvent } from './journal.js'
 import { str } from '../util.js'
-import { stripAttachedFilesMarker, type Message } from './session.js'
+import { stripAttachedFilesMarker, stripWorkspacePrefix, type Message } from './session.js'
+
+export { WORKSPACE_PREFIX_RE, stripWorkspacePrefix } from './session.js'
 import type { MediaProjection } from '../workspace/media-refs.js'
 import { decidedEditDiff, toolEditDiff, toolName } from './tool-display.js'
 
-export const WORKSPACE_PREFIX_RE = /^\s*\[Workspace::v1:\s*(?:\\.|[^\]\\])+\]\s*/
-const LEGACY_WORKSPACE_PREFIX_RE = /^\s*\[Workspace:[^\]]+\]\s*/
 const TOOL_RESULT_SNIPPET_MAX = 4000
 // Python `_TOOL_ARG_CONTENT_KEYS`: file bodies, commands, and patch text keep up to the content cap; incidental args cut at 120.
 export const TOOL_ARG_CONTENT_KEYS = new Set(['command', 'cmd', 'script', 'code', 'patch', 'diff', 'old_string', 'new_string', 'content', 'path', 'file_path'])
@@ -27,12 +27,6 @@ export function workspaceContextPrefix(path: string): string {
   return `[Workspace::v1: ${escapeWorkspacePrefixPath(path)}]\n`
 }
 
-export function stripWorkspacePrefix(text: string, includeLegacy = false): string {
-  const value = str(text)
-  let stripped = value.replace(WORKSPACE_PREFIX_RE, '')
-  if (includeLegacy && stripped === value) stripped = value.replace(LEGACY_WORKSPACE_PREFIX_RE, '')
-  return stripped.trim()
-}
 
 /** Python `_message_text`: flatten string or multimodal content to text. */
 export function isReasoningBlock(part: Record<string, unknown>): boolean {
@@ -917,7 +911,7 @@ export function mergeSessionMessagesAppendOnly(sidecar: Message[], state: Messag
   return merged
 }
 
-/** The Agent's `messages.id` a state.db row was read with, or null for a database without the column. */
+/** The state.db row id a row was read with (a compaction copy reads as the row it copies; TAL-709), or null for a database without the column. */
 function stateDbRowId(m: Message): number | null {
   const id = m._state_db_row_id
   return typeof id === 'number' && Number.isFinite(id) ? id : null
