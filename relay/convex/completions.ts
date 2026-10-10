@@ -33,6 +33,11 @@ export async function recordCompletion(
   });
 }
 
+export function grantMatches(grant: Doc<"publisherGrants">, row: Doc<"completions">): boolean {
+  return grant.userId === row.userId && grant.profileId === row.profileId
+    && grant.publisherId === row.row.publisherId && grant.publisherOwnerUserId === row.publisherOwnerUserId;
+}
+
 async function visibleCompletions(
   ctx: QueryCtx | MutationCtx, rows: Doc<"completions">[],
 ): Promise<Doc<"completions">[]> {
@@ -42,8 +47,7 @@ async function visibleCompletions(
   for (const row of rows) {
     if (!grants.has(row.grantId)) grants.set(row.grantId, await ctx.db.get(row.grantId));
     const grant = grants.get(row.grantId);
-    if (grant?.userId === row.userId && grant.profileId === row.profileId
-      && grant.publisherId === row.row.publisherId && grant.publisherOwnerUserId === row.publisherOwnerUserId) {
+    if (grant && grantMatches(grant, row)) {
       if (!enabled.has(grant._id)) {
         const publisher = await ctx.db.query("publishers")
           .withIndex("by_version_and_owner_user_id_and_publisher_id", (q) => q.eq("version", 2)

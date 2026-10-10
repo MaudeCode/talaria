@@ -215,8 +215,11 @@ Empty pages may still have a cursor when publisher exclusions hide their records
 `{ids:[...]}` (at most 100 observed completion IDs). Success returns `{ok:true}`.
 Acknowledgement is account-wide for those exact records; it does not clear running
 work, later runs or another user's/profile's results. Retries are idempotent.
-Acknowledgement tombstones prevent later terminal snapshots from reviving a result.
+Acknowledgement tombstones prevent later terminal snapshots from reviving a result
+and are deleted seven days after the run's completion was first recorded.
 Revoked/expired devices, excluded publishers and obsolete profile grants are denied.
+Revoking a publisher deletes its completions, and cleanup deletes any completion
+whose grant is gone or was re-enrolled for another owner or profile.
 
 A publisher reports that a session was viewed in its own client with the signed
 `PUT /v1/publishers/{publisherId}/profiles/{profileId}/sessions/{sessionId}/viewed`
