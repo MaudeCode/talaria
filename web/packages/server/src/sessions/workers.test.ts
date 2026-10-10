@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { SIDECAR_RPC_VERSION, type RuntimeDescribe, type SidecarResult } from '@maudecode/talaria-web-contracts'
 import { FakeSidecar } from '../sidecar/fake.js'
+import { SidecarError } from '../sidecar/client.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { CompletionDrain, formatWakeupPrompt } from './completions.js'
 import { nextSessionItem, StreamRegistry, type SessionChannels } from './streams.js'
@@ -827,5 +828,61 @@ describe('agent health', () => {
     writeFileSync(join(dir, 'gateway_state.json'), JSON.stringify({ gateway_state: 'stopped', updated_at: new Date().toISOString() }))
     expect(await agentHealth(deps)).toMatchObject({ alive: false, details: { state: 'down', reason: 'gateway_not_running' } })
     expect(runtimeStatusIsFresh({ gateway_state: 'running', updated_at: '2026-01-01T00:00:00' }, Date.now() / 1000)).toBe(false)
+  })
+})
+
+describe('wakeup turns pass the user-turn admission (TAL-577)', () => {
+  let s: TestServer
+  let sidecar: FakeSidecar
+  const starts: Json[] = []
+  beforeAll(async () => {
+    sidecar = new FakeSidecar()
+    s = await bootTestServer({ sidecar })
+    sidecar.respond('chat.start', (params) => { starts.push(params); return { ...completed('Handled.'), messages: [{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Handled.' }] } })
+    sidecar.respond('process.mark_consumed', () => ({ ok: true }))
+  })
+  afterAll(() => s.close())
+
+  const newSid = async (): Promise<string> => String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+  const completion = (sid: string, id: string): Json => ({ process_id: id, session_id: id, type: 'completion', command: 'make', exit_code: 0, output: 'ok', origin_ui_session_id: sid, consumed: false })
+  const settled = async (): Promise<void> => {
+    for (let i = 0; i < 60 && s.deps.registry.activeRuns.size; i += 1) await new Promise((r) => setTimeout(r, 50))
+  }
+
+  it('runs a wakeup for a session whose workspace was deleted in the recovered workspace', async () => {
+    const sid = await newSid()
+    const session = s.deps.sessionStore.get(sid)
+    const recovered = session.workspace
+    const worktree = join(recovered, 'removed-worktree')
+    mkdirSync(worktree, { recursive: true })
+    session.workspace = worktree
+    s.deps.sessionStore.save(session)
+    rmSync(worktree, { recursive: true })
+    starts.length = 0
+    expect(await s.deps.completions.processOne(completion(sid, 'proc_gone'))).toBe(true)
+    await settled()
+    expect(starts.map((p) => p.workspace)).toEqual([recovered])
+    expect(s.deps.sessionStore.get(sid).workspace).toBe(recovered)
+  })
+
+  it('defers a wakeup while the Agent runtime is stale', async () => {
+    const sid = await newSid()
+    starts.length = 0
+    sidecar.respond('runtime.ensure_current', () => { throw new SidecarError('restart required', { condition: 'agent_runtime_stale' }) })
+    // No turn ends in an idle session, so only the retry timer delivers the wakeup once the runtime is current.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      expect(await s.deps.completions.processOne(completion(sid, 'proc_stale'))).toBe(true)
+      expect(starts).toEqual([])
+      expect(s.deps.completions.deferredCount(sid)).toBe(1)
+      sidecar.respond('runtime.ensure_current', () => ({ current: true as const, agent_revision: null }))
+      await vi.advanceTimersByTimeAsync(30_000)
+    } finally {
+      vi.useRealTimers()
+      sidecar.respond('runtime.ensure_current', () => ({ current: true as const, agent_revision: null }))
+    }
+    await settled()
+    expect(starts).toHaveLength(1)
+    expect(s.deps.completions.deferredCount(sid)).toBe(0)
   })
 })

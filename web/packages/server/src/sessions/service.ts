@@ -151,6 +151,34 @@ export class SessionService {
   private get store(): SessionStore { return this.deps.store }
 
   /**
+   * TAL-577: user-turn admission shared by `chat.start` and server-side wakeups, after `ensureAgentRuntimeCurrent`.
+   * A requested workspace must be trusted; the session's own one, when its directory is gone, falls back to the last one.
+   */
+  turnWorkspace(s: Session, requested?: unknown): string {
+    const ws = this.deps.workspaces
+    if (requested !== undefined && requested !== null && requested !== '') {
+      try { return ws.resolveTrusted(str(requested), s.profile) } catch (error) { throw new HttpFailure(400, (error as Error).message) }
+    }
+    try {
+      const [workspace, recovered] = ws.resolveImplicitWithRecovery(s.workspace, (p) => ws.lastWorkspace(p), s.profile)
+      if (recovered) s.workspace = workspace
+      return workspace
+    } catch (error) {
+      throw new HttpFailure(400, (error as Error).message)
+    }
+  }
+
+  /** A `@provider:` id is split; any other model an explicit pick did not just choose is checked against the catalog (TAL-542). */
+  turnModel(s: Session, body: Record<string, unknown> = {}): [string | null, string | null, boolean] {
+    const requestedModel = str(body.model) || s.model
+    const requestedProvider = 'model_provider' in body ? (body.model_provider as string | null) : s.model_provider
+    const [model, provider] = this.deps.modelStateFromRequest(requestedModel, requestedProvider, s.model_provider)
+    if (model !== requestedModel || !model || body.explicit_model_pick === true) return [model, provider, model !== requestedModel]
+    const repaired = this.deps.repairSessionModel?.(s.profile ?? null, model, provider)
+    return repaired ? [repaired[0], repaired[1], true] : [model, provider, false]
+  }
+
+  /**
    * TAL-186: rewrites a session's media references to their URLs. A local path is rewritten only when `/api/media`
    * serves it for this session, under the same resolution, so every rewritten reference loads.
    */

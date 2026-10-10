@@ -88,30 +88,6 @@ function visibleOrRetag(ctx: RequestContext, s: Session, requestedProfile: strin
   throw new HttpError(404, 'Session not found')
 }
 
-function resolveWorkspace(ctx: RequestContext, s: Session, requested: unknown): string {
-  const ws = ctx.deps.workspaces
-  if (requested !== undefined && requested !== null && requested !== '') {
-    try { return ws.resolveTrusted(str(requested), s.profile) } catch (error) { throw new HttpError(400, (error as Error).message) }
-  }
-  try {
-    const [workspace, recovered] = ws.resolveImplicitWithRecovery(s.workspace, (p) => ws.lastWorkspace(p), s.profile)
-    if (recovered) s.workspace = workspace
-    return workspace
-  } catch (error) {
-    throw new HttpError(400, (error as Error).message)
-  }
-}
-
-/** A `@provider:` id is split; any other model an explicit pick did not just choose is checked against the catalog (TAL-542). */
-function modelState(ctx: RequestContext, s: Session, body: Record<string, unknown>): [string | null, string | null, boolean] {
-  const requestedModel = str(body.model) || s.model
-  const requestedProvider = 'model_provider' in body ? (body.model_provider as string | null) : s.model_provider
-  const [model, provider] = ctx.deps.sessions.deps.modelStateFromRequest(requestedModel, requestedProvider, s.model_provider)
-  if (model !== requestedModel || !model || body.explicit_model_pick === true) return [model, provider, model !== requestedModel]
-  const repaired = ctx.deps.sessions.deps.repairSessionModel?.(s.profile ?? null, model, provider)
-  return repaired ? [repaired[0], repaired[1], true] : [model, provider, false]
-}
-
 /** `chat.start`; a `chat.steer` sent while a background turn runs starts the user's turn through it too (TAL-460). */
 async function startChat(ctx: RequestContext, body: Record<string, unknown>, settle: Pick<StartTurnOptions, 'onDone' | 'onFailed'> = {}): Promise<Record<string, unknown>> {
   requireField(body, 'session_id')
@@ -154,8 +130,8 @@ async function startChat(ctx: RequestContext, body: Record<string, unknown>, set
   if (compressionRecoveryPayload(s) && !attachments.length && isGenericContinuationIntent(msg)) {
     throw new HttpError(409, 'This session exhausted context compression. Start a focused continuation, then describe the next narrow task.', { type: 'compression_recovery_required', compression_recovery: s.compression_recovery, session_id: s.session_id })
   }
-  const workspace = resolveWorkspace(ctx, s, body.workspace)
-  const [model, provider, normalized] = modelState(ctx, s, body)
+  const workspace = ctx.deps.sessions.turnWorkspace(s, body.workspace)
+  const [model, provider, normalized] = ctx.deps.sessions.turnModel(s, body)
   if (body.moa_config) throw new HttpError(503, 'MoA overrides need the Agent command registry (checkpoint 7).')
   const response = ctx.deps.turns.start(s, { msg, attachments, workspace, model, modelProvider: provider, normalizedModel: normalized, source: 'webui', ...settle })
   if (response._status !== undefined && response._status >= 400) throw new HttpError(response._status, response.error ?? 'chat start failed', response.active_stream_id ? { active_stream_id: response.active_stream_id } : {})
@@ -309,8 +285,8 @@ export const chatRouter = os.router({
     if (kickoff) {
       // TAL-542: after the goal RPCs, so the stale-model check reads a catalog for the profile the session now runs under.
       await ctx.deps.sessions.deps.warmSessionModelRepair?.(s.profile)
-      const workspace = resolveWorkspace(ctx, s, body.workspace)
-      const [model, provider, normalized] = modelState(ctx, s, body)
+      const workspace = ctx.deps.sessions.turnWorkspace(s, body.workspace)
+      const [model, provider, normalized] = ctx.deps.sessions.turnModel(s, body)
       const started = ctx.deps.turns.start(s, { msg: kickoff, attachments: [], workspace, model, modelProvider: provider, normalizedModel: normalized, source: 'webui', goalRelated: true })
       if (started._status !== undefined && started._status >= 400) {
         try { await sidecar.call('goals.restore', { session_id: sid, profile_home: profileHome, snapshot: snapshot.snapshot }) } catch { /* best effort */ }
@@ -332,7 +308,7 @@ export const chatRouter = os.router({
       if (ctx.deps.sessions.isReadOnly(parent) || parent.branchSourceReadonly) throw new HttpError(403, 'Read-only imported sessions cannot be continued from WebUI')
       const prompt = str(body.prompt).trim()
       if (!prompt) throw new HttpError(400, 'prompt is required')
-      const [model, modelProvider] = modelState(ctx, parent, {})
+      const [model, modelProvider] = ctx.deps.sessions.turnModel(parent, {})
       const bg = ctx.deps.sessionStore.newSession({ workspace: parent.workspace, model, modelProvider, profile: parent.profile })
       bg.title = `bg: ${prompt.slice(0, 60)}`
       ctx.deps.sessionStore.save(bg)
@@ -404,7 +380,7 @@ export const chatRouter = os.router({
     const question = str(body.question).trim()
     if (!question) throw new HttpError(400, 'question is required')
     // TAL-518: a side question runs in its own hidden session, so the chat's running turn does not block it.
-    const [model, modelProvider] = modelState(ctx, s, {})
+    const [model, modelProvider] = ctx.deps.sessions.turnModel(s, {})
     const ephemeral = ctx.deps.sessionStore.newSession({ workspace: s.workspace, model, modelProvider, profile: s.profile })
     ephemeral.messages = structuredClone(s.messages)
     ephemeral.context_messages = ctx.deps.sessions.sideQuestionContext(s)

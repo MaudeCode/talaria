@@ -32,7 +32,7 @@ import { SessionStore } from './sessions/store.js'
 import { DraftStore } from './sessions/drafts.js'
 import { SessionEventBus } from './sessions/events.js'
 import { ShareStore } from './sessions/shares.js'
-import { SessionService } from './sessions/service.js'
+import { ensureAgentRuntimeCurrent, HttpFailure, SessionService } from './sessions/service.js'
 import { recoveryStampingSince } from './sessions/recovery.js'
 import { ProjectStore } from './projects.js'
 import { WorkspaceRegistry } from './workspace/workspaces.js'
@@ -522,10 +522,18 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
       },
     }
   }
-  completions = new CompletionDrain({ sidecar: () => sidecar, baseHome, profileHome: (p) => profileHome(p ?? activeProfile()), activeProfile, store, channels, registry, startTurn: (session, prompt) => {
-    // TAL-542: a wakeup repairs a stale pair from the cached catalog only (Python `prefer_cached_catalog`), never waiting on a build.
-    const [model, modelProvider] = (session.model ? catalog.sessionModelRepair(profileHome(session.profile ?? activeProfile()), session.model, session.model_provider) : null) ?? [session.model, session.model_provider]
-    return turns.start(session, { msg: prompt, attachments: [], workspace: session.workspace, model, modelProvider, source: 'process_wakeup' })
+  completions = new CompletionDrain({ sidecar: () => sidecar, baseHome, profileHome: (p) => profileHome(p ?? activeProfile()), activeProfile, store, channels, registry, startTurn: async (session, prompt) => {
+    // TAL-577: a wakeup passes the user-turn admission; a stale runtime answers a retryable 409, which defers it on a retry timer.
+    // TAL-542: its model repair reads the cached catalog only (Python `prefer_cached_catalog`), never waiting on a build.
+    try {
+      await ensureAgentRuntimeCurrent(sidecar)
+      const workspace = sessions.turnWorkspace(session)
+      const [model, modelProvider] = sessions.turnModel(session)
+      return turns.start(session, { msg: prompt, attachments: [], workspace, model, modelProvider, source: 'process_wakeup' })
+    } catch (error) {
+      if (error instanceof HttpFailure) return { _status: error.status, error: error.message, retryable: error.extra.retryable === true }
+      throw error
+    }
   }, background, now, log, ...(opts.completionPollMs !== undefined ? { pollMs: opts.completionPollMs } : {}) })
   const mcpHealth = new McpHealthProber({ fetch: () => lazyFetch, now, log })
   // Dashboard reachability is probed in the background (Python `dashboard_probe.get_dashboard_status`), never per request.

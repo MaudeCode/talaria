@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Background-result replies now run in a recovered workspace when the chat's folder was deleted, and wait while the Agent needs a restart.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
