@@ -52,6 +52,14 @@ public struct ChatMessage: Decodable, Equatable, Identifiable {
     public internal(set) var markerKind: ChatMarkerMessageKind?
     /// The server's card body for a marker whose text is not the body as written (a preserved task list).
     public internal(set) var markerBody: String?
+    /// How the server says to show this row (TAL-600); nil from an older server or for a row this device made.
+    public internal(set) var display: Display?
+
+    /// TAL-600: `row` on its own, `inScene` only inside its turn's activity scene, `hidden` not at all.
+    public enum Display: String, Equatable {
+        case row, hidden
+        case inScene = "in_scene"
+    }
 
     public init(
         role: String?,
@@ -77,7 +85,8 @@ public struct ChatMessage: Decodable, Equatable, Identifiable {
         backgroundUpdate: BackgroundUpdate? = nil,
         backgroundSilent: Bool = false,
         markerKind: ChatMarkerMessageKind? = nil,
-        markerBody: String? = nil
+        markerBody: String? = nil,
+        display: Display? = nil
     ) {
         self.role = role
         self.content = content
@@ -103,6 +112,7 @@ public struct ChatMessage: Decodable, Equatable, Identifiable {
         self.backgroundSilent = backgroundSilent
         self.markerKind = markerKind
         self.markerBody = markerBody
+        self.display = display
     }
 
     enum CodingKeys: String, CodingKey {
@@ -132,6 +142,7 @@ public struct ChatMessage: Decodable, Equatable, Identifiable {
         case backgroundSilent = "_backgroundSilent"
         case markerKind = "_markerKind"
         case markerBody = "_markerBody"
+        case display = "_display"
     }
 
     public init(from decoder: Decoder) throws {
@@ -170,6 +181,7 @@ public struct ChatMessage: Decodable, Equatable, Identifiable {
         backgroundSilent = (try? container.decodeIfPresent(Bool.self, forKey: .backgroundSilent)) == true
         markerKind = ChatMarkerMessageKind(wireValue: container.decodeLossyStringIfPresent(forKey: .markerKind))
         markerBody = markerKind == nil ? nil : container.decodeLossyStringIfPresent(forKey: .markerBody)
+        display = container.decodeLossyStringIfPresent(forKey: .display).flatMap(Display.init(rawValue:))
     }
 
     private static func attachments(

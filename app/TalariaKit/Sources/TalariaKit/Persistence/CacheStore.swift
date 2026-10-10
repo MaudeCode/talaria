@@ -428,7 +428,8 @@ private extension ChatMessage {
             backgroundUpdate: cachedMessage.backgroundUpdateData.flatMap { try? JSONDecoder().decode(BackgroundUpdate.self, from: $0) },
             backgroundSilent: cachedMessage.backgroundSilent == true,
             markerKind: ChatMarkerMessageKind(wireValue: cachedMessage.markerKind),
-            markerBody: cachedMessage.markerBody
+            markerBody: cachedMessage.markerBody,
+            display: cachedMessage.display.flatMap(ChatMessage.Display.init(rawValue:))
         )
     }
 }
