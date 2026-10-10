@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Installed extensions that declare a skin, a voice engine, or a local sidecar work again: the skin appears in Appearance, the voice engine can register, and the panel can reach its consented sidecar.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

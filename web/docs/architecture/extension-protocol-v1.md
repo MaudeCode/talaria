@@ -39,9 +39,9 @@ where each entry is the sanitized projection the client validates with
 | `capabilities` | subset of `settings storage sidecar lifecycle theme tts navigate toast session` |
 | `permissions` | declared `permissions` map, shown to the user (for example `network_external`) |
 | `settings_schema` | sanitized scalar fields (`boolean string number integer enum`) rendered by the host |
-| `theme` | declarative skin: `{ key, name, scheme?, colors?, tokens }` with the allowlisted token names and value shapes |
-| `tts` | `{ id, label }` when the extension provides a speech engine |
-| `sidecar` | `{ origin, health_path, consented }` for a loopback sidecar |
+| `theme` | declarative skin: `{ key, name, scheme?, colors?, tokens }` keeping only allowlisted token names and value shapes (`SKIN_TOKEN_NAMES`, `SKIN_VALUE_RE` in `packages/contracts`); `null` plus `theme_rejected` when none survive |
+| `tts` | `{ id, label }` when the extension provides a speech engine; `null` plus `tts_rejected` when invalid |
+| `sidecar` | `{ origin, health_path, consented }` for a loopback sidecar the proxy can serve, with `consented` from the saved proxy consent; `null` otherwise |
 | `legacy_injection` | `true` when the entry only declares injected scripts/styles; it never runs |
 | `warnings` | stable warning codes from sanitization |
 

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { TOKEN_NAMES, type TokenName } from '../theme/skins'
+import { SKIN_TOKEN_NAMES, SKIN_VALUE_RE } from '@maudecode/talaria-web-contracts'
 
 /**
  * Unified extension platform, protocol version 1 (HWEB-100).
@@ -26,18 +26,16 @@ export const SettingsFieldSchema = z.object({
 export type SettingsField = z.infer<typeof SettingsFieldSchema>
 
 /**
- * Declarative skin: a validated token map over the theme vocabulary (src/theme/skins.ts), plus the
- * legacy protocol-v1 names, which map onto their current equivalents (SKIN_TOKEN_ALIASES).
+ * Declarative skin: a validated token map over the theme vocabulary, plus the legacy protocol-v1 names, which map
+ * onto their current equivalents. The allowlist lives in the contracts package; the server ships only tokens it accepts.
  */
-export const SKIN_TOKEN_ALIASES: Record<string, TokenName> = { '--surface2': '--surface-subtle', '--text2': '--muted', '--accent2': '--accent-hover', '--accent3': '--accent-text', '--accent-contrast': '--accent-fg', '--sidebar-text': '--text', '--user-bubble': '--user-bubble-bg', '--assistant-bubble': '--assistant-msg-bg', '--link': '--link-color' }
-export const SKIN_TOKEN_NAMES = [...TOKEN_NAMES, ...Object.keys(SKIN_TOKEN_ALIASES), '--accent-rgb'] as [string, ...string[]]
-export const SKIN_VALUE_RE = /^(#(?:[0-9a-fA-F]{3,8})|rg(?:b|ba)\(\s*[0-9.,%\s/]+\)|hsl(?:a)?\(\s*[0-9.,%\s/deg]+\)|[0-9]{1,3}\s*,\s*[0-9]{1,3}\s*,\s*[0-9]{1,3}|[a-zA-Z]{3,20}|[0-9.]+(?:px|em|rem|%)?)$/
+export { SKIN_TOKEN_ALIASES } from '@maudecode/talaria-web-contracts'
 export const ThemeDeclarationSchema = z.object({
   key: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,31}$/),
   name: z.string().min(1).max(40),
   scheme: z.enum(['light', 'dark']).optional(),
   colors: z.array(z.string().regex(SKIN_VALUE_RE)).max(3).optional(),
-  tokens: z.record(z.enum(SKIN_TOKEN_NAMES), z.string().regex(SKIN_VALUE_RE)).refine((t) => Object.keys(t).length > 0, 'at least one token'),
+  tokens: z.partialRecord(z.enum(SKIN_TOKEN_NAMES), z.string().regex(SKIN_VALUE_RE)).refine((t) => Object.keys(t).length > 0, 'at least one token'),
 })
 export type ThemeDeclaration = z.infer<typeof ThemeDeclarationSchema>
 
