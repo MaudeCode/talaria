@@ -804,9 +804,7 @@ final class ChatRecoveryUITests: ChatUITestCase {
     /// Checking stream (after 12 s) or reconnects and replays the run (at 18 s) while a test works (TAL-666).
     func testWaitingRunKeepsItsStreamAlive() throws {
         launchFixture(additionalArguments: ["--ui-test-chat-controls"])
-        try sendFixtureMessage("Run the deterministic fixture")
-        let waiting = app.staticTexts["Waiting for control input."]
-        XCTAssertTrue(waiting.awaitExistence(timeout: 5))
+        let waiting = try startControlsRun()
 
         let checking = element(label: "Hermes is checking the response stream")
         XCTAssertFalse(poll(timeout: 22) { checking.exists }, "A waiting run's stream looked stalled")
@@ -818,9 +816,7 @@ final class ChatRecoveryUITests: ChatUITestCase {
             argument: "--ui-test-chat-controls",
             trace: "start -> token -> steer request -> steer_consumed -> cancel request -> cancel"
         )
-        try sendFixtureMessage("Run the deterministic fixture")
-
-        XCTAssertTrue(app.staticTexts["Waiting for control input."].awaitExistence(timeout: 5))
+        try startControlsRun()
         let input = readyComposerInput(try XCTUnwrap(waitForComposer(timeout: 5)))
         input.typeText("Keep the fixture concise")
         tapCenter(of: app.buttons["Send"])
@@ -3156,6 +3152,16 @@ fileprivate extension ChatUITestCase {
         }
     }
 
+    /// Starts the `--ui-test-chat-controls` run and waits for its opening token. The fixture streams it at once,
+    /// but a loaded runner took 6 s to show it, so this waits as long as other first replies (TAL-701).
+    @discardableResult
+    func startControlsRun() throws -> XCUIElement {
+        try sendFixtureMessage("Run the deterministic fixture")
+        let waiting = app.staticTexts["Waiting for control input."]
+        XCTAssertTrue(waiting.awaitExistence(timeout: Self.navigationTimeout), "The controls run never streamed its opening")
+        return waiting
+    }
+
     func countElements(label: String) -> Int {
         app.staticTexts.matching(NSPredicate(format: "label == %@", label)).count
     }
@@ -3679,8 +3685,7 @@ final class KanbanCardActionsUITests: TalariaUITestCase {
 final class QueuedMessagesChipUITests: ChatUITestCase {
     func testQueuedMessagesSheetShowsThemInFullAndRemovesAndEditsThem() throws {
         launchChatFixture(argument: "--ui-test-chat-controls", trace: "start -> token -> /queue -> Send menu queue -> remove -> edit")
-        try sendFixtureMessage("Run the deterministic fixture")
-        XCTAssertTrue(app.staticTexts["Waiting for control input."].awaitExistence(timeout: 5))
+        try startControlsRun()
 
         // The first is queued with `/queue`; the chip replaces the old "Queued for next turn" notice.
         let input = app.textViews.firstMatch
