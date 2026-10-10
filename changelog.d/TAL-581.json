@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Single sign-on now follows the server's main config even when Talaria Web runs from a profile, and refuses logins while that config cannot be read.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

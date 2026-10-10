@@ -490,7 +490,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     defaultModel: () => (env.HERMES_WEBUI_DEFAULT_MODEL ?? '').trim(),
     log,
   })
-  oidc = new OidcService({ env, operatorConfig: () => agentConfig.read(config.hermesHome), profileHome, fetch: () => lazyFetch, pinned: () => ({ lookup: deps.dnsLookup, fetch: deps.pinnedFetch }), now, log })
+  oidc = new OidcService({ env, operatorConfig: () => agentConfig.read(baseHome), profileHome, fetch: () => lazyFetch, pinned: () => ({ lookup: deps.dnsLookup, fetch: deps.pinnedFetch }), now, log })
   operatorConfigPeek = () => agentConfig.peek(config.hermesHome)
   settings.hooks.defaultModel = () => profileDefaultModel(null)[0]
   settings.hooks.defaultModelProvider = () => profileDefaultModel(null)[1] ?? undefined

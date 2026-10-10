@@ -1,7 +1,7 @@
 /**
  * The Agent's per-profile `config.yaml`, read and written through the sidecar
  * (`config.get` / `config.set`) so the server needs no YAML parser. Reads are
- * memoised on the file's mtime+size; every write evicts the entry.
+ * memoised on the file's mtime, ctime, size and inode; every write evicts the entry.
  *
  * Policy helpers (model section, reasoning, max_tokens, auxiliary slots,
  * personalities) port Python `api/config.py`.
@@ -40,7 +40,8 @@ export class AgentConfig {
   private statKey(profileHome: string, opts: ConfigFileOptions = {}): string {
     try {
       const st = statSync(this.path(profileHome, opts), { bigint: true })
-      return `${String(st.mtimeNs)}:${String(st.size)}:${String(st.ino)}`
+      // ctime moves on chmod/chown, so a permission change re-reads through the sidecar instead of serving the old parse.
+      return `${String(st.mtimeNs)}:${String(st.ctimeNs)}:${String(st.size)}:${String(st.ino)}`
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code
       if (code === 'ENOENT' || code === 'ENOTDIR') return 'missing'
