@@ -10,6 +10,7 @@ import { resolvePathLikePython } from '../workspace/paths.js'
 import { turnOrigin } from './background-updates.js'
 
 export type Message = Record<string, unknown>
+export type ToolCall = Record<string, unknown>
 
 /**
  * TAL-709: rows an earlier release appended from the Agent's in-place compaction copies. A row read from state.db that is
@@ -25,7 +26,6 @@ function withoutCompactionCopies(messages: Message[]): Message[] {
     return true
   })
 }
-export type ToolCall = Record<string, unknown>
 
 export const METADATA_FIELDS = [
   'session_id', 'title', 'workspace', 'created_workspace', 'model', 'model_provider', 'model_explicit_pick_signature', 'created_at', 'updated_at',

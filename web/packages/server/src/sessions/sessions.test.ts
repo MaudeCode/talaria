@@ -1241,18 +1241,23 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     await turn(sid, 'status')
     const before = await served(sid)
     sidecar.respond('chat.start', (params) => {
-      commit(sid, [['user', 'status', 300]])
+      // A CLI row lands mid-turn, before the compaction copies it.
+      commit(sid, [['user', 'status', 300], ['user', 'CLI meanwhile', 300.5]])
       // The Agent prunes bulky output and re-inserts this turn's prompt with the bytes it sent.
       compactInPlace(sid, (content) => (content === 'a1 bulky tool output' ? '[Duplicate tool output — same content as a more recent call]' : content === 'status' ? '[Workspace::v1: /w]\nstatus' : content))
       commit(sid, [['assistant', 'status again answered', 301]])
       return completedTurn([...params.conversation_history, { role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'status again answered' }])
     })
     const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'status' }))
-    await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
-    expect(await served(sid)).toEqual([...before, 'status', 'status again answered'])
+    const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    const settled = await served(sid)
+    expect(settled).toEqual([...before, 'status', 'status again answered', 'CLI meanwhile'])
+    expect(((frames.find((f) => f.event === 'done')?.data as Json).session as Json).message_count).toBe(settled.length)
+    s.deps.sessionStore.sessions.delete(sid)
+    expect(await served(sid)).toEqual(settled)
     // A CLI row committed after the compaction still arrives.
     commit(sid, [['user', 'late CLI', 400]])
-    expect((await served(sid)).slice(-2)).toEqual(['status again answered', 'late CLI'])
+    expect((await served(sid)).slice(-2)).toEqual(['CLI meanwhile', 'late CLI'])
   })
 
   it('drops rows a compaction copy appended to a saved transcript, keeping other state.db rows (TAL-709)', async () => {
