@@ -3121,13 +3121,92 @@
                                         },
                                         "truncated": {
                                           "type": "boolean"
+                                        },
+                                        "hunks": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "header": {
+                                                "type": "string"
+                                              },
+                                              "old_start": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "new_start": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "new_end": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "additions": {
+                                                "type": "integer",
+                                                "minimum": -9007199254740991,
+                                                "maximum": 9007199254740991
+                                              },
+                                              "deletions": {
+                                                "type": "integer",
+                                                "minimum": -9007199254740991,
+                                                "maximum": 9007199254740991
+                                              },
+                                              "lines": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "kind": {},
+                                                    "old_line": {},
+                                                    "new_line": {},
+                                                    "text": {}
+                                                  }
+                                                }
+                                              }
+                                            },
+                                            "required": [
+                                              "header",
+                                              "old_start",
+                                              "new_start",
+                                              "new_end",
+                                              "additions",
+                                              "deletions",
+                                              "lines"
+                                            ]
+                                          }
                                         }
                                       },
                                       "required": [
                                         "added",
                                         "removed",
                                         "diff",
-                                        "truncated"
+                                        "truncated",
+                                        "hunks"
                                       ]
                                     },
                                     "name": {
@@ -3381,13 +3460,29 @@
                                                 },
                                                 "truncated": {
                                                   "type": "boolean"
+                                                },
+                                                "hunks": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "header": {},
+                                                      "old_start": {},
+                                                      "new_start": {},
+                                                      "new_end": {},
+                                                      "additions": {},
+                                                      "deletions": {},
+                                                      "lines": {}
+                                                    }
+                                                  }
                                                 }
                                               },
                                               "required": [
                                                 "added",
                                                 "removed",
                                                 "diff",
-                                                "truncated"
+                                                "truncated",
+                                                "hunks"
                                               ]
                                             },
                                             "args": {},
@@ -3963,13 +4058,129 @@
                                   },
                                   "truncated": {
                                     "type": "boolean"
+                                  },
+                                  "hunks": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "header": {
+                                          "type": "string"
+                                        },
+                                        "old_start": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "new_start": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "new_end": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "additions": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "deletions": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "lines": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "kind": {
+                                                "enum": [
+                                                  "addition",
+                                                  "deletion",
+                                                  "context"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "old_line": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "new_line": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "text": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "kind",
+                                              "old_line",
+                                              "new_line",
+                                              "text"
+                                            ]
+                                          }
+                                        }
+                                      },
+                                      "required": [
+                                        "header",
+                                        "old_start",
+                                        "new_start",
+                                        "new_end",
+                                        "additions",
+                                        "deletions",
+                                        "lines"
+                                      ]
+                                    }
                                   }
                                 },
                                 "required": [
                                   "added",
                                   "removed",
                                   "diff",
-                                  "truncated"
+                                  "truncated",
+                                  "hunks"
                                 ]
                               },
                               "name": {
@@ -5267,13 +5478,92 @@
                                         },
                                         "truncated": {
                                           "type": "boolean"
+                                        },
+                                        "hunks": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "header": {
+                                                "type": "string"
+                                              },
+                                              "old_start": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "new_start": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "new_end": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "additions": {
+                                                "type": "integer",
+                                                "minimum": -9007199254740991,
+                                                "maximum": 9007199254740991
+                                              },
+                                              "deletions": {
+                                                "type": "integer",
+                                                "minimum": -9007199254740991,
+                                                "maximum": 9007199254740991
+                                              },
+                                              "lines": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "kind": {},
+                                                    "old_line": {},
+                                                    "new_line": {},
+                                                    "text": {}
+                                                  }
+                                                }
+                                              }
+                                            },
+                                            "required": [
+                                              "header",
+                                              "old_start",
+                                              "new_start",
+                                              "new_end",
+                                              "additions",
+                                              "deletions",
+                                              "lines"
+                                            ]
+                                          }
                                         }
                                       },
                                       "required": [
                                         "added",
                                         "removed",
                                         "diff",
-                                        "truncated"
+                                        "truncated",
+                                        "hunks"
                                       ]
                                     },
                                     "name": {
@@ -5527,13 +5817,29 @@
                                                 },
                                                 "truncated": {
                                                   "type": "boolean"
+                                                },
+                                                "hunks": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "header": {},
+                                                      "old_start": {},
+                                                      "new_start": {},
+                                                      "new_end": {},
+                                                      "additions": {},
+                                                      "deletions": {},
+                                                      "lines": {}
+                                                    }
+                                                  }
                                                 }
                                               },
                                               "required": [
                                                 "added",
                                                 "removed",
                                                 "diff",
-                                                "truncated"
+                                                "truncated",
+                                                "hunks"
                                               ]
                                             },
                                             "args": {},
@@ -6109,13 +6415,129 @@
                                   },
                                   "truncated": {
                                     "type": "boolean"
+                                  },
+                                  "hunks": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "header": {
+                                          "type": "string"
+                                        },
+                                        "old_start": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "new_start": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "new_end": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "additions": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "deletions": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "lines": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "kind": {
+                                                "enum": [
+                                                  "addition",
+                                                  "deletion",
+                                                  "context"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "old_line": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "new_line": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "text": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "kind",
+                                              "old_line",
+                                              "new_line",
+                                              "text"
+                                            ]
+                                          }
+                                        }
+                                      },
+                                      "required": [
+                                        "header",
+                                        "old_start",
+                                        "new_start",
+                                        "new_end",
+                                        "additions",
+                                        "deletions",
+                                        "lines"
+                                      ]
+                                    }
                                   }
                                 },
                                 "required": [
                                   "added",
                                   "removed",
                                   "diff",
-                                  "truncated"
+                                  "truncated",
+                                  "hunks"
                                 ]
                               },
                               "name": {
@@ -7159,13 +7581,92 @@
                                         },
                                         "truncated": {
                                           "type": "boolean"
+                                        },
+                                        "hunks": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "header": {
+                                                "type": "string"
+                                              },
+                                              "old_start": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "new_start": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "new_end": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "additions": {
+                                                "type": "integer",
+                                                "minimum": -9007199254740991,
+                                                "maximum": 9007199254740991
+                                              },
+                                              "deletions": {
+                                                "type": "integer",
+                                                "minimum": -9007199254740991,
+                                                "maximum": 9007199254740991
+                                              },
+                                              "lines": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "kind": {},
+                                                    "old_line": {},
+                                                    "new_line": {},
+                                                    "text": {}
+                                                  }
+                                                }
+                                              }
+                                            },
+                                            "required": [
+                                              "header",
+                                              "old_start",
+                                              "new_start",
+                                              "new_end",
+                                              "additions",
+                                              "deletions",
+                                              "lines"
+                                            ]
+                                          }
                                         }
                                       },
                                       "required": [
                                         "added",
                                         "removed",
                                         "diff",
-                                        "truncated"
+                                        "truncated",
+                                        "hunks"
                                       ]
                                     },
                                     "name": {
@@ -7419,13 +7920,29 @@
                                                 },
                                                 "truncated": {
                                                   "type": "boolean"
+                                                },
+                                                "hunks": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "header": {},
+                                                      "old_start": {},
+                                                      "new_start": {},
+                                                      "new_end": {},
+                                                      "additions": {},
+                                                      "deletions": {},
+                                                      "lines": {}
+                                                    }
+                                                  }
                                                 }
                                               },
                                               "required": [
                                                 "added",
                                                 "removed",
                                                 "diff",
-                                                "truncated"
+                                                "truncated",
+                                                "hunks"
                                               ]
                                             },
                                             "args": {},
@@ -8001,13 +8518,129 @@
                                   },
                                   "truncated": {
                                     "type": "boolean"
+                                  },
+                                  "hunks": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "header": {
+                                          "type": "string"
+                                        },
+                                        "old_start": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "new_start": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "new_end": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "additions": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "deletions": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "lines": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "kind": {
+                                                "enum": [
+                                                  "addition",
+                                                  "deletion",
+                                                  "context"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "old_line": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "new_line": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "text": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "kind",
+                                              "old_line",
+                                              "new_line",
+                                              "text"
+                                            ]
+                                          }
+                                        }
+                                      },
+                                      "required": [
+                                        "header",
+                                        "old_start",
+                                        "new_start",
+                                        "new_end",
+                                        "additions",
+                                        "deletions",
+                                        "lines"
+                                      ]
+                                    }
                                   }
                                 },
                                 "required": [
                                   "added",
                                   "removed",
                                   "diff",
-                                  "truncated"
+                                  "truncated",
+                                  "hunks"
                                 ]
                               },
                               "name": {
@@ -10249,13 +10882,92 @@
                                         },
                                         "truncated": {
                                           "type": "boolean"
+                                        },
+                                        "hunks": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "header": {
+                                                "type": "string"
+                                              },
+                                              "old_start": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "new_start": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "new_end": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "additions": {
+                                                "type": "integer",
+                                                "minimum": -9007199254740991,
+                                                "maximum": 9007199254740991
+                                              },
+                                              "deletions": {
+                                                "type": "integer",
+                                                "minimum": -9007199254740991,
+                                                "maximum": 9007199254740991
+                                              },
+                                              "lines": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "kind": {},
+                                                    "old_line": {},
+                                                    "new_line": {},
+                                                    "text": {}
+                                                  }
+                                                }
+                                              }
+                                            },
+                                            "required": [
+                                              "header",
+                                              "old_start",
+                                              "new_start",
+                                              "new_end",
+                                              "additions",
+                                              "deletions",
+                                              "lines"
+                                            ]
+                                          }
                                         }
                                       },
                                       "required": [
                                         "added",
                                         "removed",
                                         "diff",
-                                        "truncated"
+                                        "truncated",
+                                        "hunks"
                                       ]
                                     },
                                     "name": {
@@ -10509,13 +11221,29 @@
                                                 },
                                                 "truncated": {
                                                   "type": "boolean"
+                                                },
+                                                "hunks": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "header": {},
+                                                      "old_start": {},
+                                                      "new_start": {},
+                                                      "new_end": {},
+                                                      "additions": {},
+                                                      "deletions": {},
+                                                      "lines": {}
+                                                    }
+                                                  }
                                                 }
                                               },
                                               "required": [
                                                 "added",
                                                 "removed",
                                                 "diff",
-                                                "truncated"
+                                                "truncated",
+                                                "hunks"
                                               ]
                                             },
                                             "args": {},
@@ -11091,13 +11819,129 @@
                                   },
                                   "truncated": {
                                     "type": "boolean"
+                                  },
+                                  "hunks": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "header": {
+                                          "type": "string"
+                                        },
+                                        "old_start": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "new_start": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "new_end": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "additions": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "deletions": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "lines": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "kind": {
+                                                "enum": [
+                                                  "addition",
+                                                  "deletion",
+                                                  "context"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "old_line": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "new_line": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "text": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "kind",
+                                              "old_line",
+                                              "new_line",
+                                              "text"
+                                            ]
+                                          }
+                                        }
+                                      },
+                                      "required": [
+                                        "header",
+                                        "old_start",
+                                        "new_start",
+                                        "new_end",
+                                        "additions",
+                                        "deletions",
+                                        "lines"
+                                      ]
+                                    }
                                   }
                                 },
                                 "required": [
                                   "added",
                                   "removed",
                                   "diff",
-                                  "truncated"
+                                  "truncated",
+                                  "hunks"
                                 ]
                               },
                               "name": {
@@ -13173,13 +14017,92 @@
                                         },
                                         "truncated": {
                                           "type": "boolean"
+                                        },
+                                        "hunks": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "header": {
+                                                "type": "string"
+                                              },
+                                              "old_start": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "new_start": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "new_end": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "additions": {
+                                                "type": "integer",
+                                                "minimum": -9007199254740991,
+                                                "maximum": 9007199254740991
+                                              },
+                                              "deletions": {
+                                                "type": "integer",
+                                                "minimum": -9007199254740991,
+                                                "maximum": 9007199254740991
+                                              },
+                                              "lines": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "kind": {},
+                                                    "old_line": {},
+                                                    "new_line": {},
+                                                    "text": {}
+                                                  }
+                                                }
+                                              }
+                                            },
+                                            "required": [
+                                              "header",
+                                              "old_start",
+                                              "new_start",
+                                              "new_end",
+                                              "additions",
+                                              "deletions",
+                                              "lines"
+                                            ]
+                                          }
                                         }
                                       },
                                       "required": [
                                         "added",
                                         "removed",
                                         "diff",
-                                        "truncated"
+                                        "truncated",
+                                        "hunks"
                                       ]
                                     },
                                     "name": {
@@ -13433,13 +14356,29 @@
                                                 },
                                                 "truncated": {
                                                   "type": "boolean"
+                                                },
+                                                "hunks": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "header": {},
+                                                      "old_start": {},
+                                                      "new_start": {},
+                                                      "new_end": {},
+                                                      "additions": {},
+                                                      "deletions": {},
+                                                      "lines": {}
+                                                    }
+                                                  }
                                                 }
                                               },
                                               "required": [
                                                 "added",
                                                 "removed",
                                                 "diff",
-                                                "truncated"
+                                                "truncated",
+                                                "hunks"
                                               ]
                                             },
                                             "args": {},
@@ -14015,13 +14954,129 @@
                                   },
                                   "truncated": {
                                     "type": "boolean"
+                                  },
+                                  "hunks": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "header": {
+                                          "type": "string"
+                                        },
+                                        "old_start": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "new_start": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "new_end": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "additions": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "deletions": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "lines": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "kind": {
+                                                "enum": [
+                                                  "addition",
+                                                  "deletion",
+                                                  "context"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "old_line": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "new_line": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "text": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "kind",
+                                              "old_line",
+                                              "new_line",
+                                              "text"
+                                            ]
+                                          }
+                                        }
+                                      },
+                                      "required": [
+                                        "header",
+                                        "old_start",
+                                        "new_start",
+                                        "new_end",
+                                        "additions",
+                                        "deletions",
+                                        "lines"
+                                      ]
+                                    }
                                   }
                                 },
                                 "required": [
                                   "added",
                                   "removed",
                                   "diff",
-                                  "truncated"
+                                  "truncated",
+                                  "hunks"
                                 ]
                               },
                               "name": {
@@ -16802,13 +17857,92 @@
                                         },
                                         "truncated": {
                                           "type": "boolean"
+                                        },
+                                        "hunks": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "header": {
+                                                "type": "string"
+                                              },
+                                              "old_start": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "new_start": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "new_end": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "additions": {
+                                                "type": "integer",
+                                                "minimum": -9007199254740991,
+                                                "maximum": 9007199254740991
+                                              },
+                                              "deletions": {
+                                                "type": "integer",
+                                                "minimum": -9007199254740991,
+                                                "maximum": 9007199254740991
+                                              },
+                                              "lines": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "kind": {},
+                                                    "old_line": {},
+                                                    "new_line": {},
+                                                    "text": {}
+                                                  }
+                                                }
+                                              }
+                                            },
+                                            "required": [
+                                              "header",
+                                              "old_start",
+                                              "new_start",
+                                              "new_end",
+                                              "additions",
+                                              "deletions",
+                                              "lines"
+                                            ]
+                                          }
                                         }
                                       },
                                       "required": [
                                         "added",
                                         "removed",
                                         "diff",
-                                        "truncated"
+                                        "truncated",
+                                        "hunks"
                                       ]
                                     },
                                     "name": {
@@ -17062,13 +18196,29 @@
                                                 },
                                                 "truncated": {
                                                   "type": "boolean"
+                                                },
+                                                "hunks": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "header": {},
+                                                      "old_start": {},
+                                                      "new_start": {},
+                                                      "new_end": {},
+                                                      "additions": {},
+                                                      "deletions": {},
+                                                      "lines": {}
+                                                    }
+                                                  }
                                                 }
                                               },
                                               "required": [
                                                 "added",
                                                 "removed",
                                                 "diff",
-                                                "truncated"
+                                                "truncated",
+                                                "hunks"
                                               ]
                                             },
                                             "args": {},
@@ -17644,13 +18794,129 @@
                                   },
                                   "truncated": {
                                     "type": "boolean"
+                                  },
+                                  "hunks": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "header": {
+                                          "type": "string"
+                                        },
+                                        "old_start": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "new_start": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "new_end": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "additions": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "deletions": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "lines": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "kind": {
+                                                "enum": [
+                                                  "addition",
+                                                  "deletion",
+                                                  "context"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "old_line": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "new_line": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "text": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "kind",
+                                              "old_line",
+                                              "new_line",
+                                              "text"
+                                            ]
+                                          }
+                                        }
+                                      },
+                                      "required": [
+                                        "header",
+                                        "old_start",
+                                        "new_start",
+                                        "new_end",
+                                        "additions",
+                                        "deletions",
+                                        "lines"
+                                      ]
+                                    }
                                   }
                                 },
                                 "required": [
                                   "added",
                                   "removed",
                                   "diff",
-                                  "truncated"
+                                  "truncated",
+                                  "hunks"
                                 ]
                               },
                               "name": {
@@ -18719,13 +19985,92 @@
                                         },
                                         "truncated": {
                                           "type": "boolean"
+                                        },
+                                        "hunks": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "header": {
+                                                "type": "string"
+                                              },
+                                              "old_start": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "new_start": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "new_end": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "additions": {
+                                                "type": "integer",
+                                                "minimum": -9007199254740991,
+                                                "maximum": 9007199254740991
+                                              },
+                                              "deletions": {
+                                                "type": "integer",
+                                                "minimum": -9007199254740991,
+                                                "maximum": 9007199254740991
+                                              },
+                                              "lines": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "kind": {},
+                                                    "old_line": {},
+                                                    "new_line": {},
+                                                    "text": {}
+                                                  }
+                                                }
+                                              }
+                                            },
+                                            "required": [
+                                              "header",
+                                              "old_start",
+                                              "new_start",
+                                              "new_end",
+                                              "additions",
+                                              "deletions",
+                                              "lines"
+                                            ]
+                                          }
                                         }
                                       },
                                       "required": [
                                         "added",
                                         "removed",
                                         "diff",
-                                        "truncated"
+                                        "truncated",
+                                        "hunks"
                                       ]
                                     },
                                     "name": {
@@ -18979,13 +20324,29 @@
                                                 },
                                                 "truncated": {
                                                   "type": "boolean"
+                                                },
+                                                "hunks": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "header": {},
+                                                      "old_start": {},
+                                                      "new_start": {},
+                                                      "new_end": {},
+                                                      "additions": {},
+                                                      "deletions": {},
+                                                      "lines": {}
+                                                    }
+                                                  }
                                                 }
                                               },
                                               "required": [
                                                 "added",
                                                 "removed",
                                                 "diff",
-                                                "truncated"
+                                                "truncated",
+                                                "hunks"
                                               ]
                                             },
                                             "args": {},
@@ -19561,13 +20922,129 @@
                                   },
                                   "truncated": {
                                     "type": "boolean"
+                                  },
+                                  "hunks": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "header": {
+                                          "type": "string"
+                                        },
+                                        "old_start": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "new_start": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "new_end": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "additions": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "deletions": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "lines": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "kind": {
+                                                "enum": [
+                                                  "addition",
+                                                  "deletion",
+                                                  "context"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "old_line": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "new_line": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "text": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "kind",
+                                              "old_line",
+                                              "new_line",
+                                              "text"
+                                            ]
+                                          }
+                                        }
+                                      },
+                                      "required": [
+                                        "header",
+                                        "old_start",
+                                        "new_start",
+                                        "new_end",
+                                        "additions",
+                                        "deletions",
+                                        "lines"
+                                      ]
+                                    }
                                   }
                                 },
                                 "required": [
                                   "added",
                                   "removed",
                                   "diff",
-                                  "truncated"
+                                  "truncated",
+                                  "hunks"
                                 ]
                               },
                               "name": {
@@ -20698,13 +22175,92 @@
                                         },
                                         "truncated": {
                                           "type": "boolean"
+                                        },
+                                        "hunks": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "header": {
+                                                "type": "string"
+                                              },
+                                              "old_start": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "new_start": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "new_end": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "additions": {
+                                                "type": "integer",
+                                                "minimum": -9007199254740991,
+                                                "maximum": 9007199254740991
+                                              },
+                                              "deletions": {
+                                                "type": "integer",
+                                                "minimum": -9007199254740991,
+                                                "maximum": 9007199254740991
+                                              },
+                                              "lines": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "kind": {},
+                                                    "old_line": {},
+                                                    "new_line": {},
+                                                    "text": {}
+                                                  }
+                                                }
+                                              }
+                                            },
+                                            "required": [
+                                              "header",
+                                              "old_start",
+                                              "new_start",
+                                              "new_end",
+                                              "additions",
+                                              "deletions",
+                                              "lines"
+                                            ]
+                                          }
                                         }
                                       },
                                       "required": [
                                         "added",
                                         "removed",
                                         "diff",
-                                        "truncated"
+                                        "truncated",
+                                        "hunks"
                                       ]
                                     },
                                     "name": {
@@ -20958,13 +22514,29 @@
                                                 },
                                                 "truncated": {
                                                   "type": "boolean"
+                                                },
+                                                "hunks": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "header": {},
+                                                      "old_start": {},
+                                                      "new_start": {},
+                                                      "new_end": {},
+                                                      "additions": {},
+                                                      "deletions": {},
+                                                      "lines": {}
+                                                    }
+                                                  }
                                                 }
                                               },
                                               "required": [
                                                 "added",
                                                 "removed",
                                                 "diff",
-                                                "truncated"
+                                                "truncated",
+                                                "hunks"
                                               ]
                                             },
                                             "args": {},
@@ -21540,13 +23112,129 @@
                                   },
                                   "truncated": {
                                     "type": "boolean"
+                                  },
+                                  "hunks": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "header": {
+                                          "type": "string"
+                                        },
+                                        "old_start": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "new_start": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "new_end": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "additions": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "deletions": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "lines": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "kind": {
+                                                "enum": [
+                                                  "addition",
+                                                  "deletion",
+                                                  "context"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "old_line": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "new_line": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "text": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "kind",
+                                              "old_line",
+                                              "new_line",
+                                              "text"
+                                            ]
+                                          }
+                                        }
+                                      },
+                                      "required": [
+                                        "header",
+                                        "old_start",
+                                        "new_start",
+                                        "new_end",
+                                        "additions",
+                                        "deletions",
+                                        "lines"
+                                      ]
+                                    }
                                   }
                                 },
                                 "required": [
                                   "added",
                                   "removed",
                                   "diff",
-                                  "truncated"
+                                  "truncated",
+                                  "hunks"
                                 ]
                               },
                               "name": {
@@ -22664,13 +24352,92 @@
                                         },
                                         "truncated": {
                                           "type": "boolean"
+                                        },
+                                        "hunks": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "header": {
+                                                "type": "string"
+                                              },
+                                              "old_start": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "new_start": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "new_end": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "additions": {
+                                                "type": "integer",
+                                                "minimum": -9007199254740991,
+                                                "maximum": 9007199254740991
+                                              },
+                                              "deletions": {
+                                                "type": "integer",
+                                                "minimum": -9007199254740991,
+                                                "maximum": 9007199254740991
+                                              },
+                                              "lines": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "kind": {},
+                                                    "old_line": {},
+                                                    "new_line": {},
+                                                    "text": {}
+                                                  }
+                                                }
+                                              }
+                                            },
+                                            "required": [
+                                              "header",
+                                              "old_start",
+                                              "new_start",
+                                              "new_end",
+                                              "additions",
+                                              "deletions",
+                                              "lines"
+                                            ]
+                                          }
                                         }
                                       },
                                       "required": [
                                         "added",
                                         "removed",
                                         "diff",
-                                        "truncated"
+                                        "truncated",
+                                        "hunks"
                                       ]
                                     },
                                     "name": {
@@ -22924,13 +24691,29 @@
                                                 },
                                                 "truncated": {
                                                   "type": "boolean"
+                                                },
+                                                "hunks": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "header": {},
+                                                      "old_start": {},
+                                                      "new_start": {},
+                                                      "new_end": {},
+                                                      "additions": {},
+                                                      "deletions": {},
+                                                      "lines": {}
+                                                    }
+                                                  }
                                                 }
                                               },
                                               "required": [
                                                 "added",
                                                 "removed",
                                                 "diff",
-                                                "truncated"
+                                                "truncated",
+                                                "hunks"
                                               ]
                                             },
                                             "args": {},
@@ -23506,13 +25289,129 @@
                                   },
                                   "truncated": {
                                     "type": "boolean"
+                                  },
+                                  "hunks": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "header": {
+                                          "type": "string"
+                                        },
+                                        "old_start": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "new_start": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "new_end": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "additions": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "deletions": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "lines": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "kind": {
+                                                "enum": [
+                                                  "addition",
+                                                  "deletion",
+                                                  "context"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "old_line": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "new_line": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "text": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "kind",
+                                              "old_line",
+                                              "new_line",
+                                              "text"
+                                            ]
+                                          }
+                                        }
+                                      },
+                                      "required": [
+                                        "header",
+                                        "old_start",
+                                        "new_start",
+                                        "new_end",
+                                        "additions",
+                                        "deletions",
+                                        "lines"
+                                      ]
+                                    }
                                   }
                                 },
                                 "required": [
                                   "added",
                                   "removed",
                                   "diff",
-                                  "truncated"
+                                  "truncated",
+                                  "hunks"
                                 ]
                               },
                               "name": {
@@ -24853,13 +26752,129 @@
                                   },
                                   "truncated": {
                                     "type": "boolean"
+                                  },
+                                  "hunks": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "header": {
+                                          "type": "string"
+                                        },
+                                        "old_start": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "new_start": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "new_end": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "additions": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "deletions": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "lines": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "kind": {
+                                                "enum": [
+                                                  "addition",
+                                                  "deletion",
+                                                  "context"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "old_line": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "new_line": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "text": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "kind",
+                                              "old_line",
+                                              "new_line",
+                                              "text"
+                                            ]
+                                          }
+                                        }
+                                      },
+                                      "required": [
+                                        "header",
+                                        "old_start",
+                                        "new_start",
+                                        "new_end",
+                                        "additions",
+                                        "deletions",
+                                        "lines"
+                                      ]
+                                    }
                                   }
                                 },
                                 "required": [
                                   "added",
                                   "removed",
                                   "diff",
-                                  "truncated"
+                                  "truncated",
+                                  "hunks"
                                 ]
                               },
                               "args": {},
@@ -28703,6 +30718,121 @@
                         },
                         "diff": {
                           "type": "string"
+                        },
+                        "hunks": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "header": {
+                                "type": "string"
+                              },
+                              "old_start": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "new_start": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "new_end": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "additions": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "deletions": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "lines": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "enum": [
+                                        "addition",
+                                        "deletion",
+                                        "context"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "old_line": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "new_line": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "text": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "old_line",
+                                    "new_line",
+                                    "text"
+                                  ]
+                                }
+                              }
+                            },
+                            "required": [
+                              "header",
+                              "old_start",
+                              "new_start",
+                              "new_end",
+                              "additions",
+                              "deletions",
+                              "lines"
+                            ]
+                          }
                         }
                       },
                       "required": [
@@ -28712,7 +30842,8 @@
                         "too_large",
                         "additions",
                         "deletions",
-                        "diff"
+                        "diff",
+                        "hunks"
                       ]
                     }
                   },
@@ -32178,13 +34309,92 @@
                                         },
                                         "truncated": {
                                           "type": "boolean"
+                                        },
+                                        "hunks": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "header": {
+                                                "type": "string"
+                                              },
+                                              "old_start": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "new_start": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "new_end": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "additions": {
+                                                "type": "integer",
+                                                "minimum": -9007199254740991,
+                                                "maximum": 9007199254740991
+                                              },
+                                              "deletions": {
+                                                "type": "integer",
+                                                "minimum": -9007199254740991,
+                                                "maximum": 9007199254740991
+                                              },
+                                              "lines": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "kind": {},
+                                                    "old_line": {},
+                                                    "new_line": {},
+                                                    "text": {}
+                                                  }
+                                                }
+                                              }
+                                            },
+                                            "required": [
+                                              "header",
+                                              "old_start",
+                                              "new_start",
+                                              "new_end",
+                                              "additions",
+                                              "deletions",
+                                              "lines"
+                                            ]
+                                          }
                                         }
                                       },
                                       "required": [
                                         "added",
                                         "removed",
                                         "diff",
-                                        "truncated"
+                                        "truncated",
+                                        "hunks"
                                       ]
                                     },
                                     "name": {
@@ -32438,13 +34648,29 @@
                                                 },
                                                 "truncated": {
                                                   "type": "boolean"
+                                                },
+                                                "hunks": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "header": {},
+                                                      "old_start": {},
+                                                      "new_start": {},
+                                                      "new_end": {},
+                                                      "additions": {},
+                                                      "deletions": {},
+                                                      "lines": {}
+                                                    }
+                                                  }
                                                 }
                                               },
                                               "required": [
                                                 "added",
                                                 "removed",
                                                 "diff",
-                                                "truncated"
+                                                "truncated",
+                                                "hunks"
                                               ]
                                             },
                                             "args": {},
@@ -33020,13 +35246,129 @@
                                   },
                                   "truncated": {
                                     "type": "boolean"
+                                  },
+                                  "hunks": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "header": {
+                                          "type": "string"
+                                        },
+                                        "old_start": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "new_start": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "new_end": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "additions": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "deletions": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "lines": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "kind": {
+                                                "enum": [
+                                                  "addition",
+                                                  "deletion",
+                                                  "context"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "old_line": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "new_line": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "text": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "kind",
+                                              "old_line",
+                                              "new_line",
+                                              "text"
+                                            ]
+                                          }
+                                        }
+                                      },
+                                      "required": [
+                                        "header",
+                                        "old_start",
+                                        "new_start",
+                                        "new_end",
+                                        "additions",
+                                        "deletions",
+                                        "lines"
+                                      ]
+                                    }
                                   }
                                 },
                                 "required": [
                                   "added",
                                   "removed",
                                   "diff",
-                                  "truncated"
+                                  "truncated",
+                                  "hunks"
                                 ]
                               },
                               "name": {
@@ -34236,13 +36578,92 @@
                                         },
                                         "truncated": {
                                           "type": "boolean"
+                                        },
+                                        "hunks": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "header": {
+                                                "type": "string"
+                                              },
+                                              "old_start": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "new_start": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "new_end": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "additions": {
+                                                "type": "integer",
+                                                "minimum": -9007199254740991,
+                                                "maximum": 9007199254740991
+                                              },
+                                              "deletions": {
+                                                "type": "integer",
+                                                "minimum": -9007199254740991,
+                                                "maximum": 9007199254740991
+                                              },
+                                              "lines": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "kind": {},
+                                                    "old_line": {},
+                                                    "new_line": {},
+                                                    "text": {}
+                                                  }
+                                                }
+                                              }
+                                            },
+                                            "required": [
+                                              "header",
+                                              "old_start",
+                                              "new_start",
+                                              "new_end",
+                                              "additions",
+                                              "deletions",
+                                              "lines"
+                                            ]
+                                          }
                                         }
                                       },
                                       "required": [
                                         "added",
                                         "removed",
                                         "diff",
-                                        "truncated"
+                                        "truncated",
+                                        "hunks"
                                       ]
                                     },
                                     "name": {
@@ -34496,13 +36917,29 @@
                                                 },
                                                 "truncated": {
                                                   "type": "boolean"
+                                                },
+                                                "hunks": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "header": {},
+                                                      "old_start": {},
+                                                      "new_start": {},
+                                                      "new_end": {},
+                                                      "additions": {},
+                                                      "deletions": {},
+                                                      "lines": {}
+                                                    }
+                                                  }
                                                 }
                                               },
                                               "required": [
                                                 "added",
                                                 "removed",
                                                 "diff",
-                                                "truncated"
+                                                "truncated",
+                                                "hunks"
                                               ]
                                             },
                                             "args": {},
@@ -35078,13 +37515,129 @@
                                   },
                                   "truncated": {
                                     "type": "boolean"
+                                  },
+                                  "hunks": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "header": {
+                                          "type": "string"
+                                        },
+                                        "old_start": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "new_start": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "new_end": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "additions": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "deletions": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "lines": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "kind": {
+                                                "enum": [
+                                                  "addition",
+                                                  "deletion",
+                                                  "context"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "old_line": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "new_line": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "text": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "kind",
+                                              "old_line",
+                                              "new_line",
+                                              "text"
+                                            ]
+                                          }
+                                        }
+                                      },
+                                      "required": [
+                                        "header",
+                                        "old_start",
+                                        "new_start",
+                                        "new_end",
+                                        "additions",
+                                        "deletions",
+                                        "lines"
+                                      ]
+                                    }
                                   }
                                 },
                                 "required": [
                                   "added",
                                   "removed",
                                   "diff",
-                                  "truncated"
+                                  "truncated",
+                                  "hunks"
                                 ]
                               },
                               "name": {
@@ -36211,13 +38764,91 @@
                                             },
                                             "truncated": {
                                               "type": "boolean"
+                                            },
+                                            "hunks": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "header": {
+                                                    "type": "string"
+                                                  },
+                                                  "old_start": {
+                                                    "anyOf": [
+                                                      {
+                                                        "type": "integer",
+                                                        "minimum": -9007199254740991,
+                                                        "maximum": 9007199254740991
+                                                      },
+                                                      {
+                                                        "type": "null"
+                                                      }
+                                                    ]
+                                                  },
+                                                  "new_start": {
+                                                    "anyOf": [
+                                                      {
+                                                        "type": "integer",
+                                                        "minimum": -9007199254740991,
+                                                        "maximum": 9007199254740991
+                                                      },
+                                                      {
+                                                        "type": "null"
+                                                      }
+                                                    ]
+                                                  },
+                                                  "new_end": {
+                                                    "anyOf": [
+                                                      {
+                                                        "type": "integer",
+                                                        "minimum": -9007199254740991,
+                                                        "maximum": 9007199254740991
+                                                      },
+                                                      {
+                                                        "type": "null"
+                                                      }
+                                                    ]
+                                                  },
+                                                  "additions": {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  "deletions": {
+                                                    "type": "integer",
+                                                    "minimum": -9007199254740991,
+                                                    "maximum": 9007199254740991
+                                                  },
+                                                  "lines": {
+                                                    "type": "array",
+                                                    "items": {
+                                                      "anyOf": [
+                                                        {},
+                                                        {
+                                                          "type": "null"
+                                                        }
+                                                      ]
+                                                    }
+                                                  }
+                                                },
+                                                "required": [
+                                                  "header",
+                                                  "old_start",
+                                                  "new_start",
+                                                  "new_end",
+                                                  "additions",
+                                                  "deletions",
+                                                  "lines"
+                                                ]
+                                              }
                                             }
                                           },
                                           "required": [
                                             "added",
                                             "removed",
                                             "diff",
-                                            "truncated"
+                                            "truncated",
+                                            "hunks"
                                           ]
                                         },
                                         "name": {
@@ -36471,13 +39102,25 @@
                                                     },
                                                     "truncated": {
                                                       "type": "boolean"
+                                                    },
+                                                    "hunks": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "anyOf": [
+                                                          {},
+                                                          {
+                                                            "type": "null"
+                                                          }
+                                                        ]
+                                                      }
                                                     }
                                                   },
                                                   "required": [
                                                     "added",
                                                     "removed",
                                                     "diff",
-                                                    "truncated"
+                                                    "truncated",
+                                                    "hunks"
                                                   ]
                                                 },
                                                 "args": {},
@@ -37036,13 +39679,129 @@
                                       },
                                       "truncated": {
                                         "type": "boolean"
+                                      },
+                                      "hunks": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "header": {
+                                              "type": "string"
+                                            },
+                                            "old_start": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "new_start": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "new_end": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "additions": {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            "deletions": {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            "lines": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "kind": {
+                                                    "enum": [
+                                                      "addition",
+                                                      "deletion",
+                                                      "context"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "old_line": {
+                                                    "anyOf": [
+                                                      {
+                                                        "type": "integer",
+                                                        "minimum": -9007199254740991,
+                                                        "maximum": 9007199254740991
+                                                      },
+                                                      {
+                                                        "type": "null"
+                                                      }
+                                                    ]
+                                                  },
+                                                  "new_line": {
+                                                    "anyOf": [
+                                                      {
+                                                        "type": "integer",
+                                                        "minimum": -9007199254740991,
+                                                        "maximum": 9007199254740991
+                                                      },
+                                                      {
+                                                        "type": "null"
+                                                      }
+                                                    ]
+                                                  },
+                                                  "text": {
+                                                    "type": "string"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "kind",
+                                                  "old_line",
+                                                  "new_line",
+                                                  "text"
+                                                ]
+                                              }
+                                            }
+                                          },
+                                          "required": [
+                                            "header",
+                                            "old_start",
+                                            "new_start",
+                                            "new_end",
+                                            "additions",
+                                            "deletions",
+                                            "lines"
+                                          ]
+                                        }
                                       }
                                     },
                                     "required": [
                                       "added",
                                       "removed",
                                       "diff",
-                                      "truncated"
+                                      "truncated",
+                                      "hunks"
                                     ]
                                   },
                                   "name": {

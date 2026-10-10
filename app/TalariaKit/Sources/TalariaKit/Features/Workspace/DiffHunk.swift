@@ -1,26 +1,119 @@
 import Foundation
 
-public struct DiffHunk: Identifiable, Equatable {
-    public let id: Int
+/// TAL-604: one hunk of a unified diff, parsed on the server (`hunks` on a git diff and on a file edit's `edit_diff`).
+public struct DiffHunk: Identifiable, Equatable, Decodable {
+    public internal(set) var id = 0
     let header: String
-    public let lines: [DiffLine]
-    let isSynthetic: Bool
-    let patchNumber: Int
-    let patchCount: Int
     let newStart: Int?
-    let newCount: Int?
+    let newEnd: Int?
+    public let additions: Int
+    public let deletions: Int
+    public internal(set) var lines: [DiffLine]
+    var patchCount = 1
 
-    public var additions: Int { lines.filter { $0.kind == .addition }.count }
-    public var deletions: Int { lines.filter { $0.kind == .deletion }.count }
-
-    public var displayLabel: String {
-        if isSynthetic { return "Patch \(patchNumber) of \(patchCount)" }
-        guard let start = newStart else { return header }
-        let count = max(newCount ?? 1, 1)
-        return count == 1 ? "Line \(start)" : "Lines \(start)-\(start + count - 1)"
+    init(header: String, newStart: Int?, newEnd: Int?, additions: Int, deletions: Int, lines: [DiffLine]) {
+        self.header = header
+        self.newStart = newStart
+        self.newEnd = newEnd
+        self.additions = additions
+        self.deletions = deletions
+        self.lines = lines
     }
 
-    public static func parse(_ raw: String) -> [DiffHunk] {
+    enum CodingKeys: String, CodingKey {
+        case header, additions, deletions, lines
+        case newStart = "new_start"
+        case newEnd = "new_end"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        header = container.decodeLossyStringIfPresent(forKey: .header) ?? ""
+        newStart = container.decodeLossyIntIfPresent(forKey: .newStart)
+        newEnd = container.decodeLossyIntIfPresent(forKey: .newEnd)
+        additions = container.decodeLossyIntIfPresent(forKey: .additions) ?? 0
+        deletions = container.decodeLossyIntIfPresent(forKey: .deletions) ?? 0
+        lines = (try? container.decodeIfPresent([DiffLine].self, forKey: .lines)) ?? []
+    }
+
+    public var displayLabel: String {
+        guard let start = newStart else { return header.isEmpty ? "Patch \(id + 1) of \(patchCount)" : header }
+        let end = max(newEnd ?? start, start)
+        return end == start ? "Line \(start)" : "Lines \(start)-\(end)"
+    }
+
+    /// The server's hunks for `diff`, numbered for display. A Web from before TAL-604 sends none, so the App parses `diff`
+    /// itself until every supported Web ships them (TAL-697).
+    static func resolved(_ value: JSONValue?, diff: String) -> [DiffHunk] {
+        guard let value,
+              let data = try? JSONEncoder().encode(value),
+              let hunks = try? JSONDecoder().decode([DiffHunk].self, from: data)
+        else { return numbered(legacyParse(diff)) }
+        return numbered(hunks)
+    }
+
+    /// Line ids run across the whole diff: a lazy stack flattens each hunk's rows into one list, where ids repeated from
+    /// hunk to hunk would show one hunk's rows under another's header.
+    private static func numbered(_ hunks: [DiffHunk]) -> [DiffHunk] {
+        var nextLineID = 0
+        return hunks.enumerated().map { index, hunk in
+            var hunk = hunk
+            hunk.id = index
+            hunk.patchCount = hunks.count
+            hunk.lines = hunk.lines.map { line in
+                var line = line
+                line.id = nextLineID
+                nextLineID += 1
+                return line
+            }
+            return hunk
+        }
+    }
+}
+
+public struct DiffLine: Identifiable, Equatable, Decodable {
+    public enum Kind: String, Equatable {
+        case addition, deletion, context
+    }
+
+    public internal(set) var id = 0
+    public let kind: Kind
+    public let text: String
+    let oldLineNumber: Int?
+    let newLineNumber: Int?
+
+    init(kind: Kind, text: String, oldLineNumber: Int?, newLineNumber: Int?) {
+        self.kind = kind
+        self.text = text
+        self.oldLineNumber = oldLineNumber
+        self.newLineNumber = newLineNumber
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case kind, text
+        case oldLineNumber = "old_line"
+        case newLineNumber = "new_line"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        kind = container.decodeLossyStringIfPresent(forKey: .kind).flatMap(Kind.init(rawValue:)) ?? .context
+        text = container.decodeLossyStringIfPresent(forKey: .text) ?? ""
+        oldLineNumber = container.decodeLossyIntIfPresent(forKey: .oldLineNumber)
+        newLineNumber = container.decodeLossyIntIfPresent(forKey: .newLineNumber)
+    }
+
+    public var gutterLabel: String {
+        let value = kind == .deletion ? oldLineNumber : newLineNumber
+        return value.map(String.init) ?? ""
+    }
+}
+
+// MARK: - Old-server fallback (TAL-697)
+
+extension DiffHunk {
+    /// The App's parser from before TAL-604, for a Web that sends no `hunks`. Delete with TAL-697.
+    static func legacyParse(_ raw: String) -> [DiffHunk] {
         guard !raw.isEmpty else { return [] }
         let allLines = raw.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
         let headerIndexes = allLines.indices.filter { allLines[$0].hasPrefix("@@") }
@@ -37,17 +130,7 @@ public struct DiffHunk: Identifiable, Equatable {
                 }
             }
             if !current.isEmpty { groups.append(current) }
-            guard !groups.isEmpty else { return [] }
-            return groups.enumerated().map { index, lines in
-                makeHunk(
-                    id: index,
-                    header: "",
-                    rawLines: lines,
-                    synthetic: true,
-                    patchNumber: index + 1,
-                    patchCount: groups.count
-                )
-            }
+            return groups.map { makeHunk(header: "", rawLines: $0) }
         }
 
         return headerIndexes.enumerated().map { offset, index in
@@ -58,33 +141,18 @@ public struct DiffHunk: Identifiable, Equatable {
                 rawLines.removeLast(2)
                 while rawLines.last?.isEmpty == true { rawLines.removeLast() }
             }
-            return makeHunk(
-                id: offset,
-                header: allLines[index],
-                rawLines: rawLines,
-                synthetic: false,
-                patchNumber: offset + 1,
-                patchCount: headerIndexes.count
-            )
+            return makeHunk(header: allLines[index], rawLines: rawLines)
         }
     }
 
-    private static func makeHunk(
-        id: Int,
-        header: String,
-        rawLines: [String],
-        synthetic: Bool,
-        patchNumber: Int,
-        patchCount: Int
-    ) -> DiffHunk {
+    private static func makeHunk(header: String, rawLines: [String]) -> DiffHunk {
         let range = parseRange(header)
         var oldLine = range.oldStart
         var newLine = range.newStart
-        let lines = rawLines.enumerated().map { offset, rawLine -> DiffLine in
-            let kind = DiffLine.Kind(rawLine)
+        let lines = rawLines.map { rawLine -> DiffLine in
+            let kind: DiffLine.Kind = rawLine.hasPrefix("+") ? .addition : rawLine.hasPrefix("-") ? .deletion : .context
             let isMarker = rawLine.hasPrefix("\\")
             let line = DiffLine(
-                id: offset,
                 kind: kind,
                 text: rawLine,
                 oldLineNumber: isMarker || kind == .addition ? nil : oldLine,
@@ -95,14 +163,12 @@ public struct DiffHunk: Identifiable, Equatable {
             return line
         }
         return DiffHunk(
-            id: id,
             header: header,
-            lines: lines,
-            isSynthetic: synthetic,
-            patchNumber: patchNumber,
-            patchCount: patchCount,
             newStart: range.newStart,
-            newCount: range.newCount
+            newEnd: range.newStart.map { $0 + max(range.newCount ?? 1, 1) - 1 },
+            additions: lines.filter { $0.kind == .addition }.count,
+            deletions: lines.filter { $0.kind == .deletion }.count,
+            lines: lines
         )
     }
 
@@ -124,30 +190,5 @@ public struct DiffHunk: Identifiable, Equatable {
         if line.hasPrefix("+++ b/") || line == "+++ /dev/null" { return false }
         if line.hasPrefix("--- a/") || line == "--- /dev/null" { return false }
         return first == "+" || first == "-" || first == " " || first == "\\"
-    }
-}
-
-public struct DiffLine: Identifiable, Equatable {
-    public enum Kind: Equatable {
-        case addition, deletion, context
-
-        init(_ line: String) {
-            switch line.first {
-            case "+": self = .addition
-            case "-": self = .deletion
-            default: self = .context
-            }
-        }
-    }
-
-    public let id: Int
-    public let kind: Kind
-    public let text: String
-    let oldLineNumber: Int?
-    let newLineNumber: Int?
-
-    public var gutterLabel: String {
-        let value = kind == .deletion ? oldLineNumber : newLineNumber
-        return value.map(String.init) ?? ""
     }
 }

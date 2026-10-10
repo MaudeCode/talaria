@@ -35,6 +35,9 @@ extension UITestFixtureURLProtocol {
             AADDSmgQBaIOewAAAABJRU5ErkJggg==
             """
 
+        /// Every file's diff, with the two hunks the server parses from it (TAL-604).
+        static let gitDiffJSON = #"{"diff":{"path":"fixture-notes.txt","kind":"unstaged","binary":false,"too_large":false,"additions":4,"deletions":1,"diff":"diff --git a/fixture-notes.txt b/fixture-notes.txt\n--- a/fixture-notes.txt\n+++ b/fixture-notes.txt\n@@ -1,3 +1,4 @@\n FixtureTextPreviewBody\n-Old second line.\n+Second deterministic line.\n+Inserted fixture line.\n Third line.\n@@ -20,2 +21,4 @@ section\n Line twenty.\n+Added near the end.\n+Final fixture line.\n Line twenty-one.\n","hunks":[{"header":"@@ -1,3 +1,4 @@","old_start":1,"new_start":1,"new_end":4,"additions":2,"deletions":1,"lines":[{"kind":"context","old_line":1,"new_line":1,"text":" FixtureTextPreviewBody"},{"kind":"deletion","old_line":2,"new_line":null,"text":"-Old second line."},{"kind":"addition","old_line":null,"new_line":2,"text":"+Second deterministic line."},{"kind":"addition","old_line":null,"new_line":3,"text":"+Inserted fixture line."},{"kind":"context","old_line":3,"new_line":4,"text":" Third line."}]},{"header":"@@ -20,2 +21,4 @@ section","old_start":20,"new_start":21,"new_end":24,"additions":2,"deletions":0,"lines":[{"kind":"context","old_line":20,"new_line":21,"text":" Line twenty."},{"kind":"addition","old_line":null,"new_line":22,"text":"+Added near the end."},{"kind":"addition","old_line":null,"new_line":23,"text":"+Final fixture line."},{"kind":"context","old_line":21,"new_line":24,"text":" Line twenty-one."}]}]}}"#
+
         static var isEnabled: Bool { hasArgument(argument) }
         static var readsAreSlow: Bool { hasArgument(slowReadsArgument) }
         static var allowsGitWrites: Bool { gitWriteLock.withLock { gitWritesGranted } }
@@ -89,6 +92,8 @@ extension UITestFixtureURLProtocol {
             "upstream":"origin/\(WorkspaceFixture.branch)","ahead":1,"behind":0,\
             "local":[{"name":"\(WorkspaceFixture.branch)"}],"remote":[{"name":"origin/\(WorkspaceFixture.branch)"}]}}
             """.utf8)
+        case "/api/git/diff":
+            return Data(WorkspaceFixture.gitDiffJSON.utf8)
         case "/api/git/fetch", "/api/git/pull", "/api/git/push":
             return gitRemoteActionData()
         default:

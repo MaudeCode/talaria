@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { withToolCallOutcomes } from './merge.js'
-import { EDIT_DIFF_MAX_LINES, toolArgs, toolDisplay, toolEditDiff, toolKind } from './tool-display.js'
+import { diffHunks } from '../text/diff.js'
+import { decidedEditDiff, EDIT_DIFF_MAX_LINES, toolArgs, toolDisplay, toolEditDiff, toolKind } from './tool-display.js'
 
 describe('toolKind', () => {
   it.each([
@@ -63,7 +64,7 @@ describe('toolEditDiff (TAL-448)', () => {
 
   it('counts added and removed lines over the whole diff, excluding file headers', () => {
     const small = '--- a/a.txt\n+++ b/a.txt\n@@ -1,2 +1,3 @@\n keep\n-old\n+new\n+more\n'
-    expect(toolEditDiff('patch', JSON.stringify({ success: true, diff: small }))).toEqual({ added: 2, removed: 1, diff: small.trimEnd(), truncated: false })
+    expect(toolEditDiff('patch', JSON.stringify({ success: true, diff: small }))).toEqual({ added: 2, removed: 1, diff: small.trimEnd(), truncated: false, hunks: diffHunks(small) })
     // A hunk header without counts covers one line; a dict result reads the same as its JSON text.
     expect(toolEditDiff('patch', { diff: '--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b' })).toMatchObject({ added: 1, removed: 1, truncated: false })
     // A final line without a newline runs into the next file's header; the header pair still ends that hunk.
@@ -76,7 +77,9 @@ describe('toolEditDiff (TAL-448)', () => {
     expect(edit.diff.split('\n')).toHaveLength(EDIT_DIFF_MAX_LINES)
     expect(edit.diff.split('\n').at(-1)).toBe(`+line ${String(EDIT_DIFF_MAX_LINES - 13)}`)
     // A few enormous lines are capped too, at a line boundary.
-    expect(toolEditDiff('edit_file', { diff: `@@ -1 +1 @@\n-a\n+${'x'.repeat(100_000)}` })).toEqual({ added: 1, removed: 1, diff: '@@ -1 +1 @@\n-a', truncated: true })
+    // TAL-604: its hunks are the shown diff's.
+    expect(toolEditDiff('edit_file', { diff: `@@ -1 +1 @@\n-a\n+${'x'.repeat(100_000)}` })).toEqual({ added: 1, removed: 1, diff: '@@ -1 +1 @@\n-a', truncated: true, hunks: diffHunks('@@ -1 +1 @@\n-a') })
+    expect(edit.hunks.map((hunk) => hunk.lines.length)).toEqual([4, EDIT_DIFF_MAX_LINES - 10])
   })
 
   it('is absent for a result without a diff, a non-JSON result, and a call that is not a file edit', () => {
@@ -96,5 +99,7 @@ describe('toolEditDiff (TAL-448)', () => {
       { role: 'tool', tool_call_id: 'c2', content: '{"bytes_written": 3}' },
     ], [], null) as unknown as [{ tool_calls: Record<string, unknown>[] }]
     expect(assistant.tool_calls.map((call) => call.edit_diff)).toEqual([decided, undefined, decided])
+    // TAL-604: a change decided before hunks shipped gets them from its diff.
+    expect(decidedEditDiff({ ...decided, hunks: undefined })).toEqual(decided)
   })
 })

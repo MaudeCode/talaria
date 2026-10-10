@@ -252,7 +252,7 @@ struct ToolCallCardView: View {
                 .foregroundStyle(.secondary)
 
             VStack(alignment: .leading, spacing: 0) {
-                ForEach(DiffHunk.parse(editDiff.diff)) { hunk in
+                ForEach(editDiff.hunks) { hunk in
                     Text(hunk.displayLabel)
                         .font(AppFont.mono(style: .caption))
                         .foregroundStyle(.secondary)

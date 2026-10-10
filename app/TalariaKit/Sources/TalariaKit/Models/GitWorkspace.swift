@@ -325,10 +325,28 @@ public struct GitDiff: Decodable, Equatable {
     let path: String?
     let kind: String?
     public let binary: Bool?
-    /// `true` when the diff exceeded the server's 512 KiB cap; `diff` text is then empty.
+    /// `true` when the diff exceeded the server's 512 KiB cap; it then ships no `hunks`.
     public let tooLarge: Bool?
-    public let additions: Int?
-    public let deletions: Int?
-    /// Unified diff text. Empty for binary or too-large diffs.
+    public let additions: Int
+    public let deletions: Int
+    /// Unified diff text. Empty for binary diffs.
     public let diff: String?
+    /// The diff's hunks, parsed on the server (TAL-604).
+    public let hunks: [DiffHunk]
+
+    enum CodingKeys: String, CodingKey {
+        case path, kind, binary, tooLarge, additions, deletions, diff, hunks
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        path = try container.decodeIfPresent(String.self, forKey: .path)
+        kind = try container.decodeIfPresent(String.self, forKey: .kind)
+        binary = try container.decodeIfPresent(Bool.self, forKey: .binary)
+        tooLarge = try container.decodeIfPresent(Bool.self, forKey: .tooLarge)
+        additions = try container.decode(Int.self, forKey: .additions)
+        deletions = try container.decode(Int.self, forKey: .deletions)
+        diff = try container.decodeIfPresent(String.self, forKey: .diff)
+        hunks = DiffHunk.resolved(try container.decodeIfPresent(JSONValue.self, forKey: .hunks), diff: diff ?? "")
+    }
 }

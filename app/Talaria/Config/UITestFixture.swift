@@ -1363,7 +1363,18 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
                                     "added": 2,
                                     "removed": 1,
                                     "diff": "--- a/src/app.ts\n+++ b/src/app.ts\n@@ -1,3 +1,4 @@\n import { run } from './run'\n-run(1)\n+run(2)\n+run(3)",
-                                    "truncated": true
+                                    "truncated": true,
+                                    // TAL-604: that diff as the server parses it.
+                                    "hunks": [[
+                                        "header": "@@ -1,3 +1,4 @@", "old_start": 1, "new_start": 1, "new_end": 4,
+                                        "additions": 2, "deletions": 1,
+                                        "lines": [
+                                            ["kind": "context", "old_line": 1, "new_line": 1, "text": " import { run } from './run'"],
+                                            ["kind": "deletion", "old_line": 2, "new_line": NSNull(), "text": "-run(1)"],
+                                            ["kind": "addition", "old_line": NSNull(), "new_line": 2, "text": "+run(2)"],
+                                            ["kind": "addition", "old_line": NSNull(), "new_line": 3, "text": "+run(3)"]
+                                        ]
+                                    ]]
                                 ]
                             ]
                         ]

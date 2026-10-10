@@ -787,6 +787,7 @@ final class ChatPrimaryStreamUITests: ChatUITestCase {
         tapCenter(of: editRow)
         XCTAssertTrue(addedLine.awaitExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["-run(1)"].exists)
+        XCTAssertTrue(app.staticTexts["Lines 1-4"].exists, "The server's hunk label heads the diff")
         XCTAssertTrue(app.staticTexts["Diff truncated"].exists)
         attachScreenshot(named: "Edit diff expanded")
         tapCenter(of: editRow)
@@ -1781,6 +1782,39 @@ final class WorkspaceLoadingUITests: WorkspaceUITestCase {
             releaseHeldLoads { fileRow(file: "fixture-notes.txt").exists },
             "Up did not return to the root"
         )
+    }
+}
+
+/// A changed file's diff shows the hunks the server parsed (TAL-604), each under its line label, and
+/// a hunk collapses under its header while the others stay open.
+final class GitDiffUITests: WorkspaceUITestCase {
+    func testFileDiffShowsTheServersHunks() throws {
+        launchFixture()
+        openFixtureSessionChat()
+
+        openGitActions()
+        let changes = app.buttons
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "+"))
+            .firstMatch
+        XCTAssertTrue(changes.awaitExistence(timeout: 25), "The Git status never reached the actions menu")
+        changes.tap()
+        let card = gitFileCard(named: "fixture-notes.txt")
+        XCTAssertTrue(card.awaitExistence(timeout: Self.navigationTimeout), "The changes sheet did not list the file")
+        tapCenter(of: card)
+
+        let firstHunk = app.buttons["Lines 1-4"]
+        XCTAssertTrue(firstHunk.awaitExistence(timeout: Self.navigationTimeout), "The diff did not show its first hunk")
+        XCTAssertTrue(app.buttons["Lines 21-24"].exists)
+        XCTAssertTrue(app.staticTexts["-Old second line."].exists)
+        let inserted = app.staticTexts["+Inserted fixture line."]
+        XCTAssertTrue(inserted.exists)
+        attachScreenshot(named: "Git diff hunks")
+
+        // The sheet opens at its medium height; collapsing the first hunk brings the second one's lines up.
+        tapCenter(of: firstHunk)
+        XCTAssertTrue(inserted.awaitNonExistence(timeout: 5), "The first hunk did not collapse")
+        XCTAssertTrue(app.staticTexts["+Final fixture line."].awaitExistence(timeout: 5), "The second hunk's lines are missing")
+        attachScreenshot(named: "Git diff first hunk collapsed")
     }
 }
 
