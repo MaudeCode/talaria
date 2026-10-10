@@ -1,6 +1,6 @@
 /** Health, gateway status, logs, dashboard probe and link settings, and diagnostics (Python `api/agent_health.py`, `api/system_health.py`, `api/dashboard_probe.py`, `_handle_logs`). */
 import { readCapped } from '../http/capped.js'
-import { existsSync, openSync, readSync, readFileSync, closeSync, statSync, statfsSync } from 'node:fs'
+import { existsSync, lstatSync, openSync, readSync, readFileSync, realpathSync, closeSync, statSync, statfsSync } from 'node:fs'
 import { cpus, loadavg, freemem, totalmem } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import type { GatewayStatus } from '@maudecode/talaria-web-contracts'
@@ -13,6 +13,9 @@ const LOG_FILES: Record<string, string> = { agent: 'agent.log', errors: 'errors.
 const LOG_TAILS = new Set([100, 200, 500, 1000])
 const LOG_MAX_BYTES = 4 * 1024 * 1024
 
+const realpathOrEmpty = (path: string): string => { try { return realpathSync(path) } catch { return '' } }
+const entryExists = (path: string): boolean => { try { lstatSync(path); return true } catch { return false } }
+
 export function readLogTail(profileHome: string, fileKeyRaw: unknown, tailRaw: unknown): Dict {
   const fileKey = (str(fileKeyRaw ?? 'agent').trim().toLowerCase()) || 'agent'
   const filename = LOG_FILES[fileKey]
@@ -21,6 +24,8 @@ export function readLogTail(profileHome: string, fileKeyRaw: unknown, tailRaw: u
   const tail = LOG_TAILS.has(parsedTail) ? parsedTail : 200
   const logDir = resolve(profileHome, 'logs')
   const path = resolve(logDir, filename)
+  // Python `_handle_logs`: the resolved log must sit directly in the resolved logs dir, so a symlink pointing elsewhere is refused.
+  if (entryExists(path) && dirname(realpathOrEmpty(path)) !== realpathOrEmpty(logDir)) throw new HttpFailure(400, 'Invalid log file')
   if (!existsSync(path) || !statSync(path).isFile()) return { file: fileKey, tail, lines: [], truncated: false, total_bytes: 0, mtime: null, hint: `Log file for ${fileKey} not found yet.` }
   const st = statSync(path)
   const total = st.size

@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "The Logs view refuses a log file that is a link to a file outside the Hermes logs folder.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
