@@ -264,6 +264,8 @@ const ANSI_PAYLOAD_GAPS_RE = new RegExp([SEQ_CSI, String.raw`${SEQ_ESC}[\]PX^_]`
 const SPLIT_VIEWS = [ANSI_GAPS_RE, ANSI_PAYLOAD_GAPS_RE, CONTROL_CHARS_RE]
 const ANSI_GAP_AT_RE = new RegExp(ANSI_GAPS_RE.source, 'y')
 const TOKEN_CHAR_RE = /[A-Za-z0-9_-]/
+/** A character a credential's prefix or body can hold (`SG.`, `glrt-a.b`): what a fail-closed run walks. */
+const RUN_CHAR_RE = /[A-Za-z0-9_.-]/
 /** A string sequence's opener, with an OSC's command number (`8;`), which is no payload. */
 const STRING_OPENER_RE = new RegExp(String.raw`^(?:(?:${SEQ_ESC}\]|\x9d)(?:\d*;)?|${SEQ_ESC}[PX^_]|[\x90\x98\x9e\x9f])`)
 const PAYLOAD_RUN_CAP = 65_536
@@ -399,16 +401,16 @@ function crossPayloadPrefixStarts(text: string): number[] {
     if (gap) {
       const from = STRING_OPENER_RE.exec(gap)?.[0].length ?? gap.length
       const next = new Map(candidates)
-      const payload = gap.slice(from).replace(/[^A-Za-z0-9_-]/g, '')
+      const payload = gap.slice(from).replace(/[^A-Za-z0-9_.-]/g, '')
       if (payload) for (const [candidate, start] of candidates) grow(next, candidate, start, payload)
       const end = Math.max(from, gap.length - (STRING_END_RE.exec(gap)?.[0].length ?? 0))
       let tail = end
-      while (tail > from && TOKEN_CHAR_RE.test(gap[tail - 1]!)) tail -= 1
+      while (tail > from && RUN_CHAR_RE.test(gap[tail - 1]!)) tail -= 1
       if (tail < end) grow(next, '', k + tail, gap.slice(tail, end))
       candidates = next
       afterDisplay = false
       k += gap.length
-    } else if (TOKEN_CHAR_RE.test(text[k]!)) {
+    } else if (RUN_CHAR_RE.test(text[k]!)) {
       const next = new Map<string, number>()
       for (const [candidate, start] of candidates) grow(next, candidate, start, text[k]!)
       if (!afterDisplay) grow(next, '', k, text[k]!)
@@ -442,13 +444,13 @@ function payloadRunSpan(text: string, start: number): [[number, number, string] 
     if (gap) {
       const from = STRING_OPENER_RE.exec(gap)?.[0].length ?? gap.length
       for (let j = from; j < gap.length; j += 1) {
-        if (!TOKEN_CHAR_RE.test(gap[j]!)) continue
+        if (!RUN_CHAR_RE.test(gap[j]!)) continue
         token += gap[j]!
         end = k + j + 1
         hidden = true
       }
       k += gap.length
-    } else if (TOKEN_CHAR_RE.test(text[k]!)) {
+    } else if (RUN_CHAR_RE.test(text[k]!)) {
       token += text[k]!
       end = k += 1
     } else break
