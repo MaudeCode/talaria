@@ -293,6 +293,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
         .catch((error: unknown) => { log(`[webui] memory commit for ${sid} failed: ${(error as Error).message}`) })
         .finally(release)
     },
+    titleClaimed: (session) => { turns.titleClaimed(session) },
     drafts,
     events,
     workspaces,

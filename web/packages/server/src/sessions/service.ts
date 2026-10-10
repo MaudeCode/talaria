@@ -109,6 +109,8 @@ export interface SessionServiceDeps {
   home: string
   /** Sync title-only metadata to state.db when `sync_to_insights` is on; `manual` marks a user-requested title (rename or regenerate). */
   syncTitle: (session: Session, manual?: boolean) => Promise<void>
+  /** TAL-591: the background title job for a CLI session a mutation just claimed (Python `import_cli` queued one). */
+  titleClaimed?: (session: Session) => void
   /** Context length lookup for a model (checkpoint 7 wires the catalog). */
   contextLengthFor: (model: string | null, provider: string | null) => number | null
   /** TAL-301: the catalog entry id a stored `(model, provider)` pair selects (null when none or not yet known). */
@@ -308,7 +310,11 @@ export class SessionService {
         // Python `_get_or_materialize_session`: a claimable foreign (CLI/TUI/Desktop) session gains a WebUI sidecar
         // on its first mutation; a read-only foreign source answers 403 from `getForMutation`, a missing one 404.
         const synth = this.claimOrSynthesizeCliSession(sid)
-        if (synth.session && synth.reason === 'materialized') { this.store.save(synth.session); return synth.session }
+        if (synth.session && synth.reason === 'materialized') {
+          this.store.save(synth.session)
+          this.deps.titleClaimed?.(synth.session)
+          return synth.session
+        }
         if (synth.session) return synth.session
         throw new HttpFailure(404, 'Session not found')
       }

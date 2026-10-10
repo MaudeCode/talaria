@@ -490,6 +490,31 @@ describe('claiming a CLI session for WebUI (TAL-256)', () => {
     expect(s.deps.sessionStore.get('cli-untitled').title).toBe('Resumed CLI work')
   })
 
+  it('titles an untitled CLI session when a mutation other than a send claims it (TAL-591)', async () => {
+    insertSession(db, { id: 'cli-pinned', source: 'cli', started_at: 1160, messages: [['user', 1161], ['assistant', 1162]] })
+    sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Imported CLI work"', usage: null }))
+
+    expect((await post('/api/session/pin', { session_id: 'cli-pinned', pinned: true })).status).toBe(200)
+
+    await vi.waitFor(() => { expect(s.deps.sessionStore.get('cli-pinned').title).toBe('Imported CLI work') })
+  })
+
+  it('does not recreate a claimed CLI session deleted while its title prompt ran (TAL-591)', async () => {
+    insertSession(db, { id: 'cli-gone', source: 'cli', started_at: 1170, messages: [['user', 1171], ['assistant', 1172]] })
+    let titled = false
+    sidecar.respond('aux.complete', async () => {
+      expect((await post('/api/session/delete', { session_id: 'cli-gone' })).status).toBe(200)
+      titled = true
+      return { model: 'aux', text: 'Title: "Too late"', usage: null }
+    })
+
+    expect((await post('/api/session/pin', { session_id: 'cli-gone', pinned: true })).status).toBe(200)
+    await vi.waitFor(() => { expect(titled).toBe(true) })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    expect(existsSync(s.deps.sessionStore.pathFor('cli-gone'))).toBe(false)
+  })
+
   it('files a claimed webhook session in the Webhooks project its sidebar row already shows', async () => {
     insertSession(db, { id: 'hook-run', source: 'webhook', started_at: 1200, title: 'Hook run', messages: [['user', 1201], ['assistant', 1202]] })
 
