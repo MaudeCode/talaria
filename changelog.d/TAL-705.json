@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Gallery extensions that ship an extension.json instead of a manifest.json now appear in Settings with their panel and Uninstall button.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
