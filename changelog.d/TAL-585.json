@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Voice transcription uploads now follow the server's configured upload size limit instead of a fixed 50 MB cap.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

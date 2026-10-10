@@ -386,7 +386,7 @@ function handleSessionExport(ctx: RequestContext): void {
 }
 
 /** The shared upload preamble: the declared-size gate, the bounded body read, and the multipart parse (answers on failure). */
-async function readUploadForm(ctx: RequestContext): Promise<MultipartResult | null> {
+export async function readUploadForm(ctx: RequestContext): Promise<MultipartResult | null> {
   const maxBytes = ctx.deps.config.maxUploadBytes
   const contentType = ctx.header('content-type') ?? ''
   const contentLength = Number.parseInt(ctx.header('content-length') ?? '0', 10) || 0
@@ -411,7 +411,7 @@ async function readUploadForm(ctx: RequestContext): Promise<MultipartResult | nu
 }
 
 /** The single `file` part of a chat upload, or null after answering 400. */
-function uploadFile(ctx: RequestContext, form: MultipartResult): { filename: string; body: Buffer } | null {
+export function uploadFile(ctx: RequestContext, form: MultipartResult): { filename: string; body: Buffer } | null {
   const file = form.files.file
   if (!file) {
     ctx.json({ error: 'No file field in request' }, { status: 400 })
