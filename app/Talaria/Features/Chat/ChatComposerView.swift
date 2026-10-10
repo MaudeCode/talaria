@@ -760,7 +760,7 @@ struct MessageComposerView: View {
             options: sendOptions,
             isDisabled: isActionButtonDisabled,
             onTap: { actionButtonTapped(behavior: nil) },
-            onOption: { submitDraft(as: $0) }
+            onOption: sendOptionPicked
         )
     }
 
@@ -1276,6 +1276,15 @@ struct MessageComposerView: View {
         }
     }
 
+    private func sendOptionPicked(_ action: ComposerSendButton.Option.Action) {
+        switch action {
+        case .behavior(let behavior):
+            submitDraft(as: nil, behavior: behavior)
+        case .command(let command):
+            submitDraft(as: command)
+        }
+    }
+
     private func submitDraft(as command: String?, behavior: StreamingSendBehavior? = nil) {
         if voiceInput.isListening {
             voiceInput.stopBeforeSubmittingDraft()
@@ -1287,24 +1296,13 @@ struct MessageComposerView: View {
         }
     }
 
-    /// Long-pressing Send offers the other ways to send the draft, so no one types `/queue` (TAL-630).
-    /// Steer, side questions and background tasks cannot carry files, so staged files hide them; a side
-    /// question waits for the running reply, so it shows only between replies.
     private var sendOptions: [ComposerSendButton.Option] {
         guard !isAnsweringClarification, !showsStopButton, !isActionButtonDisabled else { return [] }
-        let carriesFiles = !pendingAttachments.isEmpty
-        var options: [ComposerSendButton.Option] = []
-        if isWaitingForStream {
-            options.append((.init(title: String(localized: "Queue"), systemImage: "text.badge.plus", command: "queue")))
-            if !carriesFiles { options.append((.init(title: String(localized: "Steer"), systemImage: "arrow.turn.down.right", command: "steer"))) }
-            options.append((.init(title: String(localized: "Stop and send"), systemImage: "stop.circle", command: "interrupt")))
-        } else if !carriesFiles {
-            options.append((.init(title: String(localized: "Side question"), systemImage: "bubble.left.and.text.bubble.right", command: "btw")))
-        }
-        if !carriesFiles {
-            options.append((.init(title: String(localized: "Run in background"), systemImage: "square.stack.3d.down.right", command: "background")))
-        }
-        return options
+        return ComposerSendButton.options(
+            isWaitingForStream: isWaitingForStream,
+            carriesFiles: !pendingAttachments.isEmpty,
+            defaultBehavior: StreamingSendBehavior.storedValue(streamingSendBehaviorRawValue)
+        )
     }
 
     /// Starts dictation once for a composer opened by the "New Chat with Voice" intent (#338),
@@ -1455,10 +1453,56 @@ struct ComposerSendButton: View {
         case symbol(String)
     }
 
-    struct Option {
+    struct Option: Equatable {
+        enum Action: Equatable {
+            /// Sends the draft this way during a reply, leaving the "While responding" setting alone.
+            case behavior(StreamingSendBehavior)
+            /// Sends the draft as this slash command.
+            case command(String)
+        }
+
         let title: String
+        var subtitle: String? = nil
         let systemImage: String
-        let command: String
+        let action: Action
+        var isDefault = false
+    }
+
+    /// Long-pressing Send offers the other ways to send the draft, so no one types `/queue` (TAL-630). During a
+    /// reply it lists Steer, Queue and Stop and send for this message alone, checking the one a tap does (TAL-445).
+    /// Steer, side questions and background tasks cannot carry files, so staged files hide them; a side
+    /// question waits for the running reply, so it shows only between replies.
+    static func options(
+        isWaitingForStream: Bool,
+        carriesFiles: Bool,
+        defaultBehavior: StreamingSendBehavior
+    ) -> [Option] {
+        var options: [Option] = []
+        if isWaitingForStream {
+            let tapBehavior = defaultBehavior.sending(withFiles: carriesFiles)
+            for behavior in [StreamingSendBehavior.steer, .queue, .interrupt]
+            where behavior.sending(withFiles: carriesFiles) == behavior {
+                options.append(option(for: behavior, isDefault: behavior == tapBehavior))
+            }
+        } else if !carriesFiles {
+            options.append(.init(title: String(localized: "Side question"), systemImage: "bubble.left.and.text.bubble.right", action: .command("btw")))
+        }
+        if !carriesFiles {
+            options.append(.init(title: String(localized: "Run in background"), systemImage: "square.stack.3d.down.right", action: .command("background")))
+        }
+        return options
+    }
+
+    /// Stop and send's setting description is its title, so it goes without a subtitle.
+    private static func option(for behavior: StreamingSendBehavior, isDefault: Bool) -> Option {
+        switch behavior {
+        case .steer:
+            .init(title: String(localized: "Steer"), subtitle: behavior.settingsDescription, systemImage: "arrow.turn.down.right", action: .behavior(behavior), isDefault: isDefault)
+        case .queue:
+            .init(title: String(localized: "Queue"), subtitle: behavior.settingsDescription, systemImage: "text.badge.plus", action: .behavior(behavior), isDefault: isDefault)
+        case .interrupt:
+            .init(title: String(localized: "Stop and send"), systemImage: "stop.circle", action: .behavior(behavior), isDefault: isDefault)
+        }
     }
 
     let glyph: Glyph
@@ -1470,7 +1514,7 @@ struct ComposerSendButton: View {
     let options: [Option]
     let isDisabled: Bool
     let onTap: () -> Void
-    let onOption: (String) -> Void
+    let onOption: (Option.Action) -> Void
 
     var body: some View {
         ChatUIKitMenuButton(horizontalPadding: 8, verticalPadding: 8, primaryAction: onTap, showsMenu: !options.isEmpty) {
@@ -1492,14 +1536,19 @@ struct ComposerSendButton: View {
             .chatMinimumHitTarget(in: Circle())
         } menu: {
             UIMenu(children: options.map { option in
-                UIAction(title: option.title, image: UIImage(systemName: option.systemImage)) { _ in onOption(option.command) }
+                UIAction(
+                    title: option.title,
+                    subtitle: option.subtitle,
+                    image: UIImage(systemName: option.systemImage),
+                    state: option.isDefault ? .on : .off
+                ) { _ in onOption(option.action) }
             })
         }
         .disabled(isDisabled)
         .accessibilityLabel(accessibilityLabel)
         .accessibilityActions {
-            ForEach(options, id: \.command) { option in
-                Button(option.title) { onOption(option.command) }
+            ForEach(options, id: \.title) { option in
+                Button(option.title) { onOption(option.action) }
             }
         }
     }

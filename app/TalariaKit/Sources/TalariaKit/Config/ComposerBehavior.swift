@@ -36,6 +36,12 @@ public enum StreamingSendBehavior: String, CaseIterable, Identifiable {
         self == .queue ? .steer : .queue
     }
 
+    /// What a send with this behavior does: steering has no attachment channel, so a send with staged
+    /// files queues them with its text instead of steering the text and leaving them behind.
+    public func sending(withFiles: Bool) -> StreamingSendBehavior {
+        self == .steer && withFiles ? .queue : self
+    }
+
     public static func storedValue(_ rawValue: String) -> StreamingSendBehavior {
         StreamingSendBehavior(rawValue: rawValue) ?? .steer
     }
