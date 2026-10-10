@@ -152,7 +152,7 @@ public struct ChatMessage: Decodable, Equatable, Identifiable {
             .map(ReasoningTitleMetadata.normalize)
         activityScene = try? container.decodeIfPresent(AssistantActivityScene.self, forKey: .activityScene)
         let decodedAttachments = Self.decodeAttachmentsTolerantly(from: container)
-        attachments = Self.attachments(decodedAttachments, enrichedByMarkerIn: content)
+        attachments = decodedAttachments?.isEmpty == false ? decodedAttachments : nil
         turnDuration = container.decodeLossyDoubleIfPresent(forKey: .turnDuration)
             ?? activityScene?.turnDuration
         turnTps = container.decodeLossyDoubleIfPresent(forKey: .turnTps)
@@ -170,64 +170,6 @@ public struct ChatMessage: Decodable, Equatable, Identifiable {
         backgroundSilent = (try? container.decodeIfPresent(Bool.self, forKey: .backgroundSilent)) == true
         markerKind = ChatMarkerMessageKind(wireValue: container.decodeLossyStringIfPresent(forKey: .markerKind))
         markerBody = markerKind == nil ? nil : container.decodeLossyStringIfPresent(forKey: .markerBody)
-    }
-
-    private static func attachments(
-        _ decodedAttachments: [MessageAttachment]?,
-        enrichedByMarkerIn content: String?
-    ) -> [MessageAttachment]? {
-        let inferredAttachments = MessageAttachment.inferredFromAttachedFilesMarker(in: content)
-
-        guard let decodedAttachments, !decodedAttachments.isEmpty else {
-            return inferredAttachments
-        }
-
-        guard let inferredAttachments, !inferredAttachments.isEmpty else {
-            return decodedAttachments
-        }
-
-        var availableInferred = Array(inferredAttachments.enumerated())
-        return decodedAttachments.enumerated().map { index, attachment in
-            guard nonEmptyString(attachment.path) == nil,
-                  let inferred = matchingInferredAttachment(
-                    for: attachment,
-                    at: index,
-                    from: &availableInferred
-                  )
-            else {
-                return attachment
-            }
-
-            return MessageAttachment(
-                name: nonEmptyString(attachment.name) ?? inferred.name,
-                path: nonEmptyString(inferred.path),
-                mime: attachment.mime ?? inferred.mime,
-                size: attachment.size ?? inferred.size,
-                isImage: attachment.isImage ?? inferred.isImage
-            )
-        }
-    }
-
-    private static func matchingInferredAttachment(
-        for attachment: MessageAttachment,
-        at index: Int,
-        from availableInferred: inout [(offset: Int, element: MessageAttachment)]
-    ) -> MessageAttachment? {
-        if let key = attachment.identityKey,
-           let matchedIndex = availableInferred.firstIndex(where: { $0.element.identityKey == key }) {
-            return availableInferred.remove(at: matchedIndex).element
-        }
-
-        guard let matchedIndex = availableInferred.firstIndex(where: { $0.offset == index }) else {
-            return nil
-        }
-
-        return availableInferred.remove(at: matchedIndex).element
-    }
-
-    private static func nonEmptyString(_ value: String?) -> String? {
-        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed?.isEmpty == false ? trimmed : nil
     }
 
     private static func decodeContentTolerantly(

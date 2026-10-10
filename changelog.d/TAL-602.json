@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A reply that quotes an attached-files line no longer shows a made-up attachment, and the Hide Attachment Paths setting is gone because the server no longer puts paths in your messages.",
+      "highlight": false
+    }
+  ]
+}

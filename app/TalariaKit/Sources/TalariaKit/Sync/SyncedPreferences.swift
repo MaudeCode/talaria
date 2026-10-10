@@ -31,7 +31,6 @@ enum SyncedPreferenceAllowlist {
         .init(key: ChatTranscriptDisplaySettings.showsThinkingAndToolCardsKey, suite: .standard),
         .init(key: ChatTranscriptDisplaySettings.thinkingCardsStartExpandedKey, suite: .standard),
         .init(key: ChatTranscriptDisplaySettings.toolCardsStartExpandedKey, suite: .standard),
-        .init(key: ChatTranscriptDisplaySettings.hidesAttachmentPathsKey, suite: .standard),
         .init(key: ChatTranscriptDisplaySettings.showsAssistantTurnTimestampsKey, suite: .standard),
         .init(key: ChatTranscriptDisplaySettings.showsResponseSpeedKey, suite: .standard),
         .init(key: ChatTranscriptDisplaySettings.wrapsCodeBlockLinesKey, suite: .standard),

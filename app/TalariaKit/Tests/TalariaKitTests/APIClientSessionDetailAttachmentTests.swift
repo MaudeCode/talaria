@@ -127,19 +127,19 @@ func testSessionDecodesTolerantMessageAttachments() async throws {
     XCTAssertNil(msg5.attachments)
 }
 
-func testSessionInfersAttachmentsFromAttachedFilesMarkerWhenServerOmitsMetadata() async throws {
+// TAL-602: attachments come only from the server's `attachments` field. An
+// assistant reply quoting the marker line gains no attachment, and the text
+// renders as the server shipped it.
+func testSessionShowsNoAttachmentForAnAssistantReplyEndingInTheMarker() async throws {
     let client = makeClient { request in
-        XCTAssertEqual(request.url?.path, "/api/session")
-        XCTAssertEqual(request.httpMethod, "GET")
-
-        return apiTestJSONResponse("""
+        apiTestJSONResponse("""
         {
           "session": {
             "session_id": "abc123",
             "messages": [
               {
-                "role": "user",
-                "content": "Analyze these\\n\\n[Attached files: image_1778030812_E9EE.jpg, /Users/hermes/projects/workspace/17mb.csv]",
+                "role": "assistant",
+                "content": "The Web app appends this line:\\n\\n[Attached files: x.png]",
                 "_ts": 1770000000
               }
             ]
@@ -150,34 +150,25 @@ func testSessionInfersAttachmentsFromAttachedFilesMarkerWhenServerOmitsMetadata(
 
     let response = try await client.session(id: "abc123")
     let message = try XCTUnwrap(response.session?.messages?.first)
-    let attachments = try XCTUnwrap(message.attachments)
 
-    XCTAssertEqual(attachments.count, 2)
-    XCTAssertEqual(attachments[0].name, "image_1778030812_E9EE.jpg")
-    XCTAssertEqual(attachments[0].path, "/Users/hermes/projects/workspace/image_1778030812_E9EE.jpg")
-    XCTAssertEqual(attachments[0].isImage, true)
-    XCTAssertEqual(attachments[1].name, "17mb.csv")
-    XCTAssertEqual(attachments[1].path, "/Users/hermes/projects/workspace/17mb.csv")
-    XCTAssertEqual(attachments[1].isImage, false)
+    XCTAssertNil(message.attachments)
+    XCTAssertEqual(message.content, "The Web app appends this line:\n\n[Attached files: x.png]")
 }
 
-func testSessionEnrichesLegacyAttachmentNamesFromAttachedFilesMarkerPaths() async throws {
+func testSessionRendersUserUploadsFromTheServerAttachmentsFieldOnly() async throws {
     let client = makeClient { request in
-        XCTAssertEqual(request.url?.path, "/api/session")
-        XCTAssertEqual(request.httpMethod, "GET")
-
-        return apiTestJSONResponse("""
+        apiTestJSONResponse("""
         {
           "session": {
             "session_id": "abc123",
             "messages": [
               {
                 "role": "user",
-                "content": "Review these\\n\\n[Attached files: /Users/hermes/projects/workspace/image_1778032969_13BE.jpg, /Users/hermes/projects/workspace/hermes-agent-slideshow.html]",
+                "content": "Review these\\n\\n[Attached files: /Users/hermes/projects/workspace/other.jpg]",
                 "_ts": 1770000000,
                 "attachments": [
-                  "image_1778032969_13BE.jpg",
-                  "hermes-agent-slideshow.html"
+                  "notes.txt",
+                  {"name": "photo.png", "path": "/tmp/workspace/photo.png", "isImage": true}
                 ]
               }
             ]
@@ -188,15 +179,11 @@ func testSessionEnrichesLegacyAttachmentNamesFromAttachedFilesMarkerPaths() asyn
 
     let response = try await client.session(id: "abc123")
     let message = try XCTUnwrap(response.session?.messages?.first)
-    let attachments = try XCTUnwrap(message.attachments)
 
-    XCTAssertEqual(attachments.count, 2)
-    XCTAssertEqual(attachments[0].name, "image_1778032969_13BE.jpg")
-    XCTAssertEqual(attachments[0].path, "/Users/hermes/projects/workspace/image_1778032969_13BE.jpg")
-    XCTAssertEqual(attachments[0].isImage, true)
-    XCTAssertEqual(attachments[1].name, "hermes-agent-slideshow.html")
-    XCTAssertEqual(attachments[1].path, "/Users/hermes/projects/workspace/hermes-agent-slideshow.html")
-    XCTAssertEqual(attachments[1].isImage, false)
+    XCTAssertEqual(message.attachments, [
+        MessageAttachment(name: "notes.txt"),
+        MessageAttachment(name: "photo.png", path: "/tmp/workspace/photo.png", isImage: true)
+    ])
 }
 
 func testSessionDecodesWebUICreatedSessionWithUnexpectedOptionalFieldTypes() async throws {

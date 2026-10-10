@@ -164,14 +164,10 @@ extension PendingAttachment {
         }
 
         // Old-server fallback: a textless send has nothing to append the marker to, so the
-        // WebUI synthesized the whole message. `MessageAttachment` parses this shape back out
-        // for display; share its constants so the two cannot drift. Delete this branch once
-        // every supported server sends `named_in_prompt`.
+        // WebUI synthesized the whole message. Delete this branch once every supported
+        // server sends `named_in_prompt`.
         guard !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return MessageAttachment.uploadedFilesPrefix
-                + "\(references.count)"
-                + MessageAttachment.uploadedFilesInfix
-                + references.joined(separator: ", ")
+            return "I've uploaded \(references.count) file(s): \(references.joined(separator: ", "))"
         }
 
         return "\(draft)\n\n[Attached files: \(references.joined(separator: ", "))]"

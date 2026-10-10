@@ -78,7 +78,6 @@ public enum ChatTranscriptDisplaySettings {
     public static let showsThinkingAndToolCardsKey = "chatTranscript.showsThinkingAndToolCards"
     public static let thinkingCardsStartExpandedKey = "chatTranscript.thinkingCardsStartExpanded"
     public static let toolCardsStartExpandedKey = "chatTranscript.toolCardsStartExpanded"
-    public static let hidesAttachmentPathsKey = "chatTranscript.hidesAttachmentPaths"
     public static let showsAssistantTurnTimestampsKey = "chatTranscript.showsAssistantTurnTimestamps"
     public static let showsResponseSpeedKey = "chatTranscript.showsResponseSpeed"
     public static let wrapsCodeBlockLinesKey = "chatTranscript.wrapsCodeBlockLines"
