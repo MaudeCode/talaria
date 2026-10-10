@@ -82,9 +82,14 @@ export function useServerProbe() {
   return { online, probe, failures: online ? (probe.data?.failures ?? 0) : 0, retry: () => { void probe.refetch() } }
 }
 
-/** Treat the server as stopped now (Stop server, or another tab said so); probes back off from there and the next answer clears it. */
+/**
+ * Treat the server as stopped now (Stop server, or another tab said so); probes back off from there and the next answer
+ * clears it. A probe sent before the stop is cancelled first, so its late answer cannot clear the stop.
+ */
 export function markServerStopped(qc: QueryClient): void {
-  qc.setQueryData<Probe>(PROBE_KEY, (last) => (last && last.failures >= STOPPED_AFTER ? last : { health: last?.health ?? null, failures: STOPPED_AFTER, failedAt: Date.now() }))
+  void qc.cancelQueries({ queryKey: PROBE_KEY }).then(() => {
+    qc.setQueryData<Probe>(PROBE_KEY, (last) => (last && last.failures >= STOPPED_AFTER ? last : { health: last?.health ?? null, failures: STOPPED_AFTER, failedAt: Date.now() }))
+  })
 }
 
 /** Probe now if the last probe went unanswered: another tab just reached the server. */
