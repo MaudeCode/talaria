@@ -1,4 +1,5 @@
-import { sniffImageMime, str } from './util.js'
+import { str } from './util.js'
+import { isRasterDataUri } from './raster-image.js'
 import { snapshotArgs, toolArgs, toolDisplay, toolName } from './sessions/tool-display.js'
 import { messageText } from './sessions/merge.js'
 import { stripAttachedFilesMarker } from './sessions/session.js'
@@ -1774,22 +1775,6 @@ function isCollapsibleUserMessage(item: Record<string, unknown>): boolean {
   if (item.role !== 'user' || item._steer !== undefined || item._background_update !== undefined || item._marker_kind !== undefined) return false
   const text = stripAttachedFilesMarker(messageText(item.content))
   return text.length > COLLAPSIBLE_USER_MESSAGE_CHARS || text.split('\n').length > COLLAPSIBLE_USER_MESSAGE_LINES
-}
-
-const RASTER_DATA_URI_MIMES = ['png', 'jpeg', 'jpg', 'gif', 'webp', 'bmp'].map((kind) => [`data:image/${kind};base64,`, `image/${kind === 'jpg' ? 'jpeg' : kind}`] as const)
-
-/**
- * A raster image data URI: a well-formed base64 payload whose bytes carry its declared type's signature. Opaque image
- * bytes, which text redaction would only corrupt; a text secret behind a raster header still fails the signature.
- */
-function isRasterDataUri(value: unknown): boolean {
-  if (typeof value !== 'string') return false
-  // Scheme and MIME type are case-insensitive; only the short header is lowered, never the payload.
-  const match = RASTER_DATA_URI_MIMES.find(([prefix]) => value.slice(0, prefix.length).toLowerCase() === prefix)
-  if (!match) return false
-  const payload = value.slice(match[0].length)
-  if (!payload || payload.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(payload)) return false
-  return sniffImageMime(Buffer.from(payload.slice(0, 16), 'base64')) === match[1]
 }
 
 /**
