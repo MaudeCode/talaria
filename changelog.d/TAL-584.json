@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Signing in with SSO from the app works on the first try after the server restarts, even when password sign-in is also turned on.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

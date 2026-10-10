@@ -503,6 +503,20 @@ describe('OIDC enablement', () => {
     } finally { await s.close() }
   })
 
+  it('first native start on a cold password+OIDC server binds to the configured redirect origin', async () => {
+    const s = await bootTestServer({ env: { ...OIDC_ENV, HERMES_WEBUI_PASSWORD: 'hunter22', HERMES_WEBUI_OIDC_REDIRECT_URI: 'https://talaria.example/api/auth/oidc/callback' } })
+    try {
+      s.deps.fetch = fakeIdp(() => Date.now() / 1000).fetch
+      const started = await json(await post(s, '/api/auth/oidc/native/start', { callback_url: 'talaria://oidc-callback', state: b64u(randomBytes(24)), code_challenge: b64u(randomBytes(32)), code_challenge_method: 'S256' }))
+      const authz = new URL(String(started.authorization_url))
+      expect(authz.origin).toBe('https://talaria.example')
+      const start = await s.get(authz.pathname + authz.search)
+      expect(await start.clone().text()).not.toContain('belongs to a different server')
+      expect(start.status).toBe(302)
+      providerCode(start.headers.get('location') ?? '')
+    } finally { await s.close() }
+  })
+
   it('concurrent cold probes share one operator config read', async () => {
     let reads = 0
     let release: () => void = () => undefined
