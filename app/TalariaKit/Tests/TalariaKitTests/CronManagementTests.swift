@@ -494,6 +494,35 @@ final class CronManagementViewModelTests: APIClientTestCase {
     }
 
     @MainActor
+    func testTasksViewModelRendersJobsInResponseOrder() async throws {
+        let client = makeClient { request in
+            switch request.url?.path {
+            case "/api/crons":
+                // Deliberately not running-first or soonest-first: the server owns the order (TAL-601).
+                return apiTestJSONResponse("""
+                {"jobs": [
+                  {"id": "job-late", "name": "Alpha", "next_run_at": "2026-12-01T09:00:00Z"},
+                  {"id": "job-soon", "name": "Beta", "next_run_at": "2026-11-01T09:00:00Z"},
+                  {"id": "job-running", "name": "Gamma", "running": true}
+                ]}
+                """, for: request)
+            case "/api/crons/status":
+                return apiTestJSONResponse(#"{"running": {"job-running": 4.2}}"#, for: request)
+            case "/api/crons/delivery-options":
+                return apiTestJSONResponse(#"{"platforms": []}"#, for: request)
+            default:
+                XCTFail("Unexpected request: \(request.url?.path ?? "nil")")
+                return apiTestJSONResponse("{}", for: request)
+            }
+        }
+        let viewModel = TasksViewModel(server: try XCTUnwrap(URL(string: "https://example.test")), client: client)
+
+        await viewModel.load()
+
+        XCTAssertEqual(viewModel.jobs.map(\.jobId), ["job-late", "job-soon", "job-running"])
+    }
+
+    @MainActor
     func testTasksViewModelKeepsServerOrderAndNavigatesByJobIDOnly() async throws {
         let client = makeClient { request in
             switch request.url?.path {

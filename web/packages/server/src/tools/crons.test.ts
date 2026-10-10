@@ -68,7 +68,7 @@ describe('cron job payloads carry the derived fields', () => {
     sidecar.respond('cron.pause', () => { Object.assign(jobs[0]!, { enabled: false, state: 'paused', next_run_at: null, last_status: 'error' }); return { job: jobs[0] as never } })
     sidecar.respond('cron.run_detail', (params) => ({ job_id: recurring.id, filename: params.filename, content: runFiles[params.filename] ?? '', snippet: '', usage: {} }) as never)
     sidecar.respond('cron.resume', () => { Object.assign(jobs[0]!, { enabled: true, state: 'scheduled', next_run_at: '2026-09-19T09:00:00+02:00' }); return { job: jobs[0] as never } })
-    return { service: new CronService(deps), home, runningJobs }
+    return { service: new CronService(deps), home, runningJobs, jobs }
   }
   const runFiles: Record<string, string> = {
     'agent.md': '# Cron run: Digest\n\n**Model:** m\n\n## Response\n\n# Title\n\n| a |\n',
@@ -84,6 +84,21 @@ describe('cron job payloads carry the derived fields', () => {
     expect(await response('legacy.md')).toBe('hello')
     expect(await response('script.md')).toBe('plain stdout')
     expect(await response('empty.md')).toBe('')
+  })
+
+  it('lists running jobs first, then by next run (none last), then by name (TAL-601)', async () => {
+    const { service, runningJobs, jobs } = setup()
+    jobs.push(
+      { ...jobs[0]!, id: 'b00000000001', name: 'beta', next_run_at: '2026-09-18T08:00:00Z' },
+      { ...jobs[0]!, id: 'c00000000001', name: 'zeta', next_run_at: null },
+      { ...jobs[0]!, id: 'g00000000001', name: 'aardvark', next_run_at: '2026-09-18T08:00:00Z' },
+      { ...jobs[0]!, id: 'd00000000001', name: 'Alpha', next_run_at: null },
+      { ...jobs[0]!, id: 'e00000000001', name: 'Running', next_run_at: '2027-01-01T00:00:00Z' },
+      { ...jobs[0]!, id: 'f00000000001', name: 'Legacy', next_run_at: undefined, next_run: 1_789_000_000 },
+    )
+    runningJobs.set('e00000000001', 1)
+    const ids = (await service.list('default', false)).jobs as Dict[]
+    expect(ids.map((job) => job.id)).toEqual(['e00000000001', 'f00000000001', recurring.id, 'g00000000001', 'b00000000001', 'd00000000001', 'c00000000001'])
   })
 
   it('lists running from the manual-run map and returns pause/resume rows through the same shaping', async () => {

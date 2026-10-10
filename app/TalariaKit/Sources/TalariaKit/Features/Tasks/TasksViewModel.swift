@@ -36,7 +36,7 @@ public final class TasksViewModel {
         self.responseCache = responseCache
         // The last jobs show at once (TAL-437); running state is never cached, it goes stale too fast.
         if let cached = responseCache?.entry(ResponseCache.Kind.crons).load(CronJobsResponse.self) {
-            jobs = (cached.jobs ?? []).sorted(by: sortJobs)
+            jobs = cached.jobs ?? []
         }
     }
 
@@ -63,7 +63,8 @@ public final class TasksViewModel {
             let deliveryOptions = await deliveryOptionsResponse?.platforms
             guard generation == loadGeneration else { return }
             runningJobs = statusResult.runningJobs ?? [:]
-            jobs = (jobsResult.jobs ?? []).sorted(by: sortJobs)
+            // The server owns the list order (TAL-601).
+            jobs = jobsResult.jobs ?? []
             self.deliveryOptions = deliveryOptions
         } catch {
             guard generation == loadGeneration, !APIError.isCancellation(error) else { return }
@@ -167,28 +168,6 @@ public final class TasksViewModel {
             jobs[index] = job
         } else {
             jobs.append(job)
-        }
-        jobs.sort(by: sortJobs)
-    }
-
-    private func sortJobs(_ left: CronJob, _ right: CronJob) -> Bool {
-        if runningElapsed(for: left) != nil, runningElapsed(for: right) == nil {
-            return true
-        }
-
-        if runningElapsed(for: left) == nil, runningElapsed(for: right) != nil {
-            return false
-        }
-
-        switch (left.nextRunAt?.date, right.nextRunAt?.date) {
-        case let (leftDate?, rightDate?):
-            return leftDate < rightDate
-        case (.some, nil):
-            return true
-        case (nil, .some):
-            return false
-        case (nil, nil):
-            return left.displayName.localizedCaseInsensitiveCompare(right.displayName) == .orderedAscending
         }
     }
 }
