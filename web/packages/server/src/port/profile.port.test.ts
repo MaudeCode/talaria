@@ -385,7 +385,7 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     symlinkSync(outside, home)
     const homes: string[] = []
     sidecar.respond('process.drain', () => ({ events: [] }))
-    sidecar.respond('process.claim_delivery', (params) => { homes.push(params.profile_home); return { claim_id: 'c1' } as never })
+    sidecar.respond('process.claim_delivery', (params) => { homes.push(params.profile_home); return { claim_id: 'c1' } })
     sidecar.respond('chat.start', (params) => { homes.push(params.profile_home); throw new Error('must not start') })
     try {
       await s.deps.completions.processOne({ process_id: 'drift_1', session_id: 'drift_1', type: 'completion', command: 'make', exit_code: 0, output: 'ok', session_key: sid, origin_ui_session_id: sid, consumed: false })
