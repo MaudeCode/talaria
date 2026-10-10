@@ -766,6 +766,23 @@ describe('chat streams, cancel, and error settlement', () => {
     }
   })
 
+  it('an eager-saved prompt is not repeated in the first turn\'s history (TAL-578)', async () => {
+    const turns = s.deps.turns as unknown as { deps: { saveMode: () => 'deferred' | 'eager' } }
+    const original = turns.deps.saveMode
+    turns.deps.saveMode = () => 'eager'
+    try {
+      const sid = await newSession(s)
+      let history: Json[] | null = null
+      sidecar.respond('chat.start', (params) => { history = params.conversation_history; return completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'first answer' }]) })
+      await frames(await start(sid, 'Explain the outage'), terminal)
+      expect(history).toEqual([])
+      expect((await messagesOf(s, sid)).filter((m) => m.role === 'user')).toHaveLength(1)
+      expect(s.deps.sessionStore.get(sid).context_messages.map((m) => m.role)).toEqual(['user', 'assistant'])
+    } finally {
+      turns.deps.saveMode = original
+    }
+  })
+
   it('a stopped worker that unwinds after a successor was admitted cannot overwrite the successor (TAL-364)', async () => {
     const sid = await newSession(s)
     const earlier = await earlierTurn(sid)

@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "With eager session saving, a new chat's first message is no longer sent to the model twice.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
