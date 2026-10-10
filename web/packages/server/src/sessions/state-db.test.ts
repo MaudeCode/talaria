@@ -407,11 +407,13 @@ describe('state.db projection', () => {
       }, { workspace: s.state, model: null }))
       return sid
     }
-    const gone = [imported('tal590-cli-gone', 'cli'), imported('tal590-api-gone', 'api_server')]
-    // Its source still exists, it is not a CLI or API-server import, or it belongs to another profile's state.db.
+    // A stream id a crash left behind is no run.
+    const gone = [imported('tal590-cli-gone', 'cli'), imported('tal590-api-gone', 'api_server'), imported('tal590-dead-stream', 'cli', { active_stream_id: 'tal590-dead-run' })]
+    // Its source still exists, it is not a CLI or API-server import, it belongs to another profile's state.db, or a run holds it.
     const live = imported('tal590-cli-live', 'cli')
     insertSession(db, { id: live, source: 'cli', started_at: 8000, title: 'Orphanprobe cli', messages: [['user', 8000], ['assistant', 8001]] })
-    const kept = [live, imported('tal590-tg-gone', 'telegram'), imported('tal590-other-profile', 'cli', { profile: 'work' })]
+    s.deps.registry.liveIds.add('tal590-live-run')
+    const kept = [live, imported('tal590-tg-gone', 'telegram'), imported('tal590-other-profile', 'cli', { profile: 'work' }), imported('tal590-running', 'cli', { active_stream_id: 'tal590-live-run' })]
     await s.deps.settings.save({ show_cli_sessions: true })
     s.deps.cliSessions.invalidate()
     const listed = ((await json(await s.get('/api/sessions'))).sessions as Json[]).map((r) => str(r.session_id))
@@ -424,6 +426,7 @@ describe('state.db projection', () => {
     expect(await json(res)).toEqual({ ok: true, state_db_cleanup_failed: false })
     expect(existsSync(s.deps.sessionStore.pathFor(stale))).toBe(false)
     expect((await post('/api/session/delete', { session_id: live })).status).toBe(400)
+    s.deps.registry.liveIds.delete('tal590-live-run')
     await s.deps.settings.save({ show_cli_sessions: false })
   })
 

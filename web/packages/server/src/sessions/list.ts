@@ -96,7 +96,7 @@ export function isIntentionallyBackground(row: Row): boolean {
   return ['cron', 'webhook', 'kanban'].includes(source) || str(row.session_id).startsWith('cron_')
 }
 
-export function hasLiveState(row: Row): boolean {
+function hasLiveState(row: Row): boolean {
   return Boolean(row.active_stream_id || row.has_pending_user_message || row.pending_user_message)
 }
 

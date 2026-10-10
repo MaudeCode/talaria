@@ -12,7 +12,7 @@ import { buildActiveTurnToken, copyJson, redactSessionData, redactValue, stripPu
 import type { DraftStore } from './drafts.js'
 import { DraftVersionConflict, normalizeDraftVersion } from './drafts.js'
 import type { SessionEventBus } from './events.js'
-import { allSessions, buildSessionListPayload, CLI_IDENTITY_FIELDS, hasLiveState, isClaimableCliSource, isMessagingSessionRecord, withOwnerLocks, withSessionWireFlags, lineageRootId, mergeCliSidebarMetadata, sessionListResponse, sessionSearchMatches, sessionSearchMessageText, sessionSearchPreview, sessionSearchTerms, type ListParams, type ListResponse, type Row, type RuntimeOverlay } from './list.js'
+import { allSessions, buildSessionListPayload, CLI_IDENTITY_FIELDS, isClaimableCliSource, isMessagingSessionRecord, withOwnerLocks, withSessionWireFlags, lineageRootId, mergeCliSidebarMetadata, sessionListResponse, sessionSearchMatches, sessionSearchMessageText, sessionSearchPreview, sessionSearchTerms, type ListParams, type ListResponse, type Row, type RuntimeOverlay } from './list.js'
 import { anchorSceneIntOrNull, fullToolResult, hydrateAnchorActivityScenes, normalizeAnchorSceneMessageRef, readAnchorSceneRows, storeAnchorScene, withTurnIds } from './anchor.js'
 import { COMPRESSION_RECOVERY_ACTION_START_FOCUSED, compressionRecoveryPayload, isSafeSessionId, lastMessageTimestamp, Session, sharePath, stripAttachedFilesMarker, titleFrom, type Message } from './session.js'
 import { SessionBusy, SessionNotFound, statSignature, type SessionStore } from './store.js'
@@ -262,10 +262,11 @@ export class SessionService {
   /**
    * TAL-590 (Python #3238): the read-only CLI or API-server imports among `rows` whose active-profile state.db row is
    * gone, so their source was deleted outside Web and no Web action could remove them. An unreadable state.db proves
-   * nothing (`agentSessionRowsExisting`); a running or another profile's session is never an orphan.
+   * nothing (`agentSessionRowsExisting`); another profile's session or one with a run the runtime still holds is never
+   * an orphan, while a stream id a crash left behind does not count as one.
    */
   private orphanedImports(rows: Row[]): Set<string> {
-    const candidates = rows.filter((r) => r.read_only && ['cli', 'api'].includes(sourceKind(r)) && this.visibleToActiveProfile(str(r.profile) || null) && !hasLiveState(r))
+    const candidates = rows.filter((r) => r.read_only && ['cli', 'api'].includes(sourceKind(r)) && this.visibleToActiveProfile(str(r.profile) || null) && !this.activeRunBlocking(str(r.session_id)))
       .map((r) => str(r.session_id))
     if (!candidates.length) return new Set()
     const existing = agentSessionRowsExisting(this.stateDbPath(null), candidates)
