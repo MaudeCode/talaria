@@ -60,3 +60,22 @@ describe('external link confirmation (TAL-279)', () => {
     expect(open).not.toHaveBeenCalled()
   })
 })
+
+describe('JSON code blocks (TAL-615)', () => {
+  it('toggles a parsed JSON block between the raw code and a tree, and leaves other blocks raw', async () => {
+    render(<Markdown text={'```json\n{"name": "talaria", "tags": ["web", "app"], "nested": {"deep": {"leaf": null}}}\n```\n\n```json\n{"broken": \n```'} />)
+    const toggle = await screen.findByRole('button', { name: 'Tree' })
+    expect(screen.getAllByRole('button', { name: 'Tree' })).toHaveLength(1)
+    expect(document.querySelector('[data-json-tree]')).toBeNull()
+    await userEvent.click(toggle)
+    const tree = document.querySelector('[data-json-tree]')!
+    expect(tree).toHaveTextContent('"name": "talaria"')
+    expect(tree).toHaveTextContent('"web"')
+    // Deep levels start folded, as in the legacy tree.
+    const deep = [...tree.querySelectorAll('details')].find((node) => node.querySelector(':scope > summary')?.textContent.includes('"deep"'))
+    expect(deep).not.toHaveAttribute('open')
+    await userEvent.click(screen.getByRole('button', { name: 'Raw' }))
+    expect(document.querySelector('[data-json-tree]')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Tree' })).toBeInTheDocument()
+  })
+})
