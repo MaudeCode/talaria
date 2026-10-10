@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The Git button no longer goes missing from a chat that finishes opening while it is still loading.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}
