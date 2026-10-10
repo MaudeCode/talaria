@@ -120,4 +120,3 @@ export function SessionContextMenu({ row, active }: { row: SessionRow; active: b
     </>
   )
 }
-
