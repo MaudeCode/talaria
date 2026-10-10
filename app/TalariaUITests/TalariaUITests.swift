@@ -3634,6 +3634,12 @@ final class KanbanCardActionsUITests: TalariaUITestCase {
         openSidebarDestination("Kanban")
         let selector = app.descendants(matching: .any)["KanbanStatusSelector"]
         XCTAssertTrue(selector.awaitExistence(timeout: Self.navigationTimeout), "Kanban Board did not load")
+        // The fixture's event stream ends without a hello, so a few seconds in the board falls back to
+        // polling and its notice pushes the cards down; a tap before then can land above Card Actions.
+        XCTAssertTrue(
+            element(labelContaining: "Live updates delayed").awaitExistence(timeout: Self.navigationTimeout),
+            "Live updates notice missing"
+        )
 
         // Triage: Move and Archive only.
         assertCardMenu(offers: ["Move", "Archive"], omits: ["Block", "Unblock", "Complete"], screenshot: "Triage card actions")
@@ -3647,7 +3653,7 @@ final class KanbanCardActionsUITests: TalariaUITestCase {
     private func assertCardMenu(offers: [String], omits: [String], screenshot: String) {
         let menu = app.buttons["Card Actions"].firstMatch
         XCTAssertTrue(menu.awaitExistence(timeout: 5), "Card Actions missing")
-        menu.tap()
+        tap(at: menu.settledFrame.center)
         for label in offers {
             XCTAssertTrue(app.buttons[label].firstMatch.awaitExistence(timeout: 3), "\(label) missing [\(screenshot)]")
         }
