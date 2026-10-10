@@ -1220,9 +1220,9 @@ export class TurnRunner {
    * TAL-591 (Python `_queue_generated_title_for_imported_session`): a CLI session a mutation claims while it still
    * carries its default title gets the background title job at once instead of after its first WebUI turn.
    */
-  titleClaimed(s: Session): void {
+  async titleClaimed(s: Session): Promise<void> {
     if (!looksLikeDefaultCliTitle({ title: s.title, source_tag: s.source_tag, raw_source: s.raw_source, session_source: s.session_source, source_label: s.source_label })) return
-    void this.backgroundTitle(s, () => undefined).catch((error: unknown) => { this.deps.log(`[webui] imported session title failed for ${s.session_id}: ${(error as Error).message}`) })
+    await this.backgroundTitle(s, () => undefined).catch((error: unknown) => { this.deps.log(`[webui] imported session title failed for ${s.session_id}: ${(error as Error).message}`) })
   }
 
   /** Python `_run_background_title_update` (spawned only when `_background_title_generation_inputs` is eligible). */
