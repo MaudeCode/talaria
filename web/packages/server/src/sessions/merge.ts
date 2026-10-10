@@ -917,7 +917,7 @@ export function mergeSessionMessagesAppendOnly(sidecar: Message[], state: Messag
   return merged
 }
 
-/** The Agent's `messages.id` a state.db row was read with, or null for a database without the column. */
+/** The state.db row id a row was read with (a compaction copy reads as the row it copies; TAL-709), or null for a database without the column. */
 function stateDbRowId(m: Message): number | null {
   const id = m._state_db_row_id
   return typeof id === 'number' && Number.isFinite(id) ? id : null

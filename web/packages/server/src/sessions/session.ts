@@ -10,6 +10,21 @@ import { resolvePathLikePython } from '../workspace/paths.js'
 import { turnOrigin } from './background-updates.js'
 
 export type Message = Record<string, unknown>
+
+/**
+ * TAL-709: rows an earlier release appended from the Agent's in-place compaction copies. A row read from state.db that is
+ * no turn's own repeats an earlier row's role, timestamp, and tool call: the same message, with pruned or tagged content.
+ */
+function withoutCompactionCopies(messages: Message[]): Message[] {
+  const seen = new Set<string>()
+  return messages.filter((m) => {
+    const key = m && typeof m === 'object' && m.timestamp !== null && m.timestamp !== undefined ? JSON.stringify([m.role, m.timestamp, m.tool_call_id ?? null]) : null
+    if (key === null) return true
+    if (seen.has(key) && m._state_db_row_id !== undefined && m._turn_id === undefined) return false
+    seen.add(key)
+    return true
+  })
+}
 export type ToolCall = Record<string, unknown>
 
 export const METADATA_FIELDS = [
@@ -306,7 +321,7 @@ export class Session {
     const sig = take('model_explicit_pick_signature', null)
     this.model_explicit_pick_signature = sig ? str(sig) : null
     const messages = take('messages', null)
-    this.messages = isList(messages) ? (messages as Message[]) : []
+    this.messages = isList(messages) ? withoutCompactionCopies(messages as Message[]) : []
     const toolCalls = take('tool_calls', null)
     this.tool_calls = isList(toolCalls) ? (toolCalls as ToolCall[]) : []
     const createdAt = take('created_at', null)
@@ -334,7 +349,7 @@ export class Session {
     const pendingSource = take('pending_user_source', null)
     this.pending_user_source = pendingSource ? str(pendingSource) : null
     const context = take('context_messages', null)
-    this.context_messages = isList(context) ? (context as Message[]) : []
+    this.context_messages = isList(context) ? withoutCompactionCopies(context as Message[]) : []
     this.compression_anchor_visible_idx = take('compression_anchor_visible_idx', null)
     this.compression_anchor_message_key = take('compression_anchor_message_key', null)
     this.compression_anchor_summary = take('compression_anchor_summary', null)
