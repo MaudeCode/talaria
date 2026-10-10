@@ -12,7 +12,6 @@ import { attachToStream, teardown } from '../../stream/connection'
 import { useLiveTurn } from '../../stream/store'
 import { isTerminal } from '../../stream/reducer'
 import { writePersisted } from '../../lib/persisted'
-import { messageText } from './render/text'
 
 export const TRANSCRIPT_WINDOW = 120
 
@@ -24,25 +23,9 @@ export interface VisibleMessage {
   turnKey?: string
 }
 
-function isRenderable(msg: Message): boolean {
-  // A persisted steer renders inside its turn's scene, not as a message of its own.
-  if (!msg.role || msg.role === 'tool' || msg._steer) return false
-  // TAL-460: a background reply that is only a silence marker shows nothing; its completion lines stay.
-  if (msg._background_silent) return false
-  // TAL-305: a server-marked compaction marker always shows as its card, even without a body.
-  if (msg._marker_kind) return true
-  const source = (msg as { _source?: string })._source
-  if (source === 'process_wakeup') return !!(messageText(msg.content) || msg.attachments?.length)
-  if ((msg as { _statusCard?: unknown })._statusCard) return true
-  const hasTools = Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0
-  const hasReasoning = !!msg.reasoning
-  const text = messageText(msg.content)
-  if (msg.role === 'assistant') return !!(text.trim() || hasTools || hasReasoning || msg.attachments?.length || msg._anchor_activity_scene)
-  return !!(text || msg.attachments?.length)
-}
-
 /**
- * Project raw messages into renderable rows (a settled turn's tools and results arrive in its server scene).
+ * Project raw messages into the rows the server marks `_display: 'row'` (TAL-600); a row without the mark shows. A
+ * settled turn's tools, results and steers arrive in its server scene.
  * `base` is the absolute index of `messages[0]` in the session (non-zero when only a window is loaded), so
  * `row.index` is always the position the truncate/branch `keep_count` contract expects.
  */
@@ -50,7 +33,7 @@ export function projectMessages(messages: Message[], base = 0): VisibleMessage[]
   const rows: VisibleMessage[] = []
   messages.forEach((message, i) => {
     const index = base + i
-    if (!isRenderable(message)) return
+    if ((message._display ?? 'row') !== 'row') return
     rows.push({ index, message, key: messageKey(message) ?? `${index}-${message.role}` })
   })
   return rows

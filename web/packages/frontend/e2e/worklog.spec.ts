@@ -517,3 +517,29 @@ test('a draft typed mid-turn gets a steer arrow beside Stop (TAL-428)', async ({
     await new Promise<void>((resolve) => server.close(() => resolve()))
   }
 })
+
+test('shows only the rows the server marks to show on their own (TAL-600)', async ({ page }) => {
+  const messages = asServer([
+    ...[
+      { role: 'user', id: 1, content: 'Back up the cluster' },
+      { role: 'assistant', id: 2, content: '', tool_calls: [{ id: 'ls', type: 'function', function: { name: 'terminal', arguments: '{"command":"ls"}' } }] },
+      { role: 'tool', id: 3, tool_call_id: 'ls', content: 'backup.sh' },
+      { role: 'assistant', id: 4, content: '' },
+      { role: 'user', id: 5, content: 'Use the staging bucket', _steer: { steer_id: 's1', submitted_at: 1, consumed_at: 2 } },
+      { role: 'assistant', id: 6, content: 'Backed up to staging.' },
+    ].map((m) => ({ ...m, _turn_id: 'display-run' })),
+    ...[
+      { role: 'user', id: 7, content: 'Background process proc_1 finished', _source: 'process_wakeup' },
+      { role: 'assistant', id: 8, content: '[SILENT]', _background_reply: true, _background_silent: true },
+    ].map((m) => ({ ...m, _turn_id: 'wake-run' })),
+  ]) as { _display?: string }[]
+  expect(messages.map((m) => m._display)).toEqual(['row', 'row', 'in_scene', 'hidden', 'in_scene', 'row', 'row', 'hidden'])
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'display-fixture', title: 'Back up', messages } } }))
+  await page.goto('/session/display-fixture')
+  await expect(page.getByText('Backed up to staging.')).toBeVisible()
+  await expect(page.getByText('Background process proc_1 finished')).toBeVisible()
+  const keys = await page.locator('[data-message-key]').evaluateAll((els) => els.map((el) => el.getAttribute('data-message-key')))
+  for (const key of ['1', '7']) expect(keys).toContain(key)
+  for (const key of ['3', '4', '5', '8']) expect(keys).not.toContain(key)
+  await expect(page.getByText('[SILENT]')).toHaveCount(0)
+})
