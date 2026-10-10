@@ -142,7 +142,11 @@ export class CompletionDrain {
     }
     // TAL-576: whether or not every profile recovered, the sessions left holding wakeups resume once a sidecar answers.
     if (!this.heldResumed) this.resumeHeld()
-    const { events } = await sidecar.call('process.drain', { profile_home: this.deps.profileHome(this.deps.activeProfile()), max_events: 256 })
+    // The drain is sidecar-wide; an active profile whose home escapes the profiles root (`profileHome` throws) scopes it
+    // to the base home instead of stalling every other profile's completions.
+    let scope: string
+    try { scope = this.deps.profileHome(this.deps.activeProfile()) } catch { scope = this.deps.baseHome }
+    const { events } = await sidecar.call('process.drain', { profile_home: scope, max_events: 256 })
     let routed = 0
     const unrouted: Dict[] = []
     for (const evt of events) {

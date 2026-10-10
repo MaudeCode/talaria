@@ -171,6 +171,11 @@ describe('an escaped process-wide profile', () => {
       expect(await refused.text()).toContain('outside the profiles directory')
       expect((await s.get('/api/profiles')).status).toBe(200)
       expect((await post(s, '/api/profile/switch', { name: 'default' })).status).toBe(200)
+      // The sidecar-wide completion drain still runs, scoped to the base home instead of failing on every tick.
+      const drained: string[] = []
+      sidecar.respond('process.drain', (params) => { drained.push(params.profile_home); return { events: [] } })
+      await s.deps.completions.drainOnce()
+      expect(drained).toEqual([base])
     } finally {
       await s.close()
       rmSync(base, { recursive: true, force: true })
