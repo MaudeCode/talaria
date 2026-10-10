@@ -268,7 +268,15 @@ final class AgentPanelContentUITests: AgentPanelUITestCase {
         let enable = app.switches["skill-toggle-fixture-archivist"].firstMatch
         XCTAssertTrue(enable.awaitExistence(timeout: 5), "The disabled skill row offered no Enable switch")
         XCTAssertTrue(enable.isEnabled, "The disabled skill's Enable switch is not interactive")
-        tapCenter(of: enable)
+        // Under full-suite load a synthesized tap on the switch can be dropped outright (TAL-703).
+        // The switch reads on as soon as the optimistic update lands, so a retap only fires while
+        // it still reads off and cannot toggle the skill back.
+        let isOn = { enable.value as? String == "1" }
+        repeatStep(3, until: isOn) {
+            tapCenter(of: enable)
+            _ = poll(timeout: 2, until: isOn)
+        }
+        XCTAssertTrue(isOn(), "The disabled skill's Enable switch never turned on")
         XCTAssertTrue(
             disabledSkill.awaitNonExistence(timeout: 15),
             "Enabling a skill did not clear its Disabled badge"
