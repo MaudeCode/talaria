@@ -187,7 +187,7 @@ export const sessionsRouter = os.router({
       // Python: an invisible prev_session_id is ignored (the service drops it), never an error (#5420).
       const profile = input.profile || null
       // The middleware warms only the cookie profile's config; new-session defaults read the target's synchronously.
-      if (profile) await ctx.deps.agentConfig.read(ctx.deps.profileHome(profile)).catch(() => undefined)
+      if (profile) await Promise.resolve().then(() => ctx.deps.agentConfig.read(ctx.deps.profileHome(profile))).catch(() => undefined)
       let worktree: { path: string; branch: string; repo_root: string; created_at: number } | null = null
       let worktreeSkipped: string | null = null
       const explicit = 'worktree' in input

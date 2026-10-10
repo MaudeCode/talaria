@@ -413,7 +413,8 @@ export class CompletionDrain {
     }
     if (session.pre_compression_snapshot) { redefer(batched); this.deps.log(`[webui] WARNING: automatic wakeup retained: sealed snapshot ${sid} cannot own a turn`); return false }
     // TAL-534: the delegation's ledger row lives in the session's own profile, whichever profile is active now.
-    const home = this.deps.profileHome(session.profile ?? this.deps.activeProfile())
+    let home: string
+    try { home = this.deps.profileHome(session.profile ?? this.deps.activeProfile()) } catch (error) { redefer(batched); this.deps.log(`[webui] WARNING: server-side wakeup retained for session ${sid}: ${(error as Error).message}`); return false }
     if (await this.holdWhilePaused(sid, session, home, batched)) return false
     const claimed = await this.claimBatch(home, batched)
     if (!claimed) { redefer(batched); this.scheduleRetry(sid); return false }

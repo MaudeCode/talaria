@@ -338,7 +338,7 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
         expect(res.status, name).toBe(400)
         expect(await res.text(), name).toContain('outside the profiles directory')
         expect(res.headers.get('set-cookie'), name).toBeNull()
-        expect(s.deps.profileHome(name), name).toBe(s.state)
+        expect(() => s.deps.profileHome(name), name).toThrow('outside the profiles directory')
         const created = await post(s, '/api/profile/create', { name, base_url: 'https://example.invalid' })
         expect(created.status, name).toBe(400)
         expect(await created.text(), name).toContain('outside the profiles directory')
@@ -365,6 +365,33 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
       const res = await s.get('/api/profile/active', { headers: { cookie } })
       expect(res.headers.get('set-cookie')).toMatch(/^hermes_profile=(""|);.*Max-Age=0/)
       expect((await json(res)).name).toBe('default')
+    } finally {
+      rmSync(home, { force: true })
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
+  it('a background wakeup for a session whose profile home later escapes is retained, never run against another home', async () => {
+    const home = join(s.state, 'profiles', 'drifter')
+    mkdirSync(home, { recursive: true })
+    writeFileSync(join(home, 'config.yaml'), '# seed\n')
+    const cookie = ((await post(s, '/api/profile/switch', { name: 'drifter' })).headers.get('set-cookie') ?? '').split(';')[0] ?? ''
+    const created = await post(s, '/api/session/new', {}, { cookie })
+    const session = (await json(created)).session as Json
+    expect(session.profile).toBe('drifter')
+    const sid = String(session.session_id)
+    const outside = mkdtempSync(join(tmpdir(), 'talaria-escape-'))
+    rmSync(home, { recursive: true, force: true })
+    symlinkSync(outside, home)
+    const homes: string[] = []
+    sidecar.respond('process.drain', () => ({ events: [] }))
+    sidecar.respond('process.claim_delivery', (params) => { homes.push(params.profile_home); return { claim_id: 'c1' } as never })
+    sidecar.respond('chat.start', (params) => { homes.push(params.profile_home); throw new Error('must not start') })
+    try {
+      await s.deps.completions.processOne({ process_id: 'drift_1', session_id: 'drift_1', type: 'completion', command: 'make', exit_code: 0, output: 'ok', session_key: sid, origin_ui_session_id: sid, consumed: false })
+      await new Promise((r) => setTimeout(r, 200))
+      expect(homes).toEqual([])
+      expect(s.logs.some((line) => line.includes(`wakeup retained for session ${sid}`) && line.includes('outside the profiles directory'))).toBe(true)
     } finally {
       rmSync(home, { force: true })
       rmSync(outside, { recursive: true, force: true })
