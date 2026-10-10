@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Change an extension's settings again from Settings, Extensions in Web.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
