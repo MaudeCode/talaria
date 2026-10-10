@@ -532,11 +532,12 @@ export type KeySourceKind = z.infer<typeof KeySourceKindSchema>
  * `has_key` reports a credential; `configured` (TAL-570) is the row's setup status, which a keyless Ollama or LM Studio endpoint also meets.
  * TAL-603: `is_active` marks the active provider's card; `key_source_kind` is the key badge (`null` without a credential);
  * `models_total` is the catalog size, never below `models.length`. `is_active` and `key_source_kind` are absent from older servers.
+ * TAL-641: `removable` marks a key Remove would clear: a built-in, not self-hosted, provider whose only key is its own profile `.env` variable.
  */
 export const ProviderSchema = z.looseObject({
   id: z.string(), display_name: z.string().optional(), has_key: z.boolean().optional(), configured: z.boolean().optional(), configurable: z.boolean().optional(), is_oauth: z.boolean().optional(), is_plugin_provider: z.boolean().optional(), is_self_hosted: z.boolean().optional(),
   is_custom: z.boolean().optional(), key_source: z.string().optional(), base_url: NullableString.optional(), auth_error: NullableString.optional(), env_var: NullableString.optional(), models: z.array(ModelEntrySchema).optional(), models_total: z.number().optional(),
-  is_active: z.boolean().optional(), key_source_kind: KeySourceKindSchema.nullable().optional(),
+  is_active: z.boolean().optional(), key_source_kind: KeySourceKindSchema.nullable().optional(), removable: z.boolean().optional(),
 })
 export const ProvidersSchema = z.looseObject({ providers: z.array(ProviderSchema), active_provider: NullableString.optional() })
 export const QuotaLevelSchema = z.enum(['healthy', 'warning', 'critical', 'stale', 'unavailable'])

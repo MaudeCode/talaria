@@ -485,7 +485,8 @@ export function uniqueQuotaSources<T extends { source_id: string; provider_id: s
     .sort((a, b) => cmp(a.provider_id, b.provider_id) || cmp(a.account_label, b.account_label) || cmp(a.source_id, b.source_id))
 }
 
-interface KeyProbe { hasKey: boolean; keySource: string; authError: string | null; isOauth: boolean }
+/** `removable` (TAL-641): `setProviderKey(…, null)` would leave the provider keyless: its own `.env` var holds the only key. */
+interface KeyProbe { hasKey: boolean; keySource: string; authError: string | null; isOauth: boolean; removable: boolean }
 
 export class ProviderCatalog {
   /** Failed live lookups by home, provider, and the `sourceFingerprint` they ran under (TAL-542). */
@@ -579,16 +580,20 @@ export class ProviderCatalog {
    * The process-environment value of `name` as a named profile may see it: values `loadStartupEnv` copied from the
    * default profile's `.env` belong to that profile only, so they never count for another profile.
    */
-  private processEnv(name: string, profileHome: string): string | undefined {
-    if (!this.deps.isRootProfileHome(profileHome) && homeDotenvKeys(this.deps.env).has(name)) return undefined
+  /** `cleared`: the variable a key delete clears, which also retires its `.env`-owned startup copy (TAL-641). */
+  private processEnv(name: string, profileHome: string, cleared?: string): string | undefined {
+    if ((name === cleared || !this.deps.isRootProfileHome(profileHome)) && homeDotenvKeys(this.deps.env).has(name)) return undefined
     return this.deps.env[name]
   }
 
-  /** Python `_provider_has_key` minus the credential pool, which `probeKey` reads from the sidecar. */
-  providerHasKey(pid: string, config: Config, envValues: Record<string, string>, profileHome: string): boolean {
+  /**
+   * Python `_provider_has_key` minus the credential pool, which `probeKey` reads from the sidecar.
+   * `cleared` (TAL-641) answers for after `setProviderKey(…, null)`: that variable's `.env` entry and startup copy are gone.
+   */
+  providerHasKey(pid: string, config: Config, envValues: Record<string, string>, profileHome: string, cleared?: string): boolean {
     const envVar = providerEnvVar(pid)
     if (envVar) {
-      if (valueCountsAsApiKey(pid, envValues[envVar]) || valueCountsAsApiKey(pid, this.processEnv(envVar, profileHome))) return true
+      if ((envVar !== cleared && valueCountsAsApiKey(pid, envValues[envVar])) || valueCountsAsApiKey(pid, this.processEnv(envVar, profileHome, cleared))) return true
       for (const alias of PROVIDER_ENV_VAR_ALIASES[pid] ?? []) if (valueCountsAsApiKey(pid, envValues[alias]) || valueCountsAsApiKey(pid, this.processEnv(alias, profileHome))) return true
     }
     const model = modelSection(config)
@@ -621,6 +626,7 @@ export class ProviderCatalog {
     let isOauth = OAUTH_PROVIDERS.has(pid)
     let keySource = 'none'
     let authError: string | null = null
+    let removable = false
     if (isOauth) {
       keySource = 'oauth'
       const status = await this.authStatus(profileHome, pid)
@@ -637,7 +643,10 @@ export class ProviderCatalog {
     } else if (hasKey) {
       const envVar = providerEnvVar(pid)
       if (envVar) {
-        if (valueCountsAsApiKey(pid, envValues[envVar])) keySource = 'env_file'
+        if (valueCountsAsApiKey(pid, envValues[envVar])) {
+          keySource = 'env_file'
+          removable = !pooled.has(pid) && !this.providerHasKey(pid, config, envValues, profileHome, envVar)
+        }
         else if (valueCountsAsApiKey(pid, this.processEnv(envVar, profileHome))) keySource = 'env_var'
         else {
           keySource = 'config_yaml'
@@ -660,7 +669,7 @@ export class ProviderCatalog {
         isOauth = true
       }
     }
-    return { hasKey, keySource, authError, isOauth }
+    return { hasKey, keySource, authError, isOauth, removable }
   }
 
   /** Live model ids from the Agent for one provider, cached per profile home. */
@@ -762,6 +771,7 @@ export class ProviderCatalog {
         is_self_hosted: SELF_HOSTED_PROVIDER_IDS.has(pid),
         is_custom: false,
         key_source: probe.keySource,
+        removable: probe.removable && !SELF_HOSTED_PROVIDER_IDS.has(pid),
         base_url: baseUrl,
         auth_error: probe.authError,
         env_var: providerEnvVar(pid),
@@ -775,7 +785,7 @@ export class ProviderCatalog {
       const live = ready ? await this.liveModelIds(profileHome, plugin.name) : []
       rows.push({
         id: plugin.name, display_name: plugin.display_name || plugin.name, has_key: ready, configured: ready,
-        configurable: false, is_oauth: false, is_plugin_provider: true, is_self_hosted: false, is_custom: false, key_source: ready ? 'plugin' : 'none',
+        configurable: false, is_oauth: false, is_plugin_provider: true, is_self_hosted: false, is_custom: false, key_source: ready ? 'plugin' : 'none', removable: false,
         base_url: null, auth_error: plugin.setup === 'ready' ? (live.length ? null : PLUGIN_NO_MODELS) : PLUGIN_SETUP_ERRORS[plugin.setup], env_var: null,
         models: live.map((id) => ({ id, label: labelForModel(id, []) })), models_total: live.length,
       })
@@ -794,7 +804,7 @@ export class ProviderCatalog {
       const keySource = yamlKey ? 'config_yaml' : hasKey ? 'env_var' : cpKey ? 'config_yaml' : 'none'
       rows.push({
         id: slug, display_name: name, has_key: hasKey, configured: hasKey,
-        configurable: false, is_oauth: false, is_plugin_provider: false, is_self_hosted: false, is_custom: true, key_source: keySource,
+        configurable: false, is_oauth: false, is_plugin_provider: false, is_self_hosted: false, is_custom: true, key_source: keySource, removable: false,
         base_url: str(cp.base_url).trim() || null, auth_error: null, env_var: null, models: ids.map((id) => ({ id, label: labelForModel(id, []) })), models_total: ids.length,
       })
     }

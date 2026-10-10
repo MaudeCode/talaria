@@ -209,9 +209,9 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     let body = await json(res)
     const providers = body.providers as { id: string; has_key: boolean; key_source: string; configurable: boolean; is_oauth: boolean; models_total: number }[]
     const anthropic = providers.find((p) => p.id === 'anthropic')
-    expect(anthropic).toMatchObject({ has_key: true, key_source: 'env_file', configurable: true, is_oauth: false })
-    expect(providers.find((p) => p.id === 'openai')).toMatchObject({ has_key: false, key_source: 'none' })
-    expect(providers.find((p) => p.id === 'openai-codex')).toMatchObject({ is_oauth: true, configurable: false, has_key: false, auth_error: 'not logged in' })
+    expect(anthropic).toMatchObject({ has_key: true, key_source: 'env_file', configurable: true, is_oauth: false, removable: true })
+    expect(providers.find((p) => p.id === 'openai')).toMatchObject({ has_key: false, key_source: 'none', removable: false })
+    expect(providers.find((p) => p.id === 'openai-codex')).toMatchObject({ is_oauth: true, configurable: false, has_key: false, auth_error: 'not logged in', removable: false })
     expect(body.active_provider).toBe('anthropic')
     res = await post(s, '/api/providers', { provider: 'deepseek', api_key: 'sk-deepseek-12345' })
     expect(await json(res)).toEqual({ ok: true, provider: 'deepseek', display_name: 'DeepSeek', action: 'updated' })
@@ -241,14 +241,16 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     s.deps.catalog.invalidate()
     try {
       const rows = async (cookie?: string): Promise<{ id: string; has_key: boolean; key_source: string }[]> => ((await json(await s.get('/api/providers', cookie ? { headers: { cookie } } : {}))).providers as { id: string; has_key: boolean; key_source: string }[])
-      expect((await rows()).find((p) => p.id === 'openai')).toMatchObject({ has_key: true })
+      // TAL-641: the delete retires a startup copy of the .env key with the file entry, so the key is removable.
+      expect((await rows()).find((p) => p.id === 'openai')).toMatchObject({ has_key: true, removable: true })
       const switched = await post(s, '/api/profile/switch', { name: 'nokey' })
       const cookie = (switched.headers.get('set-cookie') ?? '').split(';')[0] ?? ''
       expect((await rows(cookie)).find((p) => p.id === 'openai')).toMatchObject({ has_key: false, key_source: 'none' })
       // A key supplied by the process environment itself still applies everywhere.
       env.DEEPSEEK_API_KEY = 'sk-deepseek-process-1234'
       s.deps.catalog.invalidate()
-      expect((await rows(cookie)).find((p) => p.id === 'deepseek')).toMatchObject({ has_key: true, key_source: 'env_var' })
+      // TAL-641: a process-environment key is not in .env, so the server offers no Remove for it.
+      expect((await rows(cookie)).find((p) => p.id === 'deepseek')).toMatchObject({ has_key: true, key_source: 'env_var', removable: false })
       // Removing the dotenv-owned key on the default profile clears the runtime copy and tells the sidecar.
       const before = sidecar.calls.length
       expect((await json(await post(s, '/api/providers/delete', { provider: 'openai' }))).action).toBe('removed')
@@ -501,6 +503,33 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     }
   })
 
+  it('a .env key stays unremovable while another source would keep the provider keyed (TAL-641)', async () => {
+    const env = s.deps.config.env
+    const row = async (id: string): Promise<Json | undefined> => { s.deps.catalog.invalidate(); return ((await json(await s.get('/api/providers'))).providers as Json[]).find((p) => p.id === id) }
+    const envPath = join(s.state, '.env')
+    const saved = loadEnvFile(envPath)
+    try {
+      writeEnvFile(envPath, { ...saved, DEEPSEEK_API_KEY: 'sk-deepseek-file-1234' })
+      expect(await row('deepseek')).toMatchObject({ has_key: true, key_source: 'env_file', removable: true })
+      // A value the process environment supplied explicitly outlives the delete, which only clears the file entry.
+      env.DEEPSEEK_API_KEY = 'sk-deepseek-process-1234'
+      expect(await row('deepseek')).toMatchObject({ has_key: true, key_source: 'env_file', removable: false })
+      delete env.DEEPSEEK_API_KEY
+      // So does an alias variable, which the delete never names.
+      writeEnvFile(envPath, { ...saved, ANTHROPIC_TOKEN: 'sk-ant-alias-token-1234' })
+      expect(await row('anthropic')).toMatchObject({ has_key: true, key_source: 'env_file', removable: false })
+      // And a credential-pool account.
+      sidecar.respond('usage.pool_providers', () => ({ providers: ['deepseek'] }))
+      writeEnvFile(envPath, { ...saved, DEEPSEEK_API_KEY: 'sk-deepseek-file-1234' })
+      expect(await row('deepseek')).toMatchObject({ has_key: true, key_source: 'env_file', removable: false })
+    } finally {
+      delete env.DEEPSEEK_API_KEY
+      sidecar.respond('usage.pool_providers', () => ({ providers: [] }))
+      writeEnvFile(envPath, saved)
+      s.deps.catalog.invalidate()
+    }
+  })
+
   it('a provider keyed only through the credential pool counts as configured in providers and models (TAL-638)', async () => {
     const zai = async (): Promise<Json | undefined> => ((await json(await s.get('/api/providers'))).providers as Json[]).find((p) => p.id === 'zai')
     const fail = (): never => { throw new SidecarError('usage.pool_providers timed out', { condition: 'timeout' }) }
@@ -512,7 +541,7 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
       }
       sidecar.respond('usage.pool_providers', () => ({ providers: ['zai'] }))
       s.deps.catalog.invalidate()
-      expect(await zai()).toMatchObject({ has_key: true, configured: true, key_source: 'credential_pool' })
+      expect(await zai()).toMatchObject({ has_key: true, configured: true, key_source: 'credential_pool', removable: false })
       const groups = (await json(await s.get('/api/models'))).groups as { provider_id: string }[]
       expect(groups.map((g) => g.provider_id)).toContain('zai')
     } finally {

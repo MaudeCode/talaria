@@ -250,7 +250,7 @@ describe('OAuth provider cards and model groups', () => {
   afterAll(() => s.close())
   const ENV_KEYS = ['ANTHROPIC_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY']
   const reset = (cfg: Json = {}, env: Record<string, string | null> = {}): void => { configs.set(s.state, cfg); writeEnvFile(join(s.state, '.env'), { ...Object.fromEntries(ENV_KEYS.map((k) => [k, null])), ...env }); s.deps.agentConfig.invalidate(); s.deps.catalog.invalidate() }
-  interface Card { id: string; has_key: boolean; is_active: boolean; key_source: string; key_source_kind: string | null; auth_error: string | null; is_oauth: boolean; configurable: boolean; display_name: string; models: { id: string }[]; models_total: number }
+  interface Card { id: string; has_key: boolean; is_active: boolean; key_source: string; key_source_kind: string | null; removable: boolean; auth_error: string | null; is_oauth: boolean; configurable: boolean; display_name: string; models: { id: string }[]; models_total: number }
   const cards = async (): Promise<Card[]> => (await json(await s.get('/api/providers'))).providers as Card[]
 
   it('a logged-in OAuth provider reports key_source oauth even with a config token', async () => {
@@ -295,12 +295,17 @@ describe('OAuth provider cards and model groups', () => {
     const all = await cards()
     const card = (id: string): Card | undefined => all.find((p) => p.id === id)
     expect(all.filter((p) => p.is_active).map((p) => p.id)).toEqual(['xai-oauth'])
-    expect(card('anthropic')).toMatchObject({ is_active: false, key_source: 'env_file', key_source_kind: 'env' })
-    expect(card('xai-oauth')).toMatchObject({ key_source_kind: 'oauth' })
-    expect(card('openai-codex')).toMatchObject({ key_source: 'config_yaml', key_source_kind: 'config' })
+    expect(card('anthropic')).toMatchObject({ is_active: false, key_source: 'env_file', key_source_kind: 'env', removable: true })
+    expect(card('xai-oauth')).toMatchObject({ key_source_kind: 'oauth', removable: false })
+    expect(card('openai-codex')).toMatchObject({ key_source: 'config_yaml', key_source_kind: 'config', removable: false })
     expect(card('openai')).toMatchObject({ has_key: false, key_source_kind: null })
     expect(card('nous')?.models.length).toBe(3)
     expect(card('nous')?.models_total).toBe(3)
+  })
+
+  it('a .env key the delete clears is not removable while config.yaml also keys the provider (TAL-641)', async () => {
+    reset({ providers: { anthropic: { api_key: 'sk-ant-yaml-token-1234' } } }, { ANTHROPIC_API_KEY: 'sk-ant-env-file-1234' })
+    expect((await cards()).find((p) => p.id === 'anthropic')).toMatchObject({ has_key: true, key_source: 'env_file', removable: false })
   })
 
   it('a custom provider keyed through the environment reports an env key_source_kind (TAL-603)', async () => {
@@ -313,6 +318,8 @@ describe('OAuth provider cards and model groups', () => {
       expect(named('Env Box')).toMatchObject({ has_key: true, key_source: 'env_var', key_source_kind: 'env' })
       expect(named('Ref Box')).toMatchObject({ has_key: true, key_source: 'env_var', key_source_kind: 'env' })
       expect(named('Yaml Box')).toMatchObject({ has_key: true, key_source: 'config_yaml', key_source_kind: 'config' })
+      // TAL-641: a custom provider's key is never in the profile .env, so no row offers Remove.
+      for (const name of ['Env Box', 'Ref Box', 'Yaml Box']) expect(named(name)?.removable, name).toBe(false)
     } finally {
       delete env.TAL603_CUSTOM_KEY
     }

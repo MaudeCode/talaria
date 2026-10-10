@@ -75,7 +75,7 @@ export function ProvidersSection() {
                   ) : p.configurable !== false && !p.is_oauth && (
                     <Button onClick={() => { setEditing(isEditing ? null : p.id); setKeyValue('') }}>{m.providers_key_set()}</Button>
                   )}
-                  {p.has_key && p.configurable !== false && !p.is_oauth && (
+                  {p.removable === true && (
                     <Button variant="ghost" className="text-error" onClick={() => saveKey.mutate({ id: p.id, key: null })}>{m.providers_key_remove()}</Button>
                   )}
                 </div>

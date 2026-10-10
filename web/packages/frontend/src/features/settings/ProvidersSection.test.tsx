@@ -77,6 +77,19 @@ describe('ProvidersSection', () => {
     expect(within(await row('openai', 'OpenAI')).getByText('Not configured')).toBeInTheDocument()
   })
 
+  it('offers Remove key only on rows the server marks removable (TAL-641)', async () => {
+    providersResponse.current = { active_provider: 'anthropic', providers: [
+      { id: 'anthropic', display_name: 'Anthropic', has_key: true, configurable: true, is_oauth: false, key_source: 'env_file', removable: true },
+      { id: 'deepseek', display_name: 'DeepSeek', has_key: true, configurable: true, is_oauth: false, key_source: 'env_var', removable: false },
+      { id: 'zai', display_name: 'Z.AI', has_key: true, configurable: true, is_oauth: false, key_source: 'credential_pool', removable: false },
+    ] }
+    renderSection()
+    const remove = async (id: string, name: string) => within((await screen.findByText(name)).closest<HTMLElement>(`[data-provider="${id}"]`)!).queryByRole('button', { name: 'Remove key' })
+    expect(await remove('anthropic', 'Anthropic')).toBeInTheDocument()
+    expect(await remove('deepseek', 'DeepSeek')).toBeNull()
+    expect(await remove('zai', 'Z.AI')).toBeNull()
+  })
+
   it("refreshes one provider's models and shows the server's new count (TAL-570)", async () => {
     providersResponse.current = { active_provider: 'zai', providers: [{ id: 'zai', display_name: 'Z.AI', has_key: true, configured: true, models: [], models_total: 3 }] }
     vi.mocked(api.refreshModels).mockImplementation(() => {
