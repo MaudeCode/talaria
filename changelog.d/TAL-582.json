@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Talaria Web again restricts credential files such as .env and auth.json to owner-only access at startup, including in Docker.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

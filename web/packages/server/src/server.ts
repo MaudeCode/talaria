@@ -9,6 +9,7 @@ import { connect } from 'node:net'
 import { readFileSync } from 'node:fs'
 import type { App } from './app.js'
 import type { ServerConfig } from './config.js'
+import { fixCredentialPermissions } from './startup.js'
 
 export async function isAlreadyServing(host: string, port: number): Promise<boolean> {
   const probeHost = ['0.0.0.0', '', '::'].includes(host) ? '127.0.0.1' : host
@@ -44,6 +45,7 @@ export async function startServer(app: App, config: ServerConfig, opts: { log?: 
   if (await isAlreadyServing(config.host, config.port)) {
     throw new Error(`Another server is already responding on ${config.host}:${config.port}. Stop the existing instance first.`)
   }
+  fixCredentialPermissions(config, log)
   let scheme: 'http' | 'https' = 'http'
   let server: Server
   const listener = (req: Parameters<App['handler']>[0], res: Parameters<App['handler']>[1]) => { void app.handler(req, res) }
