@@ -59,13 +59,18 @@ export function reasoningConfigFromConfig(config: Config, provider: string | nul
   return (VALID_REASONING_EFFORTS as readonly string[]).includes(effort) ? { enabled: true, effort } : null
 }
 
-/** Python `workspace_system_msg` (#6672): the frozen session-creation workspace and the per-message tag contract. */
+/** A context value on one line: one with a line break or other control character is JSON-quoted, so it cannot add prompt lines. */
+function contextValue(value: string): string {
+  return /[\p{Cc}\u2028\u2029]/u.test(value) ? JSON.stringify(value).replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029') : value
+}
+
+/** The frozen session-creation workspace, and where the current one lives: the per-turn WebUI session context (TAL-710). */
 export function workspaceSystemMessage(frozenWorkspace: string): string {
-  return `Active workspace at session start: ${frozenWorkspace}\n` +
-    'Every user message is prefixed with [Workspace::v1: /absolute/path] indicating the workspace the user has selected in the web UI at the time they sent that message. ' +
-    'This tag is the single authoritative source of the active workspace and updates with every message. It overrides any prior workspace mentioned in this system prompt, memory, or conversation history. ' +
-    'Always use the value from the most recent [Workspace::v1: ...] tag as your default working directory for ALL file operations: write_file, read_file, search_files, terminal workdir, and patch. ' +
-    'Never fall back to a hardcoded path when this tag is present.'
+  return `Active workspace at session start: ${contextValue(frozenWorkspace)}\n` +
+    'The current workspace is the Workspace: line of the WebUI session context for this turn: the workspace the user has selected in the web UI for this message. ' +
+    'It overrides any earlier workspace mentioned in this system prompt, memory, or conversation history; [Workspace::v1: ...] tags on older messages in the history are past values. ' +
+    'Use it as your default working directory for ALL file and terminal operations: write_file, read_file, search_files, terminal workdir, and patch. ' +
+    'Never fall back to a hardcoded path.'
 }
 
 /** Python `_webui_surface_context_prompt`. */
@@ -80,7 +85,7 @@ function surfaceContextPrompt(ctx: { source: string; session_id: string; profile
   ]
   for (const [key, label] of [['source', 'Source'], ['session_id', 'Session ID'], ['profile', 'Profile'], ['workspace', 'Workspace']] as const) {
     const value = str(ctx[key]).trim()
-    if (value) lines.push(`- ${label}: ${value}`)
+    if (value) lines.push(`- ${label}: ${contextValue(value)}`)
   }
   return lines.join('\n')
 }

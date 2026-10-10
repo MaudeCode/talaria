@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Your prompts no longer turn into workspace-tagged text after the Agent compacts a long chat.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
