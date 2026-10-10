@@ -4,6 +4,19 @@ import { closeSync, fstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+
+// Lets a test act between the walk's listing of a directory and its descent into an entry.
+const afterReaddir = vi.hoisted(() => ({ hook: null as ((path: string) => void) | null }))
+vi.mock('node:fs', async (importOriginal) => {
+  const fs = await importOriginal<typeof import('node:fs')>()
+  const readdirSync = ((path: string, opts?: unknown) => {
+    const result = fs.readdirSync(path, opts as undefined)
+    afterReaddir.hook?.(path)
+    return result
+  }) as typeof fs.readdirSync
+  return { ...fs, default: { ...fs, readdirSync }, readdirSync }
+})
+
 import { dirSignature, FileExistsError, listDir, makeAnchoredDir, NotFoundError, openAnchoredCreateFd, openAnchoredFd, openAnchoredWriteFd, PathTraversalError, renameAnchored, rmtreeAnchored, serializeEntriesForBrowser, unlinkAnchored } from './fs.js'
 
 describe('anchored walk', () => {
@@ -20,7 +33,7 @@ describe('anchored walk', () => {
     symlinkSync(join(outside, 'secret.txt'), join(root, 'a', 'link-file'))
   })
   afterAll(() => { rmSync(root, { recursive: true, force: true }); rmSync(outside, { recursive: true, force: true }) })
-  afterEach(() => { vi.restoreAllMocks() })
+  afterEach(() => { vi.restoreAllMocks(); afterReaddir.hook = null })
 
   it('reads a real file through the walk', () => {
     const fd = openAnchoredFd(root, join(root, 'a', 'b', 'f.txt'), { wantDir: false })
@@ -129,6 +142,28 @@ describe('anchored walk', () => {
     renameAnchored(root, join(root, 'mv', 'src', 'folder'), join(root, 'mv', 'dst-real', 'folder'))
     expect(readFileSync(join(root, 'mv', 'dst-real', 'folder', 'k.txt'), 'utf8')).toBe('keep')
     expect(readdirSync(root).filter((n) => n.startsWith('.talaria-move-'))).toEqual([])
+  })
+
+  it('a subdirectory swapped for a symlink to an outside directory mid-delete leaves the outside directory intact', () => {
+    mkdirSync(join(root, 'rt', 'sub', 'deep'), { recursive: true })
+    writeFileSync(join(root, 'rt', 'sub', 'deep', 'd.txt'), 'd')
+    writeFileSync(join(root, 'rt', 'top.txt'), 't')
+    mkdirSync(join(outside, 'victim'), { recursive: true })
+    writeFileSync(join(outside, 'victim', 'keep.txt'), 'keep')
+    // A link already inside the tree is removed as a link, never followed.
+    symlinkSync(join(outside, 'victim'), join(root, 'rt', 'sub', 'deep', 'link-out'))
+    let swapped = false
+    afterReaddir.hook = () => {
+      if (swapped) return
+      // The walk has listed `rt` and seen `sub` as a directory; a concurrent writer now replaces it with a link out.
+      swapped = true
+      renameSync(join(root, 'rt', 'sub'), join(root, 'rt-sub-moved'))
+      symlinkSync(join(outside, 'victim'), join(root, 'rt', 'sub'))
+    }
+    rmtreeAnchored(root, join(root, 'rt'))
+    expect(swapped).toBe(true)
+    expect(readFileSync(join(outside, 'victim', 'keep.txt'), 'utf8')).toBe('keep')
+    expect(readdirSync(root)).not.toContain('rt')
   })
 
   it('lists a directory through the walk and refuses a symlinked one', () => {

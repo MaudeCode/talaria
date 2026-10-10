@@ -11,7 +11,7 @@
  * a pathname swapped underneath us can never be followed. The sections are
  * synchronous, so nothing else in the process observes the temporary cwd.
  */
-import { closeSync, constants, existsSync, fstatSync, ftruncateSync, lstatSync, mkdirSync, openSync, readdirSync, readlinkSync, renameSync, rmdirSync, rmSync, statSync, unlinkSync, type Stats } from 'node:fs'
+import { closeSync, constants, existsSync, fstatSync, ftruncateSync, lstatSync, mkdirSync, openSync, readdirSync, readlinkSync, renameSync, rmdirSync, statSync, unlinkSync, type Stats } from 'node:fs'
 import { createHash, randomBytes } from 'node:crypto'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { isWithin, resolvePathLikePython } from './paths.js'
@@ -251,20 +251,51 @@ export function rmdirAnchored(root: string, target: string): void {
   }
 }
 
+/**
+ * Remove a directory tree through the anchored walk (Python `shutil.rmtree(dir_fd=...)`): every directory is
+ * opened from its parent's descriptor with `O_NOFOLLOW` and emptied through its own, so an entry swapped for a
+ * symlink mid-walk is unlinked as a link and never followed.
+ */
 export function rmtreeAnchored(root: string, target: string): void {
   const targetResolved = resolvePathLikePython(target)
   const { dir, leaf } = openAnchoredParent(root, targetResolved)
   try {
-    dir.anchored(() => {
-      const entry = lstatSync(dir.child(leaf))
-      if (entry.isSymbolicLink()) throw new NotFoundError(`Not found: ${target}`)
-      rmSync(dir.child(leaf), { recursive: true, force: false })
-    })
+    // The leaf itself must still be a real directory; a symlinked or non-directory leaf is refused, not unlinked.
+    const sub = openChildDir(dir, leaf)
+    try { emptyAnchoredDir(sub) } finally { sub.close() }
+    dir.anchored(() => { rmdirSync(dir.child(leaf)) })
   } catch (error) {
     if (error instanceof NotFoundError) throw error
     throw new NotFoundError(`Not found: ${target}`)
   } finally {
     dir.close()
+  }
+}
+
+/**
+ * Remove every entry of `dir` through its descriptor. Subdirectories are emptied outside the anchored section so
+ * the cwd fallback never nests; one swapped for a symlink since the listing fails the `O_NOFOLLOW` open and is
+ * unlinked as a link.
+ */
+function emptyAnchoredDir(dir: DirHandle): void {
+  const subdirs = dir.anchored(() => {
+    const names: string[] = []
+    for (const entry of readdirSync(dir.child('.'), { withFileTypes: true })) {
+      if (entry.isDirectory()) names.push(entry.name)
+      else unlinkSync(dir.child(entry.name))
+    }
+    return names
+  })
+  for (const name of subdirs) {
+    let sub: DirHandle
+    try {
+      sub = openChildDir(dir, name)
+    } catch {
+      dir.anchored(() => { unlinkSync(dir.child(name)) })
+      continue
+    }
+    try { emptyAnchoredDir(sub) } finally { sub.close() }
+    dir.anchored(() => { rmdirSync(dir.child(name)) })
   }
 }
 
