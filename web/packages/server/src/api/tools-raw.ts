@@ -6,33 +6,24 @@ import { isNonGlobalAddress } from '../http/addresses.js'
 import { BlockedAddressError, vettedAddresses } from '../http/pinned.js'
 import type { RequestContext } from '../http/context.js'
 import { activeProfileName } from '../auth/gate.js'
-import { parseMultipart, sanitizeUploadName } from '../workspace/upload.js'
+import { sanitizeUploadName } from '../workspace/upload.js'
 import { loadEnvFile } from '../providers/env-file.js'
 import { dict } from '../config/agent-config.js'
 import { SidecarError } from '../sidecar/client.js'
 import { str } from '../util.js'
 import { readCapped } from '../http/capped.js'
 import { rateLimitClientIp } from './router.js'
+import { readUploadForm, uploadFile } from './raw-routes.js'
 
-const MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 const CSP_MAX_BODY = 64 * 1024
 const TTS_TIMEOUT_MS = 30_000
 const TTS_MAX_AUDIO_BYTES = 16 * 1024 * 1024
 
 export async function handleTranscribe(ctx: RequestContext): Promise<void> {
-  const contentType = ctx.header('content-type') ?? ''
-  const length = Number(ctx.header('content-length') ?? 0)
-  if (length > MAX_UPLOAD_BYTES) { ctx.json({ error: `File too large (max ${String(MAX_UPLOAD_BYTES / 1024 / 1024)}MB)` }, { status: 413 }); return }
-  let parsed: ReturnType<typeof parseMultipart>
-  try {
-    parsed = parseMultipart(await ctx.readRawBody(MAX_UPLOAD_BYTES), contentType)
-  } catch (error) {
-    ctx.json({ error: str((error as Error).message) }, { status: 400 })
-    return
-  }
-  const file = parsed.files.file
-  if (!file) { ctx.json({ error: 'No file field in request' }, { status: 400 }); return }
-  if (!file.filename) { ctx.json({ error: 'No filename in upload' }, { status: 400 }); return }
+  const form = await readUploadForm(ctx)
+  if (!form) return
+  const file = uploadFile(ctx, form)
+  if (!file) return
   let suffix = '.webm'
   try {
     const safe = sanitizeUploadName(file.filename)

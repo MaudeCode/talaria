@@ -741,6 +741,22 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
   })
 })
 
+describe('transcribe upload limit', () => {
+  it('rejects a transcribe upload above HERMES_WEBUI_MAX_UPLOAD_MB with 413', async () => {
+    const s = await bootTestServer({ sidecar: new FakeSidecar(), env: { HERMES_WEBUI_MAX_UPLOAD_MB: '1' } })
+    try {
+      const boundary = 'abc'
+      const head = Buffer.from([`--${boundary}`, 'Content-Disposition: form-data; name="file"; filename="clip.webm"', 'Content-Type: audio/webm', '', ''].join('\r\n'))
+      const body = Buffer.concat([head, Buffer.alloc(2 * 1024 * 1024), Buffer.from(`\r\n--${boundary}--\r\n`)])
+      const res = await s.get('/api/transcribe', { method: 'POST', body, headers: { 'content-type': `multipart/form-data; boundary=${boundary}` } })
+      expect(res.status).toBe(413)
+      expect(await json(res)).toEqual({ error: 'File too large (max 1MB)' })
+    } finally {
+      await s.close()
+    }
+  })
+})
+
 describe('tools helpers', () => {
   it('keys OIDC notifications by stable issuer and subject without cross-owner sharing', () => {
     const session = (token: string, issuer: string, subject: string, boundProfile = 'work'): SessionInfo => ({
