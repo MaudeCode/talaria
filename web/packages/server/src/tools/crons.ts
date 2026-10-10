@@ -57,6 +57,14 @@ export function jobForApi(job: Dict, running = false): Dict {
   return payload
 }
 
+/** TAL-601: the canonical list order every client renders: running first, then soonest next run (none last), then name. */
+function compareListedJobs(a: Dict, b: Dict): number {
+  if (a.running !== b.running) return a.running ? -1 : 1
+  const [an, bn] = [completedAtSeconds(nextRunValue(a)), completedAtSeconds(nextRunValue(b))]
+  if (an !== bn) return an === null ? 1 : bn === null ? -1 : an - bn
+  return (str(a.name) || str(a.schedule_display)).localeCompare(str(b.name) || str(b.schedule_display), 'en', { sensitivity: 'accent' })
+}
+
 /** TAL-599: the agent's reply from a run file: everything after the `## Response` heading, else the whole text. */
 function runResponse(content: string): string {
   const idx = content.search(/^#{1,2} Response\s*$/m)
@@ -93,10 +101,15 @@ function isRecurring(job: Dict): boolean {
   return typeof schedule === 'string' && hasUnlimitedRepeat(job)
 }
 
+/** `next_run_at`, else an older agent's `next_run`. */
+function nextRunValue(job: Dict): unknown {
+  return job.next_run_at ?? (typeof job.next_run === 'number' || typeof job.next_run === 'string' ? job.next_run : null)
+}
+
 /** Older agents report `paused` / `status` / `next_run` instead of `state` / `last_status` / `next_run_at`; all stay supported. */
 function cronDerivedState(job: Dict): CronDerivedState {
   const errored = job.state === 'error' || completionOutcome(job.last_status) === 'failed' || job.status === 'error'
-  const nextRun = job.next_run_at ?? (typeof job.next_run === 'number' || typeof job.next_run === 'string' ? job.next_run : null)
+  const nextRun = nextRunValue(job)
   if (isRecurring(job) && hasUnlimitedRepeat(job) && job.enabled === false && job.state === 'completed' && !nextRun) return 'needs_attention'
   // A paused job keeps the last run's error and has no next run; that is not a schedule failure.
   if (job.state === 'paused' || job.paused) return 'paused'
@@ -309,7 +322,7 @@ export class CronService {
     try { for (const row of await this.storedJobs(active)) (row.managed ? activeJobs : otherJobs).push(await this.view(row, pickerHome)) }
     catch (error) { if (error instanceof SidecarError && error.condition === 'cron_unavailable') return { jobs: [], cron_unavailable: true }; throw error }
     const all = allProfiles && !this.deps.isolatedProfileMode()
-    return { jobs: all ? [...activeJobs, ...otherJobs] : activeJobs, all_profiles: all, active_profile: active, other_profile_count: all ? 0 : otherJobs.length }
+    return { jobs: (all ? [...activeJobs, ...otherJobs] : activeJobs).sort(compareListedJobs), ordered: true, all_profiles: all, active_profile: active, other_profile_count: all ? 0 : otherJobs.length }
   }
 
   /**

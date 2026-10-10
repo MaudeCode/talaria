@@ -26,6 +26,8 @@ public final class TasksViewModel {
     public private(set) var lastError: Error?
 
     private var recentCompletionsGeneration = 0
+    /// A pre-TAL-601 server omits `ordered`, so its jobs are sorted here. Delete the fallback once every supported server ships the field.
+    private var sortsLocally = false
 
     /// Shared with the task editor so its catalog loads use the same scope.
     public let client: APIClient
@@ -36,7 +38,7 @@ public final class TasksViewModel {
         self.responseCache = responseCache
         // The last jobs show at once (TAL-437); running state is never cached, it goes stale too fast.
         if let cached = responseCache?.entry(ResponseCache.Kind.crons).load(CronJobsResponse.self) {
-            jobs = (cached.jobs ?? []).sorted(by: sortJobs)
+            setJobs(from: cached)
         }
     }
 
@@ -63,7 +65,7 @@ public final class TasksViewModel {
             let deliveryOptions = await deliveryOptionsResponse?.platforms
             guard generation == loadGeneration else { return }
             runningJobs = statusResult.runningJobs ?? [:]
-            jobs = (jobsResult.jobs ?? []).sorted(by: sortJobs)
+            setJobs(from: jobsResult)
             self.deliveryOptions = deliveryOptions
         } catch {
             guard generation == loadGeneration, !APIError.isCancellation(error) else { return }
@@ -168,7 +170,12 @@ public final class TasksViewModel {
         } else {
             jobs.append(job)
         }
-        jobs.sort(by: sortJobs)
+        if sortsLocally { jobs.sort(by: sortJobs) }
+    }
+
+    private func setJobs(from response: CronJobsResponse) {
+        sortsLocally = response.ordered != true
+        jobs = sortsLocally ? (response.jobs ?? []).sorted(by: sortJobs) : response.jobs ?? []
     }
 
     private func sortJobs(_ left: CronJob, _ right: CronJob) -> Bool {

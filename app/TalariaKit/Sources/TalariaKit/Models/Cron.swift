@@ -2,6 +2,8 @@ import Foundation
 
 public struct CronJobsResponse: Decodable, Equatable {
     public let jobs: [CronJob]?
+    /// `true` when `jobs` arrive in the server's display order (TAL-601).
+    public let ordered: Bool?
 }
 
 public struct CronMutationResponse: Decodable, Equatable {

@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Scheduled tasks are listed in the same order on iPhone and Web: running tasks first, then by next run, then by name.",
+      "highlight": false,
+      "components": ["app", "web"]
+    }
+  ]
+}
