@@ -321,6 +321,13 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     expect(body).toMatchObject({ tail: 200, lines: ['a', 'b', 'c'], total_bytes: 6, hint: '' })
     res = await s.get('/api/logs?file=../etc/passwd')
     expect(res.status).toBe(400)
+    // A log symlinked outside the logs directory is refused rather than followed.
+    writeFileSync(join(s.state, 'outside-secret.txt'), 'secret\n')
+    symlinkSync(join(s.state, 'outside-secret.txt'), join(s.state, 'logs', 'agent.log'))
+    res = await s.get('/api/logs?file=agent')
+    expect(res.status).toBe(400)
+    expect(JSON.stringify(await res.json())).not.toContain('secret')
+    rmSync(join(s.state, 'logs', 'agent.log'))
     res = await s.get('/api/system/health')
     body = await json(res)
     expect(body.available).toBe(true)

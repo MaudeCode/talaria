@@ -1,6 +1,6 @@
 /** Health, gateway status, logs, dashboard probe and link settings, and diagnostics (Python `api/agent_health.py`, `api/system_health.py`, `api/dashboard_probe.py`, `_handle_logs`). */
 import { readCapped } from '../http/capped.js'
-import { existsSync, openSync, readSync, readFileSync, closeSync, statSync, statfsSync } from 'node:fs'
+import { constants, existsSync, fstatSync, openSync, readSync, readFileSync, closeSync, statSync, statfsSync } from 'node:fs'
 import { cpus, loadavg, freemem, totalmem } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import type { GatewayStatus } from '@maudecode/talaria-web-contracts'
@@ -13,6 +13,9 @@ const LOG_FILES: Record<string, string> = { agent: 'agent.log', errors: 'errors.
 const LOG_TAILS = new Set([100, 200, 500, 1000])
 const LOG_MAX_BYTES = 4 * 1024 * 1024
 
+// Opening with O_NOFOLLOW refuses a symlinked log atomically; O_NONBLOCK keeps a FIFO in its place from blocking the open.
+const LOG_OPEN_FLAGS = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0)
+
 export function readLogTail(profileHome: string, fileKeyRaw: unknown, tailRaw: unknown): Dict {
   const fileKey = (str(fileKeyRaw ?? 'agent').trim().toLowerCase()) || 'agent'
   const filename = LOG_FILES[fileKey]
@@ -21,16 +24,26 @@ export function readLogTail(profileHome: string, fileKeyRaw: unknown, tailRaw: u
   const tail = LOG_TAILS.has(parsedTail) ? parsedTail : 200
   const logDir = resolve(profileHome, 'logs')
   const path = resolve(logDir, filename)
-  if (!existsSync(path) || !statSync(path).isFile()) return { file: fileKey, tail, lines: [], truncated: false, total_bytes: 0, mtime: null, hint: `Log file for ${fileKey} not found yet.` }
-  const st = statSync(path)
+  const notFound = { file: fileKey, tail, lines: [], truncated: false, total_bytes: 0, mtime: null, hint: `Log file for ${fileKey} not found yet.` }
+  let fd: number
+  try { fd = openSync(path, LOG_OPEN_FLAGS) } catch (error) {
+    // Python `_handle_logs` refused a log resolving outside the logs dir; refusing every symlink makes the open itself the check.
+    if ((error as NodeJS.ErrnoException).code === 'ELOOP') throw new HttpFailure(400, 'Invalid log file')
+    return notFound
+  }
+  let st: ReturnType<typeof fstatSync>
+  let buffer: Buffer
+  try {
+    st = fstatSync(fd)
+    if (!st.isFile()) return notFound
+    const readBytes = Math.min(st.size, LOG_MAX_BYTES)
+    buffer = Buffer.alloc(readBytes)
+    readSync(fd, buffer, 0, readBytes, st.size - readBytes)
+  } finally { closeSync(fd) }
   const total = st.size
-  const readBytes = Math.min(total, LOG_MAX_BYTES)
-  const buffer = Buffer.alloc(readBytes)
-  const fd = openSync(path, 'r')
-  try { readSync(fd, buffer, 0, readBytes, total - readBytes) } finally { closeSync(fd) }
   const lines = buffer.toString('utf8').split(/\r?\n/)
   if (lines[lines.length - 1] === '') lines.pop()
-  return { file: fileKey, tail, lines: lines.slice(-tail), truncated: total > readBytes, total_bytes: total, mtime: st.mtimeMs / 1000, hint: '' }
+  return { file: fileKey, tail, lines: lines.slice(-tail), truncated: total > buffer.length, total_bytes: total, mtime: st.mtimeMs / 1000, hint: '' }
 }
 
 const checkedAt = (): string => new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')
