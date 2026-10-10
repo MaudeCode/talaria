@@ -997,7 +997,7 @@ describe('chat turns through the sidecar', () => {
     expect(frames.some((f) => f.event === 'pending_steer_leftover')).toBe(false)
     expect(frames.find((f) => f.event === 'steer_withdrawn')?.data).toEqual({ steer_id: 'steer-2', reason: 'followup', text: 'second' })
     await vi.waitFor(() => { expect(prompts).toHaveLength(2) })
-    expect(prompts[1]).toMatch(/\nsecond$/)
+    expect(prompts[1]).toBe('second')
     await vi.waitFor(() => { expect(s.deps.sessionStore.get(sid).active_stream_id).toBeNull() })
     expect(prompts).toHaveLength(2)
   })
@@ -1256,7 +1256,7 @@ describe('chat turns through the sidecar', () => {
     expect(frames.some((f) => f.event === 'steer_consumed')).toBe(false)
     expect(frames.some((f) => f.event === 'pending_steer_leftover')).toBe(false)
     await vi.waitFor(() => { expect(prompts).toHaveLength(2) })
-    expect(prompts[1]).toMatch(/\nnot applied$/)
+    expect(prompts[1]).toBe('not applied')
     await vi.waitFor(() => { expect(s.deps.sessionStore.get(sid).active_stream_id).toBeNull() })
     const messages = ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages as Json[]
     expect(messages.some((m) => m._steer)).toBe(false)
