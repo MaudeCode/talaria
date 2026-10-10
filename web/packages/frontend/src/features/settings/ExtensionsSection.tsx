@@ -123,10 +123,23 @@ function ExtensionSettings({ ext }: { ext: ExtensionManifest }) {
             {f.type === 'boolean' ? <Switch id={id} checked={value === true} onCheckedChange={(checked) => save(f.key, checked)} />
               : f.type === 'enum' ? <Select id={id} value={String(value ?? '')} onValueChange={(v) => save(f.key, v)}>{f.options?.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</Select>
               : f.type === 'string' ? <div className="w-48 max-w-[50vw]"><TextInput id={id} maxLength={2000} value={String(value ?? '')} onChange={(e) => save(f.key, e.target.value)} /></div>
-              : <div className="w-28"><TextInput id={id} type="number" step={f.type === 'integer' ? 1 : 'any'} defaultValue={String(value ?? '')} onChange={(e) => { if (e.target.value.trim() !== '') save(f.key, Number(e.target.value)) }} /></div>}
+              : <NumberSetting id={id} integer={f.type === 'integer'} value={value ?? null} onSave={(n) => save(f.key, n)} />}
           </FieldRow>
         )
       })}
+    </div>
+  )
+}
+
+/** Holds the typed text while editing; a value the schema rejects (blank, or a fraction in an integer field) is flagged and shows the saved value again on blur. */
+function NumberSetting({ id, integer, value, onSave }: { id: string; integer: boolean; value: SettingValue; onSave: (n: number) => void }) {
+  const [draft, setDraft] = useState<string | null>(null)
+  const saved = String(value ?? '')
+  const invalid = draft !== null && (draft.trim() === '' || Number(draft) !== value)
+  return (
+    <div className="w-28">
+      <TextInput id={id} type="number" step={integer ? 1 : 'any'} aria-invalid={invalid || undefined} className="aria-invalid:border-error" value={draft ?? saved}
+        onChange={(e) => { setDraft(e.target.value); if (e.target.value.trim() !== '') onSave(Number(e.target.value)) }} onBlur={() => setDraft(null)} />
     </div>
   )
 }

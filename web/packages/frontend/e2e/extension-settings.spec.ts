@@ -34,6 +34,15 @@ test('an extension settings schema renders all four input types and saves values
   await greeting.fill('hello')
   await expect.poll(() => page.evaluate((k) => JSON.parse(localStorage.getItem(k) ?? 'null'), KEY))
     .toEqual({ show_badge: true, refresh: 45, mode: 'thorough', greeting: 'hello' })
+  // A value the schema rejects (a fraction in an integer field, or blank) is flagged, then shows the saved value again.
+  await refresh.fill('4.5')
+  await expect(refresh).toHaveAttribute('aria-invalid', 'true')
+  await refresh.blur()
+  await expect(refresh).toHaveValue('45')
+  await refresh.fill('')
+  await refresh.blur()
+  await expect(refresh).toHaveValue('45')
+  await expect(refresh).not.toHaveAttribute('aria-invalid', 'true')
 
   await page.reload()
   await settle(page)
