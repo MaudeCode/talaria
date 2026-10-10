@@ -335,17 +335,22 @@ export class ExtensionService {
     const entries: Dict[] = []
     for (const id of Object.keys(installed).sort()) {
       if (!validId(id)) continue
-      const file = join(root, id, 'manifest.json')
+      // `manifest.json` wins; a gallery zip may ship only `extension.json` (docs/EXTENSIONS.md).
       let manifest: unknown
       try {
-        if (!existsSync(file) || !statSync(file).isFile()) { warn(d, 'gallery_manifest_missing', 'gallery'); continue }
+        const file = ['manifest.json', 'extension.json'].map((name) => join(root, id, name)).find((p) => existsSync(p) && statSync(p).isFile())
+        if (!file) { warn(d, 'gallery_manifest_missing', 'gallery'); continue }
         const raw = readFileSync(file)
         if (raw.length > MAX_MANIFEST_BYTES) { warn(d, 'gallery_manifest_oversized', 'gallery'); continue }
         manifest = JSON.parse(raw.toString('utf8'))
       } catch { warn(d, 'gallery_manifest_malformed', 'gallery'); continue }
       const withBase = (entry: Dict): Dict => {
         const copy = { ...entry }
-        const rebase = (v: unknown): unknown => (typeof v === 'string' && v.trim() && !/^[a-z]+:|^\/\/|^\//i.test(v.trim()) ? `${id}/${v.trim()}` : v)
+        // Paths already rooted at the id (the `extensions.json` shape, as in the shipped example) are not prefixed twice.
+        const rebase = (v: unknown): unknown => {
+          if (typeof v !== 'string' || !v.trim() || /^[a-z]+:|^\/\/|^\//i.test(v.trim())) return v
+          return v.trim().startsWith(`${id}/`) ? v.trim() : `${id}/${v.trim()}`
+        }
         for (const key of ['scripts', 'stylesheets']) if (Array.isArray(copy[key])) copy[key] = copy[key].map(rebase)
         if (typeof copy.panel === 'string') copy.panel = rebase(copy.panel.trim().replace(/^(\.\/)+/, ''))
         galleryFolders.set(copy, id)
