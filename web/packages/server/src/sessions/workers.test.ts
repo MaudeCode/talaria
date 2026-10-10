@@ -452,6 +452,9 @@ describe('background wakeups carry their update metadata (TAL-371)', () => {
       expect(answer?._background_reply, reply).toBe(true)
       if (reply === replies[0]) expect(answer, reply).not.toHaveProperty('_background_silent')
       else expect(answer?._background_silent, reply).toBe(true)
+      // TAL-600: the server, not the client, hides a silent reply; the update's own row always shows.
+      expect(answer?._display, reply).toBe(reply === replies[0] ? 'row' : 'hidden')
+      expect((await wakeupRow(sid))?._display, reply).toBe('row')
     }
   })
 

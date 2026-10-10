@@ -682,6 +682,33 @@ describe('redactSessionData', () => {
     expect(collapsible({ role: 'user', content: lines(40), _steer: { steer_id: 's2' }, _collapsible: true })).toBeUndefined()
   })
 
+  it('stamps how every row shows: on its own, inside its turn\'s scene, or not at all (TAL-600)', () => {
+    const display = (message: Record<string, unknown>): unknown => ((redactSessionData({ messages: [message] }, true).messages as Record<string, unknown>[])[0]!)._display
+    const scene = { version: 'activity_scene_v1', activity_rows: [] }
+    // Rows the turn's activity scene shows: tool results and consumed steers.
+    expect(display({ role: 'tool', content: 'ok', tool_call_id: 'c1' })).toBe('in_scene')
+    expect(display({ role: 'user', content: 'Use the staging DB', _steer: { steer_id: 's1' } })).toBe('in_scene')
+    // Rows nothing shows: a silent background reply and rows without a role or anything to show.
+    expect(display({ role: 'assistant', content: '[SILENT]', _background_reply: true, _background_silent: true })).toBe('hidden')
+    expect(display({ content: 'orphan' })).toBe('hidden')
+    expect(display({ role: 'assistant', content: '  ' })).toBe('hidden')
+    expect(display({ role: 'user', content: '' })).toBe('hidden')
+    expect(display({ role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: 'ok' }] })).toBe('hidden')
+    expect(display({ role: 'user', content: '', _source: 'process_wakeup' })).toBe('hidden')
+    // Rows that show on their own.
+    expect(display({ role: 'user', content: 'Plan the release' })).toBe('row')
+    expect(display({ role: 'user', content: '', attachments: [{ name: 'a.png' }] })).toBe('row')
+    expect(display({ role: 'user', content: 'Done', _source: 'process_wakeup', _background_update: { kind: 'process' } })).toBe('row')
+    expect(display({ role: 'user', content: '', _marker_kind: 'context_compaction' })).toBe('row')
+    expect(display({ role: 'assistant', content: 'Here is the plan.' })).toBe('row')
+    expect(display({ role: 'assistant', content: '', tool_calls: [{ id: 'c1', type: 'function', function: { name: 'ls', arguments: '{}' } }] })).toBe('row')
+    expect(display({ role: 'assistant', content: '', reasoning: 'Thinking it through' })).toBe('row')
+    expect(display({ role: 'assistant', content: '', _anchor_activity_scene: scene })).toBe('row')
+    expect(display({ role: 'system', content: 'Model switched' })).toBe('row')
+    // The server's decision replaces any `_display` a stored or imported row carries.
+    expect(display({ role: 'tool', content: 'ok', _display: 'row' })).toBe('in_scene')
+  })
+
   it('ships a stored row\'s turn stats, `_ts` and reasoning titles in their contract types (TAL-598)', () => {
     const stored = { role: 'assistant', content: 'Done.', _ts: '1700000001.5', _turnDuration: '4.25', _turnTps: 'fast', reasoning_titles: ['Plan', 7, '', 'Check'] }
     const [row] = redactSessionData({ messages: [stored] }, true).messages as Record<string, unknown>[]

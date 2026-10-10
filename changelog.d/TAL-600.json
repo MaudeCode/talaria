@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Chats on the web and iPhone now show the same messages, including context compaction cards that have no text.",
+      "highlight": false,
+      "components": ["app", "web"]
+    }
+  ]
+}
