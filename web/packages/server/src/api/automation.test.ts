@@ -1024,11 +1024,14 @@ describe('extension directory rows in /api/extensions/manifests (TAL-704)', () =
       writeFileSync(join(ext('only-ext'), 'extension.json'), JSON.stringify({ extensions: [{ id: 'only-ext', panel: 'index.html' }] }))
       writeFileSync(join(ext('both'), 'manifest.json'), JSON.stringify({ extensions: [{ id: 'both', panel: 'from-manifest.html' }] }))
       writeFileSync(join(ext('both'), 'extension.json'), JSON.stringify({ extensions: [{ id: 'both', panel: 'from-extension.html' }] }))
+      // The shipped example roots its panel at the extension id (`hello-panel/index.html`); install strips that folder.
+      writeFileSync(join(ext('hello-panel'), 'extension.json'), readFileSync(new URL('../../../../docs/examples/extensions/hello-panel/extension.json', import.meta.url)))
       const record = { version: '1.0.0', files: ['index.html'], installed_at: '2026-01-01T00:00:00Z' }
-      writeFileSync(join(s.state, 'extension-install-manifest.json'), JSON.stringify({ version: 1, installed: { 'only-ext': record, both: record } }))
+      writeFileSync(join(s.state, 'extension-install-manifest.json'), JSON.stringify({ version: 1, installed: { 'only-ext': record, both: record, 'hello-panel': record } }))
       const rows = (await json(await s.get('/api/extensions/manifests'))).manifests as Json[]
       expect(rows.find((m) => m.id === 'only-ext')).toMatchObject({ source: 'gallery', panel: 'extensions/only-ext/index.html' })
       expect(rows.find((m) => m.id === 'both')).toMatchObject({ source: 'gallery', panel: 'extensions/both/from-manifest.html' })
+      expect(rows.find((m) => m.id === 'hello-panel')).toMatchObject({ source: 'gallery', panel: 'extensions/hello-panel/index.html', nav: { label: 'Hello' } })
       expect((await json(await s.get('/api/extensions/status'))).warnings).not.toEqual(expect.arrayContaining([{ code: 'gallery_manifest_missing', source: 'gallery' }]))
     } finally {
       await s.close()

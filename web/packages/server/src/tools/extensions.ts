@@ -346,7 +346,11 @@ export class ExtensionService {
       } catch { warn(d, 'gallery_manifest_malformed', 'gallery'); continue }
       const withBase = (entry: Dict): Dict => {
         const copy = { ...entry }
-        const rebase = (v: unknown): unknown => (typeof v === 'string' && v.trim() && !/^[a-z]+:|^\/\/|^\//i.test(v.trim()) ? `${id}/${v.trim()}` : v)
+        // Paths already rooted at the id (the `extensions.json` shape, as in the shipped example) are not prefixed twice.
+        const rebase = (v: unknown): unknown => {
+          if (typeof v !== 'string' || !v.trim() || /^[a-z]+:|^\/\/|^\//i.test(v.trim())) return v
+          return v.trim().startsWith(`${id}/`) ? v.trim() : `${id}/${v.trim()}`
+        }
         for (const key of ['scripts', 'stylesheets']) if (Array.isArray(copy[key])) copy[key] = copy[key].map(rebase)
         if (typeof copy.panel === 'string') copy.panel = rebase(copy.panel.trim().replace(/^(\.\/)+/, ''))
         galleryFolders.set(copy, id)
