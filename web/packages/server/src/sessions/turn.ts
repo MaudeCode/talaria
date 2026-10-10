@@ -32,7 +32,7 @@ import { persistentStateChanges, persistentStateSnapshot } from './state-saved.j
 import { maxIterationsFromConfig, maxTokensFromConfig, processWakeupMaxIterations, reasoningConfigFromConfig, webuiEphemeralSystemPrompt, workspaceSystemMessage } from './turn-context.js'
 import { agentSteerText, assistantReplyAddedAfterCurrentTurn, attachedFilesPrompt, buildPartialMessage, dedupeContext, checkpointTurnStart, extractToolCallsFromMessages, hasNativeImages, injectMaxIterationSummaryFallback, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitDisplayText, stateDbSeenId, joinReasoning, reasoningFieldsText, stoppedTurnContext, toolOutcome, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withToolCallOutcomes, workspaceContextPrefix, withoutMaxIterationSummaryRequest, withNativeImagesRestored, withoutNativeImages, withoutToolImages } from './merge.js'
 import { mayBecomeSilentReply, turnOrigin, withBackgroundUpdates } from './background-updates.js'
-import { fallbackTitleFromExchange, firstExchangeSnippets, isGenericFallbackTitle, latestExchangeSnippets, looksInvalidGeneratedTitle, looksLikeDefaultCliTitle, sanitizeGeneratedTitle, titleLanguageMismatch, titlePrompts } from './titles.js'
+import { countExchanges, fallbackTitleFromExchange, firstExchangeSnippets, isGenericFallbackTitle, latestExchangeSnippets, looksInvalidGeneratedTitle, looksLikeDefaultCliTitle, sanitizeGeneratedTitle, titleLanguageMismatch, titlePrompts } from './titles.js'
 import { WORKSPACE_BUSY_MESSAGE } from '../workspace/git.js'
 import type { WorkspaceRegistry } from '../workspace/workspaces.js'
 import { str } from '../util.js'
@@ -80,6 +80,8 @@ export interface TurnRunnerDeps {
   onTurnEnd?: (sessionId: string) => void
   /** The profile's config.yaml (turn budgets, reasoning effort, personality, delivery context); null when unavailable. */
   profileConfig?: (profile: string | null) => Promise<Config | null>
+  /** `auto_title_refresh_every`: a generated title follows the latest exchange every N exchanges; 0 turns it off. */
+  titleRefreshEvery?: () => number
   env?: Record<string, string | undefined>
   hermesHome?: string
   homeDisplay?: () => string
@@ -282,6 +284,8 @@ export class TurnRunner {
   private readonly liveTodos = new Map<string, Record<string, unknown>>()
   /** Streams whose run completed (`done` emitted) and only await title work; a late cancel is a no-op for these. */
   private readonly settledStreams = new Set<string>()
+  /** The last adaptive title refresh per session; a successor turn's refresh runs after it (TAL-589). */
+  private readonly titleRefreshes = new Map<string, Promise<void>>()
   /**
    * TAL-364: what a Stop needs to write the turn's model context: its starting context, the prompt the Agent got, and
    * whether a settlement already used a canonical checkpoint (which marks the stop boundary; later work never replaces it).
@@ -1225,7 +1229,8 @@ export class TurnRunner {
     const status = (status: string, reason = '', title = '', rawPreview = ''): void => {
       put('title_status', { session_id: sessionId, status, ...(reason ? { reason } : {}), ...(title ? { title } : {}), ...(rawPreview ? { raw_preview: rawPreview } : {}) })
     }
-    if (!eligible || (s.llm_title_generated && !invalidExisting) || !userText || !assistantText) return
+    // Python ran the adaptive refresh only when the first-title job was not eligible.
+    if (!eligible || (s.llm_title_generated && !invalidExisting) || !userText || !assistantText) { await this.refreshTitle(s, put, status); return }
     if (s.manual_title) { status('skipped', 'manual_title', placeholder); return }
     // A missing config.yaml reads as `{}` (enabled); an unreadable one cannot confirm the user has not opted out.
     const cfg = await this.deps.profileConfig?.(s.profile ?? null)
@@ -1262,6 +1267,47 @@ export class TurnRunner {
       status(source, source === 'fallback' ? fallbackReason : llmStatus, effective, rawPreview)
       put('title', { session_id: sessionId, title: effective })
     } else status('skipped', source || 'unchanged', effective, rawPreview)
+  }
+
+  /**
+   * Python `_maybe_schedule_title_refresh` + `_run_background_title_refresh`: every N exchanges a generated title is
+   * regenerated from the latest exchange; a manual title is never touched.
+   */
+  private async refreshTitle(s: Session, put: (event: string, data: Record<string, unknown>) => void, status: (status: string, reason?: string, title?: string, rawPreview?: string) => void): Promise<void> {
+    const every = this.deps.titleRefreshEvery?.() ?? 0
+    const exchanges = countExchanges(s.messages)
+    if (every <= 0 || exchanges <= 0 || exchanges % every !== 0) return
+    const [userText, assistantText] = latestExchangeSnippets(s.messages)
+    if (!userText || !assistantText) return
+    // Admission is released before title work, so an earlier turn's refresh may still be running: refreshes apply in
+    // turn order and each reads the title its predecessor wrote.
+    const sessionId = s.session_id
+    const run = (this.titleRefreshes.get(sessionId) ?? Promise.resolve()).catch(() => undefined).then(() => this.applyTitleRefresh(sessionId, s, userText, assistantText, put, status))
+    this.titleRefreshes.set(sessionId, run)
+    try { await run } finally { if (this.titleRefreshes.get(sessionId) === run) this.titleRefreshes.delete(sessionId) }
+  }
+
+  private async applyTitleRefresh(sessionId: string, s: Session, userText: string, assistantText: string, put: (event: string, data: Record<string, unknown>) => void, status: (status: string, reason?: string, title?: string, rawPreview?: string) => void): Promise<void> {
+    const read = (): Session => { try { return this.deps.store.get(sessionId) } catch { return s } }
+    const latest = read()
+    const placeholder = str(latest.title).trim()
+    if (['Untitled', 'New Chat', ''].includes(placeholder) || latest.manual_title || !latest.llm_title_generated) return
+    const cfg = await this.deps.profileConfig?.(latest.profile ?? null)
+    if (!cfg || !titleGenerationEnabled(cfg)) { status('refresh_skipped', cfg ? 'title_generation_disabled' : 'config_unavailable', placeholder); return }
+    const { title: next, status: llmStatus, rawPreview } = await this.llmTitle(latest, userText, assistantText)
+    if (!next) { status('refresh_skipped', llmStatus || 'empty', placeholder, rawPreview); return }
+    const normalize = (value: string): string => value.replace(/\s+/g, ' ').trim().toLowerCase()
+    if (normalize(next) === normalize(placeholder)) { status('refresh_skipped', 'same_title', placeholder, rawPreview); return }
+    const current = read()
+    // The user may have renamed the session while the title prompt ran.
+    if (current.manual_title || str(current.title).trim() !== placeholder) { status('skipped', 'manual_title', str(current.title).trim()); return }
+    current.title = next
+    markSessionTitleGenerated(current)
+    this.deps.store.save(current, { touchUpdatedAt: false })
+    await this.deps.syncTitle?.(current)
+    this.deps.events.publish('title', { profile: current.profile, sessionId })
+    status('refreshed', llmStatus, next, rawPreview)
+    put('title', { session_id: sessionId, title: next })
   }
 
   // ── cancel / steer ───────────────────────────────────────────────────────

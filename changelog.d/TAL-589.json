@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Adaptive title refresh now updates a generated conversation title every few exchanges as the topic moves on, and never changes a title you named yourself.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

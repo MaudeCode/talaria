@@ -76,6 +76,11 @@ export function latestExchangeSnippets(messages: unknown[]): [string, string] {
   return [user.slice(0, TITLE_CONTEXT_CHARS), asst.slice(0, TITLE_CONTEXT_CHARS)]
 }
 
+/** Python `_count_exchanges`: user rows with text. */
+export function countExchanges(messages: unknown[]): number {
+  return messages.filter((m) => m && typeof m === 'object' && (m as Record<string, unknown>).role === 'user' && messageText((m as Record<string, unknown>).content).trim()).length
+}
+
 export function titlePrompts(userText: string, assistantText: string): [string, string[]] {
   const userContext = userText.slice(0, TITLE_CONTEXT_CHARS)
   let qa = `User request:\n${userContext}`
