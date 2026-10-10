@@ -478,6 +478,17 @@ describe('session lifecycle over HTTP', () => {
     expect((await s.get('/api/session/status')).status).toBe(400)
   })
 
+  it('imports its own JSON export as a new session (TAL-607)', async () => {
+    let res = await post(s, '/api/session/import', { title: 'Round trip', messages: [{ role: 'user', content: 'hello' }, { role: 'assistant', content: 'answer' }] })
+    const first = String(((await json(res)).session as Json).session_id)
+    res = await s.get(`/api/session/export?session_id=${first}`)
+    res = await post(s, '/api/session/import', JSON.parse(await res.text()) as Json)
+    expect(res.status, await res.clone().text()).toBe(200)
+    const second = (await json(res)).session as Json
+    expect(second.session_id).not.toBe(first)
+    expect(second.title).toBe('Round trip')
+  })
+
   it('reports streaming only for a live runtime stream on detail, list, search, status and mutation replies (TAL-312)', async () => {
     const sid = String((await newSession(s)).session_id)
     writeMessages(s, sid, [{ role: 'user', content: 'streamprobe question' }, { role: 'assistant', content: 'ok' }])

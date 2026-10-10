@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Link, useParams } from '@tanstack/react-router'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Link, useNavigate, useParams } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Archive, ArchiveRestore, Filter, GitBranch, Plus, Search, X } from 'lucide-react'
+import { Archive, ArchiveRestore, Filter, GitBranch, Plus, Search, Upload, X } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
@@ -14,6 +14,7 @@ import { SessionContextMenu } from './SessionContextMenu'
 import { ProjectChip } from './ProjectChip'
 import { closeMobileSidebar } from '../../shell/useShellState'
 import { useLocale } from '../../i18n/useLocale'
+import { showToast } from '../toast/toast'
 
 export function useSessionListQuery(params: api.SessionListParams = {}) {
   return useQuery({ queryKey: keys.sessions.list(params as Record<string, string | boolean | number | undefined>), queryFn: () => api.fetchSessions(params), staleTime: 10_000 })
@@ -155,6 +156,23 @@ export function SessionListPanel() {
     mutationFn: (name: string) => api.createProject(name),
     onSuccess: () => { void qc.invalidateQueries({ queryKey: keys.projects }) },
   })
+  const navigate = useNavigate()
+  const importInput = useRef<HTMLInputElement>(null)
+  const importSession = useMutation({
+    mutationFn: async (file: File) => {
+      let doc: unknown
+      try { doc = JSON.parse(await file.text()) } catch { throw new Error(m.import_invalid_json()) }
+      if (!doc || typeof doc !== 'object' || Array.isArray(doc)) throw new Error(m.import_invalid_json())
+      return api.importSession(doc as Record<string, unknown>)
+    },
+    onSuccess: (r) => {
+      showToast(m.session_imported())
+      void qc.invalidateQueries({ queryKey: keys.sessions.all })
+      closeMobileSidebar()
+      void navigate({ to: '/session/$sessionId', params: { sessionId: r.session.session_id } })
+    },
+    onError: (e) => showToast(m.import_failed() + (e instanceof Error ? e.message : ''), 4000, 'error'),
+  })
 
   return (
     <div className={cn('panel-view active', searchOpen && 'search-open')} id="panelChat">
@@ -168,12 +186,16 @@ export function SessionListPanel() {
             <PanelHeadButton label={showArchived ? m.session_hide_archived() : m.session_show_archived()} active={showArchived} onClick={() => setShowArchived((a) => !a)}>
               {showArchived ? <ArchiveRestore size={16} aria-hidden="true" /> : <Archive size={16} aria-hidden="true" />}
             </PanelHeadButton>
+            <PanelHeadButton label={m.import_session_json_tooltip()} tooltipSide="bottom-right" onClick={() => importInput.current?.click()}>
+              <Upload size={16} aria-hidden="true" />
+            </PanelHeadButton>
             <PanelHeadButton label={m.new_conversation()} id="btnNewChat" tooltipSide="bottom-right" onClick={() => { void newChat() }}>
               <Plus size={16} aria-hidden="true" />
             </PanelHeadButton>
           </>
         }
       />
+      <input ref={importInput} type="file" accept=".json,application/json" hidden aria-label={m.import_session_json_tooltip()} onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; if (file) importSession.mutate(file) }} />
       <div className="session-search sidebar-search">
         <div className="session-search-field">
           <Search size={14} className="sidebar-search-icon" aria-hidden="true" />

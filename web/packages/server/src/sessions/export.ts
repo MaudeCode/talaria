@@ -169,6 +169,26 @@ ${blocks.join('')}
 </html>`
 }
 
+/** A Markdown transcript of the user and assistant turns; system prompts and tool rows stay out, like the legacy download. */
+export function renderSessionMarkdown(session: Record<string, unknown>): string {
+  const sid = str(session.session_id)
+  const lines = [`# ${(str(session.title) || 'Hermes Conversation').trim()}`, '']
+  if (sid) lines.push(`Session: ${sid}`)
+  if (str(session.model)) lines.push(`Model: ${str(session.model)}`)
+  if (str(session.workspace)) lines.push(`Workspace: ${str(session.workspace)}`)
+  lines.push('')
+  for (const m of Array.isArray(session.messages) ? session.messages : []) {
+    if (!m || typeof m !== 'object' || Array.isArray(m)) continue
+    const msg = m as Record<string, unknown>
+    const role = str(msg.role)
+    const label = role === 'user' || role === 'assistant' ? ROLE_LABELS[role]?.[0] : undefined
+    const text = contentToText(msg.content).trim()
+    if (!label || !text) continue
+    lines.push(`## ${label}`, '', text, '')
+  }
+  return lines.join('\n')
+}
+
 /** Python `json.dumps(obj, ensure_ascii=False, indent=2)`. */
 export function pythonPrettyJson(value: unknown): string {
   return JSON.stringify(value, null, 2)

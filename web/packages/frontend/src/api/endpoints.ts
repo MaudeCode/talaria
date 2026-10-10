@@ -84,6 +84,8 @@ export const pinSession = (session_id: SessionId, pinned: boolean) => orpc().ses
 export const archiveSession = (session_id: SessionId, archived: boolean) => orpc().session.archive({ session_id, archived })
 export const moveSession = (session_id: SessionId, project_id: string | null) => orpc().session.move({ session_id, project_id })
 export const duplicateSession = (session_id: SessionId) => orpc().session.duplicate({ session_id })
+/** Creates a session from a JSON export's document; the server validates `messages` and the workspace. */
+export const importSession = (doc: Record<string, unknown>) => orpc().session.import(doc)
 /** `keep_count`: number of messages (absolute, from the start of the session) to copy or keep; omit to fork the whole conversation. */
 export const branchSession = (session_id: SessionId, keep_count?: number) => orpc().session.branch({ session_id, ...(keep_count !== undefined ? { keep_count } : {}) })
 export const truncateSession = (session_id: SessionId, keep_count: number) => orpc().session.truncate({ session_id, keep_count })

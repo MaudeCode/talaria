@@ -7,12 +7,14 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { SessionsListSchema, type SessionRow } from '../../contracts'
 
-vi.mock('../../api/endpoints', () => ({ fetchSessions: vi.fn(), searchSessions: vi.fn(), fetchProjects: vi.fn(), archiveSession: vi.fn(), createProject: vi.fn() }))
+vi.mock('../../api/endpoints', () => ({ fetchSessions: vi.fn(), searchSessions: vi.fn(), fetchProjects: vi.fn(), archiveSession: vi.fn(), createProject: vi.fn(), importSession: vi.fn() }))
 vi.mock('../../api/sse', () => ({ openSessionListStream: () => ({ close: () => undefined, readyState: () => 1 }) }))
 vi.mock('./useNewChat', () => ({ useNewChat: () => vi.fn() }))
 vi.mock('./SessionContextMenu', () => ({ SessionContextMenu: () => null }))
+const navigate = vi.hoisted(() => vi.fn())
 vi.mock('@tanstack/react-router', () => ({
   useParams: () => ({}),
+  useNavigate: () => navigate,
   Link: ({ children, className, ...rest }: { children: ReactNode; className?: string; 'data-sid'?: string }) => <a className={className} data-sid={rest['data-sid']}>{children}</a>,
 }))
 import * as api from '../../api/endpoints'
@@ -55,6 +57,17 @@ describe('SessionListPanel search (TAL-308)', () => {
     await screen.findByRole('button', { name: 'Proj' })
     await userEvent.type(screen.getByRole('searchbox'), 'zebra alpha')
     await waitFor(() => { expect(shown()).toEqual(['alpha']) })
+  })
+})
+
+describe('SessionListPanel import (TAL-607)', () => {
+  it('posts the chosen JSON export and opens the created session', async () => {
+    vi.mocked(api.importSession).mockResolvedValue({ ok: true, session: { ...alpha, session_id: 'imported' } } as never)
+    const { container } = render(<QueryClientProvider client={new QueryClient()}><SessionListPanel /></QueryClientProvider>)
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]')!
+    await userEvent.upload(input, new File([JSON.stringify({ title: 'Saved', messages: [{ role: 'user', content: 'hi' }] })], 'saved.json', { type: 'application/json' }))
+    await waitFor(() => { expect(navigate).toHaveBeenCalledWith({ to: '/session/$sessionId', params: { sessionId: 'imported' } }) })
+    expect(api.importSession).toHaveBeenCalledWith({ title: 'Saved', messages: [{ role: 'user', content: 'hi' }] })
   })
 })
 

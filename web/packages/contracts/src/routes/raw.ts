@@ -83,8 +83,8 @@ export const RAW_ROUTES: readonly RawRoute[] = [
     responses: { 200: { description: 'ZIP stream.', contentType: 'application/zip' }, 404: { description: 'Folder missing.', contentType: 'application/json' }, 413: { description: 'Folder exceeds the configured size or file-count cap.', contentType: 'application/json' } },
   },
   {
-    method: 'GET', path: '/api/session/export', summary: 'Transcript download as JSON or a self-contained HTML page.', tags: ['sessions'],
-    query: { session_id: { description: 'Session to export.', required: true }, format: { description: '`json` (default) or `html`.' }, theme: { description: 'HTML only: `dark` (default) or `light`.' }, palette: { description: 'HTML only: base64 JSON map of CSS variables captured from the live UI.' } },
+    method: 'GET', path: '/api/session/export', summary: 'Transcript download as JSON, Markdown, or a self-contained HTML page.', tags: ['sessions'],
+    query: { session_id: { description: 'Session to export.', required: true }, format: { description: '`json` (default), `markdown`, or `html`.' }, theme: { description: 'HTML only: `dark` (default) or `light`.' }, palette: { description: 'HTML only: base64 JSON map of CSS variables captured from the live UI.' } },
     responses: { 200: { description: 'Attachment named `hermes-<session_id>.<ext>`.' }, 404: { description: 'Session not found.', contentType: 'application/json' } },
   },
   {
