@@ -22,7 +22,7 @@ const WAKEUP_RETRY_SECONDS = 30
 const WAKEUP_RETRY_MAX_ATTEMPTS = 5
 const WAKEUP_BATCH_MAX_CHARS = 24_000
 
-interface StartedTurn { _status?: number; error?: string; stream_id?: string }
+interface StartedTurn { _status?: number; error?: string; stream_id?: string; retryable?: boolean }
 
 export interface CompletionDrainDeps {
   sidecar: () => SidecarLike | null
@@ -33,7 +33,7 @@ export interface CompletionDrainDeps {
   store: SessionStore
   channels: SessionChannels
   registry: StreamRegistry
-  /** Start a server-side turn; `_status` 409 means a turn is already active or the Agent runtime is stale. */
+  /** Start a server-side turn; `_status` 409 means a turn is already active, or with `retryable` that the Agent runtime is stale. */
   startTurn: (session: Session, prompt: string) => StartedTurn | Promise<StartedTurn>
   now: () => number
   log: (line: string) => void
@@ -315,7 +315,8 @@ export class CompletionDrain {
     let resp: StartedTurn
     try { resp = await this.deps.startTurn(session, prompt) } catch (error) { await giveBack(); this.scheduleRetry(sid); this.deps.log(`[webui] WARNING: server-side wakeup turn raised for session ${sid}: ${(error as Error).message}`); return false }
     const status = resp._status ?? (resp.stream_id ? 200 : 500)
-    if (status === 409) { await giveBack('process.defer_delivery'); return false }
+    // A busy session redelivers at its turn teardown; a stale runtime admits no turn, so it is retried on a timer (TAL-577).
+    if (status === 409) { await giveBack('process.defer_delivery'); if (resp.retryable) this.scheduleRetry(sid); return false }
     if (status >= 400) { await giveBack(); this.scheduleRetry(sid); this.deps.log(`[webui] WARNING: server-side wakeup failed for session ${sid}: status=${String(status)} err=${str(resp.error)}; re-deferred for redelivery`); return false }
     this.retryAttempts.delete(sid)
     recordBackgroundUpdate(session, str(resp.stream_id), batchUpdate(deliver.map((e) => ({ event: e.event ?? {}, prompt: e.wakeup_prompt }))))

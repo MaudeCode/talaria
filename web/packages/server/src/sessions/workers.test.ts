@@ -869,15 +869,20 @@ describe('wakeup turns pass the user-turn admission (TAL-577)', () => {
     const sid = await newSid()
     starts.length = 0
     sidecar.respond('runtime.ensure_current', () => { throw new SidecarError('restart required', { condition: 'agent_runtime_stale' }) })
+    // No turn ends in an idle session, so only the retry timer delivers the wakeup once the runtime is current.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     try {
       expect(await s.deps.completions.processOne(completion(sid, 'proc_stale'))).toBe(true)
       expect(starts).toEqual([])
       expect(s.deps.completions.deferredCount(sid)).toBe(1)
+      sidecar.respond('runtime.ensure_current', () => ({ current: true as const, agent_revision: null }))
+      await vi.advanceTimersByTimeAsync(30_000)
     } finally {
+      vi.useRealTimers()
       sidecar.respond('runtime.ensure_current', () => ({ current: true as const, agent_revision: null }))
     }
-    expect(await s.deps.completions.drainDeferred(sid)).toBe(1)
     await settled()
     expect(starts).toHaveLength(1)
+    expect(s.deps.completions.deferredCount(sid)).toBe(0)
   })
 })
