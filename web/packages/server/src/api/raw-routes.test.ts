@@ -196,6 +196,24 @@ describe('raw byte routes', () => {
     expect((await s.get('/api/session/export?session_id=deadbeef0000')).status).toBe(404)
   })
 
+  it('exports the shown transcript rows as Markdown (TAL-607)', async () => {
+    const session = s.deps.sessionStore.get(sid)
+    session.messages = [{ role: 'system', content: 'secret system prompt' }, { role: 'user', content: [{ type: 'text', text: 'Hello **world**' }] }, { role: 'tool', content: 'tool output' }, { role: 'assistant', content: 'silent background reply', _background_silent: true }, { role: 'assistant', content: '<think>private plan</think>Done.' }]
+    s.deps.sessionStore.save(session)
+    const res = await s.get(`/api/session/export?session_id=${sid}&format=markdown`)
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toBe('text/markdown; charset=utf-8')
+    expect(res.headers.get('content-disposition')).toBe(`attachment; filename="hermes-${sid}.md"`)
+    const md = await res.text()
+    expect(md).toContain(`Session: ${sid}`)
+    expect(md).toContain('## You\n\nHello **world**\n\n## Assistant\n\nDone.\n')
+    expect(md).not.toContain('secret system prompt')
+    expect(md).not.toContain('tool output')
+    // Only rows the server shows as their own row, with the reply's prose and not its inline thinking.
+    expect(md).not.toContain('silent background reply')
+    expect(md).not.toContain('private plan')
+  })
+
   it('accepts multipart uploads into the session inbox and rolls them back by receipt', async () => {
     const boundary = 'xyz'
     const body = [`--${boundary}`, 'Content-Disposition: form-data; name="session_id"', '', sid, `--${boundary}`, 'Content-Disposition: form-data; name="file"; filename="../evil name.txt"', 'Content-Type: text/plain', '', 'payload', `--${boundary}--`, ''].join('\r\n')

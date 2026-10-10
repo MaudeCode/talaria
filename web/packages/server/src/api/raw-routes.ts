@@ -24,7 +24,7 @@ import { anchoredAt } from '../workspace/escape.js'
 import { guessMime, parseMultipart, sanitizeUploadName, uploadDestination, UploadConflict, UploadRejected, type MultipartResult } from '../workspace/upload.js'
 import { ArchiveRejected, CorruptArchive, extractArchive, isArchiveName } from '../workspace/extract.js'
 import { writeFully } from '../fs/atomic.js'
-import { pythonPrettyJson, renderSessionHtml } from '../sessions/export.js'
+import { pythonPrettyJson, renderSessionHtml, renderSessionMarkdown } from '../sessions/export.js'
 import type { Session } from '../sessions/session.js'
 import { handleCspReport, handleTranscribe, handleTts } from './tools-raw.js'
 import { handleOidcCallback, handleOidcStart } from './auth-raw.js'
@@ -362,6 +362,10 @@ function handleSessionExport(ctx: RequestContext): void {
     payload = renderSessionHtml(safe, theme, palette)
     contentType = 'text/html; charset=utf-8'
     ext = 'html'
+  } else if (fmt === 'markdown') {
+    payload = renderSessionMarkdown(safe)
+    contentType = 'text/markdown; charset=utf-8'
+    ext = 'md'
   } else {
     payload = pythonPrettyJson(safe)
     contentType = 'application/json; charset=utf-8'

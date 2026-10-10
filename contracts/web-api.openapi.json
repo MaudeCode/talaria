@@ -15016,16 +15016,44 @@
                   "messages": {},
                   "tool_calls": {},
                   "title": {
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   },
                   "workspace": {
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   },
                   "model": {
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   },
                   "pinned": {
-                    "type": "boolean"
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "additionalProperties": {}
@@ -58206,7 +58234,7 @@
     },
     "/api/session/export": {
       "get": {
-        "summary": "Transcript download as JSON or a self-contained HTML page.",
+        "summary": "Transcript download as JSON, Markdown, or a self-contained HTML page.",
         "tags": [
           "sessions"
         ],
@@ -58224,7 +58252,7 @@
             "name": "format",
             "in": "query",
             "required": false,
-            "description": "`json` (default) or `html`.",
+            "description": "`json` (default), `markdown`, or `html`.",
             "schema": {
               "type": "string"
             }

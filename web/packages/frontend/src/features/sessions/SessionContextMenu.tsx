@@ -56,7 +56,7 @@ export function SessionContextMenu({ row, active }: { row: SessionRow; active: b
   const copyLink = () => {
     void navigator.clipboard.writeText(appUrl(`session/${encodeURIComponent(sid)}`).href).then(() => showToast(m.copied()), () => showToast(m.session_link_copy_failed(), 3000, 'error'))
   }
-  const exportAs = (format: 'json' | 'html') => {
+  const exportAs = (format: 'json' | 'markdown' | 'html') => {
     const a = document.createElement('a')
     a.href = appUrl(api.exportSessionUrl(sid, format)).href
     a.download = ''
@@ -89,6 +89,7 @@ export function SessionContextMenu({ row, active }: { row: SessionRow; active: b
           : <MenuItem onClick={() => share.mutate()}>{m.session_share()}</MenuItem>}
         {row.can_duplicate && <MenuItem onClick={() => duplicate.mutate()}>{m.session_duplicate()}</MenuItem>}
         <MenuItem onClick={() => exportAs('json')}>{m.session_export_json()}</MenuItem>
+        <MenuItem onClick={() => exportAs('markdown')}>{m.session_export_markdown()}</MenuItem>
         <MenuItem onClick={() => exportAs('html')}>{m.session_export_html()}</MenuItem>
         <MenuSeparator />
         {row.worktree_branch && !row.read_only && <MenuItem className="text-error" onClick={() => setDialog({ kind: 'worktree' })}>{m.session_worktree_remove()}</MenuItem>}

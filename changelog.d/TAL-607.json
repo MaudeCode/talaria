@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Download a conversation as Markdown from its menu in the sidebar.",
+      "highlight": false,
+      "components": ["web"]
+    },
+    {
+      "category": "Added",
+      "summary": "Import a conversation from a JSON export with the new Import button in the sidebar.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
