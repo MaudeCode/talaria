@@ -485,7 +485,7 @@ export function uniqueQuotaSources<T extends { source_id: string; provider_id: s
     .sort((a, b) => cmp(a.provider_id, b.provider_id) || cmp(a.account_label, b.account_label) || cmp(a.source_id, b.source_id))
 }
 
-/** `removable` (TAL-641): the key sits in the provider's own `.env` var, the one `setProviderKey(…, null)` clears. */
+/** `removable` (TAL-641): `setProviderKey(…, null)` would leave the provider keyless: its own `.env` var holds the only key. */
 interface KeyProbe { hasKey: boolean; keySource: string; authError: string | null; isOauth: boolean; removable: boolean }
 
 export class ProviderCatalog {
@@ -580,16 +580,20 @@ export class ProviderCatalog {
    * The process-environment value of `name` as a named profile may see it: values `loadStartupEnv` copied from the
    * default profile's `.env` belong to that profile only, so they never count for another profile.
    */
-  private processEnv(name: string, profileHome: string): string | undefined {
-    if (!this.deps.isRootProfileHome(profileHome) && homeDotenvKeys(this.deps.env).has(name)) return undefined
+  /** `cleared`: the variable a key delete clears, which also retires its `.env`-owned startup copy (TAL-641). */
+  private processEnv(name: string, profileHome: string, cleared?: string): string | undefined {
+    if ((name === cleared || !this.deps.isRootProfileHome(profileHome)) && homeDotenvKeys(this.deps.env).has(name)) return undefined
     return this.deps.env[name]
   }
 
-  /** Python `_provider_has_key` minus the credential pool, which `probeKey` reads from the sidecar. */
-  providerHasKey(pid: string, config: Config, envValues: Record<string, string>, profileHome: string): boolean {
+  /**
+   * Python `_provider_has_key` minus the credential pool, which `probeKey` reads from the sidecar.
+   * `cleared` (TAL-641) answers for after `setProviderKey(…, null)`: that variable's `.env` entry and startup copy are gone.
+   */
+  providerHasKey(pid: string, config: Config, envValues: Record<string, string>, profileHome: string, cleared?: string): boolean {
     const envVar = providerEnvVar(pid)
     if (envVar) {
-      if (valueCountsAsApiKey(pid, envValues[envVar]) || valueCountsAsApiKey(pid, this.processEnv(envVar, profileHome))) return true
+      if ((envVar !== cleared && valueCountsAsApiKey(pid, envValues[envVar])) || valueCountsAsApiKey(pid, this.processEnv(envVar, profileHome, cleared))) return true
       for (const alias of PROVIDER_ENV_VAR_ALIASES[pid] ?? []) if (valueCountsAsApiKey(pid, envValues[alias]) || valueCountsAsApiKey(pid, this.processEnv(alias, profileHome))) return true
     }
     const model = modelSection(config)
@@ -639,7 +643,10 @@ export class ProviderCatalog {
     } else if (hasKey) {
       const envVar = providerEnvVar(pid)
       if (envVar) {
-        if (valueCountsAsApiKey(pid, envValues[envVar])) { keySource = 'env_file'; removable = true }
+        if (valueCountsAsApiKey(pid, envValues[envVar])) {
+          keySource = 'env_file'
+          removable = !pooled.has(pid) && !this.providerHasKey(pid, config, envValues, profileHome, envVar)
+        }
         else if (valueCountsAsApiKey(pid, this.processEnv(envVar, profileHome))) keySource = 'env_var'
         else {
           keySource = 'config_yaml'

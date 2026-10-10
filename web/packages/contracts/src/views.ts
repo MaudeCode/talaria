@@ -532,7 +532,7 @@ export type KeySourceKind = z.infer<typeof KeySourceKindSchema>
  * `has_key` reports a credential; `configured` (TAL-570) is the row's setup status, which a keyless Ollama or LM Studio endpoint also meets.
  * TAL-603: `is_active` marks the active provider's card; `key_source_kind` is the key badge (`null` without a credential);
  * `models_total` is the catalog size, never below `models.length`. `is_active` and `key_source_kind` are absent from older servers.
- * TAL-641: `removable` marks a key the server can delete: a built-in API key in its own profile `.env` variable, not self-hosted.
+ * TAL-641: `removable` marks a key Remove would clear: a built-in, not self-hosted, provider whose only key is its own profile `.env` variable.
  */
 export const ProviderSchema = z.looseObject({
   id: z.string(), display_name: z.string().optional(), has_key: z.boolean().optional(), configured: z.boolean().optional(), configurable: z.boolean().optional(), is_oauth: z.boolean().optional(), is_plugin_provider: z.boolean().optional(), is_self_hosted: z.boolean().optional(),

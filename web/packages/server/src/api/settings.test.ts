@@ -241,7 +241,8 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     s.deps.catalog.invalidate()
     try {
       const rows = async (cookie?: string): Promise<{ id: string; has_key: boolean; key_source: string }[]> => ((await json(await s.get('/api/providers', cookie ? { headers: { cookie } } : {}))).providers as { id: string; has_key: boolean; key_source: string }[])
-      expect((await rows()).find((p) => p.id === 'openai')).toMatchObject({ has_key: true })
+      // TAL-641: the delete retires a startup copy of the .env key with the file entry, so the key is removable.
+      expect((await rows()).find((p) => p.id === 'openai')).toMatchObject({ has_key: true, removable: true })
       const switched = await post(s, '/api/profile/switch', { name: 'nokey' })
       const cookie = (switched.headers.get('set-cookie') ?? '').split(';')[0] ?? ''
       expect((await rows(cookie)).find((p) => p.id === 'openai')).toMatchObject({ has_key: false, key_source: 'none' })
@@ -499,6 +500,33 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     } finally {
       sidecar.respond('usage.pool_providers', () => ({ providers: [] }))
       sidecar.respond('usage.pool', () => ({ entries: [] }))
+    }
+  })
+
+  it('a .env key stays unremovable while another source would keep the provider keyed (TAL-641)', async () => {
+    const env = s.deps.config.env
+    const row = async (id: string): Promise<Json | undefined> => { s.deps.catalog.invalidate(); return ((await json(await s.get('/api/providers'))).providers as Json[]).find((p) => p.id === id) }
+    const envPath = join(s.state, '.env')
+    const saved = loadEnvFile(envPath)
+    try {
+      writeEnvFile(envPath, { ...saved, DEEPSEEK_API_KEY: 'sk-deepseek-file-1234' })
+      expect(await row('deepseek')).toMatchObject({ has_key: true, key_source: 'env_file', removable: true })
+      // A value the process environment supplied explicitly outlives the delete, which only clears the file entry.
+      env.DEEPSEEK_API_KEY = 'sk-deepseek-process-1234'
+      expect(await row('deepseek')).toMatchObject({ has_key: true, key_source: 'env_file', removable: false })
+      delete env.DEEPSEEK_API_KEY
+      // So does an alias variable, which the delete never names.
+      writeEnvFile(envPath, { ...saved, ANTHROPIC_TOKEN: 'sk-ant-alias-token-1234' })
+      expect(await row('anthropic')).toMatchObject({ has_key: true, key_source: 'env_file', removable: false })
+      // And a credential-pool account.
+      sidecar.respond('usage.pool_providers', () => ({ providers: ['deepseek'] }))
+      writeEnvFile(envPath, { ...saved, DEEPSEEK_API_KEY: 'sk-deepseek-file-1234' })
+      expect(await row('deepseek')).toMatchObject({ has_key: true, key_source: 'env_file', removable: false })
+    } finally {
+      delete env.DEEPSEEK_API_KEY
+      sidecar.respond('usage.pool_providers', () => ({ providers: [] }))
+      writeEnvFile(envPath, saved)
+      s.deps.catalog.invalidate()
     }
   })
 

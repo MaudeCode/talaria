@@ -303,8 +303,8 @@ describe('OAuth provider cards and model groups', () => {
     expect(card('nous')?.models_total).toBe(3)
   })
 
-  it('a .env key under an alias the delete does not clear is not removable (TAL-641)', async () => {
-    reset({}, { ANTHROPIC_TOKEN: 'sk-ant-alias-token-1234' })
+  it('a .env key the delete clears is not removable while config.yaml also keys the provider (TAL-641)', async () => {
+    reset({ providers: { anthropic: { api_key: 'sk-ant-yaml-token-1234' } } }, { ANTHROPIC_API_KEY: 'sk-ant-env-file-1234' })
     expect((await cards()).find((p) => p.id === 'anthropic')).toMatchObject({ has_key: true, key_source: 'env_file', removable: false })
   })
 
