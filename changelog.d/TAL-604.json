@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "File changes no longer end with an empty numbered line, and removed lines that start with dashes are counted.",
+      "highlight": false,
+      "components": ["app", "web"]
+    }
+  ]
+}

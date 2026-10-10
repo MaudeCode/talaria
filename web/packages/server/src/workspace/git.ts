@@ -13,6 +13,8 @@ import { dirname, join, relative, resolve, sep } from 'node:path'
 import { isWithin, resolvePathLikePython } from './paths.js'
 import { openAnchoredFd, rmtreeAnchored, safeResolveWs, unlinkAnchored } from './fs.js'
 import { str } from '../util.js'
+import { diffHunks, hunkTotals } from '../text/diff.js'
+import type { DiffHunk } from '@maudecode/talaria-web-contracts'
 
 export const GIT_TIMEOUT_MS = 5_000
 export const GIT_REMOTE_TIMEOUT_MS = 60_000
@@ -72,7 +74,7 @@ export function gitBadge(status: GitStatus): { branch: string; dirty: number; mo
 }
 export interface GitRef { name: string; sha: string; updated: number; updated_relative: string; author: string; subject: string; upstream: string; ahead: number; behind: number }
 export interface GitBranches { is_git: true; current: string; detached: boolean; head: string; local: GitRef[]; remote: GitRef[]; upstream: string; ahead: number; behind: number }
-export interface GitDiff { path: string; kind: string; binary: boolean; too_large: boolean; additions: number; deletions: number; diff: string }
+export interface GitDiff { path: string; kind: string; binary: boolean; too_large: boolean; additions: number; deletions: number; diff: string; hunks: DiffHunk[] }
 
 export interface GitRunnerDeps {
   env: Record<string, string | undefined>
@@ -181,15 +183,11 @@ function unifiedDiffFromEmpty(lines: string[], toFile: string): string[] {
   return [`--- /dev/null`, `+++ ${toFile}`, `@@ -0,0 +${lines.length === 1 ? '1' : `1,${String(lines.length)}`} @@`, ...lines.map((l) => `+${l}`)]
 }
 
-function diffStats(diff: string): [number, number] {
-  let additions = 0
-  let deletions = 0
-  for (const line of diff.split('\n')) {
-    if (line.startsWith('+++') || line.startsWith('---')) continue
-    if (line.startsWith('+')) additions += 1
-    else if (line.startsWith('-')) deletions += 1
-  }
-  return [additions, deletions]
+/** A diff's counts and its parsed hunks (TAL-604): a too-large diff's cut text still counts, but ships no hunks. */
+function diffFields(diff: string, shown: boolean): Pick<GitDiff, 'additions' | 'deletions' | 'hunks'> {
+  const hunks = diffHunks(diff)
+  const [additions, deletions] = hunkTotals(hunks)
+  return { additions, deletions, hunks: shown ? hunks : [] }
 }
 
 function splitLines(text: string): string[] {
@@ -976,16 +974,15 @@ export class GitRunner {
   private static syntheticUntrackedDiff(workspace: string, path: string, label: string): Omit<GitDiff, 'path' | 'kind'> {
     const read = GitRunner.readUntracked(workspace, path)
     if (!read) throw new GitWorkspaceError('Path is not a file')
-    if ('tooLarge' in read) return { binary: false, too_large: true, diff: '', additions: 0, deletions: 0 }
+    if ('tooLarge' in read) return { binary: false, too_large: true, diff: '', additions: 0, deletions: 0, hunks: [] }
     const data = read.data
     const text = data.toString('utf8')
-    if (data.includes(0) || (text.includes('�') && !data.equals(Buffer.from(text, 'utf8')))) return { binary: true, too_large: false, diff: '', additions: 0, deletions: 0 }
+    if (data.includes(0) || (text.includes('�') && !data.equals(Buffer.from(text, 'utf8')))) return { binary: true, too_large: false, diff: '', additions: 0, deletions: 0, hunks: [] }
     const diffLines = unifiedDiffFromEmpty(splitLines(text), `b/${label}`)
     let diff = diffLines.join('\n') + (diffLines.length ? '\n' : '')
     const tooLarge = Buffer.byteLength(diff, 'utf8') > DIFF_SIZE_LIMIT
     if (tooLarge) diff = diff.slice(0, DIFF_SIZE_LIMIT)
-    const [additions, deletions] = diffStats(diff)
-    return { binary: false, too_large: tooLarge, diff, additions, deletions }
+    return { binary: false, too_large: tooLarge, diff, ...diffFields(diff, !tooLarge) }
   }
 
   async diff(workspace: string, path: string, kind = 'unstaged'): Promise<GitDiff> {
@@ -1004,8 +1001,7 @@ export class GitRunner {
     const binary = diff.includes('Binary files ') || diff.includes('GIT binary patch')
     const tooLarge = Buffer.byteLength(diff, 'utf8') > DIFF_SIZE_LIMIT
     if (tooLarge) diff = diff.slice(0, DIFF_SIZE_LIMIT)
-    const [additions, deletions] = diffStats(diff)
-    return { path: workspaceRel, kind, binary, too_large: tooLarge, additions, deletions, diff: binary ? '' : diff }
+    return { path: workspaceRel, kind, binary, too_large: tooLarge, ...diffFields(diff, !(binary || tooLarge)), diff: binary ? '' : diff }
   }
 
   // ── stage / unstage / discard ────────────────────────────────────────────

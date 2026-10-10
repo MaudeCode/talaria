@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { mightContainSensitiveText, publicToolFrame, redactSensitive, redactSessionData, redactText } from './redact.js'
 import { MessageSchema } from '@maudecode/talaria-web-contracts'
 import { sanitizeShareMessage } from './sessions/shares.js'
+import { toolEditDiff } from './sessions/tool-display.js'
 
 describe('redactSensitive', () => {
   it('masks the password of a URL with userinfo and keeps the user and host', () => {
@@ -151,6 +152,14 @@ describe('curl -u', () => {
     const frame = publicToolFrame({ name: 'web_search', args: { query } }, true)
     expect(JSON.stringify(frame)).not.toContain(key.slice(0, 16))
     expect(redactText(`x -----BEGIN RSA PRIVATE KEY-----${key}`, true)).not.toContain(key.slice(0, 16))
+  })
+
+  it('re-parses an edit diff\'s hunks from its redacted text, so a key spanning lines never shows in them (TAL-604)', () => {
+    const key = 'K'.repeat(64)
+    const diff = `@@ -0,0 +1,3 @@\n+-----BEGIN PRIVATE KEY-----\n+${key}\n+-----END PRIVATE KEY-----`
+    const frame = publicToolFrame({ name: 'patch', edit_diff: toolEditDiff('patch', { diff }) }, true)
+    expect(JSON.stringify(frame)).not.toContain(key.slice(0, 16))
+    expect((frame.edit_diff as { hunks: { lines: { text: string }[] }[] }).hunks[0]!.lines.map((line) => line.text)).toEqual(['+[REDACTED PRIVATE KEY]'])
   })
 
   it('masks curl proxy credentials (-U, --proxy-user), through the public prefilter', () => {

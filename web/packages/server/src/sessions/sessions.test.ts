@@ -10,6 +10,7 @@ import type { SidecarResult } from '@maudecode/talaria-web-contracts'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { str } from '../util.js'
+import { diffHunks } from '../text/diff.js'
 import { withPendingUserTurn, withoutRunningTurnOutput } from './merge.js'
 import { RunJournalWriter } from './journal.js'
 
@@ -2343,7 +2344,7 @@ describe('session detail ships each file edit\'s diff (TAL-448)', () => {
     s.deps.sessionStore.save(session)
     const fixture = (JSON.parse(readFileSync(fixturePath, 'utf8')) as Json).tool_edit_diffs as Json
     const expected = fixture.expected as Json
-    expect(expected).toEqual({ 'call-patch': { added: 2, removed: 1, diff: diff.trimEnd(), truncated: false } })
+    expect(expected).toEqual({ 'call-patch': { added: 2, removed: 1, diff: diff.trimEnd(), truncated: false, hunks: diffHunks(diff) } })
     for (const query of ['', '&msg_limit=50']) {
       const served = (await json(await s.get(`/api/session?session_id=${sid}&messages=1${query}`))).session as Json
       const messages = served.messages as Json[]

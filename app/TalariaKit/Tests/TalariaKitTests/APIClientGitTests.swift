@@ -309,7 +309,12 @@ final class APIClientGitTests: APIClientTestCase {
                 "too_large": false,
                 "additions": 2,
                 "deletions": 1,
-                "diff": "@@ -1,2 +1,3 @@\\n context\\n-old\\n+new\\n+added\\n"
+                "diff": "@@ -1,2 +1,3 @@\\n context\\n-old\\n+new\\n+added\\n",
+                "hunks": [{"header": "@@ -1,2 +1,3 @@", "old_start": 1, "new_start": 1, "new_end": 3, "additions": 2, "deletions": 1, "lines": [
+                  {"kind": "context", "old_line": 1, "new_line": 1, "text": " context"},
+                  {"kind": "deletion", "old_line": 2, "new_line": null, "text": "-old"},
+                  {"kind": "addition", "old_line": null, "new_line": 2, "text": "+new"},
+                  {"kind": "addition", "old_line": null, "new_line": 3, "text": "+added"}]}]
               }
             }
             """, for: request)
@@ -324,12 +329,27 @@ final class APIClientGitTests: APIClientTestCase {
         XCTAssertEqual(diff.additions, 2)
         XCTAssertEqual(diff.deletions, 1)
         XCTAssertTrue(diff.diff?.contains("+added") == true)
+        // TAL-604: the server's hunks, snake_case keys and all, through the client's decoder.
+        XCTAssertEqual(diff.hunks.map(\.displayLabel), ["Lines 1-3"])
+        XCTAssertEqual(diff.hunks.first?.lines.map(\.kind), [.context, .deletion, .addition, .addition])
+        XCTAssertEqual(diff.hunks.first?.lines.map(\.gutterLabel), ["1", "2", "2", "3"])
+    }
+
+    func testGitDiffFromAnOlderServerParsesItsText() async throws {
+        // A Web from before TAL-604 sends no hunks (TAL-697).
+        let client = makeClient { request in
+            apiTestJSONResponse(#"{"diff": {"path": "a.txt", "kind": "unstaged", "additions": 1, "deletions": 0, "diff": "@@ -0,0 +1 @@\n+a\n"}}"#, for: request)
+        }
+        let response = try await client.gitDiff(sessionID: "abc123", path: "a.txt")
+        let diff = try XCTUnwrap(response.diff)
+        XCTAssertEqual(diff.hunks.map(\.displayLabel), ["Line 1"])
+        XCTAssertEqual(diff.hunks.first?.lines.first?.text, "+a")
     }
 
     func testGitDiffDefaultsKindToUnstaged() async throws {
         let client = makeClient { request in
             XCTAssertEqual(try self.query(request)["kind"], "unstaged")
-            return apiTestJSONResponse(#"{"diff": {"path": "a.txt", "kind": "unstaged", "diff": ""}}"#, for: request)
+            return apiTestJSONResponse(#"{"diff": {"path": "a.txt", "kind": "unstaged", "additions": 0, "deletions": 0, "diff": "", "hunks": []}}"#, for: request)
         }
 
         _ = try await client.gitDiff(sessionID: "abc123", path: "a.txt")

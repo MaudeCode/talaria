@@ -69,7 +69,7 @@ struct GitDiffView: View {
         } else if diff.tooLarge == true {
             ContentUnavailableView("Diff too large to show.", systemImage: "doc.badge.exclamationmark")
         } else {
-            let hunks = DiffHunk.parse(diff.diff ?? "")
+            let hunks = diff.hunks
             if hunks.isEmpty {
                 ContentUnavailableView("No Changes", systemImage: "checkmark.circle")
             } else {
@@ -100,10 +100,7 @@ struct GitDiffView: View {
     private func summary(diff: GitDiff, hunks: [DiffHunk]) -> some View {
         HStack(spacing: 10) {
             Text("1 file changed").font(AppFont.subheadline(weight: .semibold))
-            DiffCountsLabel(
-                additions: diff.additions ?? hunks.reduce(0) { $0 + $1.additions },
-                deletions: diff.deletions ?? hunks.reduce(0) { $0 + $1.deletions }
-            )
+            DiffCountsLabel(additions: diff.additions, deletions: diff.deletions)
             Spacer()
             Button(collapsedHunks.count == hunks.count ? "Expand All" : "Collapse All") {
                 withAnimation(.easeInOut(duration: 0.18)) {

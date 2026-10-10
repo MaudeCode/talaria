@@ -67,6 +67,29 @@ describe('workspace git over HTTP', () => {
     expect((await s.get(`/api/git/diff?session_id=${sid}&path=../outside`)).status).toBe(400)
   })
 
+  it('ships a multi-hunk diff as structured hunks with line kinds, numbers and per-hunk counts (TAL-604)', async () => {
+    const { sid, ws } = await repoSession(s)
+    const lines = Array.from({ length: 20 }, (_, i) => `l${String(i + 1)}`)
+    writeFileSync(join(ws, 'long.txt'), lines.join('\n') + '\n')
+    git(ws, 'add', 'long.txt')
+    git(ws, 'commit', '-q', '-m', 'long')
+    writeFileSync(join(ws, 'long.txt'), lines.map((l, i) => (i === 1 ? 'two' : l)).filter((_, i) => i !== 17).join('\n') + '\n')
+    const diff = (await json(await s.get(`/api/git/diff?session_id=${sid}&path=long.txt`))).diff as Json
+    expect(diff).toMatchObject({ additions: 1, deletions: 2 })
+    const line = (kind: string, old_line: number | null, new_line: number | null, text: string): Json => ({ kind, old_line, new_line, text })
+    expect(diff.hunks).toEqual([
+      { header: '@@ -1,5 +1,5 @@', old_start: 1, new_start: 1, new_end: 5, additions: 1, deletions: 1, lines: [
+        line('context', 1, 1, ' l1'), line('deletion', 2, null, '-l2'), line('addition', null, 2, '+two'),
+        line('context', 3, 3, ' l3'), line('context', 4, 4, ' l4'), line('context', 5, 5, ' l5'),
+      ] },
+      { header: '@@ -15,6 +15,5 @@ l14', old_start: 15, new_start: 15, new_end: 19, additions: 0, deletions: 1, lines: [
+        line('context', 15, 15, ' l15'), line('context', 16, 16, ' l16'), line('context', 17, 17, ' l17'),
+        line('deletion', 18, null, '-l18'), line('context', 19, 18, ' l19'), line('context', 20, 19, ' l20'),
+      ] },
+    ])
+    git(ws, 'checkout', '--', 'long.txt')
+  })
+
   it('an untracked entry that is a symlink out of the workspace is never read for the synthetic diff or the counts', async () => {
     const { sid, ws } = await repoSession(s)
     writeFileSync(join(s.state, 'secret.env'), 'TOKEN=leak\n')

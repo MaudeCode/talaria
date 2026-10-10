@@ -521,7 +521,34 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
         XCTAssertFalse(visibility(latestMessageRole: nil).isVisible)
     }
 
-    // MARK: - Diff parsing
+    // MARK: - Diff hunks (TAL-604)
+
+    private func hunks(_ json: String, diff: String = "") throws -> [DiffHunk] {
+        DiffHunk.resolved(try JSONDecoder().decode(JSONValue.self, from: Data(json.utf8)), diff: diff)
+    }
+
+    func testServerHunksDecodeNumberedWithTheirLabels() throws {
+        let decoded = try hunks("""
+        [{"header": "@@ -1,2 +1,2 @@", "old_start": 1, "new_start": 1, "new_end": 2, "additions": 1, "deletions": 1, "lines": [
+          {"kind": "deletion", "old_line": 1, "new_line": null, "text": "-a"},
+          {"kind": "addition", "old_line": null, "new_line": 1, "text": "+b"},
+          {"kind": "context", "old_line": 2, "new_line": 2, "text": " c"}]},
+         {"header": "@@ -9,1 +9,0 @@", "old_start": 9, "new_start": 9, "new_end": 9, "additions": 0, "deletions": 1, "lines": [
+          {"kind": "deletion", "old_line": 9, "new_line": null, "text": "-z"}]},
+         {"header": "", "old_start": null, "new_start": null, "new_end": null, "additions": 1, "deletions": 0, "lines": [
+          {"kind": "addition", "old_line": null, "new_line": null, "text": "+x"}]}]
+        """, diff: "ignored when the server sends hunks")
+
+        XCTAssertEqual(decoded.map(\.id), [0, 1, 2])
+        XCTAssertEqual(decoded.map(\.displayLabel), ["Lines 1-2", "Line 9", "Patch 3 of 3"])
+        XCTAssertEqual(decoded.map(\.additions), [1, 0, 1])
+        XCTAssertEqual(decoded[0].lines.map(\.kind), [.deletion, .addition, .context])
+        XCTAssertEqual(decoded[0].lines.map(\.id), [0, 1, 2])
+        XCTAssertEqual(decoded[0].lines.map(\.gutterLabel), ["1", "1", "2"])
+        XCTAssertEqual(try hunks("[]", diff: "@@ -1 +1 @@\n-a\n+b"), [], "An empty server list is no change, never re-parsed.")
+    }
+
+    // Old-server fallback (TAL-697): a Web from before TAL-604 sends no hunks, so the App parses the diff.
 
     func testDiffParserDropsPreambleAndClassifiesLines() {
         let raw = """
@@ -534,7 +561,7 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
         -removed line
         +added line
         """
-        let hunks = DiffHunk.parse(raw)
+        let hunks = DiffHunk.resolved(nil, diff: raw)
 
         XCTAssertEqual(hunks.count, 1)
         let hunk = try! XCTUnwrap(hunks.first)
@@ -555,7 +582,7 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
          keep
         +new
         """
-        let hunks = DiffHunk.parse(raw)
+        let hunks = DiffHunk.resolved(nil, diff: raw)
 
         XCTAssertEqual(hunks.count, 2)
         XCTAssertEqual(hunks[0].id, 0)
@@ -570,7 +597,7 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
     func testDiffParserKeepsTheNextFilesHeaderOutOfAMultiFileDiff() {
         // The Agent's multi-file patch result joins each file's diff with a blank line (TAL-448).
         let raw = "--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-old\n+new\n\n--- a/b.txt\n+++ b/b.txt\n@@ -0,0 +1 @@\n+added\n"
-        let hunks = DiffHunk.parse(raw)
+        let hunks = DiffHunk.resolved(nil, diff: raw)
 
         XCTAssertEqual(hunks.map(\.additions), [1, 1])
         XCTAssertEqual(hunks.map(\.deletions), [1, 0])
@@ -578,17 +605,16 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
     }
 
     func testDiffParserCreatesSyntheticPatchWithoutHunkHeader() {
-        let hunks = DiffHunk.parse("--- a/a.txt\n+++ b/a.txt\n-old\n+new")
+        let hunks = DiffHunk.resolved(nil, diff: "--- a/a.txt\n+++ b/a.txt\n-old\n+new")
 
         XCTAssertEqual(hunks.count, 1)
-        XCTAssertTrue(hunks[0].isSynthetic)
         XCTAssertEqual(hunks[0].displayLabel, "Patch 1 of 1")
         XCTAssertEqual(hunks[0].additions, 1)
         XCTAssertEqual(hunks[0].deletions, 1)
     }
 
     func testSyntheticDiffParserKeepsChangedLinesBeginningWithHeaderLikePrefixes() {
-        let hunks = DiffHunk.parse("--- a/a.txt\n+++ b/a.txt\n---actual content\n+++actual content")
+        let hunks = DiffHunk.resolved(nil, diff: "--- a/a.txt\n+++ b/a.txt\n---actual content\n+++actual content")
 
         XCTAssertEqual(hunks.count, 1)
         XCTAssertEqual(hunks[0].lines.map(\.text), ["---actual content", "+++actual content"])
@@ -596,14 +622,14 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
     }
 
     func testDiffParserNumbersMultipleSyntheticPatches() {
-        let hunks = DiffHunk.parse("diff --git a/a b/a\n-a\n+b\ndiff --git a/b b/b\n-c\n+d")
+        let hunks = DiffHunk.resolved(nil, diff: "diff --git a/a b/a\n-a\n+b\ndiff --git a/b b/b\n-c\n+d")
 
         XCTAssertEqual(hunks.map(\.displayLabel), ["Patch 1 of 2", "Patch 2 of 2"])
     }
 
     func testDiffParserEmptyInputReturnsNoHunks() {
-        XCTAssertTrue(DiffHunk.parse("").isEmpty)
-        XCTAssertTrue(DiffHunk.parse("diff --git a/x b/x\nindex 1..2\n").isEmpty, "No hunk header → nothing to show.")
+        XCTAssertTrue(DiffHunk.resolved(nil, diff: "").isEmpty)
+        XCTAssertTrue(DiffHunk.resolved(nil, diff: "diff --git a/x b/x\nindex 1..2\n").isEmpty, "No hunk header → nothing to show.")
     }
 
     @MainActor

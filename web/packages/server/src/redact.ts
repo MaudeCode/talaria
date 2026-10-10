@@ -1,4 +1,5 @@
 import { str } from './util.js'
+import { diffHunks } from './text/diff.js'
 import { isRasterDataUri } from './raster-image.js'
 import { snapshotArgs, toolArgs, toolDisplay, toolName } from './sessions/tool-display.js'
 import { messageText } from './sessions/merge.js'
@@ -1662,8 +1663,11 @@ export function redactString(text: string, enabled = true): string {
 export function redactValue(v: unknown, enabled: boolean): unknown {
   if (typeof v === 'string') return redactText(v, enabled)
   if (Array.isArray(v)) return v.map((item) => redactValue(item, enabled))
-  if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, val]) => [k, redactValue(val, enabled)]))
-  return v
+  if (!v || typeof v !== 'object') return v
+  const out = Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, val]) => [k, redactValue(val, enabled)]))
+  // TAL-604: a diff's `hunks` are re-parsed from its redacted text, which masks spans (a private key) that no single line shows.
+  if (enabled && Array.isArray(out.hunks) && typeof out.diff === 'string') out.hunks = diffHunks(out.diff)
+  return out
 }
 
 export const PUBLIC_MESSAGE_INTERNAL_FIELDS = new Set(['api_content', '_row_id', '_state_db_row_id', '_state_db_generation', '_db_row_id', 'state_db_row_id', '_active_turn_token', '_active_turn_user', '_fork_child_turn'])

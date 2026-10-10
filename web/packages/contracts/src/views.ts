@@ -27,11 +27,26 @@ export type Attachment = z.infer<typeof AttachmentSchema>
 export const ToolKindSchema = z.enum(['shell', 'read', 'list', 'search', 'web', 'write', 'skill', 'memory', 'delegate', 'unknown'])
 export type ToolKind = z.infer<typeof ToolKindSchema>
 /**
- * TAL-448: a completed file-edit call's change, from its result's unified diff: `added` / `removed` count the whole diff's
- * lines (file headers excluded); `diff` is the redacted diff, capped at 400 lines, with `truncated` when cut. Absent on a
- * call whose result has no diff.
+ * TAL-604: one row of a unified diff hunk as the server parsed it. `text` is the raw line, its `+` / `-` / space prefix kept;
+ * `old_line` / `new_line` number it on each side (null on the side it is absent from, and on a `\ No newline` marker).
  */
-export const ToolEditDiffSchema = z.object({ added: z.number().int(), removed: z.number().int(), diff: z.string(), truncated: z.boolean() })
+export const DiffLineSchema = z.object({ kind: z.enum(['addition', 'deletion', 'context']), old_line: z.number().int().nullable(), new_line: z.number().int().nullable(), text: z.string() })
+/**
+ * TAL-604: one hunk of a unified diff: its `@@` `header`, the first old and new line numbers, the last new line it covers
+ * (`new_end`, at least `new_start`), its added and removed line counts, and its lines. A diff without `@@` headers yields
+ * one hunk per file with an empty `header` and null numbers.
+ */
+export const DiffHunkSchema = z.object({
+  header: z.string(), old_start: z.number().int().nullable(), new_start: z.number().int().nullable(), new_end: z.number().int().nullable(),
+  additions: z.number().int(), deletions: z.number().int(), lines: z.array(DiffLineSchema),
+})
+export type DiffHunk = z.infer<typeof DiffHunkSchema>
+/**
+ * TAL-448: a completed file-edit call's change, from its result's unified diff: `added` / `removed` count the whole diff's
+ * lines (file headers excluded); `diff` is the redacted diff, capped at 400 lines, with `truncated` when cut, and `hunks`
+ * that diff parsed (TAL-604). Absent on a call whose result has no diff.
+ */
+export const ToolEditDiffSchema = z.object({ added: z.number().int(), removed: z.number().int(), diff: z.string(), truncated: z.boolean(), hunks: z.array(DiffHunkSchema) })
 export type ToolEditDiff = z.infer<typeof ToolEditDiffSchema>
 /** Server-derived display fields every tool call carries: the kind, and the redacted first-line label of its main argument (`''` when none; omitted on a live frame with none, which keeps its start frame's target), and a file edit's `edit_diff`. */
 export const ToolDisplayFields = { kind: ToolKindSchema.optional(), target: z.string().optional(), edit_diff: ToolEditDiffSchema.optional() }

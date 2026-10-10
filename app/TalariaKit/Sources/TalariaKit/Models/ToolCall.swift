@@ -99,23 +99,25 @@ public struct ToolResultView: Decodable, Equatable {
     }
 }
 
-/// TAL-448: a file edit's change, decided on the server: `added` / `removed` count the whole diff, and `diff` is the
-/// redacted unified diff, cut to 400 lines when `truncated`.
+/// TAL-448: a file edit's change, decided on the server: `added` / `removed` count the whole diff, `diff` is the
+/// redacted unified diff, cut to 400 lines when `truncated`, and `hunks` is that diff parsed (TAL-604).
 public struct ToolEditDiff: Decodable, Equatable {
     public let added: Int
     public let removed: Int
     public let diff: String
     public let truncated: Bool
+    public let hunks: [DiffHunk]
 
-    public init(added: Int, removed: Int, diff: String, truncated: Bool) {
+    init(added: Int, removed: Int, diff: String, truncated: Bool, hunks: [DiffHunk] = []) {
         self.added = added
         self.removed = removed
         self.diff = diff
         self.truncated = truncated
+        self.hunks = hunks
     }
 
     enum CodingKeys: String, CodingKey {
-        case added, removed, diff, truncated
+        case added, removed, diff, truncated, hunks
     }
 
     public init(from decoder: Decoder) throws {
@@ -129,6 +131,7 @@ public struct ToolEditDiff: Decodable, Equatable {
         self.removed = removed
         diff = container.decodeLossyStringIfPresent(forKey: .diff) ?? ""
         truncated = container.decodeLossyBoolIfPresent(forKey: .truncated) ?? false
+        hunks = DiffHunk.resolved(try? container.decodeIfPresent(JSONValue.self, forKey: .hunks), diff: diff)
     }
 
     /// The change a decoded JSON field holds; nil when the server sent none.

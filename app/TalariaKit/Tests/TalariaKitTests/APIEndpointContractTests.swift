@@ -892,12 +892,11 @@ final class SharedContractTests: XCTestCase {
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         let session = try decoder.decode(SessionDetail.self, from: JSONSerialization.data(withJSONObject: example["session"] as Any))
         let messages = try XCTUnwrap(session.messages)
-        let want = ToolEditDiff(
-            added: 2,
-            removed: 1,
-            diff: "--- a/src/app.ts\n+++ b/src/app.ts\n@@ -1,3 +1,4 @@\n import { run } from './run'\n-run(1)\n+run(2)\n+run(3)\n export {}",
-            truncated: false
-        )
+        let wantDiff = "--- a/src/app.ts\n+++ b/src/app.ts\n@@ -1,3 +1,4 @@\n import { run } from './run'\n-run(1)\n+run(2)\n+run(3)\n export {}"
+        // TAL-604: the server's hunks (or, from a Web before them, the App's own parse) read the diff the same way.
+        let want = ToolEditDiff(added: 2, removed: 1, diff: wantDiff, truncated: false, hunks: DiffHunk.resolved(nil, diff: wantDiff))
+        XCTAssertEqual(want.hunks.map(\.displayLabel), ["Lines 1-4"])
+        XCTAssertEqual(want.hunks.first?.lines.map(\.gutterLabel), ["1", "2", "2", "3", "4"])
         let expected = try XCTUnwrap(example["expected"] as? [String: Any])
         XCTAssertEqual(ToolEditDiff(try JSONDecoder().decode(JSONValue.self, from: JSONSerialization.data(withJSONObject: expected["call-patch"] as Any))), want)
         func edits(_ calls: [ToolCall]) -> [String: ToolEditDiff?] {

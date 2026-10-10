@@ -1,6 +1,6 @@
 import { oc } from '@orpc/contract'
 import { z } from 'zod'
-import { GitInfoSchema } from '../views.js'
+import { DiffHunkSchema, GitInfoSchema } from '../views.js'
 
 /** Workspace git panel, rollback checkpoints, worktrees, and upload receipts. */
 
@@ -20,7 +20,8 @@ export const GitStatusSchema = z.object({
 })
 export const GitRefSchema = z.object({ name: z.string(), sha: z.string(), updated: z.number().int(), updated_relative: z.string(), author: z.string(), subject: z.string(), upstream: z.string(), ahead: z.number().int(), behind: z.number().int() })
 export const GitBranchesSchema = z.object({ is_git: z.literal(true), current: z.string(), detached: z.boolean(), head: z.string(), local: z.array(GitRefSchema), remote: z.array(GitRefSchema), upstream: z.string(), ahead: z.number().int(), behind: z.number().int() })
-export const GitDiffSchema = z.object({ path: z.string(), kind: z.string(), binary: z.boolean(), too_large: z.boolean(), additions: z.number().int(), deletions: z.number().int(), diff: z.string() })
+/** One file's diff; `hunks` is `diff` parsed (TAL-604), empty for a binary or too-large diff. */
+export const GitDiffSchema = z.object({ path: z.string(), kind: z.string(), binary: z.boolean(), too_large: z.boolean(), additions: z.number().int(), deletions: z.number().int(), diff: z.string(), hunks: z.array(DiffHunkSchema) })
 /** Every git failure answers `{error, code}`; `code` is the classified reason (`not_a_repo`, `dirty_worktree`, ...). */
 export const GitErrorSchema = z.object({ error: z.string(), code: z.string() })
 /** One agent file checkpoint, newest first; `date_display` is the server's minute-precision rendering of `date`. */
