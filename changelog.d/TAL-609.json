@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "With Summarize What's New with AI on, Settings › System now shows what you'll notice and what's worth knowing under each pending update.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

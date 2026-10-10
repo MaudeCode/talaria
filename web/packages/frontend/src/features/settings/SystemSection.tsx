@@ -103,6 +103,7 @@ export function SystemSection() {
   const cachedCurrent = updates.data !== undefined && (updates.data.channel ?? channel) === channel && (updates.data.agent_channel ?? agentChannel) === agentChannel
   const webStatus = pathStatus(webUpdate, WEB, { failed: updates.isError && !cachedCurrent, pending: updates.isPending })
   const agentStatus = pathStatus(agentUpdate, AGENT, { failed: updates.isError && !cachedCurrent, pending: updates.isPending })
+  const whatsNew = bool('whats_new_summary_enabled')
   const heading = 'text-[15px] font-semibold text-text'
   return (
     <div className="flex flex-col gap-9" data-section="system">
@@ -118,7 +119,8 @@ export function SystemSection() {
               <option value="experimental">{m.settings_update_channel_experimental()}</option>
             </Select>}
             action={canManage && webUpdate?.can_apply ? <Button variant="primary" onClick={() => applyWeb.mutate({})} disabled={applyWeb.isPending}>{applyWeb.isPending ? m.update_updating() : webUpdate.state === 'finish' ? m.system_finish_update() : m.system_apply_web_update()}</Button> : null}
-            manualLink={webUpdate?.manual_link === true}>
+            manualLink={webUpdate?.manual_link === true}
+            summary={whatsNew ? <WhatsNew target="webui" info={webUpdate} /> : null}>
             <FieldRow label={m.settings_label_auto_apply_updates()} hint={m.system_auto_apply_hint()} htmlFor="settingsAutoApplyUpdates" inline><Switch id="settingsAutoApplyUpdates" disabled={!canManage || !bool('check_for_updates', true)} checked={bool('auto_apply_updates')} onCheckedChange={(checked) => set({ auto_apply_updates: checked })} /></FieldRow>
           </UpdatePath>
           <UpdatePath id="systemAgentPath" title={AGENT} installed={agentUpdate?.current_version ?? str('agent_version', '—')} status={agentStatus}
@@ -127,7 +129,8 @@ export function SystemSection() {
               <option value="experimental">{m.settings_update_channel_experimental()}</option>
             </Select>}
             action={canManage && agentUpdate?.can_apply ? <Button variant="primary" onClick={() => applyAgent.mutate({})} disabled={applyAgent.isPending}>{applyAgent.isPending ? m.update_updating() : m.system_apply_agent_update()}</Button> : null}
-            warning={agentUpdate?.can_apply && agentUpdate.unsupported === true ? m.system_agent_unsupported_warning() : null}>
+            warning={agentUpdate?.can_apply && agentUpdate.unsupported === true ? m.system_agent_unsupported_warning() : null}
+            summary={whatsNew ? <WhatsNew target="agent" info={agentUpdate} /> : null}>
             <FieldRow label={m.settings_label_ignore_agent_updates()} hint={m.system_agent_manual_hint()} htmlFor="settingsIgnoreAgentUpdates" inline><Switch id="settingsIgnoreAgentUpdates" checked={bool('ignore_agent_updates')} onCheckedChange={(checked) => save.mutate({ ignore_agent_updates: checked }, { onError: fail, onSettled: () => { void qc.invalidateQueries({ queryKey: keys.updates.check }) } })} /></FieldRow>
           </UpdatePath>
         </div>
@@ -221,6 +224,25 @@ function pathStatus(t: Target | null | undefined, name: string, { failed, pendin
   }
 }
 
+/** The server-written What's New sections for a target with an update ready; mounted only while the setting is on. */
+function WhatsNew({ target, info }: { target: 'webui' | 'agent'; info: Target | null | undefined }) {
+  const ready = info?.state === 'release_ready' || info?.state === 'commits_behind'
+  const summary = useQuery({ queryKey: [...keys.updates.summary, target, info?.current_sha, info?.latest_sha, info?.behind], queryFn: () => api.fetchUpdatesSummary(target, info ?? {}), enabled: ready, staleTime: Infinity })
+  if (!ready) return null
+  if (summary.isPending) return <p className="mt-2 text-xs text-muted">{m.system_whats_new_loading()}</p>
+  if (summary.isError) return <p className="mt-2 text-xs text-muted">{m.system_whats_new_failed()}</p>
+  return (
+    <div className="mt-2 flex flex-col gap-2 text-xs">
+      {(summary.data.summary_sections ?? []).map((section) => (
+        <div key={section.title}>
+          <h4 className="font-medium text-text">{section.title}</h4>
+          <ul className="mt-0.5 list-disc pl-4 text-muted">{section.items.map((item) => <li key={item}>{item}</li>)}</ul>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 const NODE: Record<Tone | 'installed', string> = {
   installed: 'border-text bg-text',
   update: 'border-accent bg-accent',
@@ -239,8 +261,8 @@ function PathNode({ tone, children }: { tone: Tone | 'installed'; children: Reac
 }
 
 /** A component's update path: installed version, then where its channel leads, with its own controls underneath. */
-function UpdatePath({ id, title, installed, status, channel, action, warning, manualLink, children }: {
-  id: string; title: string; installed: string; status: PathStatus; channel: ReactNode; action: ReactNode; warning?: string | null; manualLink?: unknown; children: ReactNode
+function UpdatePath({ id, title, installed, status, channel, action, warning, manualLink, summary, children }: {
+  id: string; title: string; installed: string; status: PathStatus; channel: ReactNode; action: ReactNode; warning?: string | null; manualLink?: unknown; summary?: ReactNode; children: ReactNode
 }) {
   const next = status.tone !== 'ok'
   return (
@@ -262,6 +284,7 @@ function UpdatePath({ id, title, installed, status, channel, action, warning, ma
             {status.detail ? <p className="mt-0.5 text-xs text-muted">{status.detail}</p> : null}
             {manualLink ? <a className="inline-flex min-h-11 items-center text-xs text-accent-text underline" href="https://github.com/MaudeCode/talaria/releases" target="_blank" rel="noreferrer">{m.system_manual_updates()}</a> : null}
             {warning ? <p role="status" className="mt-1 text-xs text-warning">{warning}</p> : null}
+            {summary}
             {action ? <div className="mt-2">{action}</div> : null}
           </PathNode>
         ) : null}

@@ -21,6 +21,7 @@ vi.mock('../../api/endpoints', () => ({
   fetchMcpServers: vi.fn(() => Promise.resolve({ servers: [] })),
   fetchMcpTools: vi.fn(() => Promise.resolve({ tools: [] })),
   toggleMcpServer: vi.fn(),
+  fetchUpdatesSummary: vi.fn(),
 }))
 vi.mock('../toast/toast', () => ({ showToast: vi.fn() }))
 import * as api from '../../api/endpoints'
@@ -286,7 +287,7 @@ describe('SystemSection "Check now"', () => {
 })
 
 describe('SystemSection update paths', () => {
-  beforeEach(() => { settingsState = { bot_name: 'Hermes', check_for_updates: true, update_channel: 'stable', agent_update_channel: 'stable' }; vi.mocked(api.applyUpdates).mockReset() })
+  beforeEach(() => { settingsState = { bot_name: 'Hermes', check_for_updates: true, update_channel: 'stable', agent_update_channel: 'stable' }; vi.mocked(api.applyUpdates).mockReset(); vi.mocked(api.fetchUpdatesSummary).mockReset() })
   const path = (name: string) => screen.getByRole('region', { name })
 
   it('names the Stable Agent release instead of a Git commit distance', async () => {
@@ -379,6 +380,31 @@ describe('SystemSection update paths', () => {
     expect(await screen.findByText('Checking Talaria Web for updates…')).toBeInTheDocument()
     expect(screen.getByText('Checking Hermes Agent for updates…')).toBeInTheDocument()
     expect(screen.queryByText(/update status is unavailable/i)).not.toBeInTheDocument()
+  })
+
+  it("shows the What's new summary in the path that has the update", async () => {
+    settingsState.whats_new_summary_enabled = true
+    const agent = behind(3)
+    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ webui: current, agent })
+    vi.mocked(api.fetchUpdatesSummary).mockResolvedValue({ ok: true, summary_sections: [{ title: "What you'll notice", items: ['Chats load faster.'] }, { title: 'Worth knowing', items: ['Three updates are combined here.'] }] })
+    renderSystem()
+    const path = await screen.findByRole('region', { name: 'Hermes Agent' })
+    expect(await within(path).findByText("What you'll notice")).toBeInTheDocument()
+    expect(within(path).getByText('Chats load faster.')).toBeInTheDocument()
+    expect(within(path).getByText('Worth knowing')).toBeInTheDocument()
+    expect(within(path).getByText('Three updates are combined here.')).toBeInTheDocument()
+    expect(api.fetchUpdatesSummary).toHaveBeenCalledTimes(1)
+    expect(api.fetchUpdatesSummary).toHaveBeenCalledWith('agent', agent)
+  })
+
+  it("fetches no What's new summary while the setting is off", async () => {
+    settingsState.whats_new_summary_enabled = false
+    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ webui: behind(2), agent: behind(3) })
+    renderSystem()
+    expect(await screen.findByRole('button', { name: /update agent/i })).toBeInTheDocument()
+    await new Promise((r) => setTimeout(r, 50))
+    expect(api.fetchUpdatesSummary).not.toHaveBeenCalled()
+    expect(screen.queryByText("What you'll notice")).not.toBeInTheDocument()
   })
 
   it('opens a setting explanation from its help button', async () => {

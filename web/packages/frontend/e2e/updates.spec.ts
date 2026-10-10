@@ -179,3 +179,39 @@ for (const scenario of [
     await page.screenshot({ path: testInfo.outputPath(`${scenario.name}.png`), fullPage: true })
   })
 }
+
+test("What's new: the summary loads into the update path only once the setting is on (TAL-609)", async ({ page }, testInfo) => {
+  let settings = { update_channel: 'stable', check_for_updates: true, whats_new_summary_enabled: false }
+  const summaries: unknown[] = []
+  await page.route('**/api/settings', (route) => {
+    if (route.request().method() === 'POST') settings = { ...settings, ...route.request().postDataJSON() as Partial<typeof settings> }
+    return route.fulfill({ json: settings })
+  })
+  await page.route('**/api/updates/check', (route) => route.fulfill({ json: updatesCheckView({
+    cached: true, webui: { behind: 2, current_sha: 'a'.repeat(40), latest_sha: 'b'.repeat(40) }, agent: { behind: 0 },
+  }) }))
+  await page.route('**/api/updates/summary', (route) => {
+    summaries.push(route.request().postDataJSON())
+    return route.fulfill({ json: { ok: true, generated_by: 'llm', summary_sections: [
+      { title: "What you'll notice", items: ['Chats open faster after a restart.', 'The model picker remembers your last choice.'] },
+      { title: 'Worth knowing', items: ['This summary combines both pending updates.'] },
+    ] } })
+  })
+  await page.goto('/settings/system')
+  await settle(page)
+  const web = page.getByRole('region', { name: 'Talaria Web', exact: true })
+  await expect(web.getByText('Talaria Web is 2 commits behind', { exact: true })).toBeVisible()
+  await expect(web.getByText("What you'll notice", { exact: true })).toHaveCount(0)
+  await page.screenshot({ path: testInfo.outputPath('whats-new-off.png'), fullPage: true })
+  expect(summaries).toEqual([])
+  await page.getByRole('switch', { name: "Summarize What's New with AI", exact: true }).click()
+  await expect.poll(() => settings.whats_new_summary_enabled).toBe(true)
+  await expect(web.getByText("What you'll notice", { exact: true })).toBeVisible()
+  await expect(web.getByText('Chats open faster after a restart.', { exact: true })).toBeVisible()
+  await expect(web.getByText('Worth knowing', { exact: true })).toBeVisible()
+  await expect(web.getByText('This summary combines both pending updates.', { exact: true })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Hermes Agent', exact: true }).getByText("What you'll notice")).toHaveCount(0)
+  expect(summaries).toEqual([{ updates: { webui: expect.objectContaining({ behind: 2, current_sha: 'a'.repeat(40), latest_sha: 'b'.repeat(40) }) }, target: 'webui' }])
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath('whats-new-on.png'), fullPage: true })
+})
