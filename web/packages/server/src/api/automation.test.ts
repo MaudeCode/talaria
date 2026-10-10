@@ -978,13 +978,16 @@ describe('extension manifest toggle decision (TAL-685)', () => {
 })
 
 describe('extension directory rows in /api/extensions/manifests (TAL-704)', () => {
-  it('ships panel, nav, capabilities, and permissions from the manifest entry, and marks a scripts-only entry legacy', async () => {
+  it('ships panel (relative to the manifest folder), nav, capabilities, and permissions from the manifest entry, and marks a scripts-only entry legacy', async () => {
     const root = mkdtempSync(join(tmpdir(), 'talaria-ext-'))
     writeFileSync(join(root, 'manifest.json'), JSON.stringify({ extensions: [
-      { id: 'live', name: 'Live', version: '2.0.0', description: 'A panel', panel: 'index.html', nav: { label: 'Live Panel', icon: 'star' }, capabilities: ['theme', 'toast', 'root'], permissions: { storage: { owned: true }, network: false, ['x'.repeat(65)]: true } },
+      { id: 'live', name: 'Live', version: '2.0.0', description: 'A panel', panel: 'live/index.html', nav: { label: 'Live Panel', icon: 'star' }, capabilities: ['theme', 'toast', 'root'], permissions: { storage: { owned: true }, network: false, ['x'.repeat(65)]: true } },
       { id: 'legacy', name: 'Legacy', scripts: ['legacy.js'], stylesheets: ['legacy.css'] },
+      { id: 'shared', name: 'Shared', panel: './shared/index.html' },
     ] }))
     const s = await bootTestServer({ env: { HERMES_WEBUI_EXTENSION_DIR: root, HERMES_WEBUI_EXTENSION_MANIFEST: 'manifest.json' } })
+    // A stale gallery install record for the same id never makes a configured entry a gallery row (no Uninstall).
+    writeFileSync(join(s.state, 'extension-install-manifest.json'), JSON.stringify({ version: 1, installed: { shared: { version: '1', files: ['index.html'], installed_at: '' } } }))
     try {
       const rows = (await json(await s.get('/api/extensions/manifests'))).manifests as Json[]
       expect(rows.find((m) => m.id === 'live')).toMatchObject({
@@ -993,6 +996,7 @@ describe('extension directory rows in /api/extensions/manifests (TAL-704)', () =
       })
       // Keys the frontend contract rejects (over 64 chars) are dropped rather than failing the whole list.
       expect(rows.find((m) => m.id === 'live')?.permissions).toEqual({ storage: true, network: false })
+      expect(rows.find((m) => m.id === 'shared')).toMatchObject({ source: 'manifest', panel: 'extensions/shared/index.html' })
       expect(rows.find((m) => m.id === 'legacy')).toMatchObject({ source: 'manifest', panel: null, nav: null, legacy_injection: true, enabled: false, can_toggle: false })
     } finally {
       await s.close()

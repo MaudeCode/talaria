@@ -5,7 +5,7 @@
       "name": "Hello Panel",
       "version": "1.0.0",
       "description": "Minimal protocol v1 extension: a panel with settings, storage, a toast, and lifecycle events.",
-      "panel": "index.html",
+      "panel": "hello-panel/index.html",
       "nav": { "label": "Hello" },
       "capabilities": ["settings", "storage", "toast", "session", "lifecycle", "theme"],
       "settings_schema": [

@@ -68,7 +68,7 @@ Extensions cannot:
       "id": "hello-panel",
       "name": "Hello Panel",
       "version": "1.0.0",
-      "panel": "index.html",
+      "panel": "hello-panel/index.html",
       "nav": { "label": "Hello" },
       "capabilities": ["settings", "storage", "toast", "session", "lifecycle"],
       "settings_schema": [
@@ -85,10 +85,9 @@ Extensions cannot:
 
 - `id` is `^[a-z][a-z0-9_-]{0,63}$` and doubles as the settings/storage
   namespace and the `/ext/<id>` route.
-- `panel` is an `.html` path relative to the extension's own folder
-  (`<extension dir>/<id>/`); it is served at `/extensions/<id>/<panel>` with a
-  `sandbox` Content-Security-Policy. An entry without `panel` is headless
-  (skin, TTS or sidecar only).
+- `panel` is a relative path inside the extension directory; it is served at
+  `/extensions/<panel>` with a `sandbox` Content-Security-Policy. An entry
+  without `panel` is headless (skin, TTS or sidecar only).
 - `capabilities`, `settings_schema`, `theme`, `tts` and `sidecar` are
   sanitized by the server's extension manifest loader (`packages/server/src/tools/extensions.ts`); rejected fields produce stable
   warning codes in `GET /api/extensions/manifests` and never reach the client
