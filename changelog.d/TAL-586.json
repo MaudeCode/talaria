@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "HTML files too large to preview now download instead of showing an error.",
+      "highlight": false
+    }
+  ]
+}

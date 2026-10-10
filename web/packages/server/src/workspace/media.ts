@@ -193,15 +193,14 @@ export function htmlWithHeadTag(raw: Buffer, base: string): Buffer {
 }
 
 export function serveInlineHtmlPreview(ctx: RequestContext, target: string, cacheControl: string, csp: string, anchorRoot: string | null): void {
-  let body: Buffer
+  let body: Buffer | null = null
   try {
     const fd = anchorRoot ? openAnchoredFd(anchorRoot, resolvePathLikePython(target), { wantDir: false }) : openSync(target, fsConstants.O_RDONLY)
     try {
       const st = fstatSync(fd)
       if (!st.isFile()) throw Object.assign(new Error('not a file'), { code: 'EISDIR' })
       // The preview is rewritten in memory; anything past the buffering cap is served as a download instead.
-      if (st.size > ETAG_SIZE_CAP) { ctx.json({ error: `File too large for inline preview (max ${String(ETAG_SIZE_CAP)} bytes)` }, { status: 413 }); return }
-      body = htmlPreviewWithBlankBase(readAll(fd, st.size))
+      if (st.size <= ETAG_SIZE_CAP) body = htmlPreviewWithBlankBase(readAll(fd, st.size))
     } finally {
       closeSync(fd)
     }
@@ -211,6 +210,10 @@ export function serveInlineHtmlPreview(ctx: RequestContext, target: string, cach
     if (error instanceof NotFoundError || code === 'ENOENT' || code === 'ENOTDIR' || code === 'EISDIR' || code === 'ELOOP') { ctx.json({ error: 'not found' }, { status: 404 }); return }
     if (error instanceof Error && !code) { ctx.json({ error: sanitizeError(error) }, { status: 403 }); return }
     ctx.json({ error: 'Could not read file' }, { status: 500 })
+    return
+  }
+  if (!body) {
+    serveFileBytes(ctx, target, { mime: 'text/html', disposition: 'attachment', cacheControl, anchorRoot })
     return
   }
   ctx.send({

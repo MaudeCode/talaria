@@ -57,11 +57,17 @@ describe('raw byte routes', () => {
 
     res = await s.get(`/api/file/raw?session_id=${sid}&path=page.html`)
     expect(res.headers.get('content-disposition')).toContain('attachment')
-    // A sparse multi-gigabyte HTML file is not buffered for the preview rewrite.
+    // TAL-586: an HTML file past the preview buffering cap downloads as an attachment instead of a 413.
+    const hugeSize = 11 * 1024 * 1024
     const hugeFd = openSync(join(ws, 'huge.html'), 'w')
-    ftruncateSync(hugeFd, 3 * 1024 * 1024 * 1024)
+    ftruncateSync(hugeFd, hugeSize)
     closeSync(hugeFd)
-    expect((await s.get(`/api/file/raw?session_id=${sid}&path=huge.html&inline=1`)).status).toBe(413)
+    res = await s.get(`/api/file/raw?session_id=${sid}&path=huge.html&inline=1`)
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-disposition')).toContain('attachment; filename="huge.html"')
+    expect(res.headers.get('content-security-policy')).not.toContain('sandbox')
+    expect(res.headers.get('content-length')).toBe(String(hugeSize))
+    expect(Buffer.from(await res.arrayBuffer())).toHaveLength(hugeSize)
     res = await s.get(`/api/file/raw?session_id=${sid}&path=page.html&inline=1`)
     expect(res.status).toBe(200)
     expect(res.headers.get('content-security-policy')).toBe('sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox')
