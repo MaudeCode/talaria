@@ -759,6 +759,55 @@ describe('chat turns through the sidecar', () => {
     expect(turns.deps.titleRefreshEvery?.()).toBe(0)
   })
 
+  it('applies overlapping adaptive title refreshes in turn order, so the newest exchange names the session (TAL-589)', async () => {
+    const turns = s.deps.turns as unknown as { deps: { titleRefreshEvery: (() => number) | undefined } }
+    const original = turns.deps.titleRefreshEvery
+    sidecar.respond('chat.start', (params) => completed([...(params.conversation_history as Json[]), { role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Here is the plan for that step.' }]))
+    const held = new Map<string, () => void>()
+    const stepOf = (params: Json): string => /step (\w+)/.exec(str((params.messages as Json[])[1]?.content))?.[1] ?? ''
+    sidecar.respond('aux.complete', (params) => {
+      const step = stepOf(params)
+      const answer = { model: 'aux', text: `Title: "Rollout step ${step}"`, usage: null }
+      // The refresh prompts for exchanges 2 and 4 answer only when the test releases them.
+      if (step !== 'two' && step !== 'four') return answer
+      return new Promise((resolve) => { held.set(step, () => { resolve(answer) }) })
+    })
+    const sid = await newSession(s)
+    const start = async (word: string): Promise<string> => {
+      const deadline = Date.now() + 5000
+      let res = await post(s, '/api/chat/start', { session_id: sid, message: `plan the rollout step ${word}` })
+      while (res.status === 409 && Date.now() < deadline) { await new Promise((r) => setTimeout(r, 25)); res = await post(s, '/api/chat/start', { session_id: sid, message: `plan the rollout step ${word}` }) }
+      expect(res.status).toBe(200)
+      return String((await json(res)).stream_id)
+    }
+    const until = async (ready: () => boolean): Promise<void> => {
+      const deadline = Date.now() + 5000
+      while (!ready() && Date.now() < deadline) await new Promise((r) => setTimeout(r, 25))
+      expect(ready()).toBe(true)
+    }
+    turns.deps.titleRefreshEvery = () => 2
+    try {
+      await s.sse(`/api/chat/stream?stream_id=${await start('one')}`, (f) => f.event === 'stream_end')
+      const second = await start('two')
+      await s.sse(`/api/chat/stream?stream_id=${second}`, (f) => f.event === 'done')
+      await s.sse(`/api/chat/stream?stream_id=${await start('three')}`, (f) => f.event === 'stream_end')
+      const fourth = await start('four')
+      await s.sse(`/api/chat/stream?stream_id=${fourth}`, (f) => f.event === 'done')
+      await until(() => held.has('two'))
+      held.get('two')?.()
+      await until(() => held.has('four'))
+      held.get('four')?.()
+      await s.sse(`/api/chat/stream?stream_id=${fourth}`, (f) => f.event === 'stream_end')
+      const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
+      expect(detail.title).toBe('Rollout step four')
+      expect(detail.manual_title).toBe(false)
+    } finally {
+      for (const release of held.values()) release()
+      turns.deps.titleRefreshEvery = original
+      sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Greeting exchange"', usage: null }))
+    }
+  })
+
   it('cancels a running turn, persists the partial, and refuses a second concurrent start', async () => {
     const sid = await newSession(s)
     let interrupted = false

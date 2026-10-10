@@ -284,6 +284,8 @@ export class TurnRunner {
   private readonly liveTodos = new Map<string, Record<string, unknown>>()
   /** Streams whose run completed (`done` emitted) and only await title work; a late cancel is a no-op for these. */
   private readonly settledStreams = new Set<string>()
+  /** The last adaptive title refresh per session; a successor turn's refresh runs after it (TAL-589). */
+  private readonly titleRefreshes = new Map<string, Promise<void>>()
   /**
    * TAL-364: what a Stop needs to write the turn's model context: its starting context, the prompt the Agent got, and
    * whether a settlement already used a canonical checkpoint (which marks the stop boundary; later work never replaces it).
@@ -1273,29 +1275,39 @@ export class TurnRunner {
    */
   private async refreshTitle(s: Session, put: (event: string, data: Record<string, unknown>) => void, status: (status: string, reason?: string, title?: string, rawPreview?: string) => void): Promise<void> {
     const every = this.deps.titleRefreshEvery?.() ?? 0
-    const placeholder = str(s.title).trim()
-    if (every <= 0 || ['Untitled', 'New Chat', ''].includes(placeholder) || s.manual_title || !s.llm_title_generated) return
     const exchanges = countExchanges(s.messages)
-    if (exchanges <= 0 || exchanges % every !== 0) return
+    if (every <= 0 || exchanges <= 0 || exchanges % every !== 0) return
     const [userText, assistantText] = latestExchangeSnippets(s.messages)
     if (!userText || !assistantText) return
-    const cfg = await this.deps.profileConfig?.(s.profile ?? null)
+    // Admission is released before title work, so an earlier turn's refresh may still be running: refreshes apply in
+    // turn order and each reads the title its predecessor wrote.
+    const sessionId = s.session_id
+    const run = (this.titleRefreshes.get(sessionId) ?? Promise.resolve()).catch(() => undefined).then(() => this.applyTitleRefresh(sessionId, s, userText, assistantText, put, status))
+    this.titleRefreshes.set(sessionId, run)
+    try { await run } finally { if (this.titleRefreshes.get(sessionId) === run) this.titleRefreshes.delete(sessionId) }
+  }
+
+  private async applyTitleRefresh(sessionId: string, s: Session, userText: string, assistantText: string, put: (event: string, data: Record<string, unknown>) => void, status: (status: string, reason?: string, title?: string, rawPreview?: string) => void): Promise<void> {
+    const read = (): Session => { try { return this.deps.store.get(sessionId) } catch { return s } }
+    const latest = read()
+    const placeholder = str(latest.title).trim()
+    if (['Untitled', 'New Chat', ''].includes(placeholder) || latest.manual_title || !latest.llm_title_generated) return
+    const cfg = await this.deps.profileConfig?.(latest.profile ?? null)
     if (!cfg || !titleGenerationEnabled(cfg)) { status('refresh_skipped', cfg ? 'title_generation_disabled' : 'config_unavailable', placeholder); return }
-    const { title: next, status: llmStatus, rawPreview } = await this.llmTitle(s, userText, assistantText)
+    const { title: next, status: llmStatus, rawPreview } = await this.llmTitle(latest, userText, assistantText)
     if (!next) { status('refresh_skipped', llmStatus || 'empty', placeholder, rawPreview); return }
     const normalize = (value: string): string => value.replace(/\s+/g, ' ').trim().toLowerCase()
     if (normalize(next) === normalize(placeholder)) { status('refresh_skipped', 'same_title', placeholder, rawPreview); return }
-    let current: Session = s
-    try { current = this.deps.store.get(s.session_id) } catch { current = s }
+    const current = read()
     // The user may have renamed the session while the title prompt ran.
     if (current.manual_title || str(current.title).trim() !== placeholder) { status('skipped', 'manual_title', str(current.title).trim()); return }
     current.title = next
     markSessionTitleGenerated(current)
     this.deps.store.save(current, { touchUpdatedAt: false })
     await this.deps.syncTitle?.(current)
-    this.deps.events.publish('title', { profile: current.profile, sessionId: s.session_id })
+    this.deps.events.publish('title', { profile: current.profile, sessionId })
     status('refreshed', llmStatus, next, rawPreview)
-    put('title', { session_id: s.session_id, title: next })
+    put('title', { session_id: sessionId, title: next })
   }
 
   // ── cancel / steer ───────────────────────────────────────────────────────
