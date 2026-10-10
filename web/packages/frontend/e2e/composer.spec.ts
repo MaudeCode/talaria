@@ -154,7 +154,7 @@ test('opening a session paints every frame at its end', async ({ page }) => {
   expect(Math.max(...frames)).toBeLessThan(2)
 })
 
-test('the top tab reports a Talaria server it cannot reach and clears when it answers again', async ({ page, errors }) => {
+test('the top tab reports a Talaria server it cannot reach, the stopped overlay takes over, and both clear when it answers again', async ({ page, errors }) => {
   let down = false
   await page.route('**/api/health/agent', (route) => (down ? route.abort('connectionrefused') : route.fulfill({ json: { alive: true } })))
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'reach', title: 'Reach', messages: transcript('reach', 2) } } }))
@@ -163,11 +163,13 @@ test('the top tab reports a Talaria server it cannot reach and clears when it an
   down = true
   const row = page.locator('.composer-tab [data-notice="runtime:server_unreachable"]')
   await expect(row).toContainText("Can't reach the Talaria server", { timeout: 15_000 })
-  // Probes back off exponentially (1 s, 2 s, 4 s, …) and the row counts down to the next one.
-  await expect(row).toContainText('Retrying in 4s', { timeout: 10_000 })
-  // Retry probes now: with the server back, the row clears well before the scheduled probe would run.
+  // Probes back off exponentially (1 s, 2 s, 4 s, …); the third unanswered one covers the page and counts down to the next.
+  const overlay = page.getByRole('alertdialog', { name: 'Server stopped' })
+  await expect(overlay).toContainText('Retrying in 4s', { timeout: 10_000 })
+  // Retry probes now: with the server back, both clear well before the scheduled probe would run.
   down = false
-  await row.getByRole('button', { name: 'Retry' }).click()
+  await overlay.getByRole('button', { name: 'Retry' }).click()
+  await expect(overlay).toHaveCount(0, { timeout: 1_500 })
   await expect(row).toHaveCount(0, { timeout: 1_500 })
   // The refused requests are the point of this test.
   errors.splice(0, errors.length, ...errors.filter((e) => !/health\/agent|ERR_CONNECTION_REFUSED|Failed to load resource/.test(e)))

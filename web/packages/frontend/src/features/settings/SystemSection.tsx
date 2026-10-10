@@ -19,6 +19,7 @@ import type { z } from 'zod'
 import type { UpdateApplySchema, UpdateTargetSchema } from '../../contracts'
 import { useUpdateProgress } from '../notifications/UpdateNotificationCenter'
 import { McpSection } from './McpSection'
+import { markServerStopped } from '../notices/useRuntimeNotices'
 
 export function SystemSection() {
   const bootstrap = useBootstrap()
@@ -35,7 +36,7 @@ export function SystemSection() {
   const fail = (e: unknown) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error')
   const setPassword = useMutation({ mutationFn: (body: Record<string, unknown>) => api.saveSettings(body), onSuccess: async () => { showToast(m.system_password_updated()); setPw(''); setCurrentPw(''); await loadBootstrap(); void qc.invalidateQueries() }, onError: fail })
   const restart = useMutation({ mutationFn: api.restartAgent, onSuccess: () => { showToast(m.saved()); void qc.invalidateQueries({ queryKey: keys.health.agent }) }, onError: fail })
-  const shutdown = useMutation({ mutationFn: api.shutdownServer, onSuccess: () => showToast(m.system_shutdown()), onError: fail })
+  const shutdown = useMutation({ mutationFn: api.shutdownServer, onSuccess: () => markServerStopped(qc), onError: fail })
   // The chosen channel is held locally until its save settles; the cache only catches up on success,
   // and a later save (e.g. ignore-agent) must not make the Select snap back meanwhile.
   const [channelDraft, setChannelDraft] = useState<string>()

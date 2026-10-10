@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Web covers every open tab with a Server stopped screen when the Talaria Web server stops answering, and clears it in all of them once the server is back.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

@@ -11,6 +11,7 @@ import { m } from '../../paraglide/messages.js'
 import { cn } from '../../ui/cn'
 import { dismissToast, removeToast, showRichToast, showToast, type ToastAction } from '../toast/toast'
 import { StatusIcon, UpdatingDialog, type UpdateDialogTarget } from './UpdatingDialog'
+import { ServerStoppedOverlay } from '../notices/ServerStoppedOverlay'
 
 /** Server action that asks this tab to load the build the server now serves; the server clears the notice only after verifying it. */
 const RELOAD_ACTION = 'reload'
@@ -270,6 +271,7 @@ export function UpdateNotificationProvider({ children }: { children: ReactNode }
       onCheckAgain={() => { void notifications.refetch() }}
       onClose={() => { if (tracking && !dialogRowId) setTracking({ ...tracking, hidden: true }); else closeDialog(dialogRowId) }}
     />}
+    <ServerStoppedOverlay suppressed={(dialogTarget !== null && !tracking?.hidden) || notifications.data?.notifications.some((row) => row.active && row.target === 'webui') === true} />
     <BaseDialog.Root open={open} onOpenChange={setOpen}>
       <BaseDialog.Portal>
         <BaseDialog.Backdrop className="fixed inset-0 z-[1300] bg-black/45" />

@@ -2215,6 +2215,8 @@
 	"notice_server_title": "Can't reach the Talaria server",
 	"notice_server_detail": "Retrying…",
 	"notice_server_retry_in": "Retrying in {seconds}s",
+	"server_stopped_title": "Server stopped",
+	"server_stopped_detail": "Talaria Web isn't answering. If it stopped, start it again from the terminal.",
 	"notice_dismiss": "Dismiss",
 	"terminal_open": "Open terminal",
 	"terminal_unavailable": "The terminal could not start.",
