@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Imported CLI and API sessions deleted outside Talaria no longer linger in the session list.",
+      "highlight": false
+    }
+  ]
+}

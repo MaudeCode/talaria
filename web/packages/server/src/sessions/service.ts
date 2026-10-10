@@ -12,19 +12,20 @@ import { buildActiveTurnToken, copyJson, redactSessionData, redactValue, stripPu
 import type { DraftStore } from './drafts.js'
 import { DraftVersionConflict, normalizeDraftVersion } from './drafts.js'
 import type { SessionEventBus } from './events.js'
-import { allSessions, buildSessionListPayload, CLI_IDENTITY_FIELDS, isClaimableCliSource, isMessagingSessionRecord, withOwnerLocks, withSessionWireFlags, lineageRootId, mergeCliSidebarMetadata, sessionListResponse, sessionSearchMatches, sessionSearchMessageText, sessionSearchPreview, sessionSearchTerms, type ListParams, type ListResponse, type Row, type RuntimeOverlay } from './list.js'
+import { allSessions, buildSessionListPayload, CLI_IDENTITY_FIELDS, hasLiveState, isClaimableCliSource, isMessagingSessionRecord, withOwnerLocks, withSessionWireFlags, lineageRootId, mergeCliSidebarMetadata, sessionListResponse, sessionSearchMatches, sessionSearchMessageText, sessionSearchPreview, sessionSearchTerms, type ListParams, type ListResponse, type Row, type RuntimeOverlay } from './list.js'
 import { anchorSceneIntOrNull, fullToolResult, hydrateAnchorActivityScenes, normalizeAnchorSceneMessageRef, readAnchorSceneRows, storeAnchorScene, withTurnIds } from './anchor.js'
 import { COMPRESSION_RECOVERY_ACTION_START_FOCUSED, compressionRecoveryPayload, isSafeSessionId, lastMessageTimestamp, Session, sharePath, stripAttachedFilesMarker, titleFrom, type Message } from './session.js'
 import { SessionBusy, SessionNotFound, statSignature, type SessionStore } from './store.js'
 import { UNSETTLED_TODO_KEY, attachTodoState } from './todo.js'
 import { isClaudeCodeSessionId, type ClaudeCodeSessionSource } from './claude-code.js'
 import { auditSessionRecovery, repairSafeSessionRecovery, type RecoveryDeps } from './recovery.js'
-import { CONVERSATION_ROUND_THRESHOLD, countConversationRounds, stateDbCompressionLineage, stateDbTailToolContent, stateDbLineageReport, stateDbSessionMessages, stateDbSessionRead, stateDbSessionRow, stateDbSessionSources, stateDbTimestampSeconds, type StateDbRead } from './state-db.js'
+import { agentSessionRowsExisting, CONVERSATION_ROUND_THRESHOLD, countConversationRounds, stateDbCompressionLineage, stateDbTailToolContent, stateDbLineageReport, stateDbSessionMessages, stateDbSessionRead, stateDbSessionRow, stateDbSessionSources, stateDbTimestampSeconds, type StateDbRead } from './state-db.js'
 import { completionIncomplete, fallbackHandoffSummary, HANDOFF_SYSTEM_PROMPT, handoffMarker, handoffPayload, handoffTranscript, messageHandoffPayload, sameHandoff } from './handoff.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, compressionReference, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { SidecarError, type SidecarLike } from '../sidecar/client.js'
 import { agentSteerText, attachedFilesPrompt, attachmentObjects, dedupeContext, isContextCompressionMarker, journalOutputRows, looksLikeCurrentUserTurn, stoppedTurnContext, workspaceContextPrefix, mergeSessionMessagesAppendOnly, messageIdentity, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, type ToolResultView } from './merge.js'
 import { withBackgroundUpdates } from './background-updates.js'
+import { sourceKind } from './source-kind.js'
 import { withBackgroundLinks, type Receipt } from './background-tasks.js'
 import { messagesForLimitedPayload, messageWindowForDisplay, MAX_MSG_LIMIT, parseMsgLimit, toolCallsForMessageWindow } from './window.js'
 import { redactText } from '../redact.js'
@@ -257,6 +258,30 @@ export class SessionService {
 
   /** TAL-358: batched `sessions.source` owners from the active profile's state.db. */
   readonly stateDbSources = (ids: string[]): Map<string, string> | null => stateDbSessionSources(join(this.deps.profileHome(this.deps.activeProfile()), 'state.db'), ids)
+
+  /**
+   * TAL-590 (Python #3238): the read-only CLI or API-server imports among `rows` whose active-profile state.db row is
+   * gone, so their source was deleted outside Web and no Web action could remove them. An unreadable state.db proves
+   * nothing (`agentSessionRowsExisting`); a running or another profile's session is never an orphan.
+   */
+  private orphanedImports(rows: Row[]): Set<string> {
+    const candidates = rows.filter((r) => r.read_only && ['cli', 'api'].includes(sourceKind(r)) && this.visibleToActiveProfile(str(r.profile) || null) && !hasLiveState(r))
+      .map((r) => str(r.session_id))
+    if (!candidates.length) return new Set()
+    const existing = agentSessionRowsExisting(this.stateDbPath(null), candidates)
+    return new Set(candidates.filter((sid) => !existing.has(sid)))
+  }
+
+  private isOrphanedImport(sid: string): boolean {
+    try { return this.orphanedImports([this.store.get(sid, { metadataOnly: true }).compact()]).size > 0 } catch { return false }
+  }
+
+  /** The list's prune: an orphan's sidecar goes, as nothing else ever removes it. */
+  private readonly pruneOrphanedImports = (rows: Row[]): Set<string> => {
+    const orphans = this.orphanedImports(rows)
+    for (const sid of orphans) this.store.deleteFiles(sid)
+    return orphans
+  }
 
   /** The persisted flag folded with the state.db owner lock (TAL-358): the one read-only rule for mutation gates and the wire. */
   isReadOnly(s: Session): boolean {
@@ -809,7 +834,7 @@ export class SessionService {
 
   // ── list / search ────────────────────────────────────────────────────────
 
-  list(params: Omit<ListParams, 'activeProfile' | 'isolatedProfileMode' | 'profilesMatch' | 'cliRows' | 'gatewayIdentity' | 'stateDbSources' | 'truncatedSources'>): { body: ListResponse; etag: string } {
+  list(params: Omit<ListParams, 'activeProfile' | 'isolatedProfileMode' | 'profilesMatch' | 'cliRows' | 'gatewayIdentity' | 'stateDbSources' | 'truncatedSources' | 'pruneOrphanedImports'>): { body: ListResponse; etag: string } {
     const activeProfile = this.deps.activeProfile()
     const wantState = params.showCliSessions || params.showCronSessions || params.showWebhookSessions || params.showKanbanSessions
     // Python reads every profile's state.db under all_profiles; this port projects the active profile only.
@@ -818,7 +843,7 @@ export class SessionService {
     const cliRows = cliRead ? [...cliRead.rows, ...claudeCodeRows] : undefined
     const gatewayIdentity = loadGatewaySessionIdentityMap(join(this.deps.profileHome(activeProfile), 'sessions', 'sessions.json'))
     const truncatedSources = cliRead?.truncated
-    const payload = buildSessionListPayload(this.store, { ...params, ...(cliRows ? { cliRows } : {}), ...(truncatedSources ? { truncatedSources } : {}), gatewayIdentity, stateDbSources: this.stateDbSources, activeProfile, isolatedProfileMode: this.deps.isolatedProfileMode(), profilesMatch: this.deps.profilesMatch })
+    const payload = buildSessionListPayload(this.store, { ...params, ...(cliRows ? { cliRows } : {}), ...(truncatedSources ? { truncatedSources } : {}), gatewayIdentity, stateDbSources: this.stateDbSources, pruneOrphanedImports: this.pruneOrphanedImports, activeProfile, isolatedProfileMode: this.deps.isolatedProfileMode(), profilesMatch: this.deps.profilesMatch })
     return sessionListResponse(payload, this.deps.runtime, this.deps.redactEnabled(), this.deps.now(), this.workspaceNames())
   }
 
@@ -1597,8 +1622,9 @@ export class SessionService {
     if (!sid) throw new HttpFailure(400, 'session_id is required')
     if (!isSafeSessionId(sid)) throw new HttpFailure(400, 'Invalid session_id')
     // Python: a read-only import (persisted sidecar flag, sidebar metadata, or a foreign state.db owner such as a
-    // Claude Code session) is never deleted — that would erase the owner's authoritative transcript.
-    if (this.isReadOnlyImport(sid)) throw new HttpFailure(400, 'Read-only imported sessions cannot be deleted from WebUI')
+    // Claude Code session) is never deleted — that would erase the owner's authoritative transcript. An orphan has none.
+    const orphaned = this.isOrphanedImport(sid)
+    if (!orphaned && this.isReadOnlyImport(sid)) throw new HttpFailure(400, 'Read-only imported sessions cannot be deleted from WebUI')
     if (this.isSubagentViewOnly(sid)) throw new HttpFailure(400, 'Subagent sessions are view-only and cannot be deleted from WebUI')
     const retained = (() => { try { return worktreeRetainedPayload(this.store.get(sid, { metadataOnly: true })) } catch { return {} } })()
     let eventProfile: string | null = null
@@ -1626,7 +1652,7 @@ export class SessionService {
     // Python: the Agent/CLI transcript in state.db goes too (else a claimable CLI row resurfaces in the sidebar), but a
     // messaging channel's memory is never erased from the WebUI; the actual outcome is reported.
     let stateDbCleanupFailed = false
-    if (!isMessaging) {
+    if (!isMessaging && !orphaned) {
       // TAL-529: the compression continuations go too, tip first; the Agent's delete keeps and detaches them otherwise.
       for (const id of stateDbCompressionLineage(this.stateDbPath(eventProfile), sid).reverse()) {
         try { if (!(await this.deps.runtime.deleteCliSession(eventProfile, id))) stateDbCleanupFailed = true } catch { stateDbCleanupFailed = true }
