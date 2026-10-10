@@ -299,6 +299,31 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     expect(profiles.find((p) => p.name === 'default')).toMatchObject({ visible: true, is_default: true })
   })
 
+  it('a profiles/<name> symlink that escapes the profiles root is refused on switch and never used as a home', async () => {
+    const outside = mkdtempSync(join(tmpdir(), 'talaria-escape-'))
+    writeFileSync(join(outside, 'config.yaml'), '# outside\n')
+    symlinkSync(outside, join(s.state, 'profiles', 'escape'))
+    symlinkSync(join(outside, 'missing'), join(s.state, 'profiles', 'dangling'))
+    symlinkSync(workHome, join(s.state, 'profiles', 'inside'))
+    try {
+      for (const name of ['escape', 'dangling']) {
+        const res = await post(s, '/api/profile/switch', { name })
+        expect(res.status, name).toBe(400)
+        expect(await res.text(), name).toContain('outside the profiles directory')
+        expect(res.headers.get('set-cookie'), name).toBeNull()
+        expect(s.deps.profileHome(name), name).toBe(s.state)
+        const created = await post(s, '/api/profile/create', { name, base_url: 'https://example.invalid' })
+        expect(created.status, name).toBe(400)
+        expect(await created.text(), name).toContain('outside the profiles directory')
+      }
+      expect(s.deps.profileHome('inside')).toBe(join(s.state, 'profiles', 'inside'))
+      expect((await post(s, '/api/profile/switch', { name: 'inside' })).status).toBe(200)
+    } finally {
+      for (const name of ['escape', 'dangling', 'inside']) rmSync(join(s.state, 'profiles', name), { force: true })
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
   it('foreign cron jobs are hidden by default and counted; all_profiles shows them read-only', async () => {
     cronJobs.clear()
     cronJobs.set(s.state, [{ id: 'd1', name: 'mine', profile: null, toast_notifications: true, monitor: '', continuity: false }])
