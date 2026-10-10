@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Chats, tool output, exports, and public share links mask web tokens (JWTs) split by terminal formatting or hidden terminal title text.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

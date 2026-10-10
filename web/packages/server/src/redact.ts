@@ -269,16 +269,24 @@ const RUN_CHAR_RE = /[A-Za-z0-9_.=-]/
 /** A string sequence's opener, with an OSC's command number (`8;`), which is no payload. */
 const STRING_OPENER_RE = new RegExp(String.raw`^(?:(?:${SEQ_ESC}\]|\x9d)(?:\d*;)?|${SEQ_ESC}[PX^_]|[\x90\x98\x9e\x9f])`)
 const PAYLOAD_RUN_CAP = 65_536
-const CRED_TEST_RE = new RegExp(CRED_RE.source)
+/**
+ * The token families a split token is joined for, each with its own boundaries: `CRED_RE`'s prefixes, and `JWT_RE`, whose
+ * `\b` lets a JWT start after a `-` and which has no right boundary.
+ */
+const TOKEN_TEST_RE = new RegExp(`${CRED_RE.source}|${JWT_RE.source}`)
 /** `CRED_RE`'s prefix and body from a position, without its boundaries (a split token checks the original ones). */
 const CRED_RUN_RE = new RegExp(CRED_RE.source.replace(/^\(\?<!\[A-Za-z0-9_-\]\)/, '').replace(/\(\?!\[A-Za-z0-9_-\]\)$/, ''), 'y')
+const JWT_RUN_SOURCE = JWT_RE.source.replace(/^\\b/, '')
+/** A credential's or JWT's prefix and body from a position, without its boundaries. */
+const TOKEN_RUN_RE = new RegExp(`${CRED_RUN_RE.source}|${JWT_RUN_SOURCE}`, 'y')
 const SPLIT_TOKEN_CAP = 1024
 /** Where a `CRED_RE` prefix and body start at a boundary, however they end. */
 const CRED_START_RE = new RegExp(CRED_RE.source.replace(/\(\?!\[A-Za-z0-9_-\]\)$/, ''), 'g')
-const CRED_WHOLE_RE = new RegExp(`^${CRED_RE.source}$`)
-/** `CRED_START_RE` and `CRED_RUN_RE` without their body: a credential's prefix, however little of its body follows. */
-const CRED_PREFIX_RE = new RegExp(CRED_START_RE.source.replace(/\{\d+,?\}/g, '{0}'), 'g')
-const CRED_PREFIX_RUN_RE = new RegExp(CRED_RUN_RE.source.replace(/\{\d+,?\}/g, '{0}'), 'y')
+const TOKEN_START_RE = new RegExp(`${CRED_START_RE.source}|${JWT_RE.source}`, 'g')
+const TOKEN_WHOLE_RE = new RegExp(`^(?:${CRED_RE.source}|${JWT_RE.source})$`)
+/** `TOKEN_START_RE` and `TOKEN_RUN_RE` without their body: a token's prefix, however little of its body follows. */
+const TOKEN_PREFIX_RE = new RegExp(`${CRED_START_RE.source.replace(/\{\d+,?\}/g, '{0}')}|\\beyJ`, 'g')
+const TOKEN_PREFIX_RUN_RE = new RegExp(`${CRED_RUN_RE.source.replace(/\{\d+,?\}/g, '{0}')}|eyJ`, 'y')
 /** A URL query parameter's value, up to the next `&` or `#`. */
 const QUERY_VALUE_RE = /[^&#]*/y
 const PRIVKEY_RE = /-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?-----END[A-Z ]*PRIVATE KEY-----/g
@@ -289,22 +297,22 @@ const ENV_KEY_PREFIX_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PAS
 const REDACTED_ENV_VALUE_RE = /(?:\*{3,}|[A-Za-z0-9][A-Za-z0-9_.:/+-]{0,32}\.\.\.[A-Za-z0-9_.:/+-]{1,16})/y
 
 /**
- * Where a credential split by control or zero-width characters (`ghp_abc\x1bdef`, `ghp_abc\ndef…`) starting at `i` of the
+ * Where a credential or JWT split by control or zero-width characters (`ghp_abc\x1bdef`, `ghp_abc\ndef…`) starting at `i` of the
  * stripped text ends there, or -1. The run of its prefix and body is read once (capped), then the longest candidate is
- * taken that ends at a piece boundary of the original, is a whole credential, is not the name of a `KEY=` that follows,
+ * taken that ends at a piece boundary of the original, is a whole token, is not the name of a `KEY=` that follows,
  * and never reaches a line holding a whole token itself (that line is the prefix pass's and joins nothing).
  */
 function splitTokenEnd(text: string, stripped: string, kept: number[], i: number): number {
-  CRED_RUN_RE.lastIndex = 0
+  TOKEN_RUN_RE.lastIndex = 0
   // ponytail: a split credential longer than SPLIT_TOKEN_CAP is cut at the cap; raise it if longer tokens appear.
-  const run = CRED_RUN_RE.exec(stripped.slice(i, i + SPLIT_TOKEN_CAP))?.[0]
+  const run = TOKEN_RUN_RE.exec(stripped.slice(i, i + SPLIT_TOKEN_CAP))?.[0]
   if (!run) return -1
   const start = kept[i]!
   let limit = kept[i + run.length - 1]! + 1
   for (let lineStart = start; lineStart < limit; ) {
     const lineEnd = text.slice(lineStart, limit).search(/[\r\n]/)
     const end = lineEnd === -1 ? limit : lineStart + lineEnd
-    if (CRED_TEST_RE.test(text.slice(lineStart, end))) {
+    if (TOKEN_TEST_RE.test(text.slice(lineStart, end))) {
       limit = lineStart === start ? end : lineStart
       break
     }
@@ -314,14 +322,14 @@ function splitTokenEnd(text: string, stripped: string, kept: number[], i: number
   for (let e = i + run.length; e > i; e -= 1) {
     const atBoundary = e === stripped.length || kept[e]! - kept[e - 1]! > 1 || (e === i + run.length && !/[A-Za-z0-9_-]/.test(stripped[e]!))
     const originalEnd = kept[e - 1]! + 1
-    if (!atBoundary || originalEnd > limit || !CRED_WHOLE_RE.test(stripped.slice(i, e)) || /^[ \t]*=/.test(text.slice(originalEnd, originalEnd + 64))) continue
+    if (!atBoundary || originalEnd > limit || !TOKEN_WHOLE_RE.test(stripped.slice(i, e)) || /^[ \t]*=/.test(text.slice(originalEnd, originalEnd + 64))) continue
     return e
   }
   return -1
 }
 
 /**
- * The original spans, and the joined text, of prefixed credentials whose body a gap of one of `SPLIT_VIEWS` splits,
+ * The original spans, and the joined text, of prefixed credentials and JWTs whose body a gap of one of `SPLIT_VIEWS` splits,
  * matched on the text without those gaps, plus `payloadRunSpan`'s from each prefix. A token starts at a boundary of the
  * stripped text, or where a stripped gap hid the original one (`note\nghp_…`); one starting inside a token already
  * masked is part of it.
@@ -337,13 +345,13 @@ function splitTokenSpans(text: string, gaps: RegExp): [number, number, string][]
     at += m[0].length
   }
   while (at < text.length) kept.push(at++)
-  const starts = [...stripped.matchAll(CRED_START_RE)].map((m) => m.index)
-  const prefixStarts = [...stripped.matchAll(CRED_PREFIX_RE)].map((m) => m.index)
+  const starts = [...stripped.matchAll(TOKEN_START_RE)].map((m) => m.index)
+  const prefixStarts = [...stripped.matchAll(TOKEN_PREFIX_RE)].map((m) => m.index)
   for (let i = 1; i < kept.length; i += 1) {
     if (kept[i]! - kept[i - 1]! <= 1 || !TOKEN_CHAR_RE.test(stripped[i - 1]!)) continue
     starts.push(i)
-    CRED_PREFIX_RUN_RE.lastIndex = i
-    if (CRED_PREFIX_RUN_RE.test(stripped)) prefixStarts.push(i)
+    TOKEN_PREFIX_RUN_RE.lastIndex = i
+    if (TOKEN_PREFIX_RUN_RE.test(stripped)) prefixStarts.push(i)
   }
   const spans: [number, number, string][] = []
   let scanned = 0
@@ -373,12 +381,20 @@ function payloadRunSpans(text: string, starts: number[]): [number, number, strin
 /** A string sequence's terminator: BEL (OSC only), ST, or CAN or SUB cancelling it. */
 const STRING_END_RE = /(?:\x07|\x1b\\|\x9c|[\x18\x1a])$/
 
+/** Tags a candidate that can grow only into a JWT prefix: one starting after a `-`, a boundary for `JWT_RE`'s `\b` alone. */
+const JWT_ONLY = '\0'
 /**
- * Where a credential prefix starts whose pieces lie apart in a run of token characters and escape sequences, with a
+ * What a piece after `prev` (undefined after a gap) seeds: any prefix after a non-token character, only a JWT's after a
+ * `-`, none after a word character.
+ */
+const seedAfter = (prev: string | undefined): string | null => (prev === undefined || !TOKEN_CHAR_RE.test(prev) ? '' : prev === '-' ? JWT_ONLY : null)
+
+/**
+ * Where a credential or JWT prefix starts whose pieces lie apart in a run of token characters and escape sequences, with a
  * string payload between them taken whole or skipped (`g\x1b]0;x\x07h\x1b]0;p_\x07…`), so that no view holds it whole.
  * Display characters are mandatory and each payload's optional. A piece starts on the display after a gap or a non-token
  * character (`.`), or in a payload's trailing run after its start or a non-token character, where `payloadRunSpan` can
- * walk from it.
+ * walk from it; a JWT's also after a `-`.
  * Candidates live only while they can grow into a prefix, which bounds them and keeps the scan linear.
  */
 function crossPayloadPrefixStarts(text: string): number[] {
@@ -389,14 +405,14 @@ function crossPayloadPrefixStarts(text: string): number[] {
   const grow = (into: Map<string, number>, candidate: string, start: number, chars: string): void => {
     for (const ch of chars) {
       candidate += ch
-      if (CRED_MARKERS.has(candidate)) return void starts.push(start)
-      if (!CRED_MARKER_STEMS.has(candidate)) return
+      if (TOKEN_MARKERS.has(candidate)) return void starts.push(start)
+      if (!TOKEN_MARKER_STEMS.has(candidate)) return
     }
     const seen = into.get(candidate)
     if (seen === undefined || start < seen) into.set(candidate, start)
   }
-  // Whether the last character was a display token character, after which no credential starts (`CRED_RE`'s boundary).
-  let afterToken = false
+  // The last display character, unless a gap came after it: what a piece starting here may seed.
+  let prev: string | undefined
   for (let k = 0; k < text.length; ) {
     ANSI_GAP_AT_RE.lastIndex = k
     const gap = ANSI_GAP_AT_RE.exec(text)?.[0]
@@ -408,20 +424,24 @@ function crossPayloadPrefixStarts(text: string): number[] {
       const end = Math.max(from, gap.length - (STRING_END_RE.exec(gap)?.[0].length ?? 0))
       let tail = end
       while (tail > from && RUN_CHAR_RE.test(gap[tail - 1]!)) tail -= 1
-      for (let j = tail; j < end; j += 1) if (j === tail || !TOKEN_CHAR_RE.test(gap[j - 1]!)) grow(next, '', k + j, gap.slice(j, end))
+      for (let j = tail; j < end; j += 1) {
+        const seed = seedAfter(j === tail ? undefined : gap[j - 1])
+        if (seed !== null) grow(next, seed, k + j, gap.slice(j, end))
+      }
       candidates = next
-      afterToken = false
+      prev = undefined
       k += gap.length
     } else if (RUN_CHAR_RE.test(text[k]!)) {
       const next = new Map<string, number>()
       for (const [candidate, start] of candidates) grow(next, candidate, start, text[k]!)
-      if (!afterToken) grow(next, '', k, text[k]!)
+      const seed = seedAfter(prev)
+      if (seed !== null) grow(next, seed, k, text[k]!)
       candidates = next
-      afterToken = TOKEN_CHAR_RE.test(text[k]!)
+      prev = text[k]!
       k += 1
     } else {
       candidates.clear()
-      afterToken = false
+      prev = undefined
       k += 1
     }
   }
@@ -1667,9 +1687,9 @@ const CASE_MARKERS = [
   'gsk_', 'syt_', 'retaindb_', 'hsk-', 'mem0_', 'brv_', 'xapp-', 'xai-', 'ntn_', 'fw-', 'fw_', 'fpk_', 'glpat-', 'gloas-', 'gldt-', 'glrt-', 'glrtr-',
   'glcbt-', 'glptt-', 'glft-', 'glimt-', 'glagent-', 'glsoat-', 'glffct-', 'glwt-', 'GR1348941', 'pk-lf-', 'eyJ', '-----BEGIN',
 ]
-/** The literal prefixes of `CRED_RE` (`xapp-` stands for `xapp-1-`), and their proper prefixes. */
-const CRED_MARKERS = new Set(CASE_MARKERS.filter((m) => ((CRED_PREFIX_RUN_RE.lastIndex = 0), CRED_PREFIX_RUN_RE.test(`${m}0-`))))
-const CRED_MARKER_STEMS = new Set([...CRED_MARKERS].flatMap((m) => Array.from({ length: m.length - 1 }, (_, n) => m.slice(0, n + 1))))
+/** The literal prefixes of `CRED_RE` (`xapp-` stands for `xapp-1-`) and `JWT_RE`, the JWT's also as `JWT_ONLY`'s, and their proper prefixes. */
+const TOKEN_MARKERS = new Set([...CASE_MARKERS.filter((m) => ((TOKEN_PREFIX_RUN_RE.lastIndex = 0), TOKEN_PREFIX_RUN_RE.test(`${m}0-`))), `${JWT_ONLY}eyJ`])
+const TOKEN_MARKER_STEMS = new Set([...TOKEN_MARKERS].flatMap((m) => Array.from({ length: m.length - 1 }, (_, n) => m.slice(0, n + 1))))
 const LOWER_MARKERS = [
   'authorization: bearer ', 'authorization: bot ', 'private key', 'postgres://', 'postgresql://', 'mysql://', 'mongodb://', 'redis://', 'amqp://', '://',
   'access_token', 'refresh_token', 'id_token', 'api_key', 'apikey', 'client_secret', 'auth_token', 'raw_secret', 'secret_input', 'key_material',
