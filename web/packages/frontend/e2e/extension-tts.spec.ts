@@ -6,7 +6,7 @@ import { REPO_ROOT } from './server'
 /** TAL-568: an extension's TTS engine stays registered with its panel closed, so Settings > Speech can pick it and replies use it. */
 const voiceBox = {
   id: 'voicebox', name: 'Voice Box', source: 'manifest', enabled: true, panel: 'extensions/voicebox/index.html', nav: null,
-  capabilities: ['tts'], settings_schema: [], theme: null, tts: { id: 'voicebox', label: 'Voice Box' }, sidecar: null, legacy_injection: false, warnings: [],
+  capabilities: ['tts'], settings_schema: [], theme: null, tts: { id: 'voicebox', label: 'Voice Box' }, sidecar: null, legacy_injection: false, can_toggle: true, warnings: [],
 }
 // The panel records what it synthesizes and answers with a one-sample WAV.
 // The SDK is inlined: a sandboxed (opaque-origin) frame may not fetch from a loopback server.

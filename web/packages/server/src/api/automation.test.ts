@@ -535,7 +535,7 @@ describe('crons, kanban, extensions, terminal', () => {
     unlinkSync(join(s.state, 'extensions', 'ext-one', 'secret'))
     res = await s.get('/api/extensions/manifests')
     body = await json(res)
-    expect((body.manifests as Json[])[0]).toMatchObject({ id: 'ext-one', enabled: true, legacy_injection: false, capabilities: [] })
+    expect((body.manifests as Json[])[0]).toMatchObject({ id: 'ext-one', enabled: true, legacy_injection: false, can_toggle: true, capabilities: [] })
     const browserHeaders = { origin: s.base, referer: `${s.base}/`, 'sec-fetch-site': 'same-origin' }
     res = await post(s, '/api/extensions/ext-one/sidecar/ping', {}, 'POST', browserHeaders)
     expect(res.status).toBe(403)
@@ -954,6 +954,23 @@ describe('extension state file limits (parity)', () => {
       expect(normalizeLoopbackOrigin('http://localhost:80')).toBe('http://localhost:80')
       expect(normalizeLoopbackOrigin('http://127.1:8080')).toBeNull()
       expect(normalizeLoopbackOrigin('http://[::1]:9')).toBe('http://[::1]:9')
+    } finally {
+      rmSync(stateDir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('extension manifest toggle decision (TAL-685)', () => {
+  it('ships can_toggle false for a manifest-disabled extension and true otherwise', async () => {
+    const stateDir = mkdtempSync(join(tmpdir(), 'talaria-ext-'))
+    const root = join(stateDir, 'ext-root')
+    mkdirSync(root)
+    writeFileSync(join(root, 'manifest.json'), JSON.stringify({ extensions: [
+      { id: 'live', name: 'Live' }, { id: 'off', name: 'Off', enabled: false },
+    ] }))
+    const service = new ExtensionService({ env: { HERMES_WEBUI_EXTENSION_DIR: root, HERMES_WEBUI_EXTENSION_MANIFEST: 'manifest.json' }, stateDir, isAuthEnabled: () => Promise.resolve(false), fetch, log: () => undefined })
+    try {
+      expect((await service.manifests()).manifests.map((m) => [m.id, m.can_toggle])).toEqual([['live', true], ['off', false]])
     } finally {
       rmSync(stateDir, { recursive: true, force: true })
     }

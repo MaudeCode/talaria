@@ -8,10 +8,10 @@ import { escapeHtml } from '../text/markdown.js'
 import { htmlWithHeadTag } from '../workspace/media.js'
 import { join, resolve } from 'node:path'
 import { isDict, type Dict } from '../config/agent-config.js'
-import type { Settings } from '../settings.js'
+import type { SettingsStore } from '../settings.js'
 import { pyBool } from '../settings.js'
 import { baseHrefFor, isServerOwned, isSpaPath } from '../spa.js'
-import { readContainedFile, text } from './extensions.js'
+import { ExtensionError, readContainedFile, text } from './extensions.js'
 
 const NAME_RE = /^[a-z][a-z0-9_-]{0,63}$/
 /** A clean same-origin path: one leading `/` (never `//`), no quotes, whitespace, query, or fragment. */
@@ -25,7 +25,7 @@ const ASSET_MIME: Record<string, string> = {
   '.map': 'application/json; charset=utf-8', '.txt': 'text/plain; charset=utf-8',
 }
 
-export interface DashboardPluginDeps { env: Record<string, string | undefined>; hermesHome: string; settings: () => Settings }
+export interface DashboardPluginDeps { env: Record<string, string | undefined>; hermesHome: string; settings: Pick<SettingsStore, 'load' | 'save'> }
 interface Plugin { name: string; manifest: Dict; tabPath: string; root: string }
 export interface PluginFile { body: Buffer; contentType: string }
 
@@ -78,11 +78,17 @@ export class DashboardPlugins {
   /** Python `_dashboard_plugin_enabled`: opt-in per plugin under `dashboard_plugins` in settings.json. */
   enabled(name: string): boolean {
     try {
-      const prefs = this.deps.settings().dashboard_plugins
+      const prefs = this.deps.settings.load().dashboard_plugins
       return isDict(prefs) && pyBool(prefs[name])
     } catch {
       return false
     }
+  }
+
+  /** The Settings > Extensions switch: `SettingsStore.save` merges this one key into `dashboard_plugins`. */
+  async setEnabled(name: string, enabled: unknown): Promise<void> {
+    if (typeof enabled !== 'boolean') throw new ExtensionError('enabled must be a boolean', 400)
+    await this.deps.settings.save({ dashboard_plugins: { [name]: enabled } })
   }
 
   private enabledPlugin(name: string): Plugin | null {
@@ -96,7 +102,7 @@ export class DashboardPlugins {
       const tab = isDict(manifest.tab) ? manifest.tab : {}
       return {
         id: name, name: text(manifest.label || manifest.name, 80) || name, version: text(manifest.version, 40), description: text(manifest.description, 300),
-        source: 'plugin', enabled: this.enabled(name), panel: `dashboard-plugins/${name}/index.html`,
+        source: 'plugin', enabled: this.enabled(name), can_toggle: true, panel: `dashboard-plugins/${name}/index.html`,
         nav: { label: text(tab.name || manifest.label || manifest.name, 40) || name },
         capabilities: ['settings', 'storage', 'toast', 'session'], permissions: {}, settings_schema: [], theme: null, tts: null, sidecar: null, legacy_injection: false, warnings: [],
       }

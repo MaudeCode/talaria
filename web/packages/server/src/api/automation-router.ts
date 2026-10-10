@@ -131,14 +131,14 @@ export const automationRouter = os.router({
   extensions: {
     status: os.extensions.status.handler(({ context: { ctx } }) => run(() => ctx.deps.extensions.status() as Promise<never>)),
     registry: os.extensions.registry.handler(({ context: { ctx } }) => run(() => ctx.deps.extensions.registry())),
-    manifests: os.extensions.manifests.handler(({ context: { ctx } }) => run(async () => {
-      // Python `build_manifests`: extension entries first, then each dashboard plugin whose id is still free.
-      const out = await ctx.deps.extensions.manifests()
-      const seen = new Set(out.manifests.map((m) => m.id))
-      out.manifests.push(...ctx.deps.dashboardPlugins.manifests().filter((m) => !seen.has(m.id)))
-      return out
+    manifests: os.extensions.manifests.handler(({ context: { ctx } }) => run(() => manifestList(ctx))),
+    toggle: os.extensions.toggle.handler(({ input, context: { ctx } }) => run(async () => {
+      // A listed plugin row persists `dashboard_plugins.<id>`; every other id is an extension override.
+      const id = typeof input.id === 'string' ? input.id.trim() : ''
+      if (!(await manifestList(ctx)).manifests.some((m) => m.id === id && m.source === 'plugin')) return ctx.deps.extensions.setEnabled(input.id, input.enabled) as Promise<never>
+      await ctx.deps.dashboardPlugins.setEnabled(id, input.enabled)
+      return ctx.deps.extensions.status() as Promise<never>
     })),
-    toggle: os.extensions.toggle.handler(({ input, context: { ctx } }) => run(() => ctx.deps.extensions.setEnabled(input.id, input.enabled) as Promise<never>)),
     consent: os.extensions.consent.handler(({ input, context: { ctx } }) => run(() => ctx.deps.extensions.setConsent(input.id, input.approved) as Promise<never>)),
     install: os.extensions.install.handler(({ input, context: { ctx } }) => run(() => ctx.deps.extensions.install(input.id, input.download_url, input.sha256))),
     uninstall: os.extensions.uninstall.handler(({ input, context: { ctx } }) => run(() => ctx.deps.extensions.uninstall(input.id))),
@@ -190,6 +190,14 @@ export const automationRouter = os.router({
     })),
   },
 })
+
+/** Python `build_manifests`: extension entries first, then each dashboard plugin whose id is still free. */
+async function manifestList(ctx: RequestContext): Promise<{ protocol_version: 1; manifests: Dict[] }> {
+  const out = await ctx.deps.extensions.manifests()
+  const seen = new Set(out.manifests.map((m) => m.id))
+  out.manifests.push(...ctx.deps.dashboardPlugins.manifests().filter((m) => !seen.has(m.id)))
+  return out
+}
 
 function linkCall(ctx: RequestContext, input: Dict, unlink: boolean): Promise<Dict> {
   const parent = str(input.parent_id).trim()

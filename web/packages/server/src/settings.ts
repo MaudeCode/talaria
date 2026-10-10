@@ -405,11 +405,10 @@ export class SettingsStore {
     const dashboardPlugins = settings.dashboard_plugins
     if (dashboardPlugins && typeof dashboardPlugins === 'object' && !Array.isArray(dashboardPlugins)) {
       const currentDash = current.dashboard_plugins
-      if (currentDash && typeof currentDash === 'object' && !Array.isArray(currentDash)) {
-        const merged = currentDash as Record<string, boolean>
-        for (const [k, v] of Object.entries(dashboardPlugins as Record<string, unknown>)) merged[k] = pyBool(v)
-        current.dashboard_plugins = merged
-      }
+      // A malformed stored value (null, string, array) is replaced, so the patch is never silently dropped.
+      const merged = (currentDash && typeof currentDash === 'object' && !Array.isArray(currentDash) ? currentDash : {}) as Record<string, boolean>
+      for (const [k, v] of Object.entries(dashboardPlugins as Record<string, unknown>)) merged[k] = pyBool(v)
+      current.dashboard_plugins = merged
     }
     for (const [k, rawValue] of Object.entries(settings)) {
       let v: unknown = rawValue

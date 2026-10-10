@@ -9,7 +9,7 @@ const tuner = {
     { key: 'mode', type: 'enum', label: 'Mode', description: '', default: 'fast', options: [{ value: 'fast', label: 'Fast' }, { value: 'thorough', label: 'Thorough' }] },
     { key: 'greeting', type: 'string', label: 'Greeting', description: 'Shown on the panel.', default: 'hi' },
   ],
-  theme: null, tts: null, sidecar: null, legacy_injection: false, warnings: [],
+  theme: null, tts: null, sidecar: null, legacy_injection: false, can_toggle: true, warnings: [],
 }
 const KEY = 'hermes.ext.settings.tuner'
 

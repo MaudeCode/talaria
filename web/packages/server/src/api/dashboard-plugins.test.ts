@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -137,6 +137,29 @@ describe('dashboard plugin routes', () => {
       expect(res.status, path).toBe(200)
       expect(await res.text()).toContain('<head><base href="./dashboard-plugins/slash/"><title>slash</title>')
     }
+  })
+
+  it('toggles a plugin from Settings > Extensions through the extensions toggle, without a restart (TAL-685)', async () => {
+    await enable({ spa: false, iife: true })
+    const toggle = (id: string, enabled: unknown): Promise<Response> => s.get('/api/extensions/toggle', { method: 'POST', body: JSON.stringify({ id, enabled }), headers: { 'content-type': 'application/json' } })
+    const row = async (): Promise<{ enabled: boolean; can_toggle: boolean } | undefined> =>
+      ((await (await s.get('/api/extensions/manifests')).json()) as { manifests: { id: string; enabled: boolean; can_toggle: boolean }[] }).manifests.find((m) => m.id === 'spa')
+    const prefs = (): unknown => (JSON.parse(readFileSync(join(s.state, 'settings.json'), 'utf8')) as { dashboard_plugins: unknown }).dashboard_plugins
+    expect(await row()).toMatchObject({ enabled: false })
+
+    expect((await toggle('spa', true)).status).toBe(200)
+    expect(prefs()).toMatchObject({ spa: true, iife: true })
+    expect(await row()).toMatchObject({ enabled: true, can_toggle: true })
+    for (const path of ['/dashboard-plugins/spa/index.html', '/dashboard-plugins/spa/dist/app.js', '/spa-board']) expect((await s.get(path)).status, path).toBe(200)
+
+    expect((await toggle('spa', false)).status).toBe(200)
+    expect(prefs()).toMatchObject({ spa: false, iife: true })
+    expect(await row()).toMatchObject({ enabled: false, can_toggle: true })
+    for (const path of ['/dashboard-plugins/spa/index.html', '/dashboard-plugins/spa/dist/app.js', '/spa-board']) expect((await s.get(path)).status, path).toBe(404)
+
+    expect((await toggle('spa', 'yes')).status).toBe(400)
+    expect((await toggle('ghost', true)).status).toBeGreaterThanOrEqual(400)
+    expect(prefs()).toMatchObject({ spa: false, iife: true })
   })
 
   it('never lets a plugin tab path shadow the app or the API', async () => {

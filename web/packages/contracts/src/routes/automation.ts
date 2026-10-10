@@ -67,7 +67,8 @@ export const automationContract = {
   extensions: {
     status: oc.route({ method: 'GET', path: '/api/extensions/status', tags }).output(ExtensionStatusSchema),
     registry: oc.route({ method: 'GET', path: '/api/extensions/registry', tags }).output(z.looseObject({ entries: z.array(Json), error: z.string().optional(), unavailable: z.boolean().optional() })),
-    manifests: oc.route({ method: 'GET', path: '/api/extensions/manifests', tags }).output(z.object({ protocol_version: z.literal(1), manifests: z.array(Loose) })),
+    // `can_toggle`: the server's decision that Settings shows an enable switch for the row (`toggle` accepts its id).
+    manifests: oc.route({ method: 'GET', path: '/api/extensions/manifests', tags }).output(z.object({ protocol_version: z.literal(1), manifests: z.array(z.looseObject({ can_toggle: z.boolean() })) })),
     toggle: oc.route({ method: 'POST', path: '/api/extensions/toggle', tags }).input(z.object({ id: Json.optional(), enabled: Json.optional() })).output(ExtensionStatusSchema),
     consent: oc.route({ method: 'POST', path: '/api/extensions/sidecar-proxy-consent', tags }).input(z.object({ id: Json.optional(), approved: Json.optional() })).output(ExtensionStatusSchema),
     install: oc.route({ method: 'POST', path: '/api/extensions/install', tags }).input(z.object({ id: Json.optional(), download_url: Json.optional(), sha256: Json.optional() })).output(z.object({ installed: z.literal(true), id: z.string(), version: z.string() })),

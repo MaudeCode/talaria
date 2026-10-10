@@ -33,6 +33,7 @@ where each entry is the sanitized projection the client validates with
 | `name`, `version`, `description` | display metadata, length-bounded |
 | `source` | `manifest` (extension directory), `gallery` (one-click install), `plugin` (dashboard plugin) |
 | `enabled` | effective enablement (manifest flag, user toggle, plugin setting) |
+| `can_toggle` | `true` when Settings shows an enable switch for the row: `false` for a manifest-disabled or legacy-injection extension |
 | `panel` | app-relative URL of the sandboxed document (`extensions/<id>/panel.html`, `dashboard-plugins/<name>/index.html`) or `null` for a headless extension |
 | `nav` | `{ label, icon? }` rail entry when a panel exists |
 | `capabilities` | subset of `settings storage sidecar lifecycle theme tts navigate toast session` |

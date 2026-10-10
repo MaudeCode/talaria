@@ -76,7 +76,7 @@ function ExtensionRow({ ext, canManage, onToggle, onConsent, onUninstall }: { ex
           <div className="text-[11px] text-muted">{ext.id}{ext.description ? ` · ${ext.description}` : ''}</div>
         </div>
         {ext.panel && ext.enabled && <Link to="/ext/$extensionId" params={{ extensionId: ext.id }} className="text-xs text-accent-text underline">{m.extensions_open()}</Link>}
-        {canManage && ext.source !== 'plugin' && !ext.legacy_injection && (
+        {canManage && ext.can_toggle && (
           <label className="flex items-center gap-1 text-xs text-muted"><Switch checked={ext.enabled} onCheckedChange={(checked) => onToggle(checked)} aria-label={`${ext.name}: ${ext.enabled ? m.plugins_enabled() : m.plugins_disabled()}`} /> {ext.enabled ? m.plugins_enabled() : m.plugins_disabled()}</label>
         )}
         {canManage && ext.source === 'gallery' && <Button variant="ghost" className="text-error" onClick={onUninstall}>{m.extensions_uninstall()}</Button>}
