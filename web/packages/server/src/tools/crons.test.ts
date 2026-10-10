@@ -97,7 +97,9 @@ describe('cron job payloads carry the derived fields', () => {
       { ...jobs[0]!, id: 'f00000000001', name: 'Legacy', next_run_at: undefined, next_run: 1_789_000_000 },
     )
     runningJobs.set('e00000000001', 1)
-    const ids = (await service.list('default', false)).jobs as Dict[]
+    const listed = await service.list('default', false)
+    expect(listed.ordered).toBe(true)
+    const ids = listed.jobs as Dict[]
     expect(ids.map((job) => job.id)).toEqual(['e00000000001', 'f00000000001', recurring.id, 'g00000000001', 'b00000000001', 'd00000000001', 'c00000000001'])
   })
 

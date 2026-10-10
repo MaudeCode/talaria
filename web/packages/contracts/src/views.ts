@@ -829,8 +829,12 @@ export const CronJobViewSchema = z.looseObject({
   attention_hint: z.enum(['croniter_missing']).nullable(),
 })
 export type CronJob = z.infer<typeof CronJobViewSchema>
-/** `jobs` arrive in display order (TAL-601): running first, then soonest next run (none last), then name. Clients keep it. */
-export const CronsSchema = z.looseObject({ jobs: z.array(CronJobViewSchema), active_profile: z.string().optional(), all_profiles: z.boolean().optional(), other_profile_count: z.number().optional(), cron_unavailable: z.boolean().optional() })
+export const CronsSchema = z.looseObject({
+  jobs: z.array(CronJobViewSchema),
+  /** TAL-601: `jobs` arrive in display order (running first, then soonest next run, none last, then name); clients keep it. Absent from older servers. */
+  ordered: z.boolean().optional(),
+  active_profile: z.string().optional(), all_profiles: z.boolean().optional(), other_profile_count: z.number().optional(), cron_unavailable: z.boolean().optional(),
+})
 export type Crons = z.infer<typeof CronsSchema>
 export const CronContextSourcesSchema = z.object({ profile: z.string(), sources: z.array(z.object({ job_id: z.string(), label: z.string(), selectable: z.boolean() })) })
 export type CronContextSources = z.infer<typeof CronContextSourcesSchema>

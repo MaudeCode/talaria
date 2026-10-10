@@ -51370,6 +51370,9 @@
                         "additionalProperties": {}
                       }
                     },
+                    "ordered": {
+                      "type": "boolean"
+                    },
                     "active_profile": {
                       "type": "string"
                     },

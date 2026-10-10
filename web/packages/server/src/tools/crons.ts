@@ -322,7 +322,7 @@ export class CronService {
     try { for (const row of await this.storedJobs(active)) (row.managed ? activeJobs : otherJobs).push(await this.view(row, pickerHome)) }
     catch (error) { if (error instanceof SidecarError && error.condition === 'cron_unavailable') return { jobs: [], cron_unavailable: true }; throw error }
     const all = allProfiles && !this.deps.isolatedProfileMode()
-    return { jobs: (all ? [...activeJobs, ...otherJobs] : activeJobs).sort(compareListedJobs), all_profiles: all, active_profile: active, other_profile_count: all ? 0 : otherJobs.length }
+    return { jobs: (all ? [...activeJobs, ...otherJobs] : activeJobs).sort(compareListedJobs), ordered: true, all_profiles: all, active_profile: active, other_profile_count: all ? 0 : otherJobs.length }
   }
 
   /**
