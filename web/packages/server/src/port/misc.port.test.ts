@@ -303,7 +303,7 @@ describe('image attachments in user messages (review round 14)', () => {
     const { sid, prompt, users } = await echoTurn('  ', [{ path: join(ws(), 'only.png'), mime: 'image/png', name: 'only.png' }])
     // The image rides natively, and the text part names it too.
     expect((prompt as Json[])[1]).toMatchObject({ type: 'image_url' })
-    expect(String((prompt as Json[])[0]!.text)).toContain(`[Attached files: ${join(ws(), 'only.png')}]`)
+    expect((prompt as Json[])[0]!.text).toBe(`\n\n[Attached files: ${join(ws(), 'only.png')}]`)
     expect(users).toHaveLength(1)
     expect(users[0]!.content).toBe('')
     expect((users[0]!.attachments as Json[]).map((a) => a.name)).toEqual(['only.png'])
@@ -318,20 +318,19 @@ describe('image attachments in user messages (review round 14)', () => {
     mode = 'native'
     const doc = join(ws(), 'notes.pdf')
     const only = await echoTurn('', [{ path: doc, mime: 'application/pdf', name: 'notes.pdf' }])
-    expect(String(only.prompt)).toMatch(/^\[Workspace::v1: [^\]]+\]\n/)
-    expect(String(only.prompt).endsWith(`]\n\n\n[Attached files: ${doc}]`)).toBe(true)
+    expect(only.prompt).toBe(`\n\n[Attached files: ${doc}]`)
     expect(only.users).toHaveLength(1)
     expect(only.users[0]!.content).toBe('')
     expect((only.users[0]!.attachments as Json[]).map((a) => a.name)).toEqual(['notes.pdf'])
     const typed = await echoTurn('summarise this', [{ path: doc, mime: 'application/pdf', name: 'notes.pdf' }])
-    expect(String(typed.prompt)).toMatch(/summarise this\n\n\[Attached files: .*notes\.pdf\]$/)
+    expect(typed.prompt).toBe(`summarise this\n\n[Attached files: ${doc}]`)
     expect(typed.users).toHaveLength(1)
     expect(typed.users[0]!.content).toBe('summarise this')
     // A text-mode model gets the image's path the same way.
     mode = 'text'
     writeFileSync(join(ws(), 'textmode.png'), png)
     const image = await echoTurn('', [{ path: join(ws(), 'textmode.png'), mime: 'image/png', name: 'textmode.png' }])
-    expect(String(image.prompt)).toContain(`[Attached files: ${join(ws(), 'textmode.png')}]`)
+    expect(image.prompt).toBe(`\n\n[Attached files: ${join(ws(), 'textmode.png')}]`)
     expect(image.users[0]!.content).toBe('')
     mode = 'native'
   })

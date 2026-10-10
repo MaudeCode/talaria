@@ -23,7 +23,7 @@ import { agentSessionRowsExisting, CONVERSATION_ROUND_THRESHOLD, countConversati
 import { completionIncomplete, fallbackHandoffSummary, HANDOFF_SYSTEM_PROMPT, handoffMarker, handoffPayload, handoffTranscript, messageHandoffPayload, sameHandoff } from './handoff.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, compressionReference, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { SidecarError, type SidecarLike } from '../sidecar/client.js'
-import { agentSteerText, attachedFilesPrompt, attachmentObjects, dedupeContext, isContextCompressionMarker, journalOutputRows, looksLikeCurrentUserTurn, stoppedTurnContext, workspaceContextPrefix, mergeSessionMessagesAppendOnly, messageIdentity, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, type ToolResultView } from './merge.js'
+import { agentSteerText, attachedFilesPrompt, attachmentObjects, dedupeContext, isContextCompressionMarker, journalOutputRows, looksLikeCurrentUserTurn, stoppedTurnContext, mergeSessionMessagesAppendOnly, messageIdentity, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, type ToolResultView } from './merge.js'
 import { withBackgroundUpdates } from './background-updates.js'
 import { sourceKind } from './source-kind.js'
 import { withBackgroundLinks, type Receipt } from './background-tasks.js'
@@ -815,7 +815,7 @@ export class SessionService {
       if (!target.messages.some((m) => m.role === 'user' && !m._steer && m._turn_id === turnId)) target.messages.push({ role: 'user', content: pendingText, timestamp: Math.trunc(startedAt), ...(attachments.length ? { attachments } : {}), _recovered: true, _source: target.pending_user_source ?? 'webui', _turn_id: turnId })
       // The model context settles as a Stop's does: the Agent's own rows when it committed the prompt, else the prompt it
       // was sent; then the prose that streamed past them.
-      const prompt = attachedFilesPrompt((str(target.workspace) ? workspaceContextPrefix(str(target.workspace)) : '') + pendingText, attachments)
+      const prompt = attachedFilesPrompt(pendingText, attachments)
       const streamed = output.map((m) => str(m.content)).filter(Boolean).join('\n\n')
       target.context_messages = dedupeContext(stoppedTurnContext(previousContext, ownRows ? [...previousContext, ...ownRows] : null, prompt, pendingText, streamed, previousContext.length) ?? [...structuredClone(previousContext), { role: 'user', content: prompt }])
     }

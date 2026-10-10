@@ -23,10 +23,6 @@ export function escapeWorkspacePrefixPath(path: string): string {
   return path.replace(/\\/g, '\\\\').replace(/]/g, '\\]')
 }
 
-export function workspaceContextPrefix(path: string): string {
-  return `[Workspace::v1: ${escapeWorkspacePrefixPath(path)}]\n`
-}
-
 
 /** Python `_message_text`: flatten string or multimodal content to text. */
 export function isReasoningBlock(part: Record<string, unknown>): boolean {

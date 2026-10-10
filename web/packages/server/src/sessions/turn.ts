@@ -30,7 +30,7 @@ import { withSessionWireFlags } from './list.js'
 import { hydrateAnchorActivityScenes, turnTerminalState, withTurnIds } from './anchor.js'
 import { persistentStateChanges, persistentStateSnapshot } from './state-saved.js'
 import { maxIterationsFromConfig, maxTokensFromConfig, processWakeupMaxIterations, reasoningConfigFromConfig, webuiEphemeralSystemPrompt, workspaceSystemMessage } from './turn-context.js'
-import { agentSteerText, assistantReplyAddedAfterCurrentTurn, attachedFilesPrompt, buildPartialMessage, dedupeContext, checkpointTurnStart, extractToolCallsFromMessages, hasNativeImages, injectMaxIterationSummaryFallback, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitDisplayText, stateDbSeenId, joinReasoning, reasoningFieldsText, stoppedTurnContext, toolOutcome, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withToolCallOutcomes, workspaceContextPrefix, withoutMaxIterationSummaryRequest, withNativeImagesRestored, withoutNativeImages, withoutToolImages } from './merge.js'
+import { agentSteerText, assistantReplyAddedAfterCurrentTurn, attachedFilesPrompt, buildPartialMessage, dedupeContext, checkpointTurnStart, extractToolCallsFromMessages, hasNativeImages, injectMaxIterationSummaryFallback, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitDisplayText, stateDbSeenId, joinReasoning, reasoningFieldsText, stoppedTurnContext, toolOutcome, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withToolCallOutcomes, withoutMaxIterationSummaryRequest, withNativeImagesRestored, withoutNativeImages, withoutToolImages } from './merge.js'
 import { mayBecomeSilentReply, turnOrigin, withBackgroundUpdates } from './background-updates.js'
 import { countExchanges, fallbackTitleFromExchange, firstExchangeSnippets, isGenericFallbackTitle, latestExchangeSnippets, looksInvalidGeneratedTitle, looksLikeDefaultCliTitle, sanitizeGeneratedTitle, titleLanguageMismatch, titlePrompts } from './titles.js'
 import { WORKSPACE_BUSY_MESSAGE } from '../workspace/git.js'
@@ -428,9 +428,8 @@ export class TurnRunner {
     // Python `_sanitize_messages_for_agent`: the model never sees display-only rows or a replayed cancelled prompt, and
     // the Agent gets back the exact bytes it sent (TAL-541).
     const apiHistory = sanitizeMessagesForApi(previousContext, { preserveApiContent: true })
-    const workspaceCtx = workspaceContextPrefix(opts.workspace)
     // Before the first await: a Stop can land at any point after admission.
-    this.stopContexts.set(streamId, { previousContext, historyLength: apiHistory.length, prompt: workspaceCtx + msgText, msgText, checkpointed: false, stateDbStartId: startRead.ok ? stateDbSeenId(startRead.rows) ?? 0 : null })
+    this.stopContexts.set(streamId, { previousContext, historyLength: apiHistory.length, prompt: msgText, msgText, checkpointed: false, stateDbStartId: startRead.ok ? stateDbSeenId(startRead.rows) ?? 0 : null })
     const activeTurnToken = buildActiveTurnToken(streamId, s.pending_started_at)
     const sidecar = deps.sidecar()
     const partialText = this.registry.partialText.get(streamId) ?? []
@@ -474,7 +473,7 @@ export class TurnRunner {
     // TAL-545: one image mode decides both this turn's upload and the replayed history, which a text-mode turn sends
     // without native images; only a turn with an image on either side asks for it.
     const imageMode = attachments.some(isImageAttachment) || hasNativeImages(apiHistory) ? await this.imageInputMode(sessionId, s, opts, controller.signal) : null
-    const userMessage = this.buildUserMessage(workspaceCtx, msgText, attachments, opts.workspace, sessionId, imageMode)
+    const userMessage = this.buildUserMessage(msgText, attachments, opts.workspace, sessionId, imageMode)
     const conversationHistory = imageMode === 'text' ? withoutNativeImages(apiHistory) : apiHistory
     // The prompt the Agent actually gets, native image parts included.
     const stop = this.stopContexts.get(streamId)
@@ -487,7 +486,8 @@ export class TurnRunner {
     try {
       if (!sidecar) throw new SidecarError('The Agent sidecar is not running; chat is unavailable until it starts.', { condition: 'sidecar_unavailable' })
       // Python: budgets, reasoning config, personality and delivery context come from the profile's config.yaml; the
-      // system message carries the frozen session workspace, the WebUI guidance rides as the ephemeral prompt.
+      // system message carries the frozen session workspace, the WebUI guidance rides as the ephemeral prompt with this
+      // turn's workspace (TAL-710: never a tag on the user's message, which the Agent can persist from memory).
       const cfg = (await deps.profileConfig?.(s.profile ?? null)) ?? {}
       // The sidecar's per-session YOLO state does not survive its restarts: push the local flag (either way) before
       // the turn so a stale sidecar-side enable cannot auto-approve a session the UI reports as guarded.
@@ -499,10 +499,9 @@ export class TurnRunner {
         put('cancel', this.cancelFrame(sessionId))
         return
       }
-      const frozenWorkspace = str(s.created_workspace) || str(s.workspace)
       const turnContext = {
-        system_message: workspaceSystemMessage(frozenWorkspace),
-        ephemeral_system_prompt: webuiEphemeralSystemPrompt({ config: cfg, personality: str(s.personality) || null, sessionId, profile: s.profile ?? null, workspace: frozenWorkspace, hermesHome: deps.profileHome(s.profile), homeDisplay: deps.homeDisplay?.() ?? '~/.hermes', background: turnOrigin(opts.source) === 'background' }),
+        system_message: workspaceSystemMessage(str(s.created_workspace) || str(s.workspace)),
+        ephemeral_system_prompt: webuiEphemeralSystemPrompt({ config: cfg, personality: str(s.personality) || null, sessionId, profile: s.profile ?? null, workspace: opts.workspace, hermesHome: deps.profileHome(s.profile), homeDisplay: deps.homeDisplay?.() ?? '~/.hermes', background: turnOrigin(opts.source) === 'background' }),
         max_iterations: processWakeupMaxIterations(maxIterationsFromConfig(cfg), opts.source ?? 'webui', deps.env ?? {}),
         max_tokens: maxTokensFromConfig(cfg),
         reasoning_config: reasoningConfigFromConfig(cfg, opts.modelProvider ?? s.model_provider ?? null),
@@ -923,9 +922,8 @@ export class TurnRunner {
    * after the text (TAL-276), so an attachment-only turn still gives the model a request and its transcript row a
    * distinct identity.
    */
-  private buildUserMessage(workspaceCtx: string, msgText: string, attachments: Record<string, unknown>[], workspace: string, sessionId: string, imageMode: 'native' | 'text' | null): string | Record<string, unknown>[] {
-    const text = workspaceCtx + msgText
-    const withFiles = (): string => attachedFilesPrompt(text, attachments)
+  private buildUserMessage(msgText: string, attachments: Record<string, unknown>[], workspace: string, sessionId: string, imageMode: 'native' | 'text' | null): string | Record<string, unknown>[] {
+    const withFiles = (): string => attachedFilesPrompt(msgText, attachments)
     const candidates = attachments.filter(isImageAttachment)
     if (!candidates.length || imageMode !== 'native') return withFiles()
     const parts: Record<string, unknown>[] = []

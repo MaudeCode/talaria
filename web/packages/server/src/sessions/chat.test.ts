@@ -56,8 +56,8 @@ describe('chat turns through the sidecar', () => {
     const sid = await newSession(s)
     sidecar.respond('chat.start', (params, emit) => {
       expect(params.session_id).toBe(sid)
-      expect(str(params.user_message)).toMatch(/^\[Workspace::v1: .*\]\nhello there$/)
-      // TAL-529: state.db stores the user's own text; the prompt with its workspace prefix is what the model gets.
+      // TAL-710: the model gets the typed text; the workspace rides in the ephemeral turn context, never in the message.
+      expect(params.user_message).toBe('hello there')
       expect(params.persist_user_message).toBe('hello there')
       expect(params.conversation_history).toEqual([])
       emit({ event: 'reasoning', data: { text: 'thinking' } })
@@ -2780,9 +2780,12 @@ describe('turn context from config.yaml (Python streaming worker)', () => {
       sidecar.respond('chat.start', (params, emit) => { seen = params; emit({ event: 'token', data: { text: 'arr' } }); return completed([{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'arr' }]) })
       const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'hi' }))
       await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}&replay=1`, (f) => f.event === 'done' || f.event === 'apperror')
-      expect(seen.system_message).toContain('Active workspace at session start: ')
-      expect(seen.system_message).toContain('[Workspace::v1: /absolute/path]')
+      const ws = realpathSync(join(s.state, 'workspace'))
+      expect(seen.system_message).toContain(`Active workspace at session start: ${ws}`)
+      expect(seen.system_message).not.toContain('prefixed')
+      expect(seen.user_message).toBe('hi')
       const ephemeral = String(seen.ephemeral_system_prompt)
+      expect(ephemeral).toContain(`- Workspace: ${ws}`)
       expect(ephemeral.startsWith('Talk like a pirate\nTone: jolly\n\nWebUI session context:')).toBe(true)
       expect(ephemeral).toContain(`- Session ID: ${sid}`)
       expect(ephemeral).toContain('WebUI progress guidance:')
@@ -2790,6 +2793,14 @@ describe('turn context from config.yaml (Python streaming worker)', () => {
       expect(ephemeral).toContain('  - telegram: ops')
       expect(ephemeral).toContain('- `"telegram"` → Home channel (ops)')
       expect(seen).toMatchObject({ max_iterations: 7, max_tokens: 4096, reasoning_config: { enabled: true, effort: 'high' } })
+      // TAL-710: switching workspace mid-session changes the turn's Workspace line; the session-start line stays.
+      const other = join(ws, 'other')
+      mkdirSync(other, { recursive: true })
+      const next = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'there', workspace: other }))
+      await s.sse(`/api/chat/stream?stream_id=${String(next.stream_id)}&replay=1`, (f) => f.event === 'done' || f.event === 'apperror')
+      expect(seen.user_message).toBe('there')
+      expect(String(seen.ephemeral_system_prompt)).toContain(`- Workspace: ${other}`)
+      expect(seen.system_message).toContain(`Active workspace at session start: ${ws}`)
     } finally {
       await s.close()
     }
