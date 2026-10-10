@@ -951,6 +951,9 @@ describe('Agent redactor parity', () => {
       ['\x1b]0;t;g\x07\x1b]0;x\x07hp_abcdef1234567890ABCDEF1234567890abcdef', '\x1b]0;t;gxhp_a...cdef'],
       // A prefix with punctuation (`SG.`) split across payloads, and its body after the dot.
       ['S\x1b]0;x\x07\x1b]0;G\x07.abcdefghij1234567890', 'SxG.ab...7890'],
+      // A period is a credential boundary, on the display and inside a payload's trailing run.
+      ['foo.g\x1b]0;x\x07h\x1b]0;p_\x07abcdef1234567890ABCDEF1234567890abcdef', 'foo.gxhp_a...cdef'],
+      ['\x1b]0;x.g\x07\x1b]0;y\x07hp_abcdef1234567890ABCDEF1234567890abcdef', '\x1b]0;x.gyhp_a...cdef'],
       // A hyperlinked name with no prefix across payloads is no hidden token.
       ['\x1b]8;;file:///tmp/notes\x1b\\notes\x1b]8;;\x1b\\', '\x1b]8;;file:///tmp/notes\x1b\\notes\x1b]8;;\x1b\\'],
     ]) {
@@ -962,6 +965,8 @@ describe('Agent redactor parity', () => {
   it('does not skip a prefix split across string payloads', () => {
     expect(mightContainSensitiveText('g\x1b]0;x\x07h\x1b]0;p_\x07abcdef1234567890ABCDEF1234567890abcdef')).toBe(true)
     expect(mightContainSensitiveText('S\x1b]0;x\x07\x1b]0;G\x07.abcdefghij')).toBe(true)
+    expect(mightContainSensitiveText('foo.g\x1b]0;x\x07h\x1b]0;p_\x07abcdef1234567890ABCDEF1234567890abcdef')).toBe(true)
+    expect(mightContainSensitiveText('\x1b]0;x.g\x07\x1b]0;y\x07hp_abcdef1234567890ABCDEF1234567890abcdef')).toBe(true)
   })
 
   it('masks a split token before a sentence period, and a spaced URL query value up to its fragment', () => {

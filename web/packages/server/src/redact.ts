@@ -376,8 +376,9 @@ const STRING_END_RE = /(?:\x07|\x1b\\|\x9c|[\x18\x1a])$/
 /**
  * Where a credential prefix starts whose pieces lie apart in a run of token characters and escape sequences, with a
  * string payload between them taken whole or skipped (`g\x1b]0;x\x07h\x1b]0;p_\x07…`), so that no view holds it whole.
- * Display token characters are mandatory and each payload's token characters optional. A piece starts at a display run
- * after a gap or a non-token character, or at a payload's trailing token run, where `payloadRunSpan` can walk from it.
+ * Display characters are mandatory and each payload's optional. A piece starts on the display after a gap or a non-token
+ * character (`.`), or in a payload's trailing run after its start or a non-token character, where `payloadRunSpan` can
+ * walk from it.
  * Candidates live only while they can grow into a prefix, which bounds them and keeps the scan linear.
  */
 function crossPayloadPrefixStarts(text: string): number[] {
@@ -394,7 +395,8 @@ function crossPayloadPrefixStarts(text: string): number[] {
     const seen = into.get(candidate)
     if (seen === undefined || start < seen) into.set(candidate, start)
   }
-  let afterDisplay = false
+  // Whether the last character was a display token character, after which no credential starts (`CRED_RE`'s boundary).
+  let afterToken = false
   for (let k = 0; k < text.length; ) {
     ANSI_GAP_AT_RE.lastIndex = k
     const gap = ANSI_GAP_AT_RE.exec(text)?.[0]
@@ -406,20 +408,20 @@ function crossPayloadPrefixStarts(text: string): number[] {
       const end = Math.max(from, gap.length - (STRING_END_RE.exec(gap)?.[0].length ?? 0))
       let tail = end
       while (tail > from && RUN_CHAR_RE.test(gap[tail - 1]!)) tail -= 1
-      if (tail < end) grow(next, '', k + tail, gap.slice(tail, end))
+      for (let j = tail; j < end; j += 1) if (j === tail || !TOKEN_CHAR_RE.test(gap[j - 1]!)) grow(next, '', k + j, gap.slice(j, end))
       candidates = next
-      afterDisplay = false
+      afterToken = false
       k += gap.length
     } else if (RUN_CHAR_RE.test(text[k]!)) {
       const next = new Map<string, number>()
       for (const [candidate, start] of candidates) grow(next, candidate, start, text[k]!)
-      if (!afterDisplay) grow(next, '', k, text[k]!)
+      if (!afterToken) grow(next, '', k, text[k]!)
       candidates = next
-      afterDisplay = true
+      afterToken = TOKEN_CHAR_RE.test(text[k]!)
       k += 1
     } else {
       candidates.clear()
-      afterDisplay = false
+      afterToken = false
       k += 1
     }
   }
