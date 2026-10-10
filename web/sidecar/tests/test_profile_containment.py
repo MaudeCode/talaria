@@ -22,6 +22,8 @@ def test_profile_scans_skip_entries_that_escape_the_profiles_root(hermes_home: p
         assert sidecar.result("runtime.handshake", {"rpc_version": SIDECAR_RPC_VERSION})["compatible"]
         rows = sidecar.result("profiles.list", {"base_home": str(hermes_home)})["profiles"]
         assert [row["name"] for row in rows] == ["default", "inside", "work"]
+        # A contained symlink answers the target it was checked against, so retargeting the link cannot redirect a reader.
+        assert {row["name"]: row["path"] for row in rows}["inside"] == str((profiles / "work").resolve())
         recovered, _ = sidecar.call("process.recover", {"base_home": str(hermes_home)})
         assert recovered.get("result") == {"homes": 3}, recovered
     finally:

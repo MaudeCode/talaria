@@ -354,7 +354,7 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     }
   })
 
-  it('a cookie for a profile whose home later escapes the profiles root is dropped, never served from the root home', async () => {
+  it('a request under a cookie whose profile home later escapes is refused and the cookie cleared, never served from the root home', async () => {
     const home = join(s.state, 'profiles', 'turncoat')
     mkdirSync(home, { recursive: true })
     writeFileSync(join(home, 'config.yaml'), '# seed\n')
@@ -365,9 +365,12 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     rmSync(home, { recursive: true, force: true })
     symlinkSync(outside, home)
     try {
-      const res = await s.get('/api/profile/active', { headers: { cookie } })
-      expect(res.headers.get('set-cookie')).toMatch(/^hermes_profile=(""|);.*Max-Age=0/)
-      expect((await json(res)).name).toBe('default')
+      for (const res of [await s.get('/api/profile/active', { headers: { cookie } }), await post(s, '/api/session/new', {}, { cookie })]) {
+        expect(res.status).toBe(400)
+        expect(await res.text()).toContain('outside the profiles directory')
+        expect(res.headers.get('set-cookie')).toMatch(/^hermes_profile=(""|);.*Max-Age=0/)
+      }
+      expect((await json(await s.get('/api/profile/active'))).name).toBe('default')
     } finally {
       rmSync(home, { force: true })
       rmSync(outside, { recursive: true, force: true })

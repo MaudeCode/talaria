@@ -417,7 +417,7 @@ def recover(base_home: Path) -> int:
     recovery fails the call, so the server retries."""
     from .profiles import named_profile_homes
 
-    named = named_profile_homes(base_home)
+    named = [home for _, home in named_profile_homes(base_home)]
     failed = []
     for home in [base_home, *named]:
         try:

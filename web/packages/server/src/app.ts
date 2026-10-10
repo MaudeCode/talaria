@@ -341,10 +341,8 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
         preflight(ctx)
         return
       }
-      // A cookie naming a profile whose home now resolves outside the profiles root is dropped, like an invalid name.
       const profile = await getProfileCookie(ctx)
-      if (profile && deps.profiles.escapes(profile)) ctx.queueCookie(clearProfileCookieHeader(ctx))
-      else if (profile) ctx.requestProfile = profile
+      if (profile) ctx.requestProfile = profile
       const path = ctx.path
       if (path.startsWith('/api/') && (ctx.header('origin') ?? '').trim().toLowerCase() === 'null') {
         ctx.rawJson(403, { error: 'Sandboxed documents cannot call the API directly' })
@@ -365,9 +363,11 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
         return
       }
       if (path.startsWith('/api/') && !guardQuerySessionId(ctx)) return
-      // A bound or process-wide profile whose home resolves outside the profiles root is refused rather than served from
-      // the root home `profileHome` clamps it to; listing profiles and switching away stay open.
+      // A request whose profile home resolves outside the profiles root is refused, never run against another home;
+      // listing profiles and switching away stay open. A cookie naming it is cleared in the refusal, so the next request
+      // falls back to the process profile.
       if (path.startsWith('/api/') && !isPublicPath(path) && path !== '/api/profile/switch' && path !== '/api/profiles' && deps.profiles.escapes(activeProfileName(ctx))) {
+        if (profile !== null && ctx.requestProfile === profile) ctx.queueCookie(clearProfileCookieHeader(ctx))
         ctx.json({ error: escapedProfileMessage(activeProfileName(ctx)) }, { status: 400 })
         return
       }
