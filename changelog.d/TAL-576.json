@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "When a provider has no usable credentials left, finished background tasks stop starting new chat turns that fail with the same error. They resume once a credential's cooldown ends, you add or change credentials, you switch provider, or a message you send succeeds.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

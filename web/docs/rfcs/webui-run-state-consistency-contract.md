@@ -104,7 +104,14 @@ projection of SSE frames that converges on the server's settled fields.
 8. **Automatic turns have a distinct budget.** A process-completion wakeup turn
    (`sessions/completions.ts`) runs under its own retry and batch limits, and a
    limit exit is reported as an automatic-wakeup limit, never as a user
-   cancellation.
+   cancellation. A wakeup that fails with `credential_pool_empty` records
+   `process_wakeup_pause` (`sessions/wakeup-pause.ts`). Later wakeups are held
+   in `sessions/_wakeup_held.json` (one atomic write, payload included) instead
+   of starting a turn until the profile's credential state or the session's
+   provider changes, the pool's earliest retry deadline passes, or a turn
+   succeeds. A held wakeup leaves the file only once a turn admits it; the drain
+   rechecks held sessions at least every five minutes, and its first pass after
+   a restart resumes them.
 9. **Observation has a degraded path.** Long-running or many-session
    observation exposes heartbeat or degraded status so the UI does not appear
    silent and ordinary APIs do not stall behind active streams.

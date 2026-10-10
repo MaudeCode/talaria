@@ -498,6 +498,258 @@ describe('background wakeups carry their update metadata (TAL-371)', () => {
   })
 })
 
+describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
+  let s: TestServer
+  let sidecar: FakeSidecar
+  let starts: string[]
+  beforeAll(async () => {
+    sidecar = new FakeSidecar()
+    s = await bootTestServer({ sidecar })
+    sidecar.respond('process.mark_consumed', () => ({ ok: true }))
+    writeFileSync(join(s.state, 'auth.json'), JSON.stringify({ credential_pool: { openrouter: [{ api_key: 'sk-old', last_status: 'exhausted', request_count: 9 }] } }))
+  })
+  afterAll(() => s.close())
+
+  const poolEmpty = (): void => { sidecar.respond('chat.start', (params) => { starts.push(str(params.user_message)); return { ...completed(''), messages: [{ role: 'user', content: str(params.user_message) }], status: 'error' as const, failed: true, error: 'All 2 credential(s) exhausted for provider openrouter' } }) }
+  const idle = async (): Promise<void> => { for (let i = 0; i < 100 && s.deps.registry.activeRuns.size; i += 1) await new Promise((r) => setTimeout(r, 20)) }
+  const complete = async (sid: string, id: string): Promise<void> => {
+    await s.deps.completions.processOne({ process_id: id, session_id: id, type: 'completion', command: 'make', exit_code: 0, output: 'ok', origin_ui_session_id: sid, consumed: false })
+    await new Promise((r) => setTimeout(r, 50))
+    await idle()
+  }
+  const heldFile = (): Record<string, Json[]> => { try { return JSON.parse(readFileSync(join(s.deps.sessionStore.sessionDir, '_wakeup_held.json'), 'utf8')) as Record<string, Json[]> } catch { return {} } }
+  const heldIndex = (): string[] => Object.keys(heldFile())
+  const heldIds = (sid: string): unknown[] => (heldFile()[sid] ?? []).map((e) => e.process_id)
+  const pausedSession = async (): Promise<string> => {
+    starts = []
+    poolEmpty()
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    await complete(sid, `${sid}_1`)
+    expect(starts).toHaveLength(1)
+    return sid
+  }
+
+  it('starts no further wakeup turn until the credentials change', async () => {
+    const sid = await pausedSession()
+    await complete(sid, `${sid}_2`)
+    await complete(sid, `${sid}_3`)
+    expect(starts, 'a paused session starts no wakeup turn').toHaveLength(1)
+    // Held with their payload in one durable file, so a restart before the pause lifts loses none.
+    expect(heldIds(sid), 'paused wakeups are held').toEqual([`${sid}_2`, `${sid}_3`])
+    expect(str(heldFile()[sid]![0]!.wakeup_prompt)).toContain(`Background process ${sid}_2 completed`)
+    expect(s.deps.completions.deferredCount(sid)).toBe(0)
+    expect(heldIndex()).toContain(sid)
+    expect(s.deps.sessionStore.get(sid).process_wakeup_pause).toMatchObject({ paused: true, classification: 'credential_pool_empty' })
+    // Token refresh and request telemetry are no credential change.
+    writeFileSync(join(s.state, 'auth.json'), JSON.stringify({ credential_pool: { openrouter: [{ api_key: 'sk-rotated', last_status: 'ok', request_count: 10 }] } }))
+    await complete(sid, `${sid}_4`)
+    expect(starts).toHaveLength(1)
+    // An added key is.
+    writeFileSync(join(s.state, 'auth.json'), JSON.stringify({ credential_pool: { openrouter: [{ api_key: 'sk-rotated' }, { api_key: 'sk-new' }] } }))
+    sidecar.respond('chat.start', (params) => { starts.push(str(params.user_message)); return completed('woke up') })
+    await complete(sid, `${sid}_5`)
+    await idle()
+    // The new completion wakes the session; its teardown delivers the ones held while paused.
+    expect(starts).toHaveLength(3)
+    expect(starts[1]).toContain(`Background process ${sid}_5 completed`)
+    expect(starts[2]).toContain(`Background process ${sid}_2 completed`)
+    expect(heldIndex()).not.toContain(sid)
+    expect(s.deps.sessionStore.get(sid).process_wakeup_pause).toBeNull()
+  })
+
+  it('a successful user turn clears the pause and delivers the held wakeups', async () => {
+    const sid = await pausedSession()
+    await complete(sid, `${sid}_2`)
+    expect(starts).toHaveLength(1)
+    sidecar.respond('chat.start', (params) => { starts.push(str(params.user_message)); return completed('ok') })
+    await json(await post(s, '/api/chat/start', { session_id: sid, message: 'hello' }))
+    for (let i = 0; i < 100 && starts.length < 3; i += 1) await new Promise((r) => setTimeout(r, 20))
+    expect(starts[1]).toContain('hello')
+    expect(starts[2]).toContain(`Background process ${sid}_2 completed`)
+    await idle()
+    expect(s.deps.sessionStore.get(sid).process_wakeup_pause).toBeNull()
+  })
+
+  it('keeps held wakeups until a turn admits them, and a restarted server resumes them', async () => {
+    const sid = await pausedSession()
+    await complete(sid, `${sid}_2`)
+    expect(heldIds(sid)).toEqual([`${sid}_2`])
+    writeFileSync(join(s.state, 'auth.json'), JSON.stringify({ credential_pool: { openrouter: [{ api_key: 'sk-a' }, { api_key: 'sk-b' }, { api_key: 'sk-c' }] } }))
+    // The pause lifts but the turn is refused: the held copy stays on disk.
+    const refused = new CompletionDrain({
+      sidecar: () => sidecar, baseHome: s.state, profileHome: () => s.state, activeProfile: () => 'default', store: s.deps.sessionStore, channels: s.deps.channels, registry: s.deps.registry,
+      startTurn: () => ({ _status: 500, error: 'boom' }), now: () => Date.now() / 1000, log: () => undefined,
+    })
+    await refused.drainDeferred(sid)
+    refused.stop()
+    expect(s.deps.sessionStore.get(sid).process_wakeup_pause).toBeNull()
+    expect(heldIds(sid)).toEqual([`${sid}_2`])
+    expect(heldIndex()).toContain(sid)
+    // A new server's first drain resumes the session and the admitted wakeup leaves the disk.
+    const prompts: string[] = []
+    const restarted = new FakeSidecar()
+    restarted.describe = { rpc_version: SIDECAR_RPC_VERSION } as RuntimeDescribe
+    // One broken profile fails recovery; the held sessions resume regardless.
+    restarted.respond('process.recover', () => { throw new Error('unrecoverable checkpoint') })
+    restarted.respond('process.drain', () => ({ events: [] }))
+    restarted.respond('process.mark_consumed', () => ({ ok: true }))
+    const resumed = new CompletionDrain({
+      sidecar: () => restarted, baseHome: s.state, profileHome: () => s.state, activeProfile: () => 'default', store: s.deps.sessionStore, channels: s.deps.channels, registry: s.deps.registry,
+      startTurn: (_session, prompt) => { prompts.push(prompt); return { stream_id: 'resumed' } }, now: () => Date.now() / 1000, log: () => undefined,
+    })
+    // A transient load failure on resume keeps the held copy.
+    const load = vi.spyOn(s.deps.sessionStore, 'get').mockImplementationOnce(() => { throw new Error('EIO') })
+    await resumed.drainOnce()
+    await new Promise((r) => setTimeout(r, 50))
+    load.mockRestore()
+    expect(prompts).toEqual([])
+    expect(heldIds(sid)).toEqual([`${sid}_2`])
+    // The failed load arms the standard timed retry; firing it now stands in for the 30 s wait.
+    const timers = (resumed as unknown as { retryTimers: Map<string, NodeJS.Timeout> }).retryTimers
+    expect(timers.has(sid), 'a retry is scheduled').toBe(true)
+    clearTimeout(timers.get(sid))
+    timers.delete(sid)
+    await resumed.drainDeferred(sid)
+    for (let i = 0; i < 50 && !prompts.length; i += 1) await new Promise((r) => setTimeout(r, 20))
+    await new Promise((r) => setTimeout(r, 50))
+    expect(prompts[0]).toContain(`Background process ${sid}_2 completed`)
+    expect(heldIds(sid)).toEqual([])
+    expect(heldIndex()).not.toContain(sid)
+  })
+
+  it('does not hold a wakeup when the pause lifted during the pool lookup', async () => {
+    const sid = await pausedSession()
+    const session = s.deps.sessionStore.get(sid)
+    session.model_provider = 'openrouter'
+    session.process_wakeup_pause = { ...(session.process_wakeup_pause as Json), provider: 'openrouter' }
+    s.deps.sessionStore.save(session)
+    // A user turn succeeds while the lookup is in flight; the pool itself still reports no usable entry.
+    sidecar.respond('usage.pool', () => { s.deps.sessionStore.get(sid).process_wakeup_pause = null; return { entries: [] } })
+    sidecar.respond('chat.start', (params) => { starts.push(str(params.user_message)); return completed('ok') })
+    await complete(sid, `${sid}_2`)
+    sidecar.respond('usage.pool', () => { throw new Error('unset') })
+    expect(starts[1]).toContain(`Background process ${sid}_2 completed`)
+    expect(heldIds(sid)).toEqual([])
+  })
+
+  it('never overwrites a held file it cannot read', async () => {
+    const path = join(s.deps.sessionStore.sessionDir, '_wakeup_held.json')
+    const sid = await pausedSession()
+    writeFileSync(path, '{"other": [{"process_id": "x", "wakeup_prompt": "kept"}]')
+    await complete(sid, `${sid}_2`)
+    expect(readFileSync(path, 'utf8')).toBe('{"other": [{"process_id": "x", "wakeup_prompt": "kept"}]')
+    expect(s.deps.completions.deferredCount(sid), 'the wakeup is kept in memory instead').toBe(1)
+    rmSync(path)
+  })
+
+  it('never revives a session deleted during the pool lookup', async () => {
+    const sid = await pausedSession()
+    const session = s.deps.sessionStore.get(sid)
+    session.model_provider = 'openrouter'
+    session.process_wakeup_pause = { ...(session.process_wakeup_pause as Json), provider: 'openrouter' }
+    s.deps.sessionStore.save(session)
+    sidecar.respond('usage.pool', () => { s.deps.sessionStore.deleteFiles(sid); return { entries: [{ credential_id: 'k', label: 'k', status: 'available' as const, unavailable_reason: null, retry_after: null, matches_api_key: false }] } })
+    await complete(sid, `${sid}_2`)
+    sidecar.respond('usage.pool', () => { throw new Error('unset') })
+    expect(starts).toHaveLength(1)
+    expect(existsSync(s.deps.sessionStore.pathFor(sid)), 'the deleted session stays deleted').toBe(false)
+    expect(heldIndex()).not.toContain(sid)
+  })
+
+  const standalone = (startTurn: (prompt: string) => { _status?: number; stream_id?: string }): CompletionDrain => new CompletionDrain({
+    sidecar: () => sidecar, baseHome: s.state, profileHome: () => s.state, activeProfile: () => 'default', store: s.deps.sessionStore, channels: s.deps.channels, registry: s.deps.registry,
+    startTurn: (_session, prompt) => startTurn(prompt), now: () => Date.now() / 1000, log: () => undefined,
+  })
+
+  it('rechecks later when the held store is unreadable', async () => {
+    const path = join(s.deps.sessionStore.sessionDir, '_wakeup_held.json')
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    writeFileSync(path, '{"partial": ')
+    const drain = standalone(() => ({ stream_id: 'x' }))
+    await drain.drainDeferred(sid)
+    const timers = (drain as unknown as { retryTimers: Map<string, NodeJS.Timeout> }).retryTimers
+    expect(timers.has(sid), 'an unreadable store is retried, not read as empty').toBe(true)
+    drain.stop()
+    rmSync(path)
+  })
+
+  it('serializes concurrent drains so a held wakeup is delivered once', async () => {
+    const path = join(s.deps.sessionStore.sessionDir, '_wakeup_held.json')
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    writeFileSync(path, JSON.stringify({ [sid]: [{ process_id: `${sid}_w`, wakeup_prompt: '[IMPORTANT: watch matched]', event: { type: 'watch_match' } }] }))
+    const prompts: string[] = []
+    const drain = standalone((prompt) => { prompts.push(prompt); return { stream_id: `w${String(prompts.length)}` } })
+    await Promise.all([drain.drainDeferred(sid), drain.drainDeferred(sid)])
+    drain.stop()
+    expect(prompts).toEqual(['[IMPORTANT: watch matched]'])
+    expect(heldIndex()).not.toContain(sid)
+  })
+
+  it('never redelivers an admitted wakeup whose release could not be written', async () => {
+    const path = join(s.deps.sessionStore.sessionDir, '_wakeup_held.json')
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    writeFileSync(path, JSON.stringify({ [sid]: [{ process_id: `${sid}_n`, wakeup_prompt: '[IMPORTANT: notice]', event: { type: 'watch_disabled' } }] }))
+    const prompts: string[] = []
+    const drain = standalone((prompt) => { prompts.push(prompt); return { stream_id: `n${String(prompts.length)}` } })
+    const store = (drain as unknown as { heldWakeups: { release: (...args: unknown[]) => void } }).heldWakeups
+    const release = vi.spyOn(store, 'release').mockImplementation(() => { throw new Error('EACCES') })
+    await drain.drainDeferred(sid)
+    await drain.drainDeferred(sid)
+    expect(prompts, 'the admitted wakeup is not delivered again').toEqual(['[IMPORTANT: notice]'])
+    // The release is retried and succeeds once the file is writable again.
+    release.mockRestore()
+    await drain.drainDeferred(sid)
+    drain.stop()
+    expect(prompts).toHaveLength(1)
+    expect(heldIndex()).not.toContain(sid)
+  })
+
+  it('never rewrites a held file with a malformed entry', async () => {
+    const path = join(s.deps.sessionStore.sessionDir, '_wakeup_held.json')
+    const sid = await pausedSession()
+    const malformed = JSON.stringify({ other: [{ process_id: 1, wakeup_prompt: 'kept' }] })
+    writeFileSync(path, malformed)
+    await complete(sid, `${sid}_2`)
+    expect(readFileSync(path, 'utf8')).toBe(malformed)
+    expect(s.deps.completions.deferredCount(sid)).toBe(1)
+    rmSync(path)
+  })
+
+  it('drops the held wakeups of a deleted session', async () => {
+    const sid = await pausedSession()
+    await complete(sid, `${sid}_2`)
+    expect(heldIds(sid)).toEqual([`${sid}_2`])
+    expect((await post(s, '/api/session/delete', { session_id: sid })).status).toBe(200)
+    await s.deps.completions.drainDeferred(sid)
+    expect(heldIndex()).not.toContain(sid)
+  })
+
+  it('rechecks the pool at its retry deadline and delivers the held wakeups', async () => {
+    // The session names no provider (the config's implicit one): only the pool of the provider the Agent resolved counts,
+    // never another provider's usable key.
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    expect(s.deps.sessionStore.get(sid).model_provider).toBeNull()
+    const deadline = Date.now() + 600
+    const asked: string[] = []
+    sidecar.respond('usage.pool', (params) => {
+      asked.push(params.provider)
+      const status = params.provider === 'openrouter' && Date.now() < deadline ? 'exhausted' as const : 'available' as const
+      return { entries: [{ credential_id: 'k1', label: 'k1', status, unavailable_reason: null, retry_after: new Date(deadline).toISOString(), matches_api_key: false }] }
+    })
+    starts = []
+    sidecar.respond('chat.start', (params) => { starts.push(str(params.user_message)); return { ...completed(''), provider: 'openrouter', messages: [{ role: 'user', content: str(params.user_message) }], status: 'error' as const, failed: true, error: 'All 2 credential(s) exhausted for provider openrouter' } })
+    await complete(sid, `${sid}_1`)
+    await complete(sid, `${sid}_2`)
+    expect(starts).toHaveLength(1)
+    sidecar.respond('chat.start', (params) => { starts.push(str(params.user_message)); return completed('ok') })
+    for (let i = 0; i < 100 && starts.length < 2; i += 1) await new Promise((r) => setTimeout(r, 20))
+    expect(starts[1], 'the deadline alone resumes the held wakeup').toContain(`Background process ${sid}_2 completed`)
+    expect(new Set(asked)).toEqual(new Set(['openrouter']))
+    await idle()
+    expect(s.deps.sessionStore.get(sid).process_wakeup_pause).toBeNull()
+  })
+})
+
 describe('hygiene tick', () => {
   it('copy-truncates oversized logs into <log>.1 and honours the size cap', () => {
     const dir = join(process.env.TMPDIR ?? '/tmp', `talaria-hygiene-${String(process.pid)}-${String(Date.now())}`)
