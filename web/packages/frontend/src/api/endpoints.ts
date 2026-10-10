@@ -172,7 +172,8 @@ export const removeWorktree = (session_id: string, force: boolean) => orpc().wor
 
 // Panels
 export const fetchSkills = (category?: string) => orpc().skills.list(category ? { category } : {})
-export const fetchSkillContent = (name: string) => orpc().skills.content({ name })
+/** With `file`, one of the skill's `linked_files` instead of its SKILL.md. */
+export const fetchSkillContent = (name: string, file?: string) => orpc().skills.content(file ? { name, file } : { name })
 export const saveSkill = (name: string, content: string) => orpc().skills.save({ name, content })
 export const deleteSkill = (name: string) => orpc().skills.delete({ name })
 export const toggleSkill = (name: string, enabled: boolean) => orpc().skills.toggle({ name, enabled })

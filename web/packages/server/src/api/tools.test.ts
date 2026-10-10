@@ -79,6 +79,11 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     writeFileSync(join(s.state, 'skills', 'custom', 'my-skill', 'notes.md'), 'linked')
     res = await s.get('/api/skills/content?name=my-skill&file=notes.md')
     expect(await json(res)).toEqual({ content: 'linked', path: 'notes.md' })
+    // A binary asset is classified, never decoded into replacement-character text.
+    mkdirSync(join(s.state, 'skills', 'custom', 'my-skill', 'assets'))
+    writeFileSync(join(s.state, 'skills', 'custom', 'my-skill', 'assets', 'logo.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0xff]))
+    res = await s.get('/api/skills/content?name=my-skill&file=assets/logo.png')
+    expect(await json(res)).toEqual({ path: 'assets/logo.png', size: 10, binary: true })
     res = await s.get('/api/skills/content?name=my-skill&file=../../.usage.json')
     expect(res.status).toBe(400)
     res = await post(s, '/api/skills/delete', { name: 'my-skill' })

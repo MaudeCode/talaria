@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A skill's reference, template, and script files are listed under the skill in Web again and open in place.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
