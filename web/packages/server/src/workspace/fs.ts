@@ -273,20 +273,22 @@ export function rmtreeAnchored(root: string, target: string): void {
 }
 
 /**
- * Remove every entry of `dir` through its descriptor. Subdirectories are emptied outside the anchored section so
- * the cwd fallback never nests; one swapped for a symlink since the listing fails the `O_NOFOLLOW` open and is
- * unlinked as a link.
+ * Remove every entry of `dir` through its descriptor (Python `_rmtree_safe_fd`). Each subdirectory is opened
+ * `O_NOFOLLOW` and must still be the inode listed, so one swapped for another directory fails closed and one swapped
+ * for a symlink fails the open and is unlinked as a link. Subdirectories are emptied outside the anchored section
+ * so the cwd fallback never nests.
  */
 function emptyAnchoredDir(dir: DirHandle): void {
   const subdirs = dir.anchored(() => {
-    const names: string[] = []
-    for (const entry of readdirSync(dir.child('.'), { withFileTypes: true })) {
-      if (entry.isDirectory()) names.push(entry.name)
-      else unlinkSync(dir.child(entry.name))
+    const found: { name: string; listed: Stats }[] = []
+    for (const name of readdirSync(dir.child('.'))) {
+      const listed = lstatSync(dir.child(name))
+      if (listed.isDirectory()) found.push({ name, listed })
+      else unlinkSync(dir.child(name))
     }
-    return names
+    return found
   })
-  for (const name of subdirs) {
+  for (const { name, listed } of subdirs) {
     let sub: DirHandle
     try {
       sub = openChildDir(dir, name)
@@ -294,7 +296,12 @@ function emptyAnchoredDir(dir: DirHandle): void {
       dir.anchored(() => { unlinkSync(dir.child(name)) })
       continue
     }
-    try { emptyAnchoredDir(sub) } finally { sub.close() }
+    try {
+      if (!sameFile(fstatSync(sub.fd), listed)) throw new NotFoundError(`Not found: ${sub.path}`)
+      emptyAnchoredDir(sub)
+    } finally {
+      sub.close()
+    }
     dir.anchored(() => { rmdirSync(dir.child(name)) })
   }
 }

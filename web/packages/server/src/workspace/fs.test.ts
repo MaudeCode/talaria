@@ -2,19 +2,19 @@
 import { spawnSync } from 'node:child_process'
 import { closeSync, fstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
-// Lets a test act between the walk's listing of a directory and its descent into an entry.
-const afterReaddir = vi.hoisted(() => ({ hook: null as ((path: string) => void) | null }))
+// Lets a test act between the walk's lstat of an entry and its descent into it.
+const afterLstat = vi.hoisted(() => ({ hook: null as ((path: string) => void) | null }))
 vi.mock('node:fs', async (importOriginal) => {
   const fs = await importOriginal<typeof import('node:fs')>()
-  const readdirSync = ((path: string, opts?: unknown) => {
-    const result = fs.readdirSync(path, opts as undefined)
-    afterReaddir.hook?.(path)
+  const lstatSync = ((path: string, opts?: unknown) => {
+    const result = fs.lstatSync(path, opts as undefined)
+    afterLstat.hook?.(path)
     return result
-  }) as typeof fs.readdirSync
-  return { ...fs, default: { ...fs, readdirSync }, readdirSync }
+  }) as typeof fs.lstatSync
+  return { ...fs, default: { ...fs, lstatSync }, lstatSync }
 })
 
 import { dirSignature, FileExistsError, listDir, makeAnchoredDir, NotFoundError, openAnchoredCreateFd, openAnchoredFd, openAnchoredWriteFd, PathTraversalError, renameAnchored, rmtreeAnchored, serializeEntriesForBrowser, unlinkAnchored } from './fs.js'
@@ -33,7 +33,7 @@ describe('anchored walk', () => {
     symlinkSync(join(outside, 'secret.txt'), join(root, 'a', 'link-file'))
   })
   afterAll(() => { rmSync(root, { recursive: true, force: true }); rmSync(outside, { recursive: true, force: true }) })
-  afterEach(() => { vi.restoreAllMocks(); afterReaddir.hook = null })
+  afterEach(() => { vi.restoreAllMocks(); afterLstat.hook = null })
 
   it('reads a real file through the walk', () => {
     const fd = openAnchoredFd(root, join(root, 'a', 'b', 'f.txt'), { wantDir: false })
@@ -153,9 +153,9 @@ describe('anchored walk', () => {
     // A link already inside the tree is removed as a link, never followed.
     symlinkSync(join(outside, 'victim'), join(root, 'rt', 'sub', 'deep', 'link-out'))
     let swapped = false
-    afterReaddir.hook = () => {
-      if (swapped) return
-      // The walk has listed `rt` and seen `sub` as a directory; a concurrent writer now replaces it with a link out.
+    afterLstat.hook = (path) => {
+      if (swapped || basename(path) !== 'sub') return
+      // The walk has seen `sub` as a directory; a concurrent writer now replaces it with a link out.
       swapped = true
       renameSync(join(root, 'rt', 'sub'), join(root, 'rt-sub-moved'))
       symlinkSync(join(outside, 'victim'), join(root, 'rt', 'sub'))
@@ -164,6 +164,24 @@ describe('anchored walk', () => {
     expect(swapped).toBe(true)
     expect(readFileSync(join(outside, 'victim', 'keep.txt'), 'utf8')).toBe('keep')
     expect(readdirSync(root)).not.toContain('rt')
+  })
+
+  it('a subdirectory swapped for another real directory mid-delete fails closed and leaves that directory intact', () => {
+    mkdirSync(join(root, 'rt2', 'sub'), { recursive: true })
+    writeFileSync(join(root, 'rt2', 'sub', 'd.txt'), 'd')
+    mkdirSync(join(root, 'precious'), { recursive: true })
+    writeFileSync(join(root, 'precious', 'keep.txt'), 'keep')
+    let swapped = false
+    afterLstat.hook = (path) => {
+      if (swapped || basename(path) !== 'sub') return
+      // A sibling directory is renamed into the listed name before the walk opens it.
+      swapped = true
+      renameSync(join(root, 'rt2', 'sub'), join(root, 'rt2-sub-moved'))
+      renameSync(join(root, 'precious'), join(root, 'rt2', 'sub'))
+    }
+    expect(() => { rmtreeAnchored(root, join(root, 'rt2')) }).toThrow(NotFoundError)
+    expect(swapped).toBe(true)
+    expect(readFileSync(join(root, 'rt2', 'sub', 'keep.txt'), 'utf8')).toBe('keep')
   })
 
   it('lists a directory through the walk and refuses a symlinked one', () => {
