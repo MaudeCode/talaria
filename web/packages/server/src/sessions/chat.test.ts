@@ -718,6 +718,47 @@ describe('chat turns through the sidecar', () => {
     }
   })
 
+  it('refreshes a generated title from the latest exchange every N exchanges, never a manual title (TAL-589)', async () => {
+    const turns = s.deps.turns as unknown as { deps: { titleRefreshEvery: (() => number) | undefined } }
+    const original = turns.deps.titleRefreshEvery
+    sidecar.respond('chat.start', (params) => completed([...(params.conversation_history as Json[]), { role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Here is the plan for that step.' }]))
+    sidecar.respond('aux.complete', (params) => ({ model: 'aux', text: `Title: "Rollout step ${/step (\w+)/.exec(str((params.messages as Json[])[1]?.content))?.[1] ?? ''}"`, usage: null }))
+    const sid = await newSession(s)
+    const turn = async (word: string): Promise<{ frames: SseFrame[]; auxCalls: number }> => {
+      const before = sidecar.calls.filter((c) => c.method === 'aux.complete').length
+      const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: `plan the rollout step ${word}` }))
+      const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+      return { frames, auxCalls: sidecar.calls.filter((c) => c.method === 'aux.complete').length - before }
+    }
+    const title = async (): Promise<unknown> => ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).title
+    turns.deps.titleRefreshEvery = () => 2
+    try {
+      await turn('one')
+      expect(await title()).toBe('Rollout step one')
+      const second = await turn('two')
+      expect(second.frames.find((f) => f.event === 'title_status')?.data as Json).toMatchObject({ status: 'refreshed', title: 'Rollout step two' })
+      expect((second.frames.find((f) => f.event === 'title')?.data as Json).title).toBe('Rollout step two')
+      expect(await title()).toBe('Rollout step two')
+      expect((await turn('three')).auxCalls).toBe(0)
+      expect(await title()).toBe('Rollout step two')
+      await turn('four')
+      expect(await title()).toBe('Rollout step four')
+      expect((await post(s, '/api/session/rename', { session_id: sid, title: 'My rollout' })).status).toBe(200)
+      await turn('five')
+      const sixth = await turn('six')
+      expect(sixth.auxCalls).toBe(0)
+      expect(eventNames(sixth.frames)).not.toContain('title')
+      expect(await title()).toBe('My rollout')
+    } finally {
+      turns.deps.titleRefreshEvery = original
+    }
+    // The runtime reads the interval from the Conversation setting.
+    expect((await post(s, '/api/settings', { auto_title_refresh_every: '5' })).status).toBe(200)
+    expect(turns.deps.titleRefreshEvery?.()).toBe(5)
+    expect((await post(s, '/api/settings', { auto_title_refresh_every: '0' })).status).toBe(200)
+    expect(turns.deps.titleRefreshEvery?.()).toBe(0)
+  })
+
   it('cancels a running turn, persists the partial, and refuses a second concurrent start', async () => {
     const sid = await newSession(s)
     let interrupted = false

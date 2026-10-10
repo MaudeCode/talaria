@@ -420,6 +420,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
       }
     },
     profileConfig: async (profile) => { try { return await agentConfig.read(profileHome(profile ?? activeProfile())) } catch { return null } },
+    titleRefreshEvery: () => { try { const every = Number(settings.load().auto_title_refresh_every); return Number.isInteger(every) && every > 0 ? every : 0 } catch { return 0 } },
     env,
     hermesHome: config.hermesHome,
     // Python `display_hermes_home`: the home shown to the model, `~`-relative when it sits under $HOME.
