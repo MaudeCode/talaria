@@ -17,12 +17,15 @@ export type ToolCall = Record<string, unknown>
  * no turn's own repeats an earlier row's role, timestamp, and tool call: the same message, with pruned or tagged content.
  */
 function withoutCompactionCopies(messages: Message[]): Message[] {
-  const seen = new Set<string>()
+  const seen = new Map<string, string>()
+  // A tool result is its call; any other row is the same message only with the same text (a compaction re-insert tags the
+  // prompt with the workspace), so an edit that kept its timestamp stays.
+  const sameAs = (m: Message): string => (m.tool_call_id ? '' : stripWorkspacePrefix(typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? null)))
   return messages.filter((m) => {
     const key = m && typeof m === 'object' && m.timestamp !== null && m.timestamp !== undefined ? JSON.stringify([m.role, m.timestamp, m.tool_call_id ?? null]) : null
     if (key === null) return true
-    if (seen.has(key) && m._state_db_row_id !== undefined && m._turn_id === undefined) return false
-    seen.add(key)
+    if (seen.get(key) === sameAs(m) && m._state_db_row_id !== undefined && m._turn_id === undefined) return false
+    if (!seen.has(key)) seen.set(key, sameAs(m))
     return true
   })
 }
@@ -563,6 +566,16 @@ export function titleFrom(messages: unknown[], fallback = 'Untitled'): string {
 const ATTACHED_FILES_RE = /\n\n\[Attached files: (?:\\.|[^\]\\])+\]$/
 export function stripAttachedFilesMarker(text: string): string {
   return text.replace(ATTACHED_FILES_RE, '').trim()
+}
+
+export const WORKSPACE_PREFIX_RE = /^\s*\[Workspace::v1:\s*(?:\\.|[^\]\\])+\]\s*/
+const LEGACY_WORKSPACE_PREFIX_RE = /^\s*\[Workspace:[^\]]+\]\s*/
+
+export function stripWorkspacePrefix(text: string, includeLegacy = false): string {
+  const value = str(text)
+  let stripped = value.replace(WORKSPACE_PREFIX_RE, '')
+  if (includeLegacy && stripped === value) stripped = value.replace(LEGACY_WORKSPACE_PREFIX_RE, '')
+  return stripped.trim()
 }
 
 /** Python `_collapse_adjacent_duplicate_partials`. */

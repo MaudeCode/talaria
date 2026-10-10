@@ -568,14 +568,19 @@ export function stateDbSessionRead(dbPath: string, sid: string, opts: { stitch?:
     const projected = rows.map((row) => projectStateDbMessage(row, hasId))
     // TAL-709: an in-place compaction archives the live rows and re-inserts each as a copy that keeps its role and timestamp
     // (content may be pruned). A copy takes the id of the oldest archived row it copies, so the merge sees a row it has
-    // already read instead of a new one.
+    // already read instead of a new one. Only a compaction archive (`compacted = 1`) vouches for a changed copy: a rewound
+    // row (`compacted = 0`, also the compaction's carried tail) counts only for the same tool call or the same content, so
+    // an edit that kept its timestamp stays new.
     if (hasId && available.has('active')) {
       const twinKey = (row: Dict): string => JSON.stringify([row.role, row.timestamp, row.tool_call_id ?? null])
-      const archived = db.prepare(`SELECT id, role, timestamp${available.has('tool_call_id') ? ', tool_call_id' : ''} FROM messages WHERE session_id IN (${chain.map(() => '?').join(', ')}) AND active = 0 AND timestamp IS NOT NULL ORDER BY id DESC`).all(...chain) as Dict[]
-      const oldest = new Map(archived.map((row) => [twinKey(row), row.id]))
+      const compacted = available.has('compacted') ? 'compacted' : '0 AS compacted'
+      const archived = db.prepare(`SELECT id, role, timestamp, ${compacted}, CASE WHEN ${available.has('compacted') ? 'compacted = 1' : '0'} THEN NULL ELSE content END AS content${available.has('tool_call_id') ? ', tool_call_id' : ''} FROM messages WHERE session_id IN (${chain.map(() => '?').join(', ')}) AND active = 0 AND timestamp IS NOT NULL ORDER BY id`).all(...chain) as Dict[]
+      const byKey = new Map<string, Dict[]>()
+      for (const row of archived) { const list = byKey.get(twinKey(row)); if (list) list.push(row); else byKey.set(twinKey(row), [row]) }
       for (const [i, row] of rows.entries()) {
-        const twin = row.timestamp === null || row.timestamp === undefined ? undefined : oldest.get(twinKey(row))
-        if (typeof twin === 'number' && typeof row.id === 'number' && twin < row.id) projected[i]!._state_db_row_id = twin
+        if (row.timestamp === null || row.timestamp === undefined || typeof row.id !== 'number') continue
+        const twin = byKey.get(twinKey(row))?.find((a) => Number(a.id) < Number(row.id) && (a.compacted === 1 || Boolean(row.tool_call_id) || a.content === row.content))
+        if (twin) projected[i]!._state_db_row_id = twin.id
       }
     }
     // TAL-493: the database file's identity, so a marker taken in a replaced state.db is never applied to its successor.
