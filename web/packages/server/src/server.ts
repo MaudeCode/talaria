@@ -9,7 +9,7 @@ import { connect } from 'node:net'
 import { readFileSync } from 'node:fs'
 import type { App } from './app.js'
 import type { ServerConfig } from './config.js'
-import { fixCredentialPermissions } from './startup.js'
+import { fixCredentialPermissions, warnUnauthenticatedBind } from './startup.js'
 
 export async function isAlreadyServing(host: string, port: number): Promise<boolean> {
   const probeHost = ['0.0.0.0', '', '::'].includes(host) ? '127.0.0.1' : host
@@ -80,6 +80,7 @@ export async function startServer(app: App, config: ServerConfig, opts: { log?: 
   const address = server.address()
   const port = typeof address === 'object' && address ? address.port : config.port
   log(`  Talaria Web listening on ${scheme}://${config.host}:${port}`)
+  await warnUnauthenticatedBind(config.host, app.deps.auth, log)
   const close = async () => {
     const hygiene = app.deps.hygiene.stop()
     await new Promise<void>((resolve) => {

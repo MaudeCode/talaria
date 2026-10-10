@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Talaria Web warns at startup again when it listens on a network address with no password or other sign-in method enabled.",
+      "highlight": false
+    }
+  ]
+}
