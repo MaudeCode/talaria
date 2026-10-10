@@ -51,6 +51,8 @@ export const ExtensionManifestSchema = z.object({
   description: z.string().max(300).optional(),
   source: z.enum(['manifest', 'gallery', 'plugin']),
   enabled: z.boolean(),
+  /** The server's decision that Settings shows an enable switch for this row. */
+  can_toggle: z.boolean(),
   /** App-relative URL of the sandboxed panel document, or null for a headless extension. */
   panel: z.string().max(400).nullable(),
   nav: z.object({ label: z.string().min(1).max(40), icon: z.string().max(40).optional() }).nullable(),

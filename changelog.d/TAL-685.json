@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Turn dashboard plugins on or off from Settings > Extensions; the change applies without restarting the server.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

@@ -769,7 +769,7 @@ export class ExtensionService {
       const permissions = isDict(entry.permissions) ? Object.fromEntries(Object.entries(entry.permissions).map(([k, v]) => [k, Boolean(v)])) : {}
       const enabledFlag = entry.effective_enabled ?? entry.enabled ?? true
       const caps = (Array.isArray(rawManifest.capabilities) ? rawManifest.capabilities : []).filter((c): c is string => typeof c === 'string' && ['settings', 'storage', 'sidecar', 'lifecycle', 'theme', 'tts', 'navigate', 'toast', 'session'].includes(c))
-      manifests.push({ id, name: text(entry.name ?? rawManifest.name, 80) || id, version: text(entry.version ?? rawManifest.version, 40), description: text(entry.description ?? rawManifest.description, 300), source: entry.gallery_installed || entry.source === 'gallery' ? 'gallery' : 'manifest', enabled: Boolean(enabledFlag) && !legacy, panel, nav, capabilities: [...new Set(caps)], permissions, settings_schema: Array.isArray(entry.settings_schema) ? entry.settings_schema : [], theme: null, tts: null, sidecar: null, legacy_injection: legacy, warnings })
+      manifests.push({ id, name: text(entry.name ?? rawManifest.name, 80) || id, version: text(entry.version ?? rawManifest.version, 40), description: text(entry.description ?? rawManifest.description, 300), source: entry.gallery_installed || entry.source === 'gallery' ? 'gallery' : 'manifest', enabled: Boolean(enabledFlag) && !legacy, can_toggle: entry.can_toggle !== false && !legacy, panel, nav, capabilities: [...new Set(caps)], permissions, settings_schema: Array.isArray(entry.settings_schema) ? entry.settings_schema : [], theme: null, tts: null, sidecar: null, legacy_injection: legacy, warnings })
     }
     return { protocol_version: 1, manifests }
   }

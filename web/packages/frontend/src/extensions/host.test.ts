@@ -10,7 +10,7 @@ function manifest(over: Partial<ExtensionManifest> = {}): ExtensionManifest {
   return {
     id: 'demo', name: 'Demo', source: 'manifest', enabled: true, panel: 'extensions/demo/index.html', nav: { label: 'Demo' },
     capabilities: ['settings', 'storage', 'toast'], settings_schema: [{ key: 'show_badge', type: 'boolean', label: 'Badge', default: true }, { key: 'mode', type: 'enum', label: 'Mode', default: 'a', options: [{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }] }],
-    theme: null, tts: null, sidecar: null, legacy_injection: false, warnings: [], ...over,
+    theme: null, tts: null, sidecar: null, legacy_injection: false, can_toggle: true, warnings: [], ...over,
   }
 }
 
