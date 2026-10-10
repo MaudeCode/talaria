@@ -1008,12 +1008,19 @@ extension ChatViewModel {
         }
 
         for (loadedIndex, message) in messages.enumerated() {
-            guard message.role != "tool" else { continue }
-            guard !TranscriptTurnClassifier.isToolResultOnlyMessage(message) else { continue }
-            // Persisted steers render inside their turn's scene, not as rows of their own.
-            guard message.steer == nil else { continue }
-            // A background reply that is only a silence marker shows nothing; its completion lines stay (TAL-460).
-            guard !message.backgroundSilent else { continue }
+            if let display = message.display {
+                // The server decides which rows show on their own (TAL-600).
+                guard display == .row else { continue }
+            } else {
+                // A row without the server's decision: an older server's, or one this device made.
+                // ponytail: the server-row half goes once every supported server ships `_display`.
+                guard message.role != "tool" else { continue }
+                guard !TranscriptTurnClassifier.isToolResultOnlyMessage(message) else { continue }
+                // Persisted steers render inside their turn's scene, not as rows of their own.
+                guard message.steer == nil else { continue }
+                // A background reply that is only a silence marker shows nothing; its completion lines stay (TAL-460).
+                guard !message.backgroundSilent else { continue }
+            }
             if let streamingAssistantID, message.messageId == streamingAssistantID {
                 continue
             }

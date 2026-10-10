@@ -116,7 +116,7 @@ test('a message deep link pages past a window with no visible rows', async ({ pa
   const messages = [
     { role: 'user', id: 1, content: 'entry-hidden question' },
     { role: 'assistant', id: 2, content: 'entry-hidden answer.' },
-    ...Array.from({ length: 20 }, (_, i) => ({ role: 'user', id: i + 3, content: `steer ${i + 1}`, _steer: true })),
+    ...Array.from({ length: 20 }, (_, i) => ({ role: 'user', id: i + 3, content: `steer ${i + 1}`, _steer: true, _display: 'in_scene' })),
     ...transcript('entry-hidden', 20).map((m) => ({ ...m, id: m.id + 22 })),
   ]
   const size = 20

@@ -22,7 +22,7 @@ const persisted = {
     { role: 'user', content: 'list the theme dir', timestamp: 1787791500, id: 7 },
     { role: 'assistant', content: 'Sure.', reasoning: 'Run ls.', finish_reason: 'tool_calls', id: 8,
       tool_calls: [{ id: 'call_a', call_id: 'call_a', response_item_id: 'fc_a', type: 'function', function: { name: 'terminal', arguments: '{"command":"ls src/theme"}' } }] },
-    { role: 'tool', name: 'terminal', tool_name: 'terminal', content: '{"output": "boot.ts\\ncomponents"}', tool_call_id: 'call_a', timestamp: 1787791524.7, _db_persisted: true, id: 9 },
+    { role: 'tool', name: 'terminal', tool_name: 'terminal', content: '{"output": "boot.ts\\ncomponents"}', tool_call_id: 'call_a', timestamp: 1787791524.7, _db_persisted: true, id: 9, _display: 'in_scene' as const },
     { role: 'assistant', content: 'Done.', id: 10, _turnDuration: 3.2 },
   ],
 }
@@ -33,7 +33,7 @@ describe('assistant turn projection', () => {
     const { groupAssistantTurns } = await import('./turnActivity')
     const messages = [...persisted.messages.slice(0, 3),
       { role: 'assistant', id: 11, content: 'Checking another file.', tool_calls: [{ id: 'call_b', name: 'read_file', args: { path: 'b' } }] },
-      { role: 'tool', id: 12, tool_call_id: 'call_b', content: 'b contents' },
+      { role: 'tool', id: 12, tool_call_id: 'call_b', content: 'b contents', _display: 'in_scene' as const },
       persisted.messages[3]!,
       { role: 'user', id: 13, content: 'Again' },
       { role: 'assistant', id: 14, content: 'Done again.' },
@@ -55,6 +55,18 @@ describe('assistant turn projection', () => {
     ]))
     expect(grouped.map((row) => row.turnKey)).toEqual(['one', 'two', 'three'])
     expect(grouped[1]!.assistantRows?.map((row) => row.message.id)).toEqual(['b', 'c'])
+  })
+
+  it('renders exactly the rows the server marks `row` (TAL-600)', () => {
+    const rows = projectMessages([
+      { role: 'user', id: 1, content: 'Plan the release', _display: 'row' },
+      { role: 'user', id: 2, content: 'Use staging', _steer: { steer_id: 's1' }, _display: 'in_scene' },
+      { role: 'tool', id: 3, content: 'ok', tool_call_id: 'c1', _display: 'in_scene' },
+      // The server decides, whatever the row holds: a reply with text it hid stays hidden, an empty one it shows renders.
+      { role: 'assistant', id: 4, content: 'Silent reply', _display: 'hidden' },
+      { role: 'assistant', id: 5, content: '', _display: 'row' },
+    ])
+    expect(rows.map((row) => row.message.id)).toEqual([1, 5])
   })
 
   it('shows a marker card only where the server stamped one (TAL-305)', async () => {

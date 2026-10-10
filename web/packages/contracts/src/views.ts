@@ -200,6 +200,12 @@ export const MessageSchema = z.looseObject({
   _background_reply: z.boolean().optional(),
   /** TAL-460: that reply is only a silence marker; clients show the update's lines and nothing of this turn's reply. */
   _background_silent: z.boolean().optional(),
+  /**
+   * TAL-600: how clients show the row, on every row the server sends: `row` on its own, `in_scene` only inside its turn's
+   * activity scene (a tool result or a consumed steer), `hidden` not at all (a silent background reply, or a row with
+   * nothing to show).
+   */
+  _display: z.enum(['row', 'hidden', 'in_scene']).optional(),
 })
 export type Message = z.infer<typeof MessageSchema>
 

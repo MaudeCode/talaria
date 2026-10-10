@@ -535,12 +535,13 @@ final class CacheStoreTests: XCTestCase {
         let cachedAt = Date(timeIntervalSince1970: 1_770_000_000)
         let update = BackgroundUpdate(lines: [BackgroundLine(kind: .agent, status: .failed, label: "Audit"), BackgroundLine(kind: .command, status: .completed, label: "make", exitCode: 0)])
         let message = ChatMessage(role: "user", content: "[ASYNC DELEGATION BATCH COMPLETE]", timestamp: 1, messageId: "wake-1", backgroundUpdate: update)
-        let silent = ChatMessage(role: "assistant", content: "[SILENT]", timestamp: 2, messageId: "wake-1-reply", backgroundSilent: true)
+        let silent = ChatMessage(role: "assistant", content: "[SILENT]", timestamp: 2, messageId: "wake-1-reply", backgroundSilent: true, display: .hidden)
         try CacheStore.cacheMessages([message, silent], serverURL: serverURL, sessionID: "abc123", in: context, cachedAt: cachedAt)
         let restored = try CacheStore.cachedMessages(serverURL: serverURL, sessionID: "abc123", in: context, now: cachedAt.addingTimeInterval(60))
         // A cache-first open shows the lines and hides a silent reply, as the server would (TAL-371, TAL-460).
         XCTAssertEqual(restored.first?.backgroundUpdate, update)
         XCTAssertEqual(restored.map(\.backgroundSilent), [false, true])
+        XCTAssertEqual(restored.map(\.display), [nil, .hidden])
     }
 
     /// TAL-186: a cache-first open renders the server's display text and media, as the live detail does.

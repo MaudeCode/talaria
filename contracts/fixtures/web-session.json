@@ -55,13 +55,15 @@
             }
           ]
         },
-        "_turn_id": "legacy:start"
+        "_turn_id": "legacy:start",
+        "_display": "row"
       },
       {
         "role": "user",
         "content": "Check the legacy scene",
         "message_id": "contract-user-2",
-        "_turn_id": "legacy:1"
+        "_turn_id": "legacy:1",
+        "_display": "row"
       },
       {
         "role": "assistant",
@@ -150,20 +152,23 @@
           "expanded_by_default": false,
           "file_changes": []
         },
-        "_turn_id": "legacy:1"
+        "_turn_id": "legacy:1",
+        "_display": "row"
       },
       {
         "role": "user",
         "content": "Run the stamped check",
         "message_id": "contract-user-3",
-        "_turn_id": "contract-run-a"
+        "_turn_id": "contract-run-a",
+        "_display": "row"
       },
       {
         "role": "assistant",
         "content": "First reply.",
         "message_id": "contract-run-a-1",
         "finish_reason": "stop",
-        "_turn_id": "contract-run-a"
+        "_turn_id": "contract-run-a",
+        "_display": "row"
       },
       {
         "role": "assistant",
@@ -198,7 +203,8 @@
           "has_consumed_steering": false,
           "activity_scene_ref": "f9928a710235ec20fd940085c6f26e7b37d1f1b0d3d52aba0664371eefd9fb8f",
           "file_changes": []
-        }
+        },
+        "_display": "row"
       },
       {
         "role": "assistant",
@@ -220,13 +226,15 @@
           "has_consumed_steering": false,
           "activity_scene_ref": "12bef384f788f810bccc2f1750a8a6cfd29aea0184d0bfb135420e7ed6e0aabc",
           "file_changes": []
-        }
+        },
+        "_display": "row"
       },
       {
         "role": "user",
         "content": "Which port does the service use?",
         "message_id": "contract-user-c",
-        "_turn_id": "contract-run-c"
+        "_turn_id": "contract-run-c",
+        "_display": "row"
       },
       {
         "role": "assistant",
@@ -260,14 +268,16 @@
           }
         ],
         "timestamp": 100,
-        "_turn_id": "contract-run-c"
+        "_turn_id": "contract-run-c",
+        "_display": "row"
       },
       {
         "role": "tool",
         "tool_call_id": "contract-port",
         "content": "port = 8080",
         "message_id": "contract-run-c-tool",
-        "_turn_id": "contract-run-c"
+        "_turn_id": "contract-run-c",
+        "_display": "in_scene"
       },
       {
         "role": "assistant",
@@ -330,13 +340,15 @@
           "has_consumed_steering": false,
           "activity_scene_ref": "e47b99c9f7978ea6c1dbce5894c55d1724a6b10e70874ac245908af12a982075",
           "file_changes": []
-        }
+        },
+        "_display": "row"
       },
       {
         "role": "user",
         "content": "Loop until done",
         "message_id": "contract-user-d",
-        "_turn_id": "contract-run-d"
+        "_turn_id": "contract-run-d",
+        "_display": "row"
       },
       {
         "role": "assistant",
@@ -353,14 +365,16 @@
             }
           }
         ],
-        "_turn_id": "contract-run-d"
+        "_turn_id": "contract-run-d",
+        "_display": "row"
       },
       {
         "role": "tool",
         "tool_call_id": "contract-loop",
         "content": "B",
         "message_id": "contract-run-d-tool",
-        "_turn_id": "contract-run-d"
+        "_turn_id": "contract-run-d",
+        "_display": "in_scene"
       },
       {
         "role": "assistant",
@@ -413,13 +427,15 @@
           "has_consumed_steering": false,
           "activity_scene_ref": "9d328184a056a90fee315a9711c8f475bee7b3b9cf2e075576e67c283b7b8aeb",
           "file_changes": []
-        }
+        },
+        "_display": "row"
       },
       {
         "role": "user",
         "content": "Only use tools",
         "message_id": "contract-user-e",
-        "_turn_id": "contract-run-e"
+        "_turn_id": "contract-run-e",
+        "_display": "row"
       },
       {
         "role": "assistant",
@@ -481,20 +497,23 @@
           "has_consumed_steering": false,
           "activity_scene_ref": "a9c678a881acc3f427bdd7fcf546980c993682b3412aee746d19dcf1d298c43a",
           "file_changes": []
-        }
+        },
+        "_display": "row"
       },
       {
         "role": "tool",
         "tool_call_id": "contract-only",
         "content": "a.txt",
         "message_id": "contract-run-e-tool",
-        "_turn_id": "contract-run-e"
+        "_turn_id": "contract-run-e",
+        "_display": "in_scene"
       },
       {
         "role": "user",
         "content": "Read both files",
         "message_id": "contract-user-g",
-        "_turn_id": "contract-run-g"
+        "_turn_id": "contract-run-g",
+        "_display": "row"
       },
       {
         "role": "assistant",
@@ -511,14 +530,16 @@
             }
           }
         ],
-        "_turn_id": "contract-run-g"
+        "_turn_id": "contract-run-g",
+        "_display": "row"
       },
       {
         "role": "tool",
         "tool_call_id": "contract-ga",
         "content": "A",
         "message_id": "contract-run-g-tool-a",
-        "_turn_id": "contract-run-g"
+        "_turn_id": "contract-run-g",
+        "_display": "in_scene"
       },
       {
         "role": "user",
@@ -531,7 +552,8 @@
           "submitted_at": 203,
           "consumed_at": 205,
           "phase_duration": 5
-        }
+        },
+        "_display": "in_scene"
       },
       {
         "role": "assistant",
@@ -548,14 +570,16 @@
             }
           }
         ],
-        "_turn_id": "contract-run-g"
+        "_turn_id": "contract-run-g",
+        "_display": "row"
       },
       {
         "role": "tool",
         "tool_call_id": "contract-gb",
         "content": "B",
         "message_id": "contract-run-g-tool-b",
-        "_turn_id": "contract-run-g"
+        "_turn_id": "contract-run-g",
+        "_display": "in_scene"
       },
       {
         "role": "user",
@@ -568,7 +592,8 @@
           "submitted_at": 208,
           "consumed_at": 209,
           "phase_duration": 4
-        }
+        },
+        "_display": "in_scene"
       },
       {
         "role": "assistant",
@@ -679,13 +704,15 @@
           "has_consumed_steering": true,
           "activity_scene_ref": "d17054d885c35cd26205697b2c00128d79ea43ef67f732a08a06e55043265ad7",
           "file_changes": []
-        }
+        },
+        "_display": "row"
       },
       {
         "role": "user",
         "content": "Start a long refactor",
         "message_id": "contract-user-x",
-        "_turn_id": "contract-run-x"
+        "_turn_id": "contract-run-x",
+        "_display": "row"
       },
       {
         "role": "assistant",
@@ -707,13 +734,15 @@
           "activity_rows_omitted": 0,
           "has_consumed_steering": false,
           "activity_scene_ref": "contract-cancelled-scene"
-        }
+        },
+        "_display": "row"
       },
       {
         "role": "user",
         "content": "Call the provider",
         "message_id": "contract-user-y",
-        "_turn_id": "contract-run-y"
+        "_turn_id": "contract-run-y",
+        "_display": "row"
       },
       {
         "role": "assistant",
@@ -736,13 +765,15 @@
           "activity_rows_omitted": 0,
           "has_consumed_steering": false,
           "activity_scene_ref": "contract-error-scene"
-        }
+        },
+        "_display": "row"
       },
       {
         "role": "user",
         "content": "An older cancelled run",
         "message_id": "contract-user-z",
-        "_turn_id": "contract-run-z"
+        "_turn_id": "contract-run-z",
+        "_display": "row"
       },
       {
         "role": "assistant",
@@ -765,19 +796,22 @@
           "activity_rows_omitted": 0,
           "has_consumed_steering": false,
           "activity_scene_ref": "contract-legacy-cancelled-scene"
-        }
+        },
+        "_display": "row"
       },
       {
         "role": "user",
         "content": "Keep going",
         "message_id": "contract-user-f",
-        "_turn_id": "contract-run-f"
+        "_turn_id": "contract-run-f",
+        "_display": "row"
       },
       {
         "role": "assistant",
         "content": "Streaming…",
         "message_id": "contract-run-f-1",
-        "_turn_id": "contract-run-f"
+        "_turn_id": "contract-run-f",
+        "_display": "row"
       }
     ],
     "title": "Contract fixture",
@@ -853,19 +887,22 @@
         "role": "user",
         "content": "Earlier question",
         "message_id": "contract-user-g0",
-        "_turn_id": "legacy:0"
+        "_turn_id": "legacy:0",
+        "_display": "row"
       },
       {
         "role": "assistant",
         "content": "Earlier answer.",
         "message_id": "contract-run-g0-1",
-        "_turn_id": "legacy:0"
+        "_turn_id": "legacy:0",
+        "_display": "row"
       },
       {
         "role": "user",
         "content": "Read the file",
         "message_id": "contract-user-h",
-        "_turn_id": "contract-run-h"
+        "_turn_id": "contract-run-h",
+        "_display": "row"
       }
     ],
     "source_kind": "webui",
@@ -891,7 +928,8 @@
         "content": "Read a.txt and run the tests",
         "message_id": "tool-user-openai",
         "timestamp": 2000,
-        "_turn_id": "tool-run-openai"
+        "_turn_id": "tool-run-openai",
+        "_display": "row"
       },
       {
         "role": "assistant",
@@ -935,21 +973,24 @@
             "type": "function"
           }
         ],
-        "_turn_id": "tool-run-openai"
+        "_turn_id": "tool-run-openai",
+        "_display": "row"
       },
       {
         "role": "tool",
         "content": "A contents",
         "timestamp": 2002,
         "tool_call_id": "call-read",
-        "_turn_id": "tool-run-openai"
+        "_turn_id": "tool-run-openai",
+        "_display": "in_scene"
       },
       {
         "role": "tool",
         "content": "{\"exit_code\": 2, \"output\": \"1 failed\"}",
         "timestamp": 2003,
         "tool_call_id": "call-exit",
-        "_turn_id": "tool-run-openai"
+        "_turn_id": "tool-run-openai",
+        "_display": "in_scene"
       },
       {
         "role": "assistant",
@@ -1021,14 +1062,16 @@
           "activity_rows_omitted": 0,
           "activity_scene_ref": "c3fcd1d20b6bc3e357a08300f6083b8edb3e14964428a5fe73101fcb6405ae22"
         },
-        "_turn_id": "tool-run-openai"
+        "_turn_id": "tool-run-openai",
+        "_display": "row"
       },
       {
         "role": "user",
         "content": "Search for TODOs",
         "message_id": "tool-user-anthropic",
         "timestamp": 2010,
-        "_turn_id": "tool-run-anthropic"
+        "_turn_id": "tool-run-anthropic",
+        "_display": "row"
       },
       {
         "role": "assistant",
@@ -1069,14 +1112,16 @@
             "type": "function"
           }
         ],
-        "_turn_id": "tool-run-anthropic"
+        "_turn_id": "tool-run-anthropic",
+        "_display": "row"
       },
       {
         "role": "tool",
         "content": "{\"error\": \"permission denied\"}",
         "timestamp": 2012,
         "tool_use_id": "toolu-search",
-        "_turn_id": "tool-run-anthropic"
+        "_turn_id": "tool-run-anthropic",
+        "_display": "in_scene"
       },
       {
         "role": "assistant",
@@ -1130,14 +1175,16 @@
           "activity_rows_omitted": 0,
           "activity_scene_ref": "125b3c9393e18c980353cd67b774b4272b18a35d947a6243f743be6ed2ccf8f6"
         },
-        "_turn_id": "tool-run-anthropic"
+        "_turn_id": "tool-run-anthropic",
+        "_display": "row"
       },
       {
         "role": "user",
         "content": "What day is it?",
         "message_id": "tool-user-session",
         "timestamp": 2020,
-        "_turn_id": "tool-run-session"
+        "_turn_id": "tool-run-session",
+        "_display": "row"
       },
       {
         "role": "assistant",
@@ -1163,13 +1210,15 @@
             "type": "function"
           }
         ],
-        "_turn_id": "tool-run-session"
+        "_turn_id": "tool-run-session",
+        "_display": "row"
       },
       {
         "role": "tool",
         "content": "Sat Sep 27",
         "timestamp": 2022,
-        "_turn_id": "tool-run-session"
+        "_turn_id": "tool-run-session",
+        "_display": "in_scene"
       },
       {
         "role": "assistant",
@@ -1223,14 +1272,16 @@
           "activity_rows_omitted": 0,
           "activity_scene_ref": "23134fbc4afa32ca0a29c3f00951f08af005beefcb792b2429beeabb4ef3525b"
         },
-        "_turn_id": "tool-run-session"
+        "_turn_id": "tool-run-session",
+        "_display": "row"
       },
       {
         "role": "user",
         "content": "Run the build",
         "message_id": "tool-user-live",
         "timestamp": 2030,
-        "_turn_id": "tool-run-live"
+        "_turn_id": "tool-run-live",
+        "_display": "row"
       },
       {
         "role": "assistant",
@@ -1299,7 +1350,8 @@
           "activity_rows_omitted": 0,
           "activity_scene_ref": "36332fda38ec5646428dd5e35a70de2cc90dc9b8291acc0273037ff8343f23ab"
         },
-        "_turn_id": "tool-run-live"
+        "_turn_id": "tool-run-live",
+        "_display": "row"
       }
     ],
     "tool_calls": [
@@ -1369,7 +1421,8 @@
         "_turn_id": "legacy:0",
         "_display_excerpt": "Synthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.\nSynthetic log line for the long-body contract example.",
         "_display_truncated": true,
-        "_collapsible": true
+        "_collapsible": true,
+        "_display": "row"
       },
       {
         "role": "assistant",
@@ -1394,14 +1447,16 @@
         },
         "_turn_id": "legacy:0",
         "_display_excerpt": "Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report sentence for the long-body contract example. Synthetic report",
-        "_display_truncated": true
+        "_display_truncated": true,
+        "_display": "row"
       },
       {
         "role": "user",
         "content": "A short question stays whole.",
         "message_id": "short-body-user",
         "timestamp": 1770000102,
-        "_turn_id": "legacy:2"
+        "_turn_id": "legacy:2",
+        "_display": "row"
       },
       {
         "role": "assistant",
@@ -1423,7 +1478,8 @@
           "activity_rows_omitted": 0,
           "activity_scene_ref": "69136d435ef9cd7d0dfade1866b7092a962c8d2650c42dae4dcbc160500d1cb2"
         },
-        "_turn_id": "legacy:2"
+        "_turn_id": "legacy:2",
+        "_display": "row"
       }
     ],
     "source_kind": "webui",
@@ -1438,7 +1494,8 @@
         "message_id": "collapsible-user",
         "timestamp": 1770000200,
         "_turn_id": "legacy:0",
-        "_collapsible": true
+        "_collapsible": true,
+        "_display": "row"
       },
       {
         "role": "assistant",
@@ -1460,14 +1517,16 @@
           "activity_rows_omitted": 0,
           "activity_scene_ref": "cb5db9e31114abaaeb2b0d43da2548aaa8c72c82043dfa48f2f0b6774fa30f3a"
         },
-        "_turn_id": "legacy:0"
+        "_turn_id": "legacy:0",
+        "_display": "row"
       },
       {
         "role": "user",
         "content": "A short prompt stays whole.",
         "message_id": "short-prompt-user",
         "timestamp": 1770000202,
-        "_turn_id": "legacy:2"
+        "_turn_id": "legacy:2",
+        "_display": "row"
       },
       {
         "role": "assistant",
@@ -1489,7 +1548,8 @@
           "activity_rows_omitted": 0,
           "activity_scene_ref": "f712ef733cad586909c2a5904f792ac5e855995fd635e4b3b3c5c1e6884d8285"
         },
-        "_turn_id": "legacy:2"
+        "_turn_id": "legacy:2",
+        "_display": "row"
       }
     ]
   },
@@ -1536,7 +1596,8 @@
         "content": "[ASYNC DELEGATION BATCH COMPLETE — deleg_typed]\nA person typed this marker.",
         "message_id": "typed-marker-user",
         "timestamp": 1770000200,
-        "_turn_id": "legacy:0"
+        "_turn_id": "legacy:0",
+        "_display": "row"
       },
       {
         "role": "assistant",
@@ -1558,7 +1619,8 @@
           "activity_rows_omitted": 0,
           "activity_scene_ref": "35adb76679f1bef805c4ffc861566c752887aadf278fabf7b73773d45193f656"
         },
-        "_turn_id": "legacy:0"
+        "_turn_id": "legacy:0",
+        "_display": "row"
       },
       {
         "role": "user",
@@ -1585,7 +1647,8 @@
             }
           ]
         },
-        "_source": "process_wakeup"
+        "_source": "process_wakeup",
+        "_display": "row"
       },
       {
         "role": "assistant",
@@ -1608,7 +1671,8 @@
           "activity_scene_ref": "b3db2f3cb57acae4a6faf19f0dde1c7b5f6cbd665f3b31efba522388961c41f9"
         },
         "_turn_id": "wake-contract",
-        "_background_reply": true
+        "_background_reply": true,
+        "_display": "row"
       },
       {
         "role": "user",
@@ -1629,7 +1693,8 @@
             }
           ]
         },
-        "_source": "process_wakeup"
+        "_source": "process_wakeup",
+        "_display": "row"
       },
       {
         "role": "assistant",
@@ -1652,7 +1717,8 @@
           "activity_scene_ref": "204102a5062ace423c9cf6ce25c757318f56e00b76181cb4e69baef967868857"
         },
         "_turn_id": "wake-legacy",
-        "_background_reply": true
+        "_background_reply": true,
+        "_display": "row"
       },
       {
         "role": "user",
@@ -1674,7 +1740,8 @@
             }
           ]
         },
-        "_source": "process_wakeup"
+        "_source": "process_wakeup",
+        "_display": "row"
       },
       {
         "role": "assistant",
@@ -1698,14 +1765,16 @@
         },
         "_turn_id": "wake-silent",
         "_background_reply": true,
-        "_background_silent": true
+        "_background_silent": true,
+        "_display": "hidden"
       },
       {
         "role": "user",
         "content": "Reply with exactly NO_REPLY",
         "message_id": "user-no-reply",
         "timestamp": 1770000208,
-        "_turn_id": "user-no-reply"
+        "_turn_id": "user-no-reply",
+        "_display": "row"
       },
       {
         "role": "assistant",
@@ -1727,7 +1796,8 @@
           "activity_rows_omitted": 0,
           "activity_scene_ref": "b3438d7ef679e5d59aa403c94d03d28e170727e32d4b9206bc57c7257370120c"
         },
-        "_turn_id": "user-no-reply"
+        "_turn_id": "user-no-reply",
+        "_display": "row"
       }
     ],
     "source_kind": "webui",
@@ -2174,7 +2244,8 @@
         "content": "Show think-start",
         "message_id": "think-start-ask",
         "timestamp": 2000,
-        "_turn_id": "legacy:0"
+        "_turn_id": "legacy:0",
+        "_display": "row"
       },
       {
         "role": "assistant",
@@ -2206,14 +2277,16 @@
           "activity_rows_omitted": 0,
           "activity_scene_ref": "c82a3c21523c81fbd5e75c36d2701eaf2d95bd25d681aea833ff83ad7daa385d"
         },
-        "_turn_id": "legacy:0"
+        "_turn_id": "legacy:0",
+        "_display": "row"
       },
       {
         "role": "user",
         "content": "Show think-middle",
         "message_id": "think-middle-ask",
         "timestamp": 2002,
-        "_turn_id": "legacy:2"
+        "_turn_id": "legacy:2",
+        "_display": "row"
       },
       {
         "role": "assistant",
@@ -2245,14 +2318,16 @@
           "activity_rows_omitted": 0,
           "activity_scene_ref": "a69ba2650a040b382eafd702c38fa7c53b097c2da4b431f55c68aaaad2c5cf2b"
         },
-        "_turn_id": "legacy:2"
+        "_turn_id": "legacy:2",
+        "_display": "row"
       },
       {
         "role": "user",
         "content": "Show think-unterminated",
         "message_id": "think-unterminated-ask",
         "timestamp": 2004,
-        "_turn_id": "legacy:4"
+        "_turn_id": "legacy:4",
+        "_display": "row"
       },
       {
         "role": "assistant",
@@ -2284,14 +2359,16 @@
           "activity_rows_omitted": 0,
           "activity_scene_ref": "89bb03801f7ab8ca2abfb1d02c62c6e7cafe85a33730aadd5948a07254152919"
         },
-        "_turn_id": "legacy:4"
+        "_turn_id": "legacy:4",
+        "_display": "row"
       },
       {
         "role": "user",
         "content": "Show thinking-start",
         "message_id": "thinking-start-ask",
         "timestamp": 2006,
-        "_turn_id": "legacy:6"
+        "_turn_id": "legacy:6",
+        "_display": "row"
       },
       {
         "role": "assistant",
@@ -2323,14 +2400,16 @@
           "activity_rows_omitted": 0,
           "activity_scene_ref": "b4cceb63793578d97a2453254294932f93cf0111a9c4a4bba1ed50a2498b5d6a"
         },
-        "_turn_id": "legacy:6"
+        "_turn_id": "legacy:6",
+        "_display": "row"
       },
       {
         "role": "user",
         "content": "Show thinking-middle",
         "message_id": "thinking-middle-ask",
         "timestamp": 2008,
-        "_turn_id": "legacy:8"
+        "_turn_id": "legacy:8",
+        "_display": "row"
       },
       {
         "role": "assistant",
@@ -2362,14 +2441,16 @@
           "activity_rows_omitted": 0,
           "activity_scene_ref": "f63dd22df8e632e15a1b03898006eba550912e9f29aa0ba93052c1b477d90562"
         },
-        "_turn_id": "legacy:8"
+        "_turn_id": "legacy:8",
+        "_display": "row"
       },
       {
         "role": "user",
         "content": "Show thinking-unterminated",
         "message_id": "thinking-unterminated-ask",
         "timestamp": 2010,
-        "_turn_id": "legacy:10"
+        "_turn_id": "legacy:10",
+        "_display": "row"
       },
       {
         "role": "assistant",
@@ -2401,14 +2482,16 @@
           "activity_rows_omitted": 0,
           "activity_scene_ref": "dc30d34853a7818f0a3b0a5dce20868f324e994c36be7735f765af1c54f2e058"
         },
-        "_turn_id": "legacy:10"
+        "_turn_id": "legacy:10",
+        "_display": "row"
       },
       {
         "role": "user",
         "content": "Show channel-start",
         "message_id": "channel-start-ask",
         "timestamp": 2012,
-        "_turn_id": "legacy:12"
+        "_turn_id": "legacy:12",
+        "_display": "row"
       },
       {
         "role": "assistant",
@@ -2440,14 +2523,16 @@
           "activity_rows_omitted": 0,
           "activity_scene_ref": "862ab91624a1d62da0f03b0b123f3c7526a4557c3cf620fd4a0b7cac92054dfd"
         },
-        "_turn_id": "legacy:12"
+        "_turn_id": "legacy:12",
+        "_display": "row"
       },
       {
         "role": "user",
         "content": "Show channel-middle",
         "message_id": "channel-middle-ask",
         "timestamp": 2014,
-        "_turn_id": "legacy:14"
+        "_turn_id": "legacy:14",
+        "_display": "row"
       },
       {
         "role": "assistant",
@@ -2479,14 +2564,16 @@
           "activity_rows_omitted": 0,
           "activity_scene_ref": "c9ba90eab5c8e80e2dcf24c08d1f21f728a4ae3414c7198e5b93583ccc8b9a04"
         },
-        "_turn_id": "legacy:14"
+        "_turn_id": "legacy:14",
+        "_display": "row"
       },
       {
         "role": "user",
         "content": "Show channel-unterminated",
         "message_id": "channel-unterminated-ask",
         "timestamp": 2016,
-        "_turn_id": "legacy:16"
+        "_turn_id": "legacy:16",
+        "_display": "row"
       },
       {
         "role": "assistant",
@@ -2518,14 +2605,16 @@
           "activity_rows_omitted": 0,
           "activity_scene_ref": "8d1d3a5bcfed6aab95f581aa7d97ab9e23bc0cb454856d4cc00f20b5ed802da6"
         },
-        "_turn_id": "legacy:16"
+        "_turn_id": "legacy:16",
+        "_display": "row"
       },
       {
         "role": "user",
         "content": "Show turn-start",
         "message_id": "turn-start-ask",
         "timestamp": 2018,
-        "_turn_id": "legacy:18"
+        "_turn_id": "legacy:18",
+        "_display": "row"
       },
       {
         "role": "assistant",
@@ -2557,14 +2646,16 @@
           "activity_rows_omitted": 0,
           "activity_scene_ref": "9da46706066c5c68165eb9b2ad5511f42b574c1d5fdff5bf7ae693ee20a5b7ad"
         },
-        "_turn_id": "legacy:18"
+        "_turn_id": "legacy:18",
+        "_display": "row"
       },
       {
         "role": "user",
         "content": "Show turn-middle",
         "message_id": "turn-middle-ask",
         "timestamp": 2020,
-        "_turn_id": "legacy:20"
+        "_turn_id": "legacy:20",
+        "_display": "row"
       },
       {
         "role": "assistant",
@@ -2596,14 +2687,16 @@
           "activity_rows_omitted": 0,
           "activity_scene_ref": "ee7b733cd793d1b0a26a86369400899626b22eb3c1db359c76f74a9aa3e3b47c"
         },
-        "_turn_id": "legacy:20"
+        "_turn_id": "legacy:20",
+        "_display": "row"
       },
       {
         "role": "user",
         "content": "Show turn-unterminated",
         "message_id": "turn-unterminated-ask",
         "timestamp": 2022,
-        "_turn_id": "legacy:22"
+        "_turn_id": "legacy:22",
+        "_display": "row"
       },
       {
         "role": "assistant",
@@ -2635,14 +2728,16 @@
           "activity_rows_omitted": 0,
           "activity_scene_ref": "df9087368ad93530dd835479db28af3299ccc17ffd4ee3671010444ae5b57895"
         },
-        "_turn_id": "legacy:22"
+        "_turn_id": "legacy:22",
+        "_display": "row"
       },
       {
         "role": "user",
         "content": "Show xml-closed",
         "message_id": "xml-closed-ask",
         "timestamp": 2024,
-        "_turn_id": "legacy:24"
+        "_turn_id": "legacy:24",
+        "_display": "row"
       },
       {
         "role": "assistant",
@@ -2664,14 +2759,16 @@
           "activity_rows_omitted": 0,
           "activity_scene_ref": "2303399cd47bcae15ff06f33df0c1bdf23f85a7cd59f016b38d0b254d46f9760"
         },
-        "_turn_id": "legacy:24"
+        "_turn_id": "legacy:24",
+        "_display": "row"
       },
       {
         "role": "user",
         "content": "Show xml-unterminated",
         "message_id": "xml-unterminated-ask",
         "timestamp": 2026,
-        "_turn_id": "legacy:26"
+        "_turn_id": "legacy:26",
+        "_display": "row"
       },
       {
         "role": "assistant",
@@ -2693,14 +2790,16 @@
           "activity_rows_omitted": 0,
           "activity_scene_ref": "1375df68369408819ffa8e67e8c9273164ed7b6e381cf06b712e09bb21bb8c56"
         },
-        "_turn_id": "legacy:26"
+        "_turn_id": "legacy:26",
+        "_display": "row"
       },
       {
         "role": "user",
         "content": "Show xml-dsml",
         "message_id": "xml-dsml-ask",
         "timestamp": 2028,
-        "_turn_id": "legacy:28"
+        "_turn_id": "legacy:28",
+        "_display": "row"
       },
       {
         "role": "assistant",
@@ -2722,14 +2821,16 @@
           "activity_rows_omitted": 0,
           "activity_scene_ref": "8797e1b9d7f1bf88439e579c9652cb7866e2952bfae5130d92d54c62206b9ef1"
         },
-        "_turn_id": "legacy:28"
+        "_turn_id": "legacy:28",
+        "_display": "row"
       },
       {
         "role": "user",
         "content": "Show typed-parts",
         "message_id": "typed-parts-ask",
         "timestamp": 2030,
-        "_turn_id": "legacy:30"
+        "_turn_id": "legacy:30",
+        "_display": "row"
       },
       {
         "role": "assistant",
@@ -2766,14 +2867,16 @@
           "activity_rows_omitted": 0,
           "activity_scene_ref": "57bb1e547902436777a4a1271126bb7b8fc38c5de824fed3e5da8312e6200ad0"
         },
-        "_turn_id": "legacy:30"
+        "_turn_id": "legacy:30",
+        "_display": "row"
       },
       {
         "role": "user",
         "content": "Show reasoning-fields",
         "message_id": "reasoning-fields-ask",
         "timestamp": 2032,
-        "_turn_id": "legacy:32"
+        "_turn_id": "legacy:32",
+        "_display": "row"
       },
       {
         "role": "assistant",
@@ -2805,7 +2908,8 @@
           "activity_rows_omitted": 0,
           "activity_scene_ref": "40d6fc4e80a96243a2da667dc50632247811db14a866947640728060b6e2fe97"
         },
-        "_turn_id": "legacy:32"
+        "_turn_id": "legacy:32",
+        "_display": "row"
       }
     ]
   },
@@ -2817,7 +2921,8 @@
         "content": "Summarise the plan.",
         "message_id": "marker-prompt",
         "timestamp": 1770000300,
-        "_turn_id": "legacy:0"
+        "_turn_id": "legacy:0",
+        "_display": "row"
       },
       {
         "role": "assistant",
@@ -2839,7 +2944,8 @@
           "activity_rows_omitted": 0,
           "activity_scene_ref": "7162b01e41ec7d4e052a24330d74295ceaaa6e7e066519d080d07cf34c137e6e"
         },
-        "_turn_id": "legacy:0"
+        "_turn_id": "legacy:0",
+        "_display": "row"
       },
       {
         "role": "user",
@@ -2847,7 +2953,8 @@
         "message_id": "marker-compaction",
         "timestamp": 1770000302,
         "_turn_id": "legacy:0",
-        "_marker_kind": "context_compaction"
+        "_marker_kind": "context_compaction",
+        "_display": "row"
       },
       {
         "role": "user",
@@ -2856,14 +2963,16 @@
         "timestamp": 1770000303,
         "_turn_id": "legacy:0",
         "_marker_kind": "preserved_task_list",
-        "_marker_body": "- [x] Draft the plan\n- [ ] Review the plan"
+        "_marker_body": "- [x] Draft the plan\n- [ ] Review the plan",
+        "_display": "row"
       },
       {
         "role": "user",
         "content": "What is context compaction?",
         "message_id": "marker-question",
         "timestamp": 1770000304,
-        "_turn_id": "legacy:4"
+        "_turn_id": "legacy:4",
+        "_display": "row"
       },
       {
         "role": "assistant",
@@ -2885,7 +2994,8 @@
           "activity_rows_omitted": 0,
           "activity_scene_ref": "37f0ec046ba08a1aaf805c66b1fa7e485e00464e03b0d5cc93f744000e054f7f"
         },
-        "_turn_id": "legacy:4"
+        "_turn_id": "legacy:4",
+        "_display": "row"
       }
     ]
   },
@@ -2912,7 +3022,8 @@
         "content": "Plot the run",
         "message_id": "media-user",
         "timestamp": 1000,
-        "_turn_id": "legacy:0"
+        "_turn_id": "legacy:0",
+        "_display": "row"
       },
       {
         "role": "assistant",
@@ -2964,7 +3075,8 @@
             "mime": "audio/mpeg",
             "kind": "audio"
           }
-        ]
+        ],
+        "_display": "row"
       }
     ]
   },
@@ -2992,7 +3104,8 @@
           "content": "Build, read, search and date",
           "message_id": "view-user",
           "timestamp": 3000,
-          "_turn_id": "view-run"
+          "_turn_id": "view-run",
+          "_display": "row"
         },
         {
           "role": "assistant",
@@ -3071,35 +3184,40 @@
               "type": "function"
             }
           ],
-          "_turn_id": "view-run"
+          "_turn_id": "view-run",
+          "_display": "row"
         },
         {
           "role": "tool",
           "content": "{\"output\": \"built\\nok\", \"stderr\": \"warning: deprecated\", \"exit_code\": 2, \"error\": null}",
           "timestamp": 3002,
           "tool_call_id": "call-make",
-          "_turn_id": "view-run"
+          "_turn_id": "view-run",
+          "_display": "in_scene"
         },
         {
           "role": "tool",
           "content": "\"{\\\"content\\\":\\\"line one\\\\nline two\\\"}\"",
           "timestamp": 3003,
           "tool_call_id": "call-nested",
-          "_turn_id": "view-run"
+          "_turn_id": "view-run",
+          "_display": "in_scene"
         },
         {
           "role": "tool",
           "content": "[{\"type\": \"text\", \"text\": \"first\"}, {\"type\": \"text\", \"text\": \"second\"}]",
           "timestamp": 3004,
           "tool_call_id": "call-parts",
-          "_turn_id": "view-run"
+          "_turn_id": "view-run",
+          "_display": "in_scene"
         },
         {
           "role": "tool",
           "content": "Sat Sep 27",
           "timestamp": 3005,
           "tool_call_id": "call-date",
-          "_turn_id": "view-run"
+          "_turn_id": "view-run",
+          "_display": "in_scene"
         },
         {
           "role": "assistant",
@@ -3220,7 +3338,8 @@
             "activity_rows_omitted": 0,
             "activity_scene_ref": "9864e85142b590b8ac94eaf71ed1e755af59bbeed18623aba529548febade674"
           },
-          "_turn_id": "view-run"
+          "_turn_id": "view-run",
+          "_display": "row"
         }
       ]
     }
@@ -3543,7 +3662,8 @@
         "content": "Earlier question",
         "message_id": "contract-user-r0",
         "timestamp": 1000,
-        "_turn_id": "legacy:0"
+        "_turn_id": "legacy:0",
+        "_display": "row"
       },
       {
         "role": "assistant",
@@ -3565,14 +3685,16 @@
           "activity_rows_omitted": 0,
           "activity_scene_ref": "a8aa29b2fd9e93af93f9e8acc30be5fa89e09c95278b2d61997dd4cc4390b1a3"
         },
-        "_turn_id": "legacy:0"
+        "_turn_id": "legacy:0",
+        "_display": "row"
       },
       {
         "role": "user",
         "content": "Read both files",
         "message_id": "contract-user-r",
         "timestamp": 1002,
-        "_turn_id": "contract-run-r"
+        "_turn_id": "contract-run-r",
+        "_display": "row"
       },
       {
         "role": "assistant",
@@ -3599,14 +3721,16 @@
           }
         ],
         "reasoning": "Plan the read.",
-        "_turn_id": "contract-run-r"
+        "_turn_id": "contract-run-r",
+        "_display": "row"
       },
       {
         "role": "tool",
         "content": "A",
         "timestamp": 1004,
         "tool_call_id": "contract-read",
-        "_turn_id": "contract-run-r"
+        "_turn_id": "contract-run-r",
+        "_display": "in_scene"
       },
       {
         "role": "assistant",
@@ -3675,7 +3799,8 @@
           "activity_rows_omitted": 0,
           "activity_scene_ref": "b0cea88295f24ceabb949c4de61b263ce24512304832d2bcf46064d3f1e790d6"
         },
-        "_turn_id": "contract-run-r"
+        "_turn_id": "contract-run-r",
+        "_display": "row"
       }
     ]
   },
@@ -3695,7 +3820,8 @@
           "content": "Edit app.ts and write notes",
           "message_id": "edit-user",
           "timestamp": 4000,
-          "_turn_id": "edit-run"
+          "_turn_id": "edit-run",
+          "_display": "row"
         },
         {
           "role": "assistant",
@@ -3744,21 +3870,24 @@
               "type": "function"
             }
           ],
-          "_turn_id": "edit-run"
+          "_turn_id": "edit-run",
+          "_display": "row"
         },
         {
           "role": "tool",
           "content": "{\"success\":true,\"diff\":\"--- a/src/app.ts\\n+++ b/src/app.ts\\n@@ -1,3 +1,4 @@\\n import { run } from './run'\\n-run(1)\\n+run(2)\\n+run(3)\\n export {}\\n\",\"files_modified\":[\"src/app.ts\"]}",
           "timestamp": 4002,
           "tool_call_id": "call-patch",
-          "_turn_id": "edit-run"
+          "_turn_id": "edit-run",
+          "_display": "in_scene"
         },
         {
           "role": "tool",
           "content": "{\"bytes_written\":5,\"dirs_created\":false}",
           "timestamp": 4003,
           "tool_call_id": "call-write",
-          "_turn_id": "edit-run"
+          "_turn_id": "edit-run",
+          "_display": "in_scene"
         },
         {
           "role": "assistant",
@@ -3844,7 +3973,8 @@
             "activity_rows_omitted": 0,
             "activity_scene_ref": "bf09e287ec6d6c164a72756617d81100e9aa4b4ea9acdf2d98cbae38cda5faf5"
           },
-          "_turn_id": "edit-run"
+          "_turn_id": "edit-run",
+          "_display": "row"
         }
       ]
     }
@@ -3908,7 +4038,8 @@
           "content": "Start step one.",
           "message_id": "reference-step-one",
           "timestamp": 1770000402,
-          "_turn_id": "legacy:2"
+          "_turn_id": "legacy:2",
+          "_display": "row"
         },
         {
           "role": "assistant",
@@ -3930,14 +4061,16 @@
             "activity_rows_omitted": 0,
             "activity_scene_ref": "3161398959e089c3f46f848bd0d02f61706f17e834ef508e0744b4043008d563"
           },
-          "_turn_id": "legacy:2"
+          "_turn_id": "legacy:2",
+          "_display": "row"
         },
         {
           "role": "user",
           "content": "Start step two.",
           "message_id": "reference-step-two",
           "timestamp": 1770000404,
-          "_turn_id": "legacy:4"
+          "_turn_id": "legacy:4",
+          "_display": "row"
         },
         {
           "role": "assistant",
@@ -3959,7 +4092,8 @@
             "activity_rows_omitted": 0,
             "activity_scene_ref": "1c4812a172d364e25bb516167cf271da2599fb33b7101cbacecd4861dd1edc16"
           },
-          "_turn_id": "legacy:4"
+          "_turn_id": "legacy:4",
+          "_display": "row"
         }
       ],
       "compression_reference": {

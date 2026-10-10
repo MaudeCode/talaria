@@ -3906,6 +3906,14 @@
                               },
                               "_background_silent": {
                                 "type": "boolean"
+                              },
+                              "_display": {
+                                "enum": [
+                                  "row",
+                                  "hidden",
+                                  "in_scene"
+                                ],
+                                "type": "string"
                               }
                             },
                             "required": [
@@ -6044,6 +6052,14 @@
                               },
                               "_background_silent": {
                                 "type": "boolean"
+                              },
+                              "_display": {
+                                "enum": [
+                                  "row",
+                                  "hidden",
+                                  "in_scene"
+                                ],
+                                "type": "string"
                               }
                             },
                             "required": [
@@ -7928,6 +7944,14 @@
                               },
                               "_background_silent": {
                                 "type": "boolean"
+                              },
+                              "_display": {
+                                "enum": [
+                                  "row",
+                                  "hidden",
+                                  "in_scene"
+                                ],
+                                "type": "string"
                               }
                             },
                             "required": [
@@ -11010,6 +11034,14 @@
                               },
                               "_background_silent": {
                                 "type": "boolean"
+                              },
+                              "_display": {
+                                "enum": [
+                                  "row",
+                                  "hidden",
+                                  "in_scene"
+                                ],
+                                "type": "string"
                               }
                             },
                             "required": [
@@ -13926,6 +13958,14 @@
                               },
                               "_background_silent": {
                                 "type": "boolean"
+                              },
+                              "_display": {
+                                "enum": [
+                                  "row",
+                                  "hidden",
+                                  "in_scene"
+                                ],
+                                "type": "string"
                               }
                             },
                             "required": [
@@ -17519,6 +17559,14 @@
                               },
                               "_background_silent": {
                                 "type": "boolean"
+                              },
+                              "_display": {
+                                "enum": [
+                                  "row",
+                                  "hidden",
+                                  "in_scene"
+                                ],
+                                "type": "string"
                               }
                             },
                             "required": [
@@ -19428,6 +19476,14 @@
                               },
                               "_background_silent": {
                                 "type": "boolean"
+                              },
+                              "_display": {
+                                "enum": [
+                                  "row",
+                                  "hidden",
+                                  "in_scene"
+                                ],
+                                "type": "string"
                               }
                             },
                             "required": [
@@ -21399,6 +21455,14 @@
                               },
                               "_background_silent": {
                                 "type": "boolean"
+                              },
+                              "_display": {
+                                "enum": [
+                                  "row",
+                                  "hidden",
+                                  "in_scene"
+                                ],
+                                "type": "string"
                               }
                             },
                             "required": [
@@ -23357,6 +23421,14 @@
                               },
                               "_background_silent": {
                                 "type": "boolean"
+                              },
+                              "_display": {
+                                "enum": [
+                                  "row",
+                                  "hidden",
+                                  "in_scene"
+                                ],
+                                "type": "string"
                               }
                             },
                             "required": [
@@ -32790,6 +32862,14 @@
                               },
                               "_background_silent": {
                                 "type": "boolean"
+                              },
+                              "_display": {
+                                "enum": [
+                                  "row",
+                                  "hidden",
+                                  "in_scene"
+                                ],
+                                "type": "string"
                               }
                             },
                             "required": [
@@ -34840,6 +34920,14 @@
                               },
                               "_background_silent": {
                                 "type": "boolean"
+                              },
+                              "_display": {
+                                "enum": [
+                                  "row",
+                                  "hidden",
+                                  "in_scene"
+                                ],
+                                "type": "string"
                               }
                             },
                             "required": [
@@ -36790,6 +36878,14 @@
                                   },
                                   "_background_silent": {
                                     "type": "boolean"
+                                  },
+                                  "_display": {
+                                    "enum": [
+                                      "row",
+                                      "hidden",
+                                      "in_scene"
+                                    ],
+                                    "type": "string"
                                   }
                                 },
                                 "required": [

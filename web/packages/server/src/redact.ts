@@ -1778,6 +1778,20 @@ function isCollapsibleUserMessage(item: Record<string, unknown>): boolean {
 }
 
 /**
+ * TAL-600: how clients show a public row. A tool result or consumed steer shows only inside its turn's activity scene
+ * (`in_scene`); a silent background reply, or a row with nothing to show, not at all (`hidden`); every other row on its own.
+ */
+function messageDisplay(item: Record<string, unknown>): 'row' | 'hidden' | 'in_scene' {
+  if (item.role === 'tool' || item._steer) return 'in_scene'
+  if (!item.role || item._background_silent) return 'hidden'
+  if (item._marker_kind) return 'row'
+  const shown = Boolean(messageText(item.content).trim()) || (Array.isArray(item.attachments) && item.attachments.length > 0)
+  if (item.role !== 'assistant') return shown ? 'row' : 'hidden'
+  const hasTools = Array.isArray(item.tool_calls) && item.tool_calls.length > 0
+  return shown || hasTools || Boolean(item.reasoning || item._anchor_activity_scene) ? 'row' : 'hidden'
+}
+
+/**
  * One user `content[*]` part (Python `_redact_message_content_part`): an `image_url.url` raster data URI passes through
  * unscanned (TAL-583). The exemption exists only at this schema position; image-shaped values elsewhere are redacted.
  */
@@ -1808,6 +1822,7 @@ function publicMessageProjection(message: unknown, enabled: boolean, activeTurnT
   // Server-owned: a `_collapsible` the stored row carries never survives the projection's own decision.
   if (isCollapsibleUserMessage(item)) item._collapsible = true
   else delete item._collapsible
+  item._display = messageDisplay(item)
   // TAL-598: stored and Agent rows may carry these as numeric strings or mixed arrays; ship the contract types or nothing.
   for (const key of ['_ts', '_turnDuration', '_turnTps'] as const) {
     if (!(key in item)) continue

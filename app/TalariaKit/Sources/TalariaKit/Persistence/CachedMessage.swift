@@ -31,6 +31,7 @@ public final class CachedMessage {
     var backgroundSilent: Bool?
     var markerKind: String?
     var markerBody: String?
+    var display: String?
     var cachedAt: Date
     var expiresAt: Date
 
@@ -98,6 +99,7 @@ public final class CachedMessage {
         backgroundSilent = message.backgroundSilent ? true : nil
         markerKind = message.markerKind?.wireValue
         markerBody = message.markerBody
+        display = message.display?.rawValue
         if let attachments = message.attachments, !attachments.isEmpty {
             attachmentsData = try? JSONEncoder().encode(attachments)
         } else {

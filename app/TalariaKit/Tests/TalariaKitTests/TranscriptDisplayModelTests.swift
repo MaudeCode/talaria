@@ -191,6 +191,30 @@ final class TranscriptMessageTests: XCTestCase {
         }
     }
 
+    /// TAL-600: the server's `_display` decides which rows show on their own; a row without it keeps the older rules.
+    func testTranscriptMessagesShowOnlyTheRowsTheServerMarksToShow() throws {
+        let json = #"""
+        [
+          {"role": "user", "content": "Plan the release", "message_id": "u1", "_display": "row"},
+          {"role": "user", "content": "", "message_id": "marker", "_marker_kind": "context_compaction", "_display": "row"},
+          {"role": "user", "content": "Use staging", "message_id": "steer", "_steer": {"steer_id": "s1"}, "_display": "in_scene"},
+          {"role": "assistant", "content": "Silent reply", "message_id": "silent", "_display": "hidden"},
+          {"role": "assistant", "content": "Here is the plan.", "message_id": "a1", "_display": "row"},
+          {"role": "tool", "content": "ok", "message_id": "old-tool"},
+          {"role": "user", "content": "An older server's prompt", "message_id": "old-user"}
+        ]
+        """#
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let messages = try decoder.decode([ChatMessage].self, from: Data(json.utf8))
+
+        let shown = ChatViewModel.transcriptMessages(from: messages).flatMap { row in
+            row.assistantSegments.isEmpty ? [row.message.messageId] : row.assistantSegments.map(\.message.messageId)
+        }
+
+        XCTAssertEqual(shown, ["u1", "marker", "a1", "old-user"])
+    }
+
     func testTranscriptMessagesPreserveMessagesWithNilMessageIDsWhenNoStreamingTurnHidden() {
         let messages = [
             ChatMessage(role: "user", content: "Hello", timestamp: 1, messageId: nil),
