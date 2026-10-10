@@ -10,10 +10,13 @@ import type { ToolCardData } from './ToolCard'
 
 export type ActivityMode = 'compact_worklog' | 'transparent_stream' | 'hide_all_activity'
 
-const DisclosureContext = createContext<{ choices: Record<string, boolean>; choose: (key: string, open: boolean) => void } | null>(null)
+const DisclosureContext = createContext<{ choices: Record<string, boolean>; choose: (key: string, open: boolean) => void; forget: (key: string) => void } | null>(null)
 export const DisclosureTurnContext = createContext('')
-/** Every row disclosure inside a turn's worklog, nested groups included, so its control can open or close them together. */
-const ExpandAllContext = createContext<Set<(open: boolean) => void> | null>(null)
+/**
+ * A turn worklog's Expand all / Collapse all: every row disclosure inside it, nested groups included, registers a reset,
+ * and `open` is the last bulk choice. It stays in memory so a long worklog never meets the stored-choice cap.
+ */
+const ExpandAllContext = createContext<{ resets: Set<() => void>; open: boolean | undefined } | null>(null)
 
 /** Renderer preferences only, scoped to profile/session and bounded to recent disclosures. */
 export function WorklogDisclosureProvider({ scope, children }: { scope: string; children: ReactNode }) {
@@ -26,7 +29,10 @@ export function WorklogDisclosureProvider({ scope, children }: { scope: string; 
       return next
     })
   }
-  return <DisclosureContext value={{ choices, choose }}>{children}</DisclosureContext>
+  const forget = (key: string) => {
+    setChoices((previous) => key in previous ? Object.fromEntries(Object.entries(previous).filter(([k]) => k !== key)) : previous)
+  }
+  return <DisclosureContext value={{ choices, choose, forget }}>{children}</DisclosureContext>
 }
 
 export function useDisclosure(id: string, defaultOpen: boolean): [boolean, () => void] {
@@ -34,15 +40,16 @@ export function useDisclosure(id: string, defaultOpen: boolean): [boolean, () =>
   const turn = useContext(DisclosureTurnContext)
   const key = JSON.stringify([turn, id])
   const [local, setLocal] = useState<boolean | undefined>()
-  const open = context?.choices[key] ?? local ?? defaultOpen
-  const set = (next: boolean) => { if (context) context.choose(key, next); else setLocal(next) }
-  const rows = useContext(ExpandAllContext)
+  const all = useContext(ExpandAllContext)
+  // A row's own choice wins; the bulk action clears those first, so only choices made after it remain.
+  const open = context?.choices[key] ?? local ?? all?.open ?? defaultOpen
   useEffect(() => {
-    if (!rows) return
-    rows.add(set)
-    return () => { rows.delete(set) }
+    if (!all) return
+    const reset = () => { if (context) context.forget(key); else setLocal(undefined) }
+    all.resets.add(reset)
+    return () => { all.resets.delete(reset) }
   })
-  return [open, () => { set(!open) }]
+  return [open, () => { if (context) context.choose(key, !open); else setLocal(!open) }]
 }
 
 export function terminalOutcomeLabel(status: string): string | null {
@@ -69,7 +76,9 @@ export function Worklog({ calls, status, children, sequenceKey, disclosureId = '
   const open = live || chosen
   const bodyId = useId()
   // Only the turn-level worklog owns the control; nested groups and their rows register with it.
-  const [rows] = useState(() => new Set<(open: boolean) => void>())
+  const [resets] = useState(() => new Set<() => void>())
+  const [all, setAll] = useState<boolean>()
+  const setEvery = (next: boolean) => { for (const reset of resets) reset(); setAll(next) }
   const text = toolText(locale)
   const byKind = new Map<string, number>()
   for (const c of calls) byKind.set(c.kind, (byKind.get(c.kind) ?? 0) + 1)
@@ -91,11 +100,11 @@ export function Worklog({ calls, status, children, sequenceKey, disclosureId = '
         <div className="worklog">
           {!nested && calls.length > 0 && (
             <div className="tool-worklog-controls">
-              <button type="button" className="tool-worklog-control" onClick={() => { for (const set of rows) set(true) }}>{m.expand_all()}</button>
-              <button type="button" className="tool-worklog-control" onClick={() => { for (const set of rows) set(false) }}>{m.collapse_all()}</button>
+              <button type="button" className="tool-worklog-control" onClick={() => { setEvery(true) }}>{m.expand_all()}</button>
+              <button type="button" className="tool-worklog-control" onClick={() => { setEvery(false) }}>{m.collapse_all()}</button>
             </div>
           )}
-          <div className="tool-worklog-list">{nested ? children : <ExpandAllContext value={rows}>{children}</ExpandAllContext>}</div>
+          <div className="tool-worklog-list">{nested ? children : <ExpandAllContext value={{ resets, open: all }}>{children}</ExpandAllContext>}</div>
         </div>
       </div>
     </div>

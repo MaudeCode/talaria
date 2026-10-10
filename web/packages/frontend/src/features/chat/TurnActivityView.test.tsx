@@ -127,6 +127,20 @@ describe('turn worklog presentation', () => {
     expect(view.container.querySelector('.tool-worklog-summary')).toHaveAttribute('aria-expanded', 'true')
   })
 
+  it('expands every row of a worklog longer than the stored-choice cap (TAL-615)', () => {
+    const ids = Array.from({ length: 205 }, (_, i) => `t${i}`)
+    const view = render(<View activity={settled({ final_answer: 'Done', activity_rows: rows(...ids.map(toolRow)) })} />)
+    fireEvent.click(view.container.querySelector('.tool-worklog-summary')!)
+    fireEvent.click(screen.getByRole('button', { name: 'Expand all' }))
+    const headers = () => [...view.container.querySelectorAll('.tool-card-header')].map((header) => header.getAttribute('aria-expanded'))
+    expect(headers().filter((expanded) => expanded !== 'true')).toEqual([])
+    // A row chosen after the bulk action keeps that choice.
+    fireEvent.click(view.container.querySelector('[data-tool-id="t0"] .tool-card-header')!)
+    expect(view.container.querySelector('[data-tool-id="t0"] .tool-card-header')).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse all' }))
+    expect(headers().filter((expanded) => expanded !== 'false')).toEqual([])
+  })
+
   it('groups consecutive live reasoning and tools until prose while leaving a singleton inline', () => {
     const run = liveRun()
     run.emit({ event: 'token', data: { text: 'Before tools' } })
