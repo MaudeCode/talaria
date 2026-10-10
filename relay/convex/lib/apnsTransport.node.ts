@@ -1,4 +1,4 @@
-import { createPrivateKey, sign } from "node:crypto";
+import { createHash, createPrivateKey, sign } from "node:crypto";
 import { connect, type ClientHttp2Session, type IncomingHttpHeaders } from "node:http2";
 
 import type { ApsEnvironment } from "./model";
@@ -10,6 +10,8 @@ export interface ApnsWireRequest {
   pushType: "alert" | "liveactivity";
   priority: "5" | "10";
   payloadJson: string;
+  // Hashed into apns-collapse-id so a retry replaces, not duplicates, an already-delivered push.
+  stateFingerprint: string;
 }
 
 export interface ApnsWireResponse {
@@ -71,6 +73,7 @@ export const sendHttp2: ApnsTransport = async (request, authorization) =>
       "apns-topic": request.topic,
       "apns-push-type": request.pushType,
       "apns-priority": request.priority,
+      "apns-collapse-id": createHash("sha256").update(request.stateFingerprint).digest("base64url"),
       "content-type": "application/json",
     });
     let responseHeaders: IncomingHttpHeaders = {};

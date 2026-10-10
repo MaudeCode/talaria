@@ -56,7 +56,10 @@ export const sendJob = internalAction({
       cachedProviderToken = { cacheKey, token: providerToken, issuedAt: nowSeconds };
     }
 
-    const response = await sendWithTransport(claimed.request, providerToken);
+    const response = await sendWithTransport(
+      { ...claimed.request, stateFingerprint: claimed.stateFingerprint },
+      providerToken,
+    );
     if (response.status >= 200 && response.status < 300) {
       await ctx.runMutation(internal.delivery.markDelivered, {
         jobId: args.jobId,
