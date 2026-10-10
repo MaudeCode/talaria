@@ -66,7 +66,7 @@ describe('cron job payloads carry the derived fields', () => {
     }
     sidecar.respond('cron.list', () => ({ jobs: jobs as never[] }))
     sidecar.respond('cron.pause', () => { Object.assign(jobs[0]!, { enabled: false, state: 'paused', next_run_at: null, last_status: 'error' }); return { job: jobs[0] as never } })
-    sidecar.respond('cron.run_detail', (params) => ({ job_id: recurring.id, filename: String(params.filename), content: runFiles[String(params.filename)] ?? '', snippet: '', usage: {} }) as never)
+    sidecar.respond('cron.run_detail', (params) => ({ job_id: recurring.id, filename: params.filename, content: runFiles[params.filename] ?? '', snippet: '', usage: {} }) as never)
     sidecar.respond('cron.resume', () => { Object.assign(jobs[0]!, { enabled: true, state: 'scheduled', next_run_at: '2026-09-19T09:00:00+02:00' }); return { job: jobs[0] as never } })
     return { service: new CronService(deps), home, runningJobs }
   }
