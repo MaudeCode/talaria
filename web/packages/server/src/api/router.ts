@@ -190,11 +190,11 @@ export const coreRouter = os.router({
       const { ctx } = context
       if (input.code_challenge_method !== 'S256') throw new HttpError(400, 'Native OIDC requires S256 PKCE')
       if (ctx.deps.nativeOidcLimiter.limited(rateLimitClientIp(ctx))) throw new HttpError(429, 'Too many native OIDC starts; try again in a minute')
-      return oidcCall(() => ctx.deps.oidc.beginNative(requestBaseUrl(ctx), input.callback_url, input.state, input.code_challenge))
+      return oidcCall(async () => ctx.deps.oidc.beginNative(await requestBaseUrl(ctx), input.callback_url, input.state, input.code_challenge))
     }),
     oidcNativeExchange: os.auth.oidcNativeExchange.handler(async ({ input, context }) => {
       const { ctx } = context
-      const identity = await oidcCall(() => ctx.deps.oidc.exchangeNative(requestBaseUrl(ctx), input.flow_id, input.code, input.state, input.code_verifier))
+      const identity = await oidcCall(async () => ctx.deps.oidc.exchangeNative(await requestBaseUrl(ctx), input.flow_id, input.code, input.state, input.code_verifier))
       const cookieVal = ctx.deps.auth.createSession({ authType: 'oidc', username: identity.email || identity.subject, boundProfile: identity.bound_profile, oidcBinding: identity.oidc_binding ?? null })
       ctx.queueCookie(ctx.authCookieHeader(cookieVal))
       return { ok: true as const }

@@ -253,9 +253,12 @@ export class OidcService {
     return cfg
   }
 
-  /** Configured `redirect_uri` origin, when set and valid (Python `_configured_oidc_origin`). */
-  configuredOrigin(): string | null {
-    const redirect = str(this.lastConfig?.redirect_uri).trim()
+  /**
+   * Configured `redirect_uri` origin, when set and valid (Python `_configured_oidc_origin`). Resolves the config first:
+   * with another auth method on, nothing else has loaded it before the first SSO start after a restart.
+   */
+  async configuredOrigin(): Promise<string | null> {
+    const redirect = str((await this.resolve()).redirect_uri).trim()
     if (!redirect) return null
     try { const u = new URL(redirect); return ['http:', 'https:'].includes(u.protocol) && u.host ? `${u.protocol}//${u.host.toLowerCase()}` : null } catch { return null }
   }

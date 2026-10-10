@@ -37,8 +37,8 @@ export function effectiveRequestHost(ctx: RequestContext): string {
 }
 
 /** Python `_request_base_url`: the configured OIDC origin wins, else scheme + effective host. */
-export function requestBaseUrl(ctx: RequestContext): string {
-  const configured = ctx.deps.oidc.configuredOrigin()
+export async function requestBaseUrl(ctx: RequestContext): Promise<string> {
+  const configured = await ctx.deps.oidc.configuredOrigin()
   if (configured) return configured
   return `${ctx.isSecureContext() ? 'https' : 'http'}://${effectiveRequestHost(ctx)}`
 }
@@ -60,7 +60,7 @@ export async function handleOidcStart(ctx: RequestContext): Promise<void> {
   const nativeFlowId = (ctx.query.get('native_flow') ?? '').trim() || null
   let location: string
   try {
-    location = await ctx.deps.oidc.authorizationRedirect(requestBaseUrl(ctx), nextPath, nativeFlowId)
+    location = await ctx.deps.oidc.authorizationRedirect(await requestBaseUrl(ctx), nextPath, nativeFlowId)
   } catch (error) {
     oidcFailure(ctx, error)
     return
@@ -74,7 +74,7 @@ export async function handleOidcCallback(ctx: RequestContext): Promise<void> {
   const query = ctx.query
   const state = (query.get('state') ?? '').trim()
   const providerError = (query.get('error') ?? '').trim()
-  const base = requestBaseUrl(ctx)
+  const base = await requestBaseUrl(ctx)
   if (providerError) {
     const nativeFlowId = oidc.consumeFailedProviderAuthorization(state)
     if (nativeFlowId) {
