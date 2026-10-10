@@ -572,15 +572,15 @@ export function stateDbSessionRead(dbPath: string, sid: string, opts: { stitch?:
     // row (`compacted = 0`, also the compaction's carried tail) counts only for the same tool call or the same content, so
     // an edit that kept its timestamp stays new.
     if (hasId && available.has('active')) {
-      const twinKey = (row: Dict): string => JSON.stringify([row.role, row.timestamp, row.tool_call_id ?? null])
-      const compacted = available.has('compacted') ? 'compacted' : '0 AS compacted'
-      const archived = db.prepare(`SELECT id, role, timestamp, ${compacted}, CASE WHEN ${available.has('compacted') ? 'compacted = 1' : '0'} THEN NULL ELSE content END AS content${available.has('tool_call_id') ? ', tool_call_id' : ''} FROM messages WHERE session_id IN (${chain.map(() => '?').join(', ')}) AND active = 0 AND timestamp IS NOT NULL ORDER BY id`).all(...chain) as Dict[]
-      const byKey = new Map<string, Dict[]>()
-      for (const row of archived) { const list = byKey.get(twinKey(row)); if (list) list.push(row); else byKey.set(twinKey(row), [row]) }
+      // One indexed lookup per live row ((session_id, active, timestamp)): the archive is never loaded, however many
+      // compactions it holds.
+      const sameCall = available.has('tool_call_id') ? " AND COALESCE(a.tool_call_id, '') = COALESCE(m.tool_call_id, '')" : ''
+      const vouched = [available.has('compacted') ? 'a.compacted = 1' : '', available.has('tool_call_id') ? 'm.tool_call_id IS NOT NULL' : '', 'a.content = m.content'].filter(Boolean).join(' OR ')
+      const twins = db.prepare(`SELECT m.id AS id, MIN(a.id) AS twin FROM messages m JOIN messages a ON a.session_id = m.session_id AND a.active = 0 AND a.role = m.role AND a.timestamp = m.timestamp AND a.id < m.id${sameCall} WHERE m.session_id IN (${chain.map(() => '?').join(', ')}) AND (m.active IS NULL OR m.active != 0) AND (${vouched}) GROUP BY m.id`).all(...chain) as Dict[]
+      const twinOf = new Map(twins.map((row) => [row.id, row.twin]))
       for (const [i, row] of rows.entries()) {
-        if (row.timestamp === null || row.timestamp === undefined || typeof row.id !== 'number') continue
-        const twin = byKey.get(twinKey(row))?.find((a) => Number(a.id) < Number(row.id) && (a.compacted === 1 || Boolean(row.tool_call_id) || a.content === row.content))
-        if (twin) projected[i]!._state_db_row_id = twin.id
+        const twin = twinOf.get(row.id)
+        if (typeof twin === 'number') projected[i]!._state_db_row_id = twin
       }
     }
     // TAL-493: the database file's identity, so a marker taken in a replaced state.db is never applied to its successor.
