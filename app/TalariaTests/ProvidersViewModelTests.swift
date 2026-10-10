@@ -1162,6 +1162,14 @@ final class ProvidersViewModelTests: APIClientTestCase {
 
         let bare = ProviderSummary(id: "p")
         XCTAssertEqual(ProvidersViewModel.modelCount(for: bare), 0)
+
+        // A pre-TAL-603 server can report fewer than it lists; a current one owns the count.
+        let three = [ProviderModel(id: "a"), ProviderModel(id: "b"), ProviderModel(id: "c")]
+        XCTAssertEqual(ProvidersViewModel.modelCount(for: ProviderSummary(id: "nous", models: three, modelsTotal: 2)), 3)
+        XCTAssertEqual(
+            ProvidersViewModel.modelCount(for: ProviderSummary(id: "nous", isActive: false, models: three, modelsTotal: 396)),
+            396
+        )
         XCTAssertNil(ProvidersViewModel.truncatedModelInfo(for: bare))
     }
 

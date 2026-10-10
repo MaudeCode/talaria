@@ -303,6 +303,21 @@ describe('OAuth provider cards and model groups', () => {
     expect(card('nous')?.models_total).toBe(3)
   })
 
+  it('a custom provider keyed through the environment reports an env key_source_kind (TAL-603)', async () => {
+    const env = s.deps.config.env
+    env.TAL603_CUSTOM_KEY = 'sk-custom-env-1234'
+    try {
+      reset({ custom_providers: [{ name: 'Env Box', base_url: 'http://127.0.0.1:9/v1', key_env: 'TAL603_CUSTOM_KEY' }, { name: 'Ref Box', base_url: 'http://127.0.0.1:9/v1', api_key: '${TAL603_CUSTOM_KEY}' }, { name: 'Yaml Box', base_url: 'http://127.0.0.1:9/v1', api_key: 'sk-custom-yaml-1234' }] })
+      const all = await cards()
+      const named = (name: string): Card | undefined => all.find((p) => p.display_name === name)
+      expect(named('Env Box')).toMatchObject({ has_key: true, key_source: 'env_var', key_source_kind: 'env' })
+      expect(named('Ref Box')).toMatchObject({ has_key: true, key_source: 'env_var', key_source_kind: 'env' })
+      expect(named('Yaml Box')).toMatchObject({ has_key: true, key_source: 'config_yaml', key_source_kind: 'config' })
+    } finally {
+      delete env.TAL603_CUSTOM_KEY
+    }
+  })
+
   it('the model picker group for xAI OAuth uses the live ids and is the active provider', async () => {
     reset({ model: { provider: 'xai-oauth', default: 'grok-4' } })
     auth.set('xai-oauth', { logged_in: true })

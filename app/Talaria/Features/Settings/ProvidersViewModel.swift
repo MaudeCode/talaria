@@ -342,9 +342,11 @@ final class ProvidersViewModel {
         trimmedNonEmpty(provider.authError)
     }
 
-    /// Catalog size to advertise on the models disclosure: the server's `models_total` (TAL-603).
+    /// Catalog size to advertise on the models disclosure: the server's `models_total` (TAL-603). A pre-TAL-603
+    /// server (no `is_active`) can report fewer than it lists; delete that guard once every supported server ships the field.
     static func modelCount(for provider: ProviderSummary) -> Int {
-        provider.modelsTotal ?? provider.models?.count ?? 0
+        guard provider.isActive == nil else { return provider.modelsTotal ?? 0 }
+        return max(provider.modelsTotal ?? 0, provider.models?.count ?? 0)
     }
 
     /// Non-nil only when the server trimmed the model list (`models_total` exceeds

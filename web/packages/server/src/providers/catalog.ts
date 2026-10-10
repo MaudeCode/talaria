@@ -788,10 +788,13 @@ export class ProviderCatalog {
       // Python: an `api_key: ${VAR}` reference counts when the variable resolves.
       const cpKey = str(cp.api_key).trim()
       const envRef = /^\$\{([^}]+)\}$/.exec(cpKey)?.[1] ?? ''
-      const hasKey = envRef ? Boolean((this.processEnv(envRef, profileHome) ?? '').trim()) : valueCountsAsApiKey(slug, cp.api_key) || Boolean(str(cp.key_env).trim() && this.processEnv(str(cp.key_env).trim(), profileHome))
+      const yamlKey = !envRef && valueCountsAsApiKey(slug, cp.api_key)
+      const hasKey = envRef ? Boolean((this.processEnv(envRef, profileHome) ?? '').trim()) : yamlKey || Boolean(str(cp.key_env).trim() && this.processEnv(str(cp.key_env).trim(), profileHome))
+      // TAL-603: a `${VAR}` reference or `key_env` credential comes from the environment.
+      const keySource = yamlKey ? 'config_yaml' : hasKey ? 'env_var' : cpKey ? 'config_yaml' : 'none'
       rows.push({
         id: slug, display_name: name, has_key: hasKey, configured: hasKey,
-        configurable: false, is_oauth: false, is_plugin_provider: false, is_self_hosted: false, is_custom: true, key_source: str(cp.api_key).trim() ? 'config_yaml' : 'none',
+        configurable: false, is_oauth: false, is_plugin_provider: false, is_self_hosted: false, is_custom: true, key_source: keySource,
         base_url: str(cp.base_url).trim() || null, auth_error: null, env_var: null, models: ids.map((id) => ({ id, label: labelForModel(id, []) })), models_total: ids.length,
       })
     }
