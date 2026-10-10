@@ -74,7 +74,7 @@ export const RAW_ROUTES: readonly RawRoute[] = [
   },
   {
     method: 'GET', path: '/api/media', summary: 'Local media referenced by the chat (allow-listed roots, MEDIA: tokens, or an immutable snapshot).', tags: ['files'],
-    query: { path: { description: 'Absolute local path.', required: true }, session_id: { description: 'Session whose assistant messages may grant the path.' }, inline: { description: '`1` allows inline audio, video, PDF, and sandboxed HTML.' }, snap: { description: 'SHA-256 digest of a message-level snapshot bound to the path.' } },
+    query: { path: { description: 'Absolute local path.', required: true }, session_id: { description: 'Session whose assistant messages may grant the path.' }, inline: { description: '`1` allows inline audio, video, PDF, and sandboxed HTML.' } },
     responses: { 200: { description: 'Media bytes.', contentType: 'application/octet-stream' }, 206: { description: 'Partial content.' }, 304: { description: 'ETag matched.' }, 403: { description: 'Path not in an allowed location.', contentType: 'application/json' }, 404: { description: 'Not found.', contentType: 'application/json' }, 410: { description: 'Snapshot unavailable.', contentType: 'application/json' } },
   },
   {

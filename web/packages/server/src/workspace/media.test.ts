@@ -66,7 +66,7 @@ describe('mediaAnchorRoot session MEDIA scan (TAL-573)', () => {
       hermesHome,
       extraRoots: '',
       activeWorkspace: () => workspace,
-      policy: { home, hermesHome, stateDir: join(hermesHome, 'webui_state'), snapshotDir: () => join(hermesHome, 'media_snapshots'), activeWorkspace: () => workspace },
+      policy: { home, hermesHome, stateDir: join(hermesHome, 'webui_state'), activeWorkspace: () => workspace },
     }
   })
   afterEach(() => { rmSync(base, { recursive: true, force: true }) })

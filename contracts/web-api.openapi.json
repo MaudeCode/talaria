@@ -57652,15 +57652,6 @@
             "schema": {
               "type": "string"
             }
-          },
-          {
-            "name": "snap",
-            "in": "query",
-            "required": false,
-            "description": "SHA-256 digest of a message-level snapshot bound to the path.",
-            "schema": {
-              "type": "string"
-            }
           }
         ],
         "responses": {

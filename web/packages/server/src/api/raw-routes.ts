@@ -15,7 +15,7 @@ import { FileExistsError, makeAnchoredDir, openAnchoredCreateFd, openAnchoredFd,
 import { isWithin, resolvePathLikePython } from '../workspace/paths.js'
 import { isLoopback } from '../http/origin.js'
 import { truthy } from '../config.js'
-import { AUDIO_VIDEO_PDF_TYPES, contentDispositionValue, INLINE_IMAGE_TYPES, isValidDigest, mediaAnchorRoot, mediaTarget, mimeFor, serveFileBytes, serveInlineHtmlPreview, snapshotPathForDigest, snapshotServableForPath } from '../workspace/media.js'
+import { AUDIO_VIDEO_PDF_TYPES, contentDispositionValue, INLINE_IMAGE_TYPES, mediaAnchorRoot, mediaTarget, mimeFor, serveFileBytes, serveInlineHtmlPreview } from '../workspace/media.js'
 import { PREVIEW_PREFIX, previewGrantRoot } from '../workspace/preview.js'
 import { REMOTE_WORKSPACE_UNSUPPORTED_CODE, REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE } from '../workspace/workspaces.js'
 import { WORKSPACE_BUSY_MESSAGE } from '../workspace/git.js'
@@ -228,21 +228,6 @@ function handleMedia(ctx: RequestContext): void {
   const inlinePreviewTypes = new Set([...INLINE_IMAGE_TYPES, ...AUDIO_VIDEO_PDF_TYPES])
   const disposition = mime !== 'image/svg+xml' && (INLINE_IMAGE_TYPES.has(mime) || (inlinePreview && inlinePreviewTypes.has(mime)) || htmlInlineOk) ? 'inline' : 'attachment'
   const csp = htmlInlineOk ? 'sandbox allow-scripts' : null
-  const snapDigest = (ctx.query.get('snap') ?? '').trim().toLowerCase()
-  if (snapDigest) {
-    const snapDir = resolvePathLikePython(deps.mediaPolicy.snapshotDir())
-    if (isValidDigest(snapDigest)) {
-      let snapshotFile = snapshotPathForDigest(snapDir, snapDigest)
-      if (snapshotFile && !snapshotServableForPath(snapDir, snapDigest, target)) snapshotFile = null
-      if (!snapshotFile) {
-        ctx.json({ error: 'snapshot unavailable' }, { status: 410 })
-        return
-      }
-      // Same inode rule as live media: a `.snap` replaced by a hard link to a state file must not be served as the snapshot.
-      serveFileBytes(ctx, snapshotFile, { mime, disposition, cacheControl: 'private, max-age=31536000, immutable', csp, downloadName: basename(target), anchorRoot: snapDir, denyHardLinks: true })
-      return
-    }
-  }
   // The pathname policy ran before the open; the hard-link rule is re-applied to the inode actually opened.
   serveFileBytes(ctx, target, { mime, disposition, cacheControl: mime === 'text/html' ? 'no-store' : 'private, no-cache', csp, anchorRoot, denyHardLinks: true })
 }
