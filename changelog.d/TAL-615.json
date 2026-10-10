@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Expand or collapse every tool step in a reply at once from its Worked section in Web.",
+      "highlight": false,
+      "components": ["web"]
+    },
+    {
+      "category": "Added",
+      "summary": "Switch JSON code blocks in Web chat between the raw text and a foldable tree.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

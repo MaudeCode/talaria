@@ -12,6 +12,8 @@ export type ActivityMode = 'compact_worklog' | 'transparent_stream' | 'hide_all_
 
 const DisclosureContext = createContext<{ choices: Record<string, boolean>; choose: (key: string, open: boolean) => void } | null>(null)
 export const DisclosureTurnContext = createContext('')
+/** Every row disclosure inside a turn's worklog, nested groups included, so its control can open or close them together. */
+const ExpandAllContext = createContext<Set<(open: boolean) => void> | null>(null)
 
 /** Renderer preferences only, scoped to profile/session and bounded to recent disclosures. */
 export function WorklogDisclosureProvider({ scope, children }: { scope: string; children: ReactNode }) {
@@ -33,7 +35,14 @@ export function useDisclosure(id: string, defaultOpen: boolean): [boolean, () =>
   const key = JSON.stringify([turn, id])
   const [local, setLocal] = useState<boolean | undefined>()
   const open = context?.choices[key] ?? local ?? defaultOpen
-  return [open, () => { if (context) context.choose(key, !open); else setLocal(!open) }]
+  const set = (next: boolean) => { if (context) context.choose(key, next); else setLocal(next) }
+  const rows = useContext(ExpandAllContext)
+  useEffect(() => {
+    if (!rows) return
+    rows.add(set)
+    return () => { rows.delete(set) }
+  })
+  return [open, () => { set(!open) }]
 }
 
 export function terminalOutcomeLabel(status: string): string | null {
@@ -59,6 +68,8 @@ export function Worklog({ calls, status, children, sequenceKey, disclosureId = '
   const [chosen, toggle] = useDisclosure(sequenceKey ?? disclosureId, defaultOpen)
   const open = live || chosen
   const bodyId = useId()
+  // Only the turn-level worklog owns the control; nested groups and their rows register with it.
+  const [rows] = useState(() => new Set<(open: boolean) => void>())
   const text = toolText(locale)
   const byKind = new Map<string, number>()
   for (const c of calls) byKind.set(c.kind, (byKind.get(c.kind) ?? 0) + 1)
@@ -76,7 +87,17 @@ export function Worklog({ calls, status, children, sequenceKey, disclosureId = '
           <span className={cn('tool-call-group-chevron as-caret', open && 'rotate-90')}><ChevronRight size={12} aria-hidden="true" /></span>
         </button>
       )}
-      <div id={bodyId} className="tool-call-group-body tool-worklog-body activity-body" hidden={!open}><div className="worklog"><div className="tool-worklog-list">{children}</div></div></div>
+      <div id={bodyId} className="tool-call-group-body tool-worklog-body activity-body" hidden={!open}>
+        <div className="worklog">
+          {!nested && calls.length > 0 && (
+            <div className="tool-worklog-controls">
+              <button type="button" className="tool-worklog-control" onClick={() => { for (const set of rows) set(true) }}>{m.expand_all()}</button>
+              <button type="button" className="tool-worklog-control" onClick={() => { for (const set of rows) set(false) }}>{m.collapse_all()}</button>
+            </div>
+          )}
+          <div className="tool-worklog-list">{nested ? children : <ExpandAllContext value={rows}>{children}</ExpandAllContext>}</div>
+        </div>
+      </div>
     </div>
   )
 }

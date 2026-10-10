@@ -11,13 +11,14 @@ import { math } from '@streamdown/math'
 import { mermaid } from '@streamdown/mermaid'
 import { cjk } from '@streamdown/cjk'
 import { appUrl } from '../../../lib/appRoot'
+import { JsonCodeBlock } from './JsonCodeBlock'
 import 'streamdown/styles.css'
 import 'katex/dist/katex.min.css'
 import { Dialog } from '../../../ui/Dialog'
 import { Button } from '../../../ui/Button'
 import { m } from '../../../paraglide/messages.js'
 
-const PLUGINS = { code, math, mermaid, cjk }
+const PLUGINS = { code, math, mermaid, cjk, renderers: [{ language: 'json', component: JsonCodeBlock }] }
 /**
  * TAL-186: server media URLs are relative to the app root (`./api/media?…`, which hardening turns into `/api/media?…`),
  * never to the current route or the origin root.

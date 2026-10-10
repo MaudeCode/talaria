@@ -42,6 +42,42 @@ test('expanded worklog and tool details are visually readable', async ({ page },
   await page.screenshot({ path: testInfo.outputPath('tool-details.png'), fullPage: true })
 })
 
+test('expand all opens every tool row, and a JSON block switches to a tree (TAL-615)', async ({ page }, testInfo) => {
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: {
+    session_id: 'worklog-expand-all', title: 'Inspect the config', messages: asServer([
+      { role: 'user', id: 1, content: 'Inspect the config' },
+      { role: 'assistant', id: 2, content: '', tool_calls: [
+        { id: 'read-a', function: { name: 'read_file', arguments: '{"path":"a.json"}' } },
+        { id: 'read-b', function: { name: 'read_file', arguments: '{"path":"b.json"}' } },
+      ] },
+      { role: 'tool', id: 3, tool_call_id: 'read-a', content: 'Contents of a.json' },
+      { role: 'tool', id: 4, tool_call_id: 'read-b', content: 'Contents of b.json' },
+      { role: 'assistant', id: 5, content: 'The merged config:\n\n```json\n{"name": "talaria", "ports": [8787, 8788], "features": {"worklog": {"expand_all": true}}}\n```' },
+    ]),
+  } } }))
+  await page.goto('/session/worklog-expand-all')
+  await page.locator('.tool-worklog-summary').first().click()
+  const details = page.locator('.tool-card-detail')
+  await expect(details).toHaveCount(0)
+  await page.screenshot({ path: testInfo.outputPath(`expand-all-before-${testInfo.project.name}.png`), fullPage: true })
+  await page.getByRole('button', { name: 'Expand all' }).click()
+  await expect(details).toHaveCount(2)
+  await expect(page.getByText('Contents of b.json', { exact: true })).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath(`expand-all-after-${testInfo.project.name}.png`), fullPage: true })
+  await page.getByRole('button', { name: 'Collapse all' }).click()
+  await expect(details).toHaveCount(0)
+
+  const block = page.locator('[data-final-answer="1"] [data-streamdown="code-block"]')
+  await block.getByRole('button', { name: 'Tree' }).click()
+  const tree = block.locator('[data-json-tree]')
+  await expect(tree).toContainText('"name": "talaria"')
+  await expect(tree.locator('details').filter({ hasText: '"worklog"' }).last()).not.toHaveAttribute('open')
+  await block.screenshot({ path: testInfo.outputPath(`json-tree-${testInfo.project.name}.png`) })
+  await block.getByRole('button', { name: 'Raw' }).click()
+  await expect(tree).toHaveCount(0)
+  await block.screenshot({ path: testInfo.outputPath(`json-raw-${testInfo.project.name}.png`) })
+})
+
 for (const limited of [false, true]) {
 test(`live tool batches settle once: ${limited ? 'tool limit' : 'completed'}`, async ({ page }, testInfo) => {
   const sid = 'worklog-live'

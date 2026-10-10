@@ -110,6 +110,23 @@ describe('turn worklog presentation', () => {
     expect(view.container.querySelector('.thinking-card-body')).toHaveTextContent('About <tool_call> tags')
   })
 
+  it('expands and collapses every tool row in the turn, nested groups included (TAL-615)', () => {
+    const view = render(<View activity={settled({ final_answer: 'Done', activity_rows: rows(toolRow('a'), toolRow('b'), proseRow('p', 'Between'), toolRow('c')) })} />)
+    fireEvent.click(view.container.querySelector('.tool-worklog-summary')!)
+    const headers = () => [...view.container.querySelectorAll('.tool-card-header')].map((header) => header.getAttribute('aria-expanded'))
+    const group = () => view.container.querySelector('[data-activity-sequence-group] > button')!
+    expect(headers()).toEqual(['false', 'false', 'false'])
+    fireEvent.click(screen.getByRole('button', { name: 'Expand all' }))
+    expect(headers()).toEqual(['true', 'true', 'true'])
+    expect(group()).toHaveAttribute('aria-expanded', 'true')
+    expect(view.container.querySelector('[data-tool-id="a"] .tool-card-detail')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse all' }))
+    expect(headers()).toEqual(['false', 'false', 'false'])
+    expect(group()).toHaveAttribute('aria-expanded', 'false')
+    // The turn's own disclosure stays open: the control only reaches the rows inside it.
+    expect(view.container.querySelector('.tool-worklog-summary')).toHaveAttribute('aria-expanded', 'true')
+  })
+
   it('groups consecutive live reasoning and tools until prose while leaving a singleton inline', () => {
     const run = liveRun()
     run.emit({ event: 'token', data: { text: 'Before tools' } })
