@@ -298,6 +298,8 @@ export interface MediaPolicyDeps {
   home: string
   hermesHome: string
   stateDir: string
+  /** `HERMES_WEBUI_MEDIA_SNAPSHOT_DIR` from the Python server: its leftover snapshot copies stay internal. */
+  legacySnapshotDir?: string | undefined
   /** The active workspace when local IO is supported, else null. */
   activeWorkspace: () => string | null
 }
@@ -341,6 +343,7 @@ export function mediaDenyReason(target: string, deps: MediaPolicyDeps): string |
   for (const root of roots) {
     for (const sub of DENY_SUBDIRS) denyDirs.push(join(root, sub), join(root, 'webui_state', sub))
   }
+  if (deps.legacySnapshotDir && withinCi(target, deps.legacySnapshotDir)) return 'legacy media snapshot store is internal'
   const activeWorkspace = deps.activeWorkspace()
   const safeCarveout = (ws: string | null): boolean => {
     if (!ws) return false

@@ -264,7 +264,8 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
       return null
     }
   }
-  const mediaPolicy: MediaPolicyDeps = { home, hermesHome: config.hermesHome, stateDir: config.stateDir, activeWorkspace: mediaActiveWorkspace }
+  const legacySnapshotDir = (env.HERMES_WEBUI_MEDIA_SNAPSHOT_DIR ?? '').trim().replace(/^~(?=$|\/)/, home) || undefined
+  const mediaPolicy: MediaPolicyDeps = { home, hermesHome: config.hermesHome, stateDir: config.stateDir, legacySnapshotDir, activeWorkspace: mediaActiveWorkspace }
   const mediaAccess: MediaAccessDeps = { home: config.homeDir, hermesHome: config.hermesHome, extraRoots: env.MEDIA_ALLOWED_ROOTS ?? '', activeWorkspace: mediaActiveWorkspace, policy: mediaPolicy }
   // TAL-259: record when this server started stamping deliberate shrinks; older backups go to manual review.
   try { recoveryStampingSince(config.stateDir) } catch (error) { log(`[webui] WARNING: could not record recovery_stamping_since: ${(error as Error).message}`) }

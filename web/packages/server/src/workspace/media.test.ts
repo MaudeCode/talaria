@@ -92,4 +92,13 @@ describe('mediaAnchorRoot session MEDIA scan (TAL-573)', () => {
     expect(mediaAnchorRoot(target, session, deps)).toBe(join(base, 'outside'))
     expect(reads()).toBe(1)
   })
+
+  it('keeps a legacy custom snapshot store denied under an allowed root (TAL-587)', () => {
+    const store = join(base, 'ws', 'snaps')
+    mkdirSync(store)
+    writeFileSync(join(store, `${'a'.repeat(64)}.snap`), 'frozen')
+    deps.policy = { ...deps.policy, legacySnapshotDir: store }
+    expect(mediaAnchorRoot(join(store, `${'a'.repeat(64)}.snap`), null, deps)).toBeNull()
+    expect(mediaAnchorRoot(join(base, 'ws', 'a.png'), null, deps)).toBe(join(base, 'ws'))
+  })
 })
