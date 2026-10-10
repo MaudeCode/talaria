@@ -19,13 +19,13 @@ import { useTasksWorkbench } from './TasksPage'
 const full: CronJob = {
   id: 'ab12cd34ef56', name: 'Digest', prompt: 'Summarise the inbox', skills: ['inbox', 'summary'], model: 'gpt-5.6-sol', provider: 'openai-codex', model_option_id: '@openai-codex:gpt-5.6-sol',
   script: 'collect.sh', no_agent: false, monitor: 'https://example.com/status', continuity: true, context_from: ['self', 'feed0000feed'],
-  schedule: { kind: 'cron', expr: '0 9 * * *', display: '0 9 * * *' }, schedule_display: '0 9 * * *', schedule_input: '0 9 * * *', repeat: { times: null, completed: 4 },
+  schedule: { kind: 'cron', expr: '0 9 * * *', display: '0 9 * * *' }, schedule_display: '0 9 * * *', schedule_input: '0 9 * * *', attention_hint: null, repeat: { times: null, completed: 4 },
   enabled: true, state: 'scheduled', next_run_at: '2026-09-18T09:00:00+02:00', last_run_at: '2026-09-17T09:00:00+02:00', last_status: 'ok',
   last_error: null, last_delivery_error: null, deliver: 'telegram', workdir: '/srv/digest', reasoning_effort: 'high', profile: 'work', toast_notifications: false,
   derived_state: 'active', needs_attention: false, resumable: false,
 }
 const feed: CronJob = { ...full, id: 'feed0000feed', name: 'Feed', context_from: [], continuity: false, monitor: '', skills: [], reasoning_effort: null, model: null, provider: null, model_option_id: null, workdir: null }
-const attention: CronJob = { ...feed, id: 'a77e0000a77e', name: 'Stuck', enabled: false, state: 'completed', next_run_at: null, last_error: "No module named 'croniter'", last_delivery_error: 'telegram: 401', derived_state: 'needs_attention', needs_attention: true, resumable: true }
+const attention: CronJob = { ...feed, id: 'a77e0000a77e', name: 'Stuck', enabled: false, state: 'completed', next_run_at: null, last_error: "No module named 'croniter'", last_delivery_error: 'telegram: 401', derived_state: 'needs_attention', needs_attention: true, resumable: true, attention_hint: 'croniter_missing' }
 const foreign: CronJob = { ...feed, id: 'f0e1f0e1f0e1', name: 'Other profile job', read_only: true, owner_profile: 'personal', profile: 'personal' }
 
 /** The route without the app shell: selection is local state instead of `?job=`. */
@@ -63,7 +63,7 @@ describe('TasksPage', () => {
     vi.mocked(api.fetchCronContextSources).mockImplementation((input) => Promise.resolve({ profile: input.profile || 'work', sources: [{ job_id: feed.id!, label: 'Feed', selectable: true }] }))
     vi.mocked(api.fetchCronStatus).mockResolvedValue({ running: {} })
     vi.mocked(api.fetchCronHistory).mockResolvedValue({ job_id: 'x', runs, total: 73, offset: 0 })
-    vi.mocked(api.fetchCronRun).mockReset().mockResolvedValue({ content: '# Not markdown\n| literal |', snippet: 'literal', usage: { input_tokens: 1000, output_tokens: 50 } })
+    vi.mocked(api.fetchCronRun).mockReset().mockResolvedValue({ content: '# Not markdown\n| literal |', snippet: 'literal', response: '# Not markdown\n| literal |', usage: { input_tokens: 1000, output_tokens: 50 } })
     vi.mocked(api.cronAction).mockReset().mockResolvedValue({ ok: true, job: full })
     vi.mocked(api.fetchCronDeliveryOptions).mockResolvedValue({ platforms: [{ value: 'local', label: 'Local' }, { value: 'telegram', label: 'Telegram' }] })
     vi.mocked(api.fetchSkills).mockResolvedValue({ skills: [{ name: 'inbox' }] })
@@ -268,6 +268,13 @@ describe('TasksPage', () => {
     expect(await within(panel).findByRole('alert')).toHaveTextContent(/could not load this run.*run not found/i)
   })
 
+  it('shows an old server\'s raw run text when it omits the response field', async () => {
+    vi.mocked(api.fetchCronRun).mockResolvedValueOnce({ content: 'Old server output', snippet: 'Old', usage: {} })
+    await openJob('Digest')
+    const panel = await screen.findByRole('complementary', { name: /^runs$/i })
+    expect(await within(panel).findByText('Old server output')).toBeInTheDocument()
+  })
+
   it('explains a needs-attention job and offers resume, run once and diagnostics', async () => {
     const writeText = vi.fn<(text: string) => Promise<void>>(() => Promise.resolve())
     Object.assign(navigator, { clipboard: { writeText } })
@@ -278,7 +285,7 @@ describe('TasksPage', () => {
     const detail = await selectJob('Stuck')
     const banner = detail.getByRole('alert')
     expect(banner).toHaveTextContent(/no next run time/i)
-    expect(banner).toHaveTextContent(/croniter/i)
+    expect(banner).toHaveTextContent(/may be missing the croniter package/i)
     expect(detail.getByText("No module named 'croniter'")).toBeVisible()
     expect(detail.getByText('telegram: 401')).toBeVisible()
     await userEvent.click(within(banner).getByRole('button', { name: /resume and recalculate/i }))
@@ -289,6 +296,13 @@ describe('TasksPage', () => {
     const copied = JSON.parse(writeText.mock.calls[0]![0]) as Record<string, unknown>
     expect(copied).toMatchObject({ id: 'a77e0000a77e', state: 'completed', enabled: false, last_error: "No module named 'croniter'", last_delivery_error: 'telegram: 401', schedule_display: '0 9 * * *' })
     expect(copied).not.toHaveProperty('prompt')
+  })
+
+  it('shows the croniter hint only when the server names it (TAL-599)', async () => {
+    renderPage([{ ...attention, attention_hint: null }])
+    const banner = (await selectJob('Stuck')).getByRole('alert')
+    expect(banner).toHaveTextContent("No module named 'croniter'")
+    expect(banner).not.toHaveTextContent(/may be missing the croniter package/i)
   })
 
   it('renders the server state and action: a paused job with a stale error offers Resume', async () => {

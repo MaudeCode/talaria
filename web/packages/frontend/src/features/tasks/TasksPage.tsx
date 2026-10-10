@@ -22,7 +22,7 @@ import { ConfirmDialog } from '../../ui/Dialog'
 import { EmptyState, ErrorState, LoadingState, formatBytes, formatDate } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { cn } from '../../ui/cn'
-import { contextFromList, cronDiagnostics, cronState, jobId, lastRunAt, nextRunAt, runResponse, runningIds, usageStrip, type CronState } from './cronJob'
+import { contextFromList, cronDiagnostics, cronState, jobId, lastRunAt, nextRunAt, runningIds, usageStrip, type CronState } from './cronJob'
 import { Markdown } from '../chat/render/Markdown'
 import { JobForm, type EditorMode } from './JobForm'
 
@@ -284,7 +284,7 @@ function TaskDetail({ job, jobs, state, onAction, onEdit, onDuplicate, onDelete 
           <section className="rounded-lg border border-warning px-4 py-3" role="alert">
             <div className="text-sm font-medium text-warning">{m.cron_status_needs_attention()}</div>
             <p className="mt-1 text-[13px] text-text">{m.cron_attention_desc()}</p>
-            {/croniter/i.test(job.last_error ?? '') && <p className="mt-1 text-[13px] text-text">{m.cron_attention_croniter_hint()}</p>}
+            {job.attention_hint === 'croniter_missing' && <p className="mt-1 text-[13px] text-text">{m.cron_attention_croniter_hint()}</p>}
             {job.last_error && <p className="mt-2 font-mono text-[12px] text-error">{job.last_error}</p>}
             {job.last_delivery_error && <p className="mt-1 font-mono text-[12px] text-error">{job.last_delivery_error}</p>}
             <div className="mt-3 flex flex-wrap gap-2">
@@ -395,7 +395,8 @@ function RunBody({ jobId: id, filename, isScript }: { jobId: string; filename: s
   const run = useQuery({ queryKey: keys.crons.run(id, filename), queryFn: () => api.fetchCronRun(id, filename), staleTime: Infinity })
   if (run.isPending) return <LoadingState />
   if (run.isError || run.data.error) return <div className="text-xs text-error" role="alert">{m.cron_run_load_failed()} {run.isError ? (run.error instanceof Error ? run.error.message : String(run.error)) : run.data.error}</div>
-  const body = runResponse(run.data.content ?? run.data.snippet ?? '')
+  // A pre-TAL-599 server omits `response`: show its raw run text unparsed. Delete the fallback once every supported server ships the field.
+  const body = run.data.response ?? run.data.content ?? run.data.snippet ?? ''
   const usage = usageStrip(run.data.usage)
   return (
     <div data-testid="cron-run-output">

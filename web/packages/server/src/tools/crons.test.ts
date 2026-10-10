@@ -66,9 +66,25 @@ describe('cron job payloads carry the derived fields', () => {
     }
     sidecar.respond('cron.list', () => ({ jobs: jobs as never[] }))
     sidecar.respond('cron.pause', () => { Object.assign(jobs[0]!, { enabled: false, state: 'paused', next_run_at: null, last_status: 'error' }); return { job: jobs[0] as never } })
+    sidecar.respond('cron.run_detail', (params) => ({ job_id: recurring.id, filename: params.filename, content: runFiles[params.filename] ?? '', snippet: '', usage: {} }) as never)
     sidecar.respond('cron.resume', () => { Object.assign(jobs[0]!, { enabled: true, state: 'scheduled', next_run_at: '2026-09-19T09:00:00+02:00' }); return { job: jobs[0] as never } })
     return { service: new CronService(deps), home, runningJobs }
   }
+  const runFiles: Record<string, string> = {
+    'agent.md': '# Cron run: Digest\n\n**Model:** m\n\n## Response\n\n# Title\n\n| a |\n',
+    'legacy.md': '# Cron run\n# Response\nhello\n',
+    'script.md': 'plain stdout\n',
+    'empty.md': '# Cron run\n\n## Response',
+  }
+
+  it('ships a run file\'s reply after its Response heading, else the whole trimmed text (TAL-599)', async () => {
+    const { service, home } = setup()
+    const response = async (filename: string) => (await service.runDetail(home, String(recurring.id), filename)).response
+    expect(await response('agent.md')).toBe('# Title\n\n| a |')
+    expect(await response('legacy.md')).toBe('hello')
+    expect(await response('script.md')).toBe('plain stdout')
+    expect(await response('empty.md')).toBe('')
+  })
 
   it('lists running from the manual-run map and returns pause/resume rows through the same shaping', async () => {
     const { service, home, runningJobs } = setup()
@@ -78,6 +94,16 @@ describe('cron job payloads carry the derived fields', () => {
     expect((await service.pause(home, String(recurring.id), null)).job).toMatchObject({ derived_state: 'paused', needs_attention: false, resumable: true, running: true, schedule_input: '0 9 * * *' })
     runningJobs.clear()
     expect((await service.resume(home, String(recurring.id))).job).toMatchObject({ derived_state: 'error', needs_attention: false, resumable: false, running: false, schedule_input: '0 9 * * *' })
+  })
+})
+
+describe('cron attention hint (TAL-599)', () => {
+  it('names the missing croniter package only for a job that needs attention', () => {
+    const stuck = { ...recurring, enabled: false, state: 'completed', next_run_at: null, last_error: "No module named 'croniter'" }
+    expect(jobForApi(stuck).attention_hint).toBe('croniter_missing')
+    expect(jobForApi({ ...recurring, state: 'error', next_run_at: null, last_error: 'Croniter missing' }).attention_hint).toBe('croniter_missing')
+    expect(jobForApi({ ...stuck, last_error: 'telegram 401' }).attention_hint).toBeNull()
+    expect(jobForApi({ ...recurring, last_error: "No module named 'croniter'" }).attention_hint).toBeNull()
   })
 })
 
