@@ -244,6 +244,8 @@ export const restartAgent = () => orpc().ops.restart({}, { signal: timeout(120_0
 export const fetchSystemHealth = () => orpc().ops.system()
 /** Passive reader: the server answers from cache and never fetches. */
 export const fetchUpdatesCheck = () => orpc().updates.check(undefined, { signal: timeout(45_000) })
+/** What's New for one target: the server writes the sections (LLM when enabled, deterministic fallback otherwise). */
+export const fetchUpdatesSummary = (target: 'webui' | 'agent', info: Record<string, unknown>) => orpc().updates.summary({ updates: { [target]: info }, target }, { signal: timeout(60_000) })
 /** Manual "Check now": only POST `{force:true}` runs a real update check; an explicit `channel` wins over the persisted setting. */
 export const checkUpdatesNow = (channel?: string, agentChannel?: 'stable' | 'experimental') => orpc().updates.checkNow({ force: true, ...(channel ? { channel } : {}), ...(agentChannel ? { agent_channel: agentChannel } : {}) }, { signal: timeout(120_000) })
 export const applyUpdates = (action: 'apply' | 'force' | 'clear_lock', channel?: string, target: 'webui' | 'agent' = 'webui', agentOptions: { agent_channel?: 'stable' | 'experimental'; confirmed_agent_revision?: string } = {}) => {

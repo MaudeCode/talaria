@@ -2287,6 +2287,8 @@
 	"system_manual_named": "{name} is updated manually",
 	"system_release_ready": "{name} {version} is available",
 	"system_installed_unverified": "The installed release could not be verified.",
+	"system_whats_new_loading": "Summarizing what's new…",
+	"system_whats_new_failed": "Couldn't summarize what's new.",
 	"system_commits_behind": [
 		{
 			"declarations": [
