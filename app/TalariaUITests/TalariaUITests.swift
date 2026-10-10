@@ -1619,6 +1619,13 @@ final class SettingsStructureUITests: SettingsUITestCase {
             element(labelContaining: "Fixture Provider").awaitExistence(timeout: 10),
             "The providers list did not show the fixture provider"
         )
+        // TAL-603: the badges render the server's `is_active` and `key_source_kind`.
+        XCTAssertTrue(app.staticTexts["Active"].exists, "The server-marked active provider lost its badge")
+        XCTAssertTrue(app.staticTexts["env"].exists, "The server's key-source kind did not render")
+        let providersShot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        providersShot.name = "providers-badges"
+        providersShot.lifetime = .keepAlways
+        add(providersShot)
         app.buttons["BackButton"].tap()
         XCTAssertTrue(app.navigationBars["Providers"].awaitExistence(timeout: Self.navigationTimeout))
 

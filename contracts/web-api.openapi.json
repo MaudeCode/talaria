@@ -41324,6 +41324,27 @@
                           },
                           "models_total": {
                             "type": "number"
+                          },
+                          "is_active": {
+                            "type": "boolean"
+                          },
+                          "key_source_kind": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "env",
+                                  "oauth",
+                                  "config",
+                                  "pool",
+                                  "plugin",
+                                  "other"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           }
                         },
                         "required": [

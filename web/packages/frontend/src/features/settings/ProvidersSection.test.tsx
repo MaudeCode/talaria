@@ -62,6 +62,21 @@ describe('ProvidersSection', () => {
     expect(within(screen.getByText('Ollama').closest<HTMLElement>('[data-provider="ollama"]')!).getByText('Not configured')).toBeInTheDocument()
   })
 
+  it("renders the server's active flag and key-source kind (TAL-603)", async () => {
+    providersResponse.current = { active_provider: ' ZAI ', providers: [
+      { id: 'zai', display_name: 'Z.AI', has_key: true, is_active: true, key_source: 'env_file', key_source_kind: 'env' },
+      { id: 'vault', display_name: 'Vault', has_key: true, is_active: false, key_source: 'keychain', key_source_kind: 'other' },
+      { id: 'openai', display_name: 'OpenAI', has_key: false, is_active: false, key_source: 'oauth', key_source_kind: null },
+    ] }
+    renderSection()
+    const row = async (id: string, name: string) => (await screen.findByText(name)).closest<HTMLElement>(`[data-provider="${id}"]`)!
+    expect((await row('zai', 'Z.AI')).className).toContain('border-accent-bg-strong')
+    expect(within(await row('zai', 'Z.AI')).getByText('Configured · env')).toBeInTheDocument()
+    expect(within(await row('vault', 'Vault')).getByText('Configured · keychain')).toBeInTheDocument()
+    expect((await row('openai', 'OpenAI')).className).not.toContain('border-accent-bg-strong')
+    expect(within(await row('openai', 'OpenAI')).getByText('Not configured')).toBeInTheDocument()
+  })
+
   it("refreshes one provider's models and shows the server's new count (TAL-570)", async () => {
     providersResponse.current = { active_provider: 'zai', providers: [{ id: 'zai', display_name: 'Z.AI', has_key: true, configured: true, models: [], models_total: 3 }] }
     vi.mocked(api.refreshModels).mockImplementation(() => {

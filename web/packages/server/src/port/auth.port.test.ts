@@ -250,7 +250,7 @@ describe('OAuth provider cards and model groups', () => {
   afterAll(() => s.close())
   const ENV_KEYS = ['ANTHROPIC_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY']
   const reset = (cfg: Json = {}, env: Record<string, string | null> = {}): void => { configs.set(s.state, cfg); writeEnvFile(join(s.state, '.env'), { ...Object.fromEntries(ENV_KEYS.map((k) => [k, null])), ...env }); s.deps.agentConfig.invalidate(); s.deps.catalog.invalidate() }
-  interface Card { id: string; has_key: boolean; key_source: string; auth_error: string | null; is_oauth: boolean; configurable: boolean; display_name: string; models: { id: string }[]; models_total: number }
+  interface Card { id: string; has_key: boolean; is_active: boolean; key_source: string; key_source_kind: string | null; auth_error: string | null; is_oauth: boolean; configurable: boolean; display_name: string; models: { id: string }[]; models_total: number }
   const cards = async (): Promise<Card[]> => (await json(await s.get('/api/providers'))).providers as Card[]
 
   it('a logged-in OAuth provider reports key_source oauth even with a config token', async () => {
@@ -284,6 +284,23 @@ describe('OAuth provider cards and model groups', () => {
     expect(card).toMatchObject({ display_name: 'xAI Grok OAuth', is_oauth: true, configurable: false, key_source: 'oauth', has_key: true })
     expect(card?.models.map((m) => m.id)).toEqual(['grok-4', 'grok-4-mini'])
     expect(card?.models_total).toBe(2)
+  })
+
+  it('each card ships is_active, key_source_kind and a models_total that covers its list (TAL-603)', async () => {
+    reset({ model: { provider: ' XAI-OAuth ', default: 'grok-4' }, providers: { nous: { models: ['extra-model'] }, 'openai-codex': { api_key: 'cfg-token' } } }, { ANTHROPIC_API_KEY: 'sk-ant-env-file-1234' })
+    auth.set('xai-oauth', { logged_in: true })
+    auth.set('nous', { logged_in: true })
+    auth.set('openai-codex', { logged_in: false, error: 'token expired' })
+    liveIds.set('nous', ['a/one', 'b/two'])
+    const all = await cards()
+    const card = (id: string): Card | undefined => all.find((p) => p.id === id)
+    expect(all.filter((p) => p.is_active).map((p) => p.id)).toEqual(['xai-oauth'])
+    expect(card('anthropic')).toMatchObject({ is_active: false, key_source: 'env_file', key_source_kind: 'env' })
+    expect(card('xai-oauth')).toMatchObject({ key_source_kind: 'oauth' })
+    expect(card('openai-codex')).toMatchObject({ key_source: 'config_yaml', key_source_kind: 'config' })
+    expect(card('openai')).toMatchObject({ has_key: false, key_source_kind: null })
+    expect(card('nous')?.models.length).toBe(3)
+    expect(card('nous')?.models_total).toBe(3)
   })
 
   it('the model picker group for xAI OAuth uses the live ids and is the active provider', async () => {

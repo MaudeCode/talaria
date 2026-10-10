@@ -94,7 +94,7 @@ final class ProvidersViewModel {
             let response = try await client.providers()
             guard generation == loadGeneration else { return }
             providers = response.providers ?? []
-            activeProviderID = Self.normalizedProviderID(response.activeProvider)
+            activeProviderID = response.activeProvider
         } catch is CancellationError {
             // The owning view was dismissed (or the refresh gesture was torn
             // down) mid-request — don't surface "cancelled" as a load error.
@@ -294,21 +294,15 @@ final class ProvidersViewModel {
         )
     }
 
+    /// The server marks the active card (TAL-603). A pre-TAL-603 server omits `is_active`; delete the
+    /// exact-match fallback once every supported server ships the field.
     func isActive(_ provider: ProviderSummary) -> Bool {
-        guard let active = activeProviderID,
-              let id = Self.normalizedProviderID(provider.id)
-        else {
-            return false
-        }
-
-        return id == active
+        provider.isActive ?? (provider.id != nil && provider.id == activeProviderID)
     }
 
     // MARK: - Presentation helpers (pure, testable)
 
-    /// `active_provider` comes from config (`model.provider`) while entry `id`s are
-    /// canonical slugs — trim and lowercase both sides so cosmetic differences
-    /// don't hide the active badge.
+    /// Key for the device-local Insights visibility and rename preferences.
     static func normalizedProviderID(_ raw: String?) -> String? {
         guard let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
               !trimmed.isEmpty
@@ -331,31 +325,16 @@ final class ProvidersViewModel {
         return String(localized: "Unknown provider")
     }
 
-    /// Short technical badge naming where a configured key came from. Collapses the
-    /// upstream `key_source` vocabulary (`env_file`/`env_var`/`env` → env,
-    /// `oauth`/`token` → OAuth, `config_yaml`/`config` → config); unknown future
-    /// values pass through verbatim rather than being hidden. `nil` when the
-    /// provider has no key — the badge only ever describes an existing credential.
+    /// Short technical badge for the server's `key_source_kind` (TAL-603); `other` shows the raw
+    /// `key_source`. `nil` when the server sends no kind.
     static func keySourceBadge(for provider: ProviderSummary) -> String? {
-        guard provider.hasKey == true else {
-            return nil
-        }
-
-        let raw = provider.keySource?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased() ?? ""
-
-        switch raw {
-        case "", "none":
-            return nil
-        case "env_file", "env_var", "env":
-            return "env"
-        case "oauth", "token":
+        switch provider.keySourceKind {
+        case "oauth":
             return "OAuth"
-        case "config_yaml", "config":
-            return "config"
+        case "other":
+            return provider.keySource
         default:
-            return raw
+            return provider.keySourceKind
         }
     }
 
@@ -363,11 +342,9 @@ final class ProvidersViewModel {
         trimmedNonEmpty(provider.authError)
     }
 
-    /// Catalog size to advertise on the models disclosure: `models_total` reflects
-    /// the complete catalog even when `models` is trimmed to a featured subset, so
-    /// prefer it whenever it is larger than the visible list.
+    /// Catalog size to advertise on the models disclosure: the server's `models_total` (TAL-603).
     static func modelCount(for provider: ProviderSummary) -> Int {
-        max(provider.modelsTotal ?? 0, provider.models?.count ?? 0)
+        provider.modelsTotal ?? provider.models?.count ?? 0
     }
 
     /// Non-nil only when the server trimmed the model list (`models_total` exceeds
