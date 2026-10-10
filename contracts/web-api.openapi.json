@@ -51516,9 +51516,6 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "response"
-                  ],
                   "additionalProperties": {}
                 }
               }

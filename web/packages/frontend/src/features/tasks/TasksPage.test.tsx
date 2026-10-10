@@ -268,6 +268,13 @@ describe('TasksPage', () => {
     expect(await within(panel).findByRole('alert')).toHaveTextContent(/could not load this run.*run not found/i)
   })
 
+  it('shows an old server\'s raw run text when it omits the response field', async () => {
+    vi.mocked(api.fetchCronRun).mockResolvedValueOnce({ content: 'Old server output', snippet: 'Old', usage: {} })
+    await openJob('Digest')
+    const panel = await screen.findByRole('complementary', { name: /^runs$/i })
+    expect(await within(panel).findByText('Old server output')).toBeInTheDocument()
+  })
+
   it('explains a needs-attention job and offers resume, run once and diagnostics', async () => {
     const writeText = vi.fn<(text: string) => Promise<void>>(() => Promise.resolve())
     Object.assign(navigator, { clipboard: { writeText } })

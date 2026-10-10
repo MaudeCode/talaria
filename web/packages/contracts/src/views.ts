@@ -838,7 +838,7 @@ export const CronRunSummarySchema = z.looseObject({ filename: z.string(), size: 
 export const CronHistorySchema = z.looseObject({ job_id: z.string().optional(), runs: z.array(CronRunSummarySchema), total: z.number().optional(), offset: z.number().optional() })
 export type CronHistory = z.infer<typeof CronHistorySchema>
 /** `response` is server-extracted (TAL-599): the agent's reply after the run file's `## Response` heading, else the whole text. */
-export const CronRunSchema = z.looseObject({ content: z.string().optional(), snippet: z.string().optional(), response: z.string(), usage: CronRunUsageSchema.optional(), error: z.string().optional() })
+export const CronRunSchema = z.looseObject({ content: z.string().optional(), snippet: z.string().optional(), response: z.string().optional(), usage: CronRunUsageSchema.optional(), error: z.string().optional() })
 export const CronStatusSchema = z.looseObject({ running: z.union([z.boolean(), z.record(z.string(), z.number())]).optional() })
 /** Card actions the server offers for a task's current status (TAL-557); clients show exactly these. `move_to` lists the statuses a Move may target, in display order. */
 export const KanbanTaskActionsSchema = z.object({ block: z.boolean(), unblock: z.boolean(), complete: z.boolean(), archive: z.boolean(), move_to: z.array(z.string()) })
