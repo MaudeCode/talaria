@@ -415,6 +415,8 @@ export interface ListParams {
   stateDbSources?: (ids: string[]) => Map<string, string> | null
   /** TAL-482: background kinds whose state.db rows stopped at the per-kind cap, so more exist than `cliRows` holds. */
   truncatedSources?: ReadonlySet<string>
+  /** TAL-590: removes the sidebar rows' orphaned imports (Python #3238) and answers their ids, which the list drops. */
+  pruneOrphanedImports?: (rows: Row[]) => Set<string>
 }
 
 export interface GatewayIdentity { session_key: string; chat_id: string; thread_id: string; chat_type: string; user_id: string; platform: string; raw_source: string }
@@ -687,9 +689,11 @@ export interface ListPayload {
   settings: Record<string, boolean>
 }
 
-/** Python `_build_session_list_cache_payload`; the orphaned-sidecar prune (#3238/#4985) is not applied. */
+/** Python `_build_session_list_cache_payload`; of its orphaned-sidecar prunes only the imported one (#3238) applies. */
 export function buildSessionListPayload(store: SessionStore, params: ListParams): ListPayload {
   let webuiSessions: Row[] = allSessions(store, { sidebarMetadataOnly: true }).map((r) => ({ ...r, is_cli_session: isCliSessionRow(r) }))
+  const orphans = params.pruneOrphanedImports?.(webuiSessions)
+  if (orphans?.size) webuiSessions = webuiSessions.filter((r) => !orphans.has(str(r.session_id)))
   // Before the state.db overlay below replaces the sidecar's own source fields, which the WebUI-born exception reads.
   if (params.stateDbSources) webuiSessions = withOwnerLocks(webuiSessions, params.stateDbSources)
   let dedupedCli: Row[] = []

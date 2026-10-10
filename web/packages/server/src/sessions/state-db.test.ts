@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -7,6 +7,7 @@ import { bootTestServer, type TestServer } from '../test/harness.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import type { SidecarResult } from '@maudecode/talaria-web-contracts'
 import { str } from '../util.js'
+import { Session } from './session.js'
 import { agentSessionRowsExisting, cheapChangeFingerprint, latestCronSessionInfo, isCliSessionRowVisible, normalizeAgentSessionSource, projectAgentSessionRows, readImportableAgentSessionRows, stateDbHasSession, stateDbLineageReport, stateDbSessionSources } from './state-db.js'
 import { GatewayWatcher, snapshotHash } from './gateway-watcher.js'
 import { capRecentCliSessions, keepLatestMessagingSessionPerSource, mergeCliSidebarMetadata, withOwnerLocks, type GatewayIdentity } from './list.js'
@@ -395,6 +396,38 @@ describe('state.db projection', () => {
       expect(s.deps.sessionStore.loadMetadataOnly(sid)?.title, sid).toMatch(/^Ownerprobe /)
     }
     for (const sid of writable) expect((await post('/api/session/rename', { session_id: sid, title: 'Ownerprobe renamed' })).status, sid).toBe(200)
+  })
+
+  it('prunes a read-only CLI or API-server import whose state.db row is gone, and deletes one a stale list still shows (TAL-590)', async () => {
+    const post = (path: string, body: unknown): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
+    const imported = (sid: string, source: string, extra: Json = {}): string => {
+      s.deps.sessionStore.save(new Session({
+        session_id: sid, title: `Orphanprobe ${source}`, source_tag: source, raw_source: source, is_cli_session: source === 'cli', read_only: true,
+        messages: [{ role: 'user', content: 'orphanprobe', timestamp: 8000 }, { role: 'assistant', content: 'ok', timestamp: 8001 }], ...extra,
+      }, { workspace: s.state, model: null }))
+      return sid
+    }
+    // A stream id a crash left behind is no run.
+    const gone = [imported('tal590-cli-gone', 'cli'), imported('tal590-api-gone', 'api_server'), imported('tal590-dead-stream', 'cli', { active_stream_id: 'tal590-dead-run' })]
+    // Its source still exists, it is not a CLI or API-server import, it belongs to another profile's state.db, or a run holds it.
+    const live = imported('tal590-cli-live', 'cli')
+    insertSession(db, { id: live, source: 'cli', started_at: 8000, title: 'Orphanprobe cli', messages: [['user', 8000], ['assistant', 8001]] })
+    s.deps.registry.liveIds.add('tal590-live-run')
+    const kept = [live, imported('tal590-tg-gone', 'telegram'), imported('tal590-other-profile', 'cli', { profile: 'work' }), imported('tal590-running', 'cli', { active_stream_id: 'tal590-live-run' })]
+    await s.deps.settings.save({ show_cli_sessions: true })
+    s.deps.cliSessions.invalidate()
+    const listed = ((await json(await s.get('/api/sessions'))).sessions as Json[]).map((r) => str(r.session_id))
+    for (const sid of gone) expect(listed, sid).not.toContain(sid)
+    for (const sid of gone) expect(existsSync(s.deps.sessionStore.pathFor(sid)), sid).toBe(false)
+    for (const sid of kept) expect(existsSync(s.deps.sessionStore.pathFor(sid)), sid).toBe(true)
+    // A client that still shows an orphan may delete it; there is no state.db row left to clean up.
+    const stale = imported('tal590-cli-stale', 'cli')
+    const res = await post('/api/session/delete', { session_id: stale })
+    expect(await json(res)).toEqual({ ok: true, state_db_cleanup_failed: false })
+    expect(existsSync(s.deps.sessionStore.pathFor(stale))).toBe(false)
+    expect((await post('/api/session/delete', { session_id: live })).status).toBe(400)
+    s.deps.registry.liveIds.delete('tal590-live-run')
+    await s.deps.settings.save({ show_cli_sessions: false })
   })
 
   it('locks a sidecar whose state.db owner cannot be read, and only a missing state.db means no owner (TAL-358)', () => {
