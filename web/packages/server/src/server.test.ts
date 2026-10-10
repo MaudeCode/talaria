@@ -76,3 +76,20 @@ describe('credential permissions at startup', () => {
     rmSync(home, { recursive: true, force: true })
   })
 })
+
+describe('unauthenticated bind warning at startup', () => {
+  const bootLogs = async (env: Record<string, string>) => {
+    const s = await bootTestServer({ env })
+    await s.close()
+    return s.logs.join('\n')
+  }
+
+  it('warns when binding 0.0.0.0 with no auth method enabled', async () => {
+    expect(await bootLogs({ HERMES_WEBUI_HOST: '0.0.0.0' })).toContain('[!!] WARNING: Binding to 0.0.0.0 with NO PASSWORD SET.')
+  })
+
+  it('stays quiet on any loopback spelling or when a password is set', async () => {
+    for (const host of ['127.0.0.1', 'localhost', '0:0:0:0:0:0:0:1']) expect(await bootLogs({ HERMES_WEBUI_HOST: host }), host).not.toContain('NO PASSWORD SET')
+    expect(await bootLogs({ HERMES_WEBUI_HOST: '0.0.0.0', HERMES_WEBUI_PASSWORD: 'correct horse' })).not.toContain('NO PASSWORD SET')
+  })
+})
