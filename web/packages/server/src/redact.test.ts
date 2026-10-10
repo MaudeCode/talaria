@@ -1,6 +1,7 @@
 import { crc32 } from 'node:zlib'
 import { describe, expect, it } from 'vitest'
 import { mightContainSensitiveText, publicToolFrame, redactSensitive, redactSessionData, redactText } from './redact.js'
+import { MessageSchema } from '@maudecode/talaria-web-contracts'
 import { sanitizeShareMessage } from './sessions/shares.js'
 
 describe('redactSensitive', () => {
@@ -679,6 +680,14 @@ describe('redactSessionData', () => {
     // The server's decision replaces any `_collapsible` a stored or imported row carries.
     expect(collapsible({ role: 'user', content: 'short', _collapsible: true })).toBeUndefined()
     expect(collapsible({ role: 'user', content: lines(40), _steer: { steer_id: 's2' }, _collapsible: true })).toBeUndefined()
+  })
+
+  it('ships a stored row\'s turn stats, `_ts` and reasoning titles in their contract types (TAL-598)', () => {
+    const stored = { role: 'assistant', content: 'Done.', _ts: '1700000001.5', _turnDuration: '4.25', _turnTps: 'fast', reasoning_titles: ['Plan', 7, '', 'Check'] }
+    const [row] = redactSessionData({ messages: [stored] }, true).messages as Record<string, unknown>[]
+    expect(MessageSchema.safeParse(row).success).toBe(true)
+    expect(row).toMatchObject({ _ts: 1700000001.5, _turnDuration: 4.25, reasoning_titles: ['Plan', 'Check'] })
+    expect(row).not.toHaveProperty('_turnTps')
   })
 
   it('returns a user image part carrying a complete raster data URI byte-identical without scanning it (TAL-583)', () => {

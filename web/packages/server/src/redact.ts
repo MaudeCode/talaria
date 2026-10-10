@@ -1808,6 +1808,18 @@ function publicMessageProjection(message: unknown, enabled: boolean, activeTurnT
   // Server-owned: a `_collapsible` the stored row carries never survives the projection's own decision.
   if (isCollapsibleUserMessage(item)) item._collapsible = true
   else delete item._collapsible
+  // TAL-598: stored and Agent rows may carry these as numeric strings or mixed arrays; ship the contract types or nothing.
+  for (const key of ['_ts', '_turnDuration', '_turnTps'] as const) {
+    if (!(key in item)) continue
+    const n = typeof item[key] === 'string' && item[key] !== '' ? Number(item[key]) : item[key]
+    if (typeof n === 'number' && Number.isFinite(n)) item[key] = n
+    else Reflect.deleteProperty(item, key)
+  }
+  if ('reasoning_titles' in item) {
+    const titles = Array.isArray(item.reasoning_titles) ? item.reasoning_titles.filter((t): t is string => typeof t === 'string' && Boolean(t.trim())) : []
+    if (titles.length) item.reasoning_titles = titles
+    else delete item.reasoning_titles
+  }
   return withMessageToolDisplay(scrubbed as Record<string, unknown>, item, enabled)
 }
 
