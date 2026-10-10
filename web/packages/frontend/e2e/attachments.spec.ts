@@ -209,3 +209,30 @@ test('a failed upload stays as an error chip that can be retried or removed', as
   // The synthetic 500s are the point of this test.
   errors.splice(0, errors.length, ...errors.filter((e) => !/api\/upload|status of 500/.test(e)))
 })
+
+test('clicking a sent image opens it enlarged, the arrow keys step through the message images, and Escape closes it (TAL-608)', async ({ page }) => {
+  const shots = ['a.png', 'b.png', 'c.png']
+  const attachments = [...shots.map((name) => ({ name, path: `/tmp/${name}`, is_image: true })), { name: 'notes.txt', path: '/tmp/notes.txt' }]
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'gallery', title: 'Gallery', messages: [{ role: 'user', content: 'three shots', attachments }] } } }))
+  await page.route('**/api/session/draft', (route) => route.fulfill({ json: { ok: true } }))
+  await page.route('**/api/file/raw**', (route) => route.fulfill({ contentType: 'image/png', body: PNG }))
+  await page.goto('/session/gallery')
+  await page.locator('.msg-row img[alt="b.png"]').click()
+  const dialog = page.getByRole('dialog', { name: 'b.png' })
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByRole('img', { name: 'b.png' })).toBeVisible()
+  await expect(dialog).toContainText('2 / 3')
+  await page.keyboard.press('ArrowRight')
+  await expect(page.getByRole('dialog', { name: 'c.png' })).toBeVisible()
+  // Stepping wraps, and the on-screen arrows move the same way.
+  await page.keyboard.press('ArrowRight')
+  await expect(page.getByRole('dialog', { name: 'a.png' })).toBeVisible()
+  await page.keyboard.press('ArrowLeft')
+  await expect(page.getByRole('dialog', { name: 'c.png' })).toBeVisible()
+  await page.getByRole('button', { name: 'Previous image' }).click()
+  await expect(page.getByRole('dialog', { name: 'b.png' })).toBeVisible()
+  await page.getByRole('button', { name: 'Next image' }).click()
+  await expect(page.getByRole('dialog', { name: 'c.png' })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+})

@@ -1,4 +1,4 @@
-import { memo } from 'react'
+import { memo, useState } from 'react'
 import { AlertTriangle, ArrowUp, CheckCircle2, Copy, GitBranch, Info, ListChecks, Pencil, RotateCcw, Shrink, Volume2 } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import type { BackgroundLine, Message } from '../../contracts'
@@ -17,6 +17,7 @@ import { formatDate } from '../../ui/States'
 import { rawFileUrl } from '../../api/endpoints'
 import { appUrl } from '../../lib/appRoot'
 import { speak } from '../voice/tts'
+import { ImageLightbox, type LightboxImage } from './ImageLightbox'
 
 export interface RowActions {
   onEdit?: (row: VisibleMessage, text: string) => void
@@ -25,20 +26,28 @@ export interface RowActions {
 }
 
 function AttachmentList({ message, sessionId }: { message: Message; sessionId: string | undefined }) {
-  const items = message.attachments ?? []
+  const [enlarged, setEnlarged] = useState<number | null>(null)
+  const images: LightboxImage[] = []
+  const items = (message.attachments ?? []).map((a, i) => {
+    const name = a.filename ?? a.name ?? a.path?.split('/').pop() ?? `file-${i + 1}`
+    const href = a.path && sessionId ? appUrl(rawFileUrl(sessionId, a.path)).href : undefined
+    const image = a.is_image && href ? images.push({ name, src: href }) - 1 : undefined
+    return { name, href, image }
+  })
   if (items.length === 0) return null
   return (
-    <ul className="mt-2 flex flex-wrap gap-2" aria-label={m.attachments_label()}>
-      {items.map((a, i) => {
-        const name = a.filename ?? a.name ?? a.path?.split('/').pop() ?? `file-${i + 1}`
-        const href = a.path && sessionId ? appUrl(rawFileUrl(sessionId, a.path)).href : undefined
-        return (
+    <>
+      <ul className="mt-2 flex flex-wrap gap-2" aria-label={m.attachments_label()}>
+        {items.map(({ name, href, image }, i) => (
           <li key={`${name}-${i}`} className="attachment-chip rounded-md border border-border bg-surface px-2 py-1 text-[12px] text-text">
-            {a.is_image && href ? <img src={href} alt={name} className="max-h-48 rounded" loading="lazy" /> : href ? <a href={href} target="_blank" rel="noopener noreferrer" className="underline">{name}</a> : <span>{name}</span>}
+            {image !== undefined
+              ? <button type="button" aria-label={m.image_enlarge({ name })} className="block cursor-zoom-in" onClick={() => setEnlarged(image)}><img src={href} alt={name} className="max-h-48 rounded" loading="lazy" /></button>
+              : href ? <a href={href} target="_blank" rel="noopener noreferrer" className="underline">{name}</a> : <span>{name}</span>}
           </li>
-        )
-      })}
-    </ul>
+        ))}
+      </ul>
+      <ImageLightbox images={images} index={enlarged} onIndexChange={setEnlarged} />
+    </>
   )
 }
 
