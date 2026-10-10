@@ -88,8 +88,8 @@ describe('unauthenticated bind warning at startup', () => {
     expect(await bootLogs({ HERMES_WEBUI_HOST: '0.0.0.0' })).toContain('[!!] WARNING: Binding to 0.0.0.0 with NO PASSWORD SET.')
   })
 
-  it('stays quiet on loopback or when a password is set', async () => {
-    expect(await bootLogs({})).not.toContain('NO PASSWORD SET')
+  it('stays quiet on any loopback spelling or when a password is set', async () => {
+    for (const host of ['127.0.0.1', 'localhost', '0:0:0:0:0:0:0:1']) expect(await bootLogs({ HERMES_WEBUI_HOST: host }), host).not.toContain('NO PASSWORD SET')
     expect(await bootLogs({ HERMES_WEBUI_HOST: '0.0.0.0', HERMES_WEBUI_PASSWORD: 'correct horse' })).not.toContain('NO PASSWORD SET')
   })
 })

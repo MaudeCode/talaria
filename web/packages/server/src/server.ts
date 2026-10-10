@@ -80,7 +80,7 @@ export async function startServer(app: App, config: ServerConfig, opts: { log?: 
   const address = server.address()
   const port = typeof address === 'object' && address ? address.port : config.port
   log(`  Talaria Web listening on ${scheme}://${config.host}:${port}`)
-  await warnUnauthenticatedBind(config.host, app.deps.auth, log)
+  await warnUnauthenticatedBind(config.host, typeof address === 'object' && address ? address.address : config.host, app.deps.auth, log)
   const close = async () => {
     const hygiene = app.deps.hygiene.stop()
     await new Promise<void>((resolve) => {

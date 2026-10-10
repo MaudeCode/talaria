@@ -6,6 +6,7 @@
 import { closeSync, constants, fchmodSync, fstatSync, openSync } from 'node:fs'
 import { join } from 'node:path'
 import { truthy, type ServerConfig } from './config.js'
+import { isLoopback } from './http/origin.js'
 
 export const STARTUP_WAIT_SECONDS = 10
 export const STARTUP_WAIT_SLOT_COUNT = 8
@@ -75,11 +76,12 @@ export function fixCredentialPermissions(config: Pick<ServerConfig, 'env' | 'her
   }
 }
 
-const LOOPBACK_HOSTS = new Set(['127.0.0.1', '::1', 'localhost'])
-
-/** Python `server.py` startup check: a non-loopback bind with no auth method exposes the filesystem and agent. */
-export async function warnUnauthenticatedBind(host: string, auth: { isAuthEnabled: () => Promise<boolean> }, log: (line: string) => void): Promise<void> {
-  if (LOOPBACK_HOSTS.has(host) || await auth.isAuthEnabled()) return
+/**
+ * Python `server.py` startup check: a non-loopback bind with no auth method exposes the filesystem and agent.
+ * `boundAddress` is the listener's resolved address, so `localhost` and every loopback spelling stay quiet.
+ */
+export async function warnUnauthenticatedBind(host: string, boundAddress: string, auth: { isAuthEnabled: () => Promise<boolean> }, log: (line: string) => void): Promise<void> {
+  if (isLoopback(boundAddress) || await auth.isAuthEnabled()) return
   log(`[!!] WARNING: Binding to ${host} with NO PASSWORD SET.`)
   log('     Anyone on the network can access your filesystem and agent.')
   log('     Set a password via Settings or HERMES_WEBUI_PASSWORD env var.')
