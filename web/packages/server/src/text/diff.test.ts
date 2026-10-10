@@ -63,6 +63,12 @@ describe('diffHunks (TAL-604)', () => {
     // A pure deletion still covers its start line; a final line without a newline runs short, and the header pair ends it.
     expect(diffHunks('@@ -5,2 +4,0 @@\n-a\n-b')[0]).toMatchObject({ new_start: 4, new_end: 4 })
     expect(kinds('--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a+b\n--- a/y\n+++ b/y\n@@ -0,0 +1 @@\n+c\n')).toEqual([['deletion'], ['addition']])
+
+    // Changing `-- old` to `++ new` writes rows that read like file headers; while the hunk still has a line left on both
+    // sides they are its change.
+    expect(diffHunks('--- a/x\n+++ b/x\n@@ -1,2 +1,2 @@\n--- old\n+++ new\n keep\n')).toMatchObject([{ additions: 1, deletions: 1, lines: [
+      { kind: 'deletion', old_line: 1, text: '--- old' }, { kind: 'addition', new_line: 1, text: '+++ new' }, { kind: 'context', old_line: 2, new_line: 2 },
+    ] }])
   })
 
   it('makes one unnumbered hunk per file of a diff without hunk headers', () => {

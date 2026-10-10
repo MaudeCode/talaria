@@ -118,7 +118,8 @@ const HUNK_HEADER_RE = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/
 /**
  * TAL-604: the server's one unified diff parser, shipped as `hunks` so clients never parse diffs. Each `@@` hunk runs for
  * the line counts its header gives, so file headers and `diff --git` preambles between hunks are no change; a `---` /
- * `+++` pair always ends the hunk before it (a final line without a newline leaves its count short). A diff without
+ * `+++` pair ends the hunk before it once either side has no line left (a final line without a newline leaves the other
+ * side's count short). A diff without
  * `@@` headers is one hunk per `diff --git` file of its `+` / `-` / context lines, unnumbered.
  */
 export function diffHunks(diff: string): DiffHunk[] {
@@ -142,7 +143,8 @@ export function diffHunks(diff: string): DiffHunk[] {
       continue
     }
     if (!hunk) continue
-    if (text.startsWith('--- ') && lines[i + 1]?.startsWith('+++ ')) { hunk = undefined; continue }
+    // A `---` / `+++` pair is a file header unless the hunk still has a line left on both sides (`-- a` changed to `++ b`).
+    if (text.startsWith('--- ') && lines[i + 1]?.startsWith('+++ ') && (oldLeft <= 0 || newLeft <= 0)) { hunk = undefined; continue }
     if (text.startsWith('\\')) { hunk.lines.push({ kind: 'context', old_line: null, new_line: null, text }); continue }
     if (oldLeft <= 0 && newLeft <= 0) { hunk = undefined; continue }
     if (text.startsWith('+')) {
