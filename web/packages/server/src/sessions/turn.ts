@@ -35,7 +35,7 @@ import { mayBecomeSilentReply, turnOrigin, withBackgroundUpdates } from './backg
 import { fallbackTitleFromExchange, firstExchangeSnippets, isGenericFallbackTitle, latestExchangeSnippets, looksInvalidGeneratedTitle, looksLikeDefaultCliTitle, sanitizeGeneratedTitle, titleLanguageMismatch, titlePrompts } from './titles.js'
 import { WORKSPACE_BUSY_MESSAGE } from '../workspace/git.js'
 import type { WorkspaceRegistry } from '../workspace/workspaces.js'
-import { str } from '../util.js'
+import { sniffImageMime, str } from '../util.js'
 import { toolEditDiff } from './tool-display.js'
 
 export const CHAT_LOCK_WAIT_SECONDS = 2
@@ -183,22 +183,6 @@ export function providerErrorPayload(message: string, errType: string, hint = ''
   if (hint) payload.hint = hint
   if (safe) payload.details = safe.length > 1200 ? `${safe.slice(0, 1197).trimEnd()}…` : safe
   return payload
-}
-
-/** The image formats a provider accepts inline; the MIME comes from the bytes, never from the client. */
-/**
- * Python `_IMAGE_MAGIC` / `_is_valid_image`: the declared MIME must match the file's signature; BMP joins the binary
- * set, and SVG (text, no signature) is accepted on its declared type when the bytes read as an SVG document.
- */
-export function sniffImageMime(bytes: Buffer, declared = ''): string | null {
-  const mime = declared.split(';', 1)[0]?.trim().toLowerCase() ?? ''
-  if (mime === 'image/svg+xml') return /^\s*(?:<\?xml[^>]*>\s*)?(?:<!--[\s\S]*?-->\s*)*(?:<!DOCTYPE[^>]*>\s*)?<svg[\s>]/i.test(bytes.subarray(0, 4096).toString('utf8')) ? 'image/svg+xml' : null
-  if (bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png'
-  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg'
-  if (bytes.length >= 6 && ['GIF87a', 'GIF89a'].includes(bytes.subarray(0, 6).toString('latin1'))) return 'image/gif'
-  if (bytes.length >= 12 && bytes.subarray(0, 4).toString('latin1') === 'RIFF' && bytes.subarray(8, 12).toString('latin1') === 'WEBP') return 'image/webp'
-  if (bytes.length >= 2 && bytes.subarray(0, 2).toString('latin1') === 'BM') return 'image/bmp'
-  return null
 }
 
 /** Python `build_compression_recovery_payload` + `stamp_compression_exhausted_recovery`. */

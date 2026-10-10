@@ -679,6 +679,32 @@ describe('redactSessionData', () => {
     expect(collapsible({ role: 'user', content: 'short', _collapsible: true })).toBeUndefined()
     expect(collapsible({ role: 'user', content: lines(40), _steer: { steer_id: 's2' }, _collapsible: true })).toBeUndefined()
   })
+
+  it('returns a user image part carrying a raster data URI byte-identical without scanning it (TAL-583)', () => {
+    // A 4 MB PNG whose base64 carries an AWS-key-shaped run: text redaction would rewrite the image bytes.
+    const bytes = Buffer.concat([Buffer.from('89504e470d0a1a0a00', 'hex'), Buffer.from('AKIAIOSFODNN7EXAMPLE', 'base64'), Buffer.alloc(4 * 1024 * 1024)])
+    const url = `data:image/png;base64,${bytes.toString('base64')}`
+    expect(redactSensitive(url) === url, 'text redaction rewrites the image bytes').toBe(false)
+    const imageUrl = (message: Record<string, unknown>): unknown => (((redactSessionData({ messages: [message] }, true).messages as Record<string, unknown>[])[0]!.content as Record<string, unknown>[])[1]!.image_url as Record<string, unknown>).url
+    const started = performance.now()
+    expect(imageUrl({ role: 'user', content: [{ type: 'text', text: 'look' }, { type: 'image_url', image_url: { url } }] }) === url, 'PNG data URI returned byte-identical').toBe(true)
+    expect(performance.now() - started).toBeLessThan(150)
+    // MIME and scheme are case-insensitive; the exemption covers every raster type the composer embeds.
+    const aws = Buffer.from('AKIAIOSFODNN7EXAMPLE', 'base64')
+    const signatures: Record<string, string> = { 'IMAGE/PNG': '89504e470d0a1a0a00', 'image/jpeg': 'ffd8ff', 'image/jpg': 'ffd8ff', 'image/gif': '474946383961', 'image/webp': '524946460000000057454250', 'image/bmp': '424d00' }
+    for (const [mime, signature] of Object.entries(signatures)) {
+      const raster = `data:${mime};base64,${Buffer.concat([Buffer.from(signature, 'hex'), aws]).toString('base64')}`
+      expect(imageUrl({ role: 'user', content: [{ type: 'text', text: '' }, { type: 'image_url', image_url: { url: raster } }] }) === raster, mime).toBe(true)
+    }
+    // Anything else stays on the fail-closed path: a non-raster type, an invalid payload, bytes without the declared type's
+    // signature, a non-user row.
+    for (const other of [`data:image/svg+xml;base64,${bytes.toString('base64')}`, `${url} AKIAIOSFODNN7EXAMPLE`, `${url}=`, `data:text/plain;base64,${bytes.toString('base64')}`, 'data:image/png;base64,AKIAIOSFODNN7EXAMPLE', `data:image/jpeg;base64,${bytes.toString('base64')}`]) {
+      expect(imageUrl({ role: 'user', content: [{ type: 'text', text: '' }, { type: 'image_url', image_url: { url: other } }] }) === other, other.slice(0, 30)).toBe(false)
+    }
+    expect(imageUrl({ role: 'assistant', content: [{ type: 'text', text: '' }, { type: 'image_url', image_url: { url } }] }) === url, 'assistant row').toBe(false)
+    const meta = redactSessionData({ messages: [{ role: 'user', content: 'x', meta: { image_url: { url } } }] }, true)
+    expect(JSON.stringify(meta).includes('AKIAIOSFODNN7EXAMPLE'), 'image-shaped metadata').toBe(false)
+  }, 30_000)
 })
 
 /**

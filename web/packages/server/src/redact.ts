@@ -1,4 +1,4 @@
-import { str } from './util.js'
+import { sniffImageMime, str } from './util.js'
 import { snapshotArgs, toolArgs, toolDisplay, toolName } from './sessions/tool-display.js'
 import { messageText } from './sessions/merge.js'
 import { stripAttachedFilesMarker } from './sessions/session.js'
@@ -1776,6 +1776,39 @@ function isCollapsibleUserMessage(item: Record<string, unknown>): boolean {
   return text.length > COLLAPSIBLE_USER_MESSAGE_CHARS || text.split('\n').length > COLLAPSIBLE_USER_MESSAGE_LINES
 }
 
+const RASTER_DATA_URI_MIMES = ['png', 'jpeg', 'jpg', 'gif', 'webp', 'bmp'].map((kind) => [`data:image/${kind};base64,`, `image/${kind === 'jpg' ? 'jpeg' : kind}`] as const)
+
+/**
+ * A raster image data URI: a well-formed base64 payload whose bytes carry its declared type's signature. Opaque image
+ * bytes, which text redaction would only corrupt; a text secret behind a raster header still fails the signature.
+ */
+function isRasterDataUri(value: unknown): boolean {
+  if (typeof value !== 'string') return false
+  // Scheme and MIME type are case-insensitive; only the short header is lowered, never the payload.
+  const match = RASTER_DATA_URI_MIMES.find(([prefix]) => value.slice(0, prefix.length).toLowerCase() === prefix)
+  if (!match) return false
+  const payload = value.slice(match[0].length)
+  if (!payload || payload.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(payload)) return false
+  return sniffImageMime(Buffer.from(payload.slice(0, 16), 'base64')) === match[1]
+}
+
+/**
+ * One user `content[*]` part (Python `_redact_message_content_part`): an `image_url.url` raster data URI passes through
+ * unscanned (TAL-583). The exemption exists only at this schema position; image-shaped values elsewhere are redacted.
+ */
+function redactUserContentPart(part: unknown, enabled: boolean): unknown {
+  if (!enabled || !part || typeof part !== 'object' || Array.isArray(part)) return redactValue(part, enabled)
+  const p = part as Record<string, unknown>
+  const image = p.image_url
+  if (p.type !== 'image_url' || !image || typeof image !== 'object' || Array.isArray(image)) return redactValue(part, enabled)
+  const url = (image as Record<string, unknown>).url
+  if (!isRasterDataUri(url)) return redactValue(part, enabled)
+  const rest = Object.fromEntries(Object.entries(image).filter(([k]) => k !== 'url'))
+  const redacted = redactValue({ ...p, image_url: rest }, enabled) as Record<string, unknown>
+  redacted.image_url = { ...(redacted.image_url as Record<string, unknown>), url }
+  return redacted
+}
+
 function publicMessageProjection(message: unknown, enabled: boolean, activeTurnToken: string | null): unknown {
   const isActive = Boolean(message && typeof message === 'object' && (message as Record<string, unknown>).role === 'user' && activeTurnToken !== null && (message as Record<string, unknown>)._active_turn_token === activeTurnToken)
   const scrubbed = (scrubInternalReplayFields([message], { messageRecords: true }) as unknown[])[0]
@@ -1783,7 +1816,8 @@ function publicMessageProjection(message: unknown, enabled: boolean, activeTurnT
   const item: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(scrubbed as Record<string, unknown>)) {
     if (PUBLIC_MESSAGE_INTERNAL_FIELDS.has(key)) continue
-    item[key] = redactValue(value, enabled)
+    const userParts = key === 'content' && Array.isArray(value) && (scrubbed as Record<string, unknown>).role === 'user'
+    item[key] = userParts ? value.map((part) => redactUserContentPart(part, enabled)) : redactValue(value, enabled)
   }
   if (isActive) item._active_turn_user = true
   // Server-owned: a `_collapsible` the stored row carries never survives the projection's own decision.
