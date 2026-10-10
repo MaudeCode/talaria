@@ -196,6 +196,13 @@ describe('save', () => {
     expect((await s.save({ auto_apply_updates: true })).auto_apply_updates).toBe(true)
     expect(store().load().auto_apply_updates).toBe(true)
   })
+  it('a dashboard_plugins patch replaces a malformed stored value instead of being dropped (TAL-685)', async () => {
+    for (const bad of [null, 'x', ['a'], 3]) {
+      write({ dashboard_plugins: bad })
+      expect((await store().save({ dashboard_plugins: { board: true } })).dashboard_plugins, JSON.stringify(bad)).toEqual({ board: true })
+      expect(onDisk().dashboard_plugins).toEqual({ board: true })
+    }
+  })
   it('ignores unknown keys, validates enums, ranges, lists, and coerces bools', async () => {
     const s = store()
     const saved = await s.save({
