@@ -983,7 +983,12 @@ export class TurnRunner {
   private persistError(s: Session, streamId: string, label: string, payload: Record<string, unknown>, activeTurnToken: string | null, agentRows: Message[] = [], runtimeProvider = ''): void {
     const startedAt = s.pending_started_at
     // TAL-576: an automatic wakeup with no usable credentials pauses the next ones instead of failing each.
-    if (s.pending_user_source === 'process_wakeup' && payload.type === 'credential_pool_empty') { const home = this.deps.profileHome(s.profile); recordWakeupPause(s, home, this.deps.now(), runtimeProvider, this.deps.configPath?.(home)) }
+    if (s.pending_user_source === 'process_wakeup' && payload.type === 'credential_pool_empty') {
+      // A profile whose home now escapes the profiles root (`profileHome` throws) records no pause; the error still persists.
+      let home: string | null = null
+      try { home = this.deps.profileHome(s.profile) } catch { home = null }
+      if (home !== null) recordWakeupPause(s, home, this.deps.now(), runtimeProvider, this.deps.configPath?.(home))
+    }
     this.materializePendingUserTurn(s, activeTurnToken, streamId)
     const duration = typeof startedAt === 'number' && startedAt > 0 ? Math.max(0, this.deps.now() - startedAt) : null
     s.active_stream_id = null
