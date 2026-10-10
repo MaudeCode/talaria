@@ -415,14 +415,15 @@ export class TurnRunner {
     const previousMessages = structuredClone(s.messages)
     // TAL-493: one state.db read builds the history and marks where this turn's own rows begin.
     const startRead = deps.service().stateDbRead(s)
-    const previousContext = structuredClone(deps.service().modelContext(s, startRead.rows))
+    // TAL-578: an eager save already put this turn's prompt in the transcript; `user_message` carries it, so the history
+    // leaves it out.
+    const previousContext = structuredClone(deps.service().modelContext(s, startRead.rows)).filter((m) => m._turn_id !== streamId)
     // Python `_sanitize_messages_for_agent`: the model never sees display-only rows or a replayed cancelled prompt, and
     // the Agent gets back the exact bytes it sent (TAL-541).
     const apiHistory = sanitizeMessagesForApi(previousContext, { preserveApiContent: true })
     const workspaceCtx = workspaceContextPrefix(opts.workspace)
     // Before the first await: a Stop can land at any point after admission.
-    // An eager save already put this turn's prompt in the transcript; the Stop fallback appends it once itself.
-    this.stopContexts.set(streamId, { previousContext: previousContext.filter((m) => m._turn_id !== streamId), historyLength: apiHistory.length, prompt: workspaceCtx + msgText, msgText, checkpointed: false, stateDbStartId: startRead.ok ? stateDbSeenId(startRead.rows) ?? 0 : null })
+    this.stopContexts.set(streamId, { previousContext, historyLength: apiHistory.length, prompt: workspaceCtx + msgText, msgText, checkpointed: false, stateDbStartId: startRead.ok ? stateDbSeenId(startRead.rows) ?? 0 : null })
     const activeTurnToken = buildActiveTurnToken(streamId, s.pending_started_at)
     const sidecar = deps.sidecar()
     const partialText = this.registry.partialText.get(streamId) ?? []
