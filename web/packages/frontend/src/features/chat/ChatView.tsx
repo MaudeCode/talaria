@@ -28,7 +28,7 @@ import { TerminalPanel } from '../terminal/TerminalPanel'
 import { ChatSidePanel } from './ChatSidePanel'
 import { setSidePanelOpen, toggleSidePanel, useShellState } from '../../shell/useShellState'
 import { useRuntimeNotices } from '../notices/useRuntimeNotices'
-import { showToast } from '../toast/toast'
+import { showRichToast, showToast } from '../toast/toast'
 import { isApiError } from '../../contracts/common'
 import { ErrorState, formatDate } from '../../ui/States'
 import { readPersisted, removePersisted, writePersisted } from '../../lib/persisted'
@@ -208,7 +208,16 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
       }
       case 'model': if (args) onModelChange(args, null); return true
       case 'workspace': if (args) onWorkspaceChange(args); return true
-      case 'personality': if (sessionId) { await api.setPersonality(sessionId, args || null); await refresh() } return true
+      case 'personality': {
+        // TAL-612: alone it lists the personalities and changes nothing.
+        if (args) { if (sessionId) { await api.setPersonality(sessionId, args); await refresh() } return true }
+        try {
+          const { personalities } = await api.fetchPersonalities()
+          if (!personalities.length) showToast(m.no_personalities(), 4000)
+          else showRichToast({ id: 'personalities', title: m.available_personalities(), text: personalities.map((p) => p.name).join(' · '), ttl: 8000, kind: 'info', dismissible: true, actions: [] })
+        } catch { showToast(m.personalities_load_failed(), 4000, 'error') }
+        return true
+      }
       case 'goal': if (sessionId) { const r = await api.goalCommand(sessionId, args ? 'set' : 'status', args || undefined); showToast(r.message ?? (r.goal?.text ?? m.done())) } return true
       case 'status': if (sessionId) { const s = await api.fetchSessionStatus(sessionId); showToast(`${s.model ?? ''} · ${s.message_count ?? 0} msgs · ${s.agent_running ? m.status_streaming() : m.done()}`, 4000) } return true
       case 'help': await navigate({ to: '/settings/$section', params: { section: 'help' } }); return true

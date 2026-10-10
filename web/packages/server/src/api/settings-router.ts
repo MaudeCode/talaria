@@ -46,6 +46,7 @@ async function run<T>(fn: () => Promise<T> | T): Promise<never> {
 const home = (ctx: RequestContext): string => ctx.deps.profileHome(activeProfileName(ctx))
 /** The active profile's auxiliary slots, stamped against the same catalog `/api/models` answers. */
 const auxiliaryState = async (ctx: RequestContext): Promise<Dict> => stampAuxiliarySelections(auxiliaryModels(await ctx.deps.agentConfig.read(home(ctx))), await ctx.deps.catalog.models(home(ctx)))
+const CLEAR_PERSONALITY = new Set(['none', 'default', 'clear'])
 const truthy = (v: string | undefined): boolean => ['1', 'true', 'yes', 'on'].includes((v ?? '').trim().toLowerCase())
 
 /** Python `addr.is_loopback or addr.is_private`: CGNAT/Tailscale `100.64.0.0/10` peers are remote. */
@@ -382,13 +383,15 @@ export const settingsRouter = os.router({
       const sid = str(input.session_id).trim()
       if (!sid) throw new HttpError(400, 'Missing required field: session_id')
       if (input.name === undefined) throw new HttpError(400, 'Missing required field: name')
-      const name = str(input.name).trim()
+      let name = str(input.name).trim()
       if (!ctx.deps.sessions.sessionIdVisible(sid)) throw new HttpError(404, 'Session not found')
       let prompt = ''
       if (name) {
         const resolved = personalityPrompt(await ctx.deps.agentConfig.read(home(ctx)), name)
-        if (resolved === null) throw new HttpError(404, `Personality "${name}" not found in config.yaml`)
-        prompt = resolved
+        // TAL-612: `none`, `default`, and `clear` clear it unless a personality has that name.
+        if (resolved !== null) prompt = resolved
+        else if (CLEAR_PERSONALITY.has(name.toLowerCase())) name = ''
+        else throw new HttpError(404, `Personality "${name}" not found in config.yaml`)
       }
       const personality = await ctx.deps.sessions.setPersonality(sid, name || null)
       return { ok: true as const, personality, prompt }

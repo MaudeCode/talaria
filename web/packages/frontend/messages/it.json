@@ -477,7 +477,7 @@
 	"session_toolsets_applied": "Strumenti aggiornati",
 	"session_toolsets_cleared": "Uso i valori predefiniti del profilo attivo",
 	"session_toolsets_failed": "Aggiornamento strumenti fallito: ",
-	"no_personalities": "Nessuna personalità trovata (aggiungile in ~/.hermes/personalities/)",
+	"no_personalities": "Nessuna personalità trovata (aggiungile in config.yaml → agent.personalities)",
 	"available_personalities": "Personalità disponibili:",
 	"personality_switch_hint": "\\n\\nUsa `/personality <nome>` per cambiare, o `/personality none` per rimuovere.",
 	"personalities_load_failed": "Caricamento personalità fallito",

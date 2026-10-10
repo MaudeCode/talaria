@@ -408,7 +408,7 @@
 	"session_toolsets_applied": "Toolsets aktualisiert",
 	"session_toolsets_cleared": "Standardwerte des aktiven Profils werden verwendet",
 	"session_toolsets_failed": "Toolsets konnten nicht aktualisiert werden: ",
-	"no_personalities": "Keine Persönlichkeiten gefunden (füge sie in ~/.hermes/personalities/ hinzu)",
+	"no_personalities": "Keine Persönlichkeiten gefunden (füge sie in config.yaml → agent.personalities hinzu)",
 	"available_personalities": "Verfügbare Persönlichkeiten:",
 	"personality_switch_hint": "\n\nNutze `/personality <name>` zum Wechseln, oder `/personality none` zum Löschen.",
 	"personalities_load_failed": "Fehler beim Laden der Persönlichkeiten",

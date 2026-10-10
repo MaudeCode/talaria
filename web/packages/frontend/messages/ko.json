@@ -464,7 +464,7 @@
 	"session_toolsets_applied": "도구 세트가 업데이트됨",
 	"session_toolsets_cleared": "활성 프로필 기본값을 사용 중",
 	"session_toolsets_failed": "도구 세트를 업데이트하지 못했습니다: ",
-	"no_personalities": "No personalities found (add them to ~/.hermes/personalities/)",
+	"no_personalities": "No personalities found (add them to config.yaml → agent.personalities)",
 	"available_personalities": "Available personalities:",
 	"personality_switch_hint": "\n\nUse `/personality <name>` to switch, or `/personality none` to clear.",
 	"personalities_load_failed": "Failed to load personalities",

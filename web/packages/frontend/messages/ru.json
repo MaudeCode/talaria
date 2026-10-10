@@ -464,7 +464,7 @@
 	"session_toolsets_applied": "Наборы инструментов обновлены",
 	"session_toolsets_cleared": "Используются значения по умолчанию активного профиля",
 	"session_toolsets_failed": "Не удалось обновить наборы инструментов: ",
-	"no_personalities": "Личности не найдены (добавьте их в ~/.hermes/personalities/)",
+	"no_personalities": "Личности не найдены (добавьте их в config.yaml → agent.personalities)",
 	"available_personalities": "Доступные личности:",
 	"personality_switch_hint": "\n\nИспользуйте `/personality <name>` для переключения или `/personality none` для сброса.",
 	"personalities_load_failed": "Не удалось загрузить личности",

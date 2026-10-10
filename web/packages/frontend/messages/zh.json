@@ -408,7 +408,7 @@
 	"session_toolsets_applied": "工具集已更新",
 	"session_toolsets_cleared": "正在使用当前配置档默认",
 	"session_toolsets_failed": "更新工具集失败：",
-	"no_personalities": "没有找到人设（可添加到 ~/.hermes/personalities/）",
+	"no_personalities": "没有找到人设（可添加到 config.yaml → agent.personalities）",
 	"available_personalities": "可用人设：",
 	"personality_switch_hint": "\n\n使用 `/personality <name>` 切换，或用 `/personality none` 清空。",
 	"personalities_load_failed": "加载人设失败",
