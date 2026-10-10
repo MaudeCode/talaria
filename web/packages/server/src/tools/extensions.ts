@@ -215,6 +215,9 @@ function sidecarFromEntry(entry: Dict, d: Diagnostics | null): Dict | null {
   return { id: entryText(entry, 'id'), name: entryText(entry, 'name'), type: 'loopback', origin, health_path: healthPath, health_url: `${origin}${healthPath}`, proxy_auth: proxyAuth }
 }
 
+/** Entries the gallery loader read from `<root>/<id>/`, keyed by object so a manifest can never claim gallery provenance. */
+const galleryFolders = new WeakMap<Dict, string>()
+
 interface State { version: 1; disabled_extensions: string[]; sidecar_proxy_consents: Record<string, string> }
 
 export class ExtensionService {
@@ -342,13 +345,16 @@ export class ExtensionService {
       } catch { warn(d, 'gallery_manifest_malformed', 'gallery'); continue }
       const withBase = (entry: Dict): Dict => {
         const copy = { ...entry }
-        for (const key of ['scripts', 'stylesheets']) if (Array.isArray(copy[key])) copy[key] = copy[key].map((v: unknown) => (typeof v === 'string' && v.trim() && !/^[a-z]+:|^\/\/|^\//i.test(v.trim()) ? `${id}/${v.trim()}` : v))
+        const rebase = (v: unknown): unknown => (typeof v === 'string' && v.trim() && !/^[a-z]+:|^\/\/|^\//i.test(v.trim()) ? `${id}/${v.trim()}` : v)
+        for (const key of ['scripts', 'stylesheets']) if (Array.isArray(copy[key])) copy[key] = copy[key].map(rebase)
+        if (typeof copy.panel === 'string') copy.panel = rebase(copy.panel.trim().replace(/^(\.\/)+/, ''))
+        galleryFolders.set(copy, id)
         return copy
       }
       if (isDict(manifest)) {
         const top: Dict = { id }
-        for (const key of ['name', 'enabled', 'scripts', 'stylesheets', 'sidecar', 'permissions', 'settings_schema']) if (key in manifest) top[key] = manifest[key]
-        if (['scripts', 'stylesheets', 'sidecar', 'permissions', 'settings_schema'].some((k) => k in top)) entries.push(withBase(top))
+        for (const key of ['name', 'enabled', 'version', 'description', 'panel', 'nav', 'capabilities', 'scripts', 'stylesheets', 'sidecar', 'permissions', 'settings_schema']) if (key in manifest) top[key] = manifest[key]
+        if (['panel', 'scripts', 'stylesheets', 'sidecar', 'permissions', 'settings_schema'].some((k) => k in top)) entries.push(withBase(top))
       }
       for (const entry of manifestEntries(manifest)) { const copy = withBase(entry); if (!validId(copy.id)) copy.id = id; entries.push(copy) }
     }
@@ -485,6 +491,11 @@ export class ExtensionService {
   }
 
   async status(): Promise<Dict> {
+    return (await this.snapshot()).status
+  }
+
+  /** The status payload plus the manifest it was built from, so `manifests()` reads the raw entries of the same load. */
+  private async snapshot(): Promise<{ status: Dict; manifest: unknown; assetBase: string }> {
     const d: Diagnostics = { warnings: [] }
     const envDir = (this.deps.env.HERMES_WEBUI_EXTENSION_DIR ?? '').trim()
     const root = this.root()
@@ -493,7 +504,7 @@ export class ExtensionService {
     const manifestConfigured = Boolean((this.deps.env.HERMES_WEBUI_EXTENSION_MANIFEST ?? '').trim())
     if (envDir && !root) warn(d, 'extension_dir_unavailable', 'extension_dir')
     if (!root) {
-      return { enabled: false, extension_dir_configured: true, extension_dir_valid: false, script_urls: [], stylesheet_urls: [], sidecars: [], counts: { script_urls: 0, stylesheet_urls: 0, sidecars: 0, manifest_extensions: 0, user_disabled: 0 }, manifest: { configured: manifestConfigured, loaded: false, status: manifestConfigured ? 'extension_disabled' : 'not_configured', entry_count: 0, script_count: 0, stylesheet_count: 0, sidecar_count: 0 }, extensions: [], warnings: d.warnings }
+      return { manifest: null, assetBase: '', status: { enabled: false, extension_dir_configured: true, extension_dir_valid: false, script_urls: [], stylesheet_urls: [], sidecars: [], counts: { script_urls: 0, stylesheet_urls: 0, sidecars: 0, manifest_extensions: 0, user_disabled: 0 }, manifest: { configured: manifestConfigured, loaded: false, status: manifestConfigured ? 'extension_disabled' : 'not_configured', entry_count: 0, script_count: 0, stylesheet_count: 0, sidecar_count: 0 }, extensions: [], warnings: d.warnings } }
     }
     const [manifest, status] = this.loadManifest(root, d)
     const consentIds = new Set(Object.keys(state.sidecar_proxy_consents))
@@ -502,11 +513,11 @@ export class ExtensionService {
     const scriptUrls = this.envUrls('HERMES_WEBUI_EXTENSION_SCRIPT_URLS', urls.scripts.length ? urls.scripts : null, d)
     const stylesheetUrls = this.envUrls('HERMES_WEBUI_EXTENSION_STYLESHEET_URLS', urls.stylesheets.length ? urls.stylesheets : null, d)
     const publicStatus = Object.fromEntries(Object.entries(status).filter(([k]) => !k.startsWith('_')))
-    return {
+    return { manifest, assetBase: str(status._asset_base), status: {
       enabled: true, extension_dir_configured: true, extension_dir_valid: true, script_urls: scriptUrls, stylesheet_urls: stylesheetUrls, sidecars: urls.sidecars,
       counts: { script_urls: scriptUrls.length, stylesheet_urls: stylesheetUrls.length, sidecars: urls.sidecars.length, manifest_extensions: ext.extensions.length, user_disabled: [...disabled].filter((id) => ext.knownIds.has(id)).length },
       manifest: publicStatus, extensions: ext.extensions, gallery_installed: this.loadInstallManifest().installed, warnings: d.warnings,
-    }
+    } }
   }
 
   private loaded(root: string, d: Diagnostics): { manifest: unknown; state: State; disabled: Set<string> } {
@@ -744,7 +755,13 @@ export class ExtensionService {
 
   /** Python `api/extension_manifests.build_manifests` extension entries (the manifests route appends dashboard plugins). */
   async manifests(): Promise<{ protocol_version: 1; manifests: Dict[] }> {
-    const status = await this.status()
+    const { status, manifest, assetBase } = await this.snapshot()
+    // Status rows carry only enable state; panel, nav, capabilities, assets, and metadata come from the first manifest entry per id.
+    const rawById = new Map<string, Dict>()
+    for (const e of manifestEntries(manifest)) { const id = entryText(e, 'id'); if (!rawById.has(id)) rawById.set(id, e) }
+    // Gallery rows are the entries the gallery loader read from their own install folder; `uninstall` accepts exactly the
+    // ids in the install manifest, so a configured entry that shares an installed id never offers Uninstall.
+    const installed = isDict(status.gallery_installed) ? status.gallery_installed : {}
     const manifests: Dict[] = []
     const seen = new Set<string>()
     const ID = /^[a-z][a-z0-9_-]{0,63}$/
@@ -752,24 +769,25 @@ export class ExtensionService {
       const id = text(entry.id, 64)
       if (!ID.test(id) || seen.has(id)) continue
       seen.add(id)
-      const rawManifest = isDict(entry.manifest) ? entry.manifest : entry
+      const rawManifest = rawById.get(str(entry.id)) ?? {}
       const warnings: string[] = []
       let panel: string | null = null
       const rawPanel = rawManifest.panel
       if (rawPanel !== null && rawPanel !== undefined) {
-        if (typeof rawPanel !== 'string' || !/^[A-Za-z0-9._/-]{1,300}$/.test(rawPanel) || rawPanel.split('/').includes('..') || rawPanel.startsWith('/')) warnings.push('panel_path_rejected')
+        // Like scripts, a panel path is relative to the manifest's folder; gallery entries were rebased onto `<id>/`.
+        const url = typeof rawPanel === 'string' ? `extensions/${assetBase ? `${assetBase}/` : ''}${rawPanel.replace(/^(\.\/)+/, '')}` : ''
+        if (typeof rawPanel !== 'string' || !/^[A-Za-z0-9._/-]{1,300}$/.test(rawPanel) || !isSafeRelativePath(url) || url.length > 400) warnings.push('panel_path_rejected')
         else if (!rawPanel.toLowerCase().endsWith('.html')) warnings.push('panel_not_html')
-        else panel = `extensions/${id}/${rawPanel.replace(/^[./]+/, '')}`
+        else panel = url
       }
-      const scripts = Array.isArray(entry.scripts) ? entry.scripts : Array.isArray(rawManifest.scripts) ? rawManifest.scripts : []
-      const stylesheets = Array.isArray(entry.stylesheets) ? entry.stylesheets : Array.isArray(rawManifest.stylesheets) ? rawManifest.stylesheets : []
+      const scripts = Array.isArray(rawManifest.scripts) ? rawManifest.scripts : []
+      const stylesheets = Array.isArray(rawManifest.stylesheets) ? rawManifest.stylesheets : []
       const legacy = Boolean((scripts.length || stylesheets.length) && !panel)
       const rawNav = isDict(rawManifest.nav) ? rawManifest.nav : {}
-      const nav = panel ? { label: text(rawNav.label, 40) || text(entry.name ?? rawManifest.name, 40) || id, ...(text(rawNav.icon, 40) ? { icon: text(rawNav.icon, 40) } : {}) } : null
-      const permissions = isDict(entry.permissions) ? Object.fromEntries(Object.entries(entry.permissions).map(([k, v]) => [k, Boolean(v)])) : {}
-      const enabledFlag = entry.effective_enabled ?? entry.enabled ?? true
+      const nav = panel ? { label: text(rawNav.label, 40) || text(entry.name, 40) || id, ...(text(rawNav.icon, 40) ? { icon: text(rawNav.icon, 40) } : {}) } : null
+      const permissions = isDict(rawManifest.permissions) ? Object.fromEntries(Object.entries(rawManifest.permissions).filter(([k]) => k.length <= 64).map(([k, v]) => [k, Boolean(v)])) : {}
       const caps = (Array.isArray(rawManifest.capabilities) ? rawManifest.capabilities : []).filter((c): c is string => typeof c === 'string' && ['settings', 'storage', 'sidecar', 'lifecycle', 'theme', 'tts', 'navigate', 'toast', 'session'].includes(c))
-      manifests.push({ id, name: text(entry.name ?? rawManifest.name, 80) || id, version: text(entry.version ?? rawManifest.version, 40), description: text(entry.description ?? rawManifest.description, 300), source: entry.gallery_installed || entry.source === 'gallery' ? 'gallery' : 'manifest', enabled: Boolean(enabledFlag) && !legacy, can_toggle: entry.can_toggle !== false && !legacy, panel, nav, capabilities: [...new Set(caps)], permissions, settings_schema: Array.isArray(entry.settings_schema) ? entry.settings_schema : [], theme: null, tts: null, sidecar: null, legacy_injection: legacy, warnings })
+      manifests.push({ id, name: text(entry.name, 80) || id, version: text(rawManifest.version, 40), description: text(rawManifest.description, 300), source: galleryFolders.get(rawManifest) === id && Object.hasOwn(installed, id) ? 'gallery' : 'manifest', enabled: entry.effective_enabled === true && !legacy, can_toggle: entry.can_toggle !== false && !legacy, panel, nav, capabilities: [...new Set(caps)], permissions, settings_schema: Array.isArray(entry.settings_schema) ? entry.settings_schema : [], theme: null, tts: null, sidecar: null, legacy_injection: legacy, warnings })
     }
     return { protocol_version: 1, manifests }
   }

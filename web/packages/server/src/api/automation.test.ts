@@ -535,7 +535,7 @@ describe('crons, kanban, extensions, terminal', () => {
     unlinkSync(join(s.state, 'extensions', 'ext-one', 'secret'))
     res = await s.get('/api/extensions/manifests')
     body = await json(res)
-    expect((body.manifests as Json[])[0]).toMatchObject({ id: 'ext-one', enabled: true, legacy_injection: false, can_toggle: true, capabilities: [] })
+    expect((body.manifests as Json[])[0]).toMatchObject({ id: 'ext-one', source: 'gallery', version: '1.2.3', enabled: false, legacy_injection: true, can_toggle: false, capabilities: [] })
     const browserHeaders = { origin: s.base, referer: `${s.base}/`, 'sec-fetch-site': 'same-origin' }
     res = await post(s, '/api/extensions/ext-one/sidecar/ping', {}, 'POST', browserHeaders)
     expect(res.status).toBe(403)
@@ -973,6 +973,47 @@ describe('extension manifest toggle decision (TAL-685)', () => {
       expect((await service.manifests()).manifests.map((m) => [m.id, m.can_toggle])).toEqual([['live', true], ['off', false]])
     } finally {
       rmSync(stateDir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('extension directory rows in /api/extensions/manifests (TAL-704)', () => {
+  it('ships panel (relative to the manifest folder), nav, capabilities, and permissions from the manifest entry, and marks a scripts-only entry legacy', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'talaria-ext-'))
+    writeFileSync(join(root, 'manifest.json'), JSON.stringify({ extensions: [
+      { id: 'live', name: 'Live', version: '2.0.0', description: 'A panel', panel: 'live/index.html', nav: { label: 'Live Panel', icon: 'star' }, capabilities: ['theme', 'toast', 'root'], permissions: { storage: { owned: true }, network: false, ['x'.repeat(65)]: true } },
+      { id: 'legacy', name: 'Legacy', scripts: ['legacy.js'], stylesheets: ['legacy.css'] },
+      { id: 'shared', name: 'Shared', panel: './shared/index.html' },
+    ] }))
+    const s = await bootTestServer({ env: { HERMES_WEBUI_EXTENSION_DIR: root, HERMES_WEBUI_EXTENSION_MANIFEST: 'manifest.json' } })
+    // A stale gallery install record for the same id never makes a configured entry a gallery row (no Uninstall).
+    writeFileSync(join(s.state, 'extension-install-manifest.json'), JSON.stringify({ version: 1, installed: { shared: { version: '1', files: ['index.html'], installed_at: '' } } }))
+    try {
+      const rows = (await json(await s.get('/api/extensions/manifests'))).manifests as Json[]
+      expect(rows.find((m) => m.id === 'live')).toMatchObject({
+        source: 'manifest', version: '2.0.0', description: 'A panel', enabled: true, can_toggle: true, legacy_injection: false,
+        panel: 'extensions/live/index.html', nav: { label: 'Live Panel', icon: 'star' }, capabilities: ['theme', 'toast'], permissions: { storage: true, network: false },
+      })
+      // Keys the frontend contract rejects (over 64 chars) are dropped rather than failing the whole list.
+      expect(rows.find((m) => m.id === 'live')?.permissions).toEqual({ storage: true, network: false })
+      expect(rows.find((m) => m.id === 'shared')).toMatchObject({ source: 'manifest', panel: 'extensions/shared/index.html' })
+      expect(rows.find((m) => m.id === 'legacy')).toMatchObject({ source: 'manifest', panel: null, nav: null, legacy_injection: true, enabled: false, can_toggle: false })
+    } finally {
+      await s.close()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('ships source "gallery" and the panel for a gallery-installed extension', async () => {
+    const s = await bootTestServer()
+    try {
+      mkdirSync(join(s.state, 'extensions', 'gal'), { recursive: true })
+      writeFileSync(join(s.state, 'extensions', 'gal', 'manifest.json'), JSON.stringify({ name: 'Gal', version: '1.0.0', panel: 'index.html', capabilities: ['theme'] }))
+      writeFileSync(join(s.state, 'extension-install-manifest.json'), JSON.stringify({ version: 1, installed: { gal: { version: '1.0.0', files: ['manifest.json', 'index.html'], installed_at: '2026-01-01T00:00:00Z' } } }))
+      const rows = (await json(await s.get('/api/extensions/manifests'))).manifests as Json[]
+      expect(rows.find((m) => m.id === 'gal')).toMatchObject({ source: 'gallery', version: '1.0.0', enabled: true, panel: 'extensions/gal/index.html', nav: { label: 'Gal' }, capabilities: ['theme'] })
+    } finally {
+      await s.close()
     }
   })
 })
