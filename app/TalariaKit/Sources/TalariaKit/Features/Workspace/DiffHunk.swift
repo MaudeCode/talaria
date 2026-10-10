@@ -52,14 +52,18 @@ public struct DiffHunk: Identifiable, Equatable, Decodable {
         return numbered(hunks)
     }
 
+    /// Line ids run across the whole diff: a lazy stack flattens each hunk's rows into one list, where ids repeated from
+    /// hunk to hunk would show one hunk's rows under another's header.
     private static func numbered(_ hunks: [DiffHunk]) -> [DiffHunk] {
-        hunks.enumerated().map { index, hunk in
+        var nextLineID = 0
+        return hunks.enumerated().map { index, hunk in
             var hunk = hunk
             hunk.id = index
             hunk.patchCount = hunks.count
-            hunk.lines = hunk.lines.enumerated().map { offset, line in
+            hunk.lines = hunk.lines.map { line in
                 var line = line
-                line.id = offset
+                line.id = nextLineID
+                nextLineID += 1
                 return line
             }
             return hunk

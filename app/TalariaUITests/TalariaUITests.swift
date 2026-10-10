@@ -1801,12 +1801,12 @@ final class GitDiffUITests: WorkspaceUITestCase {
         XCTAssertTrue(app.staticTexts["-Old second line."].exists)
         let inserted = app.staticTexts["+Inserted fixture line."]
         XCTAssertTrue(inserted.exists)
-        XCTAssertTrue(app.staticTexts["+Final fixture line."].exists)
         attachScreenshot(named: "Git diff hunks")
 
+        // The sheet opens at its medium height; collapsing the first hunk brings the second one's lines up.
         tapCenter(of: firstHunk)
         XCTAssertTrue(inserted.awaitNonExistence(timeout: 5), "The first hunk did not collapse")
-        XCTAssertTrue(app.staticTexts["+Final fixture line."].exists)
+        XCTAssertTrue(app.staticTexts["+Final fixture line."].awaitExistence(timeout: 5), "The second hunk's lines are missing")
         attachScreenshot(named: "Git diff first hunk collapsed")
     }
 }

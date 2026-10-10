@@ -543,7 +543,7 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
         XCTAssertEqual(decoded.map(\.displayLabel), ["Lines 1-2", "Line 9", "Patch 3 of 3"])
         XCTAssertEqual(decoded.map(\.additions), [1, 0, 1])
         XCTAssertEqual(decoded[0].lines.map(\.kind), [.deletion, .addition, .context])
-        XCTAssertEqual(decoded[0].lines.map(\.id), [0, 1, 2])
+        XCTAssertEqual(decoded.flatMap { $0.lines.map(\.id) }, [0, 1, 2, 3, 4], "Line ids never repeat across hunks.")
         XCTAssertEqual(decoded[0].lines.map(\.gutterLabel), ["1", "1", "2"])
         XCTAssertEqual(try hunks("[]", diff: "@@ -1 +1 @@\n-a\n+b"), [], "An empty server list is no change, never re-parsed.")
     }
