@@ -485,6 +485,20 @@ final class SharedContractTests: XCTestCase {
         XCTAssertEqual(journaled.messages?.last?.role, "user")
     }
 
+    func testSharedWebSessionCarriesTheTurnStatsRow() throws {
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
+        let rows = try XCTUnwrap((object["session"] as? [String: Any])?["messages"] as? [[String: Any]])
+        // A release checks this App against every retained Web; one from before TAL-598 has no such row.
+        guard let raw = rows.first(where: { $0["_turnDuration"] != nil }) else { return }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let message = try decoder.decode(ChatMessage.self, from: JSONSerialization.data(withJSONObject: raw))
+        XCTAssertEqual(message.turnDuration, 4.25)
+        XCTAssertEqual(message.turnTps, 31.5)
+        XCTAssertEqual(message.timestamp, 1_700_000_001)
+        XCTAssertEqual(message.reasoningTitles, ["Plan"])
+    }
+
     func testSharedWebSessionShowsARunningTurnWithoutAJournalOpenAndLetsLiveRowsContinueIt() throws {
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
         // A release checks this App against every retained Web; one from before TAL-374 has no such example.

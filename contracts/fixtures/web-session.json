@@ -171,6 +171,12 @@
         "message_id": "contract-run-a-2",
         "finish_reason": "stop",
         "_turn_id": "contract-run-a",
+        "_turnDuration": 4.25,
+        "_turnTps": 31.5,
+        "_ts": 1700000001,
+        "reasoning_titles": [
+          "Plan"
+        ],
         "_anchor_activity_scene": {
           "version": "activity_scene_v1",
           "final_answer": "Second reply in the same turn.",

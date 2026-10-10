@@ -18,4 +18,10 @@ describe('OpenAPI generation', () => {
     expect(Object.keys(gone ?? {})).toEqual(['410'])
     expect(gone?.['410']?.headers).toHaveProperty('X-Replaced-By')
   })
+
+  it('declares the transcript row fields the App decodes (TAL-598)', async () => {
+    const paths = (await generateOpenApiDocument()).paths as Record<string, Record<string, { responses: Record<string, { content: Record<string, { schema: { properties: { session: { properties: { messages: { items: { properties: Record<string, unknown> } } } } } } }> }> }>>
+    const message = paths['/api/session']?.get?.responses['200']?.content['application/json']?.schema.properties.session.properties.messages.items.properties
+    expect(Object.keys(message ?? {})).toEqual(expect.arrayContaining(['_turnDuration', '_turnTps', 'reasoning_titles', '_ts']))
+  })
 })

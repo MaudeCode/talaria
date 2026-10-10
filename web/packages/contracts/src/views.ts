@@ -145,6 +145,14 @@ export const MessageSchema = z.looseObject({
   provider_details: Json.optional(), provider_details_label: z.string().optional(), recovery_control: Json.optional(), _anchor_activity_scene: ActivitySceneSchema.optional(),
   /** The turn this row belongs to; the server stamps every row it sends, so clients group turns by equality alone. */
   _turn_id: z.string().optional(),
+  /** On a turn's last assistant row: seconds the turn ran. */
+  _turnDuration: z.number().optional(),
+  /** On a turn's last assistant row: output tokens per second, when the turn reported usage. */
+  _turnTps: z.number().optional(),
+  /** Epoch seconds the row was written; `timestamp` when absent. */
+  _ts: z.number().optional(),
+  /** Reasoning titles an older Web stored on the row, in order. */
+  reasoning_titles: z.array(z.string()).optional(),
   /** The running turn's prompt, which the turn's settlement replaces with its persisted row. */
   _active_turn_user: z.boolean().optional(),
   /** A consumed steer at its causal place in the turn: display-only, never model history. A steer only the Agent recorded has no timing. */

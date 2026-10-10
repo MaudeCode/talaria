@@ -3720,6 +3720,21 @@
                               "_turn_id": {
                                 "type": "string"
                               },
+                              "_turnDuration": {
+                                "type": "number"
+                              },
+                              "_turnTps": {
+                                "type": "number"
+                              },
+                              "_ts": {
+                                "type": "number"
+                              },
+                              "reasoning_titles": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
                               "_active_turn_user": {
                                 "type": "boolean"
                               },
@@ -5843,6 +5858,21 @@
                               "_turn_id": {
                                 "type": "string"
                               },
+                              "_turnDuration": {
+                                "type": "number"
+                              },
+                              "_turnTps": {
+                                "type": "number"
+                              },
+                              "_ts": {
+                                "type": "number"
+                              },
+                              "reasoning_titles": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
                               "_active_turn_user": {
                                 "type": "boolean"
                               },
@@ -7711,6 +7741,21 @@
                               },
                               "_turn_id": {
                                 "type": "string"
+                              },
+                              "_turnDuration": {
+                                "type": "number"
+                              },
+                              "_turnTps": {
+                                "type": "number"
+                              },
+                              "_ts": {
+                                "type": "number"
+                              },
+                              "reasoning_titles": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
                               },
                               "_active_turn_user": {
                                 "type": "boolean"
@@ -10779,6 +10824,21 @@
                               "_turn_id": {
                                 "type": "string"
                               },
+                              "_turnDuration": {
+                                "type": "number"
+                              },
+                              "_turnTps": {
+                                "type": "number"
+                              },
+                              "_ts": {
+                                "type": "number"
+                              },
+                              "reasoning_titles": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
                               "_active_turn_user": {
                                 "type": "boolean"
                               },
@@ -13679,6 +13739,21 @@
                               },
                               "_turn_id": {
                                 "type": "string"
+                              },
+                              "_turnDuration": {
+                                "type": "number"
+                              },
+                              "_turnTps": {
+                                "type": "number"
+                              },
+                              "_ts": {
+                                "type": "number"
+                              },
+                              "reasoning_titles": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
                               },
                               "_active_turn_user": {
                                 "type": "boolean"
@@ -17258,6 +17333,21 @@
                               "_turn_id": {
                                 "type": "string"
                               },
+                              "_turnDuration": {
+                                "type": "number"
+                              },
+                              "_turnTps": {
+                                "type": "number"
+                              },
+                              "_ts": {
+                                "type": "number"
+                              },
+                              "reasoning_titles": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
                               "_active_turn_user": {
                                 "type": "boolean"
                               },
@@ -19151,6 +19241,21 @@
                               },
                               "_turn_id": {
                                 "type": "string"
+                              },
+                              "_turnDuration": {
+                                "type": "number"
+                              },
+                              "_turnTps": {
+                                "type": "number"
+                              },
+                              "_ts": {
+                                "type": "number"
+                              },
+                              "reasoning_titles": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
                               },
                               "_active_turn_user": {
                                 "type": "boolean"
@@ -21108,6 +21213,21 @@
                               "_turn_id": {
                                 "type": "string"
                               },
+                              "_turnDuration": {
+                                "type": "number"
+                              },
+                              "_turnTps": {
+                                "type": "number"
+                              },
+                              "_ts": {
+                                "type": "number"
+                              },
+                              "reasoning_titles": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
                               "_active_turn_user": {
                                 "type": "boolean"
                               },
@@ -23050,6 +23170,21 @@
                               },
                               "_turn_id": {
                                 "type": "string"
+                              },
+                              "_turnDuration": {
+                                "type": "number"
+                              },
+                              "_turnTps": {
+                                "type": "number"
+                              },
+                              "_ts": {
+                                "type": "number"
+                              },
+                              "reasoning_titles": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
                               },
                               "_active_turn_user": {
                                 "type": "boolean"
@@ -32469,6 +32604,21 @@
                               "_turn_id": {
                                 "type": "string"
                               },
+                              "_turnDuration": {
+                                "type": "number"
+                              },
+                              "_turnTps": {
+                                "type": "number"
+                              },
+                              "_ts": {
+                                "type": "number"
+                              },
+                              "reasoning_titles": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
                               "_active_turn_user": {
                                 "type": "boolean"
                               },
@@ -34504,6 +34654,21 @@
                               "_turn_id": {
                                 "type": "string"
                               },
+                              "_turnDuration": {
+                                "type": "number"
+                              },
+                              "_turnTps": {
+                                "type": "number"
+                              },
+                              "_ts": {
+                                "type": "number"
+                              },
+                              "reasoning_titles": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
                               "_active_turn_user": {
                                 "type": "boolean"
                               },
@@ -36438,6 +36603,21 @@
                                   },
                                   "_turn_id": {
                                     "type": "string"
+                                  },
+                                  "_turnDuration": {
+                                    "type": "number"
+                                  },
+                                  "_turnTps": {
+                                    "type": "number"
+                                  },
+                                  "_ts": {
+                                    "type": "number"
+                                  },
+                                  "reasoning_titles": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
                                   },
                                   "_active_turn_user": {
                                     "type": "boolean"
