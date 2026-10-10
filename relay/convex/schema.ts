@@ -188,7 +188,13 @@ export default defineSchema({
   })
     .index("by_grant_id_and_run_key", ["grantId", "runKey"])
     .index("by_grant_id_and_session_id_and_acknowledged", ["grantId", "row.sessionId", "acknowledged"])
-    .index("by_user_id_and_acknowledged", ["userId", "acknowledged"]),
+    .index("by_user_id_and_acknowledged", ["userId", "acknowledged"])
+    .index("by_acknowledged", ["acknowledged"]),
+
+  pruneCursors: defineTable({
+    table: v.string(),
+    cursor: v.string(),
+  }).index("by_table", ["table"]),
 
   liveActivities: defineTable({
     userId: v.string(),

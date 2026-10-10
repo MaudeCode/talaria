@@ -285,3 +285,53 @@ it("acknowledges a session's completions when its signed publisher reports it vi
     expect(await (await viewed(ahead + 1, "skewed-view", { sessionId: "skewed-session" })).json()).toEqual({ status: "accepted", acknowledged: 1 });
   } finally { vi.useRealTimers(); }
 });
+
+it("prunes acknowledged completions after seven days and keeps pending ones", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date(1_800_000_000_000));
+  try {
+    const { backend, publish, list, now } = await fixture();
+    await publish("completed", "run-1", "old-acknowledged");
+    await publish("completed", "run-2", "old-pending");
+    const old = (await list())!.completions.find((c) => c.row.sessionId === "old-acknowledged")!;
+    await backend.mutation(internal.completions.acknowledge, { userId: "user", deviceId: "device", ids: [old.id] });
+    vi.setSystemTime(new Date(now + 7 * 86_400_000 + 1));
+    await publish("completed", "run-3", "recent-acknowledged");
+    const recent = (await list())!.completions.find((c) => c.row.sessionId === "recent-acknowledged")!;
+    await backend.mutation(internal.completions.acknowledge, { userId: "user", deviceId: "device", ids: [recent.id] });
+    await backend.mutation(internal.cleanup.prune, {});
+    const remaining = await backend.run((ctx) => ctx.db.query("completions").collect());
+    expect(remaining.map((c) => c.row.sessionId).sort()).toEqual(["old-pending", "recent-acknowledged"]);
+  } finally { vi.useRealTimers(); }
+});
+
+it("prunes completions whose grant is gone or now names another profile", async () => {
+  const { backend, publish } = await fixture();
+  await publish("completed");
+  await backend.run(async (ctx) => {
+    const valid = (await ctx.db.query("completions").first())!;
+    const { _id, _creationTime, ...copy } = valid;
+    for (let index = 0; index < 100; index++) await ctx.db.insert("completions", { ...copy, runKey: `valid-${index}` });
+    await ctx.db.insert("completions", { ...copy, runKey: "mismatched", profileId: "old-profile" });
+    const revoked = await ctx.db.insert("publisherGrants", { userId: "user", publisherOwnerUserId: "owner", publisherId: "https://hermes.example", profileId: "profile", createdAt: 0, updatedAt: 0 });
+    await ctx.db.insert("completions", { ...copy, runKey: "missing", grantId: revoked });
+    await ctx.db.delete(revoked);
+  });
+  // The sweep resumes where the previous run stopped, so orphans past the first page are still reached.
+  await backend.mutation(internal.cleanup.prune, {});
+  const orphanKeys = async () => (await backend.run((ctx) => ctx.db.query("completions").collect()))
+    .filter((c) => c.runKey === "mismatched" || c.runKey === "missing").map((c) => c.runKey);
+  expect(await orphanKeys()).toEqual(["mismatched", "missing"]);
+  await backend.mutation(internal.cleanup.prune, {});
+  expect(await orphanKeys()).toEqual([]);
+  expect(await backend.run((ctx) => ctx.db.query("completions").collect())).toHaveLength(101);
+  expect(await backend.run((ctx) => ctx.db.query("pruneCursors").collect())).toEqual([]);
+});
+
+it("deletes a revoked publisher's completions", async () => {
+  const { backend, publish } = await fixture();
+  await publish("completed");
+  expect(await backend.run((ctx) => ctx.db.query("completions").collect())).toHaveLength(1);
+  expect(await backend.mutation(internal.subscriptions.revokePublisher, { userId: "user", publisherId: "https://hermes.example", now: Date.now() })).toEqual({ ok: true });
+  expect(await backend.run((ctx) => ctx.db.query("completions").collect())).toEqual([]);
+});

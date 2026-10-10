@@ -157,6 +157,11 @@ export const revokePublisher = internalMutation({
     if (states.length > MAX_PUBLISHERS) return { ok: false, reason: "too_many_states" };
     if (exclusions.length > MAX_PUBLISHERS) return { ok: false, reason: "too_many_exclusions" };
     await ctx.db.delete(grant._id);
+    // ponytail: one revocation deletes up to 1,000 completions; prune sweeps any remainder as orphans.
+    const completions = await ctx.db.query("completions")
+      .withIndex("by_grant_id_and_run_key", (query) => query.eq("grantId", grant._id))
+      .take(1_000);
+    for (const completion of completions) await ctx.db.delete(completion._id);
     for (const exclusion of exclusions) {
       if (exclusion.publisherId === args.publisherId) await ctx.db.delete(exclusion._id);
     }

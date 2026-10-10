@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Talaria Relay deletes acknowledged completions after seven days and removes completions left behind by a revoked or re-enrolled publisher.",
+      "highlight": false,
+      "components": [
+        "relay"
+      ]
+    }
+  ]
+}
