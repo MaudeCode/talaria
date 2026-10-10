@@ -185,7 +185,7 @@ test('a manual compression shows in the top tab while it runs', async ({ page })
 })
 
 test('the context ring opens the usage figures and Compress now starts compression (TAL-614)', async ({ page }, testInfo) => {
-  const usage = { context_used_tokens: 96_000, context_window_tokens: 128_000, context_usage_percent: 75, context_threshold_percent: 50, input_tokens: 412_000, output_tokens: 18_500, cache_read_tokens: 300_000, cache_write_tokens: 12_000, cache_hit_percent: 72, estimated_cost: 1.2345 }
+  const usage = { context_used_tokens: 96_000, context_window_tokens: 128_000, context_usage_percent: 75, context_threshold_percent: 50, input_tokens: 412_000, output_tokens: 18_500, cache_read_tokens: 300_000, cache_write_tokens: 12_000, cache_hit_percent: 72, estimated_cost: 1.2345, can_compress: true }
   let started = 0
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'ring', title: 'Ring', messages: transcript('ring', 2), ...usage } } }))
   await page.route('**/api/session/compress/start', (route) => { started += 1; return route.fulfill({ json: { status: 'running' } }) })

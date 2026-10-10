@@ -616,7 +616,8 @@ export class SessionService {
     }
     this.clearStaleStreamState(s)
     const journaled = loadMessages ? this.journaledActiveTurn(s) : null
-    let transcript = loadMessages ? this.mergedTranscript(s) : []
+    const stateRows = loadMessages ? this.stateDbRows(s) : []
+    let transcript = loadMessages ? this.mergedTranscript(s, s.messages, stateRows) : []
     const pending = loadMessages ? this.pendingTurn(s) : null
     if (pending) transcript = withPendingUserTurn(transcript, pending)
     if (journaled)transcript = withoutRunningTurnOutput(transcript, { ...journaled, localCount: s.messages.length })
@@ -683,6 +684,8 @@ export class SessionService {
     raw.workspace_name = this.workspaceNames()(s)
     raw.branched_from = this.branchedFrom(s)
     withSessionWireFlags(raw, activeStreamIds)
+    // A metadata-only read lacks the history the gate counts, so it carries no flag.
+    if (loadMessages) raw.can_compress = this.canCompress(s, raw.read_only === true, stateRows)
     raw.pending_steers = raw.active_stream_id ? (this.deps.runtime.pendingSteers?.(str(raw.active_stream_id)) ?? []) : []
     return redactSessionData(raw, this.deps.redactEnabled())
   }
@@ -1200,10 +1203,27 @@ export class SessionService {
   private compressionTarget(sid: string): { s: Session; history: Message[] } {
     this.rejectSubagent(sid, 'compressed')
     const s = this.mutationTarget(sid, 'compressed')
+    return { s, history: this.compressionHistory(s) }
+  }
+
+  /** The loaded session's own compression guards: no running turn and enough model history. */
+  private compressionHistory(s: Session, stateRows?: Message[]): Message[] {
     if (s.active_stream_id) throw new HttpFailure(409, 'Session is still streaming; wait for the current turn to finish.')
-    const history = sanitizeMessagesForApi(this.modelContext(s))
+    const history = sanitizeMessagesForApi(this.modelContext(s, stateRows))
     if (history.length < 4) throw new HttpFailure(400, 'Not enough conversation to compress (need at least 4 messages).')
-    return { s, history }
+    return history
+  }
+
+  /** TAL-614: whether a manual compression would start now: `compressionTarget`'s gates, with `readOnly` the wire flag. */
+  private canCompress(s: Session, readOnly: boolean, stateRows: Message[]): boolean {
+    if (readOnly || isClaudeCodeSessionId(s.session_id)) return false
+    try {
+      this.compressionHistory(s, stateRows)
+      return true
+    } catch (error) {
+      if (error instanceof HttpFailure) return false
+      throw error
+    }
   }
 
   /** TAL-258: the session's WebUI record (absent for a CLI or gateway session) and the profile whose state.db holds its rows. */

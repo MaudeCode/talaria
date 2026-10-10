@@ -214,6 +214,23 @@ describe('manual session compression', () => {
     expect([tooShort.status, (await json(tooShort)).error]).toEqual([400, 'Not enough conversation to compress (need at least 4 messages).'])
   })
 
+  it('ships can_compress on the session detail from the same guards the start route applies (TAL-614)', async () => {
+    const canCompress = async (sid: string, query = ''): Promise<unknown> => ((await json(await s.get(`/api/session?session_id=${sid}${query}`))).session as Json).can_compress
+    expect(await canCompress(await seeded())).toBe(true)
+    expect(await canCompress(await seeded({ source_tag: 'subagent' }))).toBe(false)
+    expect(await canCompress(await seeded({ read_only: true }))).toBe(false)
+    expect(await canCompress(await seeded({ messages: ORIGINAL.slice(0, 3) }))).toBe(false)
+    // A metadata-only read has no history to count, so it carries no flag.
+    expect(await canCompress(await seeded(), '&messages=0')).toBeUndefined()
+    const streaming = await seeded({ active_stream_id: 'stream-compress-live' })
+    s.deps.registry.liveIds.add('stream-compress-live')
+    try {
+      expect(await canCompress(streaming)).toBe(false)
+    } finally {
+      s.deps.registry.liveIds.delete('stream-compress-live')
+    }
+  })
+
   it('maps sidecar failures: no provider, a held lock, and a sanitized catch-all', async () => {
     const sid = await seeded()
     sidecar.respond('chat.compress', () => { throw new SidecarError('no key', { condition: 'credential_missing' }) })
