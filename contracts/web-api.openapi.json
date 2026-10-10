@@ -47055,6 +47055,18 @@
                     "path": {
                       "type": "string"
                     },
+                    "linked_files": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
                     "success": {
                       "type": "boolean"
                     },

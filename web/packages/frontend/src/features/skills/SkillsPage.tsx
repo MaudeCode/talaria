@@ -77,9 +77,12 @@ function SkillDetail({ name, onBack }: { name: string; onBack: () => void }) {
   const content = useQuery({ queryKey: keys.skills.content(name), queryFn: () => api.fetchSkillContent(name) })
   const [draft, setDraft] = useState<string | null>(null)
   const [confirm, setConfirm] = useState(false)
+  const [file, setFile] = useState<string | null>(null)
   const save = useMutation({ mutationFn: (text: string) => api.saveSkill(name, text), onSuccess: () => { showToast(m.skill_saved()); setDraft(null); void qc.invalidateQueries({ queryKey: keys.skills.all }) }, onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error') })
   const del = useMutation({ mutationFn: () => api.deleteSkill(name), onSuccess: () => { void qc.invalidateQueries({ queryKey: keys.skills.all }); onBack() }, onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error') })
   const text = draft ?? content.data?.content ?? ''
+  const linked = Object.entries(content.data?.linked_files ?? {})
+  if (file) return <SkillFile name={name} file={file} onBack={() => setFile(null)} />
   return (
     <HubPage title={name} actions={<Button variant="ghost" onClick={onBack}><ChevronLeft size={14} aria-hidden="true" /> {m.back()}</Button>}>
       {content.isPending && <LoadingState />}
@@ -95,9 +98,36 @@ function SkillDetail({ name, onBack }: { name: string; onBack: () => void }) {
             <Button variant="primary" disabled={draft === null || save.isPending} onClick={() => { if (draft !== null) save.mutate(draft) }}>{m.save()}</Button>
             <Button variant="ghost" className="text-error" onClick={() => setConfirm(true)}>{m.delete()}</Button>
           </div>
+          {linked.length > 0 && (
+            <section className="flex flex-col gap-2">
+              <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted">{m.linked_files()}</h3>
+              {linked.map(([group, files]) => (
+                <div key={group} className="flex flex-col gap-1">
+                  <h4 className="text-xs text-muted">{group}</h4>
+                  {files.map((f) => <Button key={f} variant="link" className="self-start font-mono text-[12.5px] leading-normal" onClick={() => setFile(f)}>{f}</Button>)}
+                </div>
+              ))}
+            </section>
+          )}
         </div>
       )}
       <ConfirmDialog open={confirm} onOpenChange={setConfirm} title={m.skill_delete_confirm({ a0: name })} confirmLabel={m.delete()} cancelLabel={m.cancel()} danger onConfirm={() => del.mutate()} />
+    </HubPage>
+  )
+}
+
+function SkillFile({ name, file, onBack }: { name: string; file: string; onBack: () => void }) {
+  const content = useQuery({ queryKey: keys.skills.content(name, file), queryFn: () => api.fetchSkillContent(name, file) })
+  return (
+    <HubPage title={name} actions={<Button variant="ghost" onClick={onBack}><ChevronLeft size={14} aria-hidden="true" /> {m.skills_back_to({ a0: name })}</Button>}>
+      {content.isPending && <LoadingState />}
+      {content.isError && <ErrorState error={content.error} onRetry={() => { void content.refetch() }} />}
+      {content.isSuccess && (
+        <div className="flex flex-col gap-3">
+          <div className="font-mono text-[11px] text-muted">{file}</div>
+          <pre className="w-full overflow-auto whitespace-pre-wrap rounded-md border border-border bg-code-bg p-3 font-mono text-[12.5px] text-pre-text">{content.data.content ?? ''}</pre>
+        </div>
+      )}
     </HubPage>
   )
 }
