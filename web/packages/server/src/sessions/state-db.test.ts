@@ -490,6 +490,46 @@ describe('claiming a CLI session for WebUI (TAL-256)', () => {
     expect(s.deps.sessionStore.get('cli-untitled').title).toBe('Resumed CLI work')
   })
 
+  it('titles an untitled CLI session when a mutation other than a send claims it (TAL-591)', async () => {
+    insertSession(db, { id: 'cli-pinned', source: 'cli', started_at: 1160, messages: [['user', 1161], ['assistant', 1162]] })
+    sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Imported CLI work"', usage: null }))
+
+    expect((await post('/api/session/pin', { session_id: 'cli-pinned', pinned: true })).status).toBe(200)
+
+    await vi.waitFor(() => { expect(s.deps.sessionStore.get('cli-pinned').title).toBe('Imported CLI work') })
+  })
+
+  it('does not recreate a claimed CLI session deleted while its title prompt ran (TAL-591)', async () => {
+    insertSession(db, { id: 'cli-gone', source: 'cli', started_at: 1170, messages: [['user', 1171], ['assistant', 1172]] })
+    let titled = false
+    sidecar.respond('aux.complete', async () => {
+      expect((await post('/api/session/delete', { session_id: 'cli-gone' })).status).toBe(200)
+      titled = true
+      return { model: 'aux', text: 'Title: "Too late"', usage: null }
+    })
+
+    expect((await post('/api/session/pin', { session_id: 'cli-gone', pinned: true })).status).toBe(200)
+    await vi.waitFor(() => { expect(titled).toBe(true) })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    expect(existsSync(s.deps.sessionStore.pathFor('cli-gone'))).toBe(false)
+  })
+
+  it('counts a claimed CLI session\'s title job as profile activity until it settles (TAL-591)', async () => {
+    insertSession(db, { id: 'cli-busy', source: 'cli', started_at: 1180, messages: [['user', 1181], ['assistant', 1182]] })
+    let finish: () => void = () => undefined
+    sidecar.respond('aux.complete', () => new Promise((resolve) => { finish = () => { resolve({ model: 'aux', text: 'Title: "Busy CLI work"', usage: null }) } }))
+    const runsActive = (): boolean => (s.deps.profiles as unknown as { deps: { profileRunsActive: (name: string) => boolean } }).deps.profileRunsActive('default')
+
+    expect((await post('/api/session/pin', { session_id: 'cli-busy', pinned: true })).status).toBe(200)
+    await vi.waitFor(() => { expect(sidecar.calls.some((c) => c.method === 'aux.complete' && JSON.stringify(c.params).includes('user says'))).toBe(true) })
+    expect(runsActive()).toBe(true)
+
+    finish()
+    await vi.waitFor(() => { expect(s.deps.sessionStore.get('cli-busy').title).toBe('Busy CLI work') })
+    await vi.waitFor(() => { expect(runsActive()).toBe(false) })
+  })
+
   it('files a claimed webhook session in the Webhooks project its sidebar row already shows', async () => {
     insertSession(db, { id: 'hook-run', source: 'webhook', started_at: 1200, title: 'Hook run', messages: [['user', 1201], ['assistant', 1202]] })
 

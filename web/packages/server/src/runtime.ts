@@ -293,6 +293,12 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
         .catch((error: unknown) => { log(`[webui] memory commit for ${sid} failed: ${(error as Error).message}`) })
         .finally(release)
     },
+    // Detached like a memory commit: profile deletion waits for the title job, which reads the profile's config.
+    titleClaimed: (session) => {
+      if (profiles.isDeleting(session.profile ?? null)) return
+      const release = profileActivity(session.profile ?? null)
+      void turns.titleClaimed(session).finally(release)
+    },
     drafts,
     events,
     workspaces,
