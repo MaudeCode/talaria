@@ -17,6 +17,7 @@ export const keys = {
     detail: (id: string) => ['sessions', 'detail', id] as const,
     status: (id: string) => ['sessions', 'status', id] as const,
     usage: (id: string) => ['sessions', 'usage', id] as const,
+    worktree: (id: string) => ['sessions', 'worktree', id] as const,
     search: (q: string, filters: object) => ['sessions', 'search', q, filters] as const,
   },
   projects: ['projects'] as const,

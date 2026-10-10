@@ -4,6 +4,7 @@ import { spawnGit } from './git.js'
 import { resolvePathLikePython } from './paths.js'
 import { pyOsError } from '../util.js'
 import type { Session } from '../sessions/session.js'
+import type { WorktreeStatus } from '@maudecode/talaria-web-contracts'
 
 /** The `OSError`/`TimeoutExpired` text Python interpolated into `Failed to remove worktree: {exc}`. */
 export class GitSpawnFailure extends Error {}
@@ -85,23 +86,23 @@ export interface WorktreeLocks {
   lockedByTerminal: (sessionId: string, worktreePath: string) => boolean
 }
 
-export async function worktreeStatusForSession(session: Session, locks: WorktreeLocks): Promise<Record<string, unknown>> {
+export async function worktreeStatusForSession(session: Session, locks: WorktreeLocks): Promise<WorktreeStatus> {
   const worktreePath = resolvePath(session.worktree_path)
   if (!worktreePath) throw new Error('Session is not worktree-backed')
   const exists = isDir(worktreePath)
-  const status: Record<string, unknown> = {
-    path: worktreePath, exists, dirty: false, untracked_count: 0,
-    ahead_behind: { ahead: 0, behind: 0, available: false, upstream: null },
-    locked_by_stream: locks.lockedByStream(session),
-    locked_by_terminal: locks.lockedByTerminal(session.session_id, worktreePath),
-    listed: await worktreeListed(worktreePath, session.worktree_repo_root),
+  const lockedByStream = locks.lockedByStream(session)
+  const lockedByTerminal = locks.lockedByTerminal(session.session_id, worktreePath)
+  const listed = await worktreeListed(worktreePath, session.worktree_repo_root)
+  const [dirty, untracked] = exists ? await statusPorcelain(worktreePath) : [false, 0]
+  const aheadBehindStatus = exists ? await aheadBehind(worktreePath) : { ahead: 0, behind: 0, available: false, upstream: null }
+  return {
+    path: worktreePath, exists, dirty, untracked_count: untracked, ahead_behind: aheadBehindStatus,
+    locked_by_stream: lockedByStream, locked_by_terminal: lockedByTerminal, listed,
+    // `removeWorktreeForSession`'s gates: a missing directory is always removable, a lock blocks removal outright,
+    // and uncommitted, untracked, or unpushed work needs `force`.
+    removable: !exists || !(lockedByStream || lockedByTerminal),
+    force_required: dirty || untracked > 0 || aheadBehindStatus.ahead > 0,
   }
-  if (!exists) return status
-  const [dirty, untracked] = await statusPorcelain(worktreePath)
-  status.dirty = dirty
-  status.untracked_count = untracked
-  status.ahead_behind = await aheadBehind(worktreePath)
-  return status
 }
 
 export async function removeWorktreeForSession(session: Session, locks: WorktreeLocks, opts: { force?: boolean } = {}): Promise<Record<string, unknown>> {
@@ -114,12 +115,12 @@ export async function removeWorktreeForSession(session: Session, locks: Worktree
   if (status.locked_by_stream) throw new Error('Worktree is locked by an active streaming session')
   if (status.locked_by_terminal) throw new Error('Worktree is locked by an active terminal session')
   if (status.dirty && !force) throw new Error('Worktree has uncommitted changes. Use force=true to override.')
-  const untracked = Number(status.untracked_count) || 0
+  const untracked = status.untracked_count
   if (untracked > 0) {
     if (force) warnings.push(`${untracked} untracked file(s) will be removed.`)
     else throw new Error(`Worktree has ${untracked} untracked file(s). Use force=true to override.`)
   }
-  const ahead = (status.ahead_behind as { ahead?: number }).ahead ?? 0
+  const ahead = status.ahead_behind.ahead
   if (ahead > 0) {
     if (force) warnings.push(`${ahead} unpushed commit(s) will be removed.`)
     else throw new Error(`Worktree has ${ahead} unpushed commit(s). Use force=true to override.`)

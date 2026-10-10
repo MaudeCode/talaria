@@ -6,6 +6,7 @@ import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import type { SessionRow } from '../../contracts'
+import type { WorktreeStatus } from '@maudecode/talaria-web-contracts'
 import { appUrl } from '../../lib/appRoot'
 import { Menu, MenuItem, MenuSeparator } from '../../ui/Menu'
 import { ConfirmDialog, Dialog } from '../../ui/Dialog'
@@ -15,7 +16,7 @@ import { Select } from '../../ui/Select'
 import { showToast } from '../toast/toast'
 import { useQuery } from '@tanstack/react-query'
 
-type PendingDialog = { kind: 'rename' } | { kind: 'delete' } | { kind: 'move' } | { kind: 'revoke' } | null
+type PendingDialog = { kind: 'rename' } | { kind: 'delete' } | { kind: 'move' } | { kind: 'revoke' } | { kind: 'worktree' } | null
 
 /** Per-row conversation actions (legacy long-press / kebab menu). Every mutation invalidates the session list family. */
 export function SessionContextMenu({ row, active }: { row: SessionRow; active: boolean }) {
@@ -26,6 +27,8 @@ export function SessionContextMenu({ row, active }: { row: SessionRow; active: b
   const [projectId, setProjectId] = useState(row.project_id ?? '')
   const projects = useQuery({ queryKey: keys.projects, queryFn: api.fetchProjects, staleTime: 60_000, enabled: dialog?.kind === 'move' })
   const sid = row.session_id
+  // TAL-605: the server's removal check, read fresh each time the dialog opens.
+  const worktree = useQuery({ queryKey: keys.sessions.worktree(sid), queryFn: () => api.fetchWorktreeStatus(sid), staleTime: 0, gcTime: 0, enabled: dialog?.kind === 'worktree' })
   const invalidate = () => { void qc.invalidateQueries({ queryKey: keys.sessions.all }) }
   const fail = (e: unknown) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error')
   const rename = useMutation({ mutationFn: () => api.renameSession(sid, title.trim()), onSuccess: () => { setDialog(null); invalidate(); void qc.invalidateQueries({ queryKey: keys.sessions.detail(sid) }) }, onError: fail })
@@ -34,6 +37,11 @@ export function SessionContextMenu({ row, active }: { row: SessionRow; active: b
   const duplicate = useMutation({ mutationFn: () => api.duplicateSession(sid), onSuccess: (r) => { showToast(m.session_duplicated()); invalidate(); void navigate({ to: '/session/$sessionId', params: { sessionId: r.session.session_id } }) }, onError: (e) => showToast(m.session_duplicate_failed() + (e instanceof Error ? e.message : ''), 4000, 'error') })
   const del = useMutation({ mutationFn: () => api.deleteSession(sid), onSuccess: () => { showToast(m.session_deleted()); invalidate(); if (active) void navigate({ to: '/', search: { action: 'new-chat' } }) }, onError: fail })
   const move = useMutation({ mutationFn: () => api.moveSession(sid, projectId || null), onSuccess: () => { setDialog(null); invalidate() }, onError: fail })
+  const removeWorktree = useMutation({
+    mutationFn: (force: boolean) => api.removeWorktree(sid, force),
+    onSuccess: () => { setDialog(null); showToast(m.session_worktree_removed()); invalidate() },
+    onError: (e) => showToast(m.session_worktree_remove_failed() + (e instanceof Error ? e.message : ''), 4000, 'error'),
+  })
   const regen = useMutation({ mutationFn: () => api.regenerateTitle(sid), onSuccess: (r) => { showToast(r.title ? m.session_title_regenerated({ title: r.title }) : m.session_title_regenerating()); invalidate() }, onError: (e) => showToast(m.session_title_regenerate_failed() + (e instanceof Error ? e.message : ''), 4000, 'error') })
   const shareUrl = row.share_url
   /** Copy the server's share URL; when the clipboard refuses, the toast carries the link instead. */
@@ -90,6 +98,7 @@ export function SessionContextMenu({ row, active }: { row: SessionRow; active: b
         <MenuItem onClick={() => exportAs('json')}>{m.session_export_json()}</MenuItem>
         <MenuItem onClick={() => exportAs('html')}>{m.session_export_html()}</MenuItem>
         <MenuSeparator />
+        {row.worktree_branch && !row.read_only && <MenuItem className="text-error" onClick={() => setDialog({ kind: 'worktree' })}>{m.session_worktree_remove()}</MenuItem>}
         {row.can_archive && <MenuItem onClick={() => archive.mutate()}>{row.archived ? m.session_unarchive() : m.session_archive()}</MenuItem>}
         {!row.read_only && <MenuItem className="text-error" onClick={() => setDialog({ kind: 'delete' })}>{m.session_delete()}</MenuItem>}
       </Menu>
@@ -112,8 +121,35 @@ export function SessionContextMenu({ row, active }: { row: SessionRow; active: b
           </form>
         </Dialog>
       )}
+      {dialog?.kind === 'worktree' && (
+        <Dialog open onOpenChange={(o) => { if (!o) setDialog(null) }} title={m.session_worktree_remove()} description={worktree.data ? m.session_worktree_remove_desc({ path: worktree.data.status.path }) : undefined}>
+          <WorktreeRemoveCheck status={worktree.data?.status} error={worktree.error} />
+          <div className="mt-4 flex justify-end gap-2">
+            <Button onClick={() => setDialog(null)}>{m.cancel()}</Button>
+            <Button variant="danger" disabled={!worktree.data?.status.removable || removeWorktree.isPending} onClick={() => { if (worktree.data) removeWorktree.mutate(worktree.data.status.force_required) }}>
+              {worktree.data?.status.force_required ? m.session_worktree_force_remove() : m.session_worktree_remove_confirm_label()}
+            </Button>
+          </div>
+        </Dialog>
+      )}
       <ConfirmDialog open={dialog?.kind === 'revoke'} onOpenChange={(o) => { if (!o) setDialog(null) }} title={m.session_share_revoke()} description={m.stop_sharing_session_confirm()} confirmLabel={m.session_share_revoke()} cancelLabel={m.cancel()} danger onConfirm={() => revoke.mutate()} />
       <ConfirmDialog open={dialog?.kind === 'delete'} onOpenChange={(o) => { if (!o) setDialog(null) }} title={m.session_delete_confirm()} description={row.worktree_branch ? m.session_delete_worktree_desc() : m.session_delete_desc()} confirmLabel={m.delete()} cancelLabel={m.cancel()} danger onConfirm={() => del.mutate()} />
     </>
+  )
+}
+
+/** The removal check in words: what blocks removal, or what a forced removal loses. */
+function WorktreeRemoveCheck({ status, error }: { status: WorktreeStatus | undefined; error: Error | null }) {
+  if (error) return <p className="text-sm text-error" role="alert">{m.session_worktree_remove_status_failed() + error.message}</p>
+  if (!status) return <p className="text-sm text-muted">{m.loading()}</p>
+  if (!status.exists) return <p className="text-sm text-muted">{m.session_worktree_remove_not_exists({ path: status.path })}</p>
+  if (!status.removable) return <p className="text-sm text-error" role="alert">{status.locked_by_stream ? m.session_worktree_remove_locked_by_stream() : m.session_worktree_remove_locked_by_terminal()}</p>
+  if (!status.force_required) return null
+  return (
+    <ul className="flex list-disc flex-col gap-1 ps-5 text-sm text-warning">
+      {status.dirty && <li>{m.session_worktree_remove_dirty_warning()}</li>}
+      {status.untracked_count > 0 && <li>{m.session_worktree_remove_untracked_warning({ count: status.untracked_count })}</li>}
+      {status.ahead_behind.ahead > 0 && <li>{m.session_worktree_remove_ahead_warning({ ahead: status.ahead_behind.ahead })}</li>}
+    </ul>
   )
 }

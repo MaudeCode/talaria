@@ -97,3 +97,15 @@ refs, missing Git binaries, and timeouts.
 Repository-local credential helpers and askpass commands are disabled for workspace Git operations.
 Private HTTPS remotes that depend on a stored credential helper may fail to fetch, pull, or push from
 WebUI; use an SSH remote or another externally authenticated transport for those workflows.
+
+## Worktree conversations
+
+**New conversation in worktree**, in the composer's workspace menu, asks the Agent to create a git
+worktree of the selected workspace's repository and opens a conversation bound to it. The sidebar marks
+worktree conversations with a branch icon and lists them from creation, before the first message,
+because each one owns a directory on disk.
+
+**Remove worktree**, in the conversation menu, reads `/api/session/worktree/status` first. The server
+answers `removable` (false while a run or terminal uses the worktree) and `force_required` (true when
+removal would lose uncommitted changes, untracked files, or unpushed commits). The dialog lists that
+loss and offers **Force remove**. Removing the worktree keeps the conversation.

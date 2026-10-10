@@ -94,6 +94,14 @@ describe('worktree-backed sessions', () => {
     expect(ids).not.toContain(plain.session_id)
   })
 
+  it('the HTTP sidebar list shows a zero-message worktree session, which owns a directory on disk (TAL-605)', async () => {
+    const created = (await json(await post(s, '/api/session/new', { workspace: ws, worktree: true }))).session as Json
+    const plain = (await json(await post(s, '/api/session/new', { workspace: ws }))).session as Json
+    const rows = (await json(await s.get('/api/sessions'))).sessions as Json[]
+    expect(rows.find((r) => r.session_id === created.session_id)).toMatchObject({ worktree_branch: 'hermes/wt' })
+    expect(rows.map((r) => r.session_id)).not.toContain(plain.session_id)
+  })
+
   it('worktree:true without a workspace falls back to the last workspace', async () => {
     await post(s, '/api/session/new', { workspace: ws })
     const res = await post(s, '/api/session/new', { worktree: true })
@@ -253,13 +261,13 @@ describe('worktree status against a real git worktree', () => {
   const status = async (): Promise<Json> => (await json(await s.get(`/api/session/worktree/status?session_id=${sid}`))).status as Json
 
   it('a clean listed worktree with an upstream reports zero ahead/behind', async () => {
-    expect(await status()).toMatchObject({ path: worktree, exists: true, listed: true, dirty: false, untracked_count: 0, ahead_behind: { available: true, ahead: 0, behind: 0 }, locked_by_stream: false, locked_by_terminal: false })
+    expect(await status()).toMatchObject({ path: worktree, exists: true, listed: true, dirty: false, untracked_count: 0, ahead_behind: { available: true, ahead: 0, behind: 0 }, locked_by_stream: false, locked_by_terminal: false, removable: true, force_required: false })
   })
 
   it('edits, untracked files, and local commits show as dirty, untracked, and ahead', async () => {
     writeFileSync(join(worktree, 'README.md'), 'changed\n')
     writeFileSync(join(worktree, 'new.txt'), 'new\n')
-    expect(await status()).toMatchObject({ dirty: true, untracked_count: 1, ahead_behind: { available: true, ahead: 0 } })
+    expect(await status()).toMatchObject({ dirty: true, untracked_count: 1, ahead_behind: { available: true, ahead: 0 }, force_required: true })
     git(worktree, 'commit', '--quiet', '-am', 'edit')
     expect(await status()).toMatchObject({ dirty: true, untracked_count: 1, ahead_behind: { available: true, ahead: 1, behind: 0 } })
   })
@@ -269,8 +277,8 @@ describe('worktree status against a real git worktree', () => {
     session.active_stream_id = 'stream-live'
     s.deps.sessionStore.save(session)
     s.deps.registry.liveIds.add('stream-live')
-    expect((await status()).locked_by_stream).toBe(true)
+    expect(await status()).toMatchObject({ locked_by_stream: true, removable: false })
     s.deps.registry.liveIds.delete('stream-live')
-    expect((await status()).locked_by_stream).toBe(false)
+    expect(await status()).toMatchObject({ locked_by_stream: false, removable: true })
   })
 })

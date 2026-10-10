@@ -52,6 +52,7 @@ export interface ComposerProps {
   onToggleTerminal: () => void
   onModelChange: (model: string, provider: string | null) => void
   onWorkspaceChange: (path: string) => void
+  onNewWorktreeChat?: ((workspace: string | undefined) => void) | undefined
   onToolsetsChange: (toolsets: string[] | null) => void
   onReasoningChange: (level: string | null) => void
   reasoningLevels?: string[] | undefined
@@ -121,7 +122,7 @@ function fileKey(f: File): string {
 let handoff: { draft: { readonly current: string }; files: File[]; sessionId: string | null } | null = null
 
 export function Composer(props: ComposerProps) {
-  const { sessionId, session, live, settings, onEnsureSession, onLocalCommand, terminalOpen, onToggleTerminal, onModelChange, onWorkspaceChange, onToolsetsChange, onReasoningChange, reasoning, reasoningLevels, reasoningSupported = true, pendingChoices, locked = false, yolo, onToggleYolo, queued, onQueue, onQueueChange, clarify, notices = [] } = props
+  const { sessionId, session, live, settings, onEnsureSession, onLocalCommand, terminalOpen, onToggleTerminal, onModelChange, onWorkspaceChange, onNewWorktreeChat, onToolsetsChange, onReasoningChange, reasoning, reasoningLevels, reasoningSupported = true, pendingChoices, locked = false, yolo, onToggleYolo, queued, onQueue, onQueueChange, clarify, notices = [] } = props
   const bootstrap = useBootstrap()
   const qc = useQueryClient()
   const [text, setText] = useState(() => (sessionId ? readLocalDraft(sessionId) : ''))
@@ -653,7 +654,7 @@ export function Composer(props: ComposerProps) {
       {/* T3 Code's context strip: where the message runs (workspace, toolsets, profile), tucked under the card. */}
       {!collapsed && (!hide('hide_composer_workspace') || !hide('hide_composer_toolsets') || !hide('hide_composer_profile')) && (
         <div className="composer-strip" role="group" aria-label={m.composer_config_title()}>
-          {!hide('hide_composer_workspace') && <WorkspaceChip value={session?.workspace ?? pendingChoices?.workspace ?? settings?.default_workspace} name={session ? session.workspace_name ?? null : undefined} onChange={onWorkspaceChange} />}
+          {!hide('hide_composer_workspace') && <WorkspaceChip value={session?.workspace ?? pendingChoices?.workspace ?? settings?.default_workspace} name={session ? session.workspace_name ?? null : undefined} onChange={onWorkspaceChange} onNewWorktree={onNewWorktreeChat} />}
           {!hide('hide_composer_toolsets') && <ToolsetsChip value={session?.enabled_toolsets ?? pendingChoices?.enabled_toolsets ?? null} onChange={onToolsetsChange} />}
           {!hide('hide_composer_profile') && <ProfileMenu />}
         </div>

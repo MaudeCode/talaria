@@ -89,6 +89,19 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     return created
   }, [session, settings.data, bootstrap.profile, qc, navigate, pending])
 
+  // TAL-605: a new conversation in its own git worktree of the chosen workspace; the server creates the worktree.
+  const newWorktreeChat = useCallback(async (workspace: string | undefined) => {
+    try {
+      const created = await createSessionNow({ ...pending, ...(workspace ? { workspace } : {}), profile: bootstrap.profile?.name ?? 'default', worktree: true })
+      qc.setQueryData(keys.sessions.detail(created.session_id), { session: created })
+      void qc.invalidateQueries({ queryKey: keys.sessions.all })
+      showToast(m.workspace_worktree_created())
+      await navigate({ to: '/session/$sessionId', params: { sessionId: created.session_id } })
+    } catch (e) {
+      showToast(m.workspace_worktree_failed() + (e instanceof Error ? e.message : String(e)), 4000, 'error')
+    }
+  }, [pending, bootstrap.profile, qc, navigate])
+
   // Reasoning effort is server state shared with the CLI (config.yaml), keyed on the session's model.
   const reasoningKey = ['reasoning', session?.model ?? null, session?.model_provider ?? null] as const
   const reasoningStatus = useQuery({ queryKey: reasoningKey, queryFn: () => api.fetchReasoning(session?.model, session?.model_provider), enabled: !!sessionId, staleTime: 30_000 })
@@ -354,6 +367,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
           onToggleTerminal={() => setTerminalOpen((t) => !t)}
           onModelChange={onModelChange}
           onWorkspaceChange={onWorkspaceChange}
+          onNewWorktreeChat={(ws) => { void newWorktreeChat(ws) }}
           onToolsetsChange={onToolsetsChange}
           onReasoningChange={setReasoning}
           reasoning={reasoning}
