@@ -31,7 +31,8 @@ export type SettingsField = z.infer<typeof SettingsFieldSchema>
  */
 export { SKIN_TOKEN_ALIASES } from '@maudecode/talaria-web-contracts'
 export const ThemeDeclarationSchema = z.object({
-  key: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,31}$/),
+  /** `<extension-id>:<key>`, unique across built-in and extension skins. */
+  key: z.string().regex(/^[a-z][a-z0-9_-]{0,63}:[a-z0-9][a-z0-9_-]{0,31}$/),
   name: z.string().min(1).max(40),
   scheme: z.enum(['light', 'dark']).optional(),
   colors: z.array(z.string().regex(SKIN_VALUE_RE)).max(3).optional(),

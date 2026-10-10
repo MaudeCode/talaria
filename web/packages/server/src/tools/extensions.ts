@@ -219,14 +219,17 @@ function sidecarFromEntry(entry: Dict, d: Diagnostics | null): Dict | null {
   return { id: entryText(entry, 'id'), name: entryText(entry, 'name'), type: 'loopback', origin, health_path: healthPath, health_url: `${origin}${healthPath}`, proxy_auth: proxyAuth }
 }
 
-/** A manifest `theme` reduced to the frontend skin contract: allowlisted tokens whose values pass the shared value check. */
-function themeFromEntry(raw: unknown): Dict | null {
+/**
+ * A manifest `theme` reduced to the frontend skin contract: allowlisted tokens whose values pass the shared value check,
+ * keyed `<extension-id>:<key>` so it never collides with a built-in skin or another extension's skin.
+ */
+function themeFromEntry(raw: unknown, id: string): Dict | null {
   if (!isDict(raw) || typeof raw.key !== 'string' || !DECLARATION_ID_RE.test(raw.key)) return null
   const name = text(raw.name, 40)
   const tokens = isDict(raw.tokens) ? Object.fromEntries(Object.entries(raw.tokens).filter(([k, v]) => SKIN_TOKENS.has(k) && typeof v === 'string' && SKIN_VALUE_RE.test(v))) : {}
   if (!name || !Object.keys(tokens).length) return null
   const colors = Array.isArray(raw.colors) ? raw.colors.filter((c): c is string => typeof c === 'string' && SKIN_VALUE_RE.test(c)).slice(0, 3) : null
-  return { key: raw.key, name, ...(raw.scheme === 'light' || raw.scheme === 'dark' ? { scheme: raw.scheme } : {}), ...(colors ? { colors } : {}), tokens }
+  return { key: `${id}:${raw.key}`, name, ...(raw.scheme === 'light' || raw.scheme === 'dark' ? { scheme: raw.scheme } : {}), ...(colors ? { colors } : {}), tokens }
 }
 
 function ttsFromEntry(raw: unknown): Dict | null {
@@ -802,12 +805,13 @@ export class ExtensionService {
       }
       const scripts = Array.isArray(rawManifest.scripts) ? rawManifest.scripts : []
       const stylesheets = Array.isArray(rawManifest.stylesheets) ? rawManifest.stylesheets : []
-      const legacy = Boolean((scripts.length || stylesheets.length) && !panel)
+      const theme = themeFromEntry(rawManifest.theme, id)
+      if (!theme && rawManifest.theme != null) warnings.push('theme_rejected')
+      // A skin is the one declaration that works without a panel, so it keeps an entry with leftover assets runnable.
+      const legacy = Boolean((scripts.length || stylesheets.length) && !panel && !theme)
       const rawNav = isDict(rawManifest.nav) ? rawManifest.nav : {}
       const nav = panel ? { label: text(rawNav.label, 40) || text(entry.name, 40) || id, ...(text(rawNav.icon, 40) ? { icon: text(rawNav.icon, 40) } : {}) } : null
       const permissions = isDict(rawManifest.permissions) ? Object.fromEntries(Object.entries(rawManifest.permissions).filter(([k]) => k.length <= 64).map(([k, v]) => [k, Boolean(v)])) : {}
-      const theme = themeFromEntry(rawManifest.theme)
-      if (!theme && rawManifest.theme != null) warnings.push('theme_rejected')
       const tts = ttsFromEntry(rawManifest.tts)
       if (!tts && rawManifest.tts != null) warnings.push('tts_rejected')
       // The sidecar the proxy would serve: same record, availability, and saved consent `proxyTarget` enforces

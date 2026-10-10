@@ -41,7 +41,7 @@ test('a gallery extension with a panel gets a rail entry, Open, and Uninstall; a
 })
 
 /** TAL-711: a gallery extension's theme arrives sanitized, so its skin is offered in Appearance and applies its tokens. */
-test('a gallery extension theme is offered in Appearance and applies only its allowlisted tokens', async ({ page }, testInfo) => {
+test('a gallery extension theme is offered in Appearance, applies only its allowlisted tokens, and clears when disabled', async ({ page }, testInfo) => {
   const state = openServerState()
   const root = join(state, 'extensions')
   mkdirSync(join(root, 'dusk'), { recursive: true })
@@ -54,15 +54,24 @@ test('a gallery extension theme is offered in Appearance and applies only its al
   try {
     await page.goto('/settings/appearance')
     await settle(page)
-    const pick = page.locator('[data-skin-val="dusk"]')
+    const pick = page.locator('[data-skin-val="dusk:dusk"]')
     await expect(pick).toBeVisible()
     await pick.click()
     const html = page.locator('html')
-    await expect(html).toHaveAttribute('data-ext-skin', 'dusk')
+    await expect(html).toHaveAttribute('data-ext-skin', 'dusk:dusk')
     await expect(html).toHaveAttribute('data-ext-skin-tokens', '--bg --accent')
     expect(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--bg').trim())).toBe('#2b1d3a')
     if (process.env.TAL711_SHOTS) await page.screenshot({ path: `${process.env.TAL711_SHOTS}/appearance-${testInfo.project.name}.png` })
+
+    // Disabling the extension (in-app, no reload) drops its skin from the live page and falls back to the built-in skin.
+    await page.evaluate(() => { history.pushState({}, '', '/settings/extensions'); dispatchEvent(new PopStateEvent('popstate')) })
+    await page.locator('[data-extension-id="dusk"]').getByRole('switch').click()
+    await expect(html).not.toHaveAttribute('data-ext-skin')
+    expect(await page.evaluate(() => document.documentElement.style.getPropertyValue('--bg'))).toBe('')
+    if (process.env.TAL711_SHOTS) await page.screenshot({ path: `${process.env.TAL711_SHOTS}/disabled-${testInfo.project.name}.png` })
   } finally {
+    // The override lives in the shared server state; the next project starts from an enabled extension.
+    await page.request.post('/api/extensions/toggle', { data: { id: 'dusk', enabled: true } })
     rmSync(root, { recursive: true, force: true })
     rmSync(join(state, 'extension-install-manifest.json'), { force: true })
   }

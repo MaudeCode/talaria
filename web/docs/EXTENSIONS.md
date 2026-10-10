@@ -385,7 +385,7 @@ when selected, sets the allowlisted tokens as CSS custom properties on the
 document root. Token names are limited to the palette allowlist and values to
 hex, `rgb()`, `hsl()`, colour keywords, simple lengths or a bare RGB triple.
 No stylesheet is injected. The persisted `hermes-skin` key keeps the namespaced
-skin key (`<extension-id>-<key>`), so a removed extension falls back to the
+skin key (`<extension-id>:<key>`), so a removed extension falls back to the
 default skin.
 
 ## Registering a custom TTS engine
