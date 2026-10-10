@@ -57,7 +57,7 @@ export const sendJob = internalAction({
     }
 
     const response = await sendWithTransport(
-      { ...claimed.request, stateFingerprint: claimed.stateFingerprint },
+      { ...claimed.request, jobId: args.jobId },
       providerToken,
     );
     if (response.status >= 200 && response.status < 300) {

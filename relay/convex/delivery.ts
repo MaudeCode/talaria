@@ -610,7 +610,6 @@ export const claimJob = internalMutation({
         v.literal("notification"),
       ),
       request: apnsRequestValidator,
-      stateFingerprint: v.string(),
     }),
   ),
   handler: async (ctx, args) => {
@@ -778,7 +777,7 @@ export const claimJob = internalMutation({
       attemptCount: job.attemptCount + 1,
       updatedAt: args.now,
     });
-    return { status: "ready" as const, kind: job.kind, request, stateFingerprint: job.stateFingerprint };
+    return { status: "ready" as const, kind: job.kind, request };
   },
 });
 

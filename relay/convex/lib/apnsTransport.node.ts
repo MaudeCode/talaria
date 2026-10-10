@@ -11,7 +11,7 @@ export interface ApnsWireRequest {
   priority: "5" | "10";
   payloadJson: string;
   // Hashed into apns-collapse-id so a retry replaces, not duplicates, an already-delivered push.
-  stateFingerprint: string;
+  jobId: string;
 }
 
 export interface ApnsWireResponse {
@@ -73,7 +73,7 @@ export const sendHttp2: ApnsTransport = async (request, authorization) =>
       "apns-topic": request.topic,
       "apns-push-type": request.pushType,
       "apns-priority": request.priority,
-      "apns-collapse-id": createHash("sha256").update(request.stateFingerprint).digest("base64url"),
+      "apns-collapse-id": createHash("sha256").update(request.jobId).digest("base64url"),
       "content-type": "application/json",
     });
     let responseHeaders: IncomingHttpHeaders = {};

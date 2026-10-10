@@ -75,7 +75,7 @@ describe("APNs transport", () => {
       pushType: "liveactivity",
       priority: "5",
       payloadJson: "{}",
-      stateFingerprint: "state",
+      jobId: "job-1",
     };
     const fake = vi.fn().mockResolvedValue({ status: 200, apnsId: "apns-id" });
 
@@ -94,13 +94,14 @@ describe("APNs transport", () => {
       pushType: "alert",
       priority: "10",
       payloadJson: "{}",
-      stateFingerprint: "notification:event-1:device-1",
+      jobId: "job-1",
     };
     http2.requests.length = 0;
 
     await sendHttp2(request, "jwt");
     await sendHttp2(request, "jwt");
-    await sendHttp2({ ...request, stateFingerprint: "notification:event-2:device-1" }, "jwt");
+    // A different job with the same payload state (e.g. a reused event ID) must not replace the first alert.
+    await sendHttp2({ ...request, jobId: "job-2" }, "jwt");
 
     const [first, retry, other] = http2.requests.map((headers) => headers["apns-collapse-id"]);
     expect(first).toMatch(/^[A-Za-z0-9_-]{1,64}$/u);

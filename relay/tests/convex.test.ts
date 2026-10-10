@@ -2226,13 +2226,7 @@ describe("Convex relay state", () => {
       status: "ready",
       kind: "live_activity_start",
       request: { token: "rotated-push-to-start-token", pushType: "liveactivity" },
-      stateFingerprint: enabledJob!.stateFingerprint,
     });
-    // A workpool retry re-claims the running job with the same fingerprint, so apns-collapse-id is unchanged.
-    await expect(backend.mutation(internal.delivery.claimJob, {
-      jobId: enabledJob!._id,
-      now: now + 5,
-    })).resolves.toMatchObject({ status: "ready", stateFingerprint: enabledJob!.stateFingerprint });
     await backend.mutation(internal.delivery.markDelivered, {
       jobId: enabledJob!._id,
       apnsStatus: 200,
