@@ -1,5 +1,5 @@
 /** Listener timeouts: a stalled request body cannot hold a socket open indefinitely, while responses stay unbounded. */
-import { chmodSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdtempSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { connect } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -62,5 +62,17 @@ describe('credential permissions at startup', () => {
 
   it('removes only world bits when the operator declares HERMES_HOME_MODE', async () => {
     expect(await bootWithEnvFile({ HERMES_HOME_MODE: '0750' })).toBe(0o640)
+  })
+
+  it('never follows a symlinked credential name to its target', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'talaria-hermes-home-'))
+    const target = join(home, 'unrelated.txt')
+    writeFileSync(target, 'shared\n')
+    chmodSync(target, 0o644)
+    symlinkSync(target, join(home, '.env'))
+    const s = await bootTestServer({ env: { HERMES_HOME: home } })
+    await s.close()
+    expect(statSync(target).mode & 0o777).toBe(0o644)
+    rmSync(home, { recursive: true, force: true })
   })
 })

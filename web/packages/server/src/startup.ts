@@ -3,7 +3,7 @@
  * arms it before deferred recovery and releases it when recovery settles.
  * `/api/` requests wait a bounded time, with a bounded number of waiters.
  */
-import { chmodSync, statSync } from 'node:fs'
+import { closeSync, constants, fchmodSync, fstatSync, openSync } from 'node:fs'
 import { join } from 'node:path'
 import { truthy, type ServerConfig } from './config.js'
 
@@ -48,6 +48,8 @@ export class StartupGate {
 
 /** Credential files in `HERMES_HOME` that must never be group- or world-accessible. */
 const SENSITIVE_FILES = ['.env', 'auth.json', 'google_token.json', 'google_client_secret.json']
+// Never follow a link (or a swap after the check) to an unrelated target; never block on a FIFO.
+const O_CHMOD = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0)
 
 /**
  * Python `fix_credential_permissions`: tighten credential files to 0600 at startup (the Agent skips this in
@@ -58,13 +60,17 @@ export function fixCredentialPermissions(config: Pick<ServerConfig, 'env' | 'her
   if (process.platform === 'win32' || truthy(config.env.HERMES_SKIP_CHMOD)) return
   const declaredMode = /^[0-7]+$/.test((config.env.HERMES_HOME_MODE ?? '').trim())
   for (const name of SENSITIVE_FILES) {
-    const file = join(config.hermesHome, name)
+    let fd: number | undefined
     try {
-      const current = statSync(file).mode & 0o777
-      if ((current & (declaredMode ? 0o007 : 0o077)) === 0) continue
+      fd = openSync(join(config.hermesHome, name), O_CHMOD)
+      const stat = fstatSync(fd)
+      const current = stat.mode & 0o777
+      if (!stat.isFile() || (current & (declaredMode ? 0o007 : 0o077)) === 0) continue
       const next = declaredMode ? current & ~0o007 : 0o600
-      chmodSync(file, next)
+      fchmodSync(fd, next)
       log(`  [security] fixed permissions on ${name} (0${current.toString(8)} -> 0${next.toString(8)})`)
-    } catch { /* missing or not ours; best effort, never abort startup */ }
+    } catch { /* missing, a link, or not ours; best effort, never abort startup */ } finally {
+      if (fd !== undefined) closeSync(fd)
+    }
   }
 }
