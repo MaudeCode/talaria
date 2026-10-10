@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import type { Page } from '@playwright/test'
 import { expect, settle, test } from './fixtures'
 
@@ -32,7 +33,9 @@ test('imports a JSON session, downloads it as Markdown, and re-imports its JSON 
   await page.goto('/')
   await settle(page)
 
-  const doc = { title: TITLE, messages: [{ role: 'user', content: 'hello from import' }, { role: 'assistant', content: 'imported answer' }] }
+  // CI keeps the server's default workspace under /dev/shm, a blocked root an import refuses, so the session names a
+  // workspace in the home directory, which every server trusts; the server shares the runner's HOME.
+  const doc = { title: TITLE, workspace: homedir(), messages: [{ role: 'user', content: 'hello from import' }, { role: 'assistant', content: 'imported answer' }] }
   const first = await importFile(page, { name: 'saved.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(doc)) })
   await expect(page.getByText('imported answer')).toBeVisible()
   await expect(page.locator(`.session-item[data-sid="${first}"]`)).toContainText(TITLE)

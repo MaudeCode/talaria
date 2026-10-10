@@ -1,6 +1,7 @@
 /** Session export: JSON (Python `json.dumps(indent=2)`) and a self-contained HTML transcript (`api/session_export_html.py`). */
 import { escapeHtml, renderMarkdown } from '../text/markdown.js'
 import { str } from '../util.js'
+import { normalizeAssistantDisplay } from './merge.js'
 
 const ROLE_LABELS: Record<string, [string, string]> = { user: ['You', 'role-user'], assistant: ['Assistant', 'role-assistant'], system: ['System', 'role-system'], tool: ['Tool', 'role-tool'] }
 
@@ -169,7 +170,10 @@ ${blocks.join('')}
 </html>`
 }
 
-/** A Markdown transcript of the user and assistant turns; system prompts and tool rows stay out, like the legacy download. */
+/**
+ * A Markdown transcript of the user and assistant rows the server shows on their own (`_display: 'row'`), with each
+ * reply's prose and not its inline thinking; system prompts, tool rows and silent replies stay out.
+ */
 export function renderSessionMarkdown(session: Record<string, unknown>): string {
   const sid = str(session.session_id)
   const lines = [`# ${(str(session.title) || 'Hermes Conversation').trim()}`, '']
@@ -179,7 +183,8 @@ export function renderSessionMarkdown(session: Record<string, unknown>): string 
   lines.push('')
   for (const m of Array.isArray(session.messages) ? session.messages : []) {
     if (!m || typeof m !== 'object' || Array.isArray(m)) continue
-    const msg = m as Record<string, unknown>
+    if ((m as Record<string, unknown>)._display !== 'row') continue
+    const msg = normalizeAssistantDisplay(m as Record<string, unknown>)
     const role = str(msg.role)
     const label = role === 'user' || role === 'assistant' ? ROLE_LABELS[role]?.[0] : undefined
     const text = contentToText(msg.content).trim()
