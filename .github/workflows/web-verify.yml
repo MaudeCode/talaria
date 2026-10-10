@@ -56,6 +56,11 @@ jobs:
           npm run openapi
           git diff --exit-code -- ../contracts/web-api.openapi.json
 
+      - name: Generated sidecar result schemas are committed
+        run: |
+          npm run fixtures -w packages/contracts
+          git diff --exit-code -- sidecar/tests/fixtures/schemas.json
+
   sidecar:
     if: inputs.server
     name: Sidecar pytest against the pinned Agent

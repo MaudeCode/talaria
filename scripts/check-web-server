@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Talaria Web server gate: contracts + server lint, strict TypeScript, Vitest against the built frontend bundle,
-# the committed OpenAPI document, and the sidecar pytest suite against the
+# the committed OpenAPI document and sidecar result schemas, and the sidecar pytest suite against the
 # pinned Hermes Agent when one is available (HERMES_WEBUI_AGENT_DIR or the
 # discovery rules in web/sidecar/tests/conftest.py; otherwise those tests skip).
 set -euo pipefail
@@ -22,4 +22,6 @@ env HOME="$state/home" TMPDIR="$state/tmp" npm test -w packages/contracts -- --m
 env HOME="$state/home" TMPDIR="$state/tmp" npm test -w packages/server -- --maxWorkers=2
 npm run openapi
 git diff --exit-code -- "$root/contracts/web-api.openapi.json"
+npm run fixtures -w packages/contracts
+git diff --exit-code -- sidecar/tests/fixtures/schemas.json
 sidecar/scripts/test.sh "$@"
