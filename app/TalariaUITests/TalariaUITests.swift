@@ -409,7 +409,7 @@ final class SessionListProjectNewChatUITests: ChatUITestCase {
         XCTAssertTrue(poll(timeout: 5) { listNewChat() != nil }, "Missing the New Chat button")
         tap(at: try XCTUnwrap(listNewChat()).settledFrame.center)
         XCTAssertTrue(app.navigationBars["New Fixture Chat"].awaitExistence(timeout: 15))
-        tapCenter(of: app.buttons["BackButton"])
+        returnToSessionList()
 
         let created = app.buttons.containing(.staticText, identifier: "New Fixture Chat").firstMatch
         XCTAssertTrue(created.awaitExistence(timeout: 10), "The new chat left the project's filtered list")
@@ -3237,6 +3237,10 @@ extension TalariaUITestCase {
         repeatStep(3, until: { chats.exists }) {
             let back = app.buttons["BackButton"]
             guard back.awaitExistence(timeout: 5) else { return }
+            // A chat that focuses its composer as it opens drops a Back tap made while the
+            // keyboard is still sliding in (TAL-657), so let it land first.
+            let keyboard = app.keyboards.firstMatch
+            if keyboard.exists { _ = keyboard.settledFrame }
             back.tap()
             _ = chats.awaitExistence(timeout: 5)
         }
