@@ -8,9 +8,6 @@ public struct UploadResponse: Codable {
     public let mime: String?
     public let isImage: Bool?
     public let error: String?
-    /// The server names this file in the turn's prompt itself (TAL-276), so the message carries
-    /// only the draft. Absent from servers before TAL-635.
-    public let namedInPrompt: Bool?
     /// The most attachments the server keeps on one message.
     public let maxAttachmentsPerMessage: Int?
 }
@@ -27,8 +24,6 @@ public struct PendingAttachment: Identifiable, Equatable {
     /// Fresh composer attachments always have one; standalone sends such as voice
     /// notes do not participate in draft persistence and leave it nil.
     public let draftFileName: String?
-    /// The server that stored it names it in the prompt (TAL-635).
-    public let isNamedInPromptByServer: Bool
 
     public init(
         id: UUID = UUID(),
@@ -38,8 +33,7 @@ public struct PendingAttachment: Identifiable, Equatable {
         size: Int? = nil,
         isImage: Bool,
         thumbnailData: Data? = nil,
-        draftFileName: String? = nil,
-        isNamedInPromptByServer: Bool = false
+        draftFileName: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -49,7 +43,6 @@ public struct PendingAttachment: Identifiable, Equatable {
         self.isImage = isImage
         self.thumbnailData = thumbnailData
         self.draftFileName = draftFileName
-        self.isNamedInPromptByServer = isNamedInPromptByServer
     }
 }
 
@@ -146,31 +139,6 @@ extension PendingAttachment {
 
     public static func uploadTooLargeMessage(filename: String) -> String {
         "\(filename) is too large. Attachments must be \(maximumUploadSizeDescription) or smaller."
-    }
-
-    /// The chat `message` for a draft and its attachments. A server that names attached files in
-    /// the prompt itself (TAL-276) gets the bare draft, as Web sends it; one that does not, which
-    /// predates TAL-635 and never says so, still needs the files named in the text.
-    public static func chatMessageText(draft: String, attachments: [PendingAttachment]) -> String {
-        guard !attachments.allSatisfy(\.isNamedInPromptByServer) else { return draft }
-
-        let references = attachments
-            .map { $0.path.isEmpty ? $0.name : $0.path }
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-
-        guard !references.isEmpty else {
-            return draft
-        }
-
-        // Old-server fallback: a textless send has nothing to append the marker to, so the
-        // WebUI synthesized the whole message. Delete this branch once every supported
-        // server sends `named_in_prompt`.
-        guard !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return "I've uploaded \(references.count) file(s): \(references.joined(separator: ", "))"
-        }
-
-        return "\(draft)\n\n[Attached files: \(references.joined(separator: ", "))]"
     }
 
     public func toJSONValue() -> JSONValue {
