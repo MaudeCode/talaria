@@ -707,9 +707,8 @@ describe('redactSessionData', () => {
     const dataUri = (mime: string, bytes: Buffer): string => `data:${mime};base64,${bytes.toString('base64')}`
     const imageUrl = (url: string, role = 'user'): unknown => (((redactSessionData({ messages: [{ role, content: [{ type: 'text', text: 'look' }, { type: 'image_url', image_url: { url, detail: 'auto' } }] }] }, true).messages as Record<string, unknown>[])[0]!.content as Record<string, unknown>[])[1]!.image_url as Record<string, unknown>).url
 
-    const png = image('image/png', 4 * 1024 * 1024)
-    const url = dataUri('image/png', png)
-    expect(redactSensitive(url) === url, 'text redaction rewrites the image bytes').toBe(false)
+    // Only the exempt path sees the 4 MB image: a full scan of it takes seconds on a CI runner.
+    const url = dataUri('image/png', image('image/png', 4 * 1024 * 1024))
     const started = performance.now()
     expect(imageUrl(url) === url, '4 MB PNG data URI returned byte-identical').toBe(true)
     expect(performance.now() - started).toBeLessThan(150)
@@ -726,8 +725,9 @@ describe('redactSessionData', () => {
     for (const other of [dataUri('image/png', header), dataUri('image/png', small.subarray(0, -1)), dataUri('image/png', Buffer.concat([small, Buffer.from(AWS, 'base64')])), `${dataUri('image/png', small)} ${AWS}`, dataUri('image/png', small).replace(/=+$/, ''), dataUri('image/jpeg', small), dataUri('image/svg+xml', small), dataUri('text/plain', small)]) {
       expect(imageUrl(other) === other, other.slice(0, 30)).toBe(false)
     }
-    expect(imageUrl(url, 'assistant') === url, 'assistant row').toBe(false)
-    const meta = redactSessionData({ messages: [{ role: 'user', content: 'x', meta: { image_url: { url } } }] }, true)
+    const smallUrl = dataUri('image/png', small)
+    expect(imageUrl(smallUrl, 'assistant') === smallUrl, 'assistant row').toBe(false)
+    const meta = redactSessionData({ messages: [{ role: 'user', content: 'x', meta: { image_url: { url: smallUrl } } }] }, true)
     expect(JSON.stringify(meta).includes(AWS), 'image-shaped metadata').toBe(false)
   }, 30_000)
 })
