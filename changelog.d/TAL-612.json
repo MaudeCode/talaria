@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Typing /personality alone in Web lists the available personalities instead of clearing the current one; use /personality none to clear it.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

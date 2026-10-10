@@ -163,6 +163,12 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     expect(res.status).toBe(404)
     res = await post(s, '/api/personality/set', { session_id: sid, name: '' })
     expect(await json(res)).toEqual({ ok: true, personality: null, prompt: '' })
+    // TAL-612: `/personality none` (or `default`/`clear`) clears it, since `/personality` alone now only lists.
+    for (const name of ['none', 'Default', 'clear']) {
+      await post(s, '/api/personality/set', { session_id: sid, name: 'calm' })
+      res = await post(s, '/api/personality/set', { session_id: sid, name })
+      expect(await json(res)).toEqual({ ok: true, personality: null, prompt: '' })
+    }
     res = await post(s, '/api/personality/set', { session_id: 'nope', name: 'calm' })
     expect(res.status).toBe(404)
   })

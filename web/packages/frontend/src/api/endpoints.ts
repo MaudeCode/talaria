@@ -54,7 +54,9 @@ export const saveSelfHostedProvider = (body: { provider: string; base_url: strin
 export const refreshModels = (provider: string) => orpc().models.refresh({ provider })
 export const fetchProviderQuotas = (refresh = false) => orpc().providers.quotas(refresh ? { refresh: '1' } : {}, { signal: timeout(45_000) })
 export const fetchOpenRouterCostHistory = () => orpc().providers.costHistory({ provider: 'openrouter' }, { signal: timeout(45_000) })
-export const setPersonality = (session_id: SessionId, personality: string | null) => orpc().personalities.set({ session_id, name: personality ?? '' })
+export const fetchPersonalities = () => orpc().personalities.list()
+/** The server reads `none`, `default`, or `clear` (when no personality has that name) as clearing it. */
+export const setPersonality = (session_id: SessionId, name: string) => orpc().personalities.set({ session_id, name })
 /** Reasoning config shared with the CLI (config.yaml agent.reasoning_effort / display.show_reasoning). */
 export const fetchReasoning = (model?: string | null, provider?: string | null) => orpc().reasoning.get({ ...(model ? { model } : {}), ...(provider ? { provider } : {}) })
 /** `effort: ''` clears the override so the provider default applies. */
