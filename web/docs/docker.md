@@ -270,12 +270,17 @@ On macOS, host UIDs start at 501. On Linux, the first interactive user is usuall
 
 ### 2. Credential and home directory modes
 
-Talaria Web does not rewrite credential file modes at startup, and the Agent
-skips its `0600` enforcement inside containers, so a group-readable `.env` is
-left alone. `HERMES_HOME_MODE` is the Agent's `HERMES_HOME` *directory* mode:
-a value without the owner execute bit (such as `0640`) stops the Agent from
-traversing its own home. Use `0750` (group-traversable) or `0701` (execute
-only) when sharing the home between containers.
+The Agent skips its `0600` enforcement inside containers, so Talaria Web
+tightens `.env`, `auth.json`, `google_token.json`, and
+`google_client_secret.json` in `HERMES_HOME` at startup: any group or world
+access becomes `0600`. When `HERMES_HOME_MODE` is set, only world access is
+removed, so group-shared credentials keep working. Set `HERMES_SKIP_CHMOD=1`
+to leave every mode alone.
+
+`HERMES_HOME_MODE` is the Agent's `HERMES_HOME` *directory* mode: a value
+without the owner execute bit (such as `0640`) stops the Agent from traversing
+its own home. Use `0750` (group-traversable) or `0701` (execute only) when
+sharing the home between containers.
 
 ### 3. "Workspace appears empty even though my files are there"
 

@@ -3,6 +3,10 @@
  * arms it before deferred recovery and releases it when recovery settles.
  * `/api/` requests wait a bounded time, with a bounded number of waiters.
  */
+import { chmodSync, statSync } from 'node:fs'
+import { join } from 'node:path'
+import { truthy, type ServerConfig } from './config.js'
+
 export const STARTUP_WAIT_SECONDS = 10
 export const STARTUP_WAIT_SLOT_COUNT = 8
 export const STARTUP_RECOVERY_CONDITION = 'startup_recovery'
@@ -39,5 +43,28 @@ export class StartupGate {
     } finally {
       this.waiters -= 1
     }
+  }
+}
+
+/** Credential files in `HERMES_HOME` that must never be group- or world-accessible. */
+const SENSITIVE_FILES = ['.env', 'auth.json', 'google_token.json', 'google_client_secret.json']
+
+/**
+ * Python `fix_credential_permissions`: tighten credential files to 0600 at startup (the Agent skips this in
+ * containers). `HERMES_SKIP_CHMOD` bypasses it; an operator `HERMES_HOME_MODE` keeps group bits and clears world bits.
+ */
+export function fixCredentialPermissions(config: Pick<ServerConfig, 'env' | 'hermesHome'>, log: (line: string) => void): void {
+  // Windows has no POSIX group/world bits to clear.
+  if (process.platform === 'win32' || truthy(config.env.HERMES_SKIP_CHMOD)) return
+  const declaredMode = /^[0-7]+$/.test((config.env.HERMES_HOME_MODE ?? '').trim())
+  for (const name of SENSITIVE_FILES) {
+    const file = join(config.hermesHome, name)
+    try {
+      const current = statSync(file).mode & 0o777
+      if ((current & (declaredMode ? 0o007 : 0o077)) === 0) continue
+      const next = declaredMode ? current & ~0o007 : 0o600
+      chmodSync(file, next)
+      log(`  [security] fixed permissions on ${name} (0${current.toString(8)} -> 0${next.toString(8)})`)
+    } catch { /* missing or not ours; best effort, never abort startup */ }
   }
 }

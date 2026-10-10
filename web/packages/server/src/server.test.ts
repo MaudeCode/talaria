@@ -1,5 +1,8 @@
 /** Listener timeouts: a stalled request body cannot hold a socket open indefinitely, while responses stay unbounded. */
+import { chmodSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { connect } from 'node:net'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { REQUEST_TIMEOUT_MS } from './server.js'
 import { bootTestServer, type TestServer } from './test/harness.js'
@@ -34,4 +37,30 @@ describe('request timeout', () => {
       s.running.server.headersTimeout = headersTimeout
     }
   }, 15_000)
+})
+
+describe('credential permissions at startup', () => {
+  const bootWithEnvFile = async (env: Record<string, string> = {}) => {
+    const home = mkdtempSync(join(tmpdir(), 'talaria-hermes-home-'))
+    const file = join(home, '.env')
+    writeFileSync(file, 'OPENAI_API_KEY=sk-test\n')
+    chmodSync(file, 0o644)
+    const s = await bootTestServer({ env: { HERMES_HOME: home, ...env } })
+    const mode = statSync(file).mode & 0o777
+    await s.close()
+    rmSync(home, { recursive: true, force: true })
+    return mode
+  }
+
+  it('tightens a group- or world-readable .env to 0600', async () => {
+    expect(await bootWithEnvFile()).toBe(0o600)
+  })
+
+  it('leaves the file alone when HERMES_SKIP_CHMOD=1', async () => {
+    expect(await bootWithEnvFile({ HERMES_SKIP_CHMOD: '1' })).toBe(0o644)
+  })
+
+  it('removes only world bits when the operator declares HERMES_HOME_MODE', async () => {
+    expect(await bootWithEnvFile({ HERMES_HOME_MODE: '0750' })).toBe(0o640)
+  })
 })
