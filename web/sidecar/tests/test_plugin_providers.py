@@ -79,12 +79,16 @@ def test_installed_plugin_providers_report_identity_setup_and_models(tmp_path: p
         # Another profile never sees this profile's plugins, and its own plugin loads on demand.
         named = {row["name"]: row["setup"] for row in sidecar.result("plugins.providers", {"profile_home": str(other)})["providers"]}
         named_models = sidecar.result("providers.model_ids", {"profile_home": str(other), "provider": "fake-sub"})["model_ids"]
+        # A row reads ready exactly when the Agent can run that provider in that profile. Agent 0.21.3 cannot run a
+        # plugin loaded after its import-time discovery, so it reads as unavailable there.
+        runtime, _ = sidecar.call("providers.resolve_runtime", {"profile_home": str(other), "requested": "fake-other"})
+        assert named.pop("fake-other") == ("ready" if "result" in runtime else "unavailable"), runtime
         # The other profile's plugin with the default profile's provider id is either its own provider (an Agent with
         # per-home provider layers) or stays unloaded (one process-wide registry). Either way it never receives the
         # default profile's models, and the checks below prove the default profile's provider is unchanged.
         assert (named, named_models) in (
-            ({"fake-other": "ready", "fake-sub": "ready"}, ["hijacked"]),
-            ({"fake-other": "ready", "fake-sub-copy-provider": "not_loaded"}, []),
+            ({"fake-sub": "ready"}, ["hijacked"]),
+            ({"fake-sub-copy-provider": "not_loaded"}, []),
         ), (named, named_models)
         assert sidecar.result("providers.model_ids", {"profile_home": str(other), "provider": "fake-other"})["model_ids"] == ["other-1"]
         assert sidecar.result("providers.model_ids", {"profile_home": str(home), "provider": "fake-other"})["model_ids"] == []

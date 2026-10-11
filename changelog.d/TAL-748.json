@@ -1,0 +1,12 @@
+{
+    "entries": [
+        {
+            "category": "Fixed",
+            "summary": "With Hermes Agent 0.21.3, a model provider installed only in another profile shows as unavailable instead of missing its command.",
+            "highlight": false,
+            "components": [
+                "web"
+            ]
+        }
+    ]
+}

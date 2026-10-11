@@ -170,8 +170,25 @@ def _other_profile_plugin(provider_id: str) -> bool:
     return not any(p is profile for _name, p in installed_plugin_profiles())
 
 
+def _agent_knows_provider(name: str) -> bool:
+    """Whether the Agent's auth layer can resolve this provider id at all.
+
+    Agent 0.21.3 resolves providers from a ``PROVIDER_REGISTRY`` snapshot of its import-time plugin discovery, so a
+    named profile's plugin loaded here on demand is unknown to it and cannot run. Registering it there would expose it
+    to every profile, so it reads as unavailable instead. Newer Agents look providers up live (``_registry_lookup``).
+    """
+    try:
+        import hermes_cli.auth as auth
+    except Exception:  # noqa: BLE001 - auth_status reports an unavailable auth layer
+        return True
+    registry = getattr(auth, "PROVIDER_REGISTRY", None)
+    return hasattr(auth, "_registry_lookup") or not isinstance(registry, dict) or name.strip().lower() in registry
+
+
 def _setup_state(profile: Any) -> str:
     """The Agent's own setup verdict for a plugin provider, without spawning its CLI or reading its credentials."""
+    if not _agent_knows_provider(str(profile.name)):
+        return "unavailable"
     try:
         status = auth_status(profile.name)
     except RpcError:
