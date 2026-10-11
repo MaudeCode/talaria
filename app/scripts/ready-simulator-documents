@@ -1,0 +1,15 @@
+#!/bin/zsh
+# Warms the system document picker on a booted simulator (TAL-751). The picker's first presentation after boot
+# cold-launches com.apple.DocumentManagerUICore.Service and the file-provider and icon services it browses: 8-18 s on a
+# hosted runner against 5-11 s for the next one, and past the UI tests' 20 s wait in UI suite run 38144004591. The
+# service is an app extension simctl cannot launch, so the Files app, which loads the same DocumentManager frameworks
+# and browses the same providers, runs once instead. The settle time overlaps the build in CI.
+# Usage: scripts/ready-simulator-documents <simulator-udid>
+
+set -euo pipefail
+(( $# == 1 )) || { print -u2 "Usage: scripts/ready-simulator-documents <simulator-udid>"; exit 64; }
+simulator_id=$1
+
+xcrun simctl launch "$simulator_id" com.apple.DocumentsApp >/dev/null
+sleep 10
+xcrun simctl terminate "$simulator_id" com.apple.DocumentsApp

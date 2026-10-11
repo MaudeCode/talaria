@@ -51,6 +51,10 @@ cat > "$repo/scripts/ready-simulator-notifications" <<'EOF'
 print -r -- "$1" >> "$TALARIA_TEST_STATE/notifications-readied"
 print -r -- "ready $1" >> "$TALARIA_TEST_STATE/events"
 EOF
+cat > "$repo/scripts/ready-simulator-documents" <<'EOF'
+#!/bin/zsh
+print -r -- "$1" >> "$TALARIA_TEST_STATE/documents-readied"
+EOF
 cat > "$repo/.xcodebuildmcp/config.yaml" <<'EOF'
 defaults:
   simulatorName: "iPhone 17"
@@ -142,7 +146,7 @@ print -r -- "$(( active - 1 ))" > "$state/active"
 rmdir "$lock"
 exit "$exit_status"
 EOF
-chmod +x "$repo/scripts/assert-no-skipped-ui-tests" "$repo/scripts/seed-simulator-photo" "$repo/scripts/ready-simulator-notifications" "$fake_bin/xcrun" "$fake_bin/xcodebuild"
+chmod +x "$repo/scripts/assert-no-skipped-ui-tests" "$repo/scripts/seed-simulator-photo" "$repo/scripts/ready-simulator-notifications" "$repo/scripts/ready-simulator-documents" "$fake_bin/xcrun" "$fake_bin/xcodebuild"
 
 cat > "$state/pool-devices" <<'EOF'
 {"devices":{"com.apple.CoreSimulator.SimRuntime.iOS-27-0":[{"name":"iOS Test 1","udid":"AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA","state":"Shutdown"},{"name":"iOS Test 2","udid":"BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB","state":"Shutdown"},{"name":"iPad (A16)","udid":"EEEEEEEE-EEEE-EEEE-EEEE-EEEEEEEEEEEE","state":"Shutdown"},{"name":"iPhone 17 Pro Max","udid":"FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF","state":"Shutdown"}]}}
@@ -365,6 +369,7 @@ expected=$'-only-testing:TalariaTests/Unit|NO\n-only-testing:TalariaUITests/Firs
 # (TAL-651); a personal simulator keeps its library and its processes.
 : > "$state/seeded"
 : > "$state/notifications-readied"
+: > "$state/documents-readied"
 : > "$state/spawned"
 "$repo/scripts/test-ios" TalariaUITests/PoolSeed > "$state/pool-seed.log" 2>&1
 [[ "$(<"$state/seeded")" == (AAAAAAAA|BBBBBBBB)-* ]]
@@ -376,6 +381,9 @@ grep -q "Not preparing personal simulator DDDDDDDD" "$state/personal-seed.log"
 [[ $(wc -l < "$state/seeded" | tr -d ' ') == 1 ]]
 [[ "$(<"$state/notifications-readied")" == (AAAAAAAA|BBBBBBBB)-* ]]
 [[ $(wc -l < "$state/notifications-readied" | tr -d ' ') == 1 ]]
+# ...and has its document picker warmed (TAL-751).
+[[ "$(<"$state/documents-readied")" == (AAAAAAAA|BBBBBBBB)-* ]]
+[[ $(wc -l < "$state/documents-readied" | tr -d ' ') == 1 ]]
 
 # The parallel UI phase can leave the leased device's notification service hanging, so the
 # notification journey's serial phase readies it again right before testing (TAL-682).
