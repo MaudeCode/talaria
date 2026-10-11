@@ -87,6 +87,11 @@ def _activate_multi_profile_hosting() -> None:
     set_multiplex_active(True)
 
 
+def _launch_terminal_env() -> dict[str, str]:
+    """Agent 0.21.3 twin of ``tui_gateway.launch_profile_policy.launch_terminal_env``."""
+    return {k: v for k, v in _frozen_launch_env().items() if k.startswith("TERMINAL_")}
+
+
 def _launch_secret_scope(home: Path) -> dict[str, str]:
     """Agent 0.21.3 twin of ``tui_gateway.launch_profile_policy.launch_secret_scope``."""
     from agent.secret_scope import _is_global_env, build_profile_secret_scope, is_multiplex_active
@@ -150,10 +155,13 @@ def _terminal_scope(home: Path):
     else:
         try:
             from agent.secret_scope import is_multiplex_active
-            from tui_gateway.launch_profile_policy import launch_terminal_env
-        except ImportError:  # Agent 0.21.3 cannot layer the launch env, so the launch profile keeps the process env
+        except ImportError:  # An Agent without multiplexing cannot layer the launch env, so the launch profile keeps the process env
             yield
             return
+        try:
+            from tui_gateway.launch_profile_policy import launch_terminal_env
+        except ImportError:  # Agent 0.21.3: the sidecar's twin of the launch-profile policy
+            launch_terminal_env = _launch_terminal_env
         # Like the launch secret scope: the live process env until multiplexing freezes it.
         launch = launch_terminal_env() if is_multiplex_active() else {k: v for k, v in os.environ.items() if k.startswith("TERMINAL_")}
         token = install_profile_terminal_scope(home, env_overlay=launch)
