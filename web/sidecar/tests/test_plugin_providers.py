@@ -10,6 +10,8 @@ import json
 import pathlib
 import textwrap
 
+import pytest
+
 from conftest import SidecarProcess, load_schema, requires_agent, validate
 
 PROFILE = textwrap.dedent(
@@ -99,7 +101,8 @@ def test_installed_plugin_providers_report_identity_setup_and_models(tmp_path: p
 
 
 @requires_agent
-def test_a_named_profiles_plugin_reads_the_same_whichever_profile_lists_first(tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize("layout", [(), ("model-providers",)], ids=["flat", "model-providers"])
+def test_a_named_profiles_plugin_reads_the_same_whichever_profile_lists_first(tmp_path: pathlib.Path, layout: tuple) -> None:
     """A fresh sidecar whose first plugin listing is a named profile's reports that plugin as a launch-first one does."""
     home = tmp_path / "home" / ".hermes"
     home.mkdir(parents=True)
@@ -109,7 +112,7 @@ def test_a_named_profiles_plugin_reads_the_same_whichever_profile_lists_first(tm
     cli.chmod(0o755)
     other = home / "profiles" / "other"
     other.mkdir(parents=True)
-    _plugin(other / "plugins", "fake-other", "fake-other-provider", name="fake-other", display="Fake Other", command=str(cli), models=("other-1",))
+    _plugin(other.joinpath("plugins", *layout), "fake-other", "fake-other-provider", name="fake-other", display="Fake Other", command=str(cli), models=("other-1",))
     seen = []
     for order in ((home, other), (other, home)):
         sidecar = SidecarProcess(home)

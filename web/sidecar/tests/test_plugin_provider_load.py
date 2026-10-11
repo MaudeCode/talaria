@@ -1,55 +1,48 @@
-"""On-demand plugin loading against stand-in Agent modules: the auth registry snapshot is taken before any plugin loads."""
+"""Agent 0.21.3's auth registry snapshot precedes every Agent method, against stand-in Agent modules.
+
+Agent 0.21.3 snapshots its provider registry, discovered plugins included, when ``hermes_cli.auth`` first imports.
+A first import inside a named profile's scope would put that profile's plugins in a snapshot every profile reads.
+"""
 
 from __future__ import annotations
 
+import importlib.util
 import sys
 import types
-from pathlib import Path
 
-from talaria_sidecar.methods import providers as sidecar_providers
+from talaria_sidecar.methods import Registry
+from talaria_sidecar.runtime import AgentRuntime
 
 
-def test_the_auth_registry_snapshot_precedes_a_named_profiles_plugin(monkeypatch, tmp_path) -> None:
+def test_an_agent_method_runs_only_after_the_auth_snapshot(monkeypatch, tmp_path) -> None:
     order = []
-    agent_providers = types.ModuleType("providers")
-    agent_providers.list_providers = lambda: []
-    agent_providers._import_plugin_dir = lambda root, kind: order.append(("plugin", "hermes_cli.auth" in sys.modules))
+    run_agent = types.ModuleType("run_agent")  # Unlike the real one, it does not import hermes_cli.auth itself.
+    run_agent.AIAgent = object
     package = types.ModuleType("hermes_cli")
     package.__path__ = []
-    auth = types.ModuleType("hermes_cli.auth")
-    monkeypatch.setitem(sys.modules, "providers", agent_providers)
+    monkeypatch.setitem(sys.modules, "run_agent", run_agent)
     monkeypatch.setitem(sys.modules, "hermes_cli", package)
     monkeypatch.delitem(sys.modules, "hermes_cli.auth", raising=False)
 
-    class Finder:  # Imports hermes_cli.auth the way Agent 0.21.3 builds its snapshot: on first import.
+    class AuthFinder:
         def find_spec(self, name, path=None, target=None):
             if name != "hermes_cli.auth":
                 return None
-            import importlib.util
 
             class Loader:
                 def create_module(self, spec):
-                    order.append(("auth", None))
-                    return auth
+                    order.append("auth snapshot")
+                    return types.ModuleType(name)
 
                 def exec_module(self, module):
                     pass
 
             return importlib.util.spec_from_loader(name, Loader())
 
-    broken = []
-
-    class BrokenFinder:  # An auth layer that fails to import has no confirmed snapshot.
-        def find_spec(self, name, path=None, target=None):
-            if name == "hermes_cli.auth" and not broken:
-                broken.append(name)
-                raise ImportError("auth layer failed to import")
-            return None
-
-    monkeypatch.setattr(sys, "meta_path", [BrokenFinder(), Finder(), *sys.meta_path])
-    monkeypatch.setattr(sidecar_providers, "_LOAD_ATTEMPTED", set())
-    plugin = Path(tmp_path) / "profiles" / "other" / "plugins" / "fake-other"
-    sidecar_providers._load_plugin(plugin)
-    assert order == []  # the plugin stays unloaded rather than entering a later snapshot
-    sidecar_providers._load_plugin(plugin)  # a later listing retries once the auth layer imports
-    assert order == [("auth", None), ("plugin", True)]
+    monkeypatch.setattr(sys, "meta_path", [AuthFinder(), *sys.meta_path])
+    runtime = AgentRuntime(tmp_path)
+    monkeypatch.setattr(runtime, "ensure_current", lambda: None)
+    registry = Registry(runtime)
+    registry.method("plugins.providers")(lambda ctx, params: order.append("method body"))
+    registry.methods["plugins.providers"](None, {})
+    assert order == ["auth snapshot", "method body"]

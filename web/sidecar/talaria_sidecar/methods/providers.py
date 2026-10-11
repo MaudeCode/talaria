@@ -104,14 +104,6 @@ def _load_plugin(root: Path) -> None:
     """
     import providers
 
-    # Agent 0.21.3 snapshots its auth provider registry when hermes_cli.auth is first imported. Take that snapshot
-    # before any profile's plugin loads, so a named profile's plugin never enters it and becomes resolvable everywhere.
-    # Without a confirmed snapshot the plugin stays unloaded (it reads as not loaded) and a later listing retries.
-    try:
-        import hermes_cli.auth  # noqa: F401
-    except Exception:  # noqa: BLE001
-        log.debug("Agent auth layer unavailable; not loading provider plugin %s", root, exc_info=True)
-        return
     with _LOAD_LOCK:
         if root in _LOAD_ATTEMPTED:
             return
