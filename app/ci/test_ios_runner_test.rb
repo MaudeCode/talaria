@@ -281,6 +281,8 @@ class TestIOSRunnerTest < Minitest::Test
     # destination boots fully, and is prepared, before its tests and shuts down after them (TAL-669); the boot
     # action then leaves its device alone.
     assert_includes(test, 'scripts/prepare-ui-simulator --keyboard-only "${device}" < /dev/null')
+    # ...and its render server's post-boot burst has passed before XCTest bootstraps on it (TAL-696).
+    assert_includes(test, 'ci/memory-sampler settle 600 < /dev/null | tee -a "${GITHUB_STEP_SUMMARY}"')
     assert_includes(test, '[[ ! -s devices.txt ]] || xcrun simctl shutdown "${SIMULATOR_ID}"')
     assert_includes(test, 'xcrun simctl bootstatus "${device}" -b > /dev/null < /dev/null')
     assert_includes(test, 'xcrun simctl shutdown "${device}" < /dev/null')

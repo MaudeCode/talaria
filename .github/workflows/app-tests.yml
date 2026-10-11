@@ -433,6 +433,9 @@ jobs:
             xcrun simctl boot "${device}" < /dev/null
             xcrun simctl bootstatus "${device}" -b > /dev/null < /dev/null
             scripts/prepare-ui-simulator --keyboard-only "${device}" < /dev/null
+            # Its render server's post-boot burst (2.9-6.4 GB) passes before XCTest's bootstrap starts (TAL-696). The
+            # shard's own iPhone has its burst during setup, or none: shard 1 of run 38144004591 peaked at 406 MB.
+            ci/memory-sampler settle 600 < /dev/null | tee -a "${GITHUB_STEP_SUMMARY}"
             run_tests "${device}" "DestinationResults-${index}.xcresult" "${options[@]}" < /dev/null || status=$?
             xcrun simctl shutdown "${device}" < /dev/null
           done < devices.txt
