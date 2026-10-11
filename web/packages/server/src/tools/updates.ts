@@ -615,7 +615,11 @@ export async function applyWebUpdate(webRoot: string | null, channel: Channel, g
 
 async function releaseTags(path: string, git: GitRun): Promise<string[]> {
   const out = await git(['tag', '--list', AGENT_TAG_GLOB, '--sort=-v:refname'], path)
-  return out.ok ? out.out.split('\n').map((l) => l.trim()).filter((tag) => /^v\d+\.\d+\.\d+$/.test(tag)) : []
+  if (!out.ok) return []
+  const tags = out.out.split('\n').map((l) => l.trim()).filter((tag) => /^v\d+\.\d+\.\d+$/.test(tag))
+  // Upstream tagged date releases (v2026.9.24) until 0.21.5 and semantic versions (v0.21.6) since, so date tags rank last.
+  const dated = (tag: string) => /^v\d{4}\./.test(tag)
+  return [...tags.filter((tag) => !dated(tag)), ...tags.filter(dated)]
 }
 async function currentReleaseTag(path: string, git: GitRun): Promise<string | null> {
   const out = await git(['describe', '--tags', '--exact-match', '--match', AGENT_TAG_GLOB, 'HEAD'], path)

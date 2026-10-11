@@ -648,6 +648,17 @@ describe('Agent checkout updates', () => {
     expect(existsSync(join(a.agent, 'untracked.txt'))).toBe(false)
   })
 
+  it('ranks semantic Agent releases above the legacy date tags', async () => {
+    const a = agentInstall()
+    git(a.origin, 'tag', '-d', 'v1.0.0', 'v2.0.0')
+    git(a.agent, 'tag', '-d', 'v1.0.0')
+    git(a.origin, 'tag', 'v2026.9.24', a.v2)
+    git(a.origin, 'commit', '--allow-empty', '-m', 'first semantic release')
+    git(a.origin, 'tag', 'v0.21.6')
+    const next = git(a.origin, 'rev-parse', 'HEAD')
+    expect(await checkAgentUpdate(a.agent, runGit)).toMatchObject({ latest_version: 'v0.21.6', latest_sha: next })
+  })
+
   it('reports an installed release only when HEAD is exactly that tag', async () => {
     const a = agentInstall()
     expect(await checkAgentUpdate(a.agent, runGit)).toMatchObject({ current_version: 'v1.0.0' })
