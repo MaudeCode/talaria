@@ -45,9 +45,10 @@ and stops the review.
 Release notes are leads, not coverage. Read each release note in the range
 (`gh release view <tag> --repo <repo>`) and then every non-merge commit's body,
 stat, and relevant patch. When a range is too large for one pass, partition its
-commits by the paths they touch and review the partitions in parallel: every
-commit that touches a Talaria boundary gets its body and stat read, and
-subject-only triage covers the rest. Review against current `origin/main`; when
+commits by the paths they touch and review the partitions in parallel. Every
+commit still gets its body and stat read, whatever its path or subject; read the
+patch wherever the body or stat touches a Talaria boundary or adds a CLI verb,
+config key, persisted field, or other user-visible capability. Review against current `origin/main`; when
 main moves during the review, re-check each finding against the new head before
 filing.
 
@@ -94,9 +95,10 @@ engineer could decide from the code.
 
 A bug needs evidence that Talaria is affected: a reproduction with disposable
 state, a failing existing check, or the cited Talaria `path:line` that has the
-same reachable behavior. Reproduce first: run the real server, sidecar, or Agent
-code with disposable state (a focused test, a scratch vitest or pytest, an
-isolated server), and run it through to the consequence the finding claims, not
+same reachable behavior. Reproduce first in the affected consumer: run the real
+App, Web frontend, server, sidecar, or Agent code with disposable state (a
+focused XCTest, a scratch vitest or pytest, a Playwright check, an isolated
+server), and run it through to the consequence the finding claims, not
 only its trigger. When the needed state cannot be synthesized, code inspection
 is enough to file. Mark such a ticket **code-supported** and make a failing
 test, written before the fix, its first acceptance criterion. Waste visible in code but unmeasured is filed the same way,
