@@ -2,7 +2,7 @@
   "entries": [
     {
       "category": "Fixed",
-      "summary": "Talaria Web offers Hermes Agent releases again now that the Agent publishes them as version numbers like v0.21.6 instead of dates.",
+      "summary": "Talaria Web offers new Hermes Agent releases again.",
       "highlight": false,
       "components": ["web"]
     }

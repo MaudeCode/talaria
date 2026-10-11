@@ -35,6 +35,7 @@ export type Channel = 'stable' | 'experimental'
 const SHA = /^[a-f0-9]{40}$/
 const VERSION = '(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)'
 const AGENT_TAG_GLOB = 'v*'
+const AGENT_RELEASE_TAG = new RegExp(`^v${VERSION}$`)
 const WEB_NPM_PACKAGE = '@maudecode/talaria-web'
 const GIT_LOCK_SIGNATURES = ["index.lock': file exists", ".lock': file exists", 'another git process seems to be running', 'unable to create .git/index.lock']
 const NETWORK_FAILURES = ['could not resolve host', 'failed to connect', 'network is unreachable', 'no route to host', 'connection timed out', 'timed out after', 'connection reset by peer', 'remote end hung up unexpectedly', 'tls connection was non-properly terminated', 'ssl certificate problem']
@@ -616,7 +617,7 @@ export async function applyWebUpdate(webRoot: string | null, channel: Channel, g
 async function releaseTags(path: string, git: GitRun): Promise<string[]> {
   const out = await git(['tag', '--list', AGENT_TAG_GLOB, '--sort=-v:refname'], path)
   if (!out.ok) return []
-  const tags = out.out.split('\n').map((l) => l.trim()).filter((tag) => /^v\d+\.\d+\.\d+$/.test(tag))
+  const tags = out.out.split('\n').map((l) => l.trim()).filter((tag) => AGENT_RELEASE_TAG.test(tag))
   // Upstream tagged date releases (v2026.9.24) until 0.21.5 and semantic versions (v0.21.6) since, so date tags rank last.
   const dated = (tag: string) => /^v\d{4}\./.test(tag)
   return [...tags.filter((tag) => !dated(tag)), ...tags.filter(dated)]

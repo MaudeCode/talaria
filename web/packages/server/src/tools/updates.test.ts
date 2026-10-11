@@ -652,11 +652,16 @@ describe('Agent checkout updates', () => {
     const a = agentInstall()
     git(a.origin, 'tag', '-d', 'v1.0.0', 'v2.0.0')
     git(a.agent, 'tag', '-d', 'v1.0.0')
+    git(a.origin, 'tag', 'v2026.9.21', a.v1)
     git(a.origin, 'tag', 'v2026.9.24', a.v2)
+    await checkAgentUpdate(a.agent, runGit)
+    git(a.agent, 'merge', '--ff-only', a.v2)
     git(a.origin, 'commit', '--allow-empty', '-m', 'first semantic release')
     git(a.origin, 'tag', 'v0.21.6')
     const next = git(a.origin, 'rev-parse', 'HEAD')
-    expect(await checkAgentUpdate(a.agent, runGit)).toMatchObject({ latest_version: 'v0.21.6', latest_sha: next })
+    git(a.origin, 'commit', '--allow-empty', '-m', 'nightly canary')
+    git(a.origin, 'tag', 'v0.21.6+canary.20261011T070142Z')
+    expect(await checkAgentUpdate(a.agent, runGit)).toMatchObject({ current_version: 'v2026.9.24', latest_version: 'v0.21.6', latest_sha: next, behind: 1 })
   })
 
   it('reports an installed release only when HEAD is exactly that tag', async () => {
