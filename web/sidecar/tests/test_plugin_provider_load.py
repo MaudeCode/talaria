@@ -37,7 +37,19 @@ def test_the_auth_registry_snapshot_precedes_a_named_profiles_plugin(monkeypatch
 
             return importlib.util.spec_from_loader(name, Loader())
 
-    monkeypatch.setattr(sys, "meta_path", [Finder(), *sys.meta_path])
+    broken = []
+
+    class BrokenFinder:  # An auth layer that fails to import has no confirmed snapshot.
+        def find_spec(self, name, path=None, target=None):
+            if name == "hermes_cli.auth" and not broken:
+                broken.append(name)
+                raise ImportError("auth layer failed to import")
+            return None
+
+    monkeypatch.setattr(sys, "meta_path", [BrokenFinder(), Finder(), *sys.meta_path])
     monkeypatch.setattr(sidecar_providers, "_LOAD_ATTEMPTED", set())
-    sidecar_providers._load_plugin(Path(tmp_path) / "profiles" / "other" / "plugins" / "fake-other")
+    plugin = Path(tmp_path) / "profiles" / "other" / "plugins" / "fake-other"
+    sidecar_providers._load_plugin(plugin)
+    assert order == []  # the plugin stays unloaded rather than entering a later snapshot
+    sidecar_providers._load_plugin(plugin)  # a later listing retries once the auth layer imports
     assert order == [("auth", None), ("plugin", True)]
