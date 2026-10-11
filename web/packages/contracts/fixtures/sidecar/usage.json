@@ -21,6 +21,16 @@
       }
     }
   ],
+  "usage.pool_providers": [
+    {
+      "params": {
+        "profile_home": "<home>"
+      },
+      "result": {
+        "providers": []
+      }
+    }
+  ],
   "usage.balance": [
     {
       "params": {
@@ -35,16 +45,6 @@
         "is_available": null,
         "balances": [],
         "windows": []
-      }
-    }
-  ],
-  "usage.pool_providers": [
-    {
-      "params": {
-        "profile_home": "<home>"
-      },
-      "result": {
-        "providers": []
       }
     }
   ]

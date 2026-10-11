@@ -48,9 +48,11 @@ the newest Python the lockfile allows, exercises real Agent imports and the
 sidecar's `SessionDB` write path, and runs the sidecar pytest suite on that
 interpreter. `--receipt PATH` writes the result, failing or not, with test
 counts, the Python and Web revisions, and the JUnit report beside it. Unless
-`--skip-docker` is set, it also requires the release-tagged image to match the
-recorded digest and repeats the probe against that digest with networking
-disabled. It uses disposable homes and databases and never production
+`--skip-docker` is set, it also requires the recorded digest's image to come
+from the recorded commit (its OCI revision label, or a clean CI build stamp on
+images that have none) and to be published under the release tag or the
+`rc.N-<tag>` release attempt whose Git tag is that commit, then repeats the
+probe against that digest with networking disabled. It uses disposable homes and databases and never production
 credentials or provider requests. A passing identity is a tested combination,
 not a requirement that independently installed Agent or peer component versions
 be equal. Unreleased Agent `main` canaries never change this pin or the

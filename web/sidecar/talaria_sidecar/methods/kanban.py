@@ -673,11 +673,14 @@ def bulk_payload(params: dict) -> dict:
 
 
 def dispatch_payload(params: dict) -> dict:
-    kb = _kb()
-    if not hasattr(kb, "dispatch_once"):
-        raise InvalidParams("dispatcher is unavailable")
+    _kb()
+    try:
+        # Agent 0.21.6 dropped the kanban_db re-export; every supported release defines it here.
+        from hermes_cli.kanban_db_dispatch import dispatch_once
+    except Exception as exc:  # noqa: BLE001
+        raise InvalidParams("dispatcher is unavailable") from exc
     with _conn(board=_board(params)) as conn:
-        result = kb.dispatch_once(conn, dry_run=_bool(params, "dry_run"), max_spawn=_int(params, "max", 8, minimum=1, maximum=100))
+        result = dispatch_once(conn, dry_run=_bool(params, "dry_run"), max_spawn=_int(params, "max", 8, minimum=1, maximum=100))
     if isinstance(result, dict):
         return result
     try:

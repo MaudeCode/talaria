@@ -10,6 +10,8 @@
           "aux.complete",
           "aux.resolve",
           "chat.commit_memory",
+          "chat.compress",
+          "chat.compress_finalize",
           "chat.evict_agent",
           "chat.interrupt",
           "chat.start",
@@ -72,6 +74,9 @@
           "models.context_length",
           "models.estimate_tokens",
           "models.reasoning_efforts",
+          "oauth.cancel",
+          "oauth.poll",
+          "oauth.start",
           "plugins.list",
           "plugins.providers",
           "process.background_list",
@@ -107,6 +112,7 @@
           "skills.find",
           "skills.list",
           "skills.view",
+          "state_db.append_message",
           "state_db.delete_cli_session",
           "state_db.sync_start",
           "state_db.sync_title",
@@ -116,6 +122,9 @@
           "text.image_mode",
           "text.portal_tags",
           "usage.account",
+          "usage.balance",
+          "usage.pool",
+          "usage.pool_providers",
           "worktree.create"
         ]
       }

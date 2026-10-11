@@ -17,7 +17,7 @@ log = logging.getLogger("talaria_sidecar.mcp")
 
 def status() -> list[dict]:
     try:
-        from tools.mcp_tool import get_mcp_status
+        from tools.mcp_tool_discovery import get_mcp_status
 
         statuses = get_mcp_status()
     except Exception:  # noqa: BLE001

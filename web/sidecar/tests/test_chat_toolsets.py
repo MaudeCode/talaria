@@ -15,6 +15,7 @@ from pathlib import Path
 sys.path.append(sys.argv[1])
 from talaria_sidecar.home import scoped_home
 from talaria_sidecar.methods import chat
+from toolsets import resolve_toolset
 
 seen = []
 
@@ -41,7 +42,7 @@ for i, (profile, override) in enumerate(cases):
     with scoped_home(home):
         result = chat.start(Ctx(), params)
     assert result["status"] == "completed", result
-print(json.dumps(seen))
+print(json.dumps([seen, [sorted({tool for name in toolsets for tool in resolve_toolset(name)}) for toolsets in seen]]))
 """
 
 
@@ -56,14 +57,14 @@ def test_turn_toolsets_follow_the_profile_config_unless_overridden(tmp_path) -> 
     env = isolated_env(root)
     run = subprocess.run([AGENT_PYTHON, "-c", PROBE, str(AGENT_DIR)], env=env, capture_output=True, text=True, timeout=120)
     assert run.returncode == 0, run.stderr[-4000:]
-    custom, plain, legacy, override = json.loads(run.stdout.strip().splitlines()[-1])
+    (custom, plain, legacy, override), (_, plain_tools, legacy_tools, _) = json.loads(run.stdout.strip().splitlines()[-1])
     # The profile's saved CLI list, nothing it omitted.
     assert isinstance(custom, list) and {"web", "file", "memory"} <= set(custom), custom
     assert "terminal" not in custom and "browser" not in custom, custom
     # No saved list: the CLI default, with the Agent's default-off toolsets still off.
     assert isinstance(plain, list) and {"terminal", "file", "web"} <= set(plain), plain
     assert not {"homeassistant", "discord_admin", "kanban", "spotify"} & set(plain), plain
-    # The legacy ``hermes`` composite name expands to the composites the Agent registers today.
-    assert isinstance(legacy, list) and {"hermes-cli", "hermes-api-server"} <= set(legacy) and "hermes" not in legacy, legacy
+    # The legacy ``hermes`` name is never passed through and still grants every tool of the CLI default.
+    assert isinstance(legacy, list) and "hermes" not in legacy and set(plain_tools) <= set(legacy_tools), legacy
     # A session-level override replaces the profile default.
     assert override == ["memory"]

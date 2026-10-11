@@ -127,19 +127,48 @@ def select(args):
     return "active", active_pin(ROOT)
 
 
+def image_source(image):
+    """The commit an Agent image was built from, and the release attempt that built it. Images before Agent 0.21.6
+    carry an OCI revision label; later ones only record a CI build stamp."""
+    config = json.loads(subprocess.check_output(["docker", "image", "inspect", image]))[0]["Config"]
+    revision = (config.get("Labels") or {}).get("org.opencontainers.image.revision")
+    if revision:
+        return revision, None
+    stamp = json.loads(subprocess.check_output(["docker", "run", "--rm", "--network", "none", "--entrypoint", "cat",
+                                                image, "/opt/hermes/install-stamp.json"]))
+    if stamp.get("source") != "ci" or stamp.get("dirty") is not False:
+        raise RuntimeError("Agent image build stamp is not a clean CI build")
+    return stamp.get("commit"), stamp.get("branch")
+
+
+def remote_tag_commit(tag):
+    refs = dict(line.split("\t")[::-1] for line in subprocess.check_output(
+        ["git", "ls-remote", f"https://github.com/{AGENT_REPOSITORY}.git", f"refs/tags/{tag}", f"refs/tags/{tag}^{{}}"],
+        text=True).splitlines() if line)
+    return refs.get(f"refs/tags/{tag}^{{}}", refs.get(f"refs/tags/{tag}"))
+
+
 def verify_image(identity, sha):
     image, release_tag, version = identity["image"], identity["releaseTag"], identity["version"]
     # Docker needs the caller's daemon context, but the container receives only
     # these synthetic environment values, read-only code and temporary state.
     subprocess.run(["docker", "pull", image], check=True)
-    release_image = f"docker.io/nousresearch/hermes-agent:{release_tag}"
-    subprocess.run(["docker", "pull", release_image], check=True)
-    release_digests = json.loads(subprocess.check_output(["docker", "image", "inspect", release_image]))[0].get("RepoDigests", [])
-    if not any(ref.endswith("@" + image.rsplit("@", 1)[1]) for ref in release_digests):
+    source, attempt = image_source(image)
+    if source != sha:
+        raise RuntimeError("Agent image source label or build stamp does not match its tested source")
+    # Upstream publishes each release attempt as rc.N-<tag>, and its v0.21.6 Docker tag kept an earlier attempt's
+    # image. The attempt that built this image counts when its Git tag is the release commit.
+    tags = [release_tag]
+    if attempt and re.fullmatch(rf"rc\.[0-9]+-{re.escape(release_tag)}", attempt) and remote_tag_commit(attempt) == sha:
+        tags.append(attempt)
+    for tag in tags:
+        tagged = f"docker.io/nousresearch/hermes-agent:{tag}"
+        subprocess.run(["docker", "pull", tagged], check=True)
+        if any(ref.endswith("@" + image.rsplit("@", 1)[1])
+               for ref in json.loads(subprocess.check_output(["docker", "image", "inspect", tagged]))[0].get("RepoDigests", [])):
+            break
+    else:
         raise RuntimeError("Agent release tag image does not match the compatibility pin")
-    config = json.loads(subprocess.check_output(["docker", "image", "inspect", image]))[0]["Config"]
-    if config.get("Labels", {}).get("org.opencontainers.image.revision") != sha:
-        raise RuntimeError("Agent image source label does not match its tested source")
     name = "talaria-agent-compatibility-" + uuid.uuid4().hex[:12]
     try:
         subprocess.run([

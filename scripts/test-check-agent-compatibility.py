@@ -37,6 +37,9 @@ class FakeTools:
         self.published = {"draft": False, "prerelease": False}
         self.image_revision = None  # defaults to the tested source
         self.tag_digest = None  # defaults to the recorded image digest
+        self.stamp = None  # an unlabelled image's build stamp
+        self.attempt_digest = None  # the rc.N-<tag> Docker tag's digest
+        self.remote_tags = {}  # Agent Git tag -> peeled commit
         self.fetched = None
         for name, replacement in (("run", self.run), ("check_output", self.check_output)):
             patcher = patch.object(checker.subprocess, name, side_effect=replacement)
@@ -72,11 +75,17 @@ class FakeTools:
         if "platform.python_version()" in command[-1]:
             return "3.13.7\n"
         if command[:3] == ["docker", "image", "inspect"]:
-            if ":v" in command[3]:
-                digest = self.tag_digest or self.recorded()["image"].rsplit("@", 1)[1]
+            if "@" not in command[3]:
+                attempt = ":rc." in command[3]
+                digest = (self.attempt_digest if attempt else self.tag_digest) or self.recorded()["image"].rsplit("@", 1)[1]
                 return json.dumps([{"RepoDigests": [f"nousresearch/hermes-agent@{digest}"]}])
             revision = self.image_revision or self.recorded()["sourceRevision"]
-            return json.dumps([{"Config": {"Labels": {"org.opencontainers.image.revision": revision}}}])
+            return json.dumps([{"Config": {"Labels": None if self.stamp else {"org.opencontainers.image.revision": revision}}}])
+        if command[:2] == ["docker", "run"] and command[-1] == "/opt/hermes/install-stamp.json":
+            return json.dumps(self.stamp)
+        if command[:2] == ["git", "ls-remote"]:
+            tag = command[-2].removeprefix("refs/tags/")
+            return f"{'1' * 40}\trefs/tags/{tag}\n{self.remote_tags[tag]}\trefs/tags/{tag}^{{}}\n" if tag in self.remote_tags else ""
         raise AssertionError(f"unexpected command {command}")
 
     def recorded(self):
@@ -209,6 +218,29 @@ class CheckerTests(unittest.TestCase):
                     self.receipt("--release", "v2026.9.24")
                 self.assertFalse(self.last["imageVerified"])
                 setattr(self.tools, attribute, None)
+
+    def test_unlabelled_image_is_verified_by_its_build_stamp_and_release_attempt(self):
+        sha = RELEASES[2]["sourceRevision"]
+        self.tools.stamp = {"commit": sha, "branch": "rc.4-v2026.9.24", "dirty": False, "source": "ci"}
+        self.tools.tag_digest = "sha256:" + "f" * 64  # the release tag kept an earlier attempt's image
+        self.tools.remote_tags["rc.4-v2026.9.24"] = sha
+        self.assertTrue(self.receipt("--release", "v2026.9.24")["imageVerified"])
+        self.assertIn(["docker", "pull", "docker.io/nousresearch/hermes-agent:rc.4-v2026.9.24"], self.tools.commands)
+        for change, message in (({"remote_tags": {"rc.4-v2026.9.24": "f" * 40}}, "tag image"),
+                                ({"attempt_digest": "sha256:" + "e" * 64}, "tag image"),
+                                ({"stamp": {**self.tools.stamp, "branch": "rc.4-v2026.9.21"}}, "tag image"),
+                                ({"stamp": {**self.tools.stamp, "commit": "f" * 40}}, "source label"),
+                                ({"stamp": {**self.tools.stamp, "dirty": True}}, "clean CI build"),
+                                ({"stamp": {**self.tools.stamp, "source": "local"}}, "clean CI build")):
+            with self.subTest(change):
+                saved = {name: getattr(self.tools, name) for name in change}
+                for name, value in change.items():
+                    setattr(self.tools, name, value)
+                with self.assertRaisesRegex(RuntimeError, message):
+                    self.receipt("--release", "v2026.9.24")
+                self.assertFalse(self.last["imageVerified"])
+                for name, value in saved.items():
+                    setattr(self.tools, name, value)
 
     def test_failed_candidate_reports_counts_and_leaves_the_record_intact(self):
         record = (self.root / "web/sidecar/agent_support.json").read_bytes()

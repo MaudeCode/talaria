@@ -496,10 +496,8 @@ def _turn_identity(session_id: str, workspace: str):
     not fatal."""
     resets: list = []
     try:
-        try:
-            from tools.approval_context import reset_current_session_key, set_current_session_key
-        except ImportError:
-            from tools.approval import reset_current_session_key, set_current_session_key  # type: ignore[no-redef]
+        from tools.approval_context import reset_current_session_key, set_current_session_key
+
         token = set_current_session_key(session_id)
         resets.append(lambda: reset_current_session_key(token))
     except Exception:  # noqa: BLE001
@@ -538,7 +536,7 @@ def _turn_identity(session_id: str, workspace: str):
 
 
 #: Older configs named the CLI composite ``hermes``; the Agent registers it split in two (predecessor
-#: ``_LEGACY_CLI_TOOLSET_ALIASES``).
+#: ``_LEGACY_CLI_TOOLSET_ALIASES``). Agent 0.21.6 expands it itself; delete this once 0.21.6 is the oldest supported.
 _LEGACY_TOOLSET_ALIASES = {"hermes": ("hermes-cli", "hermes-api-server")}
 
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import pathlib
 import subprocess
+import threading
 import time
 
 import pytest
@@ -115,3 +116,55 @@ def test_a_failed_recovery_blocks_the_home_until_a_retry_succeeds(hermes_home: p
         sidecar.close()
         sleeper.kill()
         sleeper.wait()
+
+
+class _Session:
+    def __init__(self, session_id: str, exit_code=None, finish_claimed: bool = False) -> None:
+        self.id, self.exit_code, self._finish_claimed = session_id, exit_code, finish_claimed
+        self.exited, self.exited_at, self.detached, self._lock = False, 0.0, True, threading.Lock()
+
+
+class _Registry:
+    """Agent 0.21.6's shape: it prunes a gone recovered PID without a completion and publishes through _publish_finished."""
+
+    def __init__(self, *sessions: _Session) -> None:
+        self._lock, self._finished, self.published, self.fail = threading.Lock(), {}, [], 0
+        self._running = {s.id: s for s in sessions}
+
+    def _detached_host_fate(self, pid, start):
+        return "gone"
+
+    def _publish_finished(self, session, was_running):
+        if self.fail:
+            self.fail -= 1
+            raise OSError("checkpoint write failed")
+        self.published.append(session.id)
+
+
+def test_recovered_exits_are_reported_once_and_never_after_a_collected_exit(monkeypatch) -> None:
+    from talaria_sidecar.methods import process
+
+    monkeypatch.setattr(process, "_RECOVERED", {})
+    gone, killed = _Session("proc_gone"), _Session("proc_killed")
+    registry = _Registry(gone, killed)
+    process.track_recovered(registry)
+    gone.exited = True  # pruned by the Agent: no exit status
+    killed.exited, killed.exit_code, killed._finish_claimed = True, -15, True  # killed: the Agent queued its own
+    registry._running.pop("proc_gone")
+    registry.fail = 1
+    process._publish_recovered_exits(registry)
+    assert registry.published == []  # the failed publish is retried
+    process._publish_recovered_exits(registry)
+    process._publish_recovered_exits(registry)
+    assert registry.published == ["proc_gone"]
+    assert registry._finished == {"proc_gone": gone} and process._RECOVERED == {}
+
+
+def test_older_agents_report_recovered_exits_themselves(monkeypatch) -> None:
+    from talaria_sidecar.methods import process
+
+    monkeypatch.setattr(process, "_RECOVERED", {})
+    registry = _Registry(_Session("proc_old"))
+    monkeypatch.delattr(_Registry, "_detached_host_fate")
+    process.track_recovered(registry)
+    assert process._RECOVERED == {}
