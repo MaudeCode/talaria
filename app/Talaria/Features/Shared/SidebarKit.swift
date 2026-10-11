@@ -9,7 +9,9 @@ struct SectionSelectionRow<Label: View>: View {
     @ViewBuilder let label: Label
 
     var body: some View {
-        SidebarRow(isSelected: selection == item, action: { selection = item }) {
+        Button {
+            selection = item
+        } label: {
             HStack(spacing: 8) {
                 label
                 Spacer(minLength: 0)
@@ -18,7 +20,12 @@ struct SectionSelectionRow<Label: View>: View {
                     .foregroundStyle(.tertiary)
                     .accessibilityHidden(true)
             }
+            .sidebarRowPadding()
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .foregroundStyle(.primary)
+        .sidebarRow(isSelected: selection == item)
     }
 }
 
@@ -27,7 +34,7 @@ struct SectionSelectionRow<Label: View>: View {
 // background, bold section headings, and inset rows with the rounded selection tint.
 
 /// A section list with the Chats list's chrome. Content is rows: `SidebarSectionHeader`s and
-/// `SidebarRow`s (or any row using `sidebarRow(isSelected:)`).
+/// rows using `sidebarRow(isSelected:)`.
 struct SidebarList<Content: View>: View {
     @ViewBuilder let content: Content
 
@@ -57,6 +64,8 @@ struct SidebarSectionHeader<Trailing: View>: View {
                     label.contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                // The button merges its label, which drops the title's header trait.
+                .accessibilityAddTraits(.isHeader)
             } else {
                 label
             }
@@ -133,33 +142,7 @@ extension SidebarDisclosureSection where Trailing == EmptyView {
     }
 }
 
-/// A tappable `SidebarList` row with the Chats row padding and selection tint.
-struct SidebarRow<Label: View>: View {
-    let isSelected: Bool
-    let action: () -> Void
-    @ViewBuilder let label: Label
-
-    var body: some View {
-        Button(action: action) {
-            label
-                .sidebarRowPadding()
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(.primary)
-        .sidebarRow(isSelected: isSelected)
-    }
-}
-
 extension View {
-    /// The selected-row tint of the custom lists (chats, skills), with the trait VoiceOver reads.
-    func selectedRowBackground(_ isSelected: Bool) -> some View {
-        background(
-            isSelected ? Color.accentColor.opacity(0.12) : Color.clear,
-            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
-        )
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-    }
 
     /// A `SidebarList` row's content padding, for rows with and without an action.
     func sidebarRowPadding() -> some View {
@@ -168,9 +151,13 @@ extension View {
             .frame(minHeight: 44)
     }
 
-    /// A `SidebarList` row's insets and selection tint.
+    /// A `SidebarList` row's insets and selection tint, with the trait VoiceOver reads.
     func sidebarRow(isSelected: Bool) -> some View {
-        selectedRowBackground(isSelected)
-            .sessionsScreenListRow(insets: EdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12))
+        background(
+            isSelected ? Color.accentColor.opacity(0.12) : Color.clear,
+            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+        )
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .sessionsScreenListRow(insets: EdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12))
     }
 }

@@ -1189,8 +1189,8 @@ struct SessionListView: View {
         closeAppSidebarAfterNavigation()
     }
 
-    /// Closes the sidebar on the next run loop, once the new screen has rendered behind it. Closing
-    /// in the same update built that screen during the slide's first frame and stalled it.
+    /// Closes the sidebar on the next run loop pass, so the new screen is built while the sidebar
+    /// still covers it. Closing in the same update built it in the slide's first frame and stalled it.
     private func closeAppSidebarAfterNavigation() {
         DispatchQueue.main.async {
             isAppSidebarPresented = false

@@ -58,7 +58,6 @@ struct SkillRow: View {
 
             Self.chevron
         }
-        .padding(.vertical, 10)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityActions {
@@ -99,7 +98,7 @@ struct SkillRow: View {
 }
 
 /// A skill row's Enable/Disable switch. `SkillRows` draws it over the row, outside
-/// the row's NavigationLink, so a tap on the switch never opens the skill (TAL-647).
+/// the row's button, so a tap on the switch never opens the skill (TAL-647).
 struct SkillToggle: View {
     let skill: SkillSummary
     let isToggling: Bool

@@ -97,9 +97,9 @@ struct TasksView: View {
 }
 
 /// Where the Tasks list remembers which of its sections are collapsed.
-enum TaskSidebarDisclosureKeys {
-    static let recentCompletions = "tasksSidebar.recentCompletionsAreExpanded"
-    static let scheduledJobs = "tasksSidebar.scheduledJobsAreExpanded"
+enum TaskSidebarDisclosureSettings {
+    static let recentCompletionsAreExpandedKey = "tasksSidebar.recentCompletionsAreExpanded"
+    static let scheduledJobsAreExpandedKey = "tasksSidebar.scheduledJobsAreExpanded"
 }
 
 private extension TasksView {
@@ -110,7 +110,7 @@ private extension TasksView {
             // One row per job (its latest run), not a run archive.
             SidebarDisclosureSection(
                 String(localized: "Recent Completions"),
-                storageKey: TaskSidebarDisclosureKeys.recentCompletions
+                storageKey: TaskSidebarDisclosureSettings.recentCompletionsAreExpandedKey
             ) {
                 ForEach(viewModel.recentCompletions) { completion in
                     if let job = viewModel.job(for: completion) {
@@ -126,7 +126,10 @@ private extension TasksView {
             }
         }
 
-        SidebarDisclosureSection(String(localized: "Scheduled Jobs"), storageKey: TaskSidebarDisclosureKeys.scheduledJobs) {
+        SidebarDisclosureSection(
+            String(localized: "Scheduled Jobs"),
+            storageKey: TaskSidebarDisclosureSettings.scheduledJobsAreExpandedKey
+        ) {
             Label("\(viewModel.activeRunningCount) running", systemImage: "bolt.fill")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)

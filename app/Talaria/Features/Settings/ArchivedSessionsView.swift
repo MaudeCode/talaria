@@ -65,29 +65,8 @@ struct ArchivedSessionsView: View {
     @ViewBuilder
     private var content: some View {
         SidebarList {
-            if viewModel.isLoading && viewModel.sessions.isEmpty {
-                ArchivedStatusRow(title: String(localized: "Loading archived sessions..."), systemImage: "archivebox")
-                    .padding(.horizontal, 24)
-                    .sessionsScreenListRow()
-            } else if let errorMessage = viewModel.errorMessage, viewModel.sessions.isEmpty {
-                VStack(alignment: .leading, spacing: 10) {
-                    ArchivedStatusRow(title: String(localized: "Could not load archived sessions"), systemImage: "exclamationmark.triangle")
-
-                    Text(errorMessage)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(3)
-
-                    Button("Try Again") {
-                        Task { await load() }
-                    }
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.primary)
-                }
-                .padding(.horizontal, 24)
-                .sessionsScreenListRow()
-            } else if viewModel.sessions.isEmpty {
-                ArchivedStatusRow(title: String(localized: "No archived sessions"), systemImage: "archivebox")
+            if viewModel.sessions.isEmpty {
+                statusRow
                     .padding(.horizontal, 24)
                     .sessionsScreenListRow()
             } else {
@@ -95,6 +74,33 @@ struct ArchivedSessionsView: View {
                     archivedSessionRow(for: session)
                 }
             }
+        }
+    }
+
+    /// Loading, failure or empty, while there are no sessions to list.
+    @ViewBuilder
+    private var statusRow: some View {
+        if viewModel.isLoading {
+            ArchivedStatusRow(title: String(localized: "Loading archived sessions..."), systemImage: "archivebox")
+        } else if let errorMessage = viewModel.errorMessage {
+            VStack(alignment: .leading, spacing: 10) {
+                ArchivedStatusRow(title: String(localized: "Could not load archived sessions"), systemImage: "exclamationmark.triangle")
+
+                Text(errorMessage)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+
+                Button("Try Again") {
+                    Task { await load() }
+                }
+                // A List makes a default-styled button's whole row its tap target.
+                .buttonStyle(.plain)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.primary)
+            }
+        } else {
+            ArchivedStatusRow(title: String(localized: "No archived sessions"), systemImage: "archivebox")
         }
     }
 
@@ -117,6 +123,7 @@ struct ArchivedSessionsView: View {
 
             unarchiveButton(for: session)
         }
+        .sidebarRow(isSelected: session.sessionId == selectedSessionID)
         .contextMenu {
             Button {
                 unarchive(session)
@@ -125,7 +132,6 @@ struct ArchivedSessionsView: View {
             }
             .disabled(viewModel.isUnarchiving(session))
         }
-        .sidebarRow(isSelected: session.sessionId == selectedSessionID)
     }
 
     /// Always-visible unarchive affordance; the context menu keeps the same

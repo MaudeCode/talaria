@@ -129,8 +129,8 @@ struct UITestFixtureEnvironment {
         // than as an earlier test left them on this simulator.
         UserDefaults.standard.removeObject(forKey: SessionSidebarDisclosureSettings.scheduledSessionsAreExpandedKey)
         UserDefaults.standard.removeObject(forKey: SessionSidebarDisclosureSettings.webhookSessionsAreExpandedKey)
-        UserDefaults.standard.removeObject(forKey: TaskSidebarDisclosureKeys.recentCompletions)
-        UserDefaults.standard.removeObject(forKey: TaskSidebarDisclosureKeys.scheduledJobs)
+        UserDefaults.standard.removeObject(forKey: TaskSidebarDisclosureSettings.recentCompletionsAreExpandedKey)
+        UserDefaults.standard.removeObject(forKey: TaskSidebarDisclosureSettings.scheduledJobsAreExpandedKey)
 
         let keychain = UITestFixtureKeychainStore(serverURL: serverURL)
         let defaultsName = "dev.kil.talaria.ui-test-fixture"

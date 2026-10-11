@@ -18,7 +18,7 @@ struct SkillRows: View {
                 selection = .skill(id: skill.id)
             } label: {
                 SkillRow(skill: skill, isToggling: isToggling(skill), onToggle: onToggle)
-                    .padding(.horizontal, 12)
+                    .sidebarRowPadding()
             }
             .buttonStyle(.plain)
             // The switch sits over the row button, where it lines up with the slot SkillRow
@@ -30,7 +30,8 @@ struct SkillRows: View {
                         SkillToggle(skill: skill, isToggling: isToggling(skill), onToggle: onToggle)
                         SkillRow.chevron.hidden()
                     }
-                    .padding(.vertical, 10)
+                    // The row's top and trailing padding, without its minimum height.
+                    .padding(.vertical, 8)
                     .padding(.trailing, 12)
                 }
             }
