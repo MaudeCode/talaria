@@ -61,7 +61,9 @@ stat, and relevant patch.
   not commit titles. Plan semantic ports, not cherry-picks, so Talaria naming,
   module paths, navigation, activity timelines, and multi-server isolation
   survive. When adopting a change needs a request, response, or SSE shape the
-  Talaria Web contract (`web/packages/contracts`) lacks, it is a contract hold.
+  Talaria Web contract (`web/packages/contracts`) lacks, file it with the
+  server and contract work in the same ticket when the code decides that shape.
+  It is a contract hold only when the shape needs an owner decision.
 - **Hermes WebUI:** map each user-visible capability to `web/packages/server`,
   `web/sidecar`, and `web/packages/frontend`. Ignore Python-server internals.
 
