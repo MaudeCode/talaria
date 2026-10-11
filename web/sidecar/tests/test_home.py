@@ -134,8 +134,9 @@ def test_agent_0_21_3_mirrors_the_launch_profile_policy(tmp_path, monkeypatch, s
             monkeypatch.delenv(name)
     monkeypatch.setenv("OPENAI_API_KEY", "sk-launch")
 
+    # The launch profile also binds its terminal scope, layering the launch env's TERMINAL_* (none here).
     with home_module.scoped_home(root):
-        assert scope_calls[-1] == ("scope", {"OPENAI_API_KEY": "sk-launch", "ROOT_FILE": "root"})
+        assert scope_calls[-2:] == [("scope", {"OPENAI_API_KEY": "sk-launch", "ROOT_FILE": "root"}), ("terminal", root, {})]
     assert multiplex == []
 
     with pytest.raises(ValueError, match="test body"):
@@ -149,7 +150,7 @@ def test_agent_0_21_3_mirrors_the_launch_profile_policy(tmp_path, monkeypatch, s
     # The launch environment was frozen at activation; later process-env writes never reach it.
     monkeypatch.setenv("LEAKED_LATER", "x")
     with home_module.scoped_home(root):
-        assert scope_calls[-1] == ("scope", {"OPENAI_API_KEY": "sk-launch", "ROOT_FILE": "root"})
+        assert scope_calls[-2:] == [("scope", {"OPENAI_API_KEY": "sk-launch", "ROOT_FILE": "root"}), ("terminal", root, {})]
     assert multiplex == [True]
 
     # A Settings edit reaches the frozen launch environment.
@@ -161,7 +162,7 @@ def test_agent_0_21_3_mirrors_the_launch_profile_policy(tmp_path, monkeypatch, s
     monkeypatch.setenv("FRESH_KEY", "restored-after-the-test")
     registry.methods["runtime.env"](None, {"unset": ["OPENAI_API_KEY"], "set": {"FRESH_KEY": "sk-fresh"}})
     with home_module.scoped_home(root):
-        assert scope_calls[-1] == ("scope", {"FRESH_KEY": "sk-fresh", "ROOT_FILE": "root"})
+        assert scope_calls[-2:] == [("scope", {"FRESH_KEY": "sk-fresh", "ROOT_FILE": "root"}), ("terminal", root, {})]
 
     # A partial implementation is not permission to leak the launch profile's credentials.
     monkeypatch.delattr(scope, "set_multiplex_active")
@@ -249,6 +250,45 @@ def test_concurrent_turns_run_under_their_own_profiles_terminal_backend_on_the_i
     assert (containers["alpha"], containers["gamma"], containers["default"]) == ("profile:alpha", "profile:gamma", "session:default"), containers
     assert containers["beta"].endswith("session:beta"), containers
     assert len(set(containers.values())) == len(containers), containers
+
+
+@requires_agent
+def test_the_launch_profiles_terminal_scope_keeps_its_launch_env_once_a_named_profile_runs_on_the_installed_agent(tmp_path) -> None:
+    """A root turn layers the launch env under its own config.yaml, frozen when the first named profile runs."""
+    root = tmp_path / ".hermes"
+    named = root / "profiles" / "alpha"
+    for home, config in ((root, "terminal:\n  backend: ssh\n  ssh_host: root-host\n"), (named, "terminal:\n  backend: local\n")):
+        home.mkdir(parents=True, exist_ok=True)
+        (home / "config.yaml").write_text(config)
+        (home / ".env").write_text("")
+    code = """
+import json, os, sys
+from pathlib import Path
+sys.path.append(sys.argv[1])
+from talaria_sidecar.home import scoped_home
+from tools.terminal_tool import _get_env_config
+root = Path(os.environ["HERMES_HOME"])
+def seen(home):
+    with scoped_home(home):
+        config = _get_env_config()
+        return {key: config[key] for key in ("env_type", "ssh_host", "ssh_user")}
+before = seen(root)  # single-profile: the live launch env
+with scoped_home(root / "profiles" / "alpha"):  # the first named profile freezes the launch env
+    pass
+os.environ["TERMINAL_SSH_USER"] = "edited-after-freeze"
+print(json.dumps({"before": before, "after": seen(root), "named": seen(root / "profiles" / "alpha")}))
+"""
+    env = isolated_env(root, TERMINAL_ENV="local", TERMINAL_SSH_USER="launch-user")
+    run = subprocess.run([AGENT_PYTHON, "-c", code, str(AGENT_DIR)], env=env, capture_output=True, text=True, timeout=120)
+    assert run.returncode == 0, run.stderr[-4000:]
+    root_turn = {"env_type": "ssh", "ssh_host": "root-host", "ssh_user": "launch-user"}
+    assert json.loads(run.stdout.strip().splitlines()[-1]) == {
+        "before": root_turn,
+        # The frozen launch env still fills the root profile's unset keys; a later process-env edit never leaks in.
+        "after": root_turn,
+        # A named profile never sees the launch env.
+        "named": {"env_type": "local", "ssh_host": "", "ssh_user": ""},
+    }
 
 
 def test_runtime_env_waits_for_a_launch_policy_import_in_flight(tmp_path, monkeypatch) -> None:

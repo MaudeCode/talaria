@@ -1,0 +1,12 @@
+{
+    "entries": [
+        {
+            "category": "Fixed",
+            "summary": "With Hermes Agent 0.21.3, chats in the default profile run commands on the terminal backend that profile configures.",
+            "highlight": false,
+            "components": [
+                "web"
+            ]
+        }
+    ]
+}
