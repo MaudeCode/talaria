@@ -873,7 +873,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         case "/api/settings" where testsServerUpdate:
             return json(["webui_version": "web-v1.2.2"])
         case "/api/updates/check" where testsServerUpdate:
-            return json(["webui": ["behind": 1]])
+            return json(["webui": ["behind": 1, "state": "commits_behind", "can_apply": true]])
         case "/api/updates/apply" where testsServerUpdate:
             recoveryState.withLock { serverUpdateAppliedAt = Date() }
             return json(["ok": true, "target": "webui", "restart_scheduled": true, "notification_id": serverUpdateNotificationID])
