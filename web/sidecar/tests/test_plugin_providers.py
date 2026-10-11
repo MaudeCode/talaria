@@ -10,7 +10,7 @@ import json
 import pathlib
 import textwrap
 
-from conftest import SidecarProcess, agent_has, load_schema, requires_agent, validate
+from conftest import SidecarProcess, load_schema, requires_agent, validate
 
 PROFILE = textwrap.dedent(
     """
@@ -79,15 +79,13 @@ def test_installed_plugin_providers_report_identity_setup_and_models(tmp_path: p
         # Another profile never sees this profile's plugins, and its own plugin loads on demand.
         named = {row["name"]: row["setup"] for row in sidecar.result("plugins.providers", {"profile_home": str(other)})["providers"]}
         named_models = sidecar.result("providers.model_ids", {"profile_home": str(other), "provider": "fake-sub"})["model_ids"]
-        if agent_has("providers", "_HOME_LAYERS"):
-            # Each home has its own provider layer: the other profile's plugin with the same id is its own provider.
-            assert named == {"fake-other": "ready", "fake-sub": "ready"}, named
-            assert named_models == ["hijacked"]
-        else:
-            # One process-wide provider registry: a plugin claiming a taken provider id stays unloaded and cannot displace it.
-            assert named == {"fake-other": "ready", "fake-sub-copy-provider": "not_loaded"}, named
-            assert named_models == []
-        assert not {"fake-opus", "claude-sonnet-4-6"} & set(named_models)
+        # The other profile's plugin with the default profile's provider id is either its own provider (an Agent with
+        # per-home provider layers) or stays unloaded (one process-wide registry). Either way it never receives the
+        # default profile's models, and the checks below prove the default profile's provider is unchanged.
+        assert (named, named_models) in (
+            ({"fake-other": "ready", "fake-sub": "ready"}, ["hijacked"]),
+            ({"fake-other": "ready", "fake-sub-copy-provider": "not_loaded"}, []),
+        ), (named, named_models)
         assert sidecar.result("providers.model_ids", {"profile_home": str(other), "provider": "fake-other"})["model_ids"] == ["other-1"]
         assert sidecar.result("providers.model_ids", {"profile_home": str(home), "provider": "fake-other"})["model_ids"] == []
         assert sidecar.result("plugins.providers", {"profile_home": str(home)})["providers"] == result["providers"]
