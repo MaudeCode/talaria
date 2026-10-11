@@ -1059,6 +1059,11 @@ describe('keyword credentials in ANSI-coloured output (TAL-714)', () => {
     }
   })
 
+  it('masks a split key\'s passphrase whole, and values on separate lines apart', () => {
+    expect(redactText(`--pass\x1b[31mword 'correct horse battery staple'`, true)).toBe(`--pass\x1b[31mword '***'`)
+    expect(redactText(`\x1b[1mAPI_KEY\x1b[m=${S}\n\x1b[1mDB_PASSWORD\x1b[m=${S}x`, true)).toBe('\x1b[1mAPI_KEY\x1b[m=***\n\x1b[1mDB_PASSWORD\x1b[m=***')
+  })
+
   it('keeps every escape sequence outside a masked value', () => {
     const ugrep = redactText(`\x1b[1;31mAPI_KEY\x1b[m=${S}\x1b[m`, true) as string
     expect(ugrep.startsWith('\x1b[1;31mAPI_KEY\x1b[m=')).toBe(true)

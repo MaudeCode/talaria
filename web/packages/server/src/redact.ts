@@ -1573,8 +1573,16 @@ export function redactSensitive(text: string): string {
   let shown = redactShellText(stripped)
   const shownCounts = secretTokenCounts(shown)
   const raw = secretTokenCounts(redacted.replace(DISPLAY_GAPS_RE, ''))
+  // Masked units only blanks apart are one value (`'correct horse battery'`), masked whole so its word count stays hidden.
   const spans: [number, number, string][] = []
-  for (const m of stripped.matchAll(SECRET_UNIT_RE)) if ((shownCounts.get(m[0]) ?? 0) < (raw.get(m[0]) ?? 0)) spans.push([kept[m.index]!, kept[m.index + m[0].length - 1]! + 1, m[0]])
+  let last = -1
+  for (const m of stripped.matchAll(SECRET_UNIT_RE)) {
+    if ((shownCounts.get(m[0]) ?? 0) >= (raw.get(m[0]) ?? 0)) continue
+    const end = kept[m.index + m[0].length - 1]! + 1
+    if (last !== -1 && /^[ \t]+$/.test(stripped.slice(last, m.index))) spans.at(-1)![1] = end
+    else spans.push([kept[m.index]!, end, m[0]])
+    last = m.index + m[0].length
+  }
   let out = redacted
   if (spans.length) {
     const premasked = maskSpans(text, spans, () => '***')
