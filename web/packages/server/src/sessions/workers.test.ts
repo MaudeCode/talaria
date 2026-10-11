@@ -232,17 +232,19 @@ describe('async delegation delivery claims (TAL-459)', () => {
   })
 
   /** A drain over its own registry, so a test can hold a synthetic turn open, with every notification counted. */
-  const turnDrain = (startTurn: (prompt: string) => { _status?: number; stream_id?: string }): { drain: CompletionDrain; registry: StreamRegistry; notified: string[] } => {
+  const turnDrain = (startTurn: (prompt: string) => { _status?: number; stream_id?: string }): { drain: CompletionDrain; registry: StreamRegistry; notified: string[]; recorded: Json[] } => {
     const registry = new StreamRegistry()
     const notified: string[] = []
+    const recorded: Json[] = []
     const channels = { emit: (_sid: string, name: string, payload: Json) => { if (name === 'bg_task_complete') notified.push(str(payload.task_id)); return 1 } } as unknown as SessionChannels
     // Each emit is past the coalescing window, so every notification surfaces at once and can be counted.
     let clock = 0
     const drain = new CompletionDrain({
       sidecar: () => sidecar, baseHome: s.state, profileHome: () => s.state, activeProfile: () => 'default', store: s.deps.sessionStore, channels, registry,
       startTurn: (_session, prompt) => startTurn(prompt), now: () => (clock += 5), log: () => undefined,
+      background: { recordEvent: (_sid, evt) => { recorded.push(evt) } },
     })
-    return { drain, registry, notified }
+    return { drain, registry, notified, recorded }
   }
   const holdTurn = (registry: StreamRegistry, sid: string): void => { registry.registerActiveRun({ stream_id: 'held', session_id: sid, started_at: 0, phase: 'running', workspace: '', model: null, provider: null, ephemeral: false }) }
 
@@ -299,7 +301,8 @@ describe('async delegation delivery claims (TAL-459)', () => {
       }
       expect(state.calls).toEqual(['claim deleg_a', 'claim deleg_b', 'complete deleg_a', 'complete deleg_b'])
       expect([...state.delivered].sort()).toEqual(['deleg_a', 'deleg_b'])
-      expect(consumed.sort()).toEqual(['deleg_a', 'deleg_b', 'proc_x'])
+      // Delegations settle in their ledger; only the process exit is marked consumed.
+      expect(consumed).toEqual(['proc_x'])
       expect(drain.deferredCount(sid)).toBe(0)
       expect(await drain.drainDeferred(sid)).toBe(0)
       expect(notified).toEqual(['deleg_a', 'deleg_b', 'proc_x'])
@@ -368,6 +371,67 @@ describe('async delegation delivery claims (TAL-459)', () => {
       registry.activeRuns.delete('held')
       expect(await drain.drainDeferred(sid)).toBe(1)
       expect(attempts[1]).toContain('Background process proc_watched matched watch pattern "ERR"')
+    } finally {
+      drain.stop()
+    }
+  })
+
+  /** One watched process's events as the Agent enqueues them: each match, the watch giving up, then the exit. */
+  const watched = (sid: string, id: string): Record<'match' | 'disabled' | 'exit', Json> => ({
+    match: { process_id: id, session_id: id, type: 'watch_match', pattern: 'ready', command: 'npm run dev', output: 'ready on :3000', origin_ui_session_id: sid, consumed: false },
+    disabled: { process_id: id, session_id: id, type: 'watch_disabled', message: `Watch patterns disabled for ${id}; you'll get exactly one notification when the process exits.`, origin_ui_session_id: sid, consumed: false },
+    exit: { process_id: id, session_id: id, type: 'completion', command: 'npm run dev', exit_code: 1, output: 'crashed', origin_ui_session_id: sid, consumed: false },
+  })
+
+  it('wakes an idle session for every event of a watched process, not only the first (TAL-724)', async () => {
+    const sid = await newSid()
+    ledger()
+    const consumed: string[] = []
+    sidecar.respond('process.mark_consumed', (params) => { consumed.push(str(params.process_id)); return { ok: true } })
+    const attempts: string[] = []
+    const { drain, notified, recorded } = turnDrain((prompt) => { attempts.push(prompt); return { stream_id: `w${String(attempts.length)}` } })
+    const events = watched(sid, 'proc_w')
+    try {
+      expect(await drain.processOne(events.match)).toBe(true)
+      expect(await drain.processOne(events.disabled)).toBe(true)
+      expect(attempts, 'each watch event wakes the session').toHaveLength(2)
+      expect(consumed, 'a wakeup carrying only watch events consumes no exit').toEqual([])
+      expect(await drain.processOne(events.exit)).toBe(true)
+      expect(attempts).toHaveLength(3)
+      expect(attempts[0]).toContain('Background process proc_w matched watch pattern "ready"')
+      expect(attempts[1]).toContain('Watch patterns disabled for proc_w')
+      expect(attempts[2]).toContain('Background process proc_w completed (exit_code=1)')
+      expect(notified).toEqual(['proc_w', 'proc_w', 'proc_w'])
+      // The exit settles the background record with its output.
+      expect(recorded.map((e) => e.type)).toEqual(['watch_match', 'watch_disabled', 'completion'])
+      expect(consumed).toEqual(['proc_w'])
+      // A completion enqueued twice (kill racing the reader thread) still wakes once.
+      expect(await drain.processOne({ ...events.exit })).toBe(true)
+      expect(attempts).toHaveLength(3)
+      // Only that per-process delivery is remembered; a watch event cannot repeat, so it leaves nothing behind.
+      expect((drain as unknown as { seen: Map<string, Set<string>> }).seen.get(sid)).toEqual(new Set(['proc_w']))
+    } finally {
+      drain.stop()
+    }
+  })
+
+  it('defers a watch match and the exit of one process mid-turn and batches both at teardown (TAL-724)', async () => {
+    const sid = await newSid()
+    ledger()
+    sidecar.respond('process.consumed', () => ({ consumed: [] }))
+    const attempts: string[] = []
+    const { drain, registry } = turnDrain((prompt) => { attempts.push(prompt); return { stream_id: 'wake' } })
+    const events = watched(sid, 'proc_m')
+    holdTurn(registry, sid)
+    try {
+      expect(await drain.processOne(events.match)).toBe(true)
+      expect(await drain.processOne(events.exit)).toBe(true)
+      expect(drain.deferredCount(sid)).toBe(2)
+      registry.activeRuns.delete('held')
+      expect(await drain.drainDeferred(sid)).toBe(1)
+      expect(attempts).toHaveLength(1)
+      expect(attempts[0]).toContain('Background process proc_m matched watch pattern "ready"')
+      expect(attempts[0]).toContain('Background process proc_m completed (exit_code=1)')
     } finally {
       drain.stop()
     }
@@ -555,6 +619,46 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
     expect(starts[2]).toContain(`Background process ${sid}_2 completed`)
     expect(heldIndex()).not.toContain(sid)
     expect(s.deps.sessionStore.get(sid).process_wakeup_pause).toBeNull()
+  })
+
+  it('holds a watch match and the exit of one process as two wakeups and delivers both (TAL-724)', async () => {
+    const sid = await pausedSession()
+    const id = `${sid}_w`
+    await s.deps.completions.processOne({ process_id: id, session_id: id, type: 'watch_match', pattern: 'ready', command: 'npm run dev', output: 'ready', origin_ui_session_id: sid, consumed: false })
+    await complete(sid, id)
+    expect(starts).toHaveLength(1)
+    // Each held under its own id, so a reader that keys by process id alone (the Stable release after a rollback) keeps both.
+    const ids = heldIds(sid)
+    expect(ids, 'both events of the process are held').toHaveLength(2)
+    expect(new Set(ids).size).toBe(2)
+    expect(ids[1]).toBe(id)
+    expect((heldFile()[sid]![0]!.event as Json).process_id).toBe(id)
+    writeFileSync(join(s.state, 'auth.json'), JSON.stringify({ credential_pool: { openrouter: [{ api_key: 'sk-724', label: 'added' }] } }))
+    sidecar.respond('chat.start', (params) => { starts.push(str(params.user_message)); return completed('woke up') })
+    sidecar.respond('process.consumed', () => ({ consumed: [] }))
+    await s.deps.completions.drainDeferred(sid)
+    await idle()
+    expect(starts).toHaveLength(2)
+    expect(starts[1]).toContain(`Background process ${id} matched watch pattern "ready"`)
+    expect(starts[1]).toContain(`Background process ${id} completed`)
+    expect(heldIndex()).not.toContain(sid)
+  })
+
+  it('keeps the exit held after a watch match held under its bare process id before TAL-724', async () => {
+    const sid = await pausedSession()
+    const id = `${sid}_old`
+    const path = join(s.deps.sessionStore.sessionDir, '_wakeup_held.json')
+    writeFileSync(path, JSON.stringify({ ...heldFile(), [sid]: [{ process_id: id, wakeup_prompt: '[IMPORTANT: old watch matched]', event: { process_id: id, session_id: id, type: 'watch_match' } }] }))
+    await complete(sid, id)
+    expect(heldIds(sid)).toEqual([id, id])
+    writeFileSync(join(s.state, 'auth.json'), JSON.stringify({ credential_pool: { openrouter: [{ api_key: 'sk-724', label: 'legacy' }] } }))
+    sidecar.respond('chat.start', (params) => { starts.push(str(params.user_message)); return completed('woke up') })
+    sidecar.respond('process.consumed', () => ({ consumed: [] }))
+    await s.deps.completions.drainDeferred(sid)
+    await idle()
+    expect(starts[1]).toContain('[IMPORTANT: old watch matched]')
+    expect(starts[1]).toContain(`Background process ${id} completed`)
+    expect(heldIndex()).not.toContain(sid)
   })
 
   it('a successful user turn clears the pause and delivers the held wakeups', async () => {

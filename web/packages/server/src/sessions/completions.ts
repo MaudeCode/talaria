@@ -17,7 +17,7 @@ import { str } from '../util.js'
 import { isDict } from './merge.js'
 import { batchUpdate, recordBackgroundUpdate } from './background-updates.js'
 import type { BackgroundActivity } from './background-tasks.js'
-import { HeldWakeups, heldKey, mergeWakeups, poolRecovery, wakeupPaused, type HeldWakeup } from './wakeup-pause.js'
+import { HeldWakeups, deliveredPerProcess, heldKey, mergeWakeups, poolRecovery, wakeupPaused, type HeldWakeup } from './wakeup-pause.js'
 
 type Dict = Record<string, unknown>
 export const COMPLETION_POLL_MS = 1000
@@ -72,6 +72,18 @@ export function formatWakeupPrompt(evt: Dict): string | null {
   if (!(sid || cmd || 'exit_code' in evt || evt.output)) return null
   return `[IMPORTANT: Background process ${sid} completed (exit_code=${str(evt.exit_code ?? '?')}).\nCommand: ${cmd}\nOutput:\n${truncate(evt.output, 4000)}]`
 }
+
+/**
+ * TAL-724: an event's delivery identity, the `process_id` of its wakeup entry. A completion (an event with no type is one) or
+ * an async delegation is its process: one exit can be enqueued twice when a kill races the reader thread. The Agent enqueues
+ * each watch event once, and one process raises several, so each is its own delivery; its event keeps the process id.
+ */
+export function deliveryKey(evt: Dict, processId: string): string {
+  return !processId || deliveredPerProcess(evt) ? processId : `${processId}:${str(evt.type)}:${randomUUID()}`
+}
+
+/** Only a process's exit is consumed by the agent's own wait or poll (TAL-532); its watch events and delegations are not. */
+const isCompletion = (e: Deferred): boolean => Boolean(e.process_id) && str(e.event?.type ?? 'completion') === 'completion'
 
 export class CompletionDrain {
   private timer: NodeJS.Timeout | null = null
@@ -195,15 +207,19 @@ export class CompletionDrain {
     if (evt.consumed === true) return true
     const seen = this.seen.get(sid) ?? new Set<string>()
     this.seen.set(sid, seen)
-    if (processId && seen.has(processId)) return true
-    if (processId) seen.add(processId)
+    // Only a per-process delivery can repeat: a watch event's key is unique, so remembering it would only grow `seen`.
+    if (processId && deliveredPerProcess(evt)) {
+      if (seen.has(processId)) return true
+      seen.add(processId)
+    }
     this.pendingSessions.add(sid)
     const prompt = await this.wakeupPrompt(evt)
     this.deps.background?.recordEvent(sid, evt, prompt)
     this.emitCoalesced(sid, this.buildPayload(evt, sid, prompt))
     if (!prompt) return true
-    if (this.hasActiveTurn(sid)) this.recordDeferred(sid, processId, prompt, evt)
-    else await this.startWakeup(sid, [{ process_id: processId, wakeup_prompt: prompt, event: evt }])
+    const entry: Deferred = { process_id: deliveryKey(evt, processId), wakeup_prompt: prompt, event: evt }
+    if (this.hasActiveTurn(sid)) this.defer(sid, entry)
+    else await this.startWakeup(sid, [entry])
     return true
   }
 
@@ -251,20 +267,26 @@ export class CompletionDrain {
   }
 
   recordDeferred(sid: string, processId: string, prompt: string, event?: Dict): void {
-    if (!sid || !prompt) return
+    this.defer(sid, { process_id: deliveryKey(event ?? {}, processId), wakeup_prompt: prompt, ...(event ? { event } : {}) })
+  }
+
+  /** Re-deferring keeps an entry's delivery identity, so its held copy and this one stay one wakeup. */
+  private defer(sid: string, entry: Deferred): void {
+    if (!sid || !entry.wakeup_prompt) return
     const entries = this.deferred.get(sid) ?? []
-    if (processId && entries.some((e) => e.process_id === processId)) return
-    entries.push({ process_id: processId, wakeup_prompt: prompt, ...(event ? { event } : {}) })
+    if (entries.some((e) => heldKey(e) === heldKey(entry))) return
+    entries.push(entry)
     this.deferred.set(sid, entries)
     this.pendingSessions.add(sid)
   }
 
   deferredCount(sid: string): number { return this.deferred.get(sid)?.length ?? 0 }
 
-  private async markConsumed(processIds: string[]): Promise<void> {
+  /** Delivering a process's exit consumes it; a watch event leaves the exit to be delivered (TAL-724). */
+  private async markConsumed(entries: Deferred[]): Promise<void> {
     const sidecar = this.deps.sidecar()
     if (!sidecar) return
-    for (const pid of processIds.filter(Boolean)) { try { await sidecar.call('process.mark_consumed', { process_id: pid }) } catch { /* best effort */ } }
+    for (const pid of new Set(entries.filter(isCompletion).map((e) => e.process_id))) { try { await sidecar.call('process.mark_consumed', { process_id: pid }) } catch { /* best effort */ } }
   }
 
   /**
@@ -397,7 +419,7 @@ export class CompletionDrain {
       }
     }
     try { this.heldWakeups.hold(sid, batched) } catch (error) {
-      for (const e of batched) this.recordDeferred(sid, e.process_id, e.wakeup_prompt, e.event)
+      for (const e of batched) this.defer(sid, e)
       this.deps.log(`[webui] WARNING: failed to persist held wakeups for session ${sid}; kept in memory: ${(error as Error).message}`)
     }
     this.retryAttempts.delete(sid)
@@ -408,7 +430,7 @@ export class CompletionDrain {
 
   /** Python `_start_server_side_wakeup_turn`: one batched turn; 409 re-defers, other failures re-defer with a timed retry. */
   private async startWakeup(sid: string, batched: Deferred[]): Promise<boolean> {
-    const redefer = (entries: Deferred[]): void => { for (const e of entries) this.recordDeferred(sid, e.process_id, e.wakeup_prompt, e.event) }
+    const redefer = (entries: Deferred[]): void => { for (const e of entries) this.defer(sid, e) }
     let session: Session
     try { session = this.deps.store.get(sid) } catch (error) {
       // A deleted session owns no turn: its wakeups, held ones included, go with it.
@@ -424,7 +446,7 @@ export class CompletionDrain {
     if (!claimed) { redefer(batched); this.scheduleRetry(sid); return false }
     const { deliver, held } = claimed
     // Entries another consumer already delivered are done here too.
-    if (!deliver.length) { this.release(sid, batched); await this.markConsumed(batched.map((e) => e.process_id)); return true }
+    if (!deliver.length) { this.release(sid, batched); await this.markConsumed(batched); return true }
     // A wakeup that does not start hands its claims back, so those rows stay pending for the retry or the next restart.
     const giveBack = async (method: 'process.release_delivery' | 'process.defer_delivery' = 'process.release_delivery'): Promise<void> => { await this.settleClaims(home, method, held); redefer(deliver) }
     const prompt = deliver.length === 1 ? deliver[0]!.wakeup_prompt : deliver.map((e) => e.wakeup_prompt).join('\n\n')
@@ -438,7 +460,7 @@ export class CompletionDrain {
     this.release(sid, batched)
     recordBackgroundUpdate(session, str(resp.stream_id), batchUpdate(deliver.map((e) => ({ event: e.event ?? {}, prompt: e.wakeup_prompt }))))
     await this.settleClaims(home, 'process.complete_delivery', held)
-    await this.markConsumed(batched.map((e) => e.process_id))
+    await this.markConsumed(batched)
     this.deps.log(`[webui] server-side wakeup turn started for session ${sid} (stream_id=${str(resp.stream_id)})`)
     return true
   }
@@ -450,7 +472,7 @@ export class CompletionDrain {
    * A failed check delivers everything rather than lose a result.
    */
   private async alreadyConsumed(entries: Deferred[]): Promise<Set<Deferred>> {
-    const completions = entries.filter((e) => e.process_id && str(e.event?.type ?? 'completion') === 'completion')
+    const completions = entries.filter(isCompletion)
     const sidecar = this.deps.sidecar()
     if (!completions.length || !sidecar) return new Set()
     try { const { consumed } = await sidecar.call('process.consumed', { process_ids: completions.map((e) => e.process_id) }); return new Set(completions.filter((e) => consumed.includes(e.process_id))) } catch { return new Set() }
@@ -478,7 +500,7 @@ export class CompletionDrain {
     if (held.size) {
       this.release(sid, [...held])
       const ids = [...held].map((e) => e.process_id)
-      await this.markConsumed(ids)
+      await this.markConsumed([...held])
       this.deps.log(`[webui] dropped ${String(held.size)} deferred wakeup(s) already consumed by the agent's own turn for session ${sid}: ${ids.join(', ')}`)
     }
     const pending = prompted.filter((e) => !held.has(e))
@@ -487,7 +509,7 @@ export class CompletionDrain {
     let total = 0
     for (const entry of pending) {
       const size = entry.wakeup_prompt.length
-      if (batch.length && total + size > WAKEUP_BATCH_MAX_CHARS) { this.recordDeferred(sid, entry.process_id, entry.wakeup_prompt, entry.event); continue }
+      if (batch.length && total + size > WAKEUP_BATCH_MAX_CHARS) { this.defer(sid, entry); continue }
       batch.push(entry)
       total += size
     }

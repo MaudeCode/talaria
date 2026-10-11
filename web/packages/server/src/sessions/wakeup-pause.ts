@@ -65,10 +65,18 @@ export function poolRecovery(entries: readonly { status: string; retry_after: st
   return earliest !== null && earliest <= now ? true : earliest
 }
 
-/** A wakeup held while its session is paused. */
+/**
+ * A wakeup held while its session is paused. `process_id` is its delivery identity: the process for a completion or an
+ * async delegation, and a per-event key for a watch event (TAL-724), so every reader, an older one too, keeps both a
+ * watch match and the exit of one process.
+ */
 export interface HeldWakeup { process_id: string; wakeup_prompt: string; event?: Record<string, unknown> }
 
-export const heldKey = (e: HeldWakeup): string => e.process_id || e.wakeup_prompt
+/** A completion (an event with no type is one) or an async delegation is delivered once per process; each watch event is its own (TAL-724). */
+export const deliveredPerProcess = (evt: Record<string, unknown> | undefined): boolean => ['completion', 'async_delegation'].includes(str(evt?.type ?? 'completion'))
+
+/** A watch event held before TAL-724 carries its bare process id; its prompt keys it, so the exit held after it is kept. */
+export const heldKey = (e: HeldWakeup): string => (deliveredPerProcess(e.event) || e.process_id !== str(e.event?.process_id) ? e.process_id : '') || e.wakeup_prompt
 const isHeld = (e: unknown): e is HeldWakeup => isDict(e) && typeof e.wakeup_prompt === 'string' && typeof e.process_id === 'string'
 
 /** Adds entries not held yet, so held and in-memory copies of one wakeup merge into one. */
