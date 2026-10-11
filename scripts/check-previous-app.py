@@ -118,7 +118,7 @@ def run_package_tests(app, classes, responses, output):
 
 
 def run_package_suite(app, responses, output):
-    """The UI suite's package job on this checkout (TAL-414): every TalariaKit test but the fuzz soak, against the live
+    """app-tests.yml's package job on this checkout (TAL-414): every TalariaKit test but the fuzz soak, against the live
     fixture, whose decoding test must pass."""
     log_path = output / "app-package-suite.log"
     with log_path.open("w") as log:
@@ -197,7 +197,7 @@ def main():
     parser.add_argument("--app-checkout", type=Path,
                         help="Reusable App checkout (and warm DerivedData) shared by consecutive runs of one App revision.")
     parser.add_argument("--package-suite", action="store_true",
-                        help="Also run every TalariaKit test but the fuzz soak against the live fixture (the UI suite's package job).")
+                        help="Also run every TalariaKit test but the fuzz soak against the live fixture (app-tests.yml's package job).")
     args = parser.parse_args()
     tests = [*TESTS, *(["SharedContractTests"] if args.shared_contracts else [])]
     app_sha, web_sha = commit(args.app_ref), commit(args.web_ref)

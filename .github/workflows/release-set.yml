@@ -14,11 +14,6 @@ name: Release set
         required: false
         default: true
         type: boolean
-      ui_shards:
-        description: UI suite test shards when the release runs the suite (TAL-414; releases/README.md has the math).
-        required: false
-        default: 3
-        type: number
   workflow_dispatch:
     inputs:
       request:
@@ -35,11 +30,6 @@ name: Release set
         required: true
         default: true
         type: boolean
-      ui_shards:
-        description: UI suite test shards when the release runs the suite (TAL-414; releases/README.md has the math).
-        required: false
-        default: 3
-        type: number
 permissions:
   contents: read
   actions: read
@@ -48,8 +38,8 @@ concurrency:
   cancel-in-progress: false
 # Handoffs are this run's Actions artifacts: `artifacts.py put` stages and digests them, the next step uploads
 # them, and `artifacts.py get` (job token, actions: read) downloads only forwarded producer outputs whose run,
-# attempt, source and SHA-256 match. Every gate starts as soon as prepare has the plan; the macOS App build takes the
-# UI suite build's runner when the suite runs (TAL-414). build-gate joins them all before anything publishes. Relay
+# attempt, source and SHA-256 match. Every gate and build starts as soon as prepare has the plan (TAL-414);
+# build-gate joins them all before anything publishes. Relay
 # deploys first, then Web and the App publish at once, and the manifest publishes last (releases/README.md).
 jobs:
   prepare:
@@ -109,101 +99,30 @@ jobs:
         if-no-files-found: error
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
-  ui-suite-lookup:
-    # A release that ships the App reuses a completed, successful, unscoped ui-suite.yml run (the nightly schedule or
-    # a dispatch) on exactly the release source instead of running the suite again (TAL-408), or one on an earlier
-    # main commit when nothing since selects the App suite (TAL-655). Read-only; a lookup error fails this job, which
-    # skips the suite call and fails build-gate: it never counts as "no run found".
+  app-hosted-tests:
+    # The App's simulator-hosted unit tests (app-tests.yml in pull-request mode: the App build and one TalariaTests
+    # shard) on the exact release source whenever the App ships, dry runs included; no UI test gates a release
+    # (TAL-877). The contracts job runs the package tests instead (TAL-414).
     needs: prepare
     if: needs.prepare.outputs.app_changed == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
     permissions:
       contents: read
       actions: read
-    outputs:
-      reused: ${{ steps.lookup.outputs.reused }}
-      run_url: ${{ steps.lookup.outputs.run_url }}
-    steps:
-    - uses: actions/checkout@v7
-      with:
-        # History for the earlier-commit check.
-        fetch-depth: 0
-        sparse-checkout: |
-          app/ci
-          scripts
-    - name: Find a successful UI suite run on the release source
-      id: lookup
-      env:
-        GH_TOKEN: ${{ github.token }}
-        SOURCE: ${{ needs.prepare.outputs.source }}
-      run: |
-        set -euo pipefail
-        url=$(app/ci/find-ui-suite-run "$SOURCE")
-        if [[ -n "$url" ]]; then
-          printf 'reused=true\nrun_url=%s\n' "$url" >> "$GITHUB_OUTPUT"
-          printf '### UI suite\n\nReused the successful run on %s: %s\n' "$SOURCE" "$url" | tee -a "$GITHUB_STEP_SUMMARY"
-        else
-          echo "reused=false" >> "$GITHUB_OUTPUT"
-          printf '### UI suite\n\nNo successful UI suite run on %s; running the suite.\n' "$SOURCE" | tee -a "$GITHUB_STEP_SUMMARY"
-        fi
-  ui-suite:
-    # The full unit and UI suite (app-tests.yml in full mode: a build and the release's macOS test shards) on the
-    # release source, beside every other gate, unless ui-suite-lookup found one to reuse; build-gate, and so every
-    # publication, requires one or the other when the App ships. It calls app-tests.yml, not ui-suite.yml: a called
-    # workflow's concurrency left these jobs pending forever (TAL-417).
-    needs:
-    - prepare
-    - ui-suite-lookup
-    if: needs.prepare.outputs.app_changed == 'true' && needs.ui-suite-lookup.outputs.reused == 'false'
-    permissions:
-      contents: read
-      actions: read
-      # app-tests.yml's test shards post failing tests as commit statuses (TAL-673).
+      # app-tests.yml's test shard posts failing tests as commit statuses (TAL-673).
       statuses: write
     uses: ./.github/workflows/app-tests.yml
     with:
-      mode: full
+      mode: pull-request
       ref: ${{ needs.prepare.outputs.source }}
-      # A dispatch's number input reaches here as a string, which the number input rejected ("Unexpected value
-      # '3'") and left every called job pending (TAL-417); fromJSON makes it a number from either trigger.
-      shards: ${{ fromJSON(inputs.ui_shards) }}
-      # The contracts job runs the package tests on the release source instead (TAL-414).
       package_tests: false
-  ui-suite-built:
-    # Five hosted macOS slots: at the start the contracts runner, the UI suite build and three shards fill them, and
-    # the shards boot while the build runs. The App build is not on the critical path, so it queues once the UI
-    # suite build has uploaded its test build and takes that runner (TAL-414). This Linux job holds no macOS slot
-    # while it waits. A reused suite, or none, lets the App build start at once; a lookup error skips this job, and
-    # so the App build, and build-gate fails.
-    needs:
-    - prepare
-    - ui-suite-lookup
-    if: needs.prepare.outputs.app_changed == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 355
-    permissions:
-      contents: read
-      actions: read
-    steps:
-    - uses: actions/checkout@v7
-      if: needs.ui-suite-lookup.outputs.reused == 'false'
-      with:
-        sparse-checkout: app/ci
-    - name: Wait until the UI suite build has uploaded its test build
-      if: needs.ui-suite-lookup.outputs.reused == 'false'
-      env:
-        GH_TOKEN: ${{ github.token }}
-        WAIT_FOR_JOB_POLL_SECONDS: '10'
-      run: app/ci/wait-for-job "UI suite build" 20700 "Upload the test build"
   contracts:
     # macOS: both App contract gates on one runner (TAL-414), each writing its own receipt. currentContracts tests the
-    # selected App against every supported Web source and, when the App ships, runs its whole TalariaKit suite (the UI
-    # suite's package job, which the release's suite call leaves out); previousAppContracts compiles the previously
-    # released App from Git and tests it against the selected Web. Both spend minutes probing Webs beside their builds,
-    # so they run at once, with `swift test` (TAL-399) or one of them in the simulator; two Apps from before TAL-399
-    # would share the one simulator, so they take turns. One runner for both leaves four macOS slots to the UI suite's
-    # build and shards (releases/README.md).
+    # selected App against every supported Web source and, when the App ships, runs its whole TalariaKit suite
+    # (app-tests.yml's package job, which the release's hosted-tests call leaves out); previousAppContracts compiles
+    # the previously released App from Git and tests it against the selected Web. Both spend minutes probing Webs
+    # beside their builds, so they run at once, with `swift test` (TAL-399) or one of them in the simulator; two Apps
+    # from before TAL-399 would share the one simulator, so they take turns. One runner for both leaves the other macOS slots to the
+    # hosted tests' build and shard and the App build (releases/README.md).
     needs: prepare
     runs-on: xcode-27
     timeout-minutes: 120
@@ -490,11 +409,9 @@ jobs:
     outputs:
       artifacts: ${{ steps.store.outputs.artifacts }}
   app-dry-build:
-    # macOS: unsigned xcodebuild archive. Builds consume only the release plan; this one takes the UI suite build's
-    # runner when the suite runs (ui-suite-built). build-gate joins every gate and build before anything publishes.
-    needs:
-    - prepare
-    - ui-suite-built
+    # macOS: unsigned xcodebuild archive. Builds consume only the release plan; build-gate joins every gate and build
+    # before anything publishes.
+    needs: prepare
     if: inputs.dry_run && needs.prepare.outputs.app_changed == 'true'
     runs-on: xcode-27
     timeout-minutes: 90
@@ -572,11 +489,8 @@ jobs:
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
   app-signed-build:
-    # Builds consume only the release plan; this one takes the UI suite build's runner when the suite runs
-    # (ui-suite-built). build-gate joins every gate and build before anything publishes (TAL-319).
-    needs:
-    - prepare
-    - ui-suite-built
+    # Builds consume only the release plan; build-gate joins every gate and build before anything publishes (TAL-319).
+    needs: prepare
     if: ${{ !inputs.dry_run && needs.prepare.outputs.app_changed == 'true' }}
     uses: ./.github/workflows/ios-release-build.yml
     secrets: inherit
@@ -822,8 +736,7 @@ jobs:
     - contracts
     - component-contracts
     - agent
-    - ui-suite-lookup
-    - ui-suite
+    - app-hosted-tests
     - relay-build
     - web-build
     - app-dry-build

@@ -397,67 +397,41 @@ class PublicationTests(unittest.TestCase):
         jobs = json.loads(subprocess.check_output([
             "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))",
             str(root / ".github/workflows/release-set.yml")], text=True))["jobs"]
-        gates = ("contracts", "component-contracts", "agent", "ui-suite-lookup", "ui-suite")
+        gates = ("contracts", "component-contracts", "agent", "app-hosted-tests")
         builds = ("relay-build", "web-build", "app-dry-build", "app-signed-build")
-        # The macOS slot plan (TAL-414): both App contract gates share the contracts runner, and the suite's build and
-        # shards take the other four slots at once (the shards queue once the build holds a runner, TAL-413). The App
-        # builds, off the critical path, queue once the suite build has uploaded and take its runner.
-        after = {"ui-suite": ["prepare", "ui-suite-lookup"], "app-dry-build": ["prepare", "ui-suite-built"],
-                 "app-signed-build": ["prepare", "ui-suite-built"]}
+        # Every gate and build starts once prepare has the plan; both App contract gates share the contracts runner
+        # (TAL-414).
         for name in (*gates, *builds):
             with self.subTest(job=name):
-                self.assertEqual(jobs[name]["needs"], after.get(name, "prepare"))
+                self.assertEqual(jobs[name]["needs"], "prepare")
         self.assertNotIn("previous-app-contracts", jobs)
         gate = next(step["run"] for step in jobs["contracts"]["steps"] if "cli.py gate" in step.get("run", ""))
         for name in ("currentContracts", "previousAppContracts"):
             self.assertIn(f"--name {name}", gate)
-        self.assertNotIn("ui-suite-started", jobs)
-        built = jobs["ui-suite-built"]
-        self.assertEqual((built["needs"], built["if"], built["runs-on"], built["permissions"]),
-                         (["prepare", "ui-suite-lookup"], "needs.prepare.outputs.app_changed == 'true'", "ubuntu-latest",
-                          {"contents": "read", "actions": "read"}))
-        wait = next(step for step in built["steps"] if "wait-for-job" in step.get("run", ""))
-        self.assertEqual(wait["if"], "needs.ui-suite-lookup.outputs.reused == 'false'")
-        self.assertEqual(wait["run"], 'app/ci/wait-for-job "UI suite build" 20700 "Upload the test build"')
-        app_tests = json.loads(subprocess.check_output([
-            "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))",
-            str(root / ".github/workflows/app-tests.yml")], text=True))
-        self.assertIn("Upload the test build", [step.get("name") for step in app_tests["jobs"]["app-build"]["steps"]])
-        # The full UI suite runs on the release source whenever the App ships and no reusable run exists, dry runs
-        # included, in the release's shard count; contracts runs its package tests (--package-suite).
-        # app-tests.yml, not ui-suite.yml, whose concurrency left a called suite pending forever (TAL-417).
-        self.assertEqual(jobs["ui-suite"]["uses"], "./.github/workflows/app-tests.yml")
-        self.assertEqual(jobs["ui-suite"]["with"], {"mode": "full", "ref": "${{ needs.prepare.outputs.source }}",
-                                                    "shards": "${{ fromJSON(inputs.ui_shards) }}", "package_tests": False})
+        # The App's hosted unit tests run on the release source whenever the App ships, dry runs included, through
+        # app-tests.yml's pull-request mode: the App build and one TalariaTests shard, no UI test (TAL-877). The
+        # contracts job runs the package tests (--package-suite).
+        for retired in ("ui-suite", "ui-suite-lookup", "ui-suite-built"):
+            self.assertNotIn(retired, jobs)
+        hosted = jobs["app-hosted-tests"]
+        self.assertEqual(hosted["uses"], "./.github/workflows/app-tests.yml")
+        self.assertEqual(hosted["with"], {"mode": "pull-request", "ref": "${{ needs.prepare.outputs.source }}",
+                                          "package_tests": False})
+        self.assertEqual(hosted["if"], "needs.prepare.outputs.app_changed == 'true'")
+        # The test shard posts failing tests as commit statuses while it runs (TAL-673).
+        self.assertEqual(hosted["permissions"], {"contents": "read", "actions": "read", "statuses": "write"})
         document = json.loads(subprocess.check_output([
             "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))",
             str(root / ".github/workflows/release-set.yml")], text=True))
         for trigger in ("workflow_call", "workflow_dispatch"):
-            self.assertEqual({key: document["on"][trigger]["inputs"]["ui_shards"][key] for key in ("type", "default")},
-                             {"type": "number", "default": 3})
-        # app-tests.yml turns a shard count from 1 to 6 into that many matrix entries.
-        matrix = app_tests["jobs"]["app-test"]["strategy"]["matrix"]["shard"]
-        table = json.loads(re.search(r"fromJSON\('(\[null,.*?\])'\)\[inputs\.shards\]", matrix)[1])
-        self.assertEqual(table, [None, *([*range(count)] for count in range(1, 7))])
+            self.assertNotIn("ui_shards", document["on"][trigger]["inputs"])
+        app_tests = json.loads(subprocess.check_output([
+            "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))",
+            str(root / ".github/workflows/app-tests.yml")], text=True))
+        self.assertEqual(app_tests["jobs"]["app-test"]["if"], "inputs.mode != 'contracts'")
         self.assertEqual(app_tests["jobs"]["package-test"]["if"], "inputs.package_tests")
         check = (root / "scripts/check-release-contracts.py").read_text()
         self.assertIn('*(["--package-suite"] if index == 0 and plan["changed"]["app"] else [])', check)
-        self.assertEqual(jobs["ui-suite"]["if"],
-                         "needs.prepare.outputs.app_changed == 'true' && needs.ui-suite-lookup.outputs.reused == 'false'")
-        # The suite's test shards post failing tests as commit statuses while they run (TAL-673).
-        self.assertEqual(jobs["ui-suite"]["permissions"], {"contents": "read", "actions": "read", "statuses": "write"})
-        # Nightly and dispatched suites take turns in the queue job, not a concurrency group that cancels waiting runs
-        # (TAL-679); nothing calls ui-suite.yml (TAL-417).
-        suite = json.loads(subprocess.check_output([
-            "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))",
-            str(root / ".github/workflows/ui-suite.yml")], text=True))
-        self.assertNotIn("concurrency", suite)
-        self.assertEqual(suite["jobs"]["suite"]["needs"], "queue")
-        self.assertIn('app/ci/ui-suite-wait-turn "$GITHUB_RUN_ID"', suite["jobs"]["queue"]["steps"][-1]["run"])
-        self.assertNotIn("workflow_call", suite["true"])  # Ruby YAML reads `on` as true
-        # The lookup only reads Actions runs.
-        self.assertEqual(jobs["ui-suite-lookup"]["if"], "needs.prepare.outputs.app_changed == 'true'")
-        self.assertEqual(jobs["ui-suite-lookup"]["permissions"], {"contents": "read", "actions": "read"})
         self.assertEqual(set(jobs["build-gate"]["needs"]), {"prepare", *gates, *builds})
         # Nothing publishes before build-gate joined every gate and build; Relay deploys first, Web and the App then
         # publish at once, and the manifest publishes after every publication read back (TAL-414).
@@ -561,9 +535,8 @@ class PublicationTests(unittest.TestCase):
                     needs[job] = {"result": "success" if changed else "skipped"}
                 if stage == "build":
                     needs["app-signed-build" if dry else "app-dry-build"] = {"result": "skipped"}
-                    needs["ui-suite-lookup"] = {"result": "success" if app else "skipped", "outputs": {"reused": "false"} if app else {}}
-                    needs["ui-suite"] = {"result": "success" if app else "skipped"}
-                    jobs += ["ui-suite-lookup", "ui-suite"]
+                    needs["app-hosted-tests"] = {"result": "success" if app else "skipped"}
+                    jobs.append("app-hosted-tests")
                 if stage == "publication" and dry:
                     with self.assertRaises(ValueError):
                         check(needs, stage, dry)
@@ -579,101 +552,25 @@ class PublicationTests(unittest.TestCase):
                             with self.assertRaises(ValueError):
                                 check(broken, stage, dry)
 
-    def test_ui_suite_gate_reuses_only_a_successful_run_on_the_exact_source(self):
-        # The release graph end to end: the lookup job's own step runs app/ci/find-ui-suite-run against a fake gh
-        # replaying synthetic runs, the suite call and the wait follow the workflow's conditions, and build-gate's
-        # check_results decides (TAL-408).
-        root = Path(__file__).resolve().parents[1]
-        jobs = json.loads(subprocess.check_output([
-            "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))",
-            str(root / ".github/workflows/release-set.yml")], text=True))["jobs"]
-        step = next(step for step in jobs["ui-suite-lookup"]["steps"] if step.get("id") == "lookup")
-        source, other = "a" * 40, "b" * 40
-
-        def release(runs, error=None, suite="success"):
-            with TemporaryDirectory() as temporary:
-                work = Path(temporary)
-                (work / "runs.json").write_text(json.dumps({"workflow_runs": runs}))
-                (work / "bin").mkdir()
-                gh = work / "bin/gh"
-                gh.write_text("#!/usr/bin/env bash\n"
-                              + (f"echo '{error}' >&2; exit 1\n" if error else "")
-                              + 'while (( $# )); do [[ "$1" == --jq ]] && filter="$2"; shift; done\n'
-                              + f'jq -r "$filter" "{work}/runs.json"\n')
-                gh.chmod(0o755)
-                env = {"PATH": f"{work}/bin:{os.environ['PATH']}", "GH_TOKEN": "synthetic", "SOURCE": source,
-                       "GITHUB_REPOSITORY": "MaudeCode/talaria", "GITHUB_OUTPUT": str(work / "output"),
-                       "GITHUB_STEP_SUMMARY": str(work / "summary"), "GH_API_POLL_SECONDS": "0"}
-                lookup = subprocess.run(["bash", "-c", step["run"]], cwd=root, env=env, capture_output=True, text=True)
-                outputs = dict(line.split("=", 1) for line in (work / "output").read_text().splitlines()) \
-                    if (work / "output").exists() else {}
-                summary = (work / "summary").read_text() if (work / "summary").exists() else ""
-            needs = {name: {"result": "success"} for name in ("prepare", "contracts", "component-contracts",
-                                                              "agent", "app-dry-build")}
-            needs["prepare"]["outputs"] = {"app_changed": "true", "web_changed": "false", "relay_changed": "false"}
-            needs.update({name: {"result": "skipped"} for name in ("relay-build", "web-build", "app-signed-build")})
-            needs["ui-suite-lookup"] = {"result": "success" if lookup.returncode == 0 else "failure", "outputs": outputs}
-            # A failed needed job skips its dependants; otherwise the suite call and the build wait share one condition.
-            called = lookup.returncode == 0 and outputs.get("reused") == "false"
-            needs["ui-suite"] = {"result": suite if called else "skipped"}
-            return needs, called, summary
-
-        def run(number, head, conclusion="success", event="schedule", title=None):
-            return {"id": number, "head_sha": head, "status": "completed", "conclusion": conclusion, "event": event,
-                    "display_title": title or f"UI suite on {head}",
-                    "html_url": f"https://github.com/MaudeCode/talaria/actions/runs/{number}"}
-
-        # Found: the gate passes without running the suite or waiting for its build, and names the reused run.
-        needs, called, summary = release([run(7, source)])
-        self.assertFalse(called)
-        self.assertEqual(needs["ui-suite-lookup"]["outputs"],
-                         {"reused": "true", "run_url": "https://github.com/MaudeCode/talaria/actions/runs/7"})
-        self.assertIn("https://github.com/MaudeCode/talaria/actions/runs/7", summary)
-        check(needs, "build", True)
-        # Not found, including a successful run on another commit and failed or scoped runs on this one: the suite
-        # is called and must succeed.
-        for runs in ([], [run(8, other), run(9, source, "failure"), run(10, source, title=f"UI suite (scoped) on {source}")]):
-            with self.subTest(runs=len(runs)):
-                needs, called, summary = release(runs)
-                self.assertTrue(called)
-                self.assertEqual(needs["ui-suite-lookup"]["outputs"], {"reused": "false"})
-                self.assertIn("running the suite", summary)
-                check(needs, "build", True)
-                for result in ("failure", "cancelled"):
-                    with self.assertRaisesRegex(ValueError, "ui-suite"):
-                        check(release(runs, suite=result)[0], "build", True)
-        # A lookup error fails the lookup, skips the suite, and fails the gate closed.
-        for error in ("gh: Server Error (HTTP 500)", "gh: Resource not accessible by integration (HTTP 403)"):
-            with self.subTest(error=error):
-                needs, called, _ = release([run(7, source)], error=error)
-                self.assertEqual(needs["ui-suite-lookup"]["result"], "failure")
-                self.assertFalse(called)
-                with self.assertRaisesRegex(ValueError, "ui-suite-lookup"):
-                    check(needs, "build", True)
-
-    def test_ui_suite_gate_rejects_inconsistent_lookup_results(self):
+    def test_app_hosted_tests_gate_every_release_that_ships_the_app(self):
+        # The App's hosted unit tests gate every release that ships the App, dry runs included, and never run otherwise;
+        # no UI test gates a release (TAL-877).
         base = {name: {"result": "success"} for name in ("prepare", "contracts", "component-contracts",
                                                           "agent", "app-dry-build")}
         base["prepare"]["outputs"] = {"app_changed": "true", "web_changed": "false", "relay_changed": "false"}
         base.update({name: {"result": "skipped"} for name in ("relay-build", "web-build", "app-signed-build")})
-        url = "https://github.com/MaudeCode/talaria/actions/runs/7"
-        valid = ({"reused": "true", "run_url": url}, "skipped"), ({"reused": "false"}, "success")
-        for outputs, suite in valid:
-            check({**base, "ui-suite-lookup": {"result": "success", "outputs": outputs}, "ui-suite": {"result": suite}}, "build", True)
-        broken = (({"reused": "true"}, "skipped"), ({"reused": "true", "run_url": url}, "success"),
-                  ({"reused": "true", "run_url": url}, "failure"), ({"reused": "false", "run_url": url}, "success"),
-                  ({"reused": "false"}, "skipped"), ({}, "skipped"), ({}, "success"), ({"reused": "yes"}, "skipped"))
-        for outputs, suite in broken:
-            with self.subTest(outputs=outputs, suite=suite), self.assertRaisesRegex(ValueError, "ui-suite"):
-                check({**base, "ui-suite-lookup": {"result": "success", "outputs": outputs}, "ui-suite": {"result": suite}}, "build", True)
-        # Without App changes neither job may run.
+        check({**base, "app-hosted-tests": {"result": "success"}}, "build", True)
+        for result in ("failure", "cancelled", "skipped"):
+            with self.subTest(result=result), self.assertRaisesRegex(ValueError, "app-hosted-tests"):
+                check({**base, "app-hosted-tests": {"result": result}}, "build", True)
+        with self.assertRaisesRegex(ValueError, "app-hosted-tests"):
+            check(base, "build", True)
         unchanged = deepcopy(base)
         unchanged["prepare"]["outputs"]["app_changed"] = "false"
         unchanged["app-dry-build"] = {"result": "skipped"}
-        check({**unchanged, "ui-suite-lookup": {"result": "skipped"}, "ui-suite": {"result": "skipped"}}, "build", True)
-        for lookup, suite in (("success", "skipped"), ("skipped", "success")):
-            with self.subTest(lookup=lookup, suite=suite), self.assertRaisesRegex(ValueError, "ui-suite"):
-                check({**unchanged, "ui-suite-lookup": {"result": lookup}, "ui-suite": {"result": suite}}, "build", True)
+        check({**unchanged, "app-hosted-tests": {"result": "skipped"}}, "build", True)
+        with self.assertRaisesRegex(ValueError, "app-hosted-tests"):
+            check({**unchanged, "app-hosted-tests": {"result": "success"}}, "build", True)
 
     def test_production_requires_trusted_main_dispatch_and_exact_source(self):
         plan = {"dryRun": False, "releaseSet": "a" * 40}
