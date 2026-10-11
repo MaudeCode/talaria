@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Chats, tool output, exports, and public share links mask private keys whose markers are split by terminal escape sequences or hidden title text.",
+      "highlight": false
+    }
+  ]
+}
