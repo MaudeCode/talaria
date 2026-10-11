@@ -1066,6 +1066,12 @@ describe('keyword credentials in ANSI-coloured output (TAL-714)', () => {
     expect(redactText(`\x1b[1mAPI_KEY\x1b[m=${S}\n\x1b[1mDB_PASSWORD\x1b[m=${S}x`, true)).toBe('\x1b[1mAPI_KEY\x1b[m=***\n\x1b[1mDB_PASSWORD\x1b[m=***')
   })
 
+  it('masks a split key\'s value that equals a mask the redaction makes elsewhere', () => {
+    const input = 'ghp_abcdef1234567890ABCDEF1234567890abcdef pass\x1b[31mword=ghp_ab...cdef'
+    expect(redactText(input, true)).toBe('*** pass\x1b[31mword=***')
+    expect(share(input)).toBe('*** pass\x1b[31mword=***')
+  })
+
   it('keeps every escape sequence outside a masked value', () => {
     const ugrep = redactText(`\x1b[1;31mAPI_KEY\x1b[m=${S}\x1b[m`, true) as string
     expect(ugrep.startsWith('\x1b[1;31mAPI_KEY\x1b[m=')).toBe(true)

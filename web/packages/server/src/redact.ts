@@ -1575,13 +1575,13 @@ export function redactSensitive(text: string): string {
   const plain = view?.stripped ?? redacted
   const at = (i: number): number => (view ? view.kept[i]! : i)
   const raw = secretTokenCounts(plain)
-  // A unit of the text, not one a mask of the redaction made (`ghp_ab...cdef`).
-  const base = secretTokenCounts(stripped)
+  // A unit of the text, not only one a mask of the redaction made (`ghp_ab...cdef`). A value equal to a mask fails closed.
+  const base = new Set(stripped.match(SECRET_UNIT_RE))
   // Masked units only blanks apart are one value (`'correct horse battery'`), masked whole so its word count stays hidden.
   const spans: [number, number, string][] = []
   let last = -1
   for (const m of plain.matchAll(SECRET_UNIT_RE)) {
-    if ((shownCounts.get(m[0]) ?? 0) >= Math.min(raw.get(m[0]) ?? 0, base.get(m[0]) ?? 0)) continue
+    if (!base.has(m[0]) || (shownCounts.get(m[0]) ?? 0) >= (raw.get(m[0]) ?? 0)) continue
     const end = at(m.index + m[0].length - 1) + 1
     if (last !== -1 && /^[ \t]+$/.test(plain.slice(last, m.index))) spans.at(-1)![1] = end
     else spans.push([at(m.index), end, m[0]])
