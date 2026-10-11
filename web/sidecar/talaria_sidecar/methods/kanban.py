@@ -99,7 +99,16 @@ def _row_claim_live(row) -> bool:
     try:
         return bool(_kb()._claim_is_live(claim))
     except Exception:  # noqa: BLE001 - an older Agent without the helper
-        return bool(claim["claim_lock"] and claim["worker_pid"])
+        pass
+    if not (claim["claim_lock"] and claim["worker_pid"]):
+        return False
+    try:
+        # Agent 0.21.3 has no _claim_is_live, but its dispatcher's own worker PID check.
+        from hermes_cli.kanban_db_dispatch import _pid_alive
+
+        return bool(_pid_alive(int(claim["worker_pid"])))
+    except Exception:  # noqa: BLE001
+        return True
 
 
 def _claim_live(conn, task_id) -> bool:

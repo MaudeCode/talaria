@@ -1,0 +1,12 @@
+{
+    "entries": [
+        {
+            "category": "Fixed",
+            "summary": "With Hermes Agent 0.21.3, a kanban card whose worker has stopped can be blocked or moved again.",
+            "highlight": false,
+            "components": [
+                "web"
+            ]
+        }
+    ]
+}

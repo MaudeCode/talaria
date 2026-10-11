@@ -269,11 +269,13 @@ def test_kanban_tasks_report_claim_liveness_and_completion_evidence(handshaken: 
     assert message.get("error", {}).get("data", {}).get("condition") == "conflict", message
     patch = {"status": "todo", "confirm_running_exit": True}
     assert handshaken.result("kanban.patch_task", {"profile_home": home, "task_id": task_id, "patch": patch})["task"]["status"] == "todo"
-    # A refused Agent write on a claimable (ready) card releases the dispatcher fence it held: completing
-    # without a stored result raises inside the Agent.
+    # A write on a claimable (ready) card releases the dispatcher fence it held. Agents since 0.21.4 refuse a
+    # completion without a stored result inside the Agent; Agent 0.21.3 completes it. test_kanban_claim.py pins
+    # the refused and raising writes without an Agent.
     ready_id = handshaken.result("kanban.create_task", {"profile_home": home, "task": {"title": "fenced task", "status": "ready"}})["task"]["id"]
     message, _ = handshaken.call("kanban.patch_task", {"profile_home": home, "task_id": ready_id, "patch": {"status": "done"}})
-    assert "error" in message, message
+    status = handshaken.result("kanban.task", {"profile_home": home, "task_id": ready_id})["task"]["status"]
+    assert (status, "error" in message) in (("ready", True), ("done", False)), (status, message)
 
     def claim_lock(tid):
         with sqlite3.connect(db) as conn:
