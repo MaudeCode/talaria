@@ -1052,9 +1052,9 @@ describe('keyword credentials in ANSI-coloured output (TAL-714)', () => {
       [`--pass\x1b[31mword '********'`, `--password '***'`],
       ['Bear\x1b[31mer ********', 'Bearer ***'],
       // A later credential stays masked when the fallback runs (`--password …` after a coloured key's value).
-      ['{"pass\x1b[31mword":" x"}--password finalSecret987', '{"***":*** ***'],
+      ['{"pass\x1b[31mword":" x"}--password finalSecret987', '{"password":*** ***'],
       // So does an earlier credential whose value swallows the split key (`…999;API_\x1b[31mKEY:`).
-      ['API_KEY=otherSecret999;API_\x1b[31mKEY: $$$$$$$$', 'API_KEY=*** ***'],
+      ['API_KEY=otherSecret999;API_\x1b[31mKEY: $$$$$$$$', '***=*** ***'],
       [`\x1b[36mpassword\x1b[0m: @@@@@@@@ and ghp_abcdef1234567890ABCDEF1234567890abcdef\n\x1b[1;31mAPI_KEY\x1b[m=${S}\x1b[m`, 'password: *** and ghp_ab...cdef\nAPI_KEY=***'],
     ]) {
       expect(mightContainSensitiveText(input!)).toBe(true)
@@ -1066,6 +1066,12 @@ describe('keyword credentials in ANSI-coloured output (TAL-714)', () => {
   it('masks a split key\'s passphrase whole, and values on separate lines apart', () => {
     expect(redactText(`--pass\x1b[31mword 'correct horse battery staple'`, true)).toBe(`--pass\x1b[31mword '***'`)
     expect(redactText(`\x1b[1mAPI_KEY\x1b[m=${S}\n\x1b[1mDB_PASSWORD\x1b[m=${S}x`, true)).toBe('\x1b[1mAPI_KEY\x1b[m=***\n\x1b[1mDB_PASSWORD\x1b[m=***')
+  })
+
+  it('masks a value everywhere when either redaction masks one of its occurrences', () => {
+    const input = 'foo\x1b[31m"password":"SECRETX123" pass\x1b[31mword=SECRETX123'
+    expect(redactText(input, true)).toBe('foo\x1b[31m"password":"***" pass\x1b[31mword=***')
+    expect(share(input)).toBe('foo\x1b[31m"password":"***" pass\x1b[31mword=***')
   })
 
   it('masks a split key\'s value that equals a mask the redaction makes elsewhere', () => {
