@@ -728,7 +728,25 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             }
             return json(["ok": true])
         case "/api/sessions/search":
-            return json(["sessions": [], "query": "", "count": 0])
+            // TAL-308: the server answers from the `/api/sessions` rows for the sidebar's project and visibility
+            // filters, in their order, and the App shows exactly that set; title matches stand in for its title,
+            // metadata and content search (`SessionService.sidebarSearch`).
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            func value(_ name: String) -> String? { items.first { $0.name == name }?.value }
+            let query = value("q") ?? ""
+            let projectID = value("project_id")
+            let hiddenKinds = [
+                ("cli", "show_cli_sessions"), ("claude_code", "show_claude_code_sessions"),
+                ("cron", "show_cron_sessions"), ("webhook", "show_webhook_sessions")
+            ].filter { value($0.1) == "0" }.map(\.0)
+            let list = (try? JSONSerialization.jsonObject(with: sessionsResponse(firstTitle: sessionTitle))) as? [String: Any]
+            let matches = (list?["sessions"] as? [[String: Any]] ?? []).filter { row in
+                let rowProject = row["project_id"] as? String
+                if let projectID, projectID == "none" ? rowProject != nil : rowProject != projectID { return false }
+                if let kind = row["source_kind"] as? String, hiddenKinds.contains(kind) { return false }
+                return query.isEmpty || (row["title"] as? String)?.localizedCaseInsensitiveContains(query) == true
+            }
+            return json(["sessions": matches, "query": query, "count": matches.count, "sidebar_filtered": true])
         case "/api/sessions/bulk":
             let ids = requestJSON(request)["session_ids"] as? [String] ?? []
             return json(["results": ids.map { ["session_id": $0, "ok": true] }])
@@ -873,7 +891,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         case "/api/settings" where testsServerUpdate:
             return json(["webui_version": "web-v1.2.2"])
         case "/api/updates/check" where testsServerUpdate:
-            return json(["webui": ["behind": 1]])
+            return json(["webui": ["behind": 1, "state": "commits_behind", "can_apply": true]])
         case "/api/updates/apply" where testsServerUpdate:
             recoveryState.withLock { serverUpdateAppliedAt = Date() }
             return json(["ok": true, "target": "webui", "restart_scheduled": true, "notification_id": serverUpdateNotificationID])

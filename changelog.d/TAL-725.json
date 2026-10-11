@@ -1,0 +1,3 @@
+{
+  "skip": "DEBUG-only UI-test fixture: its update-check and session-search answers now use the server's current shapes."
+}

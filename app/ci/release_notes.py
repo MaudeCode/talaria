@@ -138,6 +138,8 @@ def repository_only(path):
         or path.startswith((
             "web/", "relay/", "contracts/", "releases/", "docs/", "ci/", "scripts/", ".github/", ".agents/", ".agy/", ".codex/",
             ".xcodebuildmcp/", DIRECTORY + "/", "TalariaTests/", "TalariaUITests/", "TalariaKit/Tests/",
+            # The UI-test fixture server is compiled only into DEBUG builds (`#if DEBUG`), so it never ships.
+            "Talaria/Config/UITestFixture",
         ))
         or path in {".gitignore", ".gitattributes", ".gitleaksignore", "CLAUDE.md"}
     )
