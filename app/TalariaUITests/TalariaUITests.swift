@@ -3031,6 +3031,7 @@ fileprivate extension ChatUITestCase {
         let message = element(labelContaining: "FixturePlainLead")
         XCTAssertTrue(message.awaitExistence(timeout: 15), "Missing the fixture's long assistant message")
         let before = settledFrame(of: message)
+        let closingTap = menuClosingTap()
         // High in a tall bubble: the pre-TAL-49 context menu lifted the whole
         // bubble and pushed its menu to the top of the screen from here.
         let press = CGPoint(x: before.midX, y: before.minY + 12)
@@ -3051,7 +3052,7 @@ fileprivate extension ChatUITestCase {
             message.frame, before,
             "Opening the menu moved the message instead of leaving the transcript still"
         )
-        dismissContextMenu(avoiding: menu)
+        dismissContextMenu(at: closingTap)
         XCTAssertTrue(fork.awaitNonExistence(timeout: 5), "The message actions did not close")
 
         let link = app.links["FixtureLinkTarget"]
@@ -3062,7 +3063,7 @@ fileprivate extension ChatUITestCase {
         XCTAssertTrue(openLink.awaitExistence(timeout: 5), "The link's own actions did not open")
         XCTAssertFalse(app.buttons["Fork From Here"].exists, "A link press must not offer message actions")
         XCTAssertFalse(app.buttons["Listen"].exists, "A link press must not offer message actions")
-        dismissContextMenu(avoiding: openLink.frame)
+        dismissContextMenu(at: closingTap)
         XCTAssertTrue(openLink.awaitNonExistence(timeout: 5), "The link actions did not close")
 
         // A heading renders through its own block style (TAL-172): its link
@@ -3073,21 +3074,59 @@ fileprivate extension ChatUITestCase {
         longPress(at: CGPoint(x: headingLinkFrame.midX, y: headingLinkFrame.midY))
         XCTAssertTrue(openLink.awaitExistence(timeout: 5), "The heading link's own actions did not open")
         XCTAssertFalse(app.buttons["Fork From Here"].exists, "A heading link press must not offer message actions")
-        dismissContextMenu(avoiding: openLink.frame)
+        dismissContextMenu(at: closingTap)
         XCTAssertTrue(openLink.awaitNonExistence(timeout: 5), "The heading link actions did not close")
 
         longPress(at: CGPoint(x: headingLinkFrame.minX - 30, y: headingLinkFrame.midY))
         XCTAssertTrue(fork.awaitExistence(timeout: 5), "The heading's lead text did not open the message actions")
         XCTAssertFalse(openLink.exists, "A heading's lead text must not offer link actions")
-        dismissContextMenu(avoiding: app.buttons["Listen"].frame.union(fork.frame))
+        dismissContextMenu(at: closingTap)
         XCTAssertTrue(fork.awaitNonExistence(timeout: 5), "The message actions did not close")
     }
 
-    /// Taps the half of the screen the open menu does not cover; a tap outside a context menu
-    /// only closes it.
-    func dismissContextMenu(avoiding menu: CGRect) {
-        let screen = app.frame
-        tap(at: CGPoint(x: screen.midX, y: menu.midY > screen.midY ? screen.height * 0.3 : screen.height * 0.75))
+    /// A point in the empty transcript beside the fixture's "Fixture link request" bubble, above
+    /// every menu this journey opens. It closes a menu without doing anything else, even when a
+    /// hosted simulator stalled on the open menu passes the tap through to the transcript, as
+    /// a tap on the link preview card did (TAL-727). Checked while no menu is open: an open menu
+    /// hides the transcript from accessibility.
+    func menuClosingTap() -> CGPoint {
+        let request = element(labelContaining: "Fixture link request")
+        XCTAssertTrue(request.awaitExistence(timeout: 5), "Missing the fixture's link request")
+        let point = CGPoint(x: app.frame.minX + 40, y: settledFrame(of: request).midY)
+        XCTAssertEqual(controls(at: point), [], "A tap that closes a menu at \(point) would land on a control")
+        return point
+    }
+
+    /// Taps `point`, which must lie outside the open menu. While a menu is open its actions are the
+    /// only buttons accessibility reports.
+    func dismissContextMenu(at point: CGPoint) {
+        let menu = controlFrames().reduce(CGRect.null) { $0.union($1) }
+        XCTAssertFalse(menu.contains(point), "The tap that closes the menu would land on it: \(menu) at \(point)")
+        tap(at: point)
+    }
+
+    /// Labels of the buttons and links under `point`.
+    func controls(at point: CGPoint) -> [String] {
+        controlSnapshots().filter { $0.frame.contains(point) }.map(\.label)
+    }
+
+    func controlFrames() -> [CGRect] {
+        controlSnapshots().map(\.frame)
+    }
+
+    /// Every button and link in one snapshot of the app.
+    private func controlSnapshots() -> [XCUIElementSnapshot] {
+        guard let root = try? app.snapshot() else {
+            XCTFail("Could not snapshot the app's controls")
+            return []
+        }
+        var controls: [XCUIElementSnapshot] = []
+        var pending = [root]
+        while let node = pending.popLast() {
+            if [.button, .link].contains(node.elementType) { controls.append(node) }
+            pending += node.children
+        }
+        return controls
     }
 
     func openFixtureSession() throws -> XCUIElement {
