@@ -1588,10 +1588,10 @@ export function redactSensitive(text: string): string {
   return [...outCounts].some(([char, count]) => (viewCounts.get(char) ?? 0) < count) ? shown : out
 }
 
-/** A text's delimiters, `SECRET_UNIT_RE`'s but whitespace and a mask's `*`, counted outside a private key's mask. */
+/** A text's delimiters, `SECRET_UNIT_RE`'s but whitespace, counted outside the masks `***` and a private key's. */
 function delimiterCounts(text: string): Map<string, number> {
   const counts = new Map<string, number>()
-  for (const [char] of text.replaceAll('[REDACTED PRIVATE KEY]', '').matchAll(/['"`$\\=:@/;&|<>(){}[\],]/g)) counts.set(char, (counts.get(char) ?? 0) + 1)
+  for (const [char] of text.replaceAll('[REDACTED PRIVATE KEY]', '').replace(/(?<!\*)\*{3}(?!\*)/g, '').matchAll(/['"`$\\=:@/;&|<>(){}[\],*]/g)) counts.set(char, (counts.get(char) ?? 0) + 1)
   return counts
 }
 

@@ -534,7 +534,7 @@ describe('redactSensitive cost', () => {
     // A quadratic scan takes seconds on these inputs; a linear one takes milliseconds.
     // Unquoted runs, and many credential keys inside one long quoted argument.
     // The Agent's ported families: env names, split tokens, JWT headers, phone numbers and bare URL userinfo.
-    for (const text of [...['abcdefghij-', 'a.b+c-', 'token_', '--password ', 'aB', 'aBcD_', 'ABCd', 'AB', 'PW', 'KEY_', 'a_pw', 'a_key_', 'ghp_a\x1b', 'ghp_a\x1b[1m', 'ghp_a\x1b]8;;a', '\x1b[1', 'ghp_a\x9b1m', '\x9d8;;a', 'ghp_a\x1bPa', '\x1b( ', '\x90a\x9d', '\x1b\x00\x00', 'ghp_a\x1b[\x07', '\x1b(\x00', 'g\x1b]0;h\x07', 'x\x1b]0;a\x07', '\x1b]0;g\x07h', 'gh\x1b]0;p\x07\x1b]0;_\x07', 'ghp_ab\n', 'eyJaaaaaaaaaa.', 'eyJaaaaaaaaaa\x1b[1m', 'ey\x1b[1mJ', 'e\x1b]0;y\x07J', '-e\x1b]0;y\x07J', 'eyJaaaa\x1b]0;a\x07', 'eyJaaaaaaaaaa\n.', '+1234567', 'https://aaaaaaaa', 'DB_PW="', "db_pw='a ", 'ghp_ab\nK=', 'a_key=x\\ ', 'a_key=,', '\nsk-a', 'sk-aaaaaaaaaaaa\n', '&a_key=x', 'sk-aaaaaaaaaa\nsk-b\n', '2', '1234 ', '-----BE\x1b[1mGIN PRIVATE KEY-----\n', '-----BEGIN PRI\x1b[1mVATE KEY-----', '-----B\x1b]0;x\x07E\x1b]0;GIN\x07 PRIVATE KEY-----', '-----B\x1b]0;x\x07E\x1b]0;GIN\x07', '-\x1b]0;-\x07', '\x1b[1;31mAPI_KEY\x1b[m=abcdefghij\x1b[m ', '\x1b[1;34m"password"\x1b[0m: "x" ', 'Bear\x1b[1mer $$$$ '].map((seg) => seg.repeat(Math.ceil(200_000 / seg.length))),
+    for (const text of [...['abcdefghij-', 'a.b+c-', 'token_', '--password ', 'aB', 'aBcD_', 'ABCd', 'AB', 'PW', 'KEY_', 'a_pw', 'a_key_', 'ghp_a\x1b', 'ghp_a\x1b[1m', 'ghp_a\x1b]8;;a', '\x1b[1', 'ghp_a\x9b1m', '\x9d8;;a', 'ghp_a\x1bPa', '\x1b( ', '\x90a\x9d', '\x1b\x00\x00', 'ghp_a\x1b[\x07', '\x1b(\x00', 'g\x1b]0;h\x07', 'x\x1b]0;a\x07', '\x1b]0;g\x07h', 'gh\x1b]0;p\x07\x1b]0;_\x07', 'ghp_ab\n', 'eyJaaaaaaaaaa.', 'eyJaaaaaaaaaa\x1b[1m', 'ey\x1b[1mJ', 'e\x1b]0;y\x07J', '-e\x1b]0;y\x07J', 'eyJaaaa\x1b]0;a\x07', 'eyJaaaaaaaaaa\n.', '+1234567', 'https://aaaaaaaa', 'DB_PW="', "db_pw='a ", 'ghp_ab\nK=', 'a_key=x\\ ', 'a_key=,', '\nsk-a', 'sk-aaaaaaaaaaaa\n', '&a_key=x', 'sk-aaaaaaaaaa\nsk-b\n', '2', '1234 ', '-----BE\x1b[1mGIN PRIVATE KEY-----\n', '-----BEGIN PRI\x1b[1mVATE KEY-----', '-----B\x1b]0;x\x07E\x1b]0;GIN\x07 PRIVATE KEY-----', '-----B\x1b]0;x\x07E\x1b]0;GIN\x07', '-\x1b]0;-\x07', '\x1b[1;31mAPI_KEY\x1b[m=abcdefghij\x1b[m ', '\x1b[1;34m"password"\x1b[0m: "x" ', 'Bear\x1b[1mer $$$$ ', 'Bear\x1b[1mer ****** '].map((seg) => seg.repeat(Math.ceil(200_000 / seg.length))),
       ...['Authorization: x ', 'Authorization: *** ', 'secret sauce ', 'password=*** '].map((seg) => `"${seg.repeat(Math.ceil(200_000 / seg.length))}"`),
       // One huge identifier that does name a credential, and many long ones that are followed by a separator.
       `--${'aB'.repeat(100_000)}Password=x`, `${'2'.repeat(200_000)}:`, `ghp_a\x1b${'\x00'.repeat(200_000)}`, `${'a'.repeat(1_000)}= `.repeat(200), `${'a'.repeat(1_000)}://x:`.repeat(200),
@@ -1049,6 +1049,8 @@ describe('keyword credentials in ANSI-coloured output (TAL-714)', () => {
       ['Bear\x1b[31mer $$$$$$$$', 'Bearer ***'],
       ['\x1b[1;34m"password"\x1b[0m: "$$$$$$$$"', '"password": "***"'],
       ['\x1b[1mpassword\x1b[0m=$$$$$$$$', 'password=***'],
+      [`--pass\x1b[31mword '********'`, `--password '***'`],
+      ['Bear\x1b[31mer ********', 'Bearer ***'],
       [`\x1b[36mpassword\x1b[0m: @@@@@@@@ and ghp_abcdef1234567890ABCDEF1234567890abcdef\n\x1b[1;31mAPI_KEY\x1b[m=${S}\x1b[m`, 'password: *** and ghp_ab...cdef\nAPI_KEY=***'],
     ]) {
       expect(mightContainSensitiveText(input!)).toBe(true)
