@@ -113,7 +113,7 @@ struct SessionListView: View {
         _requestedNewChat = requestedNewChat
         var archiveUndoLifetime = SessionListViewModel.defaultArchiveUndoLifetime
         #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.holdArchiveUndoArgument) {
+        if UITestFixtureLaunch.arguments.contains(UITestFixtureEnvironment.holdArchiveUndoArgument) {
             archiveUndoLifetime = .seconds(24 * 60 * 60)
         }
         #endif
@@ -127,7 +127,7 @@ struct SessionListView: View {
         _sectionViewModels = State(initialValue: SectionViewModels(server: server))
         #if DEBUG
         _isPresentingUpdateNotifications = State(
-            initialValue: ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.updateNotificationsArgument)
+            initialValue: UITestFixtureLaunch.arguments.contains(UITestFixtureEnvironment.updateNotificationsArgument)
         )
         #else
         _isPresentingUpdateNotifications = State(initialValue: false)

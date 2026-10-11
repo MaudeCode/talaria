@@ -1,5 +1,6 @@
 #if DEBUG
 import Foundation
+import TalariaKit
 
 /// Deterministic Tasks, Kanban, Skills, Memory and Insights payloads for the agent-panel
 /// smoke journeys (TAL-71). Without one of these arguments the fixture keeps serving the
@@ -15,7 +16,7 @@ enum UITestPanelScenario: String, CaseIterable {
     static let holdPanelRefreshesArgument = "--ui-test-hold-panel-refreshes"
 
     static var current: Self? {
-        let arguments = ProcessInfo.processInfo.arguments
+        let arguments = UITestFixtureLaunch.arguments
         return allCases.first { arguments.contains($0.rawValue) }
     }
 }
@@ -90,7 +91,7 @@ extension UITestFixtureURLProtocol {
         let state = UITestPanelFixtureState.shared
 
         switch url.path {
-        case "/api/insights" where ProcessInfo.processInfo.arguments.contains("--ui-test-insights-refresh-error")
+        case "/api/insights" where UITestFixtureLaunch.arguments.contains("--ui-test-insights-refresh-error")
             && URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.contains(where: { $0.name == "days" && $0.value == "7" }) == true:
             // Transient for all four attempts Insights retries, so the refresh exhausts them (TAL-191).
             let failsAttempt = (1...4).contains { state.consumeFailure(for: "insights-refresh-\($0)") }
@@ -120,7 +121,7 @@ extension UITestFixtureURLProtocol {
     static func holdsPanelLoad(for url: URL) -> Bool {
         guard [.populated, .failing].contains(UITestPanelScenario.current),
               url.query?.contains("since=") != true else { return false }
-        if ProcessInfo.processInfo.arguments.contains(UITestPanelScenario.holdPanelRefreshesArgument) {
+        if UITestFixtureLaunch.arguments.contains(UITestPanelScenario.holdPanelRefreshesArgument) {
             return panelRefreshPaths.contains(url.path)
         }
         return panelDelayPaths.contains(url.path)

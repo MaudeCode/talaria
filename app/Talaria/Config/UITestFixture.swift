@@ -95,13 +95,13 @@ struct UITestFixtureEnvironment {
     nonisolated static let holdArchiveUndoArgument = "--ui-test-hold-archive-undo"
 
     nonisolated static var keepsCachesAcrossLaunches: Bool {
-        let arguments = ProcessInfo.processInfo.arguments
+        let arguments = UITestFixtureLaunch.arguments
         return arguments.contains(persistentCacheArgument) && !arguments.contains(resetPersistentCacheArgument)
     }
 
     /// The fixture's response-cache directory, emptied once per launch unless a journey keeps it.
     nonisolated static let responseCacheRoot: URL? = {
-        guard ProcessInfo.processInfo.arguments.contains(launchArgument) else { return nil }
+        guard UITestFixtureLaunch.arguments.contains(launchArgument) else { return nil }
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("ui-test-response-cache", isDirectory: true)
         if !keepsCachesAcrossLaunches { try? FileManager.default.removeItem(at: root) }
         return root
@@ -110,7 +110,7 @@ struct UITestFixtureEnvironment {
     /// A disk store for the offline cache when a journey keeps caches across relaunches;
     /// nil keeps the fixture's in-memory store.
     nonisolated static let persistentCacheStoreURL: URL? = {
-        let arguments = ProcessInfo.processInfo.arguments
+        let arguments = UITestFixtureLaunch.arguments
         guard arguments.contains(persistentCacheArgument) else { return nil }
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("ui-test-cache.store")
         if arguments.contains(resetPersistentCacheArgument) {
@@ -121,37 +121,37 @@ struct UITestFixtureEnvironment {
         return url
     }()
     nonisolated static var isDense: Bool {
-        ProcessInfo.processInfo.arguments.contains(denseArgument)
+        UITestFixtureLaunch.arguments.contains(denseArgument)
     }
     nonisolated static var hasLongBodies: Bool {
-        ProcessInfo.processInfo.arguments.contains(longBodiesArgument)
+        UITestFixtureLaunch.arguments.contains(longBodiesArgument)
     }
     nonisolated static var hasLongPrompt: Bool {
-        ProcessInfo.processInfo.arguments.contains(longPromptArgument)
+        UITestFixtureLaunch.arguments.contains(longPromptArgument)
     }
     nonisolated static var hasDiffBlocks: Bool {
-        ProcessInfo.processInfo.arguments.contains(diffBlocksArgument)
+        UITestFixtureLaunch.arguments.contains(diffBlocksArgument)
     }
     nonisolated static var hasTranscriptMedia: Bool {
-        ProcessInfo.processInfo.arguments.contains(transcriptMediaArgument)
+        UITestFixtureLaunch.arguments.contains(transcriptMediaArgument)
     }
     nonisolated static var hasBackgroundUpdates: Bool {
-        ProcessInfo.processInfo.arguments.contains(backgroundUpdatesArgument)
+        UITestFixtureLaunch.arguments.contains(backgroundUpdatesArgument)
     }
     nonisolated static var hasCompressionReference: Bool {
-        ProcessInfo.processInfo.arguments.contains(compressionReferenceArgument)
+        UITestFixtureLaunch.arguments.contains(compressionReferenceArgument)
     }
     nonisolated static var hasBranchedFrom: Bool {
-        ProcessInfo.processInfo.arguments.contains(branchedFromArgument)
+        UITestFixtureLaunch.arguments.contains(branchedFromArgument)
     }
     nonisolated static var hasOlderMessages: Bool {
-        ProcessInfo.processInfo.arguments.contains(olderMessagesArgument)
+        UITestFixtureLaunch.arguments.contains(olderMessagesArgument)
     }
     nonisolated static var hasSidebarVariety: Bool {
-        ProcessInfo.processInfo.arguments.contains(sidebarVarietyArgument)
+        UITestFixtureLaunch.arguments.contains(sidebarVarietyArgument)
     }
     nonisolated static var hasProjects: Bool {
-        ProcessInfo.processInfo.arguments.contains(projectsArgument)
+        UITestFixtureLaunch.arguments.contains(projectsArgument)
     }
     nonisolated static let serverURL = UITestFixtureLaunch.serverURL
     nonisolated static var relayCredentials: TalariaRelayCredentials { UITestFixtureLaunch.relayCredentials }
@@ -168,7 +168,7 @@ struct UITestFixtureEnvironment {
             UITestChatFixtureState.shared.startChat()
             initialDrafts[fixtureSessionDraft] = ChatDraft(text: "Ordinary fixture draft")
         }
-        let stagedPhotosDraft = ProcessInfo.processInfo.arguments.contains(draftAttachmentsArgument) ? fixtureSessionDraft : nil
+        let stagedPhotosDraft = UITestFixtureLaunch.arguments.contains(draftAttachmentsArgument) ? fixtureSessionDraft : nil
         UITestFixtureHold.shared.listen()
         if UITestLifecycleFixture.isEnabled { UITestLifecycleServer.shared.listen() }
         UITestFixtureURLProtocol.WorkspaceFixture.listenForGitWriteGrant()
@@ -224,7 +224,7 @@ struct UITestFixtureEnvironment {
 
         prepareSharedImportInbox()
         UITestFixtureURLProtocol.prepareChangeWhileBackgrounded()
-        if ProcessInfo.processInfo.arguments.contains(newChatIntentArgument) {
+        if UITestFixtureLaunch.arguments.contains(newChatIntentArgument) {
             Task { _ = try? await NewChatIntent().perform() }
         }
 
@@ -243,7 +243,7 @@ struct UITestFixtureEnvironment {
             profileEntityCache: ProfileEntityCache(defaults: nil),
             serverRegistry: ServerRegistry(keychain: keychain, identityDefaults: defaults)
         )
-        keychain.failsServerListSaves = ProcessInfo.processInfo.arguments.contains(identitySaveFailsArgument)
+        keychain.failsServerListSaves = UITestFixtureLaunch.arguments.contains(identitySaveFailsArgument)
         return UITestFixtureEnvironment(
             authManager: authManager,
             client: client,
@@ -262,7 +262,7 @@ private extension UITestFixtureEnvironment {
     /// against a reservation still holding its lease. Only this journey resets, so a test
     /// that relaunches to inspect what consumption left behind still sees it.
     static func prepareSharedImportInbox() {
-        guard ProcessInfo.processInfo.arguments.contains(pendingShareArgument) else { return }
+        guard UITestFixtureLaunch.arguments.contains(pendingShareArgument) else { return }
         ShareExtensionUITestHost.resetSharedState()
         guard let inbox = TalariaShareDraft.containerURL() else { return }
         // The extension writes its draft while Talaria is in the background, so the fixture
@@ -302,7 +302,8 @@ final class UITestFixtureHold: @unchecked Sendable {
         lock.withLock { held.append(send) }
     }
 
-    private func release() {
+    /// Sends every held load; hosted tests call it directly instead of posting the notification (TAL-856).
+    func release() {
         let loads = lock.withLock {
             defer { held = [] }
             return held
@@ -321,7 +322,7 @@ private final class UITestFixtureKeychainStore: KeychainStoring {
     }
 
     init(serverURL: URL) {
-        values = ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.onboardingArgument)
+        values = UITestFixtureLaunch.arguments.contains(UITestFixtureEnvironment.onboardingArgument)
             ? [:]
             : [KeychainStore.Key.serverURL.rawValue: serverURL.absoluteString]
     }
@@ -395,7 +396,7 @@ private enum UITestChatScenario: String, CaseIterable {
     case pendingSteers = "--ui-test-chat-pending-steers"
 
     static var current: Self? {
-        let arguments = ProcessInfo.processInfo.arguments
+        let arguments = UITestFixtureLaunch.arguments
         return allCases.first { arguments.contains($0.rawValue) }
     }
 }
@@ -539,14 +540,14 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) private static var dismissedUpdateNotificationIDs: Set<String> = []
     nonisolated(unsafe) private static var serverUpdateAppliedAt: Date?
     private static var testsServerUpdate: Bool {
-        ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.serverUpdateArgument)
+        UITestFixtureLaunch.arguments.contains(UITestFixtureEnvironment.serverUpdateArgument)
     }
     nonisolated(unsafe) private static var archivedSessionIDs: Set<String> = []
     private static var testsReauthentication: Bool {
-        ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.reauthenticationArgument)
+        UITestFixtureLaunch.arguments.contains(UITestFixtureEnvironment.reauthenticationArgument)
     }
     private static var testsTrustedReauthentication: Bool {
-        ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.trustedReauthenticationArgument)
+        UITestFixtureLaunch.arguments.contains(UITestFixtureEnvironment.trustedReauthenticationArgument)
     }
     private static let chatStreamID = "ui-fixture-stream"
     static let pendingSteerID = "steer-ui-fixture-web"
@@ -555,8 +556,25 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     private let lifecycleLock = NSLock()
     private var stopped = false
 
+    /// Puts the fixture's per-launch server state back to a fresh launch's, for hosted tests that start the fixture in
+    /// process once per test (TAL-856).
+    static func resetForHostedTest() {
+        approvalBypassOverride = nil
+        sessionToolsets.withLock { $0 = nil }
+        sessionReads = 0
+        transcriptReads = 0
+        hasChangedWhileBackgrounded = false
+        recovered = false
+        urgentNotificationAcknowledged = false
+        readUpdateNotificationIDs = ["ui-update-succeeded"]
+        dismissedUpdateNotificationIDs = []
+        serverUpdateAppliedAt = nil
+        archivedSessionIDs = []
+        didFailSessionCreation = false
+    }
+
     static func configure(_ configuration: URLSessionConfiguration) {
-        guard ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.launchArgument) else { return }
+        guard UITestFixtureLaunch.arguments.contains(UITestFixtureEnvironment.launchArgument) else { return }
         configuration.protocolClasses = [Self.self]
             + (configuration.protocolClasses ?? []).filter { $0 != Self.self }
         // A held load waits for the test's release, not for URLSession's 60 s default: XCTest's own wait for the App to
@@ -587,9 +605,9 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         }
 
         let holdsSessionList = url.path == "/api/sessions"
-            && ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.holdSessionListArgument)
+            && UITestFixtureLaunch.arguments.contains(UITestFixtureEnvironment.holdSessionListArgument)
         let holdsSessionCreation = url.path == "/api/session/new"
-            && ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.holdSessionCreationArgument)
+            && UITestFixtureLaunch.arguments.contains(UITestFixtureEnvironment.holdSessionCreationArgument)
         if Self.holdsPanelLoad(for: url) || Self.holdsWorkspaceRead(for: url) || Self.holdsTranscriptReload(for: url)
             || holdsSessionList || holdsSessionCreation {
             UITestFixtureHold.shared.hold { [weak self] in
@@ -607,7 +625,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     static func prepareChangeWhileBackgrounded() {
-        guard ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.changeWhileBackgroundedArgument) else { return }
+        guard UITestFixtureLaunch.arguments.contains(UITestFixtureEnvironment.changeWhileBackgroundedArgument) else { return }
         NotificationCenter.default.addObserver(
             forName: UIApplication.didEnterBackgroundNotification,
             object: nil,
@@ -618,7 +636,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     private static func holdsTranscriptReload(for url: URL) -> Bool {
-        let arguments = ProcessInfo.processInfo.arguments
+        let arguments = UITestFixtureLaunch.arguments
         let holdsFirst = arguments.contains(UITestFixtureEnvironment.holdFirstTranscriptLoadArgument)
         guard url.path == "/api/session",
               holdsFirst || arguments.contains(UITestFixtureEnvironment.holdTranscriptReloadsArgument)
@@ -678,7 +696,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     /// True once, for the first new-chat request, under `--ui-test-fail-first-session-creation`.
     private static func failsSessionCreation(_ url: URL) -> Bool {
         guard url.path == "/api/session/new",
-              ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.failFirstSessionCreationArgument)
+              UITestFixtureLaunch.arguments.contains(UITestFixtureEnvironment.failFirstSessionCreationArgument)
         else { return false }
         return sessionCreationFailureLock.withLock {
             defer { didFailSessionCreation = true }
@@ -705,7 +723,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
                 ])
             }
             if testsReauthentication {
-                let offersSSO = ProcessInfo.processInfo.arguments.contains("--ui-test-reauthentication-both")
+                let offersSSO = UITestFixtureLaunch.arguments.contains("--ui-test-reauthentication-both")
                 return json([
                     "auth_enabled": true, "logged_in": recoveryState.withLock { recovered },
                     "password_auth_enabled": true, "oidc_enabled": offersSSO,
@@ -898,7 +916,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         case "/api/update-notifications" where testsServerUpdate:
             return json(serverUpdateNotificationsEnvelope())
         case "/api/update-notifications":
-            guard ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.updateNotificationsArgument) else {
+            guard UITestFixtureLaunch.arguments.contains(UITestFixtureEnvironment.updateNotificationsArgument) else {
                 return json(["scope_id": "ui-fixture-scope", "notifications": [], "unread_count": 0, "clearable_count": 0, "can_clear": false])
             }
             return json(updateNotificationsEnvelope())
@@ -932,7 +950,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             let enabled = recoveryState.withLock {
                 if let requested { approvalBypassOverride = requested }
                 return approvalBypassOverride
-                    ?? ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.approvalBypassArgument)
+                    ?? UITestFixtureLaunch.arguments.contains(UITestFixtureEnvironment.approvalBypassArgument)
             }
             if request.httpMethod != "POST" { notify_set_state(approvalBypassAnsweredToken, 1) }
             return json(["ok": true, "yolo_enabled": enabled])

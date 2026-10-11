@@ -39,7 +39,7 @@ public enum TalariaRelayConnectionState: Equatable {
 public enum TalariaRelayConfigurationStore {
     public static func load(keychain: any KeychainStoring = KeychainStore()) -> TalariaRelayCredentials? {
         #if DEBUG
-        let arguments = ProcessInfo.processInfo.arguments
+        let arguments = UITestFixtureLaunch.arguments
         if arguments.contains(UITestFixtureLaunch.launchArgument) {
             return arguments.contains(UITestFixtureLaunch.relayConnectedArgument)
                 ? UITestFixtureLaunch.relayCredentials
@@ -602,7 +602,7 @@ public enum TalariaRelayAppleCredentialStatus: Equatable {
 public enum TalariaRelayAppleCredentialState {
     public static func status(userID: String) async -> TalariaRelayAppleCredentialStatus {
         #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains(UITestFixtureLaunch.relayConnectedArgument) {
+        if UITestFixtureLaunch.arguments.contains(UITestFixtureLaunch.relayConnectedArgument) {
             return .authorized
         }
         #endif

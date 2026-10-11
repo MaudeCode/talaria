@@ -52,6 +52,11 @@
 		C13000000000000000000001 /* ChatVerticalScrollAxisGuardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C13000000000000000000002 /* ChatVerticalScrollAxisGuardTests.swift */; };
 		C46770000000000000000001 /* ChatUIKitMenuButtonFocusTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46770000000000000000002 /* ChatUIKitMenuButtonFocusTests.swift */; };
 		C46200000000000000000001 /* SidebarEdgePanGestureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46200000000000000000002 /* SidebarEdgePanGestureTests.swift */; };
+		D857001159F0B34BD088CA04 /* SessionListHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856001159F0B34BD088CA04 /* SessionListHostedTests.swift */; };
+		D857297464F3055587B2ACEF /* TranscriptHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856297464F3055587B2ACEF /* TranscriptHostedTests.swift */; };
+		D857E7989860057E41C369DF /* HostedViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856E7989860057E41C369DF /* HostedViewTests.swift */; };
+		D857DB3766E41DE9EB67A261 /* FixtureApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856DB3766E41DE9EB67A261 /* FixtureApp.swift */; };
+		D8574E4D45F8F4C581740A3A /* HostedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8564E4D45F8F4C581740A3A /* HostedView.swift */; };
 		C4840000000000000000001A /* ComposerChipLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4840000000000000000001B /* ComposerChipLayoutTests.swift */; };
 		C0410000000000000000015A /* ComposerTextViewMarkedTextTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0410000000000000000015B /* ComposerTextViewMarkedTextTests.swift */; };
 		C05000000000000000000001 /* ChatComposerAttachmentStripView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C05000000000000000000002 /* ChatComposerAttachmentStripView.swift */; };
@@ -500,6 +505,11 @@
 		C13000000000000000000002 /* ChatVerticalScrollAxisGuardTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatVerticalScrollAxisGuardTests.swift; sourceTree = "<group>"; };
 		C46770000000000000000002 /* ChatUIKitMenuButtonFocusTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatUIKitMenuButtonFocusTests.swift; sourceTree = "<group>"; };
 		C46200000000000000000002 /* SidebarEdgePanGestureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarEdgePanGestureTests.swift; sourceTree = "<group>"; };
+		D856001159F0B34BD088CA04 /* SessionListHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListHostedTests.swift; sourceTree = "<group>"; };
+		D856297464F3055587B2ACEF /* TranscriptHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptHostedTests.swift; sourceTree = "<group>"; };
+		D856E7989860057E41C369DF /* HostedViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostedViewTests.swift; sourceTree = "<group>"; };
+		D856DB3766E41DE9EB67A261 /* FixtureApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixtureApp.swift; sourceTree = "<group>"; };
+		D8564E4D45F8F4C581740A3A /* HostedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostedView.swift; sourceTree = "<group>"; };
 		C4840000000000000000001B /* ComposerChipLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerChipLayoutTests.swift; sourceTree = "<group>"; };
 		C0410000000000000000015B /* ComposerTextViewMarkedTextTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerTextViewMarkedTextTests.swift; sourceTree = "<group>"; };
 		C05000000000000000000002 /* ChatComposerAttachmentStripView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatComposerAttachmentStripView.swift; sourceTree = "<group>"; };
@@ -973,6 +983,11 @@
 				C13000000000000000000002 /* ChatVerticalScrollAxisGuardTests.swift */,
 				C46770000000000000000002 /* ChatUIKitMenuButtonFocusTests.swift */,
 				C46200000000000000000002 /* SidebarEdgePanGestureTests.swift */,
+				D856001159F0B34BD088CA04 /* SessionListHostedTests.swift */,
+				D856297464F3055587B2ACEF /* TranscriptHostedTests.swift */,
+				D856E7989860057E41C369DF /* HostedViewTests.swift */,
+				D856DB3766E41DE9EB67A261 /* FixtureApp.swift */,
+				D8564E4D45F8F4C581740A3A /* HostedView.swift */,
 				C22600000000000000000106 /* PerformanceBudgetTests.swift */,
 				C22600000000000000000104 /* ReplayCatchUpPerformanceTests.swift */,
 				C107Z0000000000000000101 /* KanbanFeatureStateLoadTests.swift */,
@@ -2031,6 +2046,11 @@
 				C13000000000000000000001 /* ChatVerticalScrollAxisGuardTests.swift in Sources */,
 				C46770000000000000000001 /* ChatUIKitMenuButtonFocusTests.swift in Sources */,
 				C46200000000000000000001 /* SidebarEdgePanGestureTests.swift in Sources */,
+				D857001159F0B34BD088CA04 /* SessionListHostedTests.swift in Sources */,
+				D857297464F3055587B2ACEF /* TranscriptHostedTests.swift in Sources */,
+				D857E7989860057E41C369DF /* HostedViewTests.swift in Sources */,
+				D857DB3766E41DE9EB67A261 /* FixtureApp.swift in Sources */,
+				D8574E4D45F8F4C581740A3A /* HostedView.swift in Sources */,
 				C22600000000000000000105 /* PerformanceBudgetTests.swift in Sources */,
 				C22600000000000000000103 /* ReplayCatchUpPerformanceTests.swift in Sources */,
 				C107Z0000000000000000001 /* KanbanFeatureStateLoadTests.swift in Sources */,

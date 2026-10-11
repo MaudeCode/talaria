@@ -4,6 +4,9 @@ import Foundation
 /// The UI-test fixture's launch contract that TalariaKit code checks: launch arguments and the synthetic server and
 /// relay identities. The App's `UITestFixtureEnvironment` builds the fixture itself.
 public enum UITestFixtureLaunch {
+    /// The fixture arguments every fixture check reads: the process's launch arguments, or the scenario a hosted test
+    /// chose for itself (TAL-856).
+    nonisolated(unsafe) public static var arguments = ProcessInfo.processInfo.arguments
     public static let launchArgument = "--ui-test-fixture"
     public static let relayConnectedArgument = "--ui-test-relay-connected"
     public static let serverURL = URL(string: "https://ui-test.talaria.invalid")!

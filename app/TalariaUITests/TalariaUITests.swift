@@ -21,31 +21,6 @@ class ChatUITestCase: TalariaUITestCase {
     }
 }
 
-/// Automatic background wakeups render as one completion line per result with the reply under them, a silent reply
-/// shows nothing, and a typed marker stays a user message (TAL-371, TAL-460).
-final class BackgroundUpdateTranscriptUITests: ChatUITestCase {
-    func testWakeupsRenderAsCompletionLinesWithTheirReplies() throws {
-        launchFixture(additionalArguments: ["--ui-test-background-updates"])
-        let session = fixtureSessionButton
-        XCTAssertTrue(session.awaitExistence(timeout: 15), "Missing deterministic session fixture")
-        tapFixtureSession(session)
-        XCTAssertNotNil(waitForComposer(timeout: 30), "The background-update session never opened")
-
-        let updates = app.buttons.matching(identifier: "background-update-lines")
-        XCTAssertTrue(updates.firstMatch.awaitExistence(timeout: 15), "The wakeup did not render as completion lines")
-        let batch = updates.element(boundBy: 0)
-        XCTAssertEqual(batch.label, "Agent “Audit the fixture” completed, Background command make test failed (exit 1)")
-        let reply = app.staticTexts["The audit finished and the test run failed."]
-        XCTAssertTrue(reply.awaitExistence(timeout: 10), "The reply to the background update is missing")
-        XCTAssertLessThan(batch.frame.maxY, reply.frame.minY, "The reply is not under its completion lines")
-        XCTAssertEqual(updates.element(boundBy: 1).label, "Background command ./backup.sh finished")
-        XCTAssertFalse(app.staticTexts["[SILENT]"].exists, "A silent background reply is shown")
-        XCTAssertTrue(app.staticTexts["[ASYNC DELEGATION BATCH COMPLETE — typed] I typed this"].exists, "The typed marker is no longer the user's message")
-        batch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Delegated result body.")).firstMatch.awaitExistence(timeout: 10), "The expanded update does not show the full notification")
-    }
-}
-
 /// Load Older keeps the reader where they were, and a disclosure toggled right as the older rows land pins its own
 /// row instead of leaving the offset to the prepend, which let SwiftUI carry the reader away (TAL-149).
 final class LoadOlderPositionUITests: ChatUITestCase {
@@ -80,51 +55,6 @@ final class LoadOlderPositionUITests: ChatUITestCase {
         XCTAssertEqual(app.buttons.matching(identifier: "Worked").allElementsBoundByIndex
             .first { $0.frame.minY > promptAfter.maxY }?.frame.minY ?? .nan, workedBefore.minY, accuracy: 1,
             "The tapped disclosure moved")
-    }
-}
-
-/// The compaction reference card renders after the row the server names (TAL-560).
-final class CompressionReferenceUITests: ChatUITestCase {
-    func testTheReferenceCardFollowsTheServersNamedRow() throws {
-        launchFixture(additionalArguments: ["--ui-test-compression-reference"])
-        let session = fixtureSessionButton
-        XCTAssertTrue(session.awaitExistence(timeout: 15), "Missing deterministic session fixture")
-        tapFixtureSession(session)
-        XCTAssertNotNil(waitForComposer(timeout: 30), "The compacted session never opened")
-
-        let card = element(labelContaining: "Reference only · Earlier turns were summarised.")
-        XCTAssertTrue(card.awaitExistence(timeout: 15), "The reference card is missing")
-        let anchor = app.staticTexts["Here is the plan."]
-        let next = app.staticTexts["Start step one."]
-        XCTAssertTrue(anchor.awaitExistence(timeout: 10) && next.exists, "The transcript rows are missing")
-        XCTAssertLessThan(anchor.frame.maxY, card.frame.minY, "The card is not after the named row")
-        XCTAssertLessThan(card.frame.maxY, next.frame.minY, "The card is not before the following row")
-        let shot = XCTAttachment(screenshot: app.screenshot())
-        shot.name = "compression-reference"
-        shot.lifetime = .keepAlways
-        add(shot)
-    }
-}
-
-/// A branched chat links back to the chat it was branched from, and that chat, not a branch, shows no link (TAL-454).
-final class BranchedFromUITests: ChatUITestCase {
-    func testTheBranchRowOpensTheParentChat() throws {
-        launchFixture(additionalArguments: ["--ui-test-branched-from"])
-        let session = fixtureSessionButton
-        XCTAssertTrue(session.awaitExistence(timeout: 15), "Missing deterministic session fixture")
-        tapFixtureSession(session)
-        XCTAssertNotNil(waitForComposer(timeout: 30), "The branched session never opened")
-        XCTAssertTrue(app.staticTexts["Branched fixture reply"].awaitExistence(timeout: 15), "The branch transcript is missing")
-
-        // VoiceOver reads the label and the button trait: "Branched from Fixture Session 01, button".
-        let link = app.buttons["Branched from Fixture Session 01"]
-        XCTAssertTrue(link.awaitExistence(timeout: 15), "The branch row is missing")
-        attachScreenshot(named: "branched-from-row")
-        tapCenter(of: link)
-
-        XCTAssertTrue(app.staticTexts["Parent fixture reply"].awaitExistence(timeout: 15), "The row did not open the parent chat")
-        XCTAssertTrue(link.awaitNonExistence(timeout: 10), "The parent chat shows a branch row")
-        attachScreenshot(named: "branched-from-parent")
     }
 }
 
@@ -225,75 +155,6 @@ final class LongBodyTranscriptUITests: ChatUITestCase {
         showLess.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         XCTAssertTrue(showLess.awaitNonExistence(timeout: 10), "The expanded body did not collapse again")
         XCTAssertNotNil(waitForComposer(timeout: 5))
-    }
-}
-
-/// A long pasted prompt opens folded to its first lines, and Show more / Show less toggle it in place (TAL-452).
-final class LongPromptFoldUITests: ChatUITestCase {
-    func testLongPromptOpensFoldedAndToggles() throws {
-        launchFixture(additionalArguments: ["--ui-test-long-prompt"])
-        let session = fixtureSessionButton
-        XCTAssertTrue(session.awaitExistence(timeout: 15), "Missing deterministic session fixture")
-        tapFixtureSession(session)
-        let composer = try XCTUnwrap(waitForComposer(timeout: 30), "The long-prompt session never opened")
-
-        let prompt = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Fixture prompt line 1\n")).firstMatch
-        XCTAssertTrue(prompt.awaitExistence(timeout: 15), "The long prompt did not render")
-        let showMore = app.buttons["Show more"]
-        XCTAssertTrue(showMore.awaitExistence(timeout: 10), "The long prompt did not open folded")
-        XCTAssertEqual(app.buttons.matching(identifier: "Show more").count, 1, "Only the long prompt folds")
-        let folded = prompt.settledFrame.height
-        let foldedShot = XCTAttachment(screenshot: app.screenshot())
-        foldedShot.name = "long-prompt-folded"
-        foldedShot.lifetime = .keepAlways
-        add(foldedShot)
-
-        // Held past the transcript's long press, as the TAL-456 toggle test does (TAL-485).
-        showMore.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 1)
-        let showLess = app.buttons["Show less"]
-        XCTAssertTrue(showLess.awaitExistence(timeout: 10), "The folded prompt did not expand")
-        // 24 lines against a fold of 8.
-        XCTAssertGreaterThan(prompt.settledFrame.height, folded * 2, "The expanded prompt is not shown whole")
-        let expandedShot = XCTAttachment(screenshot: app.screenshot())
-        expandedShot.name = "long-prompt-expanded"
-        expandedShot.lifetime = .keepAlways
-        add(expandedShot)
-
-        // The whole prompt pushes the toggle under the floating composer; scroll it above.
-        for _ in 0..<10 where showLess.frame.maxY > composer.frame.minY - 24 { app.swipeUp() }
-        showLess.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 1)
-        XCTAssertTrue(showMore.awaitExistence(timeout: 10), "The expanded prompt did not fold again")
-        XCTAssertEqual(prompt.settledFrame.height, folded, accuracy: 2, "The prompt did not return to its fold")
-    }
-}
-
-/// `diff` and `patch` blocks tint added and removed lines and announce them; `log` and `text`
-/// blocks with the same prefixes stay plain (TAL-447).
-final class DiffCodeBlockUITests: ChatUITestCase {
-    func testDiffAndPatchBlocksMarkChangedLinesInLightAndDark() throws {
-        for theme in ["light", "dark"] {
-            launchFixture(additionalArguments: ["--ui-test-diff-blocks", "-appTheme", theme])
-            let session = fixtureSessionButton
-            XCTAssertTrue(session.awaitExistence(timeout: 15), "Missing deterministic session fixture")
-            tapFixtureSession(session)
-            XCTAssertNotNil(waitForComposer(timeout: 30), "The diff-blocks session never opened")
-
-            for label in [
-                "Removed: -let fixtureRemoved = 1",
-                "Added: +let fixtureAdded = 2",
-                "Added: +",
-                "Removed: -patch fixture removed",
-                "Added: +patch fixture added"
-            ] {
-                XCTAssertTrue(app.staticTexts[label].awaitExistence(timeout: 15), "Missing \(label) in \(theme)")
-            }
-            XCTAssertTrue(app.staticTexts["+log fixture line"].exists, "The log block lost its line")
-            XCTAssertFalse(app.staticTexts["Added: +log fixture line"].exists, "A log block was tinted")
-            XCTAssertFalse(app.staticTexts["Added: +text fixture line"].exists, "A text block was tinted")
-            XCTAssertFalse(app.staticTexts["Added: +++ b/Fixture.swift"].exists, "A file header read as an added line")
-            attachScreenshot(named: "diff-blocks-\(theme)")
-            app.terminate()
-        }
     }
 }
 
@@ -509,81 +370,6 @@ final class UpdateNotificationsSheetUITests: ChatUITestCase {
     }
 }
 
-/// TAL-443: archiving a chat offers Undo, which brings the chat back from the server.
-final class SessionArchiveUndoUITests: ChatUITestCase {
-    func testUndoRestoresAnArchivedChat() throws {
-        // A hosted runner can spend longer than the five-second offer snapshotting the list (TAL-650).
-        launchFixture(additionalArguments: ["--ui-test-hold-archive-undo"])
-        let row = fixtureSessionButton
-        XCTAssertTrue(row.awaitExistence(timeout: 15), "Missing deterministic session fixture")
-
-        row.swipeLeft()
-        let archive = app.buttons["Archive"]
-        XCTAssertTrue(archive.awaitExistence(timeout: 5), "The swipe did not reveal Archive")
-        archive.tap()
-        let toast = app.staticTexts["Chat archived"]
-        XCTAssertTrue(toast.awaitExistence(timeout: 5), "Archiving did not offer Undo")
-        XCTAssertTrue(row.awaitNonExistence(timeout: 3), "The archived chat stayed in the list")
-        let screenshot = XCTAttachment(screenshot: app.screenshot())
-        screenshot.name = "archive-undo-toast"
-        screenshot.lifetime = .keepAlways
-        add(screenshot)
-
-        app.buttons["Undo"].tap()
-        XCTAssertTrue(row.awaitExistence(timeout: 10), "Undo did not restore the chat")
-        XCTAssertTrue(toast.awaitNonExistence(timeout: 5), "The toast stayed after Undo")
-    }
-}
-
-/// TAL-627: Select Chats picks rows, then one confirmed Bulk Action ends the mode.
-final class SelectChatsUITests: ChatUITestCase {
-    func testSelectingChatsAndDeletingThemEndsSelectChats() throws {
-        launchFixture()
-        XCTAssertTrue(fixtureSessionButton.awaitExistence(timeout: 15), "Missing deterministic session fixture")
-
-        let select = app.buttons["Select Chats"]
-        XCTAssertTrue(select.awaitExistence(timeout: 5))
-        select.tap()
-        for title in ["Fixture Session 01", "Fixture Session 02"] {
-            let row = app.buttons.containing(.staticText, identifier: title).firstMatch
-            XCTAssertTrue(row.awaitExistence(timeout: 5), title)
-            row.tap()
-        }
-        XCTAssertTrue(app.staticTexts["2 selected"].awaitExistence(timeout: 5))
-        attachScreenshot(named: "select-chats")
-
-        app.buttons["Delete"].tap()
-        let confirmation = app.alerts["Delete 2 Chats?"]
-        XCTAssertTrue(confirmation.awaitExistence(timeout: 5))
-        attachScreenshot(named: "select-chats-delete-confirmation")
-        confirmation.buttons["Delete"].tap()
-
-        XCTAssertTrue(app.staticTexts["2 selected"].awaitNonExistence(timeout: 10))
-        XCTAssertTrue(app.buttons["Select Chats"].awaitExistence(timeout: 5), "Select Chats did not end once every chat was deleted")
-    }
-}
-
-/// TAL-437: a relaunch shows the chats the app saw last time before `/api/sessions` answers.
-final class ColdLaunchCacheUITests: ChatUITestCase {
-    func testRelaunchShowsTheLastChatsBeforeTheServerAnswers() throws {
-        launchFixture(additionalArguments: ["--ui-test-persistent-cache", "--ui-test-reset-persistent-cache"])
-        XCTAssertTrue(fixtureSessionButton.awaitExistence(timeout: 15), "Missing deterministic session fixture")
-        app.terminate()
-
-        launchFixture(additionalArguments: ["--ui-test-persistent-cache", "--ui-test-hold-session-list"])
-
-        XCTAssertTrue(
-            fixtureSessionButton.awaitExistence(timeout: 15),
-            "The relaunch did not show the last chats before /api/sessions answered"
-        )
-        let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-        screenshot.name = "Cached chats on relaunch"
-        screenshot.lifetime = .keepAlways
-        add(screenshot)
-        XCTAssertTrue(releaseHeldLoads { fixtureSessionButton.exists })
-    }
-}
-
 /// Reopening a chat paints its cached transcript at once and shows "Syncing messages" above
 /// the composer until the server answers (TAL-436).
 final class ChatSyncStatusUITests: ChatUITestCase {
@@ -605,27 +391,6 @@ final class ChatSyncStatusUITests: ChatUITestCase {
         add(screenshot)
     }
 
-    func testReopenedChatShowsSyncingUntilTheServerAnswers() throws {
-        launchFixture(additionalArguments: ["--ui-test-hold-transcript-reloads"])
-        _ = try openFixtureSession()
-        let back = app.navigationBars.buttons["BackButton"].firstMatch
-        XCTAssertTrue(back.awaitExistence(timeout: 5))
-        back.tap()
-        let session = fixtureSessionButton
-        XCTAssertTrue(session.awaitExistence(timeout: 10))
-        tapFixtureSession(session)
-
-        let syncing = element(label: "Syncing messages with the server")
-        XCTAssertTrue(syncing.awaitExistence(timeout: 10), "The reopened chat never showed Syncing messages")
-        XCTAssertFalse(element(label: "Hermes is checking the response stream").exists, "Checking stream competed with Syncing messages")
-        XCTAssertFalse(element(label: "Hermes is reconnecting the response stream").exists, "Reconnecting stream competed with Syncing messages")
-        let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-        screenshot.name = "Syncing messages"
-        screenshot.lifetime = .keepAlways
-        add(screenshot)
-
-        XCTAssertTrue(releaseHeldLoads { !syncing.exists }, "Syncing messages stayed after the server answered")
-    }
 }
 
 final class ChatPrimaryStreamUITests: ChatUITestCase {

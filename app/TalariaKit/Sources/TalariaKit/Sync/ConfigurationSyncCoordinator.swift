@@ -22,7 +22,7 @@ extension Notification.Name {
 public final class ConfigurationSyncCoordinator {
     public static let shared: ConfigurationSyncCoordinator = {
         #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains(UITestFixtureLaunch.launchArgument) {
+        if UITestFixtureLaunch.arguments.contains(UITestFixtureLaunch.launchArgument) {
             return ConfigurationSyncCoordinator(
                 store: UnavailableConfigurationSyncStore(reason: "iCloud sync is off in the UI-test fixture."),
                 keychain: nil

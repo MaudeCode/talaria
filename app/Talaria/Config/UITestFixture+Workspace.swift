@@ -1,6 +1,7 @@
 #if DEBUG
 import Foundation
 import notify
+import TalariaKit
 
 /// Deterministic workspace, file-preview, archived-session and Git responses (TAL-72).
 ///
@@ -54,7 +55,7 @@ extension UITestFixtureURLProtocol {
         }
 
         private static func hasArgument(_ argument: String) -> Bool {
-            ProcessInfo.processInfo.arguments.contains(argument)
+            UITestFixtureLaunch.arguments.contains(argument)
         }
     }
 
