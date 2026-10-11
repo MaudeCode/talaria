@@ -986,7 +986,9 @@ final class ResponseCompletionAlertUITests: StreamLifecycleUITestCase {
         add(banner)
         alert.tap()
 
-        XCTAssertTrue(poll(timeout: 10) { app.state == .runningForeground }, "Tapping the alert did not open the app")
+        // `wait(for:)` follows the app's state events. A polled `app.state` kept reading the pre-tap state after the
+        // notification relaunched the app, though the app was on screen (UI suite run 38165809543, TAL-867).
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 10), "Tapping the alert did not open the app")
         XCTAssertTrue(app.navigationBars[fixtureSessionTitle].awaitExistence(timeout: 10), "Tapping the alert did not open its chat")
         assertSettledOnce()
     }
