@@ -43,8 +43,7 @@ class AppEntryPointUITestCase: TalariaUITestCase {
     @discardableResult
     func dismissSystemAlert(preferring buttonLabel: String? = nil, timeout: TimeInterval = 5) -> Bool {
         let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
-        let deadline = Date().addingTimeInterval(timeout)
-        repeat {
+        return poll(timeout: timeout) {
             for alert in [app.alerts.firstMatch, springboard.alerts.firstMatch] where alert.exists {
                 guard let buttonLabel else {
                     alert.buttons.firstMatch.tap()
@@ -56,9 +55,8 @@ class AppEntryPointUITestCase: TalariaUITestCase {
                     return true
                 }
             }
-            Thread.sleep(forTimeInterval: 0.2)
-        } while Date() < deadline
-        return false
+            return false
+        }
     }
 }
 

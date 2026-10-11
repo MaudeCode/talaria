@@ -89,40 +89,24 @@ class ShareExtensionUITestCase: TalariaUITestCase {
         app.staticTexts["share-host-inbox"].label
     }
 
+    // These waits go through `poll`, so a check that stalls past the deadline gets one more look (TAL-811).
     func waitForInbox(_ summary: String, timeout: TimeInterval = 20) -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-
-        repeat {
-            if inboxSummary() == summary { return true }
-            Thread.sleep(forTimeInterval: 0.25)
-        } while Date() < deadline
-
-        return false
+        poll(timeout: timeout) { inboxSummary() == summary }
     }
 
     func waitUntilHittable(_ element: XCUIElement, timeout: TimeInterval) -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-
-        repeat {
-            if element.isHittable { return true }
-            Thread.sleep(forTimeInterval: 0.25)
-        } while Date() < deadline
-
-        return false
+        poll(timeout: timeout) { element.isHittable }
     }
 
     func waitForComposerDraft(containing text: String, timeout: TimeInterval = 30) -> String? {
         let composer = app.textViews.firstMatch
-        let deadline = Date().addingTimeInterval(timeout)
-
-        repeat {
-            if composer.exists, let value = composer.value as? String, value.contains(text) {
-                return value
-            }
-            Thread.sleep(forTimeInterval: 0.25)
-        } while Date() < deadline
-
-        return nil
+        var draft: String?
+        _ = poll(timeout: timeout) {
+            guard composer.exists, let value = composer.value as? String, value.contains(text) else { return false }
+            draft = value
+            return true
+        }
+        return draft
     }
 }
 
