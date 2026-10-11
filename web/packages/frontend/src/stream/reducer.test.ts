@@ -161,12 +161,6 @@ describe('stream reducer: server pending steers (TAL-425)', () => {
     s = streamReducer(s, { type: 'pending_steers', sessionId: SID, streamId: 'other', steers: [pending('s9')] as never })
     expect(rows(s)).toEqual([['s2', 'sending_now']])
   })
-
-  it('leaves a leftover to the server: it sends the follow-up turn itself (TAL-424)', () => {
-    const s = ev(started(), 'steer_pending', pending('s1'))
-    const after = ev(s, 'pending_steer_leftover', { steer_id: 's1', text: 'S1' })
-    expect(after.turns[SID]).toEqual({ ...s.turns[SID], lastEventId: after.turns[SID]!.lastEventId })
-  })
 })
 
 describe('stream reducer: idempotency and ownership', () => {

@@ -1566,10 +1566,6 @@ export class TurnRunner {
     for (const r of left) events.push(['steer_withdrawn', { steer_id: r.steer_id, reason: mode, text: r.display_text }])
     if (mode === 'followup') return { events, leftovers: [...(unmatched ? [unmatched] : []), ...left.map((r) => r.text)] }
     if (unmatched) events.push(['steer_withdrawn', { steer_id: null, reason: 'stopped', text: unmatched }])
-    // ponytail: legacy `pending_steer_leftover` keeps today's Web and App from losing a stopped steer (they requeue it);
-    // drop it once TAL-425 / TAL-426 put `steer_withdrawn` text back in the composer.
-    for (const r of left) events.push(['pending_steer_leftover', { steer_id: r.steer_id, stream_id: streamId, text: r.text, display_text: r.display_text, leftover_at: this.deps.now() }])
-    if (unmatched) events.push(['pending_steer_leftover', { stream_id: streamId, text: unmatched }])
     return { events, leftovers: [] }
   }
 

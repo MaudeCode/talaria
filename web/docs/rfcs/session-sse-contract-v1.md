@@ -45,7 +45,6 @@ and the per-session relay. The chat-turn events:
 | `context_status` | Context window / usage status |
 | `goal` | `/goal` progress after a goal turn: `state` `evaluating`, then `continuing` or `idle` with the Agent's verdict and message |
 | `goal_continue` | The server started the goal's continuation turn (`stream_id`, `continuation_prompt`) |
-| `pending_steer_leftover` | Leftover steer text after interrupt |
 | `steer_consumed` | User steer inserted into the active run, with stable `steer_id`, text, and consumption timestamp |
 | `state_saved` | Durable state write acknowledgment |
 | `todo_state` | Todo / checklist panel update |

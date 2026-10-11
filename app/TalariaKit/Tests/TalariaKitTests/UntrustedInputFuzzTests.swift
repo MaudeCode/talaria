@@ -54,7 +54,7 @@ class UntrustedInputFuzzTests: XCTestCase {
         let knownTypes = [
             "token", "interim_assistant", "reasoning", "tool", "tool_complete",
             "title", "metering", "done", "initial", "approval", "clarify",
-            "steer_consumed", "pending_steer_leftover", "stream_end", "cancel",
+            "steer_consumed", "stream_end", "cancel",
             "error", "apperror"
         ]
 

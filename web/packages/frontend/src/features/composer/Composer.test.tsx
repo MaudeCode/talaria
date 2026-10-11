@@ -256,14 +256,6 @@ describe('Composer', () => {
     expect(screen.getByRole('textbox')).toHaveValue('')
   })
 
-  it('never queues a leftover steer: the server sends it as the next turn (TAL-424, TAL-425)', () => {
-    const onQueue = vi.fn()
-    const run = running()
-    dispatch({ type: 'event', sessionId: 's1', streamId: 'run', event: { event: 'pending_steer_leftover', data: { steer_id: 's1', text: 'Also do y' } }, lastEventId: 'run:9', now: 9 })
-    renderComposer(writable, getStreamState().turns.s1 ?? run, onQueue)
-    expect(onQueue).not.toHaveBeenCalled()
-  })
-
   it('takes back a steer\'s text after the draft, with a blank line between, and focuses the box', async () => {
     renderComposer(writable, running())
     await userEvent.type(screen.getByRole('textbox'), 'Draft so far')

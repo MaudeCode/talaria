@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Stopping a reply returns your unsent steering messages to the composer only on Talaria Web 1.15 or later.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}
