@@ -1565,41 +1565,60 @@ export function redactSensitive(text: string): string {
   if (!text) return text
   const redacted = redactShellText(text)
   // An escape sequence in a key or between a key and its value (`\x1b[1;31mAPI_KEY\x1b[m=…`, `pass\x1b[1mword …`) hides
-  // it from the rules. The units the view without sequences masks more often than the text's redaction are masked in
-  // the text first, wherever they appear, removing a sequence inside one and keeping the rest.
-  const view = splitView(text, DISPLAY_GAPS_RE)
-  if (!view) return redacted
-  const { stripped, kept } = view
-  let shown = redactShellText(stripped)
-  const shownCounts = secretTokenCounts(shown)
-  const raw = secretTokenCounts(redacted.replace(DISPLAY_GAPS_RE, ''))
+  // it from the rules. A unit of the text the view without sequences masks anywhere is masked in the text's redaction,
+  // wherever it still shows, removing a sequence inside one and keeping the rest.
+  const stripped = text.replace(DISPLAY_GAPS_RE, '')
+  if (stripped.length === text.length) return redacted
+  const shown = redactShellText(stripped)
+  const base = unitCounts(stripped)
+  const shownCounts = unitCounts(shown)
+  const view = splitView(redacted, DISPLAY_GAPS_RE)
+  const plain = view?.stripped ?? redacted
+  const at = (i: number): number => (view ? view.kept[i]! : i)
+  const raw = unitCounts(plain)
+  // Hidden by a redaction showing `counts`: fewer than the text holds, or fewer than another redaction shows (a value
+  // equal to a mask made elsewhere, `ghp_ab...cdef`, fails closed). Only a unit of the text is masked, never a mask.
+  const hides = (counts: Map<string, number>, other: Map<string, number>, unit: string): boolean => {
+    const n = counts.get(unit) ?? 0
+    return base.has(unit) && (n < base.get(unit)! || n < (other.get(unit) ?? 0))
+  }
   // Masked units only blanks apart are one value (`'correct horse battery'`), masked whole so its word count stays hidden.
   const spans: [number, number, string][] = []
   let last = -1
-  for (const m of stripped.matchAll(SECRET_UNIT_RE)) {
-    if ((shownCounts.get(m[0]) ?? 0) >= (raw.get(m[0]) ?? 0)) continue
-    const end = kept[m.index + m[0].length - 1]! + 1
-    if (last !== -1 && /^[ \t]+$/.test(stripped.slice(last, m.index))) spans.at(-1)![1] = end
-    else spans.push([kept[m.index]!, end, m[0]])
+  for (const m of plain.matchAll(MASK_OR_UNIT_RE)) {
+    if (!hides(shownCounts, raw, m[0])) continue
+    const end = at(m.index + m[0].length - 1) + 1
+    if (last !== -1 && /^[ \t]+$/.test(plain.slice(last, m.index))) spans.at(-1)![1] = end
+    else spans.push([at(m.index), end, m[0]])
     last = m.index + m[0].length
   }
-  let out = redacted
-  if (spans.length) {
-    const premasked = maskSpans(text, spans, () => '***')
-    out = redactShellText(premasked)
-    shown = redactShellText(premasked.replace(DISPLAY_GAPS_RE, ''))
-  }
-  // A credential of delimiters only (`Bear\x1b[1mer $$$$`) has no unit to mask in the text: when the view shows fewer of
-  // a delimiter than the text's redaction, the view's redaction is returned, without its escape sequences.
-  const outCounts = delimiterCounts(out.replace(DISPLAY_GAPS_RE, ''))
+  const out = spans.length ? maskSpans(redacted, spans, () => '***') : redacted
+  // A credential of delimiters only (`Bear\x1b[1mer $$$$`) has no unit to mask: when the view shows fewer of a delimiter
+  // than the text's redaction, the view's redaction is returned, without escape sequences, with each unit the text's
+  // redaction hides masked in it too.
+  const plainOut = out.replace(DISPLAY_GAPS_RE, '')
+  const outCounts = delimiterCounts(plainOut)
   const viewCounts = delimiterCounts(shown)
-  return [...outCounts].some(([char, count]) => (viewCounts.get(char) ?? 0) < count) ? shown : out
+  if (![...outCounts].some(([char, count]) => (viewCounts.get(char) ?? 0) < count)) return out
+  const hidden = unitCounts(plainOut)
+  return shown.replace(MASK_OR_UNIT_RE, (unit) => (hides(hidden, shownCounts, unit) ? '***' : unit))
+}
+
+const PRIVATE_KEY_MASK = '[REDACTED PRIVATE KEY]'
+/** A private key's mask, as one unit (its words are no units of their own), or a `SECRET_UNIT_RE` unit. */
+const MASK_OR_UNIT_RE = new RegExp(String.raw`\[REDACTED PRIVATE KEY\]|${SECRET_UNIT_RE.source}`, 'gu')
+
+/** A text's `MASK_OR_UNIT_RE` units, counted. */
+function unitCounts(text: string): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const [unit] of text.matchAll(MASK_OR_UNIT_RE)) counts.set(unit, (counts.get(unit) ?? 0) + 1)
+  return counts
 }
 
 /** A text's delimiters, `SECRET_UNIT_RE`'s but whitespace, counted outside the masks `***` and a private key's. */
 function delimiterCounts(text: string): Map<string, number> {
   const counts = new Map<string, number>()
-  for (const [char] of text.replaceAll('[REDACTED PRIVATE KEY]', '').replace(/(?<!\*)\*{3}(?!\*)/g, '').matchAll(/['"`$\\=:@/;&|<>(){}[\],*]/g)) counts.set(char, (counts.get(char) ?? 0) + 1)
+  for (const [char] of text.replaceAll(PRIVATE_KEY_MASK, '').replace(/(?<!\*)\*{3}(?!\*)/g, '').matchAll(/['"`$\\=:@/;&|<>(){}[\],*]/g)) counts.set(char, (counts.get(char) ?? 0) + 1)
   return counts
 }
 
