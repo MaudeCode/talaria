@@ -235,9 +235,6 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
       return upsertSteer(stamped, { steerId: event.data.steer_id, text: event.data.text, state: event.data.state, actions: event.data.actions })
     case 'steer_withdrawn':
       return event.data.steer_id ? closeSteer(stamped, event.data.steer_id) : stamped
-    // TAL-424: the server sends a leftover as the next turn itself; no client queues it.
-    case 'pending_steer_leftover':
-      return stamped
     case 'compressing':
       return { ...stamped, compression: { state: 'compressing', newSessionId: event.data.new_session_id ?? event.data.continuation_session_id ?? null } }
     case 'compressed':

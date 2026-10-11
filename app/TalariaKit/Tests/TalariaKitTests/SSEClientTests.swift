@@ -712,7 +712,7 @@ final class SSEClientTests: XCTestCase {
         ])
     }
 
-    func testDecodesServerPendingSteerEventsAndReadsALeftoverAsAStoppedWithdraw() {
+    func testDecodesServerPendingSteerEventsAndIgnoresALeftover() {
         // TAL-426: the server owns pending steers; a leftover is never the App's to queue.
         XCTAssertNotEqual(SSEEventDecoder.decode(
             eventType: "steer_pending",
@@ -722,15 +722,11 @@ final class SSEClientTests: XCTestCase {
             eventType: "steer_withdrawn",
             data: #"{"steer_id":"steer-1","reason":"stopped","text":"Check b"}"#
         ), .ignored)
-        XCTAssertEqual(SSEEventDecoder.decode(
-            eventType: "pending_steer_leftover",
-            data: #"{"session_id":"abc123","text":"follow this constraint"}"#
-        ), .ignored)
-        // A Web older than TAL-424 says only this: the steer's text goes back where it came from.
+        // TAL-718: the retired leftover is an unknown event; `steer_withdrawn` alone returns a stopped steer's text.
         XCTAssertEqual(SSEEventDecoder.decode(
             eventType: "pending_steer_leftover",
             data: #"{"steer_id":"steer-1","stream_id":"s","text":"Check b"}"#
-        ), .steerWithdrawn(SteerWithdrawnEvent(steerId: "steer-1", reason: .stopped, text: "Check b")))
+        ), .ignored)
     }
 
     func testErrorAndCancelFramesDeliverTheirSettledSessionFirst() {

@@ -994,7 +994,6 @@ describe('chat turns through the sidecar', () => {
     const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}&replay=1`, (f) => f.event === 'stream_end')
     expect(frames.filter((f) => f.event === 'steer_consumed')).toHaveLength(1)
     // TAL-424: the server, not each client, sends the steer the turn ended without taking: one follow-up turn.
-    expect(frames.some((f) => f.event === 'pending_steer_leftover')).toBe(false)
     expect(frames.find((f) => f.event === 'steer_withdrawn')?.data).toEqual({ steer_id: 'steer-2', reason: 'followup', text: 'second' })
     await vi.waitFor(() => { expect(prompts).toHaveLength(2) })
     expect(prompts[1]).toBe('second')
@@ -1254,7 +1253,6 @@ describe('chat turns through the sidecar', () => {
     release()
     const frames = await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'apperror')
     expect(frames.some((f) => f.event === 'steer_consumed')).toBe(false)
-    expect(frames.some((f) => f.event === 'pending_steer_leftover')).toBe(false)
     await vi.waitFor(() => { expect(prompts).toHaveLength(2) })
     expect(prompts[1]).toBe('not applied')
     await vi.waitFor(() => { expect(s.deps.sessionStore.get(sid).active_stream_id).toBeNull() })
@@ -1266,8 +1264,9 @@ describe('chat turns through the sidecar', () => {
   it('a Stop withdraws a queued steer with its text before the single cancel row, and starts nothing (TAL-424)', async () => {
     const sid = await newSession(s)
     sidecar.respond('chat.steer', () => ({ accepted: true, fallback: null }))
-    // The sidecar drains the Agent's unapplied steer text on interrupt (Python `_finalize_webui_steers`).
-    sidecar.respond('chat.interrupt', () => ({ ok: true, pending_steer: 'never applied\nalso held' }))
+    // The sidecar drains the Agent's unapplied steer text on interrupt (Python `_finalize_webui_steers`); the text ahead
+    // of this run's steers is another surface's.
+    sidecar.respond('chat.interrupt', () => ({ ok: true, pending_steer: 'from elsewhere\nnever applied\nalso held' }))
     let starts = 0
     sidecar.respond('chat.start', (params, _emit, opts) => new Promise((resolve) => {
       starts += 1
@@ -1277,22 +1276,24 @@ describe('chat turns through the sidecar', () => {
     const streamId = String(start.stream_id)
     expect((await json(await post(s, '/api/chat/steer', { session_id: sid, text: 'never applied', display_text: 'Never applied', steer_id: 'steer-x' }))).accepted).toBe(true)
     expect((await json(await post(s, '/api/chat/steer', { session_id: sid, text: 'also held', steer_id: 'steer-y' }))).accepted).toBe(true)
-    const withdrawn = [{ steer_id: 'steer-x', reason: 'stopped', text: 'Never applied' }, { steer_id: 'steer-y', reason: 'stopped', text: 'also held' }]
+    const withdrawn = [
+      { steer_id: 'steer-x', reason: 'stopped', text: 'Never applied' },
+      { steer_id: 'steer-y', reason: 'stopped', text: 'also held' },
+      { steer_id: null, reason: 'stopped', text: 'from elsewhere' },
+    ]
     // TAL-426: the Stop's answer carries them too, for a client that stops reading the stream once it answers.
     expect(await json(await s.get(`/api/chat/cancel?stream_id=${streamId}`))).toEqual({ ok: true, cancelled: true, stream_id: streamId, withdrawn_steers: withdrawn })
     const frames = await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'cancel')
     const names = frames.map((f) => f.event)
     expect(names.lastIndexOf('steer_withdrawn')).toBeLessThan(names.indexOf('cancel'))
     expect(frames.filter((f) => f.event === 'steer_withdrawn').map((f) => f.data)).toEqual(withdrawn)
-    // Until TAL-425 / TAL-426 read `steer_withdrawn`, today's clients still get the leftovers they requeue.
-    expect(frames.filter((f) => f.event === 'pending_steer_leftover').map((f) => (f.data as Json).steer_id)).toEqual(['steer-x', 'steer-y'])
-    expect(names.lastIndexOf('pending_steer_leftover')).toBeLessThan(names.indexOf('cancel'))
+    expect(names).not.toContain('pending_steer_leftover')
     expect(starts).toBe(1)
     // The worker's unwind adds nothing after the terminal row: replay from the start still ends on that one cancel.
     await new Promise((r) => setTimeout(r, 100))
     const replay = await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, () => false, { timeoutMs: 300 })
     expect(replay.filter((f) => f.event === 'cancel')).toHaveLength(1)
-    expect(replay.filter((f) => f.event === 'steer_withdrawn')).toHaveLength(2)
+    expect(replay.filter((f) => f.event === 'steer_withdrawn')).toHaveLength(3)
     expect(starts).toBe(1)
   })
 
