@@ -25,6 +25,7 @@ final class RegularWidthNavigationUITests: TalariaUITestCase {
         control.tap()
         let search = sessionSearchField
         XCTAssertTrue(search.awaitExistence(timeout: Self.navigationTimeout), "Search did not open")
+        focus(search)
         search.typeText(String(fixtureSessionTitle.prefix(7)))
         XCTAssertTrue(session.awaitExistence(timeout: Self.navigationTimeout), "The search hid the fixture session")
         session.tap()
@@ -91,7 +92,7 @@ final class RegularWidthNavigationUITests: TalariaUITestCase {
         app.buttons["Edit User Profile"].tap()
         let editor = app.textViews["User Profile"]
         XCTAssertTrue(editor.awaitExistence(timeout: Self.navigationTimeout), "Edit did not open the editor")
-        editor.tap()
+        focus(editor)
         editor.typeText(" Edited.")
         app.buttons["Save"].tap()
         XCTAssertTrue(
@@ -298,7 +299,7 @@ final class QuotaWidgetSettingsLinkUITests: TalariaUITestCase {
         XCTAssertTrue(app.buttons["Open navigation"].awaitExistence(timeout: 15), "Missing deterministic app fixture")
         app.open(try XCTUnwrap(URL(string: "talaria://provider-quota-widget-settings")))
         let confirm = XCUIApplication(bundleIdentifier: "com.apple.springboard").buttons["Open"]
-        if confirm.waitForExistence(timeout: 5) {
+        if confirm.awaitExistence(timeout: 5) {
             confirm.tap()
         }
 

@@ -14,6 +14,18 @@ class AgentPanelUITestCase: TalariaUITestCase {
         )
     }
 
+    /// On a loaded hosted runner the segmented control can lift its thumb for a synthesized tap and drop it without
+    /// selecting (TAL-693). Nothing in the app reverts a selection, so a segment that never shows selected is the
+    /// tap's loss, not the reload's.
+    func selectSegment(_ label: String) {
+        let segment = app.buttons[label].firstMatch
+        repeatStep(3, until: { segment.isSelected }) {
+            tapCenter(of: segment)
+            _ = poll(timeout: 2) { segment.isSelected }
+        }
+        XCTAssertTrue(segment.isSelected, "The segmented control never took the \(label) selection")
+    }
+
     func openPanel(_ panel: String) {
         openSidebarDestination(panel)
         XCTAssertTrue(
@@ -137,7 +149,7 @@ final class AgentPanelContentUITests: AgentPanelUITestCase {
         recovered.lifetime = .keepAlways
         add(recovered)
 
-        app.buttons["7 Days"].tap()
+        selectSegment("7 Days")
         let warning = element(labelContaining: "Showing cached server analytics. Refresh failed")
         repeatStep(8, until: { warning.exists && !warning.frame.isEmpty && app.frame.contains(warning.frame) }) { app.swipeUp() }
         XCTAssertTrue(warning.awaitExistence(timeout: 10), "The failed refresh must explain the cached snapshot")
@@ -231,7 +243,7 @@ final class AgentPanelContentUITests: AgentPanelUITestCase {
         // no-results empty state as well.
         let search = app.searchFields["Search skills..."]
         XCTAssertTrue(search.awaitExistence(timeout: 5), "Skills offered no search field")
-        search.tap()
+        focus(search)
         search.typeText("reviewer")
         XCTAssertTrue(
             element(labelContaining: "fixture-reviewer").awaitExistence(timeout: 10),
@@ -344,7 +356,7 @@ final class AgentPanelContentUITests: AgentPanelUITestCase {
 
         let field = app.textViews["My Notes"]
         XCTAssertTrue(field.awaitExistence(timeout: 5), "The memory editor exposed no text field")
-        field.tap()
+        focus(field)
         field.typeText(" Edited by fixture.")
         tapCenter(of: editor.buttons["Save"])
         XCTAssertTrue(editor.awaitNonExistence(timeout: 15), "Saving did not dismiss the memory editor")
@@ -377,15 +389,7 @@ final class AgentPanelContentUITests: AgentPanelUITestCase {
         // only advances once the new response lands; the cards alone stay visible through a
         // reload and would pass even if nothing switched.
         XCTAssertTrue(element(labelContaining: "Last 30 Days").exists, "Insights did not report its timeframe")
-        // On a loaded hosted runner the segmented control can lift its thumb for a synthesized
-        // tap and drop it without selecting (TAL-693). Nothing in the app reverts a selection, so
-        // a segment that never shows selected is the tap's loss, not the reload's.
-        let sevenDays = app.buttons["7 Days"].firstMatch
-        repeatStep(3, until: { sevenDays.isSelected }) {
-            tapCenter(of: sevenDays)
-            _ = poll(timeout: 2) { sevenDays.isSelected }
-        }
-        XCTAssertTrue(sevenDays.isSelected, "The timeframe picker never took the 7 Days selection")
+        selectSegment("7 Days")
         XCTAssertTrue(
             element(labelContaining: "Last 7 Days").awaitExistence(timeout: 15),
             "Switching the analytics timeframe did not reload the analytics"

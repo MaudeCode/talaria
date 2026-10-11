@@ -172,7 +172,7 @@ final class SessionAndShareDeepLinkUITests: AppEntryPointUITestCase {
         // alone rather than replaced.
         let input = app.textViews.firstMatch
         XCTAssertTrue(input.awaitExistence(timeout: 10), "The shared draft did not open an editable composer")
-        input.tap()
+        focus(input)
         input.typeText(" MarkedByTest")
         XCTAssertTrue(element(carrying: "MarkedByTest").awaitExistence(timeout: 5))
 
@@ -224,10 +224,6 @@ final class SessionAndShareDeepLinkUITests: AppEntryPointUITestCase {
         }
         return false
     }
-
-    private func hasKeyboardFocus(_ element: XCUIElement) -> Bool {
-        element.value(forKey: "hasKeyboardFocus") as? Bool == true
-    }
 }
 
 /// Appearance: the theme picker and the alternate app icon picker, which applies one alternate
@@ -249,7 +245,7 @@ final class AppIconSwitchingUITests: AppEntryPointUITestCase {
         tapCenter(of: theme)
         let dark = app.buttons["Dark"]
         XCTAssertTrue(dark.awaitExistence(timeout: 3), "The Theme picker did not open")
-        dark.tap()
+        tapSettled(dark)
         XCTAssertTrue(
             theme.staticTexts["Dark"].awaitExistence(timeout: 3),
             "Selecting a theme did not update the row"
@@ -259,7 +255,7 @@ final class AppIconSwitchingUITests: AppEntryPointUITestCase {
         tapCenter(of: theme)
         let system = app.buttons["System"]
         XCTAssertTrue(system.awaitExistence(timeout: 3))
-        system.tap()
+        tapSettled(system)
         XCTAssertTrue(theme.staticTexts["System"].awaitExistence(timeout: 3))
 
         let row = iconRow
@@ -387,10 +383,10 @@ final class ReauthenticationUITests: AppEntryPointUITestCase {
         addHeader.tap()
         let name = app.textFields["Header name"]
         XCTAssertTrue(name.awaitExistence(timeout: 5))
-        name.tap()
+        focus(name)
         name.typeText("X-Fixture-Authorization")
         let value = app.secureTextFields["Header value"]
-        value.tap()
+        focus(value)
         value.typeText("fixture-token")
         repeatStep(5, until: { retry.exists && retry.isHittable }) { app.swipeDown() }
         _ = retry.settledFrame
@@ -432,7 +428,7 @@ final class ReauthenticationUITests: AppEntryPointUITestCase {
         screenshot.name = "In-place reauthentication"
         screenshot.lifetime = .keepAlways
         add(screenshot)
-        password.tap()
+        focus(password)
         password.typeText("fixture-password")
         app.buttons["ReauthenticateSignIn"].tap()
         XCTAssertTrue(password.awaitNonExistence(timeout: 15))
