@@ -444,6 +444,9 @@ jobs:
           echo "- Test without building: ${duration_seconds}s" >> "${GITHUB_STEP_SUMMARY}"
           # A passing shard replaces an earlier run's failure status on this commit with success.
           [[ "${status}" != 0 ]] || ci/report-test-failures --passed "$(git rev-parse HEAD)" "UI suite failures (shard ${SHARD})"
+          # CoreSimulator's own log says what booted or shut down a simulator mid-test, which no result bundle records
+          # (TAL-869). Beside the bundles, so the failure upload keeps its layout.
+          [[ "${status}" == 0 ]] || cp "${HOME}/Library/Logs/CoreSimulator/CoreSimulator.log" CoreSimulator.log || true
           exit "${status}"
 
       - name: Reject skipped UI tests
@@ -465,6 +468,7 @@ jobs:
           path: |
             app/TestResults.xcresult
             app/DestinationResults-*.xcresult
+            app/CoreSimulator.log
           retention-days: 14
           overwrite: true
           if-no-files-found: ignore

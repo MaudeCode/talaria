@@ -38,6 +38,9 @@ class TestIOSRunnerTest < Minitest::Test
     { "ci.yml" => "app", "ui-suite.yml" => "suite", "release-set.yml" => "ui-suite" }.each do |file, job|
       assert_equal("write", workflow_jobs(file).fetch(job)["permissions"]["statuses"], "#{file} #{job}")
     end
+    # A failed shard keeps CoreSimulator's log beside its result bundles, for what shut a simulator down (TAL-869).
+    assert_includes(test["run"], '[[ "${status}" == 0 ]] || cp "${HOME}/Library/Logs/CoreSimulator/CoreSimulator.log" CoreSimulator.log || true')
+    assert_includes(shard["steps"].find { |step| step["name"] == "Upload test results on failure" }["with"]["path"], "app/CoreSimulator.log")
     assert_equal("${{ fromJSON(inputs.test_iterations) > 1 && 330 || 45 }}", test["timeout-minutes"])
     assert_equal("${{ fromJSON(inputs.test_iterations) > 1 && 360 || 75 }}", shard["timeout-minutes"])
     after = shard["steps"][(shard["steps"].index(test) + 1)..].take_while { |step| step["name"] }

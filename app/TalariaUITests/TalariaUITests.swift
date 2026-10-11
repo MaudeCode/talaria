@@ -395,7 +395,7 @@ final class SessionListProjectNewChatUITests: ChatUITestCase {
         allProjects.tap()
         let project = app.buttons["Fixture Project"]
         XCTAssertTrue(project.awaitExistence(timeout: 5), "Missing the fixture project")
-        project.tap()
+        tapSettled(project)
         XCTAssertTrue(app.buttons["Project filter: Fixture Project"].awaitExistence(timeout: 5))
         XCTAssertTrue(fixtureSessionButton.awaitNonExistence(timeout: 5), "The filter should hide chats outside the project")
 
@@ -645,7 +645,7 @@ final class ChatPrimaryStreamUITests: ChatUITestCase {
         grip.press(forDuration: 0.1, thenDragTo: grip.withOffset(CGVector(dx: 0, dy: -70)))
         XCTAssertLessThan(resize.frame.minY, originalTop - 30)
         let input = app.textViews.firstMatch
-        input.tap()
+        focus(input)
         input.typeText("A movie")
         XCTAssertTrue(app.keyboards.firstMatch.awaitExistence(timeout: 3))
         XCTAssertLessThanOrEqual(app.buttons["Next"].frame.maxY, app.keyboards.firstMatch.frame.minY + 1)
@@ -656,16 +656,16 @@ final class ChatPrimaryStreamUITests: ChatUITestCase {
         tapCenter(of: app.buttons["Tea"])
         tapCenter(of: app.buttons["Water"])
         tapCenter(of: app.buttons["Previous question"])
-        XCTAssertEqual(app.textViews.firstMatch.value as? String, "A movie")
+        assertComposerValue("A movie")
         tapCenter(of: app.buttons["Next question"])
-        XCTAssertTrue(app.buttons["Submit clarification"].isEnabled)
+        XCTAssertTrue(poll(timeout: 5) { app.buttons["Submit clarification"].isEnabled })
         let screenshot = XCTAttachment(screenshot: app.screenshot())
         screenshot.name = "Batch questions inside the composer"
         screenshot.lifetime = .keepAlways
         add(screenshot)
         app.buttons["Submit clarification"].tap()
         XCTAssertTrue(app.staticTexts["Agent received: A movie | Tea, Water"].awaitExistence(timeout: 5))
-        XCTAssertEqual(app.textViews.firstMatch.value as? String, "Ordinary fixture draft")
+        assertComposerValue("Ordinary fixture draft")
     }
 
     func testClarificationRestoresOrdinaryDraftAfterAnswerAndNavigation() throws {
@@ -673,18 +673,18 @@ final class ChatPrimaryStreamUITests: ChatUITestCase {
         _ = try openFixtureSession()
         XCTAssertTrue(app.staticTexts["Clarification Required"].awaitExistence(timeout: 5))
         let input = app.textViews.firstMatch
-        XCTAssertEqual(input.value as? String, "")
-        input.tap()
+        assertComposerValue("")
+        focus(input)
         input.typeText("Temporary fixture answer")
         app.buttons["Submit clarification"].tap()
         XCTAssertTrue(app.staticTexts["Clarification Required"].awaitNonExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Agent received: Temporary fixture answer"].awaitExistence(timeout: 5))
-        XCTAssertEqual(app.textViews.firstMatch.value as? String, "Ordinary fixture draft")
+        assertComposerValue("Ordinary fixture draft")
         tapCenter(of: app.buttons["BackButton"])
         XCTAssertTrue(fixtureSessionButton.awaitExistence(timeout: 5))
         tapCenter(of: fixtureSessionButton)
         XCTAssertTrue(app.textViews.firstMatch.awaitExistence(timeout: 5))
-        XCTAssertEqual(app.textViews.firstMatch.value as? String, "Ordinary fixture draft")
+        assertComposerValue("Ordinary fixture draft")
     }
 
     func testChatStreamPreservesChronologyAndSettlesWithoutDuplication() throws {
@@ -729,7 +729,7 @@ final class ChatPrimaryStreamUITests: ChatUITestCase {
         let send = app.buttons["Submit clarification"]
         XCTAssertFalse(send.isEnabled)
         let input = app.textViews.firstMatch
-        input.tap()
+        focus(input)
         input.typeText("/interrupt is my answer")
         let screenshot = XCTAttachment(screenshot: app.screenshot())
         screenshot.name = "Clarification in the chat composer"
@@ -758,10 +758,10 @@ final class ChatPrimaryStreamUITests: ChatUITestCase {
         let reloadedTool = element(labelContaining: "Called a tool, Completed")
         let reloadedFinished = app.staticTexts["Fixture finished."]
         XCTAssertTrue(reloadedOpening.awaitExistence(timeout: 5))
-        XCTAssertTrue(reloadedThinking.exists)
-        XCTAssertTrue(reloadedProgress.exists)
-        XCTAssertTrue(reloadedTool.exists)
-        XCTAssertTrue(reloadedFinished.exists)
+        XCTAssertTrue(reloadedThinking.awaitExistence(timeout: 5))
+        XCTAssertTrue(reloadedProgress.awaitExistence(timeout: 5))
+        XCTAssertTrue(reloadedTool.awaitExistence(timeout: 5))
+        XCTAssertTrue(reloadedFinished.awaitExistence(timeout: 5))
         XCTAssertLessThan(reloadedOpening.frame.minY, reloadedThinking.frame.minY)
         XCTAssertLessThan(reloadedThinking.frame.minY, reloadedProgress.frame.minY)
         XCTAssertLessThan(reloadedProgress.frame.minY, reloadedTool.frame.minY)
@@ -884,7 +884,8 @@ final class StreamLifecycleUITests: StreamLifecycleUITestCase {
         XCTAssertTrue(session.awaitExistence(timeout: 15), "Missing deterministic session fixture")
         tapFixtureSession(session)
         XCTAssertTrue(app.staticTexts[prompt].awaitExistence(timeout: 15), "The relaunch did not paint the cached prompt")
-        XCTAssertTrue(element(label: "Syncing messages with the server").exists, "The cached run was not shown before the server answered")
+        // The load is held, so the chip can only be waiting to render, not already gone.
+        XCTAssertTrue(element(label: "Syncing messages with the server").awaitExistence(timeout: 5), "The cached run was not shown before the server answered")
         attachScreenshot(named: "Cached run before the server answers")
 
         XCTAssertTrue(
@@ -942,12 +943,7 @@ final class StreamLifecycleUITests: StreamLifecycleUITestCase {
         let password = app.secureTextFields["ReauthenticatePassword"]
         XCTAssertTrue(password.awaitExistence(timeout: 20), "A 401 while reconnecting did not ask the user to sign in")
         attachScreenshot(named: "Sign in while reconnecting")
-        _ = password.settledFrame
-        // A tap while the sheet still settles can leave the field without focus.
-        repeatStep(3, until: { app.keyboards.firstMatch.exists }) {
-            password.tap()
-            _ = app.keyboards.firstMatch.awaitExistence(timeout: 5)
-        }
+        focus(password)
         password.typeText("fixture-password")
         app.buttons["ReauthenticateSignIn"].tap()
         XCTAssertTrue(password.awaitNonExistence(timeout: 15), "Signing in did not close the sign-in sheet")
@@ -990,6 +986,8 @@ final class ResponseCompletionAlertUITests: StreamLifecycleUITestCase {
         add(banner)
         alert.tap()
 
+        // `wait(for:)` follows the app's state events. A polled `app.state` kept reading the pre-tap state after the
+        // notification relaunched the app, though the app was on screen (UI suite run 38165809543, TAL-867).
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 10), "Tapping the alert did not open the app")
         XCTAssertTrue(app.navigationBars[fixtureSessionTitle].awaitExistence(timeout: 10), "Tapping the alert did not open its chat")
         assertSettledOnce()
@@ -1075,7 +1073,7 @@ final class PendingSteerUITests: ChatUITestCase {
         XCTAssertGreaterThan(edit.frame.minY, navigationBarBottom, "The steer's Edit action stayed under the navigation bar")
         tapCenter(of: edit)
         XCTAssertTrue(app.staticTexts["Check the backup logs too"].awaitNonExistence(timeout: 10), "The edited steer is still pending")
-        XCTAssertEqual(input.value as? String, "Draft\n\nCheck the backup logs too")
+        assertComposerValue("Draft\n\nCheck the backup logs too")
     }
 }
 
@@ -1606,7 +1604,7 @@ final class SettingsStructureUITests: SettingsUITestCase {
         tapCenter(of: dictationPicker)
         let onDeviceFirst = app.buttons["On-device first"]
         XCTAssertTrue(onDeviceFirst.awaitExistence(timeout: Self.navigationTimeout))
-        onDeviceFirst.tap()
+        tapSettled(onDeviceFirst)
         XCTAssertTrue(dictationPicker.staticTexts["On-device first"].awaitExistence(timeout: Self.navigationTimeout))
         let changedFrame = dictationPicker.settledFrame
         XCTAssertEqual(changedFrame.minY, dictationFrame.minY, accuracy: 1, "Dictation Provider changed layout with its value")
@@ -1737,7 +1735,7 @@ final class WorkspaceLoadingUITests: WorkspaceUITestCase {
             releaseHeldLoads(timeout: 25) { changes.exists },
             "The Git status never reached the actions menu"
         )
-        changes.tap()
+        tapSettled(changes)
         XCTAssertTrue(
             app.staticTexts["Loading…"].awaitExistence(timeout: 10),
             "Missing the Git changes loading state"
@@ -1795,7 +1793,7 @@ final class GitDiffUITests: WorkspaceUITestCase {
             .matching(NSPredicate(format: "label BEGINSWITH %@", "+"))
             .firstMatch
         XCTAssertTrue(changes.awaitExistence(timeout: 25), "The Git status never reached the actions menu")
-        changes.tap()
+        tapSettled(changes)
         let card = gitFileCard(named: "fixture-notes.txt")
         XCTAssertTrue(card.awaitExistence(timeout: Self.navigationTimeout), "The changes sheet did not list the file")
         tapCenter(of: card)
@@ -2244,7 +2242,7 @@ final class SidebarPresentationUITests: SidebarUITestCase {
         _ = newChat.settledFrame
         newChat.tap()
         XCTAssertTrue(app.buttons["Composer options"].awaitExistence(timeout: 15))
-        XCTAssertFalse(sidebar.isHittable)
+        XCTAssertTrue(poll(timeout: 3) { !sidebar.isHittable }, "New Chat left the sidebar open")
     }
 }
 
@@ -2359,7 +2357,7 @@ final class SidebarGestureUITests: SidebarUITestCase {
         _ = settledFrame(of: app.descendants(matching: .any)["Display Name"].firstMatch)
         swipe(rtl: rtl, from: 0.005, to: 0.75)
         XCTAssertTrue(app.navigationBars["Settings"].awaitExistence(timeout: 5), "The edge swipe did not return to Settings")
-        XCTAssertFalse(app.navigationBars["User Profile"].exists, "The edge swipe did not return to Settings")
+        XCTAssertTrue(app.navigationBars["User Profile"].awaitNonExistence(timeout: 5), "The edge swipe did not return to Settings")
         assertSidebarStaysClosed("The edge swipe opened the sidebar over a Settings page")
     }
 
@@ -2563,7 +2561,7 @@ class AdaptiveLayoutAppUITestCase: AdaptiveLayoutUITestCase {
                 .firstMatch
             XCTAssertTrue(serverRow.exists, "Fixture server row missing [\(variant.name)]")
             let coveredRowCenter = serverRow.frame.center
-            tap(at: addServer.frame.center)
+            tapCenter(of: addServer)
             let editor = app.navigationBars["Add Server"]
             XCTAssertTrue(editor.awaitExistence(timeout: 5), "Add Server editor missing [\(variant.name)]")
             try audit("Add Server editor", variant: variant)
@@ -2642,7 +2640,7 @@ class AdaptiveLayoutAppUITestCase: AdaptiveLayoutUITestCase {
         let usesOverflow = overflow.exists
         func secondaryAction(_ label: String) -> XCUIElement {
             guard usesOverflow else { return bar.buttons[label] }
-            tap(at: overflow.frame.center)
+            tapCenter(of: overflow)
             return app.buttons[label].firstMatch
         }
 
@@ -2651,21 +2649,21 @@ class AdaptiveLayoutAppUITestCase: AdaptiveLayoutUITestCase {
         let selectCards = usesOverflow ? app.buttons["Select Cards"].firstMatch : bar.buttons["Select Cards"]
         XCTAssertTrue(selectCards.exists, "Select Cards unreachable [\(variant.name)]")
         XCTAssertTrue(selectCards.isEnabled, "Select Cards disabled in the fixture Board [\(variant.name)]")
-        tap(at: selectCards.frame.center)
+        tapCenter(of: selectCards)
 
         let cancel = secondaryAction("Cancel")
         XCTAssertTrue(
             cancel.awaitExistence(timeout: 3),
             "Selection mode did not survive the toolbar placement [\(variant.name)]"
         )
-        tap(at: cancel.frame.center)
+        tapCenter(of: cancel)
     }
 
     private func assertBoardMenuSelectsAnotherBoard(picker: XCUIElement, variant: Variant) {
-        tap(at: picker.frame.center)
+        tapCenter(of: picker)
         let otherBoard = app.buttons["Fixture Board"].firstMatch
         XCTAssertTrue(otherBoard.awaitExistence(timeout: 3), "Board menu did not open [\(variant.name)]")
-        otherBoard.tap()
+        tapSettled(otherBoard)
         XCTAssertTrue(
             app.descendants(matching: .any)["KanbanBoardPicker"].firstMatch.awaitExistence(timeout: 5),
             "Board picker lost after selecting a Board [\(variant.name)]"
@@ -2713,7 +2711,7 @@ final class AdaptiveLayoutOnboardingUITests: AdaptiveLayoutUITestCase {
                 getStarted.tap()
                 let setUp = app.buttons["Set Up"]
                 XCTAssertTrue(setUp.awaitExistence(timeout: 5), "Features page missing [\(variant.name)]")
-                setUp.tap()
+                tapSettled(setUp)
 
                 let step = app.staticTexts["STEP 1"]
                 let title = app.staticTexts["Set up Hermes Web UI"]
@@ -3342,6 +3340,32 @@ extension TalariaUITestCase {
         tap(at: CGPoint(x: frame.midX, y: frame.midY))
     }
 
+    /// Taps a menu item or button once it is enabled and at rest: a tap while a menu still grows in from its button,
+    /// or while a pager slides, lands but runs no action (TAL-867).
+    func tapSettled(_ element: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertTrue(element.awaitExistence(timeout: Self.navigationTimeout), "Missing tap target", file: file, line: line)
+        XCTAssertTrue(poll(timeout: Self.navigationTimeout) { element.isEnabled }, "Tap target stayed disabled", file: file, line: line)
+        _ = element.settledFrame
+        element.tap()
+    }
+
+    /// Taps a text input until it has keyboard focus: a tap while its screen or sheet still settles can leave it
+    /// unfocused, and the typing after it goes nowhere. Focus, not the keyboard, is the signal, since the keyboard
+    /// stays up when focus moves from one field to the next (TAL-867).
+    func hasKeyboardFocus(_ element: XCUIElement) -> Bool {
+        element.value(forKey: "hasKeyboardFocus") as? Bool ?? false
+    }
+
+    func focus(_ element: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertTrue(element.awaitExistence(timeout: Self.navigationTimeout), "Missing text input", file: file, line: line)
+        _ = element.settledFrame
+        repeatStep(3, until: { hasKeyboardFocus(element) }) {
+            element.tap()
+            _ = poll(timeout: 5) { hasKeyboardFocus(element) }
+        }
+        XCTAssertTrue(hasKeyboardFocus(element), "The text input never took keyboard focus", file: file, line: line)
+    }
+
     /// Taps a point in screen coordinates. Offsetting from the app's origin needs no read of the
     /// app's own frame, which costs a query each time on a hosted runner.
     func tap(at point: CGPoint) {
@@ -3415,6 +3439,17 @@ extension TalariaUITestCase {
 
     var fixtureSessionButton: XCUIElement {
         app.buttons.containing(.staticText, identifier: fixtureSessionTitle).firstMatch
+    }
+
+    /// The composer's text settles on `value`. It refills apart from the row or card that set it off, so it is awaited.
+    func assertComposerValue(_ value: String, timeout: TimeInterval = 5, file: StaticString = #filePath, line: UInt = #line) {
+        let input = app.textViews.firstMatch
+        XCTAssertTrue(
+            input.awaitValue(value, timeout: timeout),
+            "The composer holds \((input.exists ? input.value as? String : nil) ?? "nothing"), not \(value)",
+            file: file,
+            line: line
+        )
     }
 
     func waitForComposer(timeout: TimeInterval) -> XCUIElement? {
@@ -3594,10 +3629,6 @@ fileprivate extension AdaptiveLayoutUITestCase {
             )
         }
     }
-
-    func hasKeyboardFocus(_ element: XCUIElement) -> Bool {
-        element.value(forKey: "hasKeyboardFocus") as? Bool ?? false
-    }
 }
 
 private extension CGRect {
@@ -3649,13 +3680,7 @@ fileprivate extension WorkspaceUITestCase {
     }
 
     func tapGitMenuPush() {
-        let push = app.buttons["Push"]
-        XCTAssertTrue(push.awaitExistence(timeout: Self.navigationTimeout), "Missing the Push action")
-        // A tap while the menu is still growing in from its button lands but runs no action, so
-        // wait for Push to be enabled and at rest first.
-        XCTAssertTrue(poll(timeout: Self.navigationTimeout) { push.isEnabled }, "Push stayed disabled")
-        _ = push.settledFrame
-        push.tap()
+        tapSettled(app.buttons["Push"])
     }
 
     func openDirectory(_ name: String) {
@@ -3755,8 +3780,11 @@ final class QueuedMessagesChipUITests: ChatUITestCase {
         // An item with a subtitle reads both, so it is found by its title.
         let queueOption = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Queue")).firstMatch
         XCTAssertTrue(queueOption.awaitExistence(timeout: 5), "Long-pressing Send did not open the send menu")
-        Thread.sleep(forTimeInterval: 0.6) // a dismissal would be under way by now
-        XCTAssertTrue(keyboard.exists && abs(keyboard.frame.minY - keyboardTop) < 2, "Opening the send menu dropped the keyboard")
+        // Watched until a dismissal would be under way, not sampled once at its end.
+        XCTAssertFalse(
+            poll(timeout: 0.6) { !keyboard.exists || abs(keyboard.frame.minY - keyboardTop) >= 2 },
+            "Opening the send menu dropped the keyboard"
+        )
         // The "While responding" setting's Steer carries the checkmark (TAL-445).
         let steerOption = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Steer")).firstMatch
         XCTAssertTrue(steerOption.exists && app.buttons["Stop and send"].exists)
@@ -3789,7 +3817,7 @@ final class QueuedMessagesChipUITests: ChatUITestCase {
         XCTAssertTrue(app.buttons["1 queued"].awaitNonExistence(timeout: 5), "The queue chip stayed after its last message was edited")
         let composerInput = app.textViews.firstMatch
         XCTAssertTrue(composerInput.awaitExistence(timeout: 5))
-        XCTAssertEqual(composerInput.value as? String, "First queued message", "Edit did not put the message back in the composer")
+        assertComposerValue("First queued message")
 
         // The fixture starts no background task, so the menu send fails and the draft stays to retry.
         app.buttons["Send"].press(forDuration: 1)
@@ -3892,8 +3920,11 @@ final class ComposerToolsetsUITests: WorkspaceUITestCase {
         let keyboardTop = keyboard.settledFrame.minY
         for label in ["Hide composer controls", "Show composer controls"] {
             tapCenter(of: app.buttons[label])
-            Thread.sleep(forTimeInterval: 0.6) // a dismissal would be under way by now
-            XCTAssertTrue(keyboard.exists && abs(keyboard.frame.minY - keyboardTop) < 2, "\(label) dropped the keyboard")
+            // Watched until a dismissal would be under way, not sampled once at its end.
+            XCTAssertFalse(
+                poll(timeout: 0.6) { !keyboard.exists || abs(keyboard.frame.minY - keyboardTop) >= 2 },
+                "\(label) dropped the keyboard"
+            )
         }
     }
 
@@ -3905,12 +3936,12 @@ final class ComposerToolsetsUITests: WorkspaceUITestCase {
 
         let control = app.buttons["Session toolsets"]
         XCTAssertTrue(control.awaitExistence(timeout: 15), "Missing the toolsets control")
-        XCTAssertEqual(control.value as? String, "Profile defaults")
+        XCTAssertTrue(control.awaitValue("Profile defaults", timeout: 5), "The toolsets control reads \(control.value ?? "nothing")")
         tapCenter(of: control)
 
         let field = app.textFields["Session toolsets"]
         XCTAssertTrue(field.awaitExistence(timeout: 5), "The toolsets sheet did not open")
-        field.tap()
+        focus(field)
         field.typeText("web, terminal")
         attachScreenshot(named: "toolsets-sheet")
         app.buttons["Save"].tap()
