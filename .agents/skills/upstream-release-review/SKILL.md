@@ -48,9 +48,9 @@ stat, and relevant patch. When a range is too large for one pass, partition its
 commits by the paths they touch and review the partitions in parallel. Every
 commit still gets its body and stat read, whatever its path or subject; read the
 patch wherever the body or stat touches a Talaria boundary or adds a CLI verb,
-config key, persisted field, or other user-visible capability. Review against current `origin/main`; when
-main moves during the review, re-check each finding against the new head before
-filing.
+config key, persisted field, or other user-visible capability. Review against current `origin/main`. Before
+filing, run `git fetch origin`; when `origin/main` moved during the review,
+re-check each finding against the new head.
 
 - **Hermes Agent:** diff each `sidecarModules` entry for the names the sidecar
   imports or calls. A removed or re-signatured name breaks compatibility; a name
