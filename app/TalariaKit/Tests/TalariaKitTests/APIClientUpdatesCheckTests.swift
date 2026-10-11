@@ -12,6 +12,8 @@ final class APIClientUpdatesCheckTests: APIClientTestCase {
               "webui": {
                 "name": "webui",
                 "behind": 3,
+                "state": "commits_behind",
+                "can_apply": true,
                 "current_sha": "abc1234",
                 "latest_sha": "def5678",
                 "branch": "master",
@@ -49,7 +51,7 @@ final class APIClientUpdatesCheckTests: APIClientTestCase {
 
             return apiTestJSONResponse("""
             {
-              "webui": { "name": "webui", "behind": 2 },
+              "webui": { "name": "webui", "behind": 2, "state": "commits_behind", "can_apply": true },
               "checked_at": 1770000000
             }
             """, for: request)
@@ -61,26 +63,6 @@ final class APIClientUpdatesCheckTests: APIClientTestCase {
         XCTAssertEqual(response.forcedCheckOutcome, .updateAvailable(behind: 2))
     }
 
-    func testForcedCheckOutcomeIsUpdateAvailableWhenBehind() throws {
-        let response = try decodeUpdatesCheck("""
-        { "webui": { "name": "webui", "behind": 4 } }
-        """)
-
-        XCTAssertEqual(response.forcedCheckOutcome, .updateAvailable(behind: 4))
-    }
-
-    func testForcedCheckOutcomeIsUpToDateWhenBehindIsZeroOrNull() throws {
-        let zero = try decodeUpdatesCheck("""
-        { "webui": { "name": "webui", "behind": 0 } }
-        """)
-        XCTAssertEqual(zero.forcedCheckOutcome, .upToDate)
-
-        let null = try decodeUpdatesCheck("""
-        { "webui": { "name": "webui", "behind": null } }
-        """)
-        XCTAssertEqual(null.forcedCheckOutcome, .upToDate)
-    }
-
     func testForcedCheckOutcomeIsDisabledWhenChecksOff() throws {
         let response = try decodeUpdatesCheck("""
         { "disabled": true }
@@ -90,34 +72,26 @@ final class APIClientUpdatesCheckTests: APIClientTestCase {
         XCTAssertEqual(response.forcedCheckOutcome, .disabled)
     }
 
-    func testForcedCheckOutcomeIsErrorOnFailureStaleOrMissingWebUI() throws {
-        let errored = try decodeUpdatesCheck("""
-        { "webui": { "name": "webui", "behind": 0, "error": "fetch failed" } }
-        """)
-        XCTAssertEqual(errored.forcedCheckOutcome, .error)
-
-        let stale = try decodeUpdatesCheck("""
-        { "webui": { "name": "webui", "behind": 5, "stale_check": true } }
-        """)
-        XCTAssertEqual(stale.forcedCheckOutcome, .error)
-
-        let missing = try decodeUpdatesCheck("""
-        { "checked_at": 1770000000 }
-        """)
-        XCTAssertEqual(missing.forcedCheckOutcome, .error)
+    func testForcedCheckOutcomeIsErrorWithoutAServerState() throws {
+        // Every supported server sends `state` (TAL-559); a webui block without it is not trusted.
+        let cases = [
+            #"{ "webui": { "name": "webui", "behind": 4 } }"#,
+            #"{ "webui": { "name": "webui", "behind": 0 } }"#,
+            #"{ "webui": { "name": "webui", "behind": null } }"#,
+            #"{ "webui": { "name": "webui", "behind": 0, "error": "fetch failed" } }"#,
+            #"{ "webui": { "name": "webui", "behind": 5, "stale_check": true } }"#,
+            #"{ "checked_at": 1770000000 }"#,
+        ]
+        for json in cases {
+            let response = try decodeUpdatesCheck(json)
+            XCTAssertEqual(response.forcedCheckOutcome, .error, json)
+            XCTAssertEqual(response.webuiUpdateState, .unavailable, json)
+        }
     }
 
-    func testWebUIUpdateStateIsUpToDateWhenBehindIsZero() throws {
+    func testWebUIUpdateStateIsUpToDateWhenTheServerSaysSo() throws {
         let response = try decodeUpdatesCheck("""
-        { "webui": { "name": "webui", "behind": 0 }, "checked_at": 1 }
-        """)
-
-        XCTAssertEqual(response.webuiUpdateState, .upToDate)
-    }
-
-    func testWebUIUpdateStateIsUpToDateWhenBehindIsNull() throws {
-        let response = try decodeUpdatesCheck("""
-        { "webui": { "name": "webui", "behind": null } }
+        { "webui": { "name": "webui", "behind": 0, "state": "up_to_date", "can_apply": false }, "checked_at": 1 }
         """)
 
         XCTAssertEqual(response.webuiUpdateState, .upToDate)
@@ -130,27 +104,6 @@ final class APIClientUpdatesCheckTests: APIClientTestCase {
 
         XCTAssertEqual(response.disabled, true)
         XCTAssertNil(response.webui)
-        XCTAssertEqual(response.webuiUpdateState, .unavailable)
-    }
-
-    func testErrorOrStaleCheckDegradesToUnavailable() throws {
-        let errored = try decodeUpdatesCheck("""
-        { "webui": { "name": "webui", "behind": 0, "error": "fetch failed" } }
-        """)
-        XCTAssertEqual(errored.webuiUpdateState, .unavailable)
-
-        let stale = try decodeUpdatesCheck("""
-        { "webui": { "name": "webui", "behind": 5, "stale_check": true } }
-        """)
-        // Stale results are not trusted even when they claim a non-zero gap.
-        XCTAssertEqual(stale.webuiUpdateState, .unavailable)
-    }
-
-    func testMissingWebUIBlockDegradesToUnavailable() throws {
-        let response = try decodeUpdatesCheck("""
-        { "checked_at": 1770000000 }
-        """)
-
         XCTAssertEqual(response.webuiUpdateState, .unavailable)
     }
 

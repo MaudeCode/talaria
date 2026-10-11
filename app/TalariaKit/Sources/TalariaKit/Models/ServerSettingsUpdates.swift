@@ -70,9 +70,7 @@ struct UpdateTargetInfo: Decodable, Equatable {
     let branch: String?
     let repoUrl: String?
     let compareUrl: String?
-    let error: String?
-    let staleCheck: Bool?
-    /// TAL-559: the server-decided status and apply availability; nil from a server that predates them.
+    /// TAL-559: the server-decided status and apply availability.
     let state: String?
     let canApply: Bool?
 }
@@ -98,7 +96,7 @@ extension UpdatesCheckResponse {
         case manual
         /// Update checks are turned off on this server (`{ "disabled": true }`).
         case disabled
-        /// The check failed, returned a stale result, or omitted the webui block.
+        /// The check failed, or the webui block or its `state` is missing.
         case error
     }
 
@@ -107,32 +105,19 @@ extension UpdatesCheckResponse {
             return .disabled
         }
 
-        guard let webui else {
+        guard let webui, let state = webui.state else {
             return .error
         }
 
-        if let state = webui.state {
-            if webui.canApply == true {
-                return .updateAvailable(behind: webui.behind ?? 0)
-            }
-            switch state {
-            case "up_to_date": return .upToDate
-            case "off": return .disabled
-            case "manual", "local_changes", "release_ready", "commits_behind", "finish": return .manual
-            default: return .error
-            }
+        if webui.canApply == true {
+            return .updateAvailable(behind: webui.behind ?? 0)
         }
-
-        // Old-server fallback: delete once a Stable server ships `state` (TAL-559).
-        if webui.error != nil || webui.staleCheck == true {
-            return .error
+        switch state {
+        case "up_to_date": return .upToDate
+        case "off": return .disabled
+        case "manual", "local_changes", "release_ready", "commits_behind", "finish": return .manual
+        default: return .error
         }
-
-        if let behind = webui.behind, behind > 0 {
-            return .updateAvailable(behind: behind)
-        }
-
-        return .upToDate
     }
 
     /// The passive inline indicator's coarser view of the same check. Derived from

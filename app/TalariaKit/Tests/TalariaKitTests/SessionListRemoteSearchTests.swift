@@ -154,7 +154,7 @@ extension SessionListMutationTests {
     }
 
     @MainActor
-    func testRemoteSessionSearchFromAnOldServerKeepsOnlyRowsTheListShows() async throws {
+    func testRemoteSessionSearchShowsTheServerResultWithoutTheSidebarFlag() async throws {
         let viewModel = try makeViewModel { request in
             switch request.url?.path {
             case "/api/sessions":
@@ -162,9 +162,7 @@ extension SessionListMutationTests {
                 {
                   "sessions": [
                     {"session_id": "local-title", "title": "Needle planning", "project_id": "project-1", "last_message_at": 30, "archived": false},
-                    {"session_id": "content-project", "title": "Budget", "project_id": "project-1", "last_message_at": 20, "archived": false},
-                    {"session_id": "content-other-project", "title": "Roadmap", "project_id": "project-2", "last_message_at": 40, "archived": false},
-                    {"session_id": "archived-session", "title": "Archived", "project_id": "project-1", "archived": true}
+                    {"session_id": "content-project", "title": "Budget", "project_id": "project-1", "last_message_at": 20, "archived": false}
                   ]
                 }
                 """, for: request)
@@ -172,13 +170,12 @@ extension SessionListMutationTests {
                 return apiTestJSONResponse("""
                 {
                   "sessions": [
+                    {"session_id": "not-loaded", "title": "Older content", "project_id": "project-1", "match_type": "content"},
                     {"session_id": "content-project", "title": "Budget", "match_type": "content"},
-                    {"session_id": "content-other-project", "title": "Roadmap", "match_type": "content"},
-                    {"session_id": "unknown-session", "title": "Unknown", "match_type": "content"},
-                    {"session_id": "archived-session", "title": "Archived", "match_type": "content"}
+                    {"session_id": "local-title", "title": "Needle planning", "match_type": "title"}
                   ],
                   "query": "needle",
-                  "count": 4
+                  "count": 3
                 }
                 """, for: request)
             default:
@@ -192,7 +189,7 @@ extension SessionListMutationTests {
 
         XCTAssertEqual(
             viewModel.visibleSessions(searchText: "needle", selectedProjectID: "project-1").compactMap(\.sessionId),
-            ["local-title", "content-project"]
+            ["not-loaded", "content-project", "local-title"]
         )
     }
 

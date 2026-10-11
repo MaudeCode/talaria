@@ -454,11 +454,11 @@ extension SessionListMutationTests {
                 return apiTestJSONResponse("""
                 {
                   "sessions": [
-                    {"session_id": "subagent-p1", "title": "Delegated research", "match_type": "content"},
-                    {"session_id": "normal-p2", "title": "Other project", "match_type": "content"}
+                    {"session_id": "subagent-p1", "title": "Delegated research", "match_type": "content"}
                   ],
                   "query": "needle",
-                  "count": 2
+                  "count": 1,
+                  "sidebar_filtered": true
                 }
                 """, for: request)
             default:

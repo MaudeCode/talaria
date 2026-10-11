@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Chat search, the chat list order, and update checks always follow the server, and support for Talaria Web servers older than 1.17 is removed from them.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

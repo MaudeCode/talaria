@@ -75,11 +75,9 @@ public struct SessionSearchResponse: Decodable, Equatable {
     public let sessions: [SessionSummary]?
     let query: String?
     let count: Int?
-    /// The server answered within the requested project and visibility (TAL-308).
-    let sidebarFiltered: Bool?
 
     enum CodingKeys: String, CodingKey {
-        case sessions, query, count, sidebarFiltered
+        case sessions, query, count
     }
 
     public init(from decoder: Decoder) throws {
@@ -87,7 +85,6 @@ public struct SessionSearchResponse: Decodable, Equatable {
         sessions = SessionSummary.decodingRowsIndependently(from: container, forKey: .sessions)
         query = container.decodeLossyStringIfPresent(forKey: .query)
         count = container.decodeLossyIntIfPresent(forKey: .count)
-        sidebarFiltered = container.decodeLossyBoolIfPresent(forKey: .sidebarFiltered)
     }
 }
 
@@ -727,22 +724,6 @@ extension SessionSummary {
         guard let value else { return nil }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
-    }
-}
-
-public extension Array where Element == SessionSummary {
-    /// The rows in display order. A server that ships `sort_ts` sends its canonical order, which
-    /// the list keeps (TAL-306). An older server's order is not pinned-first, so its rows keep the
-    /// previous pinned-first, newest-first sort; delete this fallback once every supported server
-    /// ships `sort_ts`.
-    var inDisplayOrder: [SessionSummary] {
-        guard !contains(where: { $0.sortTs != nil }) else { return self }
-        return sorted { left, right in
-            if (left.pinned == true) != (right.pinned == true) {
-                return left.pinned == true
-            }
-            return (left.sortTimestamp ?? 0) > (right.sortTimestamp ?? 0)
-        }
     }
 }
 

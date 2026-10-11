@@ -90,7 +90,7 @@ struct ArchivedSessionsView: View {
                         .padding(.horizontal, 24)
                 } else {
                     VStack(spacing: 2) {
-                        ForEach(viewModel.sessions.inDisplayOrder) { session in
+                        ForEach(viewModel.sessions) { session in
                             archivedSessionRow(for: session)
                         }
                     }
