@@ -232,16 +232,23 @@ def test_concurrent_turns_run_under_their_own_profiles_terminal_backend_on_the_i
     probe = Path(__file__).with_name("terminal_scope_probe.py")
     run = subprocess.run([AGENT_PYTHON, str(probe), str(AGENT_DIR)], env=env, capture_output=True, text=True, timeout=120)
     assert run.returncode == 0, run.stderr[-4000:]
-    default_image = "nikolaik/python-nodejs:python3.11-nodejs20"
-    assert json.loads(run.stdout.strip().splitlines()[-1]) == {
+    seen = json.loads(run.stdout.strip().splitlines()[-1])
+    turns, default_image = seen["turns"], seen["default_image"]  # The Agent owns its default sandbox image.
+    assert all(isinstance(turn, dict) for turn in turns.values()), turns
+    containers = {name: turn.pop("container") for name, turn in turns.items()}
+    assert turns == {
         # The root profile's config.yaml wins over the host default; its launch env still fills unset keys.
-        "default": {"env_type": "ssh", "docker_image": default_image, "ssh_host": "root-host", "ssh_user": "launch-user", "container": "session:default"},
-        # Named profiles see only their own files, never the launch env or a sibling's backend, and each
-        # persistent Docker profile creates and reuses its own sandbox rather than the shared default one.
-        "alpha": {"env_type": "docker", "docker_image": "alpha-image", "ssh_host": "", "ssh_user": "", "container": "profile:alpha"},
-        "beta": {"env_type": "ssh", "docker_image": default_image, "ssh_host": "beta-host", "ssh_user": "", "container": "session:beta"},
-        "gamma": {"env_type": "docker", "docker_image": "gamma-image", "ssh_host": "", "ssh_user": "", "container": "profile:gamma"},
+        "default": {"env_type": "ssh", "docker_image": default_image, "ssh_host": "root-host", "ssh_user": "launch-user"},
+        # Named profiles see only their own files, never the launch env or a sibling's backend.
+        "alpha": {"env_type": "docker", "docker_image": "alpha-image", "ssh_host": "", "ssh_user": ""},
+        "beta": {"env_type": "ssh", "docker_image": default_image, "ssh_host": "beta-host", "ssh_user": ""},
+        "gamma": {"env_type": "docker", "docker_image": "gamma-image", "ssh_host": "", "ssh_user": ""},
     }
+    # Each persistent Docker profile creates and reuses its own sandbox rather than the shared default one, and no two
+    # profiles share a sandbox key. The Agent may qualify a named profile's session key with its profile.
+    assert (containers["alpha"], containers["gamma"], containers["default"]) == ("profile:alpha", "profile:gamma", "session:default"), containers
+    assert containers["beta"].endswith("session:beta"), containers
+    assert len(set(containers.values())) == len(containers), containers
 
 
 def test_runtime_env_waits_for_a_launch_policy_import_in_flight(tmp_path, monkeypatch) -> None:

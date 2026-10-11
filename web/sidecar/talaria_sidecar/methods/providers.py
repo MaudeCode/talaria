@@ -97,8 +97,10 @@ def _user_plugin_profiles() -> dict[int, tuple[Any, Path]]:
 def _load_plugin(root: Path) -> None:
     """Load the scoped profile's installed plugin that the process-wide discovery (run under the launch profile) skipped.
 
-    Uses the Agent's own loader, as ``hermes plugins dev`` does, once per directory. A plugin never displaces a provider
-    that is already registered, so one profile's plugin cannot change what another profile's provider id runs.
+    Uses the Agent's own loader, as ``hermes plugins dev`` does, once per directory. On an Agent with one process-wide
+    provider registry, a plugin never displaces a provider that is already registered, so one profile's plugin cannot
+    change what another profile's provider id runs. An Agent with per-home provider layers registers it in this home's
+    layer instead, so the same id is that profile's own provider.
     """
     import providers
 
@@ -121,12 +123,12 @@ def _load_plugin(root: Path) -> None:
 def installed_plugin_profiles() -> list[tuple[str, Any]]:
     """``(manifest name, profile | None)`` for each enabled model-provider plugin installed in the scoped home.
 
-    Bundled providers are built-ins, not plugins. The Agent keeps one provider registry per process, so a profile
-    belongs to this home only when the plugin module that registered it lives in one of this home's plugin
-    directories; a plugin the launch discovery skipped is loaded here. ``None`` means the plugin could not be loaded:
-    it failed to import, its provider id is taken by another plugin, or another profile's plugin has the same directory
-    name. ponytail: ownership is read from the plugin module's globals, so a plugin that registers an unbound inline
-    profile also reads as not loaded; track registrations in the Agent if one ever does.
+    Bundled providers are built-ins, not plugins. A profile belongs to this home only when the plugin module that
+    registered it lives in one of this home's plugin directories; a plugin the launch discovery skipped is loaded here.
+    ``None`` means the plugin could not be loaded: it failed to import, another plugin took its provider id (only on an
+    Agent with one process-wide provider registry rather than per-home layers), or another profile's plugin has the same
+    directory name. ponytail: ownership is read from the plugin module's globals, so a plugin that registers an unbound
+    inline profile also reads as not loaded; track registrations in the Agent if one ever does.
     """
     try:
         from hermes_cli.plugins_discovery import _get_disabled_plugins, _get_enabled_plugins, collect_directory_manifests, gate_manifest

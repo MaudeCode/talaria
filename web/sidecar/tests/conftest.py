@@ -8,6 +8,7 @@ Tests never touch ``~/.hermes``.
 
 from __future__ import annotations
 
+import functools
 import json
 import os
 import pathlib
@@ -15,6 +16,7 @@ import queue
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 
@@ -52,6 +54,17 @@ def discover_python(agent_dir: pathlib.Path | None) -> str | None:
 AGENT_DIR = discover_agent_dir()
 AGENT_PYTHON = discover_python(AGENT_DIR)
 requires_agent = pytest.mark.skipif(AGENT_DIR is None or AGENT_PYTHON is None, reason="pinned Hermes Agent checkout with venv not found")
+
+
+@functools.cache
+def agent_has(module: str, attr: str) -> bool:
+    """Whether the Agent under test exposes ``module.attr``: tests branch on a capability, never on a version number."""
+    code = "import importlib, sys; print(hasattr(importlib.import_module(sys.argv[1]), sys.argv[2]))"
+    with tempfile.TemporaryDirectory() as home:
+        run = subprocess.run([AGENT_PYTHON, "-c", code, module, attr], cwd=AGENT_DIR, env=isolated_env(pathlib.Path(home) / ".hermes"),
+                             capture_output=True, text=True, timeout=120)
+    assert run.returncode == 0, run.stderr[-4000:]
+    return run.stdout.strip().splitlines()[-1] == "True"
 
 
 def isolated_env(hermes_home: pathlib.Path, *, home: pathlib.Path | None = None, **extra: str) -> dict[str, str]:

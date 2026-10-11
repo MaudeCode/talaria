@@ -2,7 +2,7 @@
 
 A stand-in Agent reads the terminal tool's resolved backend config and the sandbox key its
 environment would be created or reused under, mid-turn while every profile's turn is live at
-once. Prints one JSON line with what each turn saw.
+once. Prints one JSON line with what each turn saw and the Agent's own default sandbox image.
 """
 
 from __future__ import annotations
@@ -68,9 +68,14 @@ def _turn(name: str) -> None:
         results[name] = f"{type(exc).__name__}: {exc}"
 
 
+try:
+    from hermes_cli.config_defaults import DEFAULT_SANDBOX_IMAGE as default_image  # noqa: E402
+except ImportError:  # Older Agents keep the default inline: what a home with no docker_image resolves.
+    default_image = _get_env_config()["docker_image"]
+
 threads = [threading.Thread(target=_turn, args=(name,)) for name in HOMES]
 for thread in threads:
     thread.start()
 for thread in threads:
     thread.join()
-print(json.dumps(results, sort_keys=True))
+print(json.dumps({"turns": results, "default_image": default_image}, sort_keys=True))
