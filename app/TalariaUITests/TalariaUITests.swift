@@ -2920,6 +2920,10 @@ class TalariaUITestCase: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication()
+        // Xcode mirrors every os_log line of a UI-test launch to the app's stderr pty, and XCTest evaluates its
+        // queries on the app's main thread, so a slow reader of that pty stalled queries until they timed out
+        // (TAL-750). The unified log keeps every line.
+        app.launchEnvironment["OS_ACTIVITY_DT_MODE"] = "NO"
         warmUpKeyboardOnce()
     }
 
