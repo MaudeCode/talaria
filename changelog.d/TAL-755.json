@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Talaria Web supports Hermes Agent v0.21.6, so updating to it no longer shows an unsupported-version warning.",
+      "highlight": false,
+      "components": ["web"]
+    },
+    {
+      "category": "Fixed",
+      "summary": "With Hermes Agent v0.21.6, MCP server status shows again, and a background command that keeps running across a restart still reports when it finishes.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

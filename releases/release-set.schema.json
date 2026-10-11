@@ -54,7 +54,7 @@
       "required": ["version"],
       "anyOf": [{"required": ["sourceRevision"]}, {"required": ["image"]}],
       "properties": {
-        "releaseTag": {"type": "string", "pattern": "^v[0-9]{4}\\.[0-9]{1,2}\\.[0-9]{1,2}(\\.[0-9]+)?(?![\\s\\S])", "$comment": "Optional only for schema-v1 manifests published before release-only Agent pins."},
+        "releaseTag": {"type": "string", "pattern": "^v([0-9]{4}\\.[0-9]{1,2}\\.[0-9]{1,2}(\\.[0-9]+)?|(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*))(?![\\s\\S])", "$comment": "Date tags until Agent 0.21.5, semantic versions since 0.21.6. Optional only for schema-v1 manifests published before release-only Agent pins."},
         "version": {"$ref": "#/$defs/version"},
         "sourceRevision": {"$ref": "#/$defs/sha"},
         "image": {"type": "string", "pattern": "^docker\\.io/nousresearch/hermes-agent@sha256:[a-f0-9]{64}(?![\\s\\S])"}

@@ -8,6 +8,7 @@ import json
 import logging
 import queue
 import sqlite3
+import threading
 import time
 from contextlib import closing
 from pathlib import Path
@@ -49,6 +50,43 @@ def _event_row(evt: dict) -> dict:
     return row
 
 
+# Recovered sessions, held so their exit is seen even when an Agent call other than drain prunes them first.
+_RECOVERED: dict[str, object] = {}
+_RECOVERED_LOCK = threading.Lock()
+
+
+def _reports_recovered_exits(registry) -> bool:
+    """Agent 0.21.6 (hermes-agent 7550800d) closes or prunes a recovered session whose PID is gone without queuing a
+    completion, since it never collected an exit status. Talaria still wakes the session with an unknown exit code."""
+    return callable(getattr(registry, "_detached_host_fate", None)) and callable(getattr(registry, "_publish_finished", None))
+
+
+def track_recovered(registry) -> None:
+    if not _reports_recovered_exits(registry):
+        return
+    try:
+        with registry._lock:
+            detached = [s for s in registry._running.values() if getattr(s, "detached", False)]
+    except Exception:  # noqa: BLE001 - recovery itself succeeded; only the exit report is lost
+        log.warning("Failed to track recovered processes", exc_info=True)
+        return
+    with _RECOVERED_LOCK:
+        _RECOVERED.update((s.id, s) for s in detached)
+
+
+def _publish_recovered_exits(registry) -> None:
+    with _RECOVERED_LOCK:
+        exited = [s for s in _RECOVERED.values() if s.exited]
+        for session in exited:
+            del _RECOVERED[session.id]
+    for session in exited:
+        with registry._lock:
+            registry._running.pop(session.id, None)
+            session.exited_at = session.exited_at or time.time()
+            registry._finished[session.id] = session
+        registry._publish_finished(session, True)
+
+
 def drain(max_events: int) -> list[dict]:
     """Pop every queued completion event; the server requeues what it does not own."""
     registry = _registry()
@@ -61,6 +99,8 @@ def drain(max_events: int) -> list[dict]:
             detached = [s for s in registry._running.values() if getattr(s, "detached", False)]
         for session in detached:
             registry._refresh_detached_session(session)
+        if _reports_recovered_exits(registry):
+            _publish_recovered_exits(registry)
     except Exception:  # noqa: BLE001
         log.debug("Failed to reconcile recovered processes", exc_info=True)
     out = []

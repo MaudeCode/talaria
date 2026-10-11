@@ -198,6 +198,9 @@ def _recover_processes(home: Path) -> None:
             if checkpoint.exists() and not isinstance(json.loads(checkpoint.read_text(encoding="utf-8")), list):
                 raise ValueError(f"{checkpoint} is not a list")
             recovered = registry_module.process_registry.recover_from_checkpoint()
+            from .methods.process import track_recovered
+
+            track_recovered(registry_module.process_registry)
         except Exception as exc:  # noqa: BLE001
             # Retried on every call in the home; reported once per home so a lasting failure does not flood the log.
             log.log(logging.DEBUG if key in _RECOVERY_WARNED else logging.WARNING, "Background process recovery failed for %s", home, exc_info=True)
