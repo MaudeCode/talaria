@@ -98,10 +98,6 @@ public final class SessionListViewModel {
     /// The server's complete, ordered result for `activeRemoteSearch` (TAL-308);
     /// nil until it arrives, while the list shows local title matches.
     private(set) var remoteSearchResults: [SessionSummary]?
-    /// Whether the server applied the project and visibility filters itself
-    /// (`sidebar_filtered`). Old-server fallback: delete once every supported
-    /// server ships the field.
-    private var remoteSearchIsFiltered = false
     /// Server-redacted excerpts for the content matches in `remoteSearchResults`,
     /// keyed by session ID. Set and cleared together with the results so an
     /// excerpt never outlives the query that produced it.
@@ -186,24 +182,16 @@ public final class SessionListViewModel {
             guard let selectedProjectID else { return true }
             return session.projectId == selectedProjectID
         }
-        // The server's order is canonical (TAL-306); `inDisplayOrder` re-sorts only an older server's rows.
+        // The server's order is canonical (TAL-306).
         guard !query.isEmpty else {
-            return projectFilteredSessions.inDisplayOrder
+            return projectFilteredSessions
         }
 
         let titleMatches: (SessionSummary) -> Bool = { $0.title?.lowercased().contains(query) == true }
         guard activeRemoteSearch == RemoteSearchScope(query: query, projectID: selectedProjectID),
               let remoteSearchResults
         else {
-            return projectFilteredSessions.filter(titleMatches).inDisplayOrder
-        }
-
-        guard remoteSearchIsFiltered else {
-            // Old-server fallback: that server ignores the filters, so keep only its hits this list shows.
-            let remoteIDs = Set(remoteSearchResults.compactMap(\.sessionId))
-            return projectFilteredSessions.filter { session in
-                titleMatches(session) || (session.archived != true && session.sessionId.map(remoteIDs.contains) == true)
-            }.inDisplayOrder
+            return projectFilteredSessions.filter(titleMatches)
         }
 
         // The server's set and order (TAL-308), showing the loaded copy of a row so local edits stay current.
@@ -564,7 +552,6 @@ public final class SessionListViewModel {
                 return seenSessionIDs.insert(sessionID).inserted
             }
             remoteSearchResults = results
-            remoteSearchIsFiltered = response.sidebarFiltered == true
             remoteContentSearchPreviews = Dictionary(
                 results.compactMap { result -> (String, String)? in
                     guard result.matchType?.lowercased() == "content",
