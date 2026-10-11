@@ -1051,6 +1051,8 @@ describe('keyword credentials in ANSI-coloured output (TAL-714)', () => {
       ['\x1b[1mpassword\x1b[0m=$$$$$$$$', 'password=***'],
       [`--pass\x1b[31mword '********'`, `--password '***'`],
       ['Bear\x1b[31mer ********', 'Bearer ***'],
+      // A later credential stays masked when the fallback runs (`--password …` after a coloured key's value).
+      ['{"pass\x1b[31mword":" x"}--password finalSecret987', '{"***":" ***"}*** ***'],
       [`\x1b[36mpassword\x1b[0m: @@@@@@@@ and ghp_abcdef1234567890ABCDEF1234567890abcdef\n\x1b[1;31mAPI_KEY\x1b[m=${S}\x1b[m`, 'password: *** and ghp_ab...cdef\nAPI_KEY=***'],
     ]) {
       expect(mightContainSensitiveText(input!)).toBe(true)
