@@ -101,3 +101,15 @@ def test_a_failed_agent_write_releases_the_dispatcher_fence(older_agent, monkeyp
         assert kanban._fenced(conn, "t1", write, confirm_running_exit=False) is False
     assert held[0].startswith(kanban.FENCE_PREFIX)  # the dispatcher was fenced out during the write
     assert conn.execute("SELECT claim_lock FROM tasks").fetchone()[0] is None
+
+
+def test_a_failing_agent_liveness_helper_keeps_the_claim(older_agent) -> None:
+    """Only a missing helper takes the 0.21.3 PID fallback; an error from the Agent's own helper stays live."""
+
+    def undecided(claim):
+        raise RuntimeError("liveness unknown")
+
+    sys.modules["hermes_cli.kanban_db"]._claim_is_live = undecided
+    older_agent._pid_alive = lambda pid: pytest.fail("a present helper's error must not fall back to the local PID probe")
+    assert kanban._row_claim_live(Row(RUNNING)) is True
+    assert kanban._row_claim_live(Row({**RUNNING, "claim_lock": None})) is False

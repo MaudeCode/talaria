@@ -96,11 +96,17 @@ def _row_claim_live(row) -> bool:
         return False
     columns = row.keys()
     claim = {k: row[k] if k in columns else None for k in ("status", "claim_lock", "worker_pid", "worker_started_at")}
+    claimed = bool(claim["claim_lock"] and claim["worker_pid"])
     try:
-        return bool(_kb()._claim_is_live(claim))
-    except Exception:  # noqa: BLE001 - an older Agent without the helper
-        pass
-    if not (claim["claim_lock"] and claim["worker_pid"]):
+        helper = getattr(_kb(), "_claim_is_live", None)
+    except RpcError:
+        return claimed
+    if helper is not None:
+        try:
+            return bool(helper(claim))
+        except Exception:  # noqa: BLE001 - the Agent could not decide: unknown liveness counts as live
+            return claimed
+    if not claimed:
         return False
     try:
         # Agent 0.21.3 has no _claim_is_live, but its dispatcher's own worker PID check. Like its crash sweep, probe
