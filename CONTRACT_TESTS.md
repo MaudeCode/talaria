@@ -122,21 +122,12 @@ reply. The live probe captures a single-question multi-select prompt from the
 replay sidecar through Web's pending endpoint and SSE stream, submits keyed answers,
 and passes the pending response to the Swift decoder check.
 
-The following compatibility path applies only when `steps` is absent. Delete it
-once all supported Web servers ship `steps`.
-
-Talaria also accepts the additive `questions` payload alongside the
-single-question contract. Each question carries its wire `qid`,
-question text, choices, and optional `multi_select` flag. A batch-only `initial`
-event is a clarification, not an approval.
-
-The POST route and outer request stay unchanged. Its `response` string contains
-JSON `{"answers":{"q0":"typed answer","q1":["first choice","second choice"]}}`.
-The Agent's batch callback parses this envelope; sending plain text instead yields
-blank answers. Talaria submits the batch only after collecting each question's
-answer. `ClarificationTests` covers decoding, wire values, question progression,
-and retry retention; `ChatPrimaryStreamUITests` verifies choices, composer input,
-and the answer map received through the HTTP fixture.
+A pending clarification without `steps` renders no prompt and is left to expire;
+every supported Web server sends `steps`. Talaria submits only after collecting
+each step's answer and never sends a `response` string. `ClarificationTests`
+covers decoding, keyed answers, step progression, and retry retention;
+`ChatPrimaryStreamUITests` verifies choices, composer input, and the answer map
+received through the HTTP fixture.
 
 ## Contract changes
 
