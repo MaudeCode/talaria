@@ -107,6 +107,12 @@ concrete user-visible outcome in Talaria. Group changes that share one Talaria
 change into one finding. A Talaria defect older than the base is still a bug when
 upstream fixed the same defect within the range: file it and mark it pre-range.
 
+When the review is split across delegated reviewers, each one's uncertainty and
+open-question notes are findings too. Verify and classify every such item like
+any other change, or carry it into the report's Uncertainty with the step that
+would resolve it. Every item a delegated reviewer raises ends filed, reported,
+or carried, never dropped while merging their reports.
+
 Irrelevant means no Talaria user would notice the difference. A different
 mechanism is not irrelevant: compare what the user sees (for example, what a
 notification says). A change that only matters to a capability a filed ticket
