@@ -205,6 +205,18 @@ def _marker_presence(marker: Path) -> str:
     return "present"
 
 
+def installed_agent_version() -> str | None:
+    """Agents since v0.21.6 resolve their identity from the install stamp, else the checkout's release tag; their
+    ``__version__`` reads only the stamp, which a source checkout does not have."""
+    try:
+        from hermes_cli.version_info import get_version_info
+    except ModuleNotFoundError as error:
+        if error.name != "hermes_cli.version_info":
+            raise
+        return getattr(importlib.import_module("hermes_cli"), "__version__", None)
+    return get_version_info().base_version
+
+
 class AgentRuntime:
     """Loads the Agent once and guards against a changed checkout."""
 
@@ -246,7 +258,7 @@ class AgentRuntime:
     @property
     def agent_version(self) -> str | None:
         try:
-            return getattr(importlib.import_module("hermes_cli"), "__version__", None)
+            return installed_agent_version()
         except Exception:  # noqa: BLE001
             return None
 

@@ -7,17 +7,6 @@
       "result": {
         "plugins": [
           {
-            "name": "a2a-platform",
-            "key": "a2a-platform",
-            "version": "1.0.0",
-            "description": "A2A (Agent-to-Agent) protocol v1.0 support for Hermes Agent — both directions of the open Linux Foundation standard for inter-agent communication. OUTBOUND (client tools): a2a_discover, a2a_call, a2a_list, a2a_history, and a2a_orchestrate let the agent fetch another agent's Agen…",
-            "enabled": true,
-            "kind": "platform",
-            "activation": "enabled",
-            "hooks": [],
-            "is_active_provider": false
-          },
-          {
             "name": "browser-browser-use",
             "key": "browser/browser_use",
             "version": "1.0.0",
@@ -47,28 +36,6 @@
             "enabled": true,
             "kind": "backend",
             "activation": "enabled",
-            "hooks": [],
-            "is_active_provider": false
-          },
-          {
-            "name": "buzz-platform",
-            "key": "buzz-platform",
-            "version": "1.0.0",
-            "description": "Buzz gateway adapter for Hermes Agent. Connects to a Buzz community relay (Block's open-source human+agent collaboration platform built on Nostr) and relays messages between channels/DMs and the Hermes agent. Relay operations shell out to the buzz CLI binary (JSON in/out); verif…",
-            "enabled": true,
-            "kind": "platform",
-            "activation": "enabled",
-            "hooks": [],
-            "is_active_provider": false
-          },
-          {
-            "name": "chronos",
-            "key": "cron_providers/chronos",
-            "version": "1.0.0",
-            "description": "Chronos — NAS-mediated managed cron provider for scale-to-zero hosted agents. Delegates the \"wake me at time T\" trigger to Nous infrastructure so an idle gateway can scale to zero and still fire cron jobs. The agent computes each job's next-fire time and asks NAS to arm a one-sh…",
-            "enabled": false,
-            "kind": "standalone",
-            "activation": "disabled",
             "hooks": [],
             "is_active_provider": false
           },
@@ -117,28 +84,6 @@
             "is_active_provider": false
           },
           {
-            "name": "dingtalk-platform",
-            "key": "dingtalk-platform",
-            "version": "1.0.0",
-            "description": "DingTalk gateway adapter for Hermes Agent. Connects to DingTalk via the dingtalk-stream SDK (Stream Mode) and relays messages between DingTalk chats and the Hermes agent. Supports text, images, audio, video, rich text, files, group @mention gating, free-response chats, and per-u…",
-            "enabled": true,
-            "kind": "platform",
-            "activation": "enabled",
-            "hooks": [],
-            "is_active_provider": false
-          },
-          {
-            "name": "discord-platform",
-            "key": "discord-platform",
-            "version": "1.0.0",
-            "description": "Discord gateway adapter for Hermes Agent. Connects to Discord via the discord.py library and relays messages between Discord guilds/DMs and the Hermes agent. Supports voice mode, slash commands, free-response channels, role-based DM auth, threads, reactions, and channel skill bi…",
-            "enabled": true,
-            "kind": "platform",
-            "activation": "enabled",
-            "hooks": [],
-            "is_active_provider": false
-          },
-          {
             "name": "disk-cleanup",
             "key": "disk-cleanup",
             "version": "2.0.0",
@@ -146,40 +91,10 @@
             "enabled": false,
             "kind": "standalone",
             "activation": "disabled",
-            "hooks": [],
-            "is_active_provider": false
-          },
-          {
-            "name": "email-platform",
-            "key": "email-platform",
-            "version": "1.0.0",
-            "description": "Email gateway adapter for Hermes Agent. Polls an IMAP mailbox for inbound messages and replies over SMTP, relaying email threads to and from the Hermes agent.",
-            "enabled": true,
-            "kind": "platform",
-            "activation": "enabled",
-            "hooks": [],
-            "is_active_provider": false
-          },
-          {
-            "name": "feishu-platform",
-            "key": "feishu-platform",
-            "version": "1.0.0",
-            "description": "Feishu / Lark gateway adapter for Hermes Agent. Connects to Feishu (China) or Lark (International) via the official lark-oapi SDK over WebSocket or webhook and relays messages between Feishu/Lark chats and the Hermes agent. Supports text, images, video, voice, documents, threads…",
-            "enabled": true,
-            "kind": "platform",
-            "activation": "enabled",
-            "hooks": [],
-            "is_active_provider": false
-          },
-          {
-            "name": "google_chat-platform",
-            "key": "google_chat-platform",
-            "version": "1.0.0",
-            "description": "Google Chat gateway adapter for Hermes Agent. Connects through authenticated HTTP callbacks or an optional Cloud Pub/Sub pull subscription for inbound events, and uses the Google Chat REST API for outbound messages. Native file attachments are delivered via per-user OAuth (each…",
-            "enabled": true,
-            "kind": "platform",
-            "activation": "enabled",
-            "hooks": [],
+            "hooks": [
+              "pre_tool_call",
+              "post_tool_call"
+            ],
             "is_active_provider": false
           },
           {
@@ -190,17 +105,6 @@
             "enabled": false,
             "kind": "standalone",
             "activation": "disabled",
-            "hooks": [],
-            "is_active_provider": false
-          },
-          {
-            "name": "homeassistant-platform",
-            "key": "homeassistant-platform",
-            "version": "1.0.0",
-            "description": "Home Assistant gateway adapter for Hermes Agent. Subscribes to HA's WebSocket event bus and forwards state-change events (with per-entity cooldowns and domain/entity filtering) to the agent. Outbound messages are delivered as HA persistent notifications via the REST API. Out-of-…",
-            "enabled": true,
-            "kind": "platform",
-            "activation": "enabled",
             "hooks": [],
             "is_active_provider": false
           },
@@ -241,7 +145,7 @@
             "name": "meta-ai-image-gen",
             "key": "image_gen/meta-ai",
             "version": "1.0.0",
-            "description": "Meta Model API image generation backend (muse-image). OpenAI-compatible /v1/images/generations. Saves images to $HERMES_HOME/cache/images/.",
+            "description": "Meta Model API image generation backend (muse-image). OpenAI-compatible /v1/images/generations. Saves images to $HERMES_HOME/cache/generated/images/.",
             "enabled": true,
             "kind": "backend",
             "activation": "enabled",
@@ -252,7 +156,7 @@
             "name": "openai",
             "key": "image_gen/openai",
             "version": "1.0.0",
-            "description": "OpenAI image generation backend (GPT Image 2 and GPT Image 2.5 Flare/Sunburst). Saves generated images to $HERMES_HOME/cache/images/.",
+            "description": "OpenAI image generation backend (GPT Image 2 and GPT Image 2.5 Flare/Sunburst). Saves generated images to $HERMES_HOME/cache/generated/images/.",
             "enabled": true,
             "kind": "backend",
             "activation": "enabled",
@@ -263,7 +167,7 @@
             "name": "openai-codex",
             "key": "image_gen/openai-codex",
             "version": "1.0.0",
-            "description": "OpenAI image generation backed by ChatGPT/Codex OAuth (gpt-image-2 via the native Codex images/generations and images/edits endpoints). Saves generated images to $HERMES_HOME/cache/images/.",
+            "description": "OpenAI image generation backed by ChatGPT/Codex OAuth (gpt-image-2 via the native Codex images/generations and images/edits endpoints). Saves generated images to $HERMES_HOME/cache/generated/images/.",
             "enabled": true,
             "kind": "backend",
             "activation": "enabled",
@@ -293,8 +197,101 @@
             "is_active_provider": false
           },
           {
+            "name": "langfuse",
+            "key": "observability/langfuse",
+            "version": "1.0.0",
+            "description": "Optional Langfuse observability for Hermes — traces conversations, LLM calls, and tool usage. Opt-in via `hermes plugins enable observability/langfuse` or `hermes tools → Langfuse Observability`.",
+            "enabled": false,
+            "kind": "standalone",
+            "activation": "disabled",
+            "hooks": [
+              "pre_tool_call",
+              "post_tool_call",
+              "pre_llm_call",
+              "post_llm_call"
+            ],
+            "is_active_provider": false
+          },
+          {
+            "name": "a2a-platform",
+            "key": "platforms/a2a",
+            "version": "1.0.0",
+            "description": "A2A (Agent-to-Agent) protocol v1.0 support for Hermes Agent — both directions of the open Linux Foundation standard for inter-agent communication. OUTBOUND (client tools): a2a_discover, a2a_call, a2a_list, a2a_history, and a2a_orchestrate let the agent fetch another agent's Agen…",
+            "enabled": true,
+            "kind": "platform",
+            "activation": "enabled",
+            "hooks": [],
+            "is_active_provider": false
+          },
+          {
+            "name": "buzz-platform",
+            "key": "platforms/buzz",
+            "version": "1.0.0",
+            "description": "Buzz gateway adapter for Hermes Agent. Connects to a Buzz community relay (Block's open-source human+agent collaboration platform built on Nostr) and relays messages between channels/DMs and the Hermes agent. Relay operations shell out to the buzz CLI binary (JSON in/out); verif…",
+            "enabled": true,
+            "kind": "platform",
+            "activation": "enabled",
+            "hooks": [],
+            "is_active_provider": false
+          },
+          {
+            "name": "dingtalk-platform",
+            "key": "platforms/dingtalk",
+            "version": "1.0.0",
+            "description": "DingTalk gateway adapter for Hermes Agent. Connects to DingTalk via the dingtalk-stream SDK (Stream Mode) and relays messages between DingTalk chats and the Hermes agent. Supports text, images, audio, video, rich text, files, group @mention gating, free-response chats, and per-u…",
+            "enabled": true,
+            "kind": "platform",
+            "activation": "enabled",
+            "hooks": [],
+            "is_active_provider": false
+          },
+          {
+            "name": "discord-platform",
+            "key": "platforms/discord",
+            "version": "1.0.0",
+            "description": "Discord gateway adapter for Hermes Agent. Connects to Discord via the discord.py library and relays messages between Discord guilds/DMs and the Hermes agent. Supports voice mode, slash commands, free-response channels, role-based DM auth, threads, reactions, and channel skill bi…",
+            "enabled": true,
+            "kind": "platform",
+            "activation": "enabled",
+            "hooks": [],
+            "is_active_provider": false
+          },
+          {
+            "name": "email-platform",
+            "key": "platforms/email",
+            "version": "1.0.0",
+            "description": "Email gateway adapter for Hermes Agent. Polls an IMAP mailbox for inbound messages and replies over SMTP, relaying email threads to and from the Hermes agent.",
+            "enabled": true,
+            "kind": "platform",
+            "activation": "enabled",
+            "hooks": [],
+            "is_active_provider": false
+          },
+          {
+            "name": "feishu-platform",
+            "key": "platforms/feishu",
+            "version": "1.0.0",
+            "description": "Feishu / Lark gateway adapter for Hermes Agent. Connects to Feishu (China) or Lark (International) via the official lark-oapi SDK over WebSocket or webhook and relays messages between Feishu/Lark chats and the Hermes agent. Supports text, images, video, voice, documents, threads…",
+            "enabled": true,
+            "kind": "platform",
+            "activation": "enabled",
+            "hooks": [],
+            "is_active_provider": false
+          },
+          {
+            "name": "google_chat-platform",
+            "key": "platforms/google_chat",
+            "version": "1.0.0",
+            "description": "Google Chat gateway adapter for Hermes Agent. Connects through authenticated HTTP callbacks or an optional Cloud Pub/Sub pull subscription for inbound events, and uses the Google Chat REST API for outbound messages. Native file attachments are delivered via per-user OAuth (each…",
+            "enabled": true,
+            "kind": "platform",
+            "activation": "enabled",
+            "hooks": [],
+            "is_active_provider": false
+          },
+          {
             "name": "irc-platform",
-            "key": "irc-platform",
+            "key": "platforms/irc",
             "version": "1.0.0",
             "description": "IRC gateway adapter for Hermes Agent. Connects to an IRC server and relays messages between an IRC channel (or DMs) and the Hermes agent. No external dependencies — uses Python's stdlib asyncio for the IRC protocol.",
             "enabled": true,
@@ -305,7 +302,7 @@
           },
           {
             "name": "line-platform",
-            "key": "line-platform",
+            "key": "platforms/line",
             "version": "1.0.0",
             "description": "LINE Messaging API gateway adapter for Hermes Agent. Runs an aiohttp webhook server that receives LINE webhook events (with HMAC-SHA256 signature verification) and relays messages between LINE chats (1:1, groups, rooms) and the Hermes agent. Outbound replies prefer the free repl…",
             "enabled": true,
@@ -316,7 +313,7 @@
           },
           {
             "name": "matrix-platform",
-            "key": "matrix-platform",
+            "key": "platforms/matrix",
             "version": "1.0.0",
             "description": "Matrix gateway adapter for Hermes Agent. Connects to a Matrix homeserver via mautrix (with optional E2EE) and relays messages between Matrix rooms/DMs and the Hermes agent. Supports threads, HTML/markdown rendering, native media uploads, mention gating, free-response rooms, and…",
             "enabled": true,
@@ -327,7 +324,7 @@
           },
           {
             "name": "mattermost-platform",
-            "key": "mattermost-platform",
+            "key": "platforms/mattermost",
             "version": "1.0.0",
             "description": "Mattermost gateway adapter for Hermes Agent. Connects to a self-hosted or cloud Mattermost instance via the v4 REST API + WebSocket event stream and relays messages between Mattermost channels/DMs and the Hermes agent. Supports thread-mode replies, native file uploads, channel-s…",
             "enabled": true,
@@ -338,7 +335,7 @@
           },
           {
             "name": "ntfy-platform",
-            "key": "ntfy-platform",
+            "key": "platforms/ntfy",
             "version": "1.0.0",
             "description": "ntfy push-notification gateway adapter for Hermes Agent. Subscribes to a topic on ntfy.sh or any self-hosted ntfy server via HTTP streaming, and publishes replies via HTTP POST. Lightweight — no external SDK, only httpx (already a Hermes dependency). ntfy has no native user-iden…",
             "enabled": true,
@@ -348,19 +345,8 @@
             "is_active_provider": false
           },
           {
-            "name": "langfuse",
-            "key": "observability/langfuse",
-            "version": "1.0.0",
-            "description": "Optional Langfuse observability for Hermes — traces conversations, LLM calls, and tool usage. Opt-in via `hermes plugins enable observability/langfuse` or `hermes tools → Langfuse Observability`.",
-            "enabled": false,
-            "kind": "standalone",
-            "activation": "disabled",
-            "hooks": [],
-            "is_active_provider": false
-          },
-          {
             "name": "photon-platform",
-            "key": "photon-platform",
+            "key": "platforms/photon",
             "version": "0.3.0",
             "description": "Photon Spectrum gateway adapter for Hermes Agent. Connects to iMessage (and other Spectrum interfaces) through Photon's managed Spectrum platform. Both directions run over the `spectrum-ts` SDK's long-lived gRPC stream via a small supervised Node sidecar — inbound messages arriv…",
             "enabled": true,
@@ -371,9 +357,86 @@
           },
           {
             "name": "raft-platform",
-            "key": "raft-platform",
+            "key": "platforms/raft",
             "version": "1.0.0",
             "description": "Raft gateway adapter for Hermes Agent. Connects to a Raft workspace as an external agent via a local wake-channel bridge. The adapter starts a loopback HTTP endpoint that receives content-free wake hints from the bridge, then injects them into the Hermes gateway session pipeline…",
+            "enabled": true,
+            "kind": "platform",
+            "activation": "enabled",
+            "hooks": [],
+            "is_active_provider": false
+          },
+          {
+            "name": "simplex-platform",
+            "key": "platforms/simplex",
+            "version": "1.1.0",
+            "description": "SimpleX Chat gateway adapter for Hermes Agent. Connects to a local simplex-chat daemon via WebSocket and relays messages between SimpleX contacts/groups and the Hermes agent. SimpleX is decentralised and assigns no persistent user IDs — every contact is an opaque internal ID gen…",
+            "enabled": true,
+            "kind": "platform",
+            "activation": "enabled",
+            "hooks": [],
+            "is_active_provider": false
+          },
+          {
+            "name": "slack-platform",
+            "key": "platforms/slack",
+            "version": "1.0.0",
+            "description": "Slack gateway adapter for Hermes Agent. Connects to Slack via slack-bolt in Socket Mode and relays messages between Slack channels/DMs and the Hermes agent. Supports slash commands, threads, mrkdwn rendering, approval blocks, free-response channels, mention gating, and channel s…",
+            "enabled": true,
+            "kind": "platform",
+            "activation": "enabled",
+            "hooks": [],
+            "is_active_provider": false
+          },
+          {
+            "name": "sms-platform",
+            "key": "platforms/sms",
+            "version": "1.0.0",
+            "description": "SMS gateway adapter for Hermes Agent via Twilio. Sends and receives SMS through the Twilio REST API + inbound webhook, relaying texts between phone numbers and the Hermes agent. Markdown is stripped to plain text.",
+            "enabled": true,
+            "kind": "platform",
+            "activation": "enabled",
+            "hooks": [],
+            "is_active_provider": false
+          },
+          {
+            "name": "teams-platform",
+            "key": "platforms/teams",
+            "version": "1.0.0",
+            "description": "Microsoft Teams gateway adapter for Hermes Agent. Connects to Microsoft Teams via the Bot Framework and relays messages between Teams chats (personal DMs, group chats, channel posts) and the Hermes agent. Supports Adaptive Card approval prompts.",
+            "enabled": true,
+            "kind": "platform",
+            "activation": "enabled",
+            "hooks": [],
+            "is_active_provider": false
+          },
+          {
+            "name": "telegram-platform",
+            "key": "platforms/telegram",
+            "version": "1.0.0",
+            "description": "Telegram gateway adapter for Hermes Agent. Connects to Telegram via python-telegram-bot and relays messages between Telegram chats/groups/topics and the Hermes agent. Supports threads/topics, streaming edits, native media, inline keyboards, slash commands, fallback network trans…",
+            "enabled": true,
+            "kind": "platform",
+            "activation": "enabled",
+            "hooks": [],
+            "is_active_provider": false
+          },
+          {
+            "name": "wecom-platform",
+            "key": "platforms/wecom",
+            "version": "1.0.0",
+            "description": "WeCom / Enterprise WeChat gateway adapter for Hermes Agent. Registers two platforms: ``wecom`` (Smart Robot over WebSocket) and ``wecom_callback`` (self-built apps over an HTTP callback endpoint with AES message crypto). Relays messages between WeCom chats and the Hermes agent.",
+            "enabled": true,
+            "kind": "platform",
+            "activation": "enabled",
+            "hooks": [],
+            "is_active_provider": false
+          },
+          {
+            "name": "whatsapp-platform",
+            "key": "platforms/whatsapp",
+            "version": "1.0.0",
+            "description": "WhatsApp gateway adapter for Hermes Agent. Connects to WhatsApp via a local Node.js bridge (WhatsApp Web client) over an HTTP API and relays messages between WhatsApp chats and the Hermes agent. Supports DM/group policies, mention gating, free-response chats, and per-user allowl…",
             "enabled": true,
             "kind": "platform",
             "activation": "enabled",
@@ -388,40 +451,9 @@
             "enabled": false,
             "kind": "standalone",
             "activation": "disabled",
-            "hooks": [],
-            "is_active_provider": false
-          },
-          {
-            "name": "simplex-platform",
-            "key": "simplex-platform",
-            "version": "1.1.0",
-            "description": "SimpleX Chat gateway adapter for Hermes Agent. Connects to a local simplex-chat daemon via WebSocket and relays messages between SimpleX contacts/groups and the Hermes agent. SimpleX is decentralised and assigns no persistent user IDs — every contact is an opaque internal ID gen…",
-            "enabled": true,
-            "kind": "platform",
-            "activation": "enabled",
-            "hooks": [],
-            "is_active_provider": false
-          },
-          {
-            "name": "slack-platform",
-            "key": "slack-platform",
-            "version": "1.0.0",
-            "description": "Slack gateway adapter for Hermes Agent. Connects to Slack via slack-bolt in Socket Mode and relays messages between Slack channels/DMs and the Hermes agent. Supports slash commands, threads, mrkdwn rendering, approval blocks, free-response channels, mention gating, and channel s…",
-            "enabled": true,
-            "kind": "platform",
-            "activation": "enabled",
-            "hooks": [],
-            "is_active_provider": false
-          },
-          {
-            "name": "sms-platform",
-            "key": "sms-platform",
-            "version": "1.0.0",
-            "description": "SMS gateway adapter for Hermes Agent via Twilio. Sends and receives SMS through the Twilio REST API + inbound webhook, relaying texts between phone numbers and the Hermes agent. Markdown is stripped to plain text.",
-            "enabled": true,
-            "kind": "platform",
-            "activation": "enabled",
-            "hooks": [],
+            "hooks": [
+              "pre_tool_call"
+            ],
             "is_active_provider": false
           },
           {
@@ -436,17 +468,6 @@
             "is_active_provider": false
           },
           {
-            "name": "teams-platform",
-            "key": "teams-platform",
-            "version": "1.0.0",
-            "description": "Microsoft Teams gateway adapter for Hermes Agent. Connects to Microsoft Teams via the Bot Framework and relays messages between Teams chats (personal DMs, group chats, channel posts) and the Hermes agent. Supports Adaptive Card approval prompts.",
-            "enabled": true,
-            "kind": "platform",
-            "activation": "enabled",
-            "hooks": [],
-            "is_active_provider": false
-          },
-          {
             "name": "teams_pipeline",
             "key": "teams_pipeline",
             "version": "0.1.0",
@@ -454,17 +475,6 @@
             "enabled": false,
             "kind": "standalone",
             "activation": "disabled",
-            "hooks": [],
-            "is_active_provider": false
-          },
-          {
-            "name": "telegram-platform",
-            "key": "telegram-platform",
-            "version": "1.0.0",
-            "description": "Telegram gateway adapter for Hermes Agent. Connects to Telegram via python-telegram-bot and relays messages between Telegram chats/groups/topics and the Hermes agent. Supports threads/topics, streaming edits, native media, inline keyboards, slash commands, fallback network trans…",
-            "enabled": true,
-            "kind": "platform",
-            "activation": "enabled",
             "hooks": [],
             "is_active_provider": false
           },
@@ -568,6 +578,17 @@
             "is_active_provider": false
           },
           {
+            "name": "web-openai-native",
+            "key": "web/openai_native",
+            "version": "1.0.0",
+            "description": "OpenAI native web search — declares the Responses API server-side ``web_search`` built-in instead of running a client-side search. Requires the Codex Responses transport plus openai-codex OAuth (``hermes auth add openai-codex``).",
+            "enabled": true,
+            "kind": "backend",
+            "activation": "enabled",
+            "hooks": [],
+            "is_active_provider": false
+          },
+          {
             "name": "web-parallel",
             "key": "web/parallel",
             "version": "1.0.0",
@@ -618,28 +639,6 @@
             "description": "xAI Web Search — search the web via Grok's agentic web_search tool (Responses API). Requires xAI Grok OAuth (via `hermes auth`) or XAI_API_KEY (https://x.ai).",
             "enabled": true,
             "kind": "backend",
-            "activation": "enabled",
-            "hooks": [],
-            "is_active_provider": false
-          },
-          {
-            "name": "wecom-platform",
-            "key": "wecom-platform",
-            "version": "1.0.0",
-            "description": "WeCom / Enterprise WeChat gateway adapter for Hermes Agent. Registers two platforms: ``wecom`` (Smart Robot over WebSocket) and ``wecom_callback`` (self-built apps over an HTTP callback endpoint with AES message crypto). Relays messages between WeCom chats and the Hermes agent.",
-            "enabled": true,
-            "kind": "platform",
-            "activation": "enabled",
-            "hooks": [],
-            "is_active_provider": false
-          },
-          {
-            "name": "whatsapp-platform",
-            "key": "whatsapp-platform",
-            "version": "1.0.0",
-            "description": "WhatsApp gateway adapter for Hermes Agent. Connects to WhatsApp via a local Node.js bridge (WhatsApp Web client) over an HTTP API and relays messages between WhatsApp chats and the Hermes agent. Supports DM/group policies, mention gating, free-response chats, and per-user allowl…",
-            "enabled": true,
-            "kind": "platform",
             "activation": "enabled",
             "hooks": [],
             "is_active_provider": false

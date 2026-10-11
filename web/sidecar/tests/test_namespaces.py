@@ -90,6 +90,8 @@ def run_scenarios(proc: SidecarProcess, home: pathlib.Path):
 def test_every_namespace_answers_with_contract_shapes(sidecar: SidecarProcess, hermes_home: pathlib.Path) -> None:
     result = sidecar.result("runtime.handshake", {"rpc_version": SIDECAR_RPC_VERSION})
     assert result["compatible"], result
+    if result["agent_revision"] == result["pinned_revision"]:
+        assert result["agent_version"] == result["pinned_version"], result
     seen = set()
     for method, params, message, frames in run_scenarios(sidecar, hermes_home):
         assert "error" not in message, (method, params, message["error"])

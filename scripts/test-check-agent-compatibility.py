@@ -227,6 +227,7 @@ class CheckerTests(unittest.TestCase):
         self.assertTrue(self.receipt("--release", "v2026.9.24")["imageVerified"])
         self.assertIn(["docker", "pull", "docker.io/nousresearch/hermes-agent:rc.4-v2026.9.24"], self.tools.commands)
         for change, message in (({"remote_tags": {"rc.4-v2026.9.24": "f" * 40}}, "tag image"),
+                                ({"attempt_digest": "sha256:" + "e" * 64}, "tag image"),
                                 ({"stamp": {**self.tools.stamp, "branch": "rc.4-v2026.9.21"}}, "tag image"),
                                 ({"stamp": {**self.tools.stamp, "commit": "f" * 40}}, "source label"),
                                 ({"stamp": {**self.tools.stamp, "dirty": True}}, "clean CI build"),

@@ -21,15 +21,13 @@
       },
       "result": {
         "job": {
-          "id": "c7be41a84a00",
+          "id": "5b7d7ff9ceb0",
           "name": "hello",
           "prompt": "say hi",
           "skills": [],
           "skill": null,
           "model": null,
           "provider": null,
-          "provider_snapshot": null,
-          "model_snapshot": null,
           "base_url": null,
           "script": null,
           "no_agent": false,
@@ -51,13 +49,14 @@
           "state": "scheduled",
           "paused_at": null,
           "paused_reason": null,
-          "created_at": "2026-09-20T16:33:37.042595-04:00",
-          "next_run_at": "2026-09-20T17:33:42.143290-04:00",
+          "created_at": "2026-10-11T12:29:08.624751-04:00",
+          "next_run_at": "2026-10-11T13:29:08.630084-04:00",
           "last_run_at": null,
           "last_status": null,
           "last_error": null,
           "last_delivery_error": null,
           "last_delivery_unverified": null,
+          "last_failure": null,
           "failure_streak": 0,
           "deliver": "local",
           "origin": null,
@@ -103,10 +102,6 @@
           {
             "value": "feishu",
             "label": "Feishu"
-          },
-          {
-            "value": "homeassistant",
-            "label": "Homeassistant"
           },
           {
             "value": "matrix",
@@ -173,10 +168,10 @@
     },
     {
       "params": {
-        "job_id": "c7be41a84a00"
+        "job_id": "5b7d7ff9ceb0"
       },
       "result": {
-        "job_id": "c7be41a84a00",
+        "job_id": "5b7d7ff9ceb0",
         "running": false,
         "elapsed": 0.0
       }
@@ -186,19 +181,17 @@
     {
       "params": {
         "profile_home": "<home>",
-        "job_id": "c7be41a84a00"
+        "job_id": "5b7d7ff9ceb0"
       },
       "result": {
         "job": {
-          "id": "c7be41a84a00",
+          "id": "5b7d7ff9ceb0",
           "name": "hello",
           "prompt": "say hi",
           "skills": [],
           "skill": null,
           "model": null,
           "provider": null,
-          "provider_snapshot": null,
-          "model_snapshot": null,
           "base_url": null,
           "script": null,
           "no_agent": false,
@@ -220,13 +213,14 @@
           "state": "scheduled",
           "paused_at": null,
           "paused_reason": null,
-          "created_at": "2026-09-20T16:33:37.042595-04:00",
-          "next_run_at": "2026-09-20T17:33:42.143290-04:00",
+          "created_at": "2026-10-11T12:29:08.624751-04:00",
+          "next_run_at": "2026-10-11T13:29:08.630084-04:00",
           "last_run_at": null,
           "last_status": null,
           "last_error": null,
           "last_delivery_error": null,
           "last_delivery_unverified": null,
+          "last_failure": null,
           "failure_streak": 0,
           "deliver": "local",
           "origin": null,
@@ -244,7 +238,7 @@
     {
       "params": {
         "profile_home": "<home>",
-        "job_id": "c7be41a84a00",
+        "job_id": "5b7d7ff9ceb0",
         "updates": {
           "name": "hello2",
           "continuity": true
@@ -252,15 +246,13 @@
       },
       "result": {
         "job": {
-          "id": "c7be41a84a00",
+          "id": "5b7d7ff9ceb0",
           "name": "hello2",
           "prompt": "say hi",
           "skills": [],
           "skill": null,
           "model": null,
           "provider": null,
-          "provider_snapshot": null,
-          "model_snapshot": null,
           "base_url": null,
           "script": null,
           "no_agent": false,
@@ -284,13 +276,14 @@
           "state": "scheduled",
           "paused_at": null,
           "paused_reason": null,
-          "created_at": "2026-09-20T16:33:37.042595-04:00",
-          "next_run_at": "2026-09-20T17:33:42.143290-04:00",
+          "created_at": "2026-10-11T12:29:08.624751-04:00",
+          "next_run_at": "2026-10-11T13:29:08.630084-04:00",
           "last_run_at": null,
           "last_status": null,
           "last_error": null,
           "last_delivery_error": null,
           "last_delivery_unverified": null,
+          "last_failure": null,
           "failure_streak": 0,
           "deliver": "local",
           "origin": null,
@@ -308,19 +301,17 @@
     {
       "params": {
         "profile_home": "<home>",
-        "job_id": "c7be41a84a00"
+        "job_id": "5b7d7ff9ceb0"
       },
       "result": {
         "job": {
-          "id": "c7be41a84a00",
+          "id": "5b7d7ff9ceb0",
           "name": "hello2",
           "prompt": "say hi",
           "skills": [],
           "skill": null,
           "model": null,
           "provider": null,
-          "provider_snapshot": null,
-          "model_snapshot": null,
           "base_url": null,
           "script": null,
           "no_agent": false,
@@ -342,24 +333,21 @@
           },
           "enabled": false,
           "state": "paused",
-          "paused_at": "2026-09-20T16:33:43.726040-04:00",
+          "paused_at": "2026-10-11T12:29:09.314436-04:00",
           "paused_reason": null,
-          "created_at": "2026-09-20T16:33:37.042595-04:00",
-          "next_run_at": "2026-09-20T17:33:42.143290-04:00",
+          "created_at": "2026-10-11T12:29:08.624751-04:00",
+          "next_run_at": "2026-10-11T13:29:08.630084-04:00",
           "last_run_at": null,
           "last_status": null,
           "last_error": null,
           "last_delivery_error": null,
           "last_delivery_unverified": null,
+          "last_failure": null,
           "failure_streak": 0,
           "deliver": "local",
           "origin": null,
           "enabled_toolsets": null,
-          "workdir": null,
-          "profile": null,
-          "toast_notifications": true,
-          "monitor": "",
-          "continuity": true
+          "workdir": null
         }
       }
     }
@@ -368,19 +356,17 @@
     {
       "params": {
         "profile_home": "<home>",
-        "job_id": "c7be41a84a00"
+        "job_id": "5b7d7ff9ceb0"
       },
       "result": {
         "job": {
-          "id": "c7be41a84a00",
+          "id": "5b7d7ff9ceb0",
           "name": "hello2",
           "prompt": "say hi",
           "skills": [],
           "skill": null,
           "model": null,
           "provider": null,
-          "provider_snapshot": null,
-          "model_snapshot": null,
           "base_url": null,
           "script": null,
           "no_agent": false,
@@ -404,22 +390,19 @@
           "state": "scheduled",
           "paused_at": null,
           "paused_reason": null,
-          "created_at": "2026-09-20T16:33:37.042595-04:00",
-          "next_run_at": "2026-09-20T17:33:43.754886-04:00",
+          "created_at": "2026-10-11T12:29:08.624751-04:00",
+          "next_run_at": "2026-10-11T13:29:09.315555-04:00",
           "last_run_at": null,
           "last_status": null,
           "last_error": null,
           "last_delivery_error": null,
           "last_delivery_unverified": null,
+          "last_failure": null,
           "failure_streak": 0,
           "deliver": "local",
           "origin": null,
           "enabled_toolsets": null,
-          "workdir": null,
-          "profile": null,
-          "toast_notifications": true,
-          "monitor": "",
-          "continuity": true
+          "workdir": null
         }
       }
     }
@@ -428,15 +411,15 @@
     {
       "params": {
         "profile_home": "<home>",
-        "job_id": "c7be41a84a00"
+        "job_id": "5b7d7ff9ceb0"
       },
       "result": {
-        "job_id": "c7be41a84a00",
+        "job_id": "5b7d7ff9ceb0",
         "runs": [
           {
             "filename": "2026-09-20T12-00-00.md",
             "size": 83,
-            "modified": 1789936423.2473357,
+            "modified": 1791736149.1794026,
             "usage": {
               "model": "test-model",
               "input_tokens": 12,
@@ -454,10 +437,10 @@
     {
       "params": {
         "profile_home": "<home>",
-        "job_id": "c7be41a84a00"
+        "job_id": "5b7d7ff9ceb0"
       },
       "result": {
-        "job_id": "c7be41a84a00",
+        "job_id": "5b7d7ff9ceb0",
         "outputs": [
           {
             "filename": "2026-09-20T12-00-00.md",
@@ -471,11 +454,11 @@
     {
       "params": {
         "profile_home": "<home>",
-        "job_id": "c7be41a84a00",
+        "job_id": "5b7d7ff9ceb0",
         "filename": "2026-09-20T12-00-00.md"
       },
       "result": {
-        "job_id": "c7be41a84a00",
+        "job_id": "5b7d7ff9ceb0",
         "filename": "2026-09-20T12-00-00.md",
         "content": "# Cron run\n**Model:** test-model\n**Tokens:** 12 input, 4 output\n\n## Response\nhello\n",
         "snippet": "hello",
@@ -492,11 +475,11 @@
     {
       "params": {
         "profile_home": "<home>",
-        "job_id": "c7be41a84a00"
+        "job_id": "5b7d7ff9ceb0"
       },
       "result": {
         "ok": true,
-        "job_id": "c7be41a84a00"
+        "job_id": "5b7d7ff9ceb0"
       }
     }
   ]

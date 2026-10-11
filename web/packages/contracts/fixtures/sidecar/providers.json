@@ -399,18 +399,6 @@
             ],
             "base_url_env_var": "OPENCODE_GO_BASE_URL"
           },
-          "opencode-free": {
-            "id": "opencode-free",
-            "name": "OpenCode Free",
-            "auth_type": "api_key",
-            "portal_base_url": "",
-            "inference_base_url": "https://opencode.ai/zen/v1",
-            "client_id": "",
-            "scope": "",
-            "extra": {},
-            "api_key_env_vars": [],
-            "base_url_env_var": ""
-          },
           "kilocode": {
             "id": "kilocode",
             "name": "Kilo Code",
@@ -1109,6 +1097,30 @@
             ],
             "base_url_env_var": "RAMP_ROUTER_BASE_URL"
           },
+          "solstice": {
+            "id": "solstice",
+            "name": "Solstice",
+            "auth_type": "oauth_external",
+            "portal_base_url": "",
+            "inference_base_url": "https://generativelanguage.googleapis.com/v1alpha",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [],
+            "base_url_env_var": ""
+          },
+          "solstice-oauth": {
+            "id": "solstice",
+            "name": "Solstice",
+            "auth_type": "oauth_external",
+            "portal_base_url": "",
+            "inference_base_url": "https://generativelanguage.googleapis.com/v1alpha",
+            "client_id": "",
+            "scope": "",
+            "extra": {},
+            "api_key_env_vars": [],
+            "base_url_env_var": ""
+          },
           "upstage": {
             "id": "upstage",
             "name": "Upstage Solar",
@@ -1170,6 +1182,7 @@
         "model_ids": [
           "claude-fable-5.1",
           "claude-fable-5",
+          "claude-opus-5-5",
           "claude-opus-5",
           "claude-sonnet-5",
           "claude-opus-4-8",

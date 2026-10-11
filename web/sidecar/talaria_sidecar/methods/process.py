@@ -80,11 +80,26 @@ def _publish_recovered_exits(registry) -> None:
         for session in exited:
             del _RECOVERED[session.id]
     for session in exited:
-        with registry._lock:
-            registry._running.pop(session.id, None)
-            session.exited_at = session.exited_at or time.time()
-            registry._finished[session.id] = session
-        registry._publish_finished(session, True)
+        # A kill (or any path that collected a status) already queued its own completion through _move_to_finished.
+        if session.exit_code is not None or getattr(session, "_finish_claimed", False):
+            continue
+        try:
+            # Best effort, as in the Agent: a durable result must not block the live completion.
+            from tools.process_registry_results import save_completed_result
+
+            save_completed_result(session)
+        except Exception:  # noqa: BLE001
+            log.debug("Failed to retain the result of recovered process %s", session.id, exc_info=True)
+        try:
+            with registry._lock:
+                registry._running.pop(session.id, None)
+                session.exited_at = session.exited_at or time.time()
+                registry._finished[session.id] = session
+            registry._publish_finished(session, True)
+        except Exception:  # noqa: BLE001 - retried on the next drain
+            log.warning("Failed to report the exit of recovered process %s", session.id, exc_info=True)
+            with _RECOVERED_LOCK:
+                _RECOVERED.setdefault(session.id, session)
 
 
 def drain(max_events: int) -> list[dict]:
@@ -99,8 +114,7 @@ def drain(max_events: int) -> list[dict]:
             detached = [s for s in registry._running.values() if getattr(s, "detached", False)]
         for session in detached:
             registry._refresh_detached_session(session)
-        if _reports_recovered_exits(registry):
-            _publish_recovered_exits(registry)
+        _publish_recovered_exits(registry)
     except Exception:  # noqa: BLE001
         log.debug("Failed to reconcile recovered processes", exc_info=True)
     out = []

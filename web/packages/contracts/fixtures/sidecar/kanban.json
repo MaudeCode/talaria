@@ -45,7 +45,7 @@
           "color": "",
           "default_workdir": null,
           "project_id": null,
-          "created_at": 1789936415,
+          "created_at": 1791736147,
           "archived": false,
           "db_path": "<home>/kanban/boards/experiments/kanban.db"
         },
@@ -72,7 +72,7 @@
           "color": "",
           "default_workdir": null,
           "project_id": null,
-          "created_at": 1789936415,
+          "created_at": 1791736147,
           "archived": false,
           "db_path": "<home>/kanban/boards/experiments/kanban.db"
         },
@@ -112,7 +112,7 @@
         "result": {
           "slug": "experiments",
           "action": "archived",
-          "new_path": "<home>/kanban/boards/_archived/experiments-1789936416"
+          "new_path": "<home>/kanban/boards/_archived/experiments-1791736147"
         },
         "current": "default",
         "read_only": false
@@ -131,14 +131,14 @@
       },
       "result": {
         "task": {
-          "id": "t_b8db09c1",
+          "id": "t_d6c468b7",
           "title": "first task",
           "body": "details",
           "assignee": null,
           "status": "ready",
           "priority": 2,
           "created_by": "webui",
-          "created_at": 1789936416,
+          "created_at": 1791736147,
           "started_at": null,
           "completed_at": null,
           "workspace_kind": "scratch",
@@ -169,6 +169,8 @@
           "block_kind": null,
           "block_recurrences": 0,
           "completion_contract": "local-only",
+          "claim_live": false,
+          "has_completion_evidence": false,
           "age_seconds": {
             "created_age_seconds": 0,
             "started_age_seconds": null,
@@ -179,9 +181,7 @@
             "started_age_seconds": null,
             "time_to_complete_seconds": null
           },
-          "progress": null,
-          "claim_live": false,
-          "has_completion_evidence": false
+          "progress": null
         },
         "read_only": false
       }
@@ -195,14 +195,14 @@
       },
       "result": {
         "task": {
-          "id": "t_974ed3b5",
+          "id": "t_72b6726b",
           "title": "second task",
           "body": null,
           "assignee": null,
           "status": "ready",
           "priority": 0,
           "created_by": "webui",
-          "created_at": 1789936416,
+          "created_at": 1791736147,
           "started_at": null,
           "completed_at": null,
           "workspace_kind": "scratch",
@@ -233,6 +233,8 @@
           "block_kind": null,
           "block_recurrences": 0,
           "completion_contract": "local-only",
+          "claim_live": false,
+          "has_completion_evidence": false,
           "age_seconds": {
             "created_age_seconds": 0,
             "started_age_seconds": null,
@@ -243,9 +245,7 @@
             "started_age_seconds": null,
             "time_to_complete_seconds": null
           },
-          "progress": null,
-          "claim_live": false,
-          "has_completion_evidence": false
+          "progress": null
         },
         "read_only": false
       }
@@ -270,14 +270,14 @@
             "name": "ready",
             "tasks": [
               {
-                "id": "t_b8db09c1",
+                "id": "t_d6c468b7",
                 "title": "first task",
                 "body": "details",
                 "assignee": null,
                 "status": "ready",
                 "priority": 2,
                 "created_by": "webui",
-                "created_at": 1789936416,
+                "created_at": 1791736147,
                 "started_at": null,
                 "completed_at": null,
                 "workspace_kind": "scratch",
@@ -308,6 +308,8 @@
                 "block_kind": null,
                 "block_recurrences": 0,
                 "completion_contract": "local-only",
+                "claim_live": false,
+                "has_completion_evidence": false,
                 "age_seconds": {
                   "created_age_seconds": 0,
                   "started_age_seconds": null,
@@ -323,19 +325,17 @@
                   "parents": 0,
                   "children": 0
                 },
-                "comment_count": 0,
-                "claim_live": false,
-                "has_completion_evidence": false
+                "comment_count": 0
               },
               {
-                "id": "t_974ed3b5",
+                "id": "t_72b6726b",
                 "title": "second task",
                 "body": null,
                 "assignee": null,
                 "status": "ready",
                 "priority": 0,
                 "created_by": "webui",
-                "created_at": 1789936416,
+                "created_at": 1791736147,
                 "started_at": null,
                 "completed_at": null,
                 "workspace_kind": "scratch",
@@ -366,6 +366,8 @@
                 "block_kind": null,
                 "block_recurrences": 0,
                 "completion_contract": "local-only",
+                "claim_live": false,
+                "has_completion_evidence": false,
                 "age_seconds": {
                   "created_age_seconds": 0,
                   "started_age_seconds": null,
@@ -381,9 +383,7 @@
                   "parents": 0,
                   "children": 0
                 },
-                "comment_count": 0,
-                "claim_live": false,
-                "has_completion_evidence": false
+                "comment_count": 0
               }
             ]
           },
@@ -466,7 +466,7 @@
         },
         "by_assignee": {},
         "oldest_ready_age_seconds": 0,
-        "now": 1789936416
+        "now": 1791736147
       }
     }
   ],
@@ -486,6 +486,17 @@
       }
     }
   ],
+  "kanban.normalize_board": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "board": "default"
+      },
+      "result": {
+        "board": "default"
+      }
+    }
+  ],
   "kanban.events": [
     {
       "params": {
@@ -497,7 +508,7 @@
         "events": [
           {
             "id": 1,
-            "task_id": "t_b8db09c1",
+            "task_id": "t_d6c468b7",
             "run_id": null,
             "kind": "created",
             "payload": {
@@ -515,11 +526,11 @@
               "model_override": null,
               "provider_override": null
             },
-            "created_at": 1789936416
+            "created_at": 1791736147
           },
           {
             "id": 2,
-            "task_id": "t_974ed3b5",
+            "task_id": "t_72b6726b",
             "run_id": null,
             "kind": "created",
             "payload": {
@@ -537,7 +548,7 @@
               "model_override": null,
               "provider_override": null
             },
-            "created_at": 1789936416
+            "created_at": 1791736147
           }
         ],
         "cursor": 2,
@@ -556,10 +567,11 @@
         "reclaimed": 0,
         "promoted": 0,
         "reconciled_orphans": [],
+        "reaped_terminal_workers": [],
         "spawned": [],
         "skipped_unassigned": [
-          "t_b8db09c1",
-          "t_974ed3b5"
+          "t_d6c468b7",
+          "t_72b6726b"
         ],
         "auto_assigned_default": [],
         "skipped_nonspawnable": [],
@@ -579,18 +591,18 @@
     {
       "params": {
         "profile_home": "<home>",
-        "task_id": "t_b8db09c1"
+        "task_id": "t_d6c468b7"
       },
       "result": {
         "task": {
-          "id": "t_b8db09c1",
+          "id": "t_d6c468b7",
           "title": "first task",
           "body": "details",
           "assignee": null,
           "status": "ready",
           "priority": 2,
           "created_by": "webui",
-          "created_at": 1789936416,
+          "created_at": 1791736147,
           "started_at": null,
           "completed_at": null,
           "workspace_kind": "scratch",
@@ -621,25 +633,25 @@
           "block_kind": null,
           "block_recurrences": 0,
           "completion_contract": "local-only",
+          "claim_live": false,
+          "has_completion_evidence": false,
           "age_seconds": {
-            "created_age_seconds": 7,
+            "created_age_seconds": 2,
             "started_age_seconds": null,
             "time_to_complete_seconds": null
           },
           "age": {
-            "created_age_seconds": 7,
+            "created_age_seconds": 2,
             "started_age_seconds": null,
             "time_to_complete_seconds": null
           },
-          "progress": null,
-          "claim_live": false,
-          "has_completion_evidence": false
+          "progress": null
         },
         "comments": [],
         "events": [
           {
             "id": 1,
-            "task_id": "t_b8db09c1",
+            "task_id": "t_d6c468b7",
             "kind": "created",
             "payload": {
               "assignee": null,
@@ -656,7 +668,7 @@
               "model_override": null,
               "provider_override": null
             },
-            "created_at": 1789936416,
+            "created_at": 1791736147,
             "run_id": null
           }
         ],
@@ -673,20 +685,20 @@
     {
       "params": {
         "profile_home": "<home>",
-        "task_id": "t_b8db09c1",
+        "task_id": "t_d6c468b7",
         "action": "block",
         "reason": "waiting"
       },
       "result": {
         "task": {
-          "id": "t_b8db09c1",
+          "id": "t_d6c468b7",
           "title": "first task",
           "body": "details",
           "assignee": null,
           "status": "blocked",
           "priority": 2,
           "created_by": "webui",
-          "created_at": 1789936416,
+          "created_at": 1791736147,
           "started_at": null,
           "completed_at": null,
           "workspace_kind": "scratch",
@@ -717,19 +729,19 @@
           "block_kind": null,
           "block_recurrences": 1,
           "completion_contract": "local-only",
+          "claim_live": false,
+          "has_completion_evidence": false,
           "age_seconds": {
-            "created_age_seconds": 7,
+            "created_age_seconds": 2,
             "started_age_seconds": null,
             "time_to_complete_seconds": null
           },
           "age": {
-            "created_age_seconds": 7,
+            "created_age_seconds": 2,
             "started_age_seconds": null,
             "time_to_complete_seconds": null
           },
-          "progress": null,
-          "claim_live": false,
-          "has_completion_evidence": false
+          "progress": null
         },
         "read_only": false
       }
@@ -737,19 +749,19 @@
     {
       "params": {
         "profile_home": "<home>",
-        "task_id": "t_b8db09c1",
+        "task_id": "t_d6c468b7",
         "action": "unblock"
       },
       "result": {
         "task": {
-          "id": "t_b8db09c1",
+          "id": "t_d6c468b7",
           "title": "first task",
           "body": "details",
           "assignee": null,
           "status": "ready",
           "priority": 2,
           "created_by": "webui",
-          "created_at": 1789936416,
+          "created_at": 1791736147,
           "started_at": null,
           "completed_at": null,
           "workspace_kind": "scratch",
@@ -780,19 +792,19 @@
           "block_kind": null,
           "block_recurrences": 1,
           "completion_contract": "local-only",
+          "claim_live": false,
+          "has_completion_evidence": false,
           "age_seconds": {
-            "created_age_seconds": 7,
+            "created_age_seconds": 2,
             "started_age_seconds": null,
             "time_to_complete_seconds": null
           },
           "age": {
-            "created_age_seconds": 7,
+            "created_age_seconds": 2,
             "started_age_seconds": null,
             "time_to_complete_seconds": null
           },
-          "progress": null,
-          "claim_live": false,
-          "has_completion_evidence": false
+          "progress": null
         },
         "read_only": false
       }
@@ -802,7 +814,7 @@
     {
       "params": {
         "profile_home": "<home>",
-        "task_id": "t_b8db09c1",
+        "task_id": "t_d6c468b7",
         "patch": {
           "title": "renamed task",
           "status": "todo"
@@ -810,14 +822,14 @@
       },
       "result": {
         "task": {
-          "id": "t_b8db09c1",
+          "id": "t_d6c468b7",
           "title": "renamed task",
           "body": "details",
           "assignee": null,
           "status": "todo",
           "priority": 2,
           "created_by": "webui",
-          "created_at": 1789936416,
+          "created_at": 1791736147,
           "started_at": null,
           "completed_at": null,
           "workspace_kind": "scratch",
@@ -848,19 +860,19 @@
           "block_kind": null,
           "block_recurrences": 1,
           "completion_contract": "local-only",
+          "claim_live": false,
+          "has_completion_evidence": false,
           "age_seconds": {
-            "created_age_seconds": 7,
+            "created_age_seconds": 2,
             "started_age_seconds": null,
             "time_to_complete_seconds": null
           },
           "age": {
-            "created_age_seconds": 7,
+            "created_age_seconds": 2,
             "started_age_seconds": null,
             "time_to_complete_seconds": null
           },
-          "progress": null,
-          "claim_live": false,
-          "has_completion_evidence": false
+          "progress": null
         },
         "read_only": false
       }
@@ -870,7 +882,7 @@
     {
       "params": {
         "profile_home": "<home>",
-        "task_id": "t_b8db09c1",
+        "task_id": "t_d6c468b7",
         "body": "note"
       },
       "result": {
@@ -884,13 +896,13 @@
     {
       "params": {
         "profile_home": "<home>",
-        "parent_id": "t_b8db09c1",
-        "child_id": "t_974ed3b5"
+        "parent_id": "t_d6c468b7",
+        "child_id": "t_72b6726b"
       },
       "result": {
         "ok": true,
-        "parent_id": "t_b8db09c1",
-        "child_id": "t_974ed3b5",
+        "parent_id": "t_d6c468b7",
+        "child_id": "t_72b6726b",
         "read_only": false
       }
     }
@@ -899,14 +911,14 @@
     {
       "params": {
         "profile_home": "<home>",
-        "parent_id": "t_b8db09c1",
-        "child_id": "t_974ed3b5"
+        "parent_id": "t_d6c468b7",
+        "child_id": "t_72b6726b"
       },
       "result": {
         "ok": true,
         "changed": true,
-        "parent_id": "t_b8db09c1",
-        "child_id": "t_974ed3b5",
+        "parent_id": "t_d6c468b7",
+        "child_id": "t_72b6726b",
         "read_only": false
       }
     }
@@ -915,11 +927,11 @@
     {
       "params": {
         "profile_home": "<home>",
-        "task_id": "t_b8db09c1"
+        "task_id": "t_d6c468b7"
       },
       "result": {
-        "task_id": "t_b8db09c1",
-        "path": "<home>/kanban/logs/t_b8db09c1.log",
+        "task_id": "t_d6c468b7",
+        "path": "<home>/kanban/logs/t_d6c468b7.log",
         "exists": false,
         "size_bytes": 0,
         "content": "",
@@ -933,8 +945,8 @@
         "profile_home": "<home>",
         "bulk": {
           "ids": [
-            "t_b8db09c1",
-            "t_974ed3b5"
+            "t_d6c468b7",
+            "t_72b6726b"
           ],
           "priority": 5
         }
@@ -942,26 +954,15 @@
       "result": {
         "results": [
           {
-            "id": "t_b8db09c1",
+            "id": "t_d6c468b7",
             "ok": true
           },
           {
-            "id": "t_974ed3b5",
+            "id": "t_72b6726b",
             "ok": true
           }
         ],
         "read_only": false
-      }
-    }
-  ],
-  "kanban.normalize_board": [
-    {
-      "params": {
-        "profile_home": "<home>",
-        "board": "Default"
-      },
-      "result": {
-        "board": "default"
       }
     }
   ]
