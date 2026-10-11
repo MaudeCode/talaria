@@ -44,9 +44,6 @@ struct AppSidebarContainer<Sidebar: View, Content: View>: View {
                     .opacity(reduceMotion ? 1 : 0.25 + 0.75 * progress)
 
                 content
-                    // Only the surface slides; a section picked in the sidebar swaps in at once
-                    // instead of animating every list and toolbar under the slide.
-                    .transaction(value: isPresented) { $0.animation = nil }
                     .frame(width: surfaceWidth, height: surfaceHeight)
                     .overlay {
                         if isPresented {

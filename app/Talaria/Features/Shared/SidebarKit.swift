@@ -46,9 +46,25 @@ struct SidebarList<Content: View>: View {
 /// A section heading inside a `SidebarList`, styled like Chats' "Sessions".
 struct SidebarSectionHeader<Trailing: View>: View {
     let title: String?
+    /// Makes the heading a button, for a collapsible section.
+    var toggle: (() -> Void)?
     @ViewBuilder let trailing: Trailing
 
     var body: some View {
+        Group {
+            if let toggle {
+                HapticButton(action: toggle) {
+                    label.contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            } else {
+                label
+            }
+        }
+        .sessionsScreenListRow()
+    }
+
+    private var label: some View {
         HStack(spacing: 10) {
             if let title {
                 Text(title)
@@ -62,7 +78,6 @@ struct SidebarSectionHeader<Trailing: View>: View {
         .padding(.horizontal, 24)
         .padding(.top, 16)
         .padding(.bottom, 8)
-        .sessionsScreenListRow()
     }
 }
 
@@ -73,7 +88,7 @@ extension SidebarSectionHeader where Trailing == EmptyView {
 }
 
 /// A collapsible section of a `SidebarList`: a `SidebarSectionHeader` with the Chats disclosure
-/// chevron, and its rows while open. Open state is device-local and remembered per `id`.
+/// chevron, and its rows while open. Open state is device-local and stored under `storageKey`.
 struct SidebarDisclosureSection<Trailing: View, Content: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage private var isExpanded: Bool
@@ -83,27 +98,22 @@ struct SidebarDisclosureSection<Trailing: View, Content: View>: View {
 
     init(
         _ title: String,
-        id: String,
+        storageKey: String,
         @ViewBuilder trailing: () -> Trailing,
         @ViewBuilder content: () -> Content
     ) {
         self.title = title
-        _isExpanded = AppStorage(wrappedValue: true, "sidebarSection.\(id).isExpanded")
+        _isExpanded = AppStorage(wrappedValue: true, storageKey)
         self.trailing = trailing()
         self.content = content()
     }
 
     var body: some View {
-        SidebarSectionHeader(title: title) {
+        SidebarSectionHeader(title: title, toggle: toggle) {
             trailing
             SidebarDisclosureChevron(isExpanded: isExpanded)
         }
-        .contentShape(Rectangle())
-        .onTapGesture(perform: toggle)
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isButton)
         .accessibilityValue(isExpanded ? Text("Expanded") : Text("Collapsed"))
-        .accessibilityAction(.default, toggle)
 
         if isExpanded {
             content
@@ -118,8 +128,8 @@ struct SidebarDisclosureSection<Trailing: View, Content: View>: View {
 }
 
 extension SidebarDisclosureSection where Trailing == EmptyView {
-    init(_ title: String, id: String, @ViewBuilder content: () -> Content) {
-        self.init(title, id: id, trailing: { EmptyView() }, content: content)
+    init(_ title: String, storageKey: String, @ViewBuilder content: () -> Content) {
+        self.init(title, storageKey: storageKey, trailing: { EmptyView() }, content: content)
     }
 }
 
@@ -132,9 +142,7 @@ struct SidebarRow<Label: View>: View {
     var body: some View {
         Button(action: action) {
             label
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .frame(minHeight: 44)
+                .sidebarRowPadding()
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -151,6 +159,13 @@ extension View {
             in: RoundedRectangle(cornerRadius: 12, style: .continuous)
         )
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    /// A `SidebarList` row's content padding, for rows with and without an action.
+    func sidebarRowPadding() -> some View {
+        padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .frame(minHeight: 44)
     }
 
     /// A `SidebarList` row's insets and selection tint.

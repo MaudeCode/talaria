@@ -75,7 +75,7 @@ struct TasksView: View {
             }
         } else {
             SidebarList {
-                TaskRows(viewModel: viewModel, selection: $selection)
+                taskRows
             }
             .refreshable {
                 await loadTasks()
@@ -96,15 +96,22 @@ struct TasksView: View {
     }
 }
 
-/// Recent completions and scheduled jobs with the running count, for any `SidebarList`.
-struct TaskRows: View {
-    let viewModel: TasksViewModel
-    @Binding var selection: SectionItem?
+/// Where the Tasks list remembers which of its sections are collapsed.
+enum TaskSidebarDisclosureKeys {
+    static let recentCompletions = "tasksSidebar.recentCompletionsAreExpanded"
+    static let scheduledJobs = "tasksSidebar.scheduledJobsAreExpanded"
+}
 
-    var body: some View {
+private extension TasksView {
+    /// Recent completions and scheduled jobs with the running count.
+    @ViewBuilder
+    var taskRows: some View {
         if !viewModel.recentCompletions.isEmpty {
             // One row per job (its latest run), not a run archive.
-            SidebarDisclosureSection(String(localized: "Recent Completions"), id: "tasks.recent") {
+            SidebarDisclosureSection(
+                String(localized: "Recent Completions"),
+                storageKey: TaskSidebarDisclosureKeys.recentCompletions
+            ) {
                 ForEach(viewModel.recentCompletions) { completion in
                     if let job = viewModel.job(for: completion) {
                         SectionSelectionRow(item: .task(id: job.id), selection: $selection) {
@@ -112,14 +119,14 @@ struct TaskRows: View {
                         }
                     } else {
                         CronCompletionRowView(completion: completion)
-                            .padding(.horizontal, 12)
+                            .sidebarRowPadding()
                             .sidebarRow(isSelected: false)
                     }
                 }
             }
         }
 
-        SidebarDisclosureSection(String(localized: "Scheduled Jobs"), id: "tasks.jobs") {
+        SidebarDisclosureSection(String(localized: "Scheduled Jobs"), storageKey: TaskSidebarDisclosureKeys.scheduledJobs) {
             Label("\(viewModel.activeRunningCount) running", systemImage: "bolt.fill")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
@@ -128,7 +135,7 @@ struct TaskRows: View {
                 // Stale completions can outlive their jobs; keep the feed visible.
                 Text("No scheduled jobs.")
                     .foregroundStyle(.secondary)
-                    .padding(.horizontal, 12)
+                    .sidebarRowPadding()
                     .sidebarRow(isSelected: false)
             }
             ForEach(viewModel.jobs) { job in

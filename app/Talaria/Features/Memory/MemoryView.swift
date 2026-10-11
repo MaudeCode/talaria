@@ -38,7 +38,7 @@ struct MemoryView: View {
             ProgressView("Loading memory...")
         } else {
             SidebarList {
-                MemoryFileRows(viewModel: viewModel, selection: $selection)
+                fileRows
             }
             .refreshable {
                 await loadMemory(viewModel, onAPIError: onAPIError)
@@ -47,12 +47,10 @@ struct MemoryView: View {
     }
 }
 
-/// One row per Memory document, for any `SidebarList`.
-struct MemoryFileRows: View {
-    let viewModel: MemoryViewModel
-    @Binding var selection: SectionItem?
-
-    var body: some View {
+private extension MemoryView {
+    /// One row per Memory document.
+    @ViewBuilder
+    var fileRows: some View {
         ForEach(MemorySection.allCases) { section in
             SectionSelectionRow(item: .memory(.section(section)), selection: $selection) {
                 MemoryHeaderRow(

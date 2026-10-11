@@ -49,8 +49,8 @@ struct SkillRow: View {
 
             Spacer(minLength: 8)
 
-            // Holds the switch's place only. The live switch sits over the row's NavigationLink
-            // in `SkillCategorySection`; inside the link's label the link could take its taps.
+            // Holds the switch's place only. The live switch sits over the row's button
+            // in `SkillRows`; inside the button's label the button could take its taps.
             if let onToggle {
                 SkillToggle(skill: skill, isToggling: isToggling, onToggle: onToggle)
                     .hidden()
@@ -98,7 +98,7 @@ struct SkillRow: View {
     }
 }
 
-/// A skill row's Enable/Disable switch. `SkillCategorySection` draws it over the row, outside
+/// A skill row's Enable/Disable switch. `SkillRows` draws it over the row, outside
 /// the row's NavigationLink, so a tap on the switch never opens the skill (TAL-647).
 struct SkillToggle: View {
     let skill: SkillSummary

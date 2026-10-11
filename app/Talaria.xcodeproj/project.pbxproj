@@ -178,7 +178,7 @@
 		C09300000000000000000001 /* HapticButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = C09300000000000000000002 /* HapticButton.swift */; };
 		C43600000000000000000001 /* StatusChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43600000000000000000002 /* StatusChip.swift */; };
 		C48300000000000000000001 /* RefreshToolbarButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = C48300000000000000000002 /* RefreshToolbarButton.swift */; };
-		TAL643000000000000001002 /* SectionSelectionRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = TAL643000000000000000002 /* SectionSelectionRow.swift */; };
+		TAL643000000000000001002 /* SidebarKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = TAL643000000000000000002 /* SidebarKit.swift */; };
 		C43600000000000000000003 /* AccessorySurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43600000000000000000004 /* AccessorySurface.swift */; };
 		C02100000000000000000001 /* FileExportPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = C02100000000000000000002 /* FileExportPresentation.swift */; };
 		C43400000000000000000001 /* LiveRefresh.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43400000000000000000002 /* LiveRefresh.swift */; };
@@ -267,7 +267,7 @@
 		C107N0000000000000000010 /* ProjectContextSectionFooter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000110 /* ProjectContextSectionFooter.swift */; };
 		C107N0000000000000000011 /* MemorySectionContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000111 /* MemorySectionContent.swift */; };
 		C107N0000000000000000012 /* MemoryEditSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000112 /* MemoryEditSheet.swift */; };
-		C107N0000000000000000013 /* SkillCategorySection.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000113 /* SkillCategorySection.swift */; };
+		C107N0000000000000000013 /* SkillRows.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000113 /* SkillRows.swift */; };
 		C107N0000000000000000014 /* SkillRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000114 /* SkillRow.swift */; };
 		C107N0000000000000000015 /* SkillDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000115 /* SkillDetailView.swift */; };
 		C107N0000000000000000016 /* SkillLinkedFilesSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000116 /* SkillLinkedFilesSection.swift */; };
@@ -596,7 +596,7 @@
 		C09300000000000000000002 /* HapticButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HapticButton.swift; sourceTree = "<group>"; };
 		C43600000000000000000002 /* StatusChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusChip.swift; sourceTree = "<group>"; };
 		C48300000000000000000002 /* RefreshToolbarButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RefreshToolbarButton.swift; sourceTree = "<group>"; };
-		TAL643000000000000000002 /* SectionSelectionRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SectionSelectionRow.swift; sourceTree = "<group>"; };
+		TAL643000000000000000002 /* SidebarKit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarKit.swift; sourceTree = "<group>"; };
 		C43600000000000000000004 /* AccessorySurface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessorySurface.swift; sourceTree = "<group>"; };
 		C02100000000000000000002 /* FileExportPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileExportPresentation.swift; sourceTree = "<group>"; };
 		C43400000000000000000002 /* LiveRefresh.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveRefresh.swift; sourceTree = "<group>"; };
@@ -685,7 +685,7 @@
 		C107N0000000000000000110 /* ProjectContextSectionFooter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectContextSectionFooter.swift; sourceTree = "<group>"; };
 		C107N0000000000000000111 /* MemorySectionContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemorySectionContent.swift; sourceTree = "<group>"; };
 		C107N0000000000000000112 /* MemoryEditSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryEditSheet.swift; sourceTree = "<group>"; };
-		C107N0000000000000000113 /* SkillCategorySection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillCategorySection.swift; sourceTree = "<group>"; };
+		C107N0000000000000000113 /* SkillRows.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillRows.swift; sourceTree = "<group>"; };
 		C107N0000000000000000114 /* SkillRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillRow.swift; sourceTree = "<group>"; };
 		C107N0000000000000000115 /* SkillDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillDetailView.swift; sourceTree = "<group>"; };
 		C107N0000000000000000116 /* SkillLinkedFilesSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillLinkedFilesSection.swift; sourceTree = "<group>"; };
@@ -1055,7 +1055,7 @@
 				C09300000000000000000002 /* HapticButton.swift */,
 				C43600000000000000000002 /* StatusChip.swift */,
 				C48300000000000000000002 /* RefreshToolbarButton.swift */,
-				TAL643000000000000000002 /* SectionSelectionRow.swift */,
+				TAL643000000000000000002 /* SidebarKit.swift */,
 				C43600000000000000000004 /* AccessorySurface.swift */,
 				C02100000000000000000002 /* FileExportPresentation.swift */,
 				C43400000000000000000002 /* LiveRefresh.swift */,
@@ -1403,7 +1403,7 @@
 			isa = PBXGroup;
 			children = (
 				1A2B3C4D5E6F70000000213 /* SkillsView.swift */,
-				C107N0000000000000000113 /* SkillCategorySection.swift */,
+				C107N0000000000000000113 /* SkillRows.swift */,
 				C107N0000000000000000114 /* SkillRow.swift */,
 				C107N0000000000000000115 /* SkillDetailView.swift */,
 				C107N0000000000000000116 /* SkillLinkedFilesSection.swift */,
@@ -1774,7 +1774,7 @@
 				C107N0000000000000000010 /* ProjectContextSectionFooter.swift in Sources */,
 				C107N0000000000000000011 /* MemorySectionContent.swift in Sources */,
 				C107N0000000000000000012 /* MemoryEditSheet.swift in Sources */,
-				C107N0000000000000000013 /* SkillCategorySection.swift in Sources */,
+				C107N0000000000000000013 /* SkillRows.swift in Sources */,
 				C107N0000000000000000014 /* SkillRow.swift in Sources */,
 				C107N0000000000000000015 /* SkillDetailView.swift in Sources */,
 				C107N0000000000000000016 /* SkillLinkedFilesSection.swift in Sources */,
@@ -1834,7 +1834,7 @@
 				C09300000000000000000001 /* HapticButton.swift in Sources */,
 				C43600000000000000000001 /* StatusChip.swift in Sources */,
 				C48300000000000000000001 /* RefreshToolbarButton.swift in Sources */,
-				TAL643000000000000001002 /* SectionSelectionRow.swift in Sources */,
+				TAL643000000000000001002 /* SidebarKit.swift in Sources */,
 				C43600000000000000000003 /* AccessorySurface.swift in Sources */,
 				C02100000000000000000001 /* FileExportPresentation.swift in Sources */,
 				C43400000000000000000001 /* LiveRefresh.swift in Sources */,

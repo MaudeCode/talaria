@@ -146,7 +146,12 @@ final class AppScreenVisualReferenceTests: XCTestCase {
 
         for scheme in [ColorScheme.light, .dark] {
             try VisualReference.assertMatchesReference(
-                SkillRow(skill: skill)
+                SkillRows(
+                    skills: [skill],
+                    selection: .constant(nil),
+                    togglingSkillNames: [],
+                    onToggleSkill: { _, _ in }
+                )
                 .padding(.horizontal, 16),
                 named: "skill-row-disabled-\(name(for: scheme))",
                 size: CGSize(width: 390, height: 130),
