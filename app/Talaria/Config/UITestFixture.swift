@@ -1447,8 +1447,12 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             "model_provider": "fixture-provider",
             "profile": "fixture-profile",
             "archived": false,
+            // Every row action gate the server ships (TAL-723); a row without one offers nothing.
+            "can_pin": true,
             "can_archive": true,
             "can_delete": true,
+            "can_duplicate": true,
+            "can_branch": true,
             "enabled_toolsets": sessionToolsets.withLock { $0 }.map { $0 as Any } ?? NSNull()
         ]
     }

@@ -371,11 +371,11 @@ private extension SessionSummary {
         parentSessionId = cachedSession.parentSessionId
         relationshipType = cachedSession.relationshipType
         readOnly = cachedSession.readOnly
-        canBranch = nil
-        canPin = nil
-        canArchive = nil
-        canDelete = nil
-        canDuplicate = nil
+        canBranch = cachedSession.canBranch
+        canPin = cachedSession.canPin
+        canArchive = cachedSession.canArchive
+        canDelete = cachedSession.canDelete
+        canDuplicate = cachedSession.canDuplicate
         matchType = nil
         matchPreview = nil
     }

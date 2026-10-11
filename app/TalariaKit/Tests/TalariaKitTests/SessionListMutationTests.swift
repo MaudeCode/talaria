@@ -28,9 +28,11 @@ final class SessionListMutationTests: XCTestCase {
         XCTAssertFalse(SessionRowActionPolicy.offersMutationActions(for: readOnlyImport))
         XCTAssertFalse(SessionRowActionPolicy.canDuplicate(foreignRow))
 
-        let olderServerReadOnly = SessionSummary(sessionId: "legacy", readOnly: true)
-        XCTAssertFalse(SessionRowActionPolicy.canPin(olderServerReadOnly))
-        XCTAssertTrue(SessionRowActionPolicy.canPin(SessionSummary(sessionId: "legacy-writable")))
+        // A row without the gates (one cached before TAL-723) offers none of these actions.
+        let ungated = SessionSummary(sessionId: "ungated")
+        XCTAssertFalse(SessionRowActionPolicy.canPin(ungated))
+        XCTAssertFalse(SessionRowActionPolicy.canArchive(ungated))
+        XCTAssertFalse(SessionRowActionPolicy.canDuplicate(ungated))
     }
 
     func testReadOnlyRowsOfferExportButNoMutationActions() {
@@ -51,30 +53,26 @@ final class SessionListMutationTests: XCTestCase {
     }
 
     @MainActor
-    func testDuplicatePolicyRejectsExternalSessionsBeforeAnyRequest() async throws {
+    func testDuplicateTheServerRefusesSendsNoRequest() async throws {
         var requestedPaths: [String] = []
         let viewModel = try makeViewModel { request in
             requestedPaths.append(request.url?.path ?? "nil")
-            XCTFail("External sessions must not reach the duplicate endpoint.")
+            XCTFail("A row the server will not duplicate must not reach the duplicate endpoint.")
             throw URLError(.badURL)
         }
-        let cliSession = SessionSummary(sessionId: "cli", isCliSession: true)
+        let cliSession = SessionSummary(sessionId: "cli", isCliSession: true, canDuplicate: false)
         let messagingSession = SessionSummary(
             sessionId: "telegram",
             rawSource: "telegram",
             sessionSource: "messaging",
-            sourceKind: .messaging
+            sourceKind: .messaging,
+            canDuplicate: false
         )
 
         XCTAssertFalse(SessionRowActionPolicy.canDuplicate(cliSession))
         XCTAssertFalse(SessionRowActionPolicy.canDuplicate(messagingSession))
-        XCTAssertTrue(SessionRowActionPolicy.canDuplicate(SessionSummary(sessionId: "webui")))
-        XCTAssertTrue(SessionRowActionPolicy.canDuplicate(SessionSummary(
-            sessionId: "webui-override",
-            isCliSession: true,
-            sessionSource: "webui",
-            sourceKind: .webui
-        )))
+        // The server's gate decides, not the row's source.
+        XCTAssertTrue(SessionRowActionPolicy.canDuplicate(SessionSummary(sessionId: "cli-with-sidecar", isCliSession: true, canDuplicate: true)))
         let duplicatedCLI = await viewModel.duplicate(cliSession)
         let duplicatedMessaging = await viewModel.duplicate(messagingSession)
 

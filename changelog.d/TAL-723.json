@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Cached chats offer the same row actions as the server, including Pin and Archive on read-only CLI chats and no Branch on subagent chats.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

@@ -220,7 +220,7 @@ extension SessionListMutationTests {
     }
 
     private static func listJSON(_ ids: [String]) -> String {
-        let rows = ids.map { #"{"session_id":"\#($0)","title":"\#($0)","archived":false}"# }
+        let rows = ids.map { #"{"session_id":"\#($0)","title":"\#($0)","archived":false,"can_duplicate":true}"# }
         return #"{"sessions":[\#(rows.joined(separator: ","))]}"#
     }
 }

@@ -15,13 +15,12 @@ final class SessionListBulkActionTests: XCTestCase {
         super.tearDown()
     }
 
-    func testDeleteFollowsTheServerGateWithTheReadOnlyFallback() throws {
+    func testDeleteFollowsTheServerGate() throws {
         XCTAssertTrue(SessionRowActionPolicy.canDelete(writable))
         XCTAssertFalse(SessionRowActionPolicy.canDelete(readOnlyImport))
         XCTAssertFalse(SessionRowActionPolicy.canDelete(SessionSummary(sessionId: "x", canDelete: false)))
-        // An older server sends no `can_delete`: `read_only` decides, as before.
-        XCTAssertFalse(SessionRowActionPolicy.canDelete(SessionSummary(sessionId: "legacy", readOnly: true)))
-        XCTAssertTrue(SessionRowActionPolicy.canDelete(SessionSummary(sessionId: "legacy")))
+        // A row without the gate (one cached before TAL-723) offers no Delete.
+        XCTAssertFalse(SessionRowActionPolicy.canDelete(SessionSummary(sessionId: "ungated")))
 
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
