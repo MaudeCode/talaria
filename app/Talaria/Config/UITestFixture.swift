@@ -728,12 +728,23 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             }
             return json(["ok": true])
         case "/api/sessions/search":
-            // The server answers from its `/api/sessions` rows, in their order, and the App shows exactly that set
-            // (TAL-308); title matches stand in for the server's title, metadata and content search.
-            let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "q" }?.value ?? ""
+            // TAL-308: the server answers from the `/api/sessions` rows for the sidebar's project and visibility
+            // filters, in their order, and the App shows exactly that set; title matches stand in for its title,
+            // metadata and content search (`SessionService.sidebarSearch`).
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            func value(_ name: String) -> String? { items.first { $0.name == name }?.value }
+            let query = value("q") ?? ""
+            let projectID = value("project_id")
+            let hiddenKinds = [
+                ("cli", "show_cli_sessions"), ("claude_code", "show_claude_code_sessions"),
+                ("cron", "show_cron_sessions"), ("webhook", "show_webhook_sessions")
+            ].filter { value($0.1) == "0" }.map(\.0)
             let list = (try? JSONSerialization.jsonObject(with: sessionsResponse(firstTitle: sessionTitle))) as? [String: Any]
-            let matches = (list?["sessions"] as? [[String: Any]] ?? []).filter {
-                ($0["title"] as? String)?.localizedCaseInsensitiveContains(query) == true
+            let matches = (list?["sessions"] as? [[String: Any]] ?? []).filter { row in
+                let rowProject = row["project_id"] as? String
+                if let projectID, projectID == "none" ? rowProject != nil : rowProject != projectID { return false }
+                if let kind = row["source_kind"] as? String, hiddenKinds.contains(kind) { return false }
+                return query.isEmpty || (row["title"] as? String)?.localizedCaseInsensitiveContains(query) == true
             }
             return json(["sessions": matches, "query": query, "count": matches.count, "sidebar_filtered": true])
         case "/api/sessions/bulk":
