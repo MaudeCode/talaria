@@ -96,3 +96,29 @@ def test_installed_plugin_providers_report_identity_setup_and_models(tmp_path: p
         assert sidecar.result("providers.model_ids", {"profile_home": str(home), "provider": "fake-sub"})["model_ids"] == ["fake-opus", "claude-sonnet-4-6"]
     finally:
         sidecar.close()
+
+
+@requires_agent
+def test_a_named_profiles_plugin_reads_the_same_whichever_profile_lists_first(tmp_path: pathlib.Path) -> None:
+    """A fresh sidecar whose first plugin listing is a named profile's reports that plugin as a launch-first one does."""
+    home = tmp_path / "home" / ".hermes"
+    home.mkdir(parents=True)
+    cli = tmp_path / "bin" / "fake-cli"
+    cli.parent.mkdir()
+    cli.write_text("#!/bin/sh\nexit 97\n")  # Listing must never run it.
+    cli.chmod(0o755)
+    other = home / "profiles" / "other"
+    other.mkdir(parents=True)
+    _plugin(other / "plugins", "fake-other", "fake-other-provider", name="fake-other", display="Fake Other", command=str(cli), models=("other-1",))
+    seen = []
+    for order in ((home, other), (other, home)):
+        sidecar = SidecarProcess(home)
+        try:
+            for profile in order:
+                rows = {row["name"]: row["setup"] for row in sidecar.result("plugins.providers", {"profile_home": str(profile)})["providers"]}
+            seen.append(rows if order[-1] == other else {row["name"]: row["setup"] for row in sidecar.result("plugins.providers", {"profile_home": str(other)})["providers"]})
+            runtime, _ = sidecar.call("providers.resolve_runtime", {"profile_home": str(other), "requested": "fake-other"})
+            assert seen[-1]["fake-other"] == ("ready" if "result" in runtime else "unavailable"), runtime
+        finally:
+            sidecar.close()
+    assert seen[0] == seen[1], seen

@@ -104,6 +104,12 @@ def _load_plugin(root: Path) -> None:
     """
     import providers
 
+    # Agent 0.21.3 snapshots its auth provider registry when hermes_cli.auth is first imported. Take that snapshot
+    # before any profile's plugin loads, so a named profile's plugin never enters it and becomes resolvable everywhere.
+    try:
+        import hermes_cli.auth  # noqa: F401
+    except Exception:  # noqa: BLE001 - auth_status reports an unavailable auth layer
+        pass
     with _LOAD_LOCK:
         if root in _LOAD_ATTEMPTED:
             return
