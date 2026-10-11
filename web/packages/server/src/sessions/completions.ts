@@ -74,9 +74,9 @@ export function formatWakeupPrompt(evt: Dict): string | null {
 }
 
 /**
- * TAL-724: an event's delivery identity, apart from its process identity. A completion (an event with no type is one) or an
- * async delegation is its process: one exit can be enqueued twice when a kill races the reader thread. The Agent enqueues
- * each watch event once, and one process raises several, so each is its own delivery.
+ * TAL-724: an event's delivery identity, the `process_id` of its wakeup entry. A completion (an event with no type is one) or
+ * an async delegation is its process: one exit can be enqueued twice when a kill races the reader thread. The Agent enqueues
+ * each watch event once, and one process raises several, so each is its own delivery; its event keeps the process id.
  */
 export function deliveryKey(evt: Dict, processId: string): string {
   return !processId || deliveredPerProcess(evt) ? processId : `${processId}:${str(evt.type)}:${randomUUID()}`
@@ -205,17 +205,19 @@ export class CompletionDrain {
     const sid = this.resolveTarget(evt)
     if (!sid) return false
     if (evt.consumed === true) return true
-    const deliveryId = deliveryKey(evt, processId)
     const seen = this.seen.get(sid) ?? new Set<string>()
     this.seen.set(sid, seen)
-    if (deliveryId && seen.has(deliveryId)) return true
-    if (deliveryId) seen.add(deliveryId)
+    // Only a per-process delivery can repeat: a watch event's key is unique, so remembering it would only grow `seen`.
+    if (processId && deliveredPerProcess(evt)) {
+      if (seen.has(processId)) return true
+      seen.add(processId)
+    }
     this.pendingSessions.add(sid)
     const prompt = await this.wakeupPrompt(evt)
     this.deps.background?.recordEvent(sid, evt, prompt)
     this.emitCoalesced(sid, this.buildPayload(evt, sid, prompt))
     if (!prompt) return true
-    const entry: Deferred = { process_id: processId, delivery_id: deliveryId, wakeup_prompt: prompt, event: evt }
+    const entry: Deferred = { process_id: deliveryKey(evt, processId), wakeup_prompt: prompt, event: evt }
     if (this.hasActiveTurn(sid)) this.defer(sid, entry)
     else await this.startWakeup(sid, [entry])
     return true
@@ -265,7 +267,7 @@ export class CompletionDrain {
   }
 
   recordDeferred(sid: string, processId: string, prompt: string, event?: Dict): void {
-    this.defer(sid, { process_id: processId, delivery_id: deliveryKey(event ?? {}, processId), wakeup_prompt: prompt, ...(event ? { event } : {}) })
+    this.defer(sid, { process_id: deliveryKey(event ?? {}, processId), wakeup_prompt: prompt, ...(event ? { event } : {}) })
   }
 
   /** Re-deferring keeps an entry's delivery identity, so its held copy and this one stay one wakeup. */

@@ -408,6 +408,8 @@ describe('async delegation delivery claims (TAL-459)', () => {
       // A completion enqueued twice (kill racing the reader thread) still wakes once.
       expect(await drain.processOne({ ...events.exit })).toBe(true)
       expect(attempts).toHaveLength(3)
+      // Only that per-process delivery is remembered; a watch event cannot repeat, so it leaves nothing behind.
+      expect((drain as unknown as { seen: Map<string, Set<string>> }).seen.get(sid)).toEqual(new Set(['proc_w']))
     } finally {
       drain.stop()
     }
@@ -625,7 +627,12 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
     await s.deps.completions.processOne({ process_id: id, session_id: id, type: 'watch_match', pattern: 'ready', command: 'npm run dev', output: 'ready', origin_ui_session_id: sid, consumed: false })
     await complete(sid, id)
     expect(starts).toHaveLength(1)
-    expect(heldIds(sid), 'both events of the process are held').toEqual([id, id])
+    // Each held under its own id, so a reader that keys by process id alone (the Stable release after a rollback) keeps both.
+    const ids = heldIds(sid)
+    expect(ids, 'both events of the process are held').toHaveLength(2)
+    expect(new Set(ids).size).toBe(2)
+    expect(ids[1]).toBe(id)
+    expect((heldFile()[sid]![0]!.event as Json).process_id).toBe(id)
     writeFileSync(join(s.state, 'auth.json'), JSON.stringify({ credential_pool: { openrouter: [{ api_key: 'sk-724', label: 'added' }] } }))
     sidecar.respond('chat.start', (params) => { starts.push(str(params.user_message)); return completed('woke up') })
     sidecar.respond('process.consumed', () => ({ consumed: [] }))
@@ -637,11 +644,11 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
     expect(heldIndex()).not.toContain(sid)
   })
 
-  it('keeps the exit held after a watch match held before delivery ids existed (TAL-724)', async () => {
+  it('keeps the exit held after a watch match held under its bare process id before TAL-724', async () => {
     const sid = await pausedSession()
     const id = `${sid}_old`
     const path = join(s.deps.sessionStore.sessionDir, '_wakeup_held.json')
-    writeFileSync(path, JSON.stringify({ ...heldFile(), [sid]: [{ process_id: id, wakeup_prompt: '[IMPORTANT: old watch matched]', event: { type: 'watch_match' } }] }))
+    writeFileSync(path, JSON.stringify({ ...heldFile(), [sid]: [{ process_id: id, wakeup_prompt: '[IMPORTANT: old watch matched]', event: { process_id: id, session_id: id, type: 'watch_match' } }] }))
     await complete(sid, id)
     expect(heldIds(sid)).toEqual([id, id])
     writeFileSync(join(s.state, 'auth.json'), JSON.stringify({ credential_pool: { openrouter: [{ api_key: 'sk-724', label: 'legacy' }] } }))
