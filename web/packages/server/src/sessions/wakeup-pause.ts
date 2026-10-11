@@ -65,11 +65,15 @@ export function poolRecovery(entries: readonly { status: string; retry_after: st
   return earliest !== null && earliest <= now ? true : earliest
 }
 
-/** A wakeup held while its session is paused. */
-export interface HeldWakeup { process_id: string; wakeup_prompt: string; event?: Record<string, unknown> }
+/** A wakeup held while its session is paused; `delivery_id` (TAL-724) is absent from entries held before it existed. */
+export interface HeldWakeup { process_id: string; wakeup_prompt: string; delivery_id?: string; event?: Record<string, unknown> }
 
-export const heldKey = (e: HeldWakeup): string => e.process_id || e.wakeup_prompt
-const isHeld = (e: unknown): e is HeldWakeup => isDict(e) && typeof e.wakeup_prompt === 'string' && typeof e.process_id === 'string'
+/** A completion (an event with no type is one) or an async delegation is delivered once per process; each watch event is its own (TAL-724). */
+export const deliveredPerProcess = (evt: Record<string, unknown> | undefined): boolean => ['completion', 'async_delegation'].includes(str(evt?.type ?? 'completion'))
+
+/** An entry held before `delivery_id` existed is its process only when delivered per process, so a held watch event never absorbs the exit. */
+export const heldKey = (e: HeldWakeup): string => e.delivery_id || (deliveredPerProcess(e.event) ? e.process_id : '') || e.wakeup_prompt
+const isHeld = (e: unknown): e is HeldWakeup => isDict(e) && typeof e.wakeup_prompt === 'string' && typeof e.process_id === 'string' && (e.delivery_id === undefined || typeof e.delivery_id === 'string')
 
 /** Adds entries not held yet, so held and in-memory copies of one wakeup merge into one. */
 export function mergeWakeups(into: HeldWakeup[], entries: readonly HeldWakeup[]): HeldWakeup[] {

@@ -42,7 +42,8 @@ def _event_row(evt: dict) -> dict:
             if not row.get("origin_ui_session_id"):
                 row["origin_ui_session_id"] = str(getattr(proc, "origin_ui_session_id", "") or "") or str(getattr(proc, "spawn_session_id", "") or "")
     try:
-        row["consumed"] = bool(registry is not None and process_id and row.get("type") != "async_delegation" and registry.is_completion_consumed(process_id))
+        # Only the exit is consumed by the agent's wait or poll; a watch notice from the same process still wakes (TAL-724).
+        row["consumed"] = bool(registry is not None and process_id and row.get("type") in (None, "completion") and registry.is_completion_consumed(process_id))
     except Exception:  # noqa: BLE001
         row["consumed"] = False
     return row

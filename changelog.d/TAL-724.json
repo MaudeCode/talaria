@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A background process that watches its output for a pattern now reports every match and its exit to the agent and the Background card, not only the first match.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
