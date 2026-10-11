@@ -468,27 +468,26 @@ func testEmptyTerminalSceneStillCarriesTheServerOutcome() throws {
     XCTAssertEqual(AssistantTurnOutcome.label(for: message.activityScene?.terminalState), "No answer produced.")
 }
 
-func testOlderServerSceneWithoutFinalAnswerKeepsTheMessageTextAsTheAnswer() throws {
+func testASceneShowsOnlyItsFinalAnswerNeverTheMessageText() throws {
     let decoder = JSONDecoder()
     decoder.keyDecodingStrategy = .convertFromSnakeCase
-    func turn(_ rows: String) throws -> CompletedAssistantTurn {
+    func turn(finalAnswer: String) throws -> CompletedAssistantTurn {
         let message = try decoder.decode(ChatMessage.self, from: Data("""
-        {"role":"assistant","content":"Final answer.","message_id":"old-server","_anchor_activity_scene":{"version":"activity_scene_v1","activity_rows":[\(rows)]}}
+        {"role":"assistant","content":"Message text.","message_id":"scene","_anchor_activity_scene":{"version":"activity_scene_v1",\(finalAnswer)"activity_rows":[{"row_id":"r","order_index":0,"role":"reasoning","text":"Plan"},{"row_id":"tool:t","order_index":1,"role":"tool","tool":{"id":"t","name":"read_file","done":true,"is_error":false}}]}}
         """.utf8))
         let timeline = try XCTUnwrap(AssistantActivityTimeline.authoritativeScene(message: message))
         return try XCTUnwrap(CompletedAssistantTurn(rows: timeline.rows))
     }
-    let tool = #"{"row_id":"tool:t","order_index":1,"role":"tool","tool":{"id":"t","name":"read_file","done":true,"is_error":false}}"#
 
-    // Work rows only: the message text becomes the visible answer.
-    let workOnly = try turn(#"{"row_id":"r","order_index":0,"role":"reasoning","text":"Plan"},"# + tool)
-    XCTAssertEqual(workOnly.finalAnswer, "Final answer.")
-    XCTAssertEqual(workOnly.workRows.map(\.kind), ["reasoning", "tools"])
+    // The server's answer renders below Worked.
+    let answered = try turn(finalAnswer: #""final_answer":"Final answer.","#)
+    XCTAssertEqual(answered.finalAnswer, "Final answer.")
+    XCTAssertEqual(answered.workRows.map(\.kind), ["reasoning", "tools"])
 
-    // The older server kept the answer's own row in the scene: it is matched, not repeated.
-    let withAnswerRow = try turn(tool + #",{"row_id":"f","order_index":2,"role":"prose","text":"Final answer."}"#)
-    XCTAssertEqual(withAnswerRow.finalAnswer, "Final answer.")
-    XCTAssertEqual(withAnswerRow.workRows.map(\.kind), ["tools"])
+    // A scene without `final_answer` adds no final prose row; the message text is not the answer.
+    let unanswered = try turn(finalAnswer: "")
+    XCTAssertEqual(unanswered.finalAnswer, "")
+    XCTAssertEqual(unanswered.workRows.map(\.kind), ["reasoning", "tools"])
 }
 }
 

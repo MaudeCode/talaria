@@ -9,8 +9,8 @@ extension ChatViewModelSendTests {
         var withdraw: [String] = []
         var sendNow: [String] = []
         var cancel = #"{"ok":true,"cancelled":true}"#
-        /// The session load's `pending_steers` JSON.
-        var pendingSteers = "[]"
+        /// The session load's `pending_steers` JSON; nil omits the key.
+        var pendingSteers: String? = "[]"
     }
 
     private func runningViewModel(
@@ -34,7 +34,7 @@ extension ChatViewModelSendTests {
             case "/api/chat/cancel":
                 return apiTestJSONResponse(log.cancel, for: request)
             case "/api/session":
-                return apiTestJSONResponse(#"{"session":{"session_id":"session-abc","active_stream_id":"stream-123","is_streaming":true,"messages":[{"role":"user","content":"Initial request","message_id":"user-1"}],"pending_steers":\#(log.pendingSteers)}}"#, for: request)
+                return apiTestJSONResponse(#"{"session":{"session_id":"session-abc","active_stream_id":"stream-123","is_streaming":true,"messages":[{"role":"user","content":"Initial request","message_id":"user-1"}]\#(log.pendingSteers.map { #","pending_steers":\#($0)"# } ?? "")}}"#, for: request)
             case "/api/chat/steer/withdraw":
                 return apiTestJSONResponse(log.withdraw.isEmpty ? #"{"withdrawn":false}"# : log.withdraw.removeFirst(), for: request)
             case "/api/chat/steer/send-now":
@@ -276,6 +276,21 @@ extension ChatViewModelSendTests {
         log.pendingSteers = "[]"
         await viewModel.reconnectStreamIfNeeded()
         XCTAssertFalse(viewModel.messages.contains { $0.messageId == "steer-web" })
+    }
+
+    func testALoadWithoutPendingSteersRemovesRowsTheServerNoLongerLists() async throws {
+        let streamClient = SpySSEStreamingClient()
+        let log = RequestLog()
+        let viewModel = try runningViewModel(log, streamClient: streamClient)
+        let started = await viewModel.sendMessage("Initial request")
+        XCTAssertTrue(started)
+        streamClient.emit(.steerPending(steer("steer-web", "Theirs")))
+
+        // A detail without the list lists none, exactly as `[]`.
+        log.pendingSteers = nil
+        await viewModel.loadMessages()
+        XCTAssertFalse(viewModel.messages.contains { $0.messageId == "steer-web" })
+        XCTAssertNil(viewModel.pendingSteerActions["steer-web"])
     }
 }
 

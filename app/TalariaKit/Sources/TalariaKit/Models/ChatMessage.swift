@@ -283,23 +283,12 @@ public struct BackgroundUpdate: Codable, Equatable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case lines, attention, summary
+        case lines
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        let decoded = (try? container.decodeIfPresent([BackgroundLine].self, forKey: .lines)) ?? []
-        // Older servers (TAL-371) sent one summary instead of lines; it becomes the one line.
-        let summary = container.decodeLossyStringIfPresent(forKey: .summary) ?? ""
-        let attention = (try? container.decodeIfPresent(Bool.self, forKey: .attention)) == true
-        lines = decoded.isEmpty
-            ? [BackgroundLine(kind: .other, status: attention ? .failed : .completed, label: summary)]
-            : decoded
-    }
-
-    public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(lines, forKey: .lines)
+        lines = (try? container.decodeIfPresent([BackgroundLine].self, forKey: .lines)) ?? []
     }
 }
 

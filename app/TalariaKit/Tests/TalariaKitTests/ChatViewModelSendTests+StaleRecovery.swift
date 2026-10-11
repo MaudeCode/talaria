@@ -1473,10 +1473,10 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(viewModel.messages.filter { $0.role == "assistant" }.count, 2)
     }
 
-    // Old-server fallback: a Web without `transcript_seq` still sends the running
-    // turn's persisted rows, so the app drops them after the prompt and replays from 0.
+    // A detail without the `transcript_seq` key is read like `null`: the loaded turn
+    // stays and the stream attaches live, with no replay.
     @MainActor
-    func testColdRelaunchAgainstServerWithoutCursorFieldRendersEachSegmentOnce() async throws {
+    func testColdRelaunchWithoutCursorFieldAttachesLiveWithoutTrimmingTheLoadedTurn() async throws {
         let streamClient = SpySSEStreamingClient()
         let viewModel = try makeColdRelaunchViewModel(streamClient: streamClient, transcriptJSON: """
         "pending_started_at": 1770000100,
@@ -1484,99 +1484,7 @@ extension ChatViewModelSendTests {
           { "role": "user", "content": "Earlier question", "timestamp": 1770000000, "message_id": "user-0" },
           { "role": "assistant", "content": "Earlier answer.", "timestamp": 1770000001, "message_id": "assistant-0" },
           { "role": "user", "content": "Tell me a tiger story", "timestamp": 1770000100, "message_id": "user-1" },
-          { "role": "assistant", "content": "Once Raj reached the river. ", "timestamp": 1770000101, "message_id": "assistant-1" },
-          { "role": "user", "content": "Make it scary", "timestamp": 1770000102, "message_id": "steer-row-1", "_steer": { "steer_id": "steer-a" } }
-        ]
-        """)
-
-        await viewModel.loadMessages()
-        await viewModel.reconnectStreamIfNeeded()
-
-        let replayURL = try XCTUnwrap(streamClient.startedURLs.last)
-        let queryItems = URLComponents(url: replayURL, resolvingAgainstBaseURL: false)?.queryItems ?? []
-        XCTAssertEqual(queryItems.first(where: { $0.name == "after_seq" })?.value, "0")
-        // The replay supplies the turn's output; the user's steers stay.
-        XCTAssertEqual(
-            viewModel.messages.compactMap(\.content),
-            ["Earlier question", "Earlier answer.", "Tell me a tiger story", "Make it scary"]
-        )
-
-        streamClient.emit(.token("Once Raj reached the river. "), lastEventID: "stream-123:1")
-        streamClient.emit(.token("The snare broke."), lastEventID: "stream-123:2")
-
-        XCTAssertEqual(liveProse(viewModel), ["Once Raj reached the river. The snare broke."])
-        XCTAssertEqual(viewModel.messages.filter { $0.role == "assistant" }.compactMap(\.content), [
-            "Earlier answer.", "Once Raj reached the river. The snare broke."
-        ])
-        XCTAssertEqual(viewModel.messages.filter { $0.steer != nil }.map(\.content), ["Make it scary"])
-    }
-
-    @MainActor
-    func testOldServerFallbackKeepsTheUsersPendingSteeringHint() async throws {
-        let streamClient = SpySSEStreamingClient()
-        let now = serverNow
-        let viewModel = try makeViewModel(streamClient: streamClient) { request in
-            switch request.url?.path {
-            case "/api/chat/start":
-                return apiTestJSONResponse(#"{"session_id":"session-abc","stream_id":"stream-123"}"#, for: request)
-            case "/api/chat/steer":
-                return apiTestJSONResponse(#"{"accepted":true,"stream_id":"stream-123"}"#, for: request)
-            case "/api/session":
-                // A Web that predates `transcript_seq`: the running turn's persisted rows, no cursor key.
-                return apiTestJSONResponse("""
-                {
-                  "session": {
-                    "session_id": "session-abc",
-                    "title": "Planning",
-                    "active_stream_id": "stream-123",
-                    "pending_started_at": \(now),
-                    "messages": [
-                      { "role": "user", "content": "Initial request", "timestamp": \(now), "message_id": "user-1" },
-                      { "role": "assistant", "content": "Before hint. ", "timestamp": \(now + 1), "message_id": "assistant-1" }
-                    ]
-                  }
-                }
-                """, for: request)
-            case "/api/chat/stream/status":
-                return apiTestJSONResponse(#"{"active":true,"stream_id":"stream-123","replay_available":true}"#, for: request)
-            default:
-                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
-                throw URLError(.badURL)
-            }
-        }
-
-        let didStart = await viewModel.sendMessage("Initial request")
-        XCTAssertTrue(didStart)
-        streamClient.emit(.token("Before hint. "))
-        _ = await viewModel.executeSlashCommand(
-            try XCTUnwrap(SlashCommandCatalog.command(named: "steer")),
-            args: "Use the focused test"
-        )
-        viewModel.suspendStreamForNavigation()
-        await viewModel.reconnectStreamIfNeeded()
-
-        let replayURL = try XCTUnwrap(streamClient.startedURLs.last)
-        let queryItems = URLComponents(url: replayURL, resolvingAgainstBaseURL: false)?.queryItems ?? []
-        XCTAssertEqual(queryItems.first(where: { $0.name == "after_seq" })?.value, "0")
-        // The loaded output is gone and the user's hint survives the trim. (A reload
-        // merge can repeat the hint on every server; that predates TAL-316.)
-        XCTAssertTrue(viewModel.messages.filter { $0.role == "assistant" }.isEmpty)
-        XCTAssertEqual(Set(viewModel.messages.filter(\.isLocalSteeringHint).compactMap(\.content)), ["Use the focused test"])
-
-        streamClient.emit(.token("Before hint. "), lastEventID: "stream-123:1")
-        XCTAssertEqual(viewModel.messages.filter { $0.role == "assistant" }.compactMap(\.content), ["Before hint. "])
-    }
-
-    // Early in a run the old server may not hold the running prompt yet: the latest
-    // loaded prompt belongs to the previous turn, whose settled answer must stay.
-    @MainActor
-    func testOldServerFallbackKeepsThePreviousTurnWhenTheRunningPromptIsNotLoaded() async throws {
-        let streamClient = SpySSEStreamingClient()
-        let viewModel = try makeColdRelaunchViewModel(streamClient: streamClient, transcriptJSON: """
-        "pending_started_at": 1770000200,
-        "messages": [
-          { "role": "user", "content": "Earlier question", "timestamp": 1770000000, "message_id": "user-0" },
-          { "role": "assistant", "content": "Earlier answer.", "timestamp": 1770000001, "message_id": "assistant-0" }
+          { "role": "assistant", "content": "Once Raj reached the river. ", "timestamp": 1770000101, "message_id": "assistant-1" }
         ]
         """)
 
@@ -1585,8 +1493,18 @@ extension ChatViewModelSendTests {
 
         let url = try XCTUnwrap(streamClient.startedURLs.last)
         let queryItems = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        XCTAssertNil(queryItems.first(where: { $0.name == "replay" }))
         XCTAssertNil(queryItems.first(where: { $0.name == "after_seq" }))
-        XCTAssertEqual(viewModel.messages.compactMap(\.content), ["Earlier question", "Earlier answer."])
+        XCTAssertEqual(
+            viewModel.messages.compactMap(\.content),
+            ["Earlier question", "Earlier answer.", "Tell me a tiger story", "Once Raj reached the river. "]
+        )
+
+        streamClient.emit(.token("The snare broke."))
+
+        XCTAssertEqual(viewModel.messages.filter { $0.role == "assistant" }.compactMap(\.content), [
+            "Earlier answer.", "Once Raj reached the river. The snare broke."
+        ])
     }
 
     @MainActor
@@ -1594,6 +1512,7 @@ extension ChatViewModelSendTests {
         let streamClient = SpySSEStreamingClient()
         let viewModel = try makeColdRelaunchViewModel(streamClient: streamClient, transcriptJSON: """
         "transcript_seq": null,
+        "pending_started_at": 1770000100,
         "messages": [
           { "role": "user", "content": "Tell me a tiger story", "timestamp": 1770000100, "message_id": "user-1" },
           { "role": "assistant", "content": "Once Raj reached the river. ", "timestamp": 1770000101, "message_id": "assistant-1" }

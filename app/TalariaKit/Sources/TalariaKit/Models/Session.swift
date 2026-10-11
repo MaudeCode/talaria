@@ -888,8 +888,6 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
     public let branchedFrom: SessionBranchLink?
     /// Where `messages` end in the active run's journal (TAL-316); nil means attach live without replay.
     public let transcriptSeq: TranscriptSeq?
-    /// False for a server that predates `transcript_seq` (the key is absent, not null).
-    public let statesTranscriptSeq: Bool
     /// The session's toolset override (TAL-631); nil means the profile's defaults.
     public let enabledToolsets: [String]?
     /// False for a server that does not report `enabled_toolsets` (the key is absent, not null).
@@ -1018,7 +1016,6 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
         compressionReference = try? container.decodeIfPresent(CompressionReference.self, forKey: .compressionReference)
         branchedFrom = try? container.decodeIfPresent(SessionBranchLink.self, forKey: .branchedFrom)
         transcriptSeq = try? container.decodeIfPresent(TranscriptSeq.self, forKey: .transcriptSeq)
-        statesTranscriptSeq = container.contains(.transcriptSeq)
         enabledToolsets = try? container.decodeIfPresent([String].self, forKey: .enabledToolsets)
         statesEnabledToolsets = container.contains(.enabledToolsets)
     }

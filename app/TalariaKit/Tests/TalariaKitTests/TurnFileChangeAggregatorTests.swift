@@ -26,7 +26,7 @@ final class TurnFileChangeAggregatorTests: XCTestCase {
 
     func testSceneDecodesServerFileChangesLossily() throws {
         let decoded = try scene("""
-        {"version": "activity_scene_v1", "activity_rows": [], "file_changes": [
+        {"version": "activity_scene_v1", "final_answer": "", "activity_rows": [], "file_changes": [
           {"path": "Sources/App.swift", "action": "edited"},
           {"path": "new/name.swift", "action": "renamed"},
           {"path": "future.swift", "action": "chmodded"},
@@ -39,7 +39,7 @@ final class TurnFileChangeAggregatorTests: XCTestCase {
     }
 
     func testSceneFromOlderWebHasNoFileChanges() throws {
-        let decoded = try scene(#"{"version": "activity_scene_v1", "activity_rows": []}"#)
+        let decoded = try scene(#"{"version": "activity_scene_v1", "final_answer": "", "activity_rows": []}"#)
         XCTAssertNil(decoded.fileChanges)
         XCTAssertEqual(TurnFileChangeAggregator.summarize(changes: decoded.fileChanges ?? [], status: nil), .empty)
     }

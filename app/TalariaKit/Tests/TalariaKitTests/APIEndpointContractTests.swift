@@ -723,11 +723,14 @@ final class SharedContractTests: XCTestCase {
         XCTAssertNil(ordinary.branchedFrom)
     }
 
-    func testAnOlderBackgroundUpdateBecomesOneLineFromItsSummary() throws {
+    func testABackgroundUpdateShowsOnlyItsLines() throws {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
-        let message = try decoder.decode(ChatMessage.self, from: Data(#"{"role":"user","content":"x","_background_update":{"kind":"future_kind","attention":true,"count":0,"summary":"s"}}"#.utf8))
-        XCTAssertEqual(message.backgroundUpdate?.lines, [BackgroundLine(kind: .other, status: .failed, label: "s")])
+        let message = try decoder.decode(ChatMessage.self, from: Data(#"{"role":"user","content":"x","_background_update":{"lines":[{"kind":"command","status":"failed","label":"Nightly"}]}}"#.utf8))
+        XCTAssertEqual(message.backgroundUpdate?.lines, [BackgroundLine(kind: .command, status: .failed, label: "Nightly")])
+        // A record with only a `summary` has no lines to show.
+        let summaryOnly = try decoder.decode(ChatMessage.self, from: Data(#"{"role":"user","content":"x","_background_update":{"attention":true,"summary":"s"}}"#.utf8))
+        XCTAssertEqual(summaryOnly.backgroundUpdate?.lines, [])
     }
 
     func testSharedWebSessionDecodesTheServersPendingSteers() throws {
@@ -741,7 +744,7 @@ final class SharedContractTests: XCTestCase {
         XCTAssertEqual(detail.pendingSteers?.first?.actions, PendingSteer.Actions(edit: true, cancel: true, sendNow: true))
         XCTAssertEqual(detail.pendingSteers?.last?.state, .sendingNow)
         XCTAssertEqual(detail.pendingSteers?.last?.actions, PendingSteer.Actions.none)
-        // An older Web says nothing about pending steers, which is not the same as none.
+        // A detail without the list (a CLI session) decodes none; the chat reads it as an empty list.
         XCTAssertNil(try decoder.decode(SessionDetail.self, from: Data(#"{"session_id":"s"}"#.utf8)).pendingSteers)
     }
 
