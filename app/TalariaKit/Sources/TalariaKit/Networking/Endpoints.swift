@@ -60,8 +60,6 @@ public enum Endpoint {
     case background
     /// TAL-372: the session's background work, one shared record each.
     case backgroundTasks(sessionID: String)
-    /// ponytail: old-server fallback (TAL-372).
-    case backgroundStatus(sessionID: String)
     case backgroundResult(sessionID: String, taskID: String)
     case backgroundDismiss
     case workspaces
@@ -264,8 +262,6 @@ public enum Endpoint {
             return "/api/background"
         case .backgroundTasks:
             return "/api/background/tasks"
-        case .backgroundStatus:
-            return "/api/background/status"
         case .backgroundResult:
             return "/api/background/result"
         case .backgroundDismiss:
@@ -557,7 +553,7 @@ public enum Endpoint {
             let .clarifyPending(sessionID),
             let .clarifyStream(sessionID):
             return [URLQueryItem(name: "session_id", value: sessionID)]
-        case let .backgroundTasks(sessionID), let .backgroundStatus(sessionID):
+        case let .backgroundTasks(sessionID):
             return [URLQueryItem(name: "session_id", value: sessionID)]
         case let .backgroundResult(sessionID, taskID):
             return [URLQueryItem(name: "session_id", value: sessionID), URLQueryItem(name: "task_id", value: taskID)]

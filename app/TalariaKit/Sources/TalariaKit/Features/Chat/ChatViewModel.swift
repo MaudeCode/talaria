@@ -454,10 +454,6 @@ public final class ChatViewModel {
     /// What the card above the composer shows: the records the server pins.
     public var pinnedBackgroundTasks: [BackgroundWorkTask] { backgroundTasks.filter(\.pinned) }
     @ObservationIgnored private var backgroundPollTask: Task<Void, Never>?
-    /// ponytail: old-server fallback (TAL-372); a Web without `/api/background/tasks` only reports finished `/background`
-    /// tasks through its status route, so their answers come back as local messages, as before. Delete with that route.
-    @ObservationIgnored private var serverHasBackgroundTasks = true
-    @ObservationIgnored private var legacyBackgroundPrompts: [String: String] = [:]
     private var isRefreshingCompletedResponseTitle = false
     private var latestServerLoadHadAssistantResponseAfterLatestUser = false
     // The latest applied load's `pending_started_at`: when its running turn began.
@@ -3243,10 +3239,6 @@ public final class ChatViewModel {
             }
 
             await refreshBackgroundTasks()
-            if !serverHasBackgroundTasks {
-                legacyBackgroundPrompts[taskID] = prompt
-                startLegacyBackgroundPolling(parentSessionID: sessionID)
-            }
             return .executed(message: String(localized: "Background task started. I'll add the result here when it completes."))
         } catch {
             lastError = error
@@ -4889,7 +4881,6 @@ public final class ChatViewModel {
         backgroundPollTask = nil
         if clearTrackedPrompts {
             backgroundTasks = []
-            legacyBackgroundPrompts.removeAll()
         }
     }
 
@@ -4899,11 +4890,7 @@ public final class ChatViewModel {
         do {
             let response = try await client.backgroundTasks(sessionID: sessionID)
             guard self.sessionID == sessionID else { return }
-            serverHasBackgroundTasks = true
             backgroundTasks = response.tasks
-        } catch APIError.http(statusCode: 404, body: _) {
-            serverHasBackgroundTasks = false
-            return
         } catch {
             return
         }
@@ -4930,32 +4917,6 @@ public final class ChatViewModel {
         await refreshBackgroundTasks()
     }
 
-    /// ponytail: old-server fallback (TAL-372); polls the status route until each tracked task's answer arrives. It
-    /// replaces any running poll: a Web downgraded mid-session leaves the tasks poll with nothing to read.
-    private func startLegacyBackgroundPolling(parentSessionID: String) {
-        backgroundPollTask?.cancel()
-        backgroundPollTask = nil
-        let pollingInterval = pollingIntervals.backgroundNanoseconds
-        let sleep = pollingIntervals.sleep
-        backgroundPollTask = Task { @MainActor [weak self] in
-            pollingLoop: while !Task.isCancelled {
-                try? await sleep(pollingInterval)
-                guard !Task.isCancelled, let self, !self.legacyBackgroundPrompts.isEmpty else { break pollingLoop }
-                guard let response = try? await self.client.backgroundStatus(sessionID: parentSessionID) else { continue }
-                for result in response.results ?? [] {
-                    guard let taskID = result.taskId, let prompt = self.legacyBackgroundPrompts.removeValue(forKey: taskID) else { continue }
-                    let answer = result.answer?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                    let summary = prompt.count > 80 ? "\(prompt.prefix(80))..." : prompt
-                    self.appendLocalAssistantMessage("**Background** \(summary)\n\n\(answer.isEmpty ? String(localized: "No answer produced.") : answer)")
-                }
-                if self.legacyBackgroundPrompts.isEmpty { break pollingLoop }
-            }
-            if !Task.isCancelled {
-                self?.backgroundPollTask = nil
-            }
-        }
-    }
-
     /// While work runs, the card refreshes quietly; it stops once nothing is running.
     private func startBackgroundPollingIfNeeded() {
         guard backgroundPollTask == nil else { return }
@@ -4971,8 +4932,7 @@ public final class ChatViewModel {
                 do {
                     response = try await self.client.backgroundTasks(sessionID: sessionID)
                 } catch APIError.http(statusCode: 404, body: _) {
-                    // An older Web (TAL-372 fallback): nothing to refresh here.
-                    self.serverHasBackgroundTasks = false
+                    // The server no longer serves this session's records: keep what is shown.
                     break pollingLoop
                 } catch {
                     continue

@@ -922,13 +922,13 @@ extension ChatViewModelSendTests {
         let clarifyStreamClient = SpySSEStreamingClient()
         let approvalPendingRequests = LockedCounter()
         let clarificationPendingRequests = LockedCounter()
-        let backgroundStatusRequests = LockedCounter()
+        let backgroundTaskRequests = LockedCounter()
         // Each loop polls once and then parks in its interval until cancelled (CI run 36500298117 counted a
         // poll that real 100 ms intervals had already sent when cleanup ran). Distinct intervals name the loops.
         let hold = PollingLoopHold(pollsByInterval: [
             1: approvalPendingRequests,
             2: clarificationPendingRequests,
-            3: backgroundStatusRequests
+            3: backgroundTaskRequests
         ])
         let pollingIntervals = ChatPollingIntervals(
             approvalNanoseconds: 1,
@@ -954,7 +954,7 @@ extension ChatViewModelSendTests {
             case "/api/background":
                 return apiTestJSONResponse(#"{"task_id": "task-1", "stream_id": "stream-bg", "session_id": "background-1"}"#, for: request)
             case "/api/background/tasks":
-                _ = backgroundStatusRequests.increment()
+                _ = backgroundTaskRequests.increment()
                 // TAL-372: the started task runs until cleanup, so the card keeps refreshing.
                 return apiTestJSONResponse(#"{"session_id":"session-abc","agent_available":true,"tasks":[{"task_id":"task-1","kind":"background_command","status":"running","title":"audit tests","pinned":true,"dismissible":false,"active":true}]}"#, for: request)
             default:
@@ -978,7 +978,7 @@ extension ChatViewModelSendTests {
         try await waitUntil { hold.parkedLoops == 3 }
         XCTAssertEqual(approvalPendingRequests.count, 1)
         XCTAssertEqual(clarificationPendingRequests.count, 1)
-        XCTAssertEqual(backgroundStatusRequests.count, 1)
+        XCTAssertEqual(backgroundTaskRequests.count, 1)
 
         viewModel.cleanupPollingTasks()
 
@@ -988,7 +988,7 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(hold.parkedLoops, 3, "A cancelled loop must not wait for another interval")
         XCTAssertEqual(approvalPendingRequests.count, 1)
         XCTAssertEqual(clarificationPendingRequests.count, 1)
-        XCTAssertEqual(backgroundStatusRequests.count, 1)
+        XCTAssertEqual(backgroundTaskRequests.count, 1)
     }
 
     @MainActor

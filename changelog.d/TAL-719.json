@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Background task results always come from the server's shared task list, and support for Talaria Web servers older than 1.15 is removed from background tasks.",
+      "highlight": false,
+      "components": ["app", "web"]
+    }
+  ]
+}

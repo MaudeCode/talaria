@@ -6,10 +6,12 @@ import XCTest
 extension ChatViewModelSendTests {
     private final class BackgroundLog: @unchecked Sendable {
         var tasks = #"{"session_id":"session-abc","agent_available":true,"tasks":[]}"#
-        var statusReads = 0
         var taskReads = 0
+        var notFound = 0
         var dismissed: [String] = []
-        /// A Web from before TAL-372 has no tasks route.
+        /// Every request path, in order: background work reads only the routes the server ships.
+        var paths: [String] = []
+        /// The tasks route answers 404, as for a session the server does not serve.
         var tasksRouteMissing = false
     }
 
@@ -18,16 +20,16 @@ extension ChatViewModelSendTests {
             sessionSummary: try makeSession(),
             pollingIntervals: ChatPollingIntervals(approvalNanoseconds: 1_000_000_000, clarificationNanoseconds: 1_000_000_000, backgroundNanoseconds: 1_000_000)
         ) { request in
+            log.paths.append(request.url?.path ?? "")
             switch request.url?.path ?? "" {
             case "/api/background":
                 return apiTestJSONResponse(#"{"ok":true,"task_id":"task-1","stream_id":"stream-bg","session_id":"background-1"}"#, for: request)
-            case "/api/background/status":
-                // An older App polled this and turned each result into a local assistant message.
-                log.statusReads += 1
-                return apiTestJSONResponse(#"{"results":[{"task_id":"task-1","prompt":"audit tests","answer":"All tests pass.","completed_at":1}]}"#, for: request)
             case "/api/background/tasks":
                 log.taskReads += 1
-                if log.tasksRouteMissing { return apiTestJSONResponse(#"{"error":"not found"}"#, statusCode: 404, for: request) }
+                if log.tasksRouteMissing {
+                    log.notFound += 1
+                    return apiTestJSONResponse(#"{"error":"not found"}"#, statusCode: 404, for: request)
+                }
                 return apiTestJSONResponse(log.tasks, for: request)
             case "/api/background/result":
                 return apiTestJSONResponse(#"{"task_id":"task-1","text":"All tests pass."}"#, for: request)
@@ -48,31 +50,40 @@ extension ChatViewModelSendTests {
         let viewModel = try backgroundViewModel(log)
         let before = viewModel.messages.count
         _ = await viewModel.executeSlashCommand(try XCTUnwrap(SlashCommandCatalog.command(named: "background")), args: "audit tests")
-        try await waitUntil { log.statusReads + log.taskReads > 0 }
+        try await waitUntil { log.taskReads > 0 }
         await drainMainActor()
         XCTAssertEqual(viewModel.messages.count, before)
         XCTAssertFalse(viewModel.messages.contains { ($0.content ?? "").contains("All tests pass.") })
     }
 
-    func testAnOlderWebStillGetsTheFinishedAnswerAsBefore() async throws {
+    func testABackgroundStartShowsTheServerRecordAndReadsOnlyTheTasksRoute() async throws {
         let log = BackgroundLog()
-        log.tasksRouteMissing = true
+        log.tasks = #"{"session_id":"session-abc","agent_available":true,"tasks":[{"task_id":"task-1","kind":"background_command","status":"running","title":"audit tests","pinned":true,"dismissible":false,"active":true}]}"#
         let viewModel = try backgroundViewModel(log)
         _ = await viewModel.executeSlashCommand(try XCTUnwrap(SlashCommandCatalog.command(named: "background")), args: "audit tests")
-        try await waitUntil { viewModel.messages.contains { ($0.content ?? "").contains("All tests pass.") } }
-        XCTAssertEqual(viewModel.messages.filter { ($0.content ?? "").contains("All tests pass.") }.count, 1)
-        XCTAssertTrue(viewModel.pinnedBackgroundTasks.isEmpty)
+        XCTAssertEqual(viewModel.pinnedBackgroundTasks.map(\.taskId), ["task-1"])
+        log.tasks = #"{"session_id":"session-abc","agent_available":true,"tasks":[{"task_id":"task-1","kind":"background_command","status":"completed","title":"audit tests","result_available":true,"pinned":true,"dismissible":true}]}"#
+        try await waitUntil { viewModel.backgroundTasks.first?.status == .completed }
+        XCTAssertEqual(Set(log.paths), ["/api/background", "/api/background/tasks"])
     }
 
-    func testAWebDowngradedWhileWorkRunsStillGetsTheNextAnswer() async throws {
+    func testA404FromTheTasksRouteKeepsTheShownRecordsAndStartsNoOtherPolling() async throws {
         let log = BackgroundLog()
         log.tasks = #"{"session_id":"session-abc","agent_available":true,"tasks":[{"task_id":"d1","kind":"delegation","status":"running","title":"Fix CI","pinned":true,"dismissible":false,"active":true}]}"#
         let viewModel = try backgroundViewModel(log)
         await viewModel.refreshBackgroundTasks()
-        // The Web is downgraded: the tasks route is gone while the card's poll runs.
         log.tasksRouteMissing = true
+        let before = viewModel.messages.count
         _ = await viewModel.executeSlashCommand(try XCTUnwrap(SlashCommandCatalog.command(named: "background")), args: "audit tests")
-        try await waitUntil { viewModel.messages.contains { ($0.content ?? "").contains("All tests pass.") } }
+        // The start's refresh and the card's poll each read the 404, and the poll stops; any other route fails below.
+        try await waitUntil { log.notFound >= 2 || Set(log.paths).count > 2 }
+        await drainMainActor()
+        let reads = log.paths.count
+        try await Task.sleep(nanoseconds: 20_000_000)
+        XCTAssertEqual(log.paths.count, reads, "Nothing polls after the 404")
+        XCTAssertEqual(Set(log.paths), ["/api/background", "/api/background/tasks"])
+        XCTAssertEqual(viewModel.pinnedBackgroundTasks.map(\.taskId), ["d1"])
+        XCTAssertEqual(viewModel.messages.count, before)
     }
 
     func testTheCardShowsWhatTheServerPinsWithItsResultAndDismissAsksTheServer() async throws {

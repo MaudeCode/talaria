@@ -38,8 +38,6 @@ export interface Receipt {
   /** The `/background` turn running it, while it runs. */
   stream_id: string | null
   dismissed_at: number | null
-  /** Old clients' `/api/background/status` has returned it once. */
-  legacy_reported: boolean
 }
 
 export interface ChildSession { goal: string; session_id: string }
@@ -131,7 +129,7 @@ function mergeChildren(known: ChildSession[] | undefined, reported: ChildSession
 
 /** Fold an update into a receipt: a terminal record never reopens, and fields an update leaves out are kept. */
 export function mergeReceipt(prev: Receipt | undefined, next: Partial<Receipt> & Pick<Receipt, 'task_id' | 'kind'>, now: number): Receipt {
-  const base: Receipt = prev ?? { task_id: next.task_id, kind: next.kind, status: 'running', title: '', started_at: null, updated_at: now, completed_at: null, exit_code: null, agents: null, result: null, agent_result: false, stream_id: null, dismissed_at: null, legacy_reported: false }
+  const base: Receipt = prev ?? { task_id: next.task_id, kind: next.kind, status: 'running', title: '', started_at: null, updated_at: now, completed_at: null, exit_code: null, agents: null, result: null, agent_result: false, stream_id: null, dismissed_at: null }
   const defined = Object.fromEntries(Object.entries(next).filter(([, v]) => v !== undefined && v !== null && v !== '')) as Partial<Receipt>
   const children = mergeChildren(base.children, defined.children)
   if (isTerminal(base.status)) {
@@ -213,8 +211,8 @@ export class BackgroundTaskStore {
     return true
   }
 
-  /** Flags that are not task state: dismissal, the legacy status read. */
-  mark(sid: string, taskId: string, fields: Partial<Pick<Receipt, 'dismissed_at' | 'legacy_reported' | 'stream_id'>>): Receipt | null {
+  /** Flags that are not task state: dismissal, the running stream. */
+  mark(sid: string, taskId: string, fields: Partial<Pick<Receipt, 'dismissed_at' | 'stream_id'>>): Receipt | null {
     const receipts = [...this.list(sid)]
     const index = receipts.findIndex((r) => r.task_id === taskId)
     if (index < 0) return null
@@ -363,15 +361,5 @@ export class BackgroundActivity {
   dismiss(sid: string, taskId: string): BackgroundTask | null {
     const receipt = this.deps.store.mark(sid, taskId, { dismissed_at: this.deps.now() })
     return receipt ? taskView(receipt) : null
-  }
-
-  /**
-   * Old clients' `/api/background/status`: each finished `/background` result once per server, as before. The record and
-   * its result stay; the shared `tasks` view is not affected.
-   */
-  legacyResults(sid: string): Record<string, unknown>[] {
-    const done = this.deps.store.list(sid).filter((r) => r.kind === 'background_command' && isTerminal(r.status) && !r.legacy_reported)
-    for (const r of done) this.deps.store.mark(sid, r.task_id, { legacy_reported: true })
-    return done.map((r) => ({ task_id: r.task_id, prompt: r.title, answer: r.result, completed_at: r.completed_at }))
   }
 }

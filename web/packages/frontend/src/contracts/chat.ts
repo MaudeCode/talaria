@@ -4,7 +4,7 @@ import { SessionIdSchema } from '@maudecode/talaria-web-contracts'
 export {
   ChatStartRequestSchema, ChatStartResponseSchema, StreamStatusSchema, CancelResponseSchema, SteerRequestSchema, SteerResponseSchema, ApprovalPendingSchema, ApprovalPendingEnvelopeSchema, ApprovalChoiceSchema,
   ApprovalRespondRequestSchema, ClarifyChoiceSchema, ClarifyPendingSchema, ClarifyPendingEnvelopeSchema, ClarifyRespondRequestSchema, ClarifyRespondResponseSchema, DraftResponseSchema, UploadResponseSchema,
-  GoalViewSchema as GoalStateSchema, GoalResponseSchema, BackgroundResultSchema, BackgroundStatusSchema, ShareCreateResponseSchema, ShareMessageSchema, ShareReadSchema, SessionNewRequestSchema, TranscribeCapabilitySchema,
+  GoalViewSchema as GoalStateSchema, GoalResponseSchema, ShareCreateResponseSchema, ShareMessageSchema, ShareReadSchema, SessionNewRequestSchema, TranscribeCapabilitySchema,
   type ChatStartRequest, type ChatStartResponse, type StreamStatus, type ApprovalPending, type ClarifyPending, type ClarifyStep, type UploadResponse,
 } from '@maudecode/talaria-web-contracts'
 /** Composer draft save body (the route takes the flattened fields). */
