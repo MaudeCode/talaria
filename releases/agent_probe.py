@@ -23,7 +23,15 @@ for module in ("run_agent", "hermes_cli.runtime_provider", "agent.auxiliary_clie
     importlib.import_module(module)
 import sqlite3
 
-from hermes_cli import __version__
+try:
+    # Agents since v0.21.6 resolve their identity from the install stamp, else the checkout's release tag;
+    # their ``__version__`` reads only the stamp, which a source checkout does not have.
+    from hermes_cli.version_info import get_version_info
+    __version__ = get_version_info().base_version
+except ModuleNotFoundError as error:
+    if error.name != "hermes_cli.version_info":
+        raise
+    from hermes_cli import __version__
 from hermes_state import SessionDB
 from talaria_sidecar.methods import state_db as sidecar_state_db
 

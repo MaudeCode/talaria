@@ -50,7 +50,8 @@ class FakeTools:
         command = [str(part) for part in command]
         self.commands.append(command)
         if command[:2] == ["git", "-C"] and command[3] == "fetch":
-            self.fetched = command[-1]
+            self.refspec = command[-1]
+            self.fetched = command[-1].removeprefix("+").split(":", 1)[0]
         if command[:2] == ["git", "-C"] and command[3] == "checkout":
             (Path(command[2]) / "uv.lock").write_text(f'version = 1\nrequires-python = "{self.requires_python}"\n')
         if command[0].endswith("test.sh"):
@@ -170,7 +171,8 @@ class CheckerTests(unittest.TestCase):
             "kind": "supported", **{key: RELEASES[0][key] for key in checker.IDENTITY}, "webRevision": "e" * 40,
             "python": "3.13.7", "tests": {"passed": 39, "failed": 0, "skipped": 1}, "imageVerified": True,
             "result": "success", "diagnostics": "result.junit.xml"})
-        self.assertEqual(self.tools.fetched, "refs/tags/v2026.9.14")
+        # The release tag lands as a local tag so git-derived Agent versions can resolve it.
+        self.assertEqual(self.tools.refspec, "+refs/tags/v2026.9.14:refs/tags/v2026.9.14")
         probe = next(command for command in self.tools.commands if command[-2:] == [str(self.root / "releases/agent_probe.py"), "0.21.3"])
         self.assertTrue(probe)
         self.assertIn(["uv", "sync", "--frozen", "--no-dev", "--extra", "mcp", "--python", "3.13"], self.tools.commands)

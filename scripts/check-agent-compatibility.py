@@ -175,8 +175,10 @@ def check(args, kind, identity, receipt, junit):
                 env[key] = os.environ[key]
         agent = state / "agent"
         ref = sha if kind == "canary" else f"refs/tags/{identity['releaseTag']}"
+        # A local release tag lets Agents that derive their version from git see the release they are.
         for command in (["git", "init", "--quiet", str(agent)],
-                        ["git", "-C", str(agent), "fetch", "--depth=1", "--no-tags", f"https://github.com/{AGENT_REPOSITORY}.git", ref],
+                        ["git", "-C", str(agent), "fetch", "--depth=1", "--no-tags", f"https://github.com/{AGENT_REPOSITORY}.git",
+                         ref if kind == "canary" else f"+{ref}:{ref}"],
                         ["git", "-C", str(agent), "checkout", "--quiet", "--detach", "FETCH_HEAD"]):
             subprocess.run(command, env=env, check=True)
         actual = subprocess.check_output(["git", "-C", str(agent), "rev-parse", "HEAD"], env=env, text=True).strip()
