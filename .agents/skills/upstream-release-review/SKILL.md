@@ -42,15 +42,18 @@ and stops the review.
 
 ## 2. Read every change
 
-Release notes are leads, not coverage. Read each release note in the range
-(`gh release view <tag> --repo <repo>`) and then every non-merge commit's body,
-stat, and relevant patch. When a range is too large for one pass, partition its
+Release notes are leads, not coverage. Read each release note in the range (`gh
+release view <tag> --repo <repo>`) and then every non-merge commit's body, stat,
+and relevant patch. When a range is too large for one pass, partition its
 commits by the paths they touch and review the partitions in parallel. Every
 commit still gets its body and stat read, whatever its path or subject; read the
 patch wherever the body or stat touches a Talaria boundary or adds a CLI verb,
-config key, persisted field, or other user-visible capability. Review against current `origin/main`. Before
-filing, run `git fetch origin`; when `origin/main` moved during the review,
-re-check each finding against the new head.
+config key, persisted field, or other user-visible capability. Each partition
+reviewer's uncertainty and open-question notes join the review: verify every one
+and classify it with step 3's classes, or put it in the report's Uncertainty
+when it cannot be resolved. Review against current `origin/main`. Before filing,
+run `git fetch origin`; when `origin/main` moved during the review, re-check
+each finding against the new head.
 
 - **Hermes Agent:** diff each `sidecarModules` entry for the names the sidecar
   imports or calls. A removed or re-signatured name breaks compatibility; a name
