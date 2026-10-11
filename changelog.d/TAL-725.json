@@ -1,10 +1,3 @@
 {
-  "entries": [
-    {
-      "category": "Changed",
-      "summary": "Server updates started from Settings are now checked reliably before each release.",
-      "highlight": false,
-      "components": ["app"]
-    }
-  ]
+  "skip": "DEBUG-only UI-test fixture: its update-check and session-search answers now use the server's current shapes."
 }
