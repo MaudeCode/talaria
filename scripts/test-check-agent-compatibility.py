@@ -245,7 +245,8 @@ class CheckerTests(unittest.TestCase):
 
     def test_lockfile_selects_the_newest_allowed_python(self):
         for requires, expected in ((">=3.11, <3.14", "3.13"), (">=3.11,<3.15", "3.14"), (">=3.12,<=3.12", "3.12"),
-                                   ("==3.11.*", "3.11"), (">=3.11,!=3.14.*", "3.13")):
+                                   ("==3.11.*", "3.11"), (">=3.11,!=3.14.*", "3.13"), ("~=3.13", "3.14"),
+                                   (">=3.11,<4", "3.14"), ("<=3.13", "3.13"), (">=3.11.4,<3.13", "3.12"), ("~=3.12.1", "3.12")):
             with self.subTest(requires), tempfile.TemporaryDirectory() as agent:
                 (Path(agent) / "uv.lock").write_text(f'requires-python = "{requires}"\n')
                 self.assertEqual(checker.lockfile_python(Path(agent)), expected)

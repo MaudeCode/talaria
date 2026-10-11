@@ -76,20 +76,15 @@ def supported_releases(root):
 
 
 def lockfile_python(agent):
-    """Newest Python minor the checkout's uv.lock ``requires-python`` allows."""
-    clauses = tomllib.loads((agent / "uv.lock").read_text())["requires-python"].split(",")
-    operators = {">=": lambda a, b: a >= b, ">": lambda a, b: a > b, "<=": lambda a, b: a <= b, "<": lambda a, b: a < b,
-                 "==": lambda a, b: a == b, "!=": lambda a, b: a != b}
-
-    def allows(minor):
-        for clause in clauses:
-            operator, major, bound = re.fullmatch(r"\s*(>=|<=|==|!=|>|<)\s*([0-9]+)\.([0-9]+)(?:\.[0-9*]+)?\s*", clause).groups()
-            if not operators[operator]((3, minor), (int(major), int(bound))):
-                return False
-        return True
-
+    """Newest Python minor the checkout's uv.lock ``requires-python`` allows, by PEP 440 specifier rules."""
+    try:
+        from packaging.specifiers import SpecifierSet
+    except ImportError:  # Not installed on a bare runner; pip ships the same library.
+        from pip._vendor.packaging.specifiers import SpecifierSet
+    allowed = SpecifierSet(tomllib.loads((agent / "uv.lock").read_text())["requires-python"])
     for minor in reversed(PYTHON_MINORS):
-        if allows(minor):
+        # A minor qualifies when some patch release of it does (`<=3.13` admits only 3.13.0).
+        if any(allowed.contains(f"3.{minor}.{patch}") for patch in (0, 99)):
             return f"3.{minor}"
     raise RuntimeError("no supported Python satisfies the Agent lockfile")
 
