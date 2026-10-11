@@ -728,7 +728,14 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             }
             return json(["ok": true])
         case "/api/sessions/search":
-            return json(["sessions": [], "query": "", "count": 0])
+            // The server answers from its `/api/sessions` rows, in their order, and the App shows exactly that set
+            // (TAL-308); title matches stand in for the server's title, metadata and content search.
+            let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "q" }?.value ?? ""
+            let list = (try? JSONSerialization.jsonObject(with: sessionsResponse(firstTitle: sessionTitle))) as? [String: Any]
+            let matches = (list?["sessions"] as? [[String: Any]] ?? []).filter {
+                ($0["title"] as? String)?.localizedCaseInsensitiveContains(query) == true
+            }
+            return json(["sessions": matches, "query": query, "count": matches.count, "sidebar_filtered": true])
         case "/api/sessions/bulk":
             let ids = requestJSON(request)["session_ids"] as? [String] ?? []
             return json(["results": ids.map { ["session_id": $0, "ok": true] }])
