@@ -17,8 +17,9 @@ provider, or the network. Run commands from `web/` unless noted.
 | iOS contract | `app/scripts/validate-upstream-contract` | boots the Node server on the replay sidecar and runs the HTTP/SSE probe plus Swift decoders |
 | Everything | `scripts/check web` (root) | `scripts/check-web-server` + frontend gates + browser |
 
-CI (`.github/workflows/web-verify.yml`) runs the server, sidecar (provisioning the pinned Agent with
-`scripts/check-agent-compatibility.py --skip-docker`), and frontend jobs selected by
+CI (`.github/workflows/web-verify.yml`) runs the server, sidecar (one job per supported Agent release
+in `sidecar/agent_support.json`, each provisioned with
+`scripts/check-agent-compatibility.py --skip-docker --release TAG`), and frontend jobs selected by
 `scripts/changed-components.py`.
 
 ## Server tests
@@ -42,8 +43,9 @@ CI (`.github/workflows/web-verify.yml`) runs the server, sidecar (provisioning t
 `sidecar/tests` spawns `python -m talaria_sidecar` on the Agent venv with a disposable `HERMES_HOME`
 per test (`conftest.py` `SidecarProcess`). `sidecar/scripts/record-fixtures.py` regenerates the recorded
 fixtures consumed by the contracts package and the Vitest fake; commit fixture changes together with the
-method change. `scripts/check-agent-compatibility.py` (root) provisions the pinned Agent in a temporary
-directory, runs the Agent probe, the sidecar suite, and optionally verifies the pinned container image.
+method change. `scripts/check-agent-compatibility.py` (root) provisions an Agent release in a temporary
+directory, runs the Agent probe, the sidecar suite, and optionally verifies the release container image.
+Its `--receipt` records the result, test counts, Python and Web revisions.
 
 ## Frontend tests
 

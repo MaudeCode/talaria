@@ -16,6 +16,13 @@ installs an Agent; existing installations are discovered and retained, never
 downgraded. Both multi-container Compose variants inherit their Agent image from
 the same file through Compose `extends`.
 
+`sidecar/agent_support.json` lists exactly three stable Agent releases Talaria
+supports, each with its tag, package version, peeled commit, release image
+digest, and the ticket that validated it. The active pin must be one of them;
+the checker refuses a record with any other count, a repeated identity, a
+mutable reference, or a pin outside the set. Promoting a newer release replaces
+the oldest entry only after the candidate passes.
+
 At handshake the sidecar reports `{agent_revision, agent_version, pinned_revision,
 pinned_version, compatible, stale, update_state}`. `compatible` means the Agent
 imported; a different revision than the pin gets a warning and can attempt Agent
@@ -30,16 +37,24 @@ contracts, compatibleAgent`); it names the tested dependency, not whichever Agen
 an operator installed.
 
 Run `python3 scripts/check-agent-compatibility.py` from the monorepo root when
-changing the pin or preparing a release. The gate fetches only the pinned
-release tag, requires it to peel to the recorded commit, installs its locked
-dependencies, exercises real Agent imports and the sidecar's `SessionDB` write
-path, and runs the sidecar pytest suite on that interpreter. Unless
+changing the pin or preparing a release; `--release TAG` checks one supported
+release, `--identity JSON` an unpromoted candidate, and `--main SHA` an Agent
+`main` canary. Pull requests that change the sidecar, its contracts, the
+checker, or the record run it for all three supported releases, and the release
+gate repeats that against the release plan's Web source. The gate requires a
+published, non-prerelease GitHub release, fetches only that release tag,
+requires it to peel to the recorded commit, installs its locked dependencies on
+the newest Python the lockfile allows, exercises real Agent imports and the
+sidecar's `SessionDB` write path, and runs the sidecar pytest suite on that
+interpreter. `--receipt PATH` writes the result, failing or not, with test
+counts, the Python and Web revisions, and the JUnit report beside it. Unless
 `--skip-docker` is set, it also requires the release-tagged image to match the
 recorded digest and repeats the probe against that digest with networking
 disabled. It uses disposable homes and databases and never production
 credentials or provider requests. A passing identity is a tested combination,
 not a requirement that independently installed Agent or peer component versions
-be equal. Unreleased Agent `main` canaries never change this pin.
+be equal. Unreleased Agent `main` canaries never change this pin or the
+support record.
 
 The compatibility gate proves Talaria's existing calls still work; it cannot see
 new Agent capabilities. For what a release or `main` SHA adds, modifies,

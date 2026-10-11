@@ -364,38 +364,67 @@ class ContractRunnerTests(unittest.TestCase):
 
 
 class AgentRunnerTests(unittest.TestCase):
-    def test_selected_checkout_stays_in_shared_scratch_and_is_removed(self):
+    def test_every_supported_release_runs_from_the_selected_checkout_which_is_removed(self):
         spec = importlib.util.spec_from_file_location("agent_runner", Path(__file__).resolve().parents[1] / "scripts/check-release-agent.py")
         agent = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(agent)
         pin = {"x-talaria": {"version": "1.0.0"}, "services": {"hermes-agent": {"image": "synthetic"}}}
-        for fail in (False, True):
-            with self.subTest(fail=fail), tempfile.TemporaryDirectory() as temporary:
+        tags = ["v2026.9.14", "v2026.9.21", "v2026.9.24"]
+        for failing, receipts in ((None, False), (None, True), ("v2026.9.21", True)):
+            with self.subTest(failing=failing, receipts=receipts), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
                 plan = root / "plan.json"
                 plan.write_text(json.dumps({"components": {"web": {"sourceRevision": "a" * 40}},
                                             "agent": {"version": "1.0.0", "image": "synthetic"}}))
-                checkouts = []
+                checks = []
+
+                def check_output(command, **kwargs):
+                    if command[:2] == ["git", "-C"]:
+                        self.assertEqual(command[-1], f"{'a' * 40}:web/sidecar/agent_dependency.json")
+                        return json.dumps(pin).encode()
+                    # The supported releases come from the selected source's own record, not this checkout's.
+                    self.assertEqual(command[1:], [str(kwargs["cwd"] / "scripts/check-agent-compatibility.py"), "--list"])
+                    return json.dumps(tags).encode()
 
                 def run(command, **kwargs):
                     if command[0] == "python3":
                         checkout = kwargs["cwd"]
                         self.assertTrue(checkout.is_relative_to(root / ".codex-tmp"))
-                        self.assertTrue(checkout.parent.is_dir())
-                        checkouts.append(checkout)
-                        if fail:
+                        self.assertEqual(command[1], str(checkout / "scripts/check-agent-compatibility.py"))
+                        checks.append((checkout, command[2:]))
+                        if failing in command:
                             raise subprocess.CalledProcessError(1, command)
 
-                with patch.object(agent, "ROOT", root), patch.object(sys, "argv", ["check", "--plan", str(plan)]), \
-                        patch.object(agent.subprocess, "check_output", return_value=json.dumps(pin).encode()), \
+                argv = ["check", "--plan", str(plan), *(["--receipts", str(root / "receipts")] if receipts else [])]
+                with patch.object(agent, "ROOT", root), patch.object(sys, "argv", argv), \
+                        patch.object(agent.subprocess, "check_output", side_effect=check_output), \
                         patch.object(agent.subprocess, "run", side_effect=run):
-                    if fail:
-                        with self.assertRaises(subprocess.CalledProcessError):
+                    if failing:
+                        with self.assertRaisesRegex(RuntimeError, failing):
                             agent.main()
                     else:
                         agent.main()
-                self.assertEqual(len(checkouts), 1)
-                self.assertFalse(checkouts[0].parent.exists())
+                # A failing release does not stop the others from reporting.
+                self.assertEqual([arguments for _, arguments in checks],
+                                 [["--release", tag, *(["--receipt", str((root / "receipts").resolve() / f"{tag}.json")] if receipts else [])]
+                                  for tag in tags])
+                self.assertFalse(checks[0][0].parent.exists())
+
+    def test_selected_web_pin_must_match_the_planned_agent(self):
+        spec = importlib.util.spec_from_file_location("agent_runner", Path(__file__).resolve().parents[1] / "scripts/check-release-agent.py")
+        agent = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(agent)
+        pin = {"x-talaria": {"version": "1.0.1"}, "services": {"hermes-agent": {"image": "synthetic"}}}
+        with tempfile.TemporaryDirectory() as temporary:
+            plan = Path(temporary) / "plan.json"
+            plan.write_text(json.dumps({"components": {"web": {"sourceRevision": "a" * 40}},
+                                        "agent": {"version": "1.0.0", "image": "synthetic"}}))
+            with patch.object(sys, "argv", ["check", "--plan", str(plan), "--receipts", temporary]), \
+                    patch.object(agent.subprocess, "check_output", return_value=json.dumps(pin).encode()), \
+                    patch.object(agent.subprocess, "run") as run:
+                with self.assertRaisesRegex(ValueError, "differ"):
+                    agent.main()
+            run.assert_not_called()
 
     def test_each_web_source_is_probed_by_its_own_harness(self):
         # A retained pre-TAL-245 Web is the Python server; only its own revision's harness can start it.

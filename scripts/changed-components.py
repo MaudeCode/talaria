@@ -47,6 +47,7 @@ SCRIPTS = {
     "stamp-release.py": {"tooling"},
     "test-stamp-release.py": {"tooling"},
     "check-agent-compatibility.py": {"web_server", "docker", "tooling"},
+    "test-check-agent-compatibility.py": {"tooling"},
     "critical-markdown-check.py": {"tooling"},
     "test-critical-markdown-check.py": {"tooling"},
     "check-committed-images.py": {"tooling"},
