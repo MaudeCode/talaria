@@ -1570,11 +1570,29 @@ export function redactSensitive(text: string): string {
   const view = splitView(text, DISPLAY_GAPS_RE)
   if (!view) return redacted
   const { stripped, kept } = view
-  const shown = secretTokenCounts(redactShellText(stripped))
+  let shown = redactShellText(stripped)
+  const shownCounts = secretTokenCounts(shown)
   const raw = secretTokenCounts(redacted.replace(DISPLAY_GAPS_RE, ''))
   const spans: [number, number, string][] = []
-  for (const m of stripped.matchAll(SECRET_UNIT_RE)) if ((shown.get(m[0]) ?? 0) < (raw.get(m[0]) ?? 0)) spans.push([kept[m.index]!, kept[m.index + m[0].length - 1]! + 1, m[0]])
-  return spans.length ? redactShellText(maskSpans(text, spans, () => '***')) : redacted
+  for (const m of stripped.matchAll(SECRET_UNIT_RE)) if ((shownCounts.get(m[0]) ?? 0) < (raw.get(m[0]) ?? 0)) spans.push([kept[m.index]!, kept[m.index + m[0].length - 1]! + 1, m[0]])
+  let out = redacted
+  if (spans.length) {
+    const premasked = maskSpans(text, spans, () => '***')
+    out = redactShellText(premasked)
+    shown = redactShellText(premasked.replace(DISPLAY_GAPS_RE, ''))
+  }
+  // A credential of delimiters only (`Bear\x1b[1mer $$$$`) has no unit to mask in the text: when the view shows fewer of
+  // a delimiter than the text's redaction, the view's redaction is returned, without its escape sequences.
+  const outCounts = delimiterCounts(out.replace(DISPLAY_GAPS_RE, ''))
+  const viewCounts = delimiterCounts(shown)
+  return [...outCounts].some(([char, count]) => (viewCounts.get(char) ?? 0) < count) ? shown : out
+}
+
+/** A text's delimiters, `SECRET_UNIT_RE`'s but whitespace and a mask's `*`, counted outside a private key's mask. */
+function delimiterCounts(text: string): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const [char] of text.replaceAll('[REDACTED PRIVATE KEY]', '').matchAll(/['"`$\\=:@/;&|<>(){}[\],]/g)) counts.set(char, (counts.get(char) ?? 0) + 1)
+  return counts
 }
 
 function redactShellText(text: string): string {
