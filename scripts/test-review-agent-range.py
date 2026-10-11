@@ -115,6 +115,12 @@ class ReviewAgentRangeTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
         self.assertFalse(state.exists())
 
+    def test_first_advance_creates_the_state_directory(self):
+        state, report = self.root / "reviews" / "state.json", self.root / "report.md"
+        report.write_text(f"Reviewed {self.candidate}\n")
+        self.run_script("advance", "--state", str(state), "--ref", "v0.2.0", "--sha", self.candidate, "--report", str(report))
+        self.assertEqual(json.loads(state.read_text())["lastReviewed"]["sha"], self.candidate)
+
 
 if __name__ == "__main__":
     unittest.main()

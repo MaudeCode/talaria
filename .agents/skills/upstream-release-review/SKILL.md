@@ -1,0 +1,143 @@
+---
+name: upstream-release-review
+description: Review one exact release range of a Talaria upstream (Hermes Agent, Hermex, or Hermes WebUI) for changes Talaria should adopt, fix, or track, then file validated bugs and features in Kaneo and hold everything else for owner approval. Use when a new upstream release needs review, when the upstream release monitor launches a review thread, or when asked what changed upstream since the last review.
+---
+
+# Upstream release review
+
+Review one exact range, `<base>..<candidate>`, of one upstream:
+
+| Upstream | Repository | Talaria consumer | Review covers |
+|---|---|---|---|
+| Hermes Agent | `NousResearch/hermes-agent` | Web sidecar, contracts, server, UI | compatibility and features |
+| Hermex | `uzairansaruzi/hermex` | `app/` (Talaria's App is a Hermex fork) | fixes and features to port |
+| Hermes WebUI | `nesquena/hermes-webui`, including `exp-*` | `web/` (Talaria Web derives from it) | features, plus fixes for defects Talaria Web shares |
+
+Talaria Web is no longer the Python WebUI build, so WebUI changes never create
+compatibility work. Count a WebUI fix only when Talaria Web shows the same
+user-visible defect.
+
+The review never edits Talaria source, the Agent pin, or a deployment. Its only
+tracker writes are the ones in step 4.
+
+## 1. Pin the range
+
+Resolve both ends to exact SHAs. Missing or rewritten history ends the review:
+report both SHAs and do not choose a narrower range. An empty range is reported
+and stops the review.
+
+- **Hermes Agent:** from the monorepo root, run:
+  ```sh
+  python3 scripts/review-agent-range.py prepare --candidate <tag|main|SHA> \
+    --base <base> --state ~/.talaria-release-reviews/hermes-agent.json
+  ```
+  `--candidate main` reviews one exact unreleased SHA, which is never called
+  supported. `already_reviewed` means the watermark covers the candidate; report
+  that and stop. The manifest's `sidecarModules` lists the changed Agent modules
+  the sidecar imports.
+- **Hermex and WebUI:** clone into a new temporary directory outside the
+  repository (`gh repo clone <repo> <dir> -- --filter=blob:none`). Verify that
+  `<base>` is an ancestor of `<candidate>`, and list
+  `git log --no-merges <base>..<candidate>`.
+
+## 2. Read every change
+
+Release notes are leads, not coverage. Read each release note in the range
+(`gh release view <tag> --repo <repo>`) and then every non-merge commit's body,
+stat, and relevant patch.
+
+- **Hermes Agent:** diff each `sidecarModules` entry for the names the sidecar
+  imports or calls. A removed or re-signatured name breaks compatibility; a name
+  re-exported lazily (module `__getattr__` map) still exists. Also check the
+  `hermes` CLI verbs the sidecar runs (`gateway restart` in
+  `web/sidecar/talaria_sidecar/methods/gateway.py`) and the Agent-owned files
+  the server reads (`config.yaml`, `.env`, profiles, skills, memories,
+  `state.db`; see `web/docs/architecture/agent-api-contract.md`). New
+  capabilities are `feat(...)` commits, CLI verbs, config keys, control-socket
+  verbs, and `state.db` columns in areas from that document's dependency-class
+  table.
+- **Hermex:** map `HermesMobile` paths and types to their current Talaria
+  equivalents, then read current callers, tests, and history. Compare behavior,
+  not commit titles. Plan semantic ports, not cherry-picks, so Talaria naming,
+  module paths, navigation, activity timelines, and multi-server isolation
+  survive. When adopting a change needs a request, response, or SSE shape the
+  Talaria Web contract (`web/packages/contracts`) lacks, it is a contract hold.
+- **Hermes WebUI:** map each user-visible capability to `web/packages/server`,
+  `web/sidecar`, and `web/packages/frontend`. Ignore Python-server internals.
+
+Map every finding to its Talaria consumer with a `path:line`.
+
+## 3. Classify
+
+Put each relevant change in exactly one class:
+
+| Class | Meaning | Outcome |
+|---|---|---|
+| **bug** | Talaria has the same reachable defect, or breaks against the candidate | file |
+| **feature** | a new upstream capability Talaria users would gain | file |
+| **already present** | Talaria already has it or a stronger equivalent | report |
+| **hold** | anything needing a decision: deprecation without current breakage, product choice, intentional divergence, contract hold, code-supported but unreproduced claim | hold for approval |
+| **irrelevant** | outside every Talaria boundary | summarize by area |
+
+A bug needs evidence that Talaria is affected: a reproduction with disposable
+state, or a failing existing check. Code inspection alone makes it a hold. A
+feature needs a concrete user-visible outcome in Talaria. Group changes that share
+one Talaria change into one finding.
+
+## 4. File and hold
+
+For every **bug** and **feature**, follow the `discover-tickets` skill's validation,
+shaping, and filing sections in the Talaria Kaneo project. Use the investigation
+question "What does `<repo>` `<base>..<candidate>` need from Talaria?". That
+skill dedupes against open and recent tickets, branches, and PRs, decides `sf`
+readiness, and reads tickets back. It is a user-level skill from
+`kiliantyler/skills`, not part of this repository. When it is not installed,
+file nothing and list every bug and feature under "Held for approval" instead.
+On top of its rules:
+
+- Attach the workspace `upstream` label and the consumer's scope: `web` for the
+  Agent and WebUI, `app` for Hermex. Add `contracts` when the change touches
+  `web/packages/contracts`.
+- Put the upstream release tag and commit, PR, or blob links (at exact SHAs) in
+  the body.
+- Follow the server-owned-state rule in the root `AGENTS.md`: client features
+  get their decision fields on the server and in the contract.
+- When an open ticket already covers the finding, comment on it with the new
+  evidence instead of filing.
+
+File nothing for a **hold**. List it in the report with its evidence and the
+ticket you would file. The owner approves held findings by replying in the
+review thread, and only then is that ticket filed.
+
+## 5. Report
+
+- **Identity:** upstream, base and candidate tags with SHAs, compare link, and
+  non-merge commit count.
+- **Filed:** each ticket link and the finding it covers, plus tickets commented
+  on.
+- **Held for approval:** numbered so the owner can approve by number.
+- **Already present and irrelevant:** grouped summaries.
+- **Uncertainty:** open questions, plus findings older than the base, labeled as
+  outside the range.
+- **Hermes Agent only:** the support result from
+  `python3 scripts/check-agent-compatibility.py --identity JSON` (a release) or
+  `--main SHA` (a canary) when run for this identity, citing its receipt.
+  Otherwise write "not run".
+
+Link to upstream sources, never to the local clone. The report contains no
+credentials, home paths, or live session content.
+
+## 6. Advance the Agent watermark
+
+Only for Hermes Agent, and only after the report is complete:
+
+```sh
+python3 scripts/review-agent-range.py advance \
+  --state ~/.talaria-release-reviews/hermes-agent.json \
+  --ref <candidate ref> --sha <candidate SHA> --report <report file>
+```
+
+It refuses a report that does not name the SHA or that contains a home path or
+token. A failed or missing review leaves the watermark unchanged. The `lastObserved`
+and `lastPassing` fields belong to the CI release detector and canary, so never
+edit them here.

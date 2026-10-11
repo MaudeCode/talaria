@@ -58,12 +58,13 @@ support record.
 
 The compatibility gate proves Talaria's existing calls still work; it cannot see
 new Agent capabilities. For what a release or `main` SHA adds, modifies,
-deprecates or removes, run the read-only
-[`hermes-agent-release-review`](../../../.agents/skills/hermes-agent-release-review/SKILL.md)
+deprecates or removes, run the
+[`upstream-release-review`](../../../.agents/skills/upstream-release-review/SKILL.md)
 skill: `python3 scripts/review-agent-range.py prepare --base <reviewed SHA>
 --candidate <tag|main>` prepares the exact range, and the skill classifies each
-change against the sidecar, contracts, server and UI. Its report is advisory and
-never changes the pin.
+change against the sidecar, contracts, server and UI. It files validated bugs
+and features in Kaneo, holds other findings for owner approval, and never
+changes the pin.
 
 ## Dependency classes
 
