@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Clarification questions are answered only on Talaria Web 1.12 or later; support for older servers' question format is removed.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

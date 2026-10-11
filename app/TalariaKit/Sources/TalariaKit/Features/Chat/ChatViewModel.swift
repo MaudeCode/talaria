@@ -304,8 +304,8 @@ public final class ChatViewModel {
     public var clarificationDraftResponse: String { pendingActionCoordinator.clarificationDraftResponse }
     public var clarificationSelectedChoices: [String] { pendingActionCoordinator.clarificationSelectedChoices }
 
-    public func selectClarificationQuestion(_ index: Int, promptID: String) {
-        pendingActionCoordinator.selectClarificationQuestion(index, promptID: promptID)
+    public func selectClarificationStep(_ index: Int, promptID: String) {
+        pendingActionCoordinator.selectClarificationStep(index, promptID: promptID)
     }
 
     public func toggleClarificationChoice(_ choice: String, promptID: String) {

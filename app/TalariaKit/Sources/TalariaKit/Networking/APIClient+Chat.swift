@@ -85,16 +85,14 @@ extension APIClient {
 
     public func respondClarification(
         sessionID: String,
-        response: String? = nil,
         clarifyID: String?,
-        answers: [String: JSONValue]? = nil
+        answers: [String: JSONValue]
     ) async throws -> ClarificationRespondResponse {
         try await send(
             endpoint: .clarifyRespond,
             method: "POST",
             body: ClarificationRespondRequest(
                 sessionId: sessionID,
-                response: response,
                 clarifyId: clarifyID,
                 answers: answers
             )
@@ -221,9 +219,8 @@ private struct ApprovalRespondRequest: Encodable {
 
 private struct ClarificationRespondRequest: Encodable {
     let sessionId: String
-    let response: String?
     let clarifyId: String?
-    let answers: [String: JSONValue]?
+    let answers: [String: JSONValue]
 }
 
 private struct BtwRequest: Encodable {

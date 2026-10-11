@@ -420,7 +420,7 @@ struct ChatView: View {
             },
             onSelectClarificationQuestion: { index in
                 guard let prompt else { return }
-                viewModel.selectClarificationQuestion(index, promptID: prompt.id)
+                viewModel.selectClarificationStep(index, promptID: prompt.id)
             },
             onSubmitClarification: { response in
                 guard let prompt else { return }

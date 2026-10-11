@@ -66,7 +66,7 @@ final class ChatPendingActionCoordinator {
     private var clarificationAnswers: [String: JSONValue] = [:]
     private var clarificationQuestionDrafts: [String: (text: String, choices: [String])] = [:]
 
-    func selectClarificationQuestion(_ index: Int, promptID: String) {
+    func selectClarificationStep(_ index: Int, promptID: String) {
         guard let prompt = clarificationPrompt, prompt.id == promptID,
               prompt.sessionID == delegate?.pendingActionSessionID,
               !isRespondingToClarification,
@@ -309,22 +309,22 @@ final class ChatPendingActionCoordinator {
             return false
         }
 
-        if prompt.questionID != nil {
-            clarificationDraftResponse = responseText
-            saveClarificationDraft(for: prompt)
-            if !prompt.isLastQuestion {
-                selectClarificationQuestion(prompt.questionIndex + 1, promptID: prompt.id)
-                return true
-            }
-            // Manual paging must not let the final page submit missing answers.
-            for index in 0..<prompt.questionCount {
-                var question = prompt
-                question.questionIndex = index
-                if let id = question.questionID, clarificationAnswers[id] == nil {
-                    selectClarificationQuestion(index, promptID: prompt.id)
-                    clarificationErrorMessage = String(localized: "Answer each question before submitting.")
-                    return false
-                }
+        // A prompt without a server step has nothing to answer.
+        guard prompt.questionID != nil else { return false }
+        clarificationDraftResponse = responseText
+        saveClarificationDraft(for: prompt)
+        if !prompt.isLastQuestion {
+            selectClarificationStep(prompt.questionIndex + 1, promptID: prompt.id)
+            return true
+        }
+        // Manual paging must not let the final page submit missing answers.
+        for index in 0..<prompt.questionCount {
+            var question = prompt
+            question.questionIndex = index
+            if let id = question.questionID, clarificationAnswers[id] == nil {
+                selectClarificationStep(index, promptID: prompt.id)
+                clarificationErrorMessage = String(localized: "Answer each question before submitting.")
+                return false
             }
         }
         let answers = clarificationAnswers
@@ -335,19 +335,10 @@ final class ChatPendingActionCoordinator {
         defer { isRespondingToClarification = false }
 
         do {
-            // Old-server fallback. Delete response shaping once supported servers all ship steps.
-            let wireResponse: String?
-            if prompt.pending.steps != nil {
-                wireResponse = nil
-            } else {
-                wireResponse = prompt.questionID == nil ? response
-                    : String(decoding: try JSONEncoder().encode(["answers": answers]), as: UTF8.self)
-            }
             _ = try await client.respondClarification(
                 sessionID: prompt.sessionID,
-                response: wireResponse,
                 clarifyID: prompt.pending.clarifyId,
-                answers: prompt.pending.steps != nil ? answers : nil
+                answers: answers
             )
             guard clarificationPrompt?.id == prompt.id,
                   delegate?.pendingActionSessionID == prompt.sessionID else { return true }
