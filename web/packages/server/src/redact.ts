@@ -289,9 +289,14 @@ const TOKEN_PREFIX_RE = new RegExp(`${CRED_START_RE.source.replace(/\{\d+,?\}/g,
 const TOKEN_PREFIX_RUN_RE = new RegExp(`${CRED_RUN_RE.source.replace(/\{\d+,?\}/g, '{0}')}|eyJ`, 'y')
 /** A URL query parameter's value, up to the next `&` or `#`. */
 const QUERY_VALUE_RE = /[^&#]*/y
-const PRIVKEY_RE = /-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?-----END[A-Z ]*PRIVATE KEY-----/g
-/** A private key whose end marker is missing (a display cap cut it off): masked to the end of the text. */
-const PRIVKEY_OPEN_RE = /-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*$/
+const PEM_OPENER = '-----BEGIN'
+/**
+ * A private key through its end marker (captured) or, when that is missing (a display cap cut it off), to the end of the
+ * text.
+ */
+const PRIVKEY_RE = /-----BEGIN[A-Z ]*PRIVATE KEY-----(?:[\s\S]*?(-----END[A-Z ]*PRIVATE KEY-----)|[\s\S]*$)/g
+/** `PRIVKEY_RE` after its opener, from a position. */
+const PRIVKEY_REST_RE = new RegExp(PRIVKEY_RE.source.slice(PEM_OPENER.length), 'y')
 const CODE_ENV_KEY_LITERAL_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH)[A-Z0-9_]{0,50}=)(["'][)\]:,]+|[)\]:,]+)/y
 const ENV_KEY_PREFIX_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH)[A-Z0-9_]{0,50}=)/g
 const REDACTED_ENV_VALUE_RE = /(?:\*{3,}|[A-Za-z0-9][A-Za-z0-9_.:/+-]{0,32}\.\.\.[A-Za-z0-9_.:/+-]{1,16})/y
@@ -328,16 +333,10 @@ function splitTokenEnd(text: string, stripped: string, kept: number[], i: number
   return -1
 }
 
-/**
- * The original spans, and the joined text, of prefixed credentials and JWTs whose body a gap of one of `SPLIT_VIEWS` splits,
- * matched on the text without those gaps, plus `payloadRunSpan`'s from each prefix. A token starts at a boundary of the
- * stripped text, or where a stripped gap hid the original one (`note\nghp_…`); one starting inside a token already
- * masked is part of it.
- */
-function splitTokenSpans(text: string, gaps: RegExp): [number, number, string][] {
+/** The text without the gaps of `gaps`, and the original index of each kept character, or null when it has none. */
+function splitView(text: string, gaps: RegExp): { stripped: string; kept: number[] } | null {
   const stripped = text.replace(gaps, '')
-  if (stripped.length === text.length) return []
-  // The original index of each kept character.
+  if (stripped.length === text.length) return null
   const kept: number[] = []
   let at = 0
   for (const m of text.matchAll(gaps)) {
@@ -345,6 +344,19 @@ function splitTokenSpans(text: string, gaps: RegExp): [number, number, string][]
     at += m[0].length
   }
   while (at < text.length) kept.push(at++)
+  return { stripped, kept }
+}
+
+/**
+ * The original spans, and the joined text, of prefixed credentials and JWTs whose body a gap of one of `SPLIT_VIEWS` splits,
+ * matched on the text without those gaps, plus `payloadRunSpan`'s from each prefix. A token starts at a boundary of the
+ * stripped text, or where a stripped gap hid the original one (`note\nghp_…`); one starting inside a token already
+ * masked is part of it.
+ */
+function splitTokenSpans(text: string, gaps: RegExp): [number, number, string][] {
+  const view = splitView(text, gaps)
+  if (!view) return []
+  const { stripped, kept } = view
   const starts = [...stripped.matchAll(TOKEN_START_RE)].map((m) => m.index)
   const prefixStarts = [...stripped.matchAll(TOKEN_PREFIX_RE)].map((m) => m.index)
   for (let i = 1; i < kept.length; i += 1) {
@@ -390,23 +402,26 @@ const JWT_ONLY = '\0'
 const seedAfter = (prev: string | undefined): string | null => (prev === undefined || !TOKEN_CHAR_RE.test(prev) ? '' : prev === '-' ? JWT_ONLY : null)
 
 /**
- * Where a credential or JWT prefix starts whose pieces lie apart in a run of token characters and escape sequences, with a
- * string payload between them taken whole or skipped (`g\x1b]0;x\x07h\x1b]0;p_\x07…`), so that no view holds it whole.
+ * Where a credential or JWT prefix or a private key's opener starts, where it ends, and which marker it is, when its
+ * pieces lie apart in a run of token characters and escape sequences, with a string payload between them taken whole or
+ * skipped (`g\x1b]0;x\x07h\x1b]0;p_\x07…`), so that no view holds it whole.
  * Display characters are mandatory and each payload's optional. A piece starts on the display after a gap or a non-token
  * character (`.`), or in a payload's trailing run after its start or a non-token character, where `payloadRunSpan` can
  * walk from it; a JWT's also after a `-`.
  * Candidates live only while they can grow into a prefix, which bounds them and keeps the scan linear.
  */
-function crossPayloadPrefixStarts(text: string): number[] {
-  const starts: number[] = []
+function crossPayloadPrefixStarts(text: string): [start: number, end: number, marker: string][] {
+  const starts: [number, number, string][] = []
   if (!/[\x1b\x90\x98\x9d-\x9f]/.test(text)) return starts
   // Each candidate string, with the original index of its earliest start.
   let candidates = new Map<string, number>()
-  const grow = (into: Map<string, number>, candidate: string, start: number, chars: string): void => {
-    for (const ch of chars) {
-      candidate += ch
-      if (TOKEN_MARKERS.has(candidate)) return void starts.push(start)
-      if (!TOKEN_MARKER_STEMS.has(candidate)) return
+  // Grows a candidate by the run characters of `chars`, which starts at original index `at`.
+  const grow = (into: Map<string, number>, candidate: string, start: number, chars: string, at: number): void => {
+    for (let j = 0; j < chars.length; j += 1) {
+      if (!RUN_CHAR_RE.test(chars[j]!)) continue
+      candidate += chars[j]!
+      if (PAYLOAD_MARKERS.has(candidate)) return void starts.push([start, at + j + 1, candidate])
+      if (!PAYLOAD_MARKER_STEMS.has(candidate)) return
     }
     const seen = into.get(candidate)
     if (seen === undefined || start < seen) into.set(candidate, start)
@@ -419,23 +434,22 @@ function crossPayloadPrefixStarts(text: string): number[] {
     if (gap) {
       const from = STRING_OPENER_RE.exec(gap)?.[0].length ?? gap.length
       const next = new Map(candidates)
-      const payload = gap.slice(from).replace(/[^A-Za-z0-9_.=-]/g, '')
-      if (payload) for (const [candidate, start] of candidates) grow(next, candidate, start, payload)
+      for (const [candidate, start] of candidates) grow(next, candidate, start, gap.slice(from), k + from)
       const end = Math.max(from, gap.length - (STRING_END_RE.exec(gap)?.[0].length ?? 0))
       let tail = end
       while (tail > from && RUN_CHAR_RE.test(gap[tail - 1]!)) tail -= 1
       for (let j = tail; j < end; j += 1) {
         const seed = seedAfter(j === tail ? undefined : gap[j - 1])
-        if (seed !== null) grow(next, seed, k + j, gap.slice(j, end))
+        if (seed !== null) grow(next, seed, k + j, gap.slice(j, end), k + j)
       }
       candidates = next
       prev = undefined
       k += gap.length
     } else if (RUN_CHAR_RE.test(text[k]!)) {
       const next = new Map<string, number>()
-      for (const [candidate, start] of candidates) grow(next, candidate, start, text[k]!)
+      for (const [candidate, start] of candidates) grow(next, candidate, start, text[k]!, k)
       const seed = seedAfter(prev)
-      if (seed !== null) grow(next, seed, k, text[k]!)
+      if (seed !== null) grow(next, seed, k, text[k]!, k)
       candidates = next
       prev = text[k]!
       k += 1
@@ -480,9 +494,48 @@ function payloadRunSpan(text: string, start: number): [[number, number, string] 
   return [hidden ? [start, end, token] : null, k]
 }
 
+/**
+ * The original spans of private keys a gap of one of `SPLIT_VIEWS` splits (`-----BE\x1b[1mGIN …`), matched on each view,
+ * and of those whose opener lies apart across string payloads (`-----B\x1b]0;x\x07E\x1b]0;GIN\x07 …`), matched on each
+ * view from where the opener ends. A whole key is `PRIVKEY_RE`'s on the text itself. A key one view leaves open runs to
+ * the end of the text only when no view closes one there (`-----END PRI\x1b[1mVATE KEY-----`).
+ */
+function privateKeySpans(text: string): [number, number, string][] {
+  const openers = crossPayloadPrefixStarts(text).filter(([, , marker]) => marker === PEM_OPENER).sort((a, b) => a[1] - b[1])
+  const closed: [number, number, string][] = []
+  const open: [number, number, string][] = []
+  for (const gaps of SPLIT_VIEWS) {
+    const view = splitView(text, gaps)
+    if (!view) continue
+    const { stripped, kept } = view
+    // A key running to the end of the view runs to the end of the text, past any trailing gap.
+    const end = (e: number): number => (e === stripped.length ? text.length : kept[e - 1]! + 1)
+    for (const m of stripped.matchAll(PRIVKEY_RE)) (m[1] ? closed : open).push([kept[m.index]!, end(m.index + m[0].length), ''])
+    let i = 0
+    let scanned = 0
+    for (const [start, opened] of openers) {
+      if (opened < scanned) continue
+      while (i < kept.length && kept[i]! < opened) i += 1
+      PRIVKEY_REST_RE.lastIndex = i
+      const m = PRIVKEY_REST_RE.exec(stripped)
+      if (!m) continue
+      scanned = end(PRIVKEY_REST_RE.lastIndex)
+      const spans = m[1] ? closed : open
+      spans.push([start, scanned, ''])
+    }
+  }
+  return [...closed, ...open.filter(([start]) => !closed.some(([from, to]) => from <= start && start < to))]
+}
+
 /** Masks each union of the split-token spans every view finds, so no view masks a piece of a token another one joins. */
 function maskSplitTokens(text: string): string {
-  const spans = [...SPLIT_VIEWS.flatMap((gaps) => splitTokenSpans(text, gaps)), ...payloadRunSpans(text, crossPayloadPrefixStarts(text))].sort((a, b) => a[0] - b[0])
+  const starts = crossPayloadPrefixStarts(text).flatMap(([start, , marker]) => (marker === PEM_OPENER ? [] : [start]))
+  return maskSpans(text, [...SPLIT_VIEWS.flatMap((gaps) => splitTokenSpans(text, gaps)), ...payloadRunSpans(text, starts)], mask)
+}
+
+/** Replaces each union of overlapping original spans, given the longest of their texts. */
+function maskSpans(text: string, found: [number, number, string][], replace: (token: string) => string): string {
+  const spans = found.sort((a, b) => a[0] - b[0])
   let out = ''
   let last = 0
   for (let k = 0; k < spans.length; ) {
@@ -493,7 +546,7 @@ function maskSplitTokens(text: string): string {
       end = Math.max(end, nextEnd)
       if (nextToken.length > token.length) token = nextToken
     }
-    out += text.slice(last, start) + mask(token)
+    out += text.slice(last, start) + replace(token)
     last = end
   }
   return out + text.slice(last)
@@ -1651,7 +1704,7 @@ export function redactSensitive(text: string): string {
 
 function redactRules(text: string): string {
   if (!text) return text
-  let out = maskSplitTokens(text).replace(CRED_RE, (_, t: string) => mask(t))
+  let out = maskSplitTokens(maskSpans(text, privateKeySpans(text), () => '[REDACTED PRIVATE KEY]')).replace(CRED_RE, (_, t: string) => mask(t))
   out = out.replace(EMBEDDED_AWS_RE, (t) => mask(t))
   out = redactHeaderCredentials(out, AUTH_HDR_RE)
   out = out.replace(JWT_RE, (t) => mask(t))
@@ -1677,7 +1730,7 @@ function redactRules(text: string): string {
   out = redactUserFlags(out)
   out = redactCommandFlags(out)
   out = out.replace(QUERY_KEY_RE, (whole, head: string, value: string) => (/[A-Za-z0-9]/.test(value) ? head + mask(value) : whole))
-  out = out.replace(PRIVKEY_RE, '[REDACTED PRIVATE KEY]').replace(PRIVKEY_OPEN_RE, '[REDACTED PRIVATE KEY]')
+  out = out.replace(PRIVKEY_RE, '[REDACTED PRIVATE KEY]')
   return restoreCodeEnvKeyLiterals(text, out)
 }
 
@@ -1687,9 +1740,11 @@ const CASE_MARKERS = [
   'gsk_', 'syt_', 'retaindb_', 'hsk-', 'mem0_', 'brv_', 'xapp-', 'xai-', 'ntn_', 'fw-', 'fw_', 'fpk_', 'glpat-', 'gloas-', 'gldt-', 'glrt-', 'glrtr-',
   'glcbt-', 'glptt-', 'glft-', 'glimt-', 'glagent-', 'glsoat-', 'glffct-', 'glwt-', 'GR1348941', 'pk-lf-', 'eyJ', '-----BEGIN',
 ]
-/** The literal prefixes of `CRED_RE` (`xapp-` stands for `xapp-1-`) and `JWT_RE`, the JWT's also as `JWT_ONLY`'s, and their proper prefixes. */
+/** The literal prefixes of `CRED_RE` (`xapp-` stands for `xapp-1-`) and `JWT_RE`, the JWT's also as `JWT_ONLY`'s. */
 const TOKEN_MARKERS = new Set([...CASE_MARKERS.filter((m) => ((TOKEN_PREFIX_RUN_RE.lastIndex = 0), TOKEN_PREFIX_RUN_RE.test(`${m}0-`))), `${JWT_ONLY}eyJ`])
-const TOKEN_MARKER_STEMS = new Set([...TOKEN_MARKERS].flatMap((m) => Array.from({ length: m.length - 1 }, (_, n) => m.slice(0, n + 1))))
+/** What a cross-payload scan assembles: `TOKEN_MARKERS` and a private key's opener, and their proper prefixes. */
+const PAYLOAD_MARKERS = new Set([...TOKEN_MARKERS, PEM_OPENER])
+const PAYLOAD_MARKER_STEMS = new Set([...PAYLOAD_MARKERS].flatMap((m) => Array.from({ length: m.length - 1 }, (_, n) => m.slice(0, n + 1))))
 const LOWER_MARKERS = [
   'authorization: bearer ', 'authorization: bot ', 'private key', 'postgres://', 'postgresql://', 'mysql://', 'mongodb://', 'redis://', 'amqp://', '://',
   'access_token', 'refresh_token', 'id_token', 'api_key', 'apikey', 'client_secret', 'auth_token', 'raw_secret', 'secret_input', 'key_material',
