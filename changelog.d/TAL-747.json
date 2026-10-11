@@ -1,0 +1,12 @@
+{
+    "entries": [
+        {
+            "category": "Fixed",
+            "summary": "With Hermes Agent 0.21.3, scheduled jobs can run in another profile again.",
+            "highlight": false,
+            "components": [
+                "web"
+            ]
+        }
+    ]
+}

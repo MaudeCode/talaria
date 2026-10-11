@@ -52,7 +52,8 @@ def test_create_pins_execution_profile_model(handshaken: SidecarProcess, hermes_
     assert stored[0]["provider"] == expected_provider
     assert stored[0]["model"] == expected_model
     assert stored[0]["profile"] == "research"
-    assert not any(key.endswith("_snapshot") for key in stored[0])
+    # The pin replaces any model snapshot; Agent 0.21.3 still stores its snapshot keys, empty for a pinned job.
+    assert not any(value for key, value in stored[0].items() if key.endswith("_snapshot")), stored[0]
     assert handshaken.result("cron.list", {"profile_home": str(hermes_home)})["jobs"] == []
 
 

@@ -33,6 +33,35 @@ _RUNNING_LOCK = threading.Lock()
 _SNAPSHOT_LOCK = threading.Lock()
 
 
+def _main_model_pin() -> tuple[str | None, str | None]:
+    """``(provider, model)`` the scoped profile's main agent runs on: the Agent's own ``cron.jobs._main_model_pin``.
+
+    Agent 0.21.3 predates that helper, so it is rebuilt from the readers 0.21.4 composes: the home's effective
+    ``config.yaml`` model and the provider the runtime resolves for it. ``(None, None)`` when no model is configured.
+    """
+    from cron import jobs
+
+    if hasattr(jobs, "_main_model_pin"):
+        return jobs._main_model_pin()
+    from hermes_cli.config_effective import load_user_config_effective
+    from hermes_constants import get_hermes_home
+
+    cfg_path = get_hermes_home() / "config.yaml"
+    cfg = load_user_config_effective(cfg_path) if cfg_path.exists() else {}
+    model_cfg = cfg.get("model") or {}
+    model = model_cfg.get("default") or model_cfg.get("model") if isinstance(model_cfg, dict) else model_cfg
+    model = model.strip() or None if isinstance(model, str) else None
+    if not model:
+        return None, None
+    provider = None
+    with contextlib.suppress(Exception):
+        from hermes_cli.runtime_provider import resolve_runtime_provider
+
+        resolved = resolve_runtime_provider(requested=None).get("provider")
+        provider = resolved.strip().lower() or None if isinstance(resolved, str) else None
+    return provider, model
+
+
 class CronUnavailable(RpcError):
     def __init__(self, exc: Exception):
         super().__init__(f"cron unavailable: {exc}", condition="cron_unavailable")
@@ -396,8 +425,6 @@ def register(registry) -> None:
         # to the store home; owner_profile only preserves management from the creating Web profile.
         if post.get("profile") and execution_home and not (model and provider) and not body.get("no_agent"):
             try:
-                from cron.jobs import _main_model_pin
-
                 with _SNAPSHOT_LOCK, scoped_home(Path(execution_home)):
                     profile_provider, profile_model = _main_model_pin()
                 if not profile_model:
