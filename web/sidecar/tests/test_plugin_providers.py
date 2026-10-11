@@ -10,6 +10,8 @@ import json
 import pathlib
 import textwrap
 
+import pytest
+
 from conftest import SidecarProcess, load_schema, requires_agent, validate
 
 PROFILE = textwrap.dedent(
@@ -79,12 +81,16 @@ def test_installed_plugin_providers_report_identity_setup_and_models(tmp_path: p
         # Another profile never sees this profile's plugins, and its own plugin loads on demand.
         named = {row["name"]: row["setup"] for row in sidecar.result("plugins.providers", {"profile_home": str(other)})["providers"]}
         named_models = sidecar.result("providers.model_ids", {"profile_home": str(other), "provider": "fake-sub"})["model_ids"]
+        # A row reads ready exactly when the Agent can run that provider in that profile. Agent 0.21.3 cannot run a
+        # plugin loaded after its import-time discovery, so it reads as unavailable there.
+        runtime, _ = sidecar.call("providers.resolve_runtime", {"profile_home": str(other), "requested": "fake-other"})
+        assert named.pop("fake-other") == ("ready" if "result" in runtime else "unavailable"), runtime
         # The other profile's plugin with the default profile's provider id is either its own provider (an Agent with
         # per-home provider layers) or stays unloaded (one process-wide registry). Either way it never receives the
         # default profile's models, and the checks below prove the default profile's provider is unchanged.
         assert (named, named_models) in (
-            ({"fake-other": "ready", "fake-sub": "ready"}, ["hijacked"]),
-            ({"fake-other": "ready", "fake-sub-copy-provider": "not_loaded"}, []),
+            ({"fake-sub": "ready"}, ["hijacked"]),
+            ({"fake-sub-copy-provider": "not_loaded"}, []),
         ), (named, named_models)
         assert sidecar.result("providers.model_ids", {"profile_home": str(other), "provider": "fake-other"})["model_ids"] == ["other-1"]
         assert sidecar.result("providers.model_ids", {"profile_home": str(home), "provider": "fake-other"})["model_ids"] == []
@@ -92,3 +98,30 @@ def test_installed_plugin_providers_report_identity_setup_and_models(tmp_path: p
         assert sidecar.result("providers.model_ids", {"profile_home": str(home), "provider": "fake-sub"})["model_ids"] == ["fake-opus", "claude-sonnet-4-6"]
     finally:
         sidecar.close()
+
+
+@requires_agent
+@pytest.mark.parametrize("layout", [(), ("model-providers",)], ids=["flat", "model-providers"])
+def test_a_named_profiles_plugin_reads_the_same_whichever_profile_lists_first(tmp_path: pathlib.Path, layout: tuple) -> None:
+    """A fresh sidecar whose first plugin listing is a named profile's reports that plugin as a launch-first one does."""
+    home = tmp_path / "home" / ".hermes"
+    home.mkdir(parents=True)
+    cli = tmp_path / "bin" / "fake-cli"
+    cli.parent.mkdir()
+    cli.write_text("#!/bin/sh\nexit 97\n")  # Listing must never run it.
+    cli.chmod(0o755)
+    other = home / "profiles" / "other"
+    other.mkdir(parents=True)
+    _plugin(other.joinpath("plugins", *layout), "fake-other", "fake-other-provider", name="fake-other", display="Fake Other", command=str(cli), models=("other-1",))
+    seen = []
+    for order in ((home, other), (other, home)):
+        sidecar = SidecarProcess(home)
+        try:
+            for profile in order:
+                rows = {row["name"]: row["setup"] for row in sidecar.result("plugins.providers", {"profile_home": str(profile)})["providers"]}
+            seen.append(rows if order[-1] == other else {row["name"]: row["setup"] for row in sidecar.result("plugins.providers", {"profile_home": str(other)})["providers"]})
+            runtime, _ = sidecar.call("providers.resolve_runtime", {"profile_home": str(other), "requested": "fake-other"})
+            assert seen[-1]["fake-other"] == ("ready" if "result" in runtime else "unavailable"), runtime
+        finally:
+            sidecar.close()
+    assert seen[0] == seen[1], seen
