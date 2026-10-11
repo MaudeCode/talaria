@@ -90,7 +90,10 @@ For every **bug** and **feature**, follow the `discover-tickets` skill's validat
 shaping, and filing sections in the Talaria Kaneo project. Use the investigation
 question "What does `<repo>` `<base>..<candidate>` need from Talaria?". That
 skill dedupes against open and recent tickets, branches, and PRs, decides `sf`
-readiness, and reads tickets back. On top of its rules:
+readiness, and reads tickets back. It is a user-level skill from
+`kiliantyler/skills`, not part of this repository. When it is not installed,
+file nothing and list every bug and feature under "Held for approval" instead.
+On top of its rules:
 
 - Attach the workspace `upstream` label and the consumer's scope: `web` for the
   Agent and WebUI, `app` for Hermex. Add `contracts` when the change touches

@@ -144,6 +144,7 @@ def advance(args):
     state = json.loads(path.read_text()) if path.exists() else {}
     reviewed = {"ref": args.ref, "sha": args.sha}
     if state.get("lastReviewed") != reviewed:  # an unchanged watermark leaves the file untouched
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps({**state, "lastReviewed": reviewed}, indent=2, sort_keys=True) + "\n")
     return {"lastReviewed": reviewed}
 
