@@ -152,3 +152,10 @@ enum HostedAccessibility {
         (object as? UIView)?.subviews.forEach { visit($0, into: &found) }
     }
 }
+
+extension UIView {
+    /// Whether a view of `type` is anywhere under this one.
+    func containsView<View: UIView>(ofType type: View.Type) -> Bool {
+        self is View || subviews.contains { $0.containsView(ofType: type) }
+    }
+}

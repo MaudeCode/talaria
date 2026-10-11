@@ -2,7 +2,7 @@ import SwiftData
 import SwiftUI
 import XCTest
 @testable import Talaria
-import TalariaKit
+@testable import TalariaKit
 
 /// A hosted test's fixture arguments, appended to what `ProcessInfo.arguments` returns: the fixture checks in App and
 /// TalariaKit code read the launch arguments directly, so the tests change those rather than the checks.
@@ -48,6 +48,8 @@ final class FixtureApp {
     init(_ scenario: [String] = [], for testCase: XCTestCase) throws {
         FixtureLaunchArguments.scenario = [UITestFixtureLaunch.launchArgument] + scenario
         UITestFixtureURLProtocol.resetForHostedTest()
+        // A relaunch empties what a process keeps in memory per session; hosted tests share one process.
+        ActiveChatStreamSnapshotStore.shared.removeAll(for: UITestFixtureEnvironment.serverURL)
         environment = UITestFixtureEnvironment.make()
         cache = try ModelContainer(
             for: CachedSession.self, CachedMessage.self,
@@ -86,6 +88,8 @@ final class FixtureApp {
                 )
             }
         }
+        // A window outside SwiftUI's scene lifecycle reports no scene phase of its own; the App's runs in the foreground.
+        .environment(\.scenePhase, .active)
         .modelContainer(cache)
     }
 
@@ -95,6 +99,7 @@ final class FixtureApp {
             server: UITestFixtureEnvironment.serverURL,
             draftStore: environment.draftStore
         )
+        .environment(\.scenePhase, .active)
         .modelContainer(cache)
     }
 }
@@ -165,5 +170,64 @@ extension XCTestCase {
             try? await Task.sleep(for: .milliseconds(50))
         }
         return !HostedAccessibility.elements(in: window).contains(where: match)
+    }
+
+    /// The chat composer's text view, once the chat has one.
+    @MainActor
+    func composerTextView(in window: UIWindow, timeout: TimeInterval = 10) async -> UITextView? {
+        func find(_ view: UIView) -> UITextView? {
+            if let text = view as? UITextView, text.isEditable { return text }
+            return view.subviews.lazy.compactMap(find).first
+        }
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if let text = find(window) { return text }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        return find(window)
+    }
+
+    /// Types `text` into the composer the way the keyboard does: through the text view's own input path, so the
+    /// composer's draft follows.
+    @MainActor
+    func typeIntoComposer(_ text: String, in window: UIWindow) async throws {
+        // A chat with a transcript shows its composer as the collapsed "Message" shell until it is tapped.
+        var found = await composerTextView(in: window, timeout: 2)
+        if found == nil, let shell = await awaitElement(in: window, label: "Message") {
+            HostedAccessibility.activate(shell)
+            found = await composerTextView(in: window)
+        }
+        let input = try XCTUnwrap(found, "The chat has no composer text view")
+        input.becomeFirstResponder()
+        input.insertText(text)
+        try? await Task.sleep(for: .milliseconds(100))
+    }
+
+    /// Types `message` and activates Send.
+    @MainActor
+    func sendFromComposer(_ message: String, in window: UIWindow) async throws {
+        try await typeIntoComposer(message, in: window)
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Send"))
+    }
+
+    /// Elements whose label or identifier is `name`, as XCUITest's `matching(identifier:)` counted them.
+    @MainActor
+    func elements(named name: String, in window: UIWindow) -> [NSObject] {
+        HostedAccessibility.elements(in: window).filter {
+            $0.accessibilityLabel == name || HostedAccessibility.identifier(of: $0) == name
+        }
+    }
+
+    /// `awaitElement(in:where:)` that fails the test with `message` when no element matches.
+    @MainActor
+    func requireElement(
+        in window: UIWindow,
+        _ message: String = "No matching element",
+        file: StaticString = #filePath,
+        line: UInt = #line,
+        where match: @escaping (NSObject) -> Bool
+    ) async throws -> NSObject {
+        let found = await awaitElement(in: window, where: match)
+        return try XCTUnwrap(found, message, file: file, line: line)
     }
 }

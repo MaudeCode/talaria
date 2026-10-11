@@ -414,6 +414,21 @@ private final class UITestChatFixtureState: @unchecked Sendable {
     private var withdrawnSteerID: String?
     private var cancelled = false
 
+    /// A fresh launch's state, for hosted tests that start the fixture once per test (TAL-856).
+    func reset() {
+        condition.lock()
+        started = false
+        settled = false
+        approvalAnswered = false
+        clarificationAnswered = false
+        clarificationAnswers = [:]
+        steerID = nil
+        withdrawnSteerID = nil
+        cancelled = false
+        condition.broadcast()
+        condition.unlock()
+    }
+
     func startChat() {
         condition.lock()
         started = true
@@ -555,10 +570,16 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     private static let chatState = UITestChatFixtureState.shared
     private let lifecycleLock = NSLock()
     private var stopped = false
+    /// Bumped by each hosted test's reset: a load an earlier test started counts as stopped, so its scripted stream
+    /// ends instead of answering the next test's scenario (TAL-856).
+    nonisolated(unsafe) private static var generation = 0
+    private static let generationHeader = "X-UI-Fixture-Generation"
+    private let startedGeneration = UITestFixtureURLProtocol.generation
 
     /// Puts the fixture's per-launch server state back to a fresh launch's, for hosted tests that start the fixture in
     /// process once per test (TAL-856).
     static func resetForHostedTest() {
+        generation += 1
         approvalBypassOverride = nil
         sessionToolsets.withLock { $0 = nil }
         sessionReads = 0
@@ -571,12 +592,18 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         serverUpdateAppliedAt = nil
         archivedSessionIDs = []
         didFailSessionCreation = false
+        chatState.reset()
     }
 
     static func configure(_ configuration: URLSessionConfiguration) {
         guard ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.launchArgument) else { return }
         configuration.protocolClasses = [Self.self]
             + (configuration.protocolClasses ?? []).filter { $0 != Self.self }
+        // A session remembers the hosted test it was made in, so a screen an earlier test left running cannot reach the
+        // next test's scenario (TAL-856).
+        var headers = configuration.httpAdditionalHeaders ?? [:]
+        headers[generationHeader] = String(generation)
+        configuration.httpAdditionalHeaders = headers
         // A held load waits for the test's release, not for URLSession's 60 s default: XCTest's own wait for the App to
         // go idle blocked a hosted test for 58 s, and the held Git status read failed before its release (TAL-672).
         configuration.timeoutIntervalForRequest = .infinity
@@ -591,6 +618,10 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     override func startLoading() {
         guard let url = request.url else {
             client?.urlProtocol(self, didFailWithError: URLError(.badURL))
+            return
+        }
+        if let made = request.value(forHTTPHeaderField: Self.generationHeader), made != String(Self.generation) {
+            client?.urlProtocol(self, didFailWithError: URLError(.cancelled))
             return
         }
 
@@ -1846,7 +1877,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     var isStopped: Bool {
-        lifecycleLock.withLock { stopped }
+        lifecycleLock.withLock { stopped } || startedGeneration != Self.generation
     }
 
     private func send(events: [(String, [String: Any])]) {
