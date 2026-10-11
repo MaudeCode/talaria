@@ -42,7 +42,7 @@ struct SessionInteractiveRow: View {
         .accessibilityAddTraits(viewModel.isSelectingSessions && viewModel.isSelected(session) ? .isSelected : [])
         .id(session.id)
         // While picking chats the checkmarks carry selection, so the open chat stops reading as selected.
-        .selectedRowBackground(!viewModel.isSelectingSessions && session.sessionId == selectedSessionID)
+        .sidebarRow(isSelected: !viewModel.isSelectingSessions && session.sessionId == selectedSessionID)
         .transition(SessionListMotion.sessionRowTransition(reduceMotion: reduceMotion))
         .swipeActions(edge: .leading, allowsFullSwipe: false) {
             sessionLeadingSwipeActions(for: session)
@@ -65,7 +65,6 @@ struct SessionInteractiveRow: View {
                 )
             }
         }
-        .sessionsScreenListRow(insets: EdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12))
     }
 
     private var isSelectable: Bool {

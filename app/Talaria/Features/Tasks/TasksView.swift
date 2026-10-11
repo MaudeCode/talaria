@@ -74,46 +74,8 @@ struct TasksView: View {
                 Text("Scheduled jobs from the Hermes server will appear here.")
             }
         } else {
-            List {
-                Section {
-                    HStack {
-                        Label("Running now", systemImage: "bolt.fill")
-                        Spacer()
-                        Text("\(viewModel.activeRunningCount)")
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                if !viewModel.recentCompletions.isEmpty {
-                    // One row per job (its latest run), not a run archive.
-                    Section("Recent Completions") {
-                        ForEach(viewModel.recentCompletions) { completion in
-                            if let job = viewModel.job(for: completion) {
-                                SectionSelectionRow(item: .task(id: job.id), selection: $selection) {
-                                    CronCompletionRowView(completion: completion)
-                                }
-                            } else {
-                                CronCompletionRowView(completion: completion)
-                            }
-                        }
-                    }
-                }
-
-                Section("Scheduled Jobs") {
-                    if viewModel.jobs.isEmpty {
-                        // Stale completions can outlive their jobs; keep the feed visible.
-                        Text("No scheduled jobs.")
-                            .foregroundStyle(.secondary)
-                    }
-                    ForEach(viewModel.jobs) { job in
-                        SectionSelectionRow(item: .task(id: job.id), selection: $selection) {
-                            CronJobRowView(
-                                job: job,
-                                runningElapsed: viewModel.runningElapsed(for: job)
-                            )
-                        }
-                    }
-                }
+            SidebarList {
+                TaskRows(viewModel: viewModel, selection: $selection)
             }
             .refreshable {
                 await loadTasks()
@@ -131,6 +93,53 @@ struct TasksView: View {
             onAPIError(lastError)
         }
         await feed
+    }
+}
+
+/// Recent completions and scheduled jobs with the running count, for any `SidebarList`.
+struct TaskRows: View {
+    let viewModel: TasksViewModel
+    @Binding var selection: SectionItem?
+
+    var body: some View {
+        if !viewModel.recentCompletions.isEmpty {
+            // One row per job (its latest run), not a run archive.
+            SidebarDisclosureSection(String(localized: "Recent Completions"), id: "tasks.recent") {
+                ForEach(viewModel.recentCompletions) { completion in
+                    if let job = viewModel.job(for: completion) {
+                        SectionSelectionRow(item: .task(id: job.id), selection: $selection) {
+                            CronCompletionRowView(completion: completion)
+                        }
+                    } else {
+                        CronCompletionRowView(completion: completion)
+                            .padding(.horizontal, 12)
+                            .sidebarRow(isSelected: false)
+                    }
+                }
+            }
+        }
+
+        SidebarDisclosureSection(String(localized: "Scheduled Jobs"), id: "tasks.jobs") {
+            Label("\(viewModel.activeRunningCount) running", systemImage: "bolt.fill")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        } content: {
+            if viewModel.jobs.isEmpty {
+                // Stale completions can outlive their jobs; keep the feed visible.
+                Text("No scheduled jobs.")
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 12)
+                    .sidebarRow(isSelected: false)
+            }
+            ForEach(viewModel.jobs) { job in
+                SectionSelectionRow(item: .task(id: job.id), selection: $selection) {
+                    CronJobRowView(
+                        job: job,
+                        runningElapsed: viewModel.runningElapsed(for: job)
+                    )
+                }
+            }
+        }
     }
 }
 

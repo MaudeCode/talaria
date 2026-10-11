@@ -565,6 +565,9 @@ struct SessionListView: View {
                 sectionRoot(section)
             }
         }
+        // Loading, empty and error states sit on the lists' background, not the column's gray.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(.systemBackground))
         .toolbar {
             // A full-width section's hidden column must not hold a second drawer button.
             if !section.isFullWidth {
@@ -919,7 +922,7 @@ struct SessionListView: View {
     }
 
     private var content: some View {
-        List {
+        SidebarList {
             if viewModel.isViewingCachedData {
                 OfflineCacheBanner()
                     .padding(.top, 16)
@@ -1018,14 +1021,7 @@ struct SessionListView: View {
                 .sessionsScreenListRow()
                 .accessibilityHidden(true)
         }
-        .listStyle(.plain)
-        // Let rows hug their content instead of the 44pt default minimum, so the
-        // single-line utility/disclosure rows aren't padded out and stay aligned
-        // with the tightly-packed navigation rows.
-        .environment(\.defaultMinListRowHeight, 0)
-        .scrollContentBackground(.hidden)
         .scrollPosition(id: $sidebarScrollPosition)
-        .background(Color(.systemBackground))
         .scrollDismissesKeyboard(.interactively)
         .refreshable {
             await refreshSessionsAndActiveProfile()

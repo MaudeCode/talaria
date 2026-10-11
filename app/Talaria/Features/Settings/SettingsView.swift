@@ -8,35 +8,32 @@ struct SettingsView: View {
     @Binding var selection: SectionItem?
 
     var body: some View {
-        List {
-            Section {
-                SectionSelectionRow(item: .settings(.userProfile), selection: $selection) {
-                    UserProfileSettingsRow(server: server)
-                }
-                .accessibilityIdentifier("settings-user-profile")
-
-                SectionSelectionRow(item: .settings(.appleAccount), selection: $selection) {
-                    AppleAccountSettingsRow()
-                }
-                .accessibilityHint("Opens Apple account, iCloud sync, and Talaria Relay settings.")
-                .accessibilityIdentifier("settings-apple-account")
+        SidebarList {
+            SectionSelectionRow(item: .settings(.userProfile), selection: $selection) {
+                UserProfileSettingsRow(server: server)
             }
+            .accessibilityIdentifier("settings-user-profile")
 
-            Section {
-                ForEach(SettingsCategory.rootCategories) { category in
-                    SectionSelectionRow(item: .settings(.category(category)), selection: $selection) {
-                        Label {
-                            Text(category.title)
-                        } icon: {
-                            Image(systemName: category.systemImage)
-                                .foregroundStyle(.tint)
-                        }
+            SectionSelectionRow(item: .settings(.appleAccount), selection: $selection) {
+                AppleAccountSettingsRow()
+            }
+            .accessibilityHint("Opens Apple account, iCloud sync, and Talaria Relay settings.")
+            .accessibilityIdentifier("settings-apple-account")
+
+            SidebarSectionHeader(String(localized: "Categories"))
+
+            ForEach(SettingsCategory.rootCategories) { category in
+                SectionSelectionRow(item: .settings(.category(category)), selection: $selection) {
+                    Label {
+                        Text(category.title)
+                    } icon: {
+                        Image(systemName: category.systemImage)
+                            .foregroundStyle(.tint)
                     }
-                    .accessibilityIdentifier("settings-category-\(category.id)")
                 }
+                .accessibilityIdentifier("settings-category-\(category.id)")
             }
         }
-        .listStyle(.insetGrouped)
         .navigationTitle("Settings")
     }
 }

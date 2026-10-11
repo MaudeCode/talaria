@@ -37,27 +37,37 @@ struct MemoryView: View {
         } else if !viewModel.hasLoaded {
             ProgressView("Loading memory...")
         } else {
-            List {
-                ForEach(MemorySection.allCases) { section in
-                    SectionSelectionRow(item: .memory(.section(section)), selection: $selection) {
-                        MemoryHeaderRow(
-                            title: section.title,
-                            systemImage: section.systemImage,
-                            modifiedAt: viewModel.modifiedAt(for: section)
-                        ) {
-                            EmptyView()
-                        }
-                    }
-                }
-
-                if viewModel.showsProjectContext {
-                    SectionSelectionRow(item: .memory(.projectContext), selection: $selection) {
-                        ProjectContextSectionHeader(modifiedAt: viewModel.projectContextMtime)
-                    }
-                }
+            SidebarList {
+                MemoryFileRows(viewModel: viewModel, selection: $selection)
             }
             .refreshable {
                 await loadMemory(viewModel, onAPIError: onAPIError)
+            }
+        }
+    }
+}
+
+/// One row per Memory document, for any `SidebarList`.
+struct MemoryFileRows: View {
+    let viewModel: MemoryViewModel
+    @Binding var selection: SectionItem?
+
+    var body: some View {
+        ForEach(MemorySection.allCases) { section in
+            SectionSelectionRow(item: .memory(.section(section)), selection: $selection) {
+                MemoryHeaderRow(
+                    title: section.title,
+                    systemImage: section.systemImage,
+                    modifiedAt: viewModel.modifiedAt(for: section)
+                ) {
+                    EmptyView()
+                }
+            }
+        }
+
+        if viewModel.showsProjectContext {
+            SectionSelectionRow(item: .memory(.projectContext), selection: $selection) {
+                ProjectContextSectionHeader(modifiedAt: viewModel.projectContextMtime)
             }
         }
     }
