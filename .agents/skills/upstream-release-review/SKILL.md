@@ -11,7 +11,7 @@ Review one exact range, `<base>..<candidate>`, of one upstream:
 |---|---|---|---|
 | Hermes Agent | `NousResearch/hermes-agent` | Web sidecar, contracts, server, UI | compatibility and features |
 | Hermex | `uzairansaruzi/hermex` | `app/` (Talaria's App is a Hermex fork) | fixes and features to port |
-| Hermes WebUI | `nesquena/hermes-webui`, including `exp-*` | `web/` (Talaria Web derives from it) | features only |
+| Hermes WebUI | `nesquena/hermes-webui`, including `exp-*` | `web/` (Talaria Web derives from it) | features, plus fixes for defects Talaria Web shares |
 
 Talaria Web is no longer the Python WebUI build, so WebUI changes never create
 compatibility work. Count a WebUI fix only when Talaria Web shows the same
