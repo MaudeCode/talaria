@@ -1,22 +1,22 @@
 import Foundation
 
 public enum SessionRowActionPolicy {
+    /// Rename and Move follow `read_only`, as the server's own rename and move checks do.
     public static func offersMutationActions(for session: SessionSummary) -> Bool {
         !session.isSessionReadOnly
     }
 
-    /// The server's own gates (TAL-312); an older server that omits them keeps the earlier rules.
+    /// The server's own gates (TAL-312, TAL-627); a row without one (cached before TAL-723) offers no action.
     public static func canPin(_ session: SessionSummary) -> Bool {
-        session.canPin ?? offersMutationActions(for: session)
+        session.canPin == true
     }
 
     public static func canArchive(_ session: SessionSummary) -> Bool {
-        session.canArchive ?? offersMutationActions(for: session)
+        session.canArchive == true
     }
 
-    /// The server's delete gate (TAL-627); ponytail: the `readOnly` fallback serves older servers, delete it once all ship `can_delete`.
     public static func canDelete(_ session: SessionSummary) -> Bool {
-        session.canDelete ?? offersMutationActions(for: session)
+        session.canDelete == true
     }
 
     /// A row Select Chats can pick: the server allows archiving or deleting it.
@@ -25,7 +25,7 @@ public enum SessionRowActionPolicy {
     }
 
     public static func canDuplicate(_ session: SessionSummary) -> Bool {
-        session.canDuplicate ?? (offersMutationActions(for: session) && !session.isExternalSourceSession)
+        session.canDuplicate == true
     }
 
     public static func canExport(_ session: SessionSummary, isViewingCachedData: Bool) -> Bool {

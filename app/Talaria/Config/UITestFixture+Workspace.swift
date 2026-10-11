@@ -190,7 +190,8 @@ extension UITestFixtureURLProtocol {
         {"archived_count":1,"sessions":[{"session_id":"ui-fixture-archived-session",\
         "title":"\(WorkspaceFixture.archivedSessionTitle)","archived":true,"message_count":3,\
         "last_message_at":2000000000,"workspace":"/fixture","workspace_name":"Fixture Workspace","model":"fixture-model",\
-        "model_provider":"fixture-provider","profile":"fixture-profile"}]}
+        "model_provider":"fixture-provider","profile":"fixture-profile",\
+        "can_pin":true,"can_archive":true,"can_delete":true,"can_duplicate":true,"can_branch":true}]}
         """.utf8)
     }
 

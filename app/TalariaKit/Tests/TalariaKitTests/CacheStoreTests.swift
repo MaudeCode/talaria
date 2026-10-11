@@ -273,6 +273,61 @@ final class CacheStoreTests: XCTestCase {
         XCTAssertEqual(updatedMessage.expiresAt, secondCachedAt.addingTimeInterval(CachePolicy.ttl))
     }
 
+    /// A cached paint offers the server's row actions, not a client guess from `read_only` (TAL-723).
+    func testCachedSessionsKeepTheServerRowActionGates() throws {
+        let context = try makeContext()
+        let serverURL = URL(string: "https://example.test")!
+        let cachedAt = Date(timeIntervalSince1970: 1_770_000_000)
+        let rows = try XCTUnwrap(decodeSessions("""
+        {
+          "sessions": [
+            {"session_id": "cli-import", "is_cli_session": true, "read_only": true,
+             "can_pin": true, "can_archive": true, "can_delete": false, "can_duplicate": false, "can_branch": false},
+            {"session_id": "writable", "read_only": false,
+             "can_pin": true, "can_archive": true, "can_delete": true, "can_duplicate": true, "can_branch": true},
+            {"session_id": "subagent", "source_kind": "subagent", "parent_session_id": "parent-1", "read_only": false,
+             "can_pin": false, "can_archive": false, "can_delete": false, "can_duplicate": false, "can_branch": false}
+          ]
+        }
+        """).sessions)
+
+        try CacheStore.cacheSessions(rows, serverURL: serverURL, in: context, cachedAt: cachedAt)
+        let cached = try CacheStore.cachedSessions(serverURL: serverURL, in: context, now: cachedAt.addingTimeInterval(60))
+
+        func gates(_ session: SessionSummary) -> [Bool?] {
+            [session.canPin, session.canArchive, session.canDelete, session.canDuplicate, session.canBranch]
+        }
+        XCTAssertEqual(cached.map(gates), rows.map(gates))
+
+        let cliImport = try XCTUnwrap(cached.first { $0.sessionId == "cli-import" })
+        XCTAssertTrue(SessionRowActionPolicy.canPin(cliImport))
+        XCTAssertTrue(SessionRowActionPolicy.canArchive(cliImport))
+        let subagent = try XCTUnwrap(cached.first { $0.sessionId == "subagent" })
+        XCTAssertFalse(try makeChatViewModel(session: subagent, server: serverURL).canBranch)
+    }
+
+    /// A row cached before the gates were stored offers nothing until the next list load rewrites it (TAL-723).
+    func testACachedRowWithoutGatesOffersNoRowActions() throws {
+        let context = try makeContext()
+        let serverURL = URL(string: "https://example.test")!
+        let cachedAt = Date(timeIntervalSince1970: 1_770_000_000)
+        try CacheStore.cacheSessions(
+            [SessionSummary(sessionId: "legacy", title: "Cached before the gates")],
+            serverURL: serverURL,
+            in: context,
+            cachedAt: cachedAt
+        )
+
+        let cached = try XCTUnwrap(
+            CacheStore.cachedSessions(serverURL: serverURL, in: context, now: cachedAt.addingTimeInterval(60)).first
+        )
+        XCTAssertFalse(SessionRowActionPolicy.canPin(cached))
+        XCTAssertFalse(SessionRowActionPolicy.canArchive(cached))
+        XCTAssertFalse(SessionRowActionPolicy.canDelete(cached))
+        XCTAssertFalse(SessionRowActionPolicy.canDuplicate(cached))
+        XCTAssertFalse(try makeChatViewModel(session: cached, server: serverURL).canBranch)
+    }
+
     func testCacheSessionUpsertsOneSessionWithoutRemovingExistingSessions() throws {
         let context = try makeContext()
         let serverURL = URL(string: "https://example.test")!
@@ -1064,6 +1119,16 @@ final class CacheStoreTests: XCTestCase {
             configurations: configuration
         )
         return ModelContext(container)
+    }
+
+    private func makeChatViewModel(session: SessionSummary, server: URL) throws -> ChatViewModel {
+        let userDefaults = try XCTUnwrap(UserDefaults(suiteName: "CacheStoreTests.\(UUID().uuidString)"))
+        return ChatViewModel(
+            session: session,
+            server: server,
+            draftAttachmentStore: RecordingSendDraftAttachmentStore(),
+            userDefaults: userDefaults
+        )
     }
 
     private func decodeSessions(_ json: String) throws -> SessionsResponse {

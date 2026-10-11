@@ -77,6 +77,7 @@ extension SessionListMutationTests {
                 {
                   "session_id": "session-abc",
                   "title": "Planning",
+                  "can_pin": true, "can_archive": true, "can_delete": true, "can_duplicate": true, "can_branch": true,
                   "pinned": true,
                   "archived": false
                 }
@@ -90,6 +91,7 @@ extension SessionListMutationTests {
                 {
                   "session_id": "session-abc",
                   "title": "Planning",
+                  "can_pin": true, "can_archive": true, "can_delete": true, "can_duplicate": true, "can_branch": true,
                   "pinned": true,
                   "archived": true
                 }
@@ -103,6 +105,7 @@ extension SessionListMutationTests {
                 {
                   "session_id": "session-abc",
                   "title": "Planning",
+                  "can_pin": true, "can_archive": true, "can_delete": true, "can_duplicate": true, "can_branch": true,
                   "project_id": "project-1",
                   "archived": false
                 }
@@ -122,6 +125,7 @@ extension SessionListMutationTests {
                 {
                   "session_id": "session-abc",
                   "title": "Planning",
+                  "can_pin": true, "can_archive": true, "can_delete": true, "can_duplicate": true, "can_branch": true,
                   "pinned": false,
                   "archived": false
                 }
@@ -179,7 +183,8 @@ extension SessionListMutationTests {
               "session_id": "\(id)",
               "title": "\(title)",
               "pinned": \(pinned),
-              "archived": \(archived)
+              "archived": \(archived),
+              "can_pin": true, "can_archive": true, "can_delete": true, "can_duplicate": true, "can_branch": true
             }
             """.utf8)
         )

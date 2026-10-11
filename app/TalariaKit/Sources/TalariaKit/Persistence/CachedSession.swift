@@ -55,6 +55,13 @@ public final class CachedSession {
     /// Optional so the unversioned store opens without a migration.
     var branchedFromSessionID: String?
     var branchedFromTitle: String?
+    /// The server's row action gates (TAL-723), so a cached paint offers the server's actions.
+    /// Optional so the unversioned store opens without a migration.
+    var canPin: Bool?
+    var canArchive: Bool?
+    var canDelete: Bool?
+    var canDuplicate: Bool?
+    var canBranch: Bool?
     var cachedAt: Date
     var expiresAt: Date
 
@@ -105,6 +112,11 @@ public final class CachedSession {
         parentSessionId = session.parentSessionId
         relationshipType = session.relationshipType
         readOnly = session.readOnly
+        canPin = session.canPin
+        canArchive = session.canArchive
+        canDelete = session.canDelete
+        canDuplicate = session.canDuplicate
+        canBranch = session.canBranch
         self.cachedAt = cachedAt
         expiresAt = cachedAt.addingTimeInterval(CachePolicy.ttl)
     }

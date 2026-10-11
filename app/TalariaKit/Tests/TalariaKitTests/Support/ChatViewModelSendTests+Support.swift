@@ -154,7 +154,8 @@ extension ChatViewModelSendTests {
             {
               "session_id": "session-abc",
               "title": "\(title)",
-              "workspace": "/tmp/workspace"\(modelJSON)\(modelProviderJSON)\(optionJSON)\(profileJSON)\(readOnlyJSON)
+              "workspace": "/tmp/workspace"\(modelJSON)\(modelProviderJSON)\(optionJSON)\(profileJSON)\(readOnlyJSON),
+              "can_branch": \(!readOnly)
             }
             """.utf8)
         )

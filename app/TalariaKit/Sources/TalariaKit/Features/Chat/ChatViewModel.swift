@@ -338,7 +338,7 @@ public final class ChatViewModel {
         currentProfile = session.profile
         isCLISession = session.isCliSession == true
         isSessionReadOnly = session.isSessionReadOnly
-        canBranch = session.canBranch != false
+        canBranch = session.canBranch == true
         displayTitle = Self.displayTitle(from: session.title)
     }
 
@@ -365,7 +365,7 @@ public final class ChatViewModel {
     /// refreshed from every applied `SessionDetail`, which is authoritative.
     public private(set) var isSessionReadOnly: Bool
     /// The server's branch gate (TAL-312), seeded and refreshed like `isSessionReadOnly`;
-    /// an older server that omits it allowed branching.
+    /// a row without it (one cached before TAL-723) does not branch.
     public private(set) var canBranch: Bool
     /// The server's `assistant_name` (TAL-458), refreshed like `canBranch`; an older server that
     /// omits it gets the stock agent name.
@@ -496,7 +496,7 @@ public final class ChatViewModel {
         currentProfile = session.profile
         isCLISession = session.isCliSession == true
         isSessionReadOnly = session.isSessionReadOnly
-        canBranch = session.canBranch != false
+        canBranch = session.canBranch == true
         selectedRowIsStreaming = session.isStreaming
         selectedRowActiveStreamID = Self.nonEmpty(session.activeStreamId)
         self.server = server
