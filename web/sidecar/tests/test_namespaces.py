@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import socket
 import subprocess
 import sys
 
@@ -241,7 +242,9 @@ def test_kanban_tasks_report_claim_liveness_and_completion_evidence(handshaken: 
     worker = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
     try:
         with sqlite3.connect(db) as conn:
-            conn.execute("UPDATE tasks SET status = 'running', claim_lock = 'test-claim', worker_pid = ?, result = 'shipped' WHERE id = ?", (worker.pid, task_id))
+            # The Agent's claimer id is "<host>:<pid>" of the dispatcher that claimed the task, here this host.
+            claim = f"{socket.gethostname()}:{os.getpid()}"
+            conn.execute("UPDATE tasks SET status = 'running', claim_lock = ?, worker_pid = ?, result = 'shipped' WHERE id = ?", (claim, worker.pid, task_id))
             # No start fingerprint: liveness is the worker PID's existence.
             if any(c[1] == "worker_started_at" for c in conn.execute("PRAGMA table_info(tasks)")):
                 conn.execute("UPDATE tasks SET worker_started_at = NULL WHERE id = ?", (task_id,))

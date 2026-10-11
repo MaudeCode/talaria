@@ -11,7 +11,7 @@ import pytest
 
 from talaria_sidecar.methods import kanban
 
-RUNNING = {"status": "running", "claim_lock": "claim", "worker_pid": 4242, "worker_started_at": None}
+RUNNING = {"status": "running", "claim_lock": "here:4242", "worker_pid": 4242, "worker_started_at": None}
 
 
 class Row(dict):
@@ -25,7 +25,9 @@ def older_agent(monkeypatch):
     package = types.ModuleType("hermes_cli")
     package.__path__ = []
     monkeypatch.setitem(sys.modules, "hermes_cli", package)
-    monkeypatch.setitem(sys.modules, "hermes_cli.kanban_db", types.ModuleType("hermes_cli.kanban_db"))
+    kb = types.ModuleType("hermes_cli.kanban_db")
+    kb._host_prefix = lambda: "here:"  # the Agent's claim locks are "<host>:<pid>"
+    monkeypatch.setitem(sys.modules, "hermes_cli.kanban_db", kb)
     dispatch = types.ModuleType("hermes_cli.kanban_db_dispatch")
     monkeypatch.setitem(sys.modules, "hermes_cli.kanban_db_dispatch", dispatch)
     return dispatch
@@ -43,6 +45,13 @@ def test_a_live_worker_keeps_its_claim(older_agent) -> None:
     assert kanban._row_claim_live(Row(RUNNING)) is True
 
 
+def test_another_hosts_claim_is_never_probed_locally(older_agent) -> None:
+    checked = []
+    older_agent._pid_alive = lambda pid: checked.append(pid) or False
+    assert kanban._row_claim_live(Row({**RUNNING, "claim_lock": "elsewhere:4242"})) is True
+    assert checked == []
+
+
 def test_unknown_liveness_counts_as_live(older_agent) -> None:
     assert kanban._row_claim_live(Row(RUNNING)) is True  # no _pid_alive either
 
@@ -50,6 +59,10 @@ def test_unknown_liveness_counts_as_live(older_agent) -> None:
         raise OSError("ps unavailable")
 
     older_agent._pid_alive = broken
+    assert kanban._row_claim_live(Row(RUNNING)) is True
+
+    older_agent._pid_alive = lambda pid: False
+    del sys.modules["hermes_cli.kanban_db"]._host_prefix  # a claim whose host cannot be attributed
     assert kanban._row_claim_live(Row(RUNNING)) is True
 
 

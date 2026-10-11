@@ -103,9 +103,12 @@ def _row_claim_live(row) -> bool:
     if not (claim["claim_lock"] and claim["worker_pid"]):
         return False
     try:
-        # Agent 0.21.3 has no _claim_is_live, but its dispatcher's own worker PID check.
+        # Agent 0.21.3 has no _claim_is_live, but its dispatcher's own worker PID check. Like its crash sweep, probe
+        # only a claim this host issued: another host's PID means nothing here, so a remote claim stays live.
         from hermes_cli.kanban_db_dispatch import _pid_alive
 
+        if not str(claim["claim_lock"]).startswith(_kb()._host_prefix()):
+            return True
         return bool(_pid_alive(int(claim["worker_pid"])))
     except Exception:  # noqa: BLE001
         return True
