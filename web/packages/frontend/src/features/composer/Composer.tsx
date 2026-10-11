@@ -8,7 +8,7 @@ import type { Session, Settings } from '../../contracts'
 import type { LiveTurn } from '../../stream/reducer'
 import { isTerminal } from '../../stream/reducer'
 import { adoptTurn, cancelTurn, startTurn } from '../../stream/connection'
-import { forgetOwnSteer, onReturnToComposer, rememberOwnSteer } from './composerReturn'
+import { forgetOwnSteer, onReturnToComposer, rememberOwnSteer, returnToComposer } from './composerReturn'
 import { dispatch } from '../../stream/store'
 import { useBootstrap } from '../../app/bootstrap'
 import { cn } from '../../ui/cn'
@@ -329,27 +329,27 @@ export function Composer(props: ComposerProps) {
     upload(key, f.file)
   }
 
-  // Steer: deliver mid-run, shown in the turn as a pending user message; if the server did not accept it, the draft stays in the box.
-  const trySteer = useCallback(async (text: string): Promise<boolean> => {
-    if (!sessionId) return false
+  // Steer: deliver mid-run, shown in the turn as a pending user message. The box empties at once like any send (TAL-743);
+  // a steer the server did not accept returns after whatever was typed meanwhile.
+  const trySteer = useCallback(async (text: string): Promise<void> => {
+    if (!sessionId) return
     const steerId = `steer-${randomHex()}`
     // TAL-425: shown as sending until the server reports it; a Stop that withdraws it gives the text back to this tab.
     dispatch({ type: 'steer_sending', sessionId, steerId, text })
     rememberOwnSteer(steerId)
+    setText('')
     try {
       const r = await api.steerChat({ session_id: sessionId, text, steer_id: steerId })
       // TAL-460: sent during a background turn, the message became the user's own turn; follow it like a send.
-      if (r.started_turn) { adoptTurn(sessionId, text, r.started_turn); return true }
-      if (r.accepted) return true
-      dispatch({ type: 'steer_refused', sessionId, steerId })
-      forgetOwnSteer(steerId)
+      if (r.started_turn) { adoptTurn(sessionId, text, r.started_turn); return }
+      if (r.accepted) return
       showToast(r.fallback === 'gateway_steer_queued' ? m.steer_leftover_queued() : m.busy_steer_fallback(), 2500)
     } catch (e) {
-      dispatch({ type: 'steer_refused', sessionId, steerId })
-      forgetOwnSteer(steerId)
       showToast(e instanceof Error ? e.message : String(e), 4000, 'error')
     }
-    return false
+    dispatch({ type: 'steer_refused', sessionId, steerId })
+    // A Stop that withdrew it while the request was in flight already gave the text back.
+    if (forgetOwnSteer(steerId)) returnToComposer(sessionId, text)
   }, [sessionId])
 
   // Snapshot of what a send would post right now, for the queue.
@@ -403,13 +403,13 @@ export function Composer(props: ComposerProps) {
         return
       }
       if (cmd.name === 'queue' && busy) { requestScroll('end'); onQueue(queueEntry(cmd.args)); setText(''); setFiles([]); return }
-      if (cmd.name === 'steer' && busy && sessionId) { if (!cmd.args) { showToast(m.cmd_steer_no_msg(), 2000); return } requestScroll('end'); if (await trySteer(cmd.args)) setText(''); return }
+      if (cmd.name === 'steer' && busy && sessionId) { if (!cmd.args) { showToast(m.cmd_steer_no_msg(), 2000); return } requestScroll('end'); await trySteer(cmd.args); return }
       if (cmd.name === 'interrupt' && busy && sessionId) { requestScroll('end'); await cancelTurn(sessionId); onQueue(queueEntry(cmd.args)); setText(''); setFiles([]); return }
     }
     requestScroll('end')
     if (busy && sessionId) {
       if (busyMode === 'queue') { onQueue(queueEntry(value)); setText(''); setFiles([]); return }
-      if (busyMode === 'steer') { if (await trySteer(value)) setText(''); return }
+      if (busyMode === 'steer') { await trySteer(value); return }
       await cancelTurn(sessionId)
       onQueue(queueEntry(value))
       setText('')

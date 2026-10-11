@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Sending a steering message while a reply runs now empties the message box right away, and returns the text if the steer cannot be delivered.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
