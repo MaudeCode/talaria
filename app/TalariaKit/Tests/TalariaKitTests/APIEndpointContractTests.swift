@@ -483,7 +483,7 @@ final class SharedContractTests: XCTestCase {
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
         let rows = try XCTUnwrap((object["session"] as? [String: Any])?["messages"] as? [[String: Any]])
         // A release checks this App against every retained Web; one from before TAL-598 has no such row.
-        guard let raw = rows.first(where: { $0["_turnDuration"] != nil }) else { return }
+        guard let raw = rows.first(where: { $0["_turnTps"] != nil }) else { return }
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         let message = try decoder.decode(ChatMessage.self, from: JSONSerialization.data(withJSONObject: raw))
