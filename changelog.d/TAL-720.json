@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Chat reconnects, pending steering messages, final answers, and background updates no longer support Talaria Web servers older than 1.17.2.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

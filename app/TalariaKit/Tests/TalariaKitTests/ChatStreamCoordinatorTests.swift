@@ -1324,7 +1324,7 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
 
     @MainActor
     func testColdRelaunchWithoutTranscriptCursorAttachesLiveWithoutReplay() async throws {
-        // No journal (or an older server): the transcript already holds the persisted segments.
+        // No journal: the transcript already holds the persisted segments.
         let (streamClient, delegate, coordinator) = try await coldRelaunch(transcriptSeq: nil)
 
         let resumedURL = try XCTUnwrap(streamClient.startedURLs.last)
@@ -1333,27 +1333,6 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
         XCTAssertNil(queryItems.first(where: { $0.name == "after_seq" }))
         XCTAssertFalse(coordinator.isReplayConnection)
         XCTAssertEqual(delegate.streamCoordinatorStreamingAssistantMessageID, "assistant-latest")
-    }
-
-    @MainActor
-    func testColdRelaunchAgainstServerWithoutCursorFieldOmitsLoadedTurnAndReplaysFromZero() async throws {
-        let (streamClient, delegate, _) = try await coldRelaunch(transcriptSeq: nil, statesTranscriptSeq: false)
-
-        let resumedURL = try XCTUnwrap(streamClient.startedURLs.last)
-        let queryItems = URLComponents(url: resumedURL, resolvingAgainstBaseURL: false)?.queryItems ?? []
-        XCTAssertEqual(queryItems.first(where: { $0.name == "after_seq" })?.value, "0")
-        XCTAssertEqual(delegate.omitLoadedRunningTurnCount, 1)
-    }
-
-    @MainActor
-    func testColdRelaunchAgainstServerWithoutCursorFieldAttachesLiveWhenNoTurnStartIsLoaded() async throws {
-        let (streamClient, _, _) = try await coldRelaunch(
-            transcriptSeq: nil, statesTranscriptSeq: false, omitsLoadedRunningTurn: false
-        )
-
-        let resumedURL = try XCTUnwrap(streamClient.startedURLs.last)
-        let queryItems = URLComponents(url: resumedURL, resolvingAgainstBaseURL: false)?.queryItems ?? []
-        XCTAssertNil(queryItems.first(where: { $0.name == "after_seq" }))
     }
 
     @MainActor
@@ -1372,14 +1351,11 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
     /// run already adopted, exactly as `ChatViewModel.loadMessages` does.
     @MainActor
     private func coldRelaunch(
-        transcriptSeq: TranscriptSeq?,
-        statesTranscriptSeq: Bool = true,
-        omitsLoadedRunningTurn: Bool = true
+        transcriptSeq: TranscriptSeq?
     ) async throws -> (CoordinatorSpySSEStreamingClient, CoordinatorDelegateSpy, ChatStreamCoordinator) {
         let streamClient = CoordinatorSpySSEStreamingClient()
         let delegate = CoordinatorDelegateSpy()
         delegate.restoredSnapshotEventID = nil
-        delegate.omitsLoadedRunningTurn = omitsLoadedRunningTurn
         let coordinator = makeCoordinator(streamClient: streamClient, delegate: delegate) { request in
             XCTAssertEqual(request.url?.path, "/api/chat/stream/status")
             return apiTestJSONResponse(
@@ -1393,8 +1369,7 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
                 loadedActiveStreamID: "stream-cold",
                 preparation: reloadPreparation,
                 usedCacheFallback: false,
-                transcriptSeq: transcriptSeq,
-                statesTranscriptSeq: statesTranscriptSeq
+                transcriptSeq: transcriptSeq
             )
         }
 
@@ -1403,8 +1378,7 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
             loadedActiveStreamID: "stream-cold",
             preparation: preparation,
             usedCacheFallback: false,
-            transcriptSeq: transcriptSeq,
-            statesTranscriptSeq: statesTranscriptSeq
+            transcriptSeq: transcriptSeq
         )
         XCTAssertTrue(coordinator.isConnectionSuspended)
         XCTAssertNil(coordinator.lastEventID)
@@ -1798,14 +1772,6 @@ private final class CoordinatorDelegateSpy: ChatStreamCoordinatorDelegate {
     func streamCoordinatorServerTerminalState(turnID: String) -> String? {
         terminalStateTurnIDs.append(turnID)
         return serverTerminalState
-    }
-
-    var omitsLoadedRunningTurn = true
-    private(set) var omitLoadedRunningTurnCount = 0
-
-    func streamCoordinatorOmitLoadedRunningTurn() -> Bool {
-        omitLoadedRunningTurnCount += 1
-        return omitsLoadedRunningTurn
     }
 
     func streamCoordinatorStartAuxiliaryMonitoring() {

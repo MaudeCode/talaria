@@ -62,8 +62,8 @@ public final class ChatViewModel {
     /// Counts each change to a pending row here; a session load fetched before a change never undoes it.
     private var steerChangeCount = 0
     private var steerChangedAt: [String: Int] = [:]
-    /// The last session load listed `pending_steers`, so a snapshot merge adds no pending row of its own.
-    private var serverListsPendingSteers = false
+    /// A session load reconciled the pending rows with `pending_steers`, so a snapshot merge adds no pending row of its own.
+    private var hasAppliedServerPendingSteers = false
     private var ownSteers: OwnSteerStore { OwnSteerStore(defaults: userDefaults) }
     /// The stream the server last reported a background result started (`active_turn_origin`, TAL-460).
     private var backgroundTurnStreamID: String?
@@ -456,8 +456,6 @@ public final class ChatViewModel {
     @ObservationIgnored private var backgroundPollTask: Task<Void, Never>?
     private var isRefreshingCompletedResponseTitle = false
     private var latestServerLoadHadAssistantResponseAfterLatestUser = false
-    // The latest applied load's `pending_started_at`: when its running turn began.
-    private var loadedPendingStartedAt: Double?
     private var needsComposerConfigurationReload = false
     private var pendingExplicitModelPick = false
     public private(set) var composerConfigurationInteractionGeneration = 0
@@ -1539,15 +1537,13 @@ public final class ChatViewModel {
             toolCallAnchorMessageID = nil
             reasoningAnchorMessageID = nil
             attachmentCoordinator.removeAllLocalPreviews()
-            loadedPendingStartedAt = session?.pendingStartedAt
             backgroundTurnStreamID = session?.activeTurnOrigin == "background" ? loadedActiveStreamID : nil
             streamCoordinator.reconcileSessionLoad(
                 loadedActiveStreamID: loadedActiveStreamID,
                 preparation: streamLoadPreparation,
                 usedCacheFallback: false,
                 runStartedAt: Self.activeRunStartDate(pendingStartedAt: session?.pendingStartedAt, messages: messages),
-                transcriptSeq: session?.transcriptSeq,
-                statesTranscriptSeq: session?.statesTranscriptSeq ?? true
+                transcriptSeq: session?.transcriptSeq
             )
             applyServerPendingSteers(session?.pendingSteers, changedAfter: steerChangesAtFetch, newerRows: newerSteerRows)
             latestSettledSessionLoadRequestGeneration = loadRequestGeneration
@@ -3998,13 +3994,12 @@ public final class ChatViewModel {
 
     /// TAL-426: after a load the server's `pending_steers` are the pending rows: one per steer, in its order, and none it
     /// no longer holds. A row this device sent or changed after the fetch (a steer POST, a `steer_pending` frame) is newer
-    /// than the list and stays as it is. A Web older than TAL-424 lists none, so this device's own rows stay as they were.
+    /// than the list and stays as it is. A detail without the list (a CLI session has no Web run to steer) lists none.
     private func applyServerPendingSteers(_ steers: [PendingSteer]?, changedAfter fetch: Int, newerRows: [ChatMessage]) {
-        serverListsPendingSteers = steers != nil
+        let steers = steers ?? []
+        hasAppliedServerPendingSteers = true
         // The reload rebuilt the transcript from rows captured before the fetch; rows changed since come back as they were.
         for row in newerRows where !messages.contains(where: { $0.messageId == row.messageId }) { messages.append(row) }
-        // ponytail: old-server fallback; delete once every supported Web ships `pending_steers`.
-        guard let steers else { return }
         let newer = Set(steerChangedAt.filter { $0.value > fetch }.keys).union(steerRequestsInFlight)
         let kept = Set(steers.map(\.steerId)).union(newer)
         var seen = Set<String>()
@@ -4029,14 +4024,14 @@ public final class ChatViewModel {
         steerChangedAt[id] = steerChangeCount
     }
 
-    /// A snapshot merge never brings back a closed steer or shows one twice; once the server lists pending steers, the
+    /// A snapshot merge never brings back a closed steer or shows one twice; once a load applied `pending_steers`, the
     /// pending rows are the ones already shown (its list, its events, this device's request in flight).
     private func withoutRestoredPendingSteers(_ merged: [ChatMessage], shownBefore: [ChatMessage]) -> [ChatMessage] {
         let shown = Set(shownBefore.filter(\.isLocalSteeringHint).compactMap(\.messageId))
         var seen = Set<String>()
         return merged.filter { message in
             guard message.isLocalSteeringHint, message.steeringHintState != .consumed, let id = message.messageId else { return true }
-            return !closedSteerIDs.contains(id) && (!serverListsPendingSteers || shown.contains(id)) && seen.insert(id).inserted
+            return !closedSteerIDs.contains(id) && (!hasAppliedServerPendingSteers || shown.contains(id)) && seen.insert(id).inserted
         }
     }
 
@@ -5867,25 +5862,6 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
         // ponytail: old-server fallback — a turn from a Web before settled-turn scenes states no outcome, so the latest
         // load's reply after the prompt counts as completed. Delete once every supported Web ships scene `terminal_state`.
         return latestServerLoadHadAssistantResponseAfterLatestUser ? "completed" : nil
-    }
-
-    public func streamCoordinatorOmitLoadedRunningTurn() -> Bool {
-        // Only the running turn's own prompt (sent at or after its start) marks where to trim; an
-        // earlier prompt means the load does not hold this turn yet, and its settled answer stays.
-        guard let prompt = messages.lastIndex(where: Self.isOrdinaryUserTurnBoundary),
-              let startedAt = loadedPendingStartedAt,
-              let promptSentAt = messages[prompt].timestamp,
-              promptSentAt >= startedAt - 1
-        else { return false }
-
-        // Steers are the user's own rows; replayed `steer_consumed` frames only update them.
-        let steers = messages[messages.index(after: prompt)...].filter { $0.isLocalSteeringHint || $0.steer != nil }
-        messages.replaceSubrange(messages.index(after: prompt)..., with: steers)
-        liveAssistantActivity.removeAll()
-        streamingAssistantMessageID = nil
-        toolCallAnchorMessageID = nil
-        reasoningAnchorMessageID = nil
-        return true
     }
 
     public func streamCoordinatorStartAuxiliaryMonitoring() {
