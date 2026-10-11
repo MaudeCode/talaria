@@ -30,12 +30,14 @@ class TestIOSRunnerTest < Minitest::Test
     assert_includes(test["run"], "-test-timeouts-enabled YES")
     # Each failing test goes out as a commit status while the job runs, since its log is unreadable until it ends
     # (TAL-673); every caller grants the permission.
-    assert_includes(test["run"], 'ci/report-test-failures "${XCODEBUILD_LOG}" "$(git rev-parse HEAD)" "UI suite failures (shard ${SHARD})"')
+    assert_includes(test["run"], 'ci/report-test-failures "${XCODEBUILD_LOG}" "$(git rev-parse HEAD)" "${FAILURE_STATUS}"')
     assert_includes(test["run"], %q(trap 'kill "${reporter}" 2>/dev/null || true' EXIT))
-    assert_includes(test["run"], '[[ "${status}" != 0 ]] || ci/report-test-failures --passed "$(git rev-parse HEAD)" "UI suite failures (shard ${SHARD})"')
+    assert_includes(test["run"], '[[ "${status}" != 0 ]] || ci/report-test-failures --passed "$(git rev-parse HEAD)" "${FAILURE_STATUS}"')
+    assert_equal("${{ inputs.mode == 'full' && format('UI suite failures (shard {0})', matrix.shard) || 'App hosted test failures' }}",
+                 shard["env"]["FAILURE_STATUS"])
     assert_equal("${{ github.token }}", test["env"]["GH_TOKEN"])
     assert_equal("write", shard["permissions"]["statuses"])
-    { "ci.yml" => "app", "ui-suite.yml" => "suite", "release-set.yml" => "ui-suite" }.each do |file, job|
+    { "ci.yml" => "app", "ui-suite.yml" => "suite", "release-set.yml" => "app-hosted-tests" }.each do |file, job|
       assert_equal("write", workflow_jobs(file).fetch(job)["permissions"]["statuses"], "#{file} #{job}")
     end
     # A failed shard keeps CoreSimulator's log beside its result bundles, for what shut a simulator down (TAL-869).
@@ -48,21 +50,19 @@ class TestIOSRunnerTest < Minitest::Test
     after.each { |step| assert(step["timeout-minutes"].to_i.between?(1, 10), "#{step["name"]} has no short limit") }
   end
 
-  def test_failure_alert_covers_a_suite_cancelled_by_a_shard_timeout
-    alert = YAML.safe_load_file(File.join(WORKFLOWS, "ui-suite.yml"), aliases: true)["jobs"].fetch("alert")
+  def test_no_ui_suite_run_is_scheduled_or_alerts
+    # No UI test gates anything, so nothing schedules the UI suite, CI never dispatches it, and no run wakes the fix
+    # agent (TAL-877); it runs only when dispatched by hand.
+    suite = YAML.safe_load_file(File.join(WORKFLOWS, "ui-suite.yml"), aliases: true)
+    assert_equal(%w[workflow_dispatch], suite[true].keys)
+    assert_equal(%w[queue suite], suite["jobs"].keys)
+    refute_match(/UI_SUITE_WEBHOOK|secrets\./, workflow_text("ui-suite.yml"))
+    refute_includes(workflow_jobs("ci.yml").keys, "ui-suite-cadence")
+    Dir[File.join(WORKFLOWS, "*.yml")].each do |path|
+      next if File.basename(path) == "ui-suite.yml"
 
-    # A shard GitHub cancels at its timeout leaves the suite cancelled, not failed, and failure() never ran the alert
-    # (TAL-670); ci/ui-suite-failed-jobs keeps a person's cancel from sending anything. A failed Queue job skips the
-    # suite and alerts too, unless it failed after requeueing the suite at its limit (TAL-679).
-    assert_equal("always() && (needs.suite.result == 'failure' || needs.suite.result == 'cancelled' " \
-                 "|| (needs.queue.result == 'failure' && needs.queue.outputs.requeued != 'true')) " \
-                 "&& github.ref == 'refs/heads/main' && !inputs.only_testing && (!inputs.ref || inputs.ref == github.sha)",
-                 alert["if"])
-    assert_equal(%w[queue suite], alert["needs"])
-    assert_equal({"contents" => "read", "actions" => "read", "checks" => "read"}, alert["permissions"])
-    post = alert["steps"].find { |step| step["name"] == "Post the signed failure report" }["run"]
-    assert_includes(post, 'failed_jobs=$(app/ci/ui-suite-failed-jobs "$GITHUB_RUN_ID")')
-    assert_includes(post, 'if [[ "$failed_jobs" == "[]" ]]; then')
+      refute_match(%r{workflow run ui-suite\.yml|workflows/ui-suite\.yml}, File.read(path, encoding: "UTF-8"), File.basename(path))
+    end
   end
 
   def test_single_worker_runs_on_the_leased_simulator_without_cloning
@@ -144,7 +144,7 @@ class TestIOSRunnerTest < Minitest::Test
     # while it builds (TAL-380). The wait runs on Linux, so it holds no macOS slot.
     assert_equal("build-started", shard["needs"])
     started = jobs.fetch("build-started")
-    assert_equal(["inputs.mode == 'full'", "ubuntu-latest"], started.values_at("if", "runs-on"))
+    assert_equal(["inputs.mode != 'contracts'", "ubuntu-latest"], started.values_at("if", "runs-on"))
     assert_equal(['ci/wait-for-job "${BUILD_JOB}" 20700 "Set up job"'], started["steps"].filter_map { |step| step["run"] })
     # The boot finishes before the build wait and download, so it competes with neither (TAL-380), and the simulator
     # is prepared while the build still runs (scripts/prepare-ui-simulator: the keyboard introduction, TAL-668;
@@ -244,9 +244,9 @@ class TestIOSRunnerTest < Minitest::Test
     assert_equal(1, workflow.scan("            -parallel-testing-enabled NO \\").length)
     refute_match(/parallel-testing-enabled YES|parallel-testing-worker-count|test_workers|build_cache|COMPILATION_CACHE|xcode-cache/, workflow)
     refute_match(/COMPILATION_CACHE|build-cache/, File.read(File.expand_path("build-for-testing", __dir__), encoding: "UTF-8"))
-    # Pull requests run the package tests and the App build for testing, and nothing in a simulator (TAL-405). The
-    # simulator-hosted unit tests, the launch smoke and every UI test run in the full suite's four shards
-    # (TAL-399), or in one for a scoped UI suite dispatch (TAL-401).
+    # Pull requests run the package tests, the App build for testing and one shard of the simulator-hosted unit
+    # tests, never a UI test (TAL-877). A hand-dispatched full suite adds the launch smoke and every UI test in four
+    # shards (TAL-399), or in one for a scoped dispatch (TAL-401).
     assert_includes(workflow, "timeout-minutes: ${{ fromJSON(inputs.test_iterations) > 1 && 360 || 75 }}")
     # Dispatch inputs arrive as strings, so the reusable workflow's input is a string too.
     app_tests = YAML.safe_load_file(File.join(WORKFLOWS, "app-tests.yml"), aliases: true)
@@ -255,17 +255,19 @@ class TestIOSRunnerTest < Minitest::Test
     jobs = workflow_jobs("app-tests.yml")
     shard = jobs.fetch("app-test")
     # inputs.shards shards (default four; a release passes its own count, TAL-414), or one for a scoped dispatch.
-    assert_equal("${{ inputs.only_testing == '' && fromJSON('[null,[0],[0,1],[0,1,2],[0,1,2,3],[0,1,2,3,4],[0,1,2,3,4,5]]')[inputs.shards] || fromJSON('[0]') }}",
+    assert_equal("${{ inputs.mode == 'full' && inputs.only_testing == '' && fromJSON('[null,[0],[0,1],[0,1,2],[0,1,2,3],[0,1,2,3,4],[0,1,2,3,4,5]]')[inputs.shards] || fromJSON('[0]') }}",
                  shard["strategy"]["matrix"]["shard"])
+    # Pull-request mode's one shard selects the hosted unit tests' whole target and no UI test.
+    assert_equal("${{ inputs.mode != 'full' && 'TalariaTests' || inputs.only_testing }}", shard["env"]["ONLY_TESTING"])
     assert_equal({"type" => "number", "default" => 4}, app_tests[true]["workflow_call"]["inputs"]["shards"])
-    # A pull request builds without a test shard; a contract-only change has no App build either, and the package
-    # job runs its contract classes in every mode.
-    assert_equal("inputs.mode == 'full'", shard["if"])
+    # A contract-only change has no App build or test shard, and the package job runs its contract classes in every
+    # mode.
+    assert_equal("inputs.mode != 'contracts'", shard["if"])
     assert_equal("inputs.mode != 'contracts'", jobs.fetch("app-build")["if"])
     assert_equal([nil] * 2, jobs.values_at("app-build", "package-test").map { |job| job["needs"] })
-    # Only the full suite packages and uploads its build for the shards; the build itself always runs to the end.
+    # Every mode with a test shard packages and uploads its build for it; the build itself always runs to the end.
     build_steps = jobs.fetch("app-build")["steps"].map { |step| [step["name"] || step["uses"], step] }.to_h
-    assert_equal(["inputs.mode == 'full'"] * 2, build_steps.values_at("Package the test build", "Upload the test build").map { |step| step["if"] })
+    assert_equal(["inputs.mode != 'contracts'"] * 2, build_steps.values_at("Package the test build", "Upload the test build").map { |step| step["if"] })
     assert_equal('ci/build-for-testing "${BUILD_DESTINATION}"', build_steps.fetch("Build for testing")["run"])
     assert_nil(build_steps.fetch("Build for testing")["if"])
     # The launch smoke runs as one of the full suite's UI tests, and no UI test may skip.
@@ -293,8 +295,7 @@ class TestIOSRunnerTest < Minitest::Test
     # A failing shard still runs its destination classes, and the step still fails.
     assert_includes(test, 'run_tests "${SIMULATOR_ID}" "${RESULT_BUNDLE_PATH}" "${selection[@]}" || status=$?')
     assert_match(/exit "\$\{status\}"\n\z/, test)
-    # Pull requests and main pushes run the same App jobs; the full UI suite, launch smoke included, is nightly and
-    # a release gate.
+    # Pull requests and main pushes run the same App jobs; no UI test runs in CI.
     app = workflow_jobs("ci.yml").fetch("app")
     assert_equal("./.github/workflows/app-tests.yml", app["uses"])
     assert_equal("${{ (needs.changes.result != 'success' || needs.changes.outputs.app != 'false') && 'pull-request' || 'contracts' }}",
@@ -305,8 +306,8 @@ class TestIOSRunnerTest < Minitest::Test
                   "test_iterations" => "${{ inputs.test_iterations || '1' }}",
                   "queue_attempt" => "${{ needs.queue.outputs.attempt }}"}, suite["jobs"]["suite"]["with"])
     assert_equal("string", suite[true]["workflow_dispatch"]["inputs"]["test_iterations"]["type"])
-    # A release calls app-tests.yml directly: a called ui-suite.yml's concurrency left its jobs pending (TAL-417).
-    assert_equal(%w[schedule workflow_dispatch], suite[true].keys)
+    # Hand dispatches only (TAL-877).
+    assert_equal(%w[workflow_dispatch], suite[true].keys)
     assert_includes(workflow, 'python3 ci/test_shards.py --shards "${SHARD_COUNT}" --shard "${SHARD}" > selection.txt')
     # CI skips the measurement-only UI classes and the scheduled UI Performance
     # workflow runs them (TAL-75, TAL-287); the shard script owns the skip list.

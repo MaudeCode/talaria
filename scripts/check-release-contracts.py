@@ -26,7 +26,7 @@ def verify_app_web(plan, output):
     app = plan["components"]["app"]["sourceRevision"]
     web_refs = list(dict.fromkeys([plan["components"]["web"]["sourceRevision"], *plan["supportedWebSources"]]))
     # One App revision for every Web: the pairs share a checkout, so only the first builds cold. A shipping App also runs
-    # its whole TalariaKit suite there against the selected Web, which the release's UI suite call leaves out (TAL-414).
+    # its whole TalariaKit suite there against the selected Web, which the release's hosted-tests call leaves out (TAL-414).
     with tempfile.TemporaryDirectory(prefix="talaria-selected-app-") as temporary:
         for index, web in enumerate(web_refs):
             subprocess.run([

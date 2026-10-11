@@ -21,13 +21,12 @@ enough to assert on; a path whose cost is the rendered app is measured in
 | Sidebar close hitch | `TalariaUITests/SidebarPerformanceUITests` | daily UI Performance workflow, full local suite |
 
 The UI classes repeat each path under `measure` and together add several
-minutes of relaunching and scrolling, so CI and the UI suite
-(`.github/workflows/app-tests.yml`) skip them on every run through the skip list
-in `ci/test_shards.py`.
+minutes of relaunching and scrolling, so a hand-dispatched UI suite
+(`.github/workflows/app-tests.yml`) skips them through the skip list in
+`ci/test_shards.py`; CI runs no UI test (TAL-877).
 `.github/workflows/ui-performance.yml` runs them daily at 09:00 UTC (or on
 dispatch) serially on a GitHub-hosted macOS runner and keeps the metrics as the
-run's `performance-metrics-<attempt>` artifact for 30 days; the nightly and
-release UI suite does not repeat their paths (TAL-402). The
+run's `performance-metrics-<attempt>` artifact for 30 days (TAL-402). The
 unit-level budgets are fast and deterministic, so they stay in the pull-request
 suite where a regression is introduced.
 

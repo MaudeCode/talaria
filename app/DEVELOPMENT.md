@@ -50,9 +50,9 @@ models, networking (API client, SSE, contract types), persistence and sync, and
 the view models and presentation logic behind every screen (chat, sessions,
 Kanban, settings, workspace, auth). The App, the share extension and the Live
 Activity widget link it. Its tests run on macOS without a simulator; CI runs
-them on every App change, beside the App build for testing, while the
-simulator-hosted `TalariaTests`, the launch smoke test and the UI suite run
-nightly and as a release gate:
+them on every App change, beside the App build for testing and the
+simulator-hosted `TalariaTests` (one shard; releases run it too). No UI test
+runs in CI (TAL-877):
 
 ```zsh
 swift test --package-path TalariaKit
@@ -83,8 +83,8 @@ generated resource accessors and the tests themselves are excluded. The
 `app-package-coverage` artifact (`ui-suite-package-coverage` from the full
 suite) keeps `coverage.txt`, the per-file table, and `coverage.json`, the
 per-line `llvm-cov export`; it is uploaded after failed runs too and kept for 14
-days. Simulator-hosted App target code (`Talaria/`, the extensions) runs only
-in the full suite and is not in the number.
+days. Simulator-hosted App target code (`Talaria/`, the extensions) runs in the
+hosted unit tests shard and is not in the number.
 
 The baseline when coverage landed was 82.37% of lines (33,497 of 40,667) and
 76.86% of functions (5,056 of 6,578) across 225 files. Read it as visibility:
