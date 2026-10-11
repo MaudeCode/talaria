@@ -1,0 +1,26 @@
+#!/bin/zsh
+# Warms the system document picker on a booted simulator (TAL-751). The picker's first presentation after boot
+# cold-launches com.apple.DocumentManagerUICore.Service and the file-provider and icon services it browses: 8-18 s on a
+# hosted runner against 5-11 s for the next one, and past the UI tests' 20 s wait in UI suite run 38144004591. The
+# service is an app extension simctl cannot launch, so the Files app, which loads the same DocumentManager frameworks
+# and browses the same providers, runs until it logs that its first collection finished gathering. This runs while
+# the build does in CI.
+# Usage: scripts/ready-simulator-documents <simulator-udid>
+
+set -euo pipefail
+(( $# == 1 )) || { print -u2 "Usage: scripts/ready-simulator-documents <simulator-udid>"; exit 64; }
+simulator_id=$1
+
+started=$(date '+%Y-%m-%d %H:%M:%S')
+xcrun simctl launch "$simulator_id" com.apple.DocumentsApp >/dev/null
+gathered() {
+    xcrun simctl spawn "$simulator_id" log show --start "$started" --style compact \
+        --predicate 'process == "Files" AND eventMessage CONTAINS "collectionDidFinishGathering"' 2>/dev/null |
+        grep -q collectionDidFinishGathering
+}
+for _ in {1..120}; do
+    gathered && break
+    sleep 1
+done
+gathered || print -u2 "Files never finished gathering on simulator $simulator_id; its document picker may still start cold."
+xcrun simctl terminate "$simulator_id" com.apple.DocumentsApp

@@ -4,6 +4,7 @@
 #   ci/memory-sampler watch LOG XCODEBUILD_LOG   appends a sample every MEMORY_SAMPLE_SECONDS (15) until killed
 #   ci/memory-sampler sample LOG XCODEBUILD_LOG  appends one sample
 #   ci/memory-sampler summary LOG                prints the peak swap and SimRenderServer footprint, with their tests
+#   ci/memory-sampler settle CAP_SECONDS         returns once a freshly booted simulator's render server has settled
 # A sample holds swap use, the free-memory percentage, compressor and swap counters, the eight largest processes by
 # footprint (top's MEM, which counts the GPU and IOSurface memory ps's RSS leaves out), SimRenderServer's
 # footprint and lifetime peak, and the test xcodebuild last started. The peak (footprint's phys_footprint_peak) keeps
@@ -21,18 +22,28 @@ megabytes() {
   }'
 }
 
-sample() {
-  local log=$1 xcodebuild_log=$2 test processes swap_used render_server render_server_pid peak_bytes=0
-  test=$(grep -o "Test Case '-\[[^]]*\]' started" "${xcodebuild_log}" 2>/dev/null | tail -n 1 | sed -E "s/Test Case '-\[([A-Za-z0-9_]+\.)?(.*)\]' started/\2/") || true
-  processes=$(top -l 1 -o mem -stats pid,command,mem 2>/dev/null | awk '/^PID/ { listed = 1 } listed') || true
-  swap_used=$(sysctl -n vm.swapusage | sed -E 's/.*used = ([0-9.]+)M.*/\1/')
-  render_server=$(awk '$2 == "SimRenderServer" { print $3; exit }' <<< "${processes}")
-  render_server_pid=$(awk '$2 == "SimRenderServer" { print $1; exit }' <<< "${processes}")
-  if [[ -n "${render_server_pid}" ]]; then
-    peak_bytes=$(footprint --pid "${render_server_pid}" --noCategories -f bytes 2>/dev/null |
+# The processes by footprint, top's header line first.
+processes() { top -l 1 -o mem -stats pid,command,mem 2>/dev/null | awk '/^PID/ { listed = 1 } listed' || true; }
+
+# Usage: render_server_peak_bytes PROCESSES. SimRenderServer's lifetime peak footprint; 0 when unknown.
+render_server_peak_bytes() {
+  local pid peak_bytes=0
+  pid=$(awk '$2 == "SimRenderServer" { print $1; exit }' <<< "$1")
+  if [[ -n "${pid}" ]]; then
+    peak_bytes=$(footprint --pid "${pid}" --noCategories -f bytes 2>/dev/null |
       awk '$1 == "phys_footprint_peak:" { print $2; exit }') || true
   fi
   [[ "${peak_bytes}" =~ ^[0-9]+$ ]] || peak_bytes=0
+  echo "${peak_bytes}"
+}
+
+sample() {
+  local log=$1 xcodebuild_log=$2 test processes swap_used render_server peak_bytes
+  test=$(grep -o "Test Case '-\[[^]]*\]' started" "${xcodebuild_log}" 2>/dev/null | tail -n 1 | sed -E "s/Test Case '-\[([A-Za-z0-9_]+\.)?(.*)\]' started/\2/") || true
+  processes=$(processes)
+  swap_used=$(sysctl -n vm.swapusage | sed -E 's/.*used = ([0-9.]+)M.*/\1/')
+  render_server=$(awk '$2 == "SimRenderServer" { print $3; exit }' <<< "${processes}")
+  peak_bytes=$(render_server_peak_bytes "${processes}")
   {
     echo "=== $(date -u +%Y-%m-%dT%H:%M:%SZ) test: ${test:-none}"
     echo "swap: $(sysctl -n vm.swapusage)"
@@ -60,9 +71,33 @@ summary() {
     }' "$1"
 }
 
+# A hosted runner's freshly booted simulator has its render server burst to 2-6 GB a few minutes after boot, with no
+# app running, and calm down on its own minutes later. XCTest's runner bootstrap waits on Accessibility, which starves
+# inside the burst: an iPad destination that reached xcodebuild 3 minutes after boot lost its runner (UI suite run
+# 38144004591), while those that reached it after 5-9 minutes passed (TAL-696). This returns once the render server's
+# lifetime peak shows the burst came (over 1 GB) and its footprint is back under 400 MB, or after CAP_SECONDS.
+settle() {
+  local cap=$1 start=${SECONDS} processes current=0 peak=0
+  while true; do
+    processes=$(processes)
+    current=$(megabytes "$(awk '$2 == "SimRenderServer" { print $3; exit }' <<< "${processes}")")
+    peak=$(( $(render_server_peak_bytes "${processes}") / 1048576 ))
+    if (( peak > 1024 && current < 400 )); then
+      echo "SimRenderServer settled after $((SECONDS - start)) s: ${current} MB, lifetime peak ${peak} MB"
+      return 0
+    fi
+    if (( SECONDS - start >= cap )); then
+      echo "SimRenderServer had not settled after ${cap} s: ${current} MB, lifetime peak ${peak} MB"
+      return 0
+    fi
+    sleep "${MEMORY_SETTLE_POLL_SECONDS:-10}"
+  done
+}
+
 case "${1:-}" in
   sample) sample "$2" "$3" ;;
   watch) while true; do sample "$2" "$3" || true; sleep "${MEMORY_SAMPLE_SECONDS:-15}"; done ;;
   summary) summary "$2" ;;
-  *) echo "usage: ci/memory-sampler watch|sample LOG XCODEBUILD_LOG | summary LOG" >&2; exit 2 ;;
+  settle) settle "$2" ;;
+  *) echo "usage: ci/memory-sampler watch|sample LOG XCODEBUILD_LOG | summary LOG | settle CAP_SECONDS" >&2; exit 2 ;;
 esac

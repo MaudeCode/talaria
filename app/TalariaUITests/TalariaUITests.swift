@@ -698,14 +698,16 @@ final class ChatPrimaryStreamUITests: ChatUITestCase {
         XCTAssertTrue(optimisticMessage.awaitExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Approval required"].awaitExistence(timeout: 5))
 
+        // The cards render apart from the transcript rows the same events streamed, so those rows are awaited, not
+        // checked at once (TAL-735).
         let opening = app.staticTexts["Fixture opening."]
-        XCTAssertTrue(opening.exists)
+        XCTAssertTrue(opening.awaitExistence(timeout: 5))
         let liveThinking = element(labelContaining: "Thinking, Inspecting fixture")
         let liveProgress = app.staticTexts["Fixture progress."]
         let liveTool = element(labelContaining: "Calling a tool, Running")
-        XCTAssertTrue(liveThinking.exists)
-        XCTAssertTrue(liveProgress.exists)
-        XCTAssertTrue(liveTool.exists)
+        XCTAssertTrue(liveThinking.awaitExistence(timeout: 5))
+        XCTAssertTrue(liveProgress.awaitExistence(timeout: 5))
+        XCTAssertTrue(liveTool.awaitExistence(timeout: 5))
         XCTAssertLessThan(opening.frame.minY, liveThinking.frame.minY)
         XCTAssertLessThan(liveThinking.frame.minY, liveProgress.frame.minY)
         XCTAssertLessThan(liveProgress.frame.minY, liveTool.frame.minY)
@@ -715,7 +717,7 @@ final class ChatPrimaryStreamUITests: ChatUITestCase {
         XCTAssertTrue(app.staticTexts["Which deterministic path should continue?"].exists)
 
         let finished = app.staticTexts["Fixture finished."]
-        XCTAssertTrue(finished.exists)
+        XCTAssertTrue(finished.awaitExistence(timeout: 5))
 
         // The clarification uses only the composer, and slash text there is an answer, not a
         // command. Tapping an offered choice is the batch test's and `ClarificationTests`'.
@@ -3268,15 +3270,12 @@ extension TalariaUITestCase {
     /// Polls for either, so the choice does not depend on which appears first.
     func waitForSessionSearchControl(timeout: TimeInterval) -> XCUIElement? {
         let button = app.buttons["Search"]
-        let deadline = Date().addingTimeInterval(timeout)
-
-        repeat {
-            if sessionSearchField.exists { return sessionSearchField }
-            if button.exists { return button }
-            Thread.sleep(forTimeInterval: 0.1)
-        } while Date() < deadline
-
-        return nil
+        var control: XCUIElement?
+        _ = poll(timeout: timeout) {
+            control = sessionSearchField.exists ? sessionSearchField : button.exists ? button : nil
+            return control != nil
+        }
+        return control
     }
 }
 
@@ -3421,15 +3420,12 @@ extension TalariaUITestCase {
     func waitForComposer(timeout: TimeInterval) -> XCUIElement? {
         let idleComposer = app.buttons["Message"]
         let expandedComposer = app.textViews.firstMatch
-        let deadline = Date().addingTimeInterval(timeout)
-
-        repeat {
-            if idleComposer.exists { return idleComposer }
-            if expandedComposer.exists { return expandedComposer }
-            Thread.sleep(forTimeInterval: 0.1)
-        } while Date() < deadline
-
-        return nil
+        var composer: XCUIElement?
+        _ = poll(timeout: timeout) {
+            composer = idleComposer.exists ? idleComposer : expandedComposer.exists ? expandedComposer : nil
+            return composer != nil
+        }
+        return composer
     }
 
     /// Scrolls the row fully into the list's viewport and taps it. Each pass reads the row once
