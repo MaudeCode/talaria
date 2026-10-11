@@ -1589,11 +1589,14 @@ export function redactSensitive(text: string): string {
   }
   const out = spans.length ? maskSpans(redacted, spans, () => '***') : redacted
   // A credential of delimiters only (`Bear\x1b[1mer $$$$`) has no unit to mask: when the view shows fewer of a delimiter
-  // than the text's redaction, that redaction is redacted again without its escape sequences, keeping each of its masks.
+  // than the text's redaction, the view's redaction is returned, without escape sequences, with each unit of the text
+  // that the text's redaction hides more often masked in it too.
   const plainOut = out.replace(DISPLAY_GAPS_RE, '')
   const outCounts = delimiterCounts(plainOut)
   const viewCounts = delimiterCounts(shown)
-  return [...outCounts].some(([char, count]) => (viewCounts.get(char) ?? 0) < count) ? redactShellText(plainOut) : out
+  if (![...outCounts].some(([char, count]) => (viewCounts.get(char) ?? 0) < count)) return out
+  const hidden = secretTokenCounts(plainOut)
+  return shown.replace(SECRET_UNIT_RE, (unit) => (base.has(unit) && (shownCounts.get(unit) ?? 0) > (hidden.get(unit) ?? 0) ? '***' : unit))
 }
 
 /** A text's delimiters, `SECRET_UNIT_RE`'s but whitespace, counted outside the masks `***` and a private key's. */
