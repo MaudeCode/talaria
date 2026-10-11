@@ -72,7 +72,7 @@ final class SessionListHostedTests: XCTestCase {
         XCTAssertNotNil(cached, "Missing deterministic session fixture")
         first.isHidden = true
 
-        UITestFixtureLaunch.arguments.append(UITestFixtureEnvironment.holdSessionListArgument)
+        FixtureLaunchArguments.scenario.append(UITestFixtureEnvironment.holdSessionListArgument)
         let relaunched = try hostWindow(fixture.sessionList())
         let painted = await awaitElement(in: relaunched, where: isFixtureRow)
         XCTAssertNotNil(painted, "The relaunch did not show the last chats before /api/sessions answered")

@@ -22,11 +22,11 @@ enum ShareExtensionUITestHost {
     static let sharedURL = URL(string: "https://share.fixture.invalid/talaria")!
 
     static var isActive: Bool {
-        UITestFixtureLaunch.arguments.contains(launchArgument)
+        ProcessInfo.processInfo.arguments.contains(launchArgument)
     }
 
     static var resetsSharedState: Bool {
-        UITestFixtureLaunch.arguments.contains(resetArgument)
+        ProcessInfo.processInfo.arguments.contains(resetArgument)
     }
 
     /// A reset launch starts from an empty share inbox and the shipping open path, so a

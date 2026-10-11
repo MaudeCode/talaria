@@ -1,7 +1,6 @@
 #if DEBUG
 import Foundation
 import notify
-import TalariaKit
 
 /// TAL-80: one run on a server that outlives the app. The run's state is kept on disk, so a
 /// journey can background the app, kill it, relaunch it, drop its connection or expire its
@@ -26,11 +25,11 @@ enum UITestLifecycleFixture {
     static let finished = " Lifecycle finished."
 
     static var isEnabled: Bool {
-        UITestFixtureLaunch.arguments.contains(argument)
+        ProcessInfo.processInfo.arguments.contains(argument)
     }
 
     static func has(_ argument: String) -> Bool {
-        UITestFixtureLaunch.arguments.contains(argument)
+        ProcessInfo.processInfo.arguments.contains(argument)
     }
 
     /// The run journal: `seq` 1 is out as soon as the run starts; 2 and 3 only once it finishes.

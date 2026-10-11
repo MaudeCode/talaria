@@ -392,6 +392,22 @@ class ReleaseNotesTests(unittest.TestCase):
         self.write("changelog.d/TAL-3.json", "malformed")
         self.cli("validate", "--base", baseline, "--target", pr_head, error="TAL-3.json")
 
+    def test_project_edits_naming_only_test_files_can_skip(self):
+        project = "Talaria.xcodeproj/project.pbxproj"
+        self.write(project, "A1 /* Feature.swift in Sources */,\n")
+        self.write("Talaria/Feature.swift", "// app\n")
+        self.add_fragment(2)
+        self.commit("TAL-2: app feature")
+        base = self.git("rev-parse", "HEAD")
+        self.write(project, "A1 /* Feature.swift in Sources */,\nB1 /* FeatureTests.swift in Sources */,\n")
+        self.write("TalariaTests/FeatureTests.swift", "// test\n")
+        self.write("changelog.d/TAL-3.json", '{"skip":"Tests only"}')
+        self.commit("TAL-3: add a test")
+        self.cli("validate", "--base", base)
+        self.write(project, "A1 /* Feature.swift in Sources */,\nB1 /* FeatureTests.swift in Sources */,\nSWIFT_VERSION = 6.0;\n")
+        self.commit("TAL-3: change a build setting")
+        self.cli("validate", "--base", base, error="require user-facing entries")
+
     def test_app_changes_cannot_use_only_skip_or_another_tickets_metadata(self):
         self.write("Talaria/Feature.swift", "// fixture\n")
         self.write("changelog.d/TAL-2.json", '{"skip":"Docs only"}')

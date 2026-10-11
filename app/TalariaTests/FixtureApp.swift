@@ -4,9 +4,35 @@ import XCTest
 @testable import Talaria
 import TalariaKit
 
+/// A hosted test's fixture arguments, appended to what `ProcessInfo.arguments` returns: the fixture checks in App and
+/// TalariaKit code read the launch arguments directly, so the tests change those rather than the checks.
+enum FixtureLaunchArguments {
+    nonisolated(unsafe) static var scenario: [String] = [] {
+        willSet { _ = installed }
+    }
+
+    private static let installed: Void = {
+        // Swift reads go to the runtime subclass's override (`_NSSwiftProcessInfo`), not to NSProcessInfo's getter.
+        let selector = #selector(getter: ProcessInfo.arguments)
+        guard let type = object_getClass(ProcessInfo.processInfo),
+              let method = class_getInstanceMethod(type, selector) else {
+            preconditionFailure("ProcessInfo has no arguments getter")
+        }
+        typealias Getter = @convention(c) (AnyObject, Selector) -> NSArray
+        let original = unsafeBitCast(method_getImplementation(method), to: Getter.self)
+        let arguments: @convention(block) (AnyObject) -> NSArray = { info in
+            original(info, selector).addingObjects(from: scenario) as NSArray
+        }
+        let replacement = imp_implementationWithBlock(arguments)
+        if !class_addMethod(type, selector, replacement, method_getTypeEncoding(method)) {
+            method_setImplementation(method, replacement)
+        }
+    }()
+}
+
 /// The App's UI-test fixture, started in process for one hosted test (TAL-856): the same canned server, sessions and
-/// scenarios the UI tests launched with arguments, chosen per test instead. Every fixture check reads
-/// `UITestFixtureLaunch.arguments`, so setting it here selects the scenario; teardown restores the process's own.
+/// scenarios the UI tests launched with arguments, chosen per test instead: `FixtureLaunchArguments` adds them to the
+/// process's launch arguments, which every fixture check reads, until teardown.
 /// A test hosts the App's screens against it with one offline cache, so a second host sees what the first one cached,
 /// the way a reopen or relaunch does.
 @MainActor
@@ -20,8 +46,7 @@ final class FixtureApp {
     var client: APIClient { environment.client }
 
     init(_ scenario: [String] = [], for testCase: XCTestCase) throws {
-        let previous = UITestFixtureLaunch.arguments
-        UITestFixtureLaunch.arguments = [UITestFixtureLaunch.launchArgument] + scenario
+        FixtureLaunchArguments.scenario = [UITestFixtureLaunch.launchArgument] + scenario
         UITestFixtureURLProtocol.resetForHostedTest()
         environment = UITestFixtureEnvironment.make()
         cache = try ModelContainer(
@@ -33,7 +58,7 @@ final class FixtureApp {
         testCase.addTeardownBlock {
             MainActor.assumeIsolated {
                 UITestFixtureHold.shared.release()
-                UITestFixtureLaunch.arguments = previous
+                FixtureLaunchArguments.scenario = []
                 UITestFixtureURLProtocol.resetForHostedTest()
             }
         }

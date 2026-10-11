@@ -211,7 +211,7 @@ struct RelayConnectionManagementView: View {
         credentials = TalariaRelayConfigurationStore.load()
         guard let credentials else { return }
         #if DEBUG
-        if UITestFixtureLaunch.arguments.contains(UITestFixtureEnvironment.relayConnectedArgument) {
+        if ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.relayConnectedArgument) {
             return
         }
         #endif
