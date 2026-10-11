@@ -89,7 +89,10 @@ import json, sys
 sys.path.insert(0, sys.argv[1])
 from cron.jobs import get_job, update_job
 from cron import scheduler
-from cron.scheduler_tick import tick
+try:
+    from cron.scheduler_tick import tick
+except ImportError:  # Agent 0.21.3 keeps its scheduled tick in cron.scheduler
+    from cron.scheduler import tick
 from agent.secret_scope import get_secret
 original_run = scheduler.run_job
 def observe_scope(job, **kwargs):
