@@ -54,7 +54,6 @@ const SCHEMAS: Record<string, ZodType> = {
   provider_cost_history: C.ProviderCostHistorySchema,
   draft_set: C.DraftResponseSchema,
   goal_status: C.GoalResponseSchema,
-  background_status: C.BackgroundStatusSchema,
   approval_pending: C.ApprovalPendingEnvelopeSchema,
   clarify_pending: C.ClarifyPendingEnvelopeSchema,
   api_404: C.ErrorBodySchema,

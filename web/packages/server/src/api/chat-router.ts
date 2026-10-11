@@ -312,7 +312,7 @@ export const chatRouter = os.router({
       const bg = ctx.deps.sessionStore.newSession({ workspace: parent.workspace, model, modelProvider, profile: parent.profile })
       bg.title = `bg: ${prompt.slice(0, 60)}`
       ctx.deps.sessionStore.save(bg)
-      // Python: `uuid.uuid4().hex[:8]`; a failed run still completes the task so `/api/background/status` can report it,
+      // Python: `uuid.uuid4().hex[:8]`; a failed run still completes the task so `/api/background/tasks` reports it,
       // and the hidden bg session file is removed afterwards.
       const taskId = randomUUID().replace(/-/g, '').slice(0, 8)
       // TAL-372: the parent session keeps the task's record and result, so every client and a restart see it.
@@ -333,11 +333,6 @@ export const chatRouter = os.router({
       }
       ctx.deps.background.setCommandStream(parent.session_id, taskId, str(started.stream_id))
       return { ok: true as const, task_id: taskId, stream_id: str(started.stream_id), session_id: bg.session_id }
-    })),
-    status: os.background.status.handler(({ input, context: { ctx } }) => run(() => {
-      const sid = str(input.session_id)
-      if (!sid) throw new HttpError(400, 'Missing session_id')
-      return { results: ctx.deps.background.legacyResults(sid) }
     })),
     tasks: os.background.tasks.handler(({ input, context: { ctx } }) => run(async () => {
       const s = visibleSession(ctx, input.session_id)

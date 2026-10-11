@@ -29,6 +29,11 @@ const completed = (messages: Json[], extra: Partial<ChatResult> = {}): ChatResul
 })
 
 const eventNames = (frames: SseFrame[]): string[] => frames.map((f) => f.event)
+/** A `/background` task's shared record and its full result, as every client reads them. */
+async function backgroundTask(s: TestServer, sid: string, taskId: unknown): Promise<{ record: Json | undefined; result: unknown }> {
+  const tasks = (await json(await s.get(`/api/background/tasks?session_id=${sid}`))).tasks as Json[]
+  return { record: tasks.find((t) => t.task_id === taskId), result: (await json(await s.get(`/api/background/result?session_id=${sid}&task_id=${String(taskId)}`))).text }
+}
 const messageKind = (m: Json): string => (m._background_update ? 'background' : str(m.content))
 
 describe('chat turns through the sidecar', () => {
@@ -1474,17 +1479,15 @@ describe('chat turns through the sidecar', () => {
     const bg = await json(res)
     expect(bg.session_id).not.toBe(sid)
     await s.sse(`/api/chat/stream?stream_id=${String(bg.stream_id)}&replay=1`, (f) => f.event === 'stream_end')
-    const status = await json(await s.get(`/api/background/status?session_id=${sid}`))
-    expect(status.results).toEqual([{ task_id: bg.task_id, prompt: 'summarize repo', answer: 'answer to summarize repo', completed_at: expect.any(Number) as number }])
+    expect(await backgroundTask(s, sid, bg.task_id)).toMatchObject({ record: { kind: 'background_command', status: 'completed', title: 'summarize repo' }, result: 'answer to summarize repo' })
     expect(String(bg.task_id)).toMatch(/^[0-9a-f]{8}$/)
-    expect(await json(await s.get(`/api/background/status?session_id=${sid}`))).toEqual({ results: [] })
     // The hidden bg session file is removed once the task completes; a failed run still completes the task.
     expect(existsSync(s.deps.sessionStore.pathFor(String(bg.session_id)))).toBe(false)
     sidecar.respond('chat.start', () => { throw new SidecarError('provider exploded', { condition: 'sidecar_error' }) })
     const failed = await json(await post(s, '/api/background', { session_id: sid, prompt: 'doomed' }))
     await s.sse(`/api/chat/stream?stream_id=${String(failed.stream_id)}&replay=1`, (f) => f.event === 'stream_end' || f.event === 'apperror')
     await new Promise((r) => setTimeout(r, 50))
-    expect((await json(await s.get(`/api/background/status?session_id=${sid}`))).results).toEqual([{ task_id: failed.task_id, prompt: 'doomed', answer: '(background task failed)', completed_at: expect.any(Number) as number }])
+    expect(await backgroundTask(s, sid, failed.task_id)).toMatchObject({ record: { status: 'failed', title: 'doomed' }, result: '(background task failed)' })
     // The failure cleanup runs after the error writeback, so the hidden session does not get re-saved into the sidebar.
     expect(existsSync(s.deps.sessionStore.pathFor(String(failed.session_id)))).toBe(false)
     expect((await json(await s.get('/api/sessions'))).sessions as Json[]).not.toContainEqual(expect.objectContaining({ session_id: failed.session_id }))
@@ -1493,7 +1496,7 @@ describe('chat turns through the sidecar', () => {
     const inBand = await json(await post(s, '/api/background', { session_id: sid, prompt: 'doomed too' }))
     await s.sse(`/api/chat/stream?stream_id=${String(inBand.stream_id)}&replay=1`, (f) => f.event === 'apperror')
     await new Promise((r) => setTimeout(r, 50))
-    expect((await json(await s.get(`/api/background/status?session_id=${sid}`))).results).toEqual([{ task_id: inBand.task_id, prompt: 'doomed too', answer: '(background task failed)', completed_at: expect.any(Number) as number }])
+    expect(await backgroundTask(s, sid, inBand.task_id)).toMatchObject({ record: { status: 'failed', title: 'doomed too' }, result: '(background task failed)' })
     expect(existsSync(s.deps.sessionStore.pathFor(String(inBand.session_id)))).toBe(false)
     sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: `answer to ${str(params.user_message).split('\n').pop() ?? ''}` }]))
 
@@ -1542,8 +1545,7 @@ describe('chat turns through the sidecar', () => {
     expect(new Set(agents.map((t) => t.kind))).toEqual(new Set(['delegation']))
     expect((await s.get(`/api/background/tasks?session_id=${sid}&kind=nope`)).status).toBe(400)
 
-    // Reading never consumes: an old client's status read, then another client, still see the result.
-    expect((await json(await s.get(`/api/background/status?session_id=${sid}`))).results).toEqual([expect.objectContaining({ task_id: bg.task_id, answer: 'answer to it' })])
+    // Reading never consumes: every later read still sees the result.
     expect((await tasks())[String(bg.task_id)]).toMatchObject({ status: 'completed', result_available: true })
     expect(await json(await s.get(`/api/background/result?session_id=${sid}&task_id=${String(bg.task_id)}`))).toEqual({ task_id: bg.task_id, text: 'answer to it' })
 
@@ -2090,7 +2092,7 @@ describe('chat turns through the sidecar', () => {
     } finally {
       turns.deps.profileDeleting = original
     }
-    expect(await json(await s.get(`/api/background/status?session_id=${sid}`))).toEqual({ results: [] })
+    expect((await json(await s.get(`/api/background/tasks?session_id=${sid}&kind=background_command`))).tasks).toEqual([])
     const leftover = [...s.deps.sessionStore.persistedIds()].filter((id) => { try { return str(s.deps.sessionStore.get(id, { metadataOnly: true }).title).startsWith('bg: doomed') } catch { return false } })
     expect(leftover).toEqual([])
   })
@@ -2106,7 +2108,7 @@ describe('chat turns through the sidecar', () => {
     await s.sse(`/api/chat/stream?stream_id=${String(bg.stream_id)}`, (f) => f.event === 'token')
     expect(await json(await s.get(`/api/chat/cancel?stream_id=${String(bg.stream_id)}`))).toMatchObject({ cancelled: true })
     await s.deps.turns.finished(String(bg.stream_id))
-    expect((await json(await s.get(`/api/background/status?session_id=${sid}`))).results).toEqual([{ task_id: bg.task_id, prompt: 'stop me', answer: '(background task failed)', completed_at: expect.any(Number) as number }])
+    expect(await backgroundTask(s, sid, bg.task_id)).toMatchObject({ record: { status: 'failed', title: 'stop me' }, result: '(background task failed)' })
     expect(existsSync(s.deps.sessionStore.pathFor(String(bg.session_id)))).toBe(false)
   })
 

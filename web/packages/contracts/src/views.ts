@@ -432,8 +432,6 @@ export const UploadResponseSchema = z.looseObject({ filename: z.string(), path: 
 export type UploadResponse = z.infer<typeof UploadResponseSchema>
 export const GoalViewSchema = z.looseObject({ text: z.string().optional(), state: z.string().optional(), status: z.string().optional(), turns: z.number().optional(), max_turns: z.number().optional(), reason: z.string().optional() })
 export const GoalResponseSchema = z.looseObject({ ok: z.boolean().optional(), action: z.string().optional(), goal: GoalViewSchema.nullable().optional(), message: z.string().optional(), message_key: z.string().optional(), stream_id: z.string().optional(), status: z.string().optional(), reason: z.string().optional() })
-export const BackgroundResultSchema = z.looseObject({ id: z.string().optional(), task_id: z.string().optional(), status: z.string().optional(), title: z.string().optional(), summary: z.string().optional(), prompt: z.string().optional(), answer: NullableString.optional(), error: z.string().optional(), completed_at: z.number().nullable().optional() })
-export const BackgroundStatusSchema = z.looseObject({ results: z.array(BackgroundResultSchema) })
 /**
  * TAL-372: one piece of background work a session owns, the same record for every client, reload and restart.
  * - `task_id` is stable: the delegation unit's id, the process id, or the `/background` task id.
