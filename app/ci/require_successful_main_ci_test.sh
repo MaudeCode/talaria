@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+source "$(dirname "$0")/test_assertions.sh"
 
 source "$(dirname "$0")/require_successful_main_ci"
 
@@ -7,16 +8,16 @@ export GITHUB_REPOSITORY="MaudeCode/talaria"
 export GITHUB_SHA="0123456789abcdef"
 
 gh() {
-  [[ "$*" == *"--repo MaudeCode/talaria"* ]]
-  [[ "$*" == *"--workflow ci.yml"* ]]
-  [[ "$*" == *"--branch main"* ]]
-  [[ "$*" == *"--commit 0123456789abcdef"* ]]
-  [[ "$*" == *"--event push"* ]]
-  [[ "$*" == *"--status success"* ]]
+  expect_glob "$*" '*--repo MaudeCode/talaria*'
+  expect_glob "$*" '*--workflow ci.yml*'
+  expect_glob "$*" '*--branch main*'
+  expect_glob "$*" '*--commit 0123456789abcdef*'
+  expect_glob "$*" '*--event push*'
+  expect_glob "$*" '*--status success*'
   printf '42\n'
 }
 
-[[ "$(require_successful_main_ci)" == "Verified successful CI run 42 for exact commit 0123456789abcdef." ]]
+expect_eq "$(require_successful_main_ci)" "Verified successful CI run 42 for exact commit 0123456789abcdef."
 
 gh() { :; }
 if require_successful_main_ci >/dev/null 2>&1; then
@@ -38,6 +39,6 @@ sleep() { :; }
 # SECONDS ticks on wall-clock second boundaries, so a 1s budget can expire before the retry (TAL-380).
 export WAIT_FOR_MAIN_CI_SECONDS=60
 export MAIN_CI_POLL_SECONDS=0
-[[ "$(require_successful_main_ci)" == *"Verified successful CI run 84"* ]]
+expect_glob "$(require_successful_main_ci)" '*Verified successful CI run 84*'
 
 echo "require_successful_main_ci tests passed."
