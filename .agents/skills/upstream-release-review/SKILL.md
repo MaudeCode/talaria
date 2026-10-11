@@ -76,13 +76,22 @@ Put each relevant change in exactly one class:
 | **bug** | Talaria has the same reachable defect, or breaks against the candidate | file |
 | **feature** | a new upstream capability Talaria users would gain | file |
 | **already present** | Talaria already has it or a stronger equivalent | report |
-| **hold** | anything needing a decision: deprecation without current breakage, product choice, intentional divergence, contract hold, code-supported but unreproduced claim | hold for approval |
+| **hold** | an owner decision: product choice, intentional divergence, security posture, deprecation without current breakage, contract shape that cannot be decided from the code | hold for approval |
 | **irrelevant** | outside every Talaria boundary | summarize by area |
 
 A bug needs evidence that Talaria is affected: a reproduction with disposable
-state, or a failing existing check. Code inspection alone makes it a hold. A
-feature needs a concrete user-visible outcome in Talaria. Group changes that share
-one Talaria change into one finding.
+state, a failing existing check, or the cited Talaria `path:line` that has the
+same reachable behavior. Code inspection is enough to file. Mark such a ticket
+**code-supported** and make a failing test, written before the fix, its first
+acceptance criterion. Waste visible in code but unmeasured is filed the same way,
+with a measurement or budget as its first acceptance criterion. A feature needs a
+concrete user-visible outcome in Talaria. Group changes that share one Talaria
+change into one finding.
+
+Irrelevant means no Talaria user would notice the difference. A different
+mechanism is not irrelevant: compare what the user sees (for example, what a
+notification says). A change that only matters to a capability a filed ticket
+or a hold would add belongs to that finding, not to irrelevant.
 
 ## 4. File and hold
 
