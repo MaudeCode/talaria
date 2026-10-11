@@ -262,6 +262,8 @@ const ANSI_PAYLOAD_GAPS_RE = new RegExp([SEQ_CSI, String.raw`${SEQ_ESC}[\]PX^_]`
  * terminal title can hold a token), and without control characters only (an escape's final byte can be a token's).
  */
 const SPLIT_VIEWS = [ANSI_GAPS_RE, ANSI_PAYLOAD_GAPS_RE, CONTROL_CHARS_RE]
+/** `ANSI_GAPS_RE` without the whitespace controls, so a view keeps its lines and words apart. */
+const DISPLAY_GAPS_RE = new RegExp(String.raw`(?![\t-\r])(?:${ANSI_GAPS_RE.source})`, 'g')
 const ANSI_GAP_AT_RE = new RegExp(ANSI_GAPS_RE.source, 'y')
 const TOKEN_CHAR_RE = /[A-Za-z0-9_-]/
 /** A character a credential's prefix or body can hold (`SG.`, `glrt-a.b`, `gAAAA…=`): what a fail-closed run walks. */
@@ -1561,6 +1563,47 @@ function secretTokenCounts(text: string): Map<string, number> {
  */
 export function redactSensitive(text: string): string {
   if (!text) return text
+  const redacted = redactShellText(text)
+  // An escape sequence in a key or between a key and its value (`\x1b[1;31mAPI_KEY\x1b[m=…`, `pass\x1b[1mword …`) hides
+  // it from the rules. The units the view without sequences masks more often than the text's redaction are masked in
+  // the text first, wherever they appear, removing a sequence inside one and keeping the rest.
+  const view = splitView(text, DISPLAY_GAPS_RE)
+  if (!view) return redacted
+  const { stripped, kept } = view
+  let shown = redactShellText(stripped)
+  const shownCounts = secretTokenCounts(shown)
+  const raw = secretTokenCounts(redacted.replace(DISPLAY_GAPS_RE, ''))
+  // Masked units only blanks apart are one value (`'correct horse battery'`), masked whole so its word count stays hidden.
+  const spans: [number, number, string][] = []
+  let last = -1
+  for (const m of stripped.matchAll(SECRET_UNIT_RE)) {
+    if ((shownCounts.get(m[0]) ?? 0) >= (raw.get(m[0]) ?? 0)) continue
+    const end = kept[m.index + m[0].length - 1]! + 1
+    if (last !== -1 && /^[ \t]+$/.test(stripped.slice(last, m.index))) spans.at(-1)![1] = end
+    else spans.push([kept[m.index]!, end, m[0]])
+    last = m.index + m[0].length
+  }
+  let out = redacted
+  if (spans.length) {
+    const premasked = maskSpans(text, spans, () => '***')
+    out = redactShellText(premasked)
+    shown = redactShellText(premasked.replace(DISPLAY_GAPS_RE, ''))
+  }
+  // A credential of delimiters only (`Bear\x1b[1mer $$$$`) has no unit to mask in the text: when the view shows fewer of
+  // a delimiter than the text's redaction, the view's redaction is returned, without its escape sequences.
+  const outCounts = delimiterCounts(out.replace(DISPLAY_GAPS_RE, ''))
+  const viewCounts = delimiterCounts(shown)
+  return [...outCounts].some(([char, count]) => (viewCounts.get(char) ?? 0) < count) ? shown : out
+}
+
+/** A text's delimiters, `SECRET_UNIT_RE`'s but whitespace, counted outside the masks `***` and a private key's. */
+function delimiterCounts(text: string): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const [char] of text.replaceAll('[REDACTED PRIVATE KEY]', '').replace(/(?<!\*)\*{3}(?!\*)/g, '').matchAll(/['"`$\\=:@/;&|<>(){}[\],*]/g)) counts.set(char, (counts.get(char) ?? 0) + 1)
+  return counts
+}
+
+function redactShellText(text: string): string {
   // Line continuations join their lines as the shell runs them (`--user \⏎ bob:pw`, `--pass\⏎word=x`): that view is
   // redacted, and a text with nothing to mask keeps its lines as written.
   const joined = text.replace(/\\\r?\n/g, '')
@@ -1761,6 +1804,11 @@ export function mightContainSensitiveText(text: string): boolean {
   const views = SPLIT_VIEWS.map((gaps) => text.replace(gaps, ''))
   if (CASE_MARKERS.some((m) => views.some((view) => view.includes(m)))) return true
   if (crossPayloadPrefixStarts(text).length) return true
+  // So is a key or token an escape sequence splits (`pass\x1b[1mword`, `123456789\x1b[0m:…`).
+  return mightContainKeyword(text) || (views[0] !== text && mightContainKeyword(views[0]!))
+}
+
+function mightContainKeyword(text: string): boolean {
   const lower = text.toLowerCase()
   if (LOWER_MARKERS.some((m) => lower.includes(m))) return true
   if (CRED_KEY_NAME_RE.test(text)) return true
