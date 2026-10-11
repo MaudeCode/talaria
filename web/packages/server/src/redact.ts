@@ -1585,7 +1585,7 @@ export function redactSensitive(text: string): string {
   // Masked units only blanks apart are one value (`'correct horse battery'`), masked whole so its word count stays hidden.
   const spans: [number, number, string][] = []
   let last = -1
-  for (const m of plain.replaceAll(PRIVATE_KEY_MASK, '*'.repeat(PRIVATE_KEY_MASK.length)).matchAll(SECRET_UNIT_RE)) {
+  for (const m of plain.matchAll(MASK_OR_UNIT_RE)) {
     if (!hides(shownCounts, raw, m[0])) continue
     const end = at(m.index + m[0].length - 1) + 1
     if (last !== -1 && /^[ \t]+$/.test(plain.slice(last, m.index))) spans.at(-1)![1] = end
@@ -1601,15 +1601,17 @@ export function redactSensitive(text: string): string {
   const viewCounts = delimiterCounts(shown)
   if (![...outCounts].some(([char, count]) => (viewCounts.get(char) ?? 0) < count)) return out
   const hidden = unitCounts(plainOut)
-  return shown.split(PRIVATE_KEY_MASK).map((piece) => piece.replace(SECRET_UNIT_RE, (unit) => (hides(hidden, shownCounts, unit) ? '***' : unit))).join(PRIVATE_KEY_MASK)
+  return shown.replace(MASK_OR_UNIT_RE, (unit) => (hides(hidden, shownCounts, unit) ? '***' : unit))
 }
 
 const PRIVATE_KEY_MASK = '[REDACTED PRIVATE KEY]'
+/** A private key's mask, as one unit (its words are no units of their own), or a `SECRET_UNIT_RE` unit. */
+const MASK_OR_UNIT_RE = new RegExp(String.raw`\[REDACTED PRIVATE KEY\]|${SECRET_UNIT_RE.source}`, 'gu')
 
-/** A text's `SECRET_UNIT_RE` units outside a private key's mask, counted. */
+/** A text's `MASK_OR_UNIT_RE` units, counted. */
 function unitCounts(text: string): Map<string, number> {
   const counts = new Map<string, number>()
-  for (const [unit] of text.replaceAll(PRIVATE_KEY_MASK, '').matchAll(SECRET_UNIT_RE)) counts.set(unit, (counts.get(unit) ?? 0) + 1)
+  for (const [unit] of text.matchAll(MASK_OR_UNIT_RE)) counts.set(unit, (counts.get(unit) ?? 0) + 1)
   return counts
 }
 

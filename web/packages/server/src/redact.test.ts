@@ -1078,6 +1078,8 @@ describe('keyword credentials in ANSI-coloured output (TAL-714)', () => {
     const input = 'ghp_abcdef1234567890ABCDEF1234567890abcdef pass\x1b[31mword=ghp_ab...cdef'
     expect(redactText(input, true)).toBe('*** pass\x1b[31mword=***')
     expect(share(input)).toBe('*** pass\x1b[31mword=***')
+    expect(redactText('pass\x1b[31mword=[REDACTED PRIVATE KEY]', true)).toBe('pass\x1b[31mword=***')
+    expect(share('pass\x1b[31mword=[REDACTED PRIVATE KEY]')).toBe('pass\x1b[31mword=***')
   })
 
   it('keeps every escape sequence outside a masked value', () => {
