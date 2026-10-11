@@ -262,6 +262,8 @@ const ANSI_PAYLOAD_GAPS_RE = new RegExp([SEQ_CSI, String.raw`${SEQ_ESC}[\]PX^_]`
  * terminal title can hold a token), and without control characters only (an escape's final byte can be a token's).
  */
 const SPLIT_VIEWS = [ANSI_GAPS_RE, ANSI_PAYLOAD_GAPS_RE, CONTROL_CHARS_RE]
+/** `ANSI_GAPS_RE` without the whitespace controls, so a view keeps its lines and words apart. */
+const DISPLAY_GAPS_RE = new RegExp(String.raw`(?![\t-\r])(?:${ANSI_GAPS_RE.source})`, 'g')
 const ANSI_GAP_AT_RE = new RegExp(ANSI_GAPS_RE.source, 'y')
 const TOKEN_CHAR_RE = /[A-Za-z0-9_-]/
 /** A character a credential's prefix or body can hold (`SG.`, `glrt-a.b`, `gAAAA…=`): what a fail-closed run walks. */
@@ -1561,6 +1563,21 @@ function secretTokenCounts(text: string): Map<string, number> {
  */
 export function redactSensitive(text: string): string {
   if (!text) return text
+  const redacted = redactShellText(text)
+  // An escape sequence in a key or between a key and its value (`\x1b[1;31mAPI_KEY\x1b[m=…`, `pass\x1b[1mword …`) hides
+  // it from the rules. The units the view without sequences masks more often than the text's redaction are masked in
+  // the text first, wherever they appear, removing a sequence inside one and keeping the rest.
+  const view = splitView(text, DISPLAY_GAPS_RE)
+  if (!view) return redacted
+  const { stripped, kept } = view
+  const shown = secretTokenCounts(redactShellText(stripped))
+  const raw = secretTokenCounts(redacted.replace(DISPLAY_GAPS_RE, ''))
+  const spans: [number, number, string][] = []
+  for (const m of stripped.matchAll(SECRET_UNIT_RE)) if ((shown.get(m[0]) ?? 0) < (raw.get(m[0]) ?? 0)) spans.push([kept[m.index]!, kept[m.index + m[0].length - 1]! + 1, m[0]])
+  return spans.length ? redactShellText(maskSpans(text, spans, () => '***')) : redacted
+}
+
+function redactShellText(text: string): string {
   // Line continuations join their lines as the shell runs them (`--user \⏎ bob:pw`, `--pass\⏎word=x`): that view is
   // redacted, and a text with nothing to mask keeps its lines as written.
   const joined = text.replace(/\\\r?\n/g, '')
@@ -1761,6 +1778,11 @@ export function mightContainSensitiveText(text: string): boolean {
   const views = SPLIT_VIEWS.map((gaps) => text.replace(gaps, ''))
   if (CASE_MARKERS.some((m) => views.some((view) => view.includes(m)))) return true
   if (crossPayloadPrefixStarts(text).length) return true
+  // So is a key or token an escape sequence splits (`pass\x1b[1mword`, `123456789\x1b[0m:…`).
+  return mightContainKeyword(text) || (views[0] !== text && mightContainKeyword(views[0]!))
+}
+
+function mightContainKeyword(text: string): boolean {
   const lower = text.toLowerCase()
   if (LOWER_MARKERS.some((m) => lower.includes(m))) return true
   if (CRED_KEY_NAME_RE.test(text)) return true

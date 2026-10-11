@@ -534,7 +534,7 @@ describe('redactSensitive cost', () => {
     // A quadratic scan takes seconds on these inputs; a linear one takes milliseconds.
     // Unquoted runs, and many credential keys inside one long quoted argument.
     // The Agent's ported families: env names, split tokens, JWT headers, phone numbers and bare URL userinfo.
-    for (const text of [...['abcdefghij-', 'a.b+c-', 'token_', '--password ', 'aB', 'aBcD_', 'ABCd', 'AB', 'PW', 'KEY_', 'a_pw', 'a_key_', 'ghp_a\x1b', 'ghp_a\x1b[1m', 'ghp_a\x1b]8;;a', '\x1b[1', 'ghp_a\x9b1m', '\x9d8;;a', 'ghp_a\x1bPa', '\x1b( ', '\x90a\x9d', '\x1b\x00\x00', 'ghp_a\x1b[\x07', '\x1b(\x00', 'g\x1b]0;h\x07', 'x\x1b]0;a\x07', '\x1b]0;g\x07h', 'gh\x1b]0;p\x07\x1b]0;_\x07', 'ghp_ab\n', 'eyJaaaaaaaaaa.', 'eyJaaaaaaaaaa\x1b[1m', 'ey\x1b[1mJ', 'e\x1b]0;y\x07J', '-e\x1b]0;y\x07J', 'eyJaaaa\x1b]0;a\x07', 'eyJaaaaaaaaaa\n.', '+1234567', 'https://aaaaaaaa', 'DB_PW="', "db_pw='a ", 'ghp_ab\nK=', 'a_key=x\\ ', 'a_key=,', '\nsk-a', 'sk-aaaaaaaaaaaa\n', '&a_key=x', 'sk-aaaaaaaaaa\nsk-b\n', '2', '1234 ', '-----BE\x1b[1mGIN PRIVATE KEY-----\n', '-----BEGIN PRI\x1b[1mVATE KEY-----', '-----B\x1b]0;x\x07E\x1b]0;GIN\x07 PRIVATE KEY-----', '-----B\x1b]0;x\x07E\x1b]0;GIN\x07', '-\x1b]0;-\x07'].map((seg) => seg.repeat(Math.ceil(200_000 / seg.length))),
+    for (const text of [...['abcdefghij-', 'a.b+c-', 'token_', '--password ', 'aB', 'aBcD_', 'ABCd', 'AB', 'PW', 'KEY_', 'a_pw', 'a_key_', 'ghp_a\x1b', 'ghp_a\x1b[1m', 'ghp_a\x1b]8;;a', '\x1b[1', 'ghp_a\x9b1m', '\x9d8;;a', 'ghp_a\x1bPa', '\x1b( ', '\x90a\x9d', '\x1b\x00\x00', 'ghp_a\x1b[\x07', '\x1b(\x00', 'g\x1b]0;h\x07', 'x\x1b]0;a\x07', '\x1b]0;g\x07h', 'gh\x1b]0;p\x07\x1b]0;_\x07', 'ghp_ab\n', 'eyJaaaaaaaaaa.', 'eyJaaaaaaaaaa\x1b[1m', 'ey\x1b[1mJ', 'e\x1b]0;y\x07J', '-e\x1b]0;y\x07J', 'eyJaaaa\x1b]0;a\x07', 'eyJaaaaaaaaaa\n.', '+1234567', 'https://aaaaaaaa', 'DB_PW="', "db_pw='a ", 'ghp_ab\nK=', 'a_key=x\\ ', 'a_key=,', '\nsk-a', 'sk-aaaaaaaaaaaa\n', '&a_key=x', 'sk-aaaaaaaaaa\nsk-b\n', '2', '1234 ', '-----BE\x1b[1mGIN PRIVATE KEY-----\n', '-----BEGIN PRI\x1b[1mVATE KEY-----', '-----B\x1b]0;x\x07E\x1b]0;GIN\x07 PRIVATE KEY-----', '-----B\x1b]0;x\x07E\x1b]0;GIN\x07', '-\x1b]0;-\x07', '\x1b[1;31mAPI_KEY\x1b[m=abcdefghij\x1b[m ', '\x1b[1;34m"password"\x1b[0m: "x" '].map((seg) => seg.repeat(Math.ceil(200_000 / seg.length))),
       ...['Authorization: x ', 'Authorization: *** ', 'secret sauce ', 'password=*** '].map((seg) => `"${seg.repeat(Math.ceil(200_000 / seg.length))}"`),
       // One huge identifier that does name a credential, and many long ones that are followed by a separator.
       `--${'aB'.repeat(100_000)}Password=x`, `${'2'.repeat(200_000)}:`, `ghp_a\x1b${'\x00'.repeat(200_000)}`, `${'a'.repeat(1_000)}= `.repeat(200), `${'a'.repeat(1_000)}://x:`.repeat(200),
@@ -1008,5 +1008,64 @@ describe('Agent redactor parity', () => {
   it('masks a split token before a sentence period, and a spaced URL query value up to its fragment', () => {
     expect(redactText('ghp_abcdef\n1234567890ABCDEF1234567890abcdef.', true)).toBe('ghp_ab...cdef.')
     expect(redactText('https://x.test/?db_pass= hunter2#long-fragment-name', true)).toBe('https://x.test/?db_pass= ***#long-fragment-name')
+  })
+})
+
+describe('keyword credentials in ANSI-coloured output (TAL-714)', () => {
+  const S = 'Zq7xK2mN9pL4vB8cR1tY6wE3uI5oA0sD2fG4hJ'
+  const T = 'AAHsynthetic0198765432abcdefghijklmnop'
+  const stripAnsi = (text: string): string => text.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '')
+  const leaks = (text: string, secret: string): boolean => Array.from({ length: secret.length - 7 }, (_, i) => secret.slice(i, i + 8)).some((run) => stripAnsi(text).includes(run))
+  const share = (text: string): unknown => sanitizeShareMessage({ role: 'assistant', content: text }, [], [], '/nonexistent-home')?.content
+
+  it('masks a value whose key, separator or token an escape sequence colours or splits, through the prefilter', () => {
+    for (const [input, secret] of [
+      // grep --color=always (ugrep and GNU grep), a match inside a flag, and jq -C.
+      [`\x1b[1;31mAPI_KEY\x1b[m=${S}\x1b[m`, S],
+      [`DB_\x1b[m\x1b[1;31mPASSWORD\x1b[m=${S}\x1b[m`, S],
+      [`\x1b[01;31m\x1b[KAPI_KEY\x1b[m\x1b[K=${S}`, S],
+      [`curl --\x1b[01;31m\x1b[Kpassword\x1b[m\x1b[K ${S}`, S],
+      [`\x1b[1;34m"api_key"\x1b[0m\x1b[1;39m:\x1b[0m \x1b[0;32m"${S}"\x1b[0m`, S],
+      [`\x1b[1;34m"password"\x1b[0m\x1b[1;39m:\x1b[0m \x1b[0;32m"${S}"\x1b[0m`, S],
+      [`\x1b[34;1m"token"\x1b[0m: "${S}"`, S],
+      [`\x1b[36mpassword\x1b[0m: ${S}`, S],
+      // A key split by a sequence.
+      [`API_\x1b[1mKEY=${S}`, S],
+      [`--pass\x1b[1mword ${S}`, S],
+      [`Bear\x1b[1mer ${S}`, S],
+      // A Telegram bot token split by a sequence.
+      [`bot123456789:AAHsynthetic01\x1b[1m98765432abcdefghijklmnop`, T],
+      [`123456789\x1b[0m:\x1b[1m${T}`, T],
+    ]) {
+      expect.soft(mightContainSensitiveText(input!), JSON.stringify(input)).toBe(true)
+      expect.soft(leaks(redactText(input, true) as string, secret!), JSON.stringify(redactText(input, true))).toBe(false)
+      expect.soft(leaks(share(input!) as string, secret!), JSON.stringify(share(input!))).toBe(false)
+    }
+  })
+
+  it('keeps every escape sequence outside a masked value', () => {
+    const ugrep = redactText(`\x1b[1;31mAPI_KEY\x1b[m=${S}\x1b[m`, true) as string
+    expect(ugrep.startsWith('\x1b[1;31mAPI_KEY\x1b[m=')).toBe(true)
+    expect(ugrep.endsWith('\x1b[m')).toBe(true)
+    const jq = redactText(`\x1b[1;34m"api_key"\x1b[0m\x1b[1;39m:\x1b[0m \x1b[0;32m"${S}"\x1b[0m`, true) as string
+    expect(jq.startsWith('\x1b[1;34m"api_key"\x1b[0m\x1b[1;39m:\x1b[0m \x1b[0;32m"')).toBe(true)
+    expect(jq.endsWith('"\x1b[0m')).toBe(true)
+  })
+
+  it('keeps coloured text with no credential, and the output of values the raw text already masks', () => {
+    for (const [input, expected] of [
+      ['\x1b[1;34m"name"\x1b[0m: "\x1b[0;32m"alice"\x1b[0m"', '\x1b[1;34m"name"\x1b[0m: "\x1b[0;32m"alice"\x1b[0m"'],
+      ['\x1b[0m\x1b[01;34mdir\x1b[0m  \x1b[01;32mrun.sh\x1b[0m\n\x1b[01;34mtoken_store\x1b[0m', '\x1b[0m\x1b[01;34mdir\x1b[0m  \x1b[01;32mrun.sh\x1b[0m\n\x1b[01;34mtoken_store\x1b[0m'],
+      ['\x1b]8;;file:///tmp/notes\x1b\\notes\x1b]8;;\x1b\\', '\x1b]8;;file:///tmp/notes\x1b\\notes\x1b]8;;\x1b\\'],
+      [`API_KEY=\x1b[32m${S}\x1b[0m`, 'API_KEY=***'],
+      [`--password \x1b[1m${S}`, '--password ***'],
+      [`\x1b[1;31mAuthorization\x1b[m: Bearer ${S}`, '\x1b[1;31mAuthorization\x1b[m: Bearer Zq7xK2...G4hJ'],
+      [`\x1b[34mhttps://bob:${S}@x.test\x1b[0m`, '\x1b[34mhttps://bob:Zq7xK2...G4hJ@x.test\x1b[0m'],
+      [`aws_secret_access_key = \x1b[32m${S}`, 'aws_secret_access_key = ***'],
+      [`\x1b[32m+API_KEY=${S}\x1b[m`, '\x1b[32m+API_KEY=***'],
+    ]) {
+      expect(redactText(input, true)).toBe(expected)
+      expect(share(input!)).toBe(expected)
+    }
   })
 })

@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Chats, tool output, exports, and public share links mask passwords, API keys, and bot tokens in colored terminal output, such as grep and jq highlighting.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
