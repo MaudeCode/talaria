@@ -10,12 +10,14 @@ const OWN_STEERS_KEY = 'talaria-own-steers'
 const listeners = new Map<string, Set<Listener>>()
 const waiting = new Map<string, string[]>()
 
-function ownSteers(): Set<string> {
-  try { return new Set(JSON.parse(sessionStorage.getItem(OWN_STEERS_KEY) ?? '[]') as string[]) } catch { return new Set() }
-}
+// This tab's steer ids live in memory; sessionStorage only carries them across a reload, so a storage failure (private
+// mode, quota) never loses one (TAL-743).
+const ownSteers: Set<string> = (() => {
+  try { return new Set(JSON.parse(sessionStorage.getItem(OWN_STEERS_KEY) ?? '[]') as string[]) } catch { return new Set<string>() }
+})()
 
-function saveOwnSteers(ids: Set<string>): void {
-  try { sessionStorage.setItem(OWN_STEERS_KEY, JSON.stringify([...ids])) } catch { /* private mode: in-page only */ }
+function saveOwnSteers(): void {
+  try { sessionStorage.setItem(OWN_STEERS_KEY, JSON.stringify([...ownSteers])) } catch { /* private mode: in-page only */ }
 }
 
 export function onReturnToComposer(sessionId: string, listener: Listener): () => void {
@@ -36,14 +38,14 @@ export function returnToComposer(sessionId: string, text: string): void {
 
 /** This tab sent the steer, so a Stop that withdraws it gives the text back here. */
 export function rememberOwnSteer(steerId: string): void {
-  saveOwnSteers(ownSteers().add(steerId))
+  ownSteers.add(steerId)
+  saveOwnSteers()
 }
 
 /** The steer is no longer pending (taken, withdrawn or refused): nothing comes back for it any more. */
 export function forgetOwnSteer(steerId: string): boolean {
-  const ids = ownSteers()
-  const had = ids.delete(steerId)
-  if (had) saveOwnSteers(ids)
+  const had = ownSteers.delete(steerId)
+  if (had) saveOwnSteers()
   return had
 }
 
