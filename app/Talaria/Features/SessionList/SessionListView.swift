@@ -157,8 +157,8 @@ struct SessionListView: View {
                 activeProfileName: appSidebarProfileName,
                 quotaSources: appSidebarQuotaSources,
                 newChat: {
-                    isAppSidebarPresented = false
                     openNewChat()
+                    closeAppSidebarAfterNavigation()
                 },
                 select: selectAppSidebarDestination,
                 close: { isAppSidebarPresented = false }
@@ -1186,7 +1186,15 @@ struct SessionListView: View {
             navigationState.select(.settings(nil))
         }
 
-        isAppSidebarPresented = false
+        closeAppSidebarAfterNavigation()
+    }
+
+    /// Closes the sidebar on the next run loop, once the new screen has rendered behind it. Closing
+    /// in the same update built that screen during the slide's first frame and stalled it.
+    private func closeAppSidebarAfterNavigation() {
+        DispatchQueue.main.async {
+            isAppSidebarPresented = false
+        }
     }
 
     private func reloadAppSidebarQuotaSources() {
