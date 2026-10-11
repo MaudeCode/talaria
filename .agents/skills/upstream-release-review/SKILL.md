@@ -1,6 +1,6 @@
 ---
 name: upstream-release-review
-description: Review one exact release range of a Talaria upstream (Hermes Agent, Hermex, or Hermes WebUI) for changes Talaria should adopt, fix, or track, then file validated bugs and features in Kaneo and hold everything else for owner approval. Use when a new upstream release needs review, when the upstream release monitor launches a review thread, or when asked what changed upstream since the last review.
+description: Review one exact release range of a Talaria upstream (Hermes Agent, Hermex, or Hermes WebUI) for changes Talaria should adopt, fix, or track, then file every bug and feature in Kaneo, deciding product choices, and hold only owner-only decisions. Use when a new upstream release needs review, when the upstream release monitor launches a review thread, or when asked what changed upstream since the last review.
 ---
 
 # Upstream release review
@@ -44,7 +44,13 @@ and stops the review.
 
 Release notes are leads, not coverage. Read each release note in the range
 (`gh release view <tag> --repo <repo>`) and then every non-merge commit's body,
-stat, and relevant patch.
+stat, and relevant patch. When a range is too large for one pass, partition its
+commits by the paths they touch and review the partitions in parallel. Every
+commit still gets its body and stat read, whatever its path or subject; read the
+patch wherever the body or stat touches a Talaria boundary or adds a CLI verb,
+config key, persisted field, or other user-visible capability. Review against current `origin/main`. Before
+filing, run `git fetch origin`; when `origin/main` moved during the review,
+re-check each finding against the new head.
 
 - **Hermes Agent:** diff each `sidecarModules` entry for the names the sidecar
   imports or calls. A removed or re-signatured name breaks compatibility; a name
@@ -78,17 +84,28 @@ Put each relevant change in exactly one class:
 | **bug** | Talaria has the same reachable defect, or breaks against the candidate | file |
 | **feature** | a new upstream capability Talaria users would gain | file |
 | **already present** | Talaria already has it or a stronger equivalent | report |
-| **hold** | an owner decision: product choice, intentional divergence, security posture, deprecation without current breakage, contract shape that cannot be decided from the code | hold for approval |
+| **hold** | an owner-only decision: it needs a credential or a paid or external account, makes an irreversible or outward-facing change, or conflicts with a recorded owner preference | hold for approval |
 | **irrelevant** | outside every Talaria boundary | summarize by area |
+
+Decide everything else. A product choice, intentional divergence, security
+posture, deprecation, or contract shape is decided from the way Talaria already
+solves the same class of problem, and the ticket records the decision and its
+reason (the `kaneo` skill's readiness rules). Hold nothing that a competent
+engineer could decide from the code.
 
 A bug needs evidence that Talaria is affected: a reproduction with disposable
 state, a failing existing check, or the cited Talaria `path:line` that has the
-same reachable behavior. Code inspection is enough to file. Mark such a ticket
-**code-supported** and make a failing test, written before the fix, its first
-acceptance criterion. Waste visible in code but unmeasured is filed the same way,
+same reachable behavior. Reproduce first in the affected consumer: run the real
+App, Web frontend, server, sidecar, or Agent code with disposable state (a
+focused XCTest, a scratch vitest or pytest, a Playwright check, an isolated
+server), and run it through to the consequence the finding claims, not
+only its trigger. When the needed state cannot be synthesized, code inspection
+is enough to file. Mark such a ticket **code-supported** and make a failing
+test, written before the fix, its first acceptance criterion. Waste visible in code but unmeasured is filed the same way,
 with a measurement or budget as its first acceptance criterion. A feature needs a
 concrete user-visible outcome in Talaria. Group changes that share one Talaria
-change into one finding.
+change into one finding. A Talaria defect older than the base is still a bug when
+upstream fixed the same defect within the range: file it and mark it pre-range.
 
 Irrelevant means no Talaria user would notice the difference. A different
 mechanism is not irrelevant: compare what the user sees (for example, what a
@@ -115,6 +132,9 @@ On top of its rules:
   get their decision fields on the server and in the contract.
 - When an open ticket already covers the finding, comment on it with the new
   evidence instead of filing.
+- When a ticket adds a server field that a client it does not cover must render,
+  file that client's adoption ticket in the same run, blocked by the server
+  ticket.
 
 File nothing for a **hold**. List it in the report with its evidence and the
 ticket you would file. The owner approves held findings by replying in the
@@ -128,8 +148,8 @@ review thread, and only then is that ticket filed.
   on.
 - **Held for approval:** numbered so the owner can approve by number.
 - **Already present and irrelevant:** grouped summaries.
-- **Uncertainty:** open questions, plus findings older than the base, labeled as
-  outside the range.
+- **Uncertainty:** only what the review could not resolve, each with the step
+  that would resolve it.
 - **Hermes Agent only:** the support result from
   `python3 scripts/check-agent-compatibility.py --identity JSON` (a release) or
   `--main SHA` (a canary) when run for this identity, citing its receipt.
