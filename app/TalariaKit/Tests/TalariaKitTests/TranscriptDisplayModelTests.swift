@@ -306,58 +306,6 @@ final class TranscriptMessageTests: XCTestCase {
 }
 
 final class ChatTranscriptDisplaySettingsTests: XCTestCase {
-    func testTypingIndicatorStaysHiddenBehindVisibleThinkingAndToolCards() {
-        XCTAssertFalse(ChatTranscriptDisplaySettings.shouldShowAssistantTypingIndicator(
-            hasActiveStream: true,
-            isCancellingStream: false,
-            hasStreamingAssistantMessage: false,
-            liveReasoningText: "Inspecting files",
-            hasLiveToolCalls: false,
-            showsThinkingAndToolCards: true
-        ))
-
-        XCTAssertFalse(ChatTranscriptDisplaySettings.shouldShowAssistantTypingIndicator(
-            hasActiveStream: true,
-            isCancellingStream: false,
-            hasStreamingAssistantMessage: false,
-            liveReasoningText: "",
-            hasLiveToolCalls: true,
-            showsThinkingAndToolCards: true
-        ))
-    }
-
-    func testTypingIndicatorShowsWhenHiddenCardsAreOnlyLiveActivity() {
-        XCTAssertTrue(ChatTranscriptDisplaySettings.shouldShowAssistantTypingIndicator(
-            hasActiveStream: true,
-            isCancellingStream: false,
-            hasStreamingAssistantMessage: false,
-            liveReasoningText: "Inspecting files",
-            hasLiveToolCalls: true,
-            showsThinkingAndToolCards: false
-        ))
-
-        XCTAssertFalse(ChatTranscriptDisplaySettings.shouldShowAssistantTypingIndicator(
-            hasActiveStream: true,
-            isCancellingStream: false,
-            hasStreamingAssistantMessage: true,
-            liveReasoningText: "Inspecting files",
-            hasLiveToolCalls: true,
-            showsThinkingAndToolCards: false
-        ))
-    }
-
-    func testTypingIndicatorHidesBehindPendingClarificationPrompt() {
-        XCTAssertFalse(ChatTranscriptDisplaySettings.shouldShowAssistantTypingIndicator(
-            hasActiveStream: true,
-            isCancellingStream: false,
-            hasStreamingAssistantMessage: false,
-            hasPendingClarificationPrompt: true,
-            liveReasoningText: "",
-            hasLiveToolCalls: false,
-            showsThinkingAndToolCards: false
-        ))
-    }
-
     func testStreamingBubbleRenderingDoesNotMatchNilMessageIDs() {
         XCTAssertFalse(ChatTranscriptDisplaySettings.shouldUseStreamingBubbleRendering(
             hasActiveStream: true,

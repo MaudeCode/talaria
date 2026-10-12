@@ -1234,9 +1234,7 @@ struct ChatView: View {
             liveTokensPerSecond: viewModel.liveTokensPerSecond,
             showsRunStateCheck: viewModel.showsRunStateCheck,
             clarificationPrompt: viewModel.clarificationPrompt,
-            hidesRunStatusAccessibility: activeRunStatusPresentation.map { !$0.isSyncing } ?? false,
             showsThinkingAndToolCards: showsThinkingAndToolCards,
-            showsAssistantTypingIndicator: showsAssistantTypingIndicator,
             shouldFollowLatestMessage: shouldFollowLatestMessage,
             isDisclosureSettling: isDisclosureSettling,
             latestTranscriptMessageRole: latestTranscriptMessageRole,
@@ -1414,18 +1412,6 @@ struct ChatView: View {
 
     private var showsScrollToBottomButton: Bool {
         !isScrolledNearBottom && (viewModel.activeStreamID == nil || !shouldFollowLatestMessage)
-    }
-
-    private var showsAssistantTypingIndicator: Bool {
-        ChatTranscriptDisplaySettings.shouldShowAssistantTypingIndicator(
-            hasActiveStream: viewModel.activeStreamID != nil,
-            isCancellingStream: viewModel.isCancellingStream,
-            hasStreamingAssistantMessage: viewModel.hasStreamingAssistantMessageContent,
-            hasPendingClarificationPrompt: viewModel.clarificationPrompt != nil,
-            liveReasoningText: viewModel.liveReasoningText,
-            hasLiveToolCalls: !viewModel.liveToolCalls.isEmpty,
-            showsThinkingAndToolCards: showsThinkingAndToolCards
-        )
     }
 
     private var isComposerChromeCompact: Bool {
