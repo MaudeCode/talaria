@@ -8,11 +8,12 @@ import type { StateDbWorkerReply, StateDbWorkerRequest } from './state-db.js'
 
 // Source runs (vitest) start this file as TypeScript; map its `.js` imports back to the sources first.
 if (import.meta.url.endsWith('.ts')) await import(new URL('../test/ts-worker-hooks.ts', import.meta.url).href)
-const { agentSessionRowsExisting, cheapChangeFingerprint, readImportableAgentSessionRows, setStateDbReadDelayForTests, stateDbSessionSources } = await import('./state-db.js')
+const { agentSessionRowsExisting, cheapChangeFingerprint, readImportableAgentSessionRows, stateDbSessionSources } = await import('./state-db.js')
 
 parentPort?.on('message', (request: StateDbWorkerRequest) => {
   const reply: StateDbWorkerReply = { id: request.id, logs: [], failures: [] }
-  setStateDbReadDelayForTests(request.delayMs)
+  // The test read delay holds every request here, standing in for a slow state.db.
+  if (request.delayMs > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, request.delayMs)
   try {
     if (request.op === 'crash') process.exit(1)
     else if (request.op === 'rows') reply.value = readImportableAgentSessionRows(request.dbPath, { ...request.opts, log: (line) => { reply.logs.push(line) } })

@@ -156,6 +156,18 @@ describe('session list state.db reads off the event loop (TAL-920)', () => {
     }
   })
 
+  it('lets no read interrupted by shutdown restart the worker while it stops', async () => {
+    const watcher = new GatewayWatcher('default', s.state, { now: () => Date.now() / 1000, log: () => undefined })
+    setStateDbReadDelayForTests(1500)
+    // The fingerprint read is held when the stop lands; its caller then goes on to the projection read.
+    const poll = watcher.pollOnce()
+    setStateDbReadDelayForTests(0)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    await stopStateDbWorker()
+    expect(await poll).toBe(false)
+    watcher.stop()
+  })
+
   it('stops the worker on server shutdown without leaving a read hanging, and starts a fresh one on the next call', async () => {
     const other = await bootTestServer()
     seedStateDb(join(other.state, 'state.db'), [{ id: 'tg-b', source: 'telegram', at: 1000 }])

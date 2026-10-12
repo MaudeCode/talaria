@@ -225,7 +225,7 @@ export interface ReadRowsOptions {
 const warnedNoSourceColumn = new Set<string>()
 let readDelayMs = 0
 
-/** Test hook: every sidebar listing read blocks its thread this long first, standing in for a slow `state.db` (TAL-920). */
+/** Test hook: each listing read (and each listing worker request) blocks its thread this long first, standing in for a slow `state.db` (TAL-920). */
 export function setStateDbReadDelayForTests(ms: number): void { readDelayMs = ms }
 
 /**
@@ -497,6 +497,8 @@ interface ListingWorker { worker: Worker; pending: Map<number, PendingCall> }
 
 let listingWorker: ListingWorker | null = null
 let nextCallId = 0
+/** Set while `stopStateDbWorker` waits for the worker to exit; calls then reject instead of starting another worker. */
+let stoppingWorker = false
 
 /** Reject every call still waiting on `current` and forget it, so the next call starts a fresh worker. */
 function retireListingWorker(current: ListingWorker, error: Error): void {
@@ -526,6 +528,8 @@ function startedListingWorker(): ListingWorker {
 }
 
 function callListingWorker(call: ListingCall): Promise<StateDbWorkerReply> {
+  // A multi-read caller the stop interrupted goes on to its next read; that read must not restart the worker.
+  if (stoppingWorker) return Promise.reject(new Error('state.db worker stopped'))
   const current = startedListingWorker()
   const id = ++nextCallId
   return new Promise((resolve, reject) => {
@@ -578,8 +582,13 @@ export function crashStateDbWorkerForTests(): Promise<unknown> {
 export async function stopStateDbWorker(): Promise<void> {
   const current = listingWorker
   if (!current) return
-  retireListingWorker(current, new Error('state.db worker stopped'))
-  await current.worker.terminate()
+  stoppingWorker = true
+  try {
+    retireListingWorker(current, new Error('state.db worker stopped'))
+    await current.worker.terminate()
+  } finally {
+    stoppingWorker = false
+  }
 }
 
 // ── message reader ────────────────────────────────────────────────────────
