@@ -123,8 +123,8 @@ question "What does `<repo>` `<base>..<candidate>` need from Talaria?". That
 skill dedupes against open and recent tickets, branches, and PRs, decides `sf`
 readiness, and reads tickets back. It is a user-level skill from
 `kiliantyler/skills`, not part of this repository. When it is not installed,
-file nothing and list every bug, feature, and support ticket under "Held for
-approval" instead.
+file nothing, change no ticket, and list every bug, feature, and support
+ticket under "Held for approval" instead.
 On top of its rules:
 
 - Attach the workspace `upstream` label and the consumer's scope: `web` for the
@@ -155,6 +155,11 @@ On top of its rules:
     Pre-range defects are not compatibility bugs.
   - The newest open support ticket for an earlier Agent release also blocks it,
     so pins land in release order.
+  - Set the support ticket and everything that blocks it (each compatibility
+    bug and the earlier support ticket) to Kaneo priority `urgent`, so the
+    factory picks the chain up before other work. This covers tickets that
+    already existed and a held compatibility bug filed after the owner
+    approves it. Other tickets keep the priority `discover-tickets` decides.
   - Record blockers only as Kaneo `blocks` relations. This overrides
     `discover-tickets`' rule to record prerequisites on dependent work.
   - Apply `sf` when the ticket's content is otherwise ready. Software-factory
@@ -176,8 +181,8 @@ review thread, and only then is that ticket filed.
 - **Identity:** upstream, base and candidate tags with SHAs, compare link, and
   non-merge commit count.
 - **Filed:** each ticket link and the finding it covers, plus tickets commented
-  on, and for a Hermes Agent release the support ticket and its `blocks`
-  relations.
+  on, and for a Hermes Agent release the support ticket and each ticket that
+  blocks it, all set to `urgent`.
 - **Held for approval:** numbered so the owner can approve by number.
 - **Already present and irrelevant:** grouped summaries.
 - **Uncertainty:** only what the review could not resolve, each with the step
