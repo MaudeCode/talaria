@@ -15,6 +15,9 @@ struct ServerUpdateSettingsSection: View {
     @State private var isCheckingForUpdates = false
     @State private var forcedCheckOutcome: UpdatesCheckResponse.ForcedCheckOutcome?
     @State private var isPresentingForcedCheckResult = false
+    /// The server's last update check, for its per-target summary offers and the Agent row.
+    @State private var updateTargets: UpdatesCheckResponse?
+    @State private var summaryRequest: UpdateSummaryRequest?
 
     var body: some View {
         Group {
@@ -41,9 +44,20 @@ struct ServerUpdateSettingsSection: View {
 
             serverUpdateCheckAction
             serverUpdateNote
+            UpdateSummaryButton(info: updateTargets?.webui) {
+                summaryRequest = UpdateSummaryRequest(target: .webui, info: updateTargets?.webui)
+            }
             serverUpdateAction
+            agentUpdateRows
         }
         .task { await loadServerSettings() }
+        .sheet(item: $summaryRequest) { request in
+            UpdateSummarySheet(
+                model: UpdateSummaryModel(target: request.target, client: APIClient(baseURL: server)),
+                name: request.name,
+                range: request.range
+            )
+        }
         .refreshesLive(showsStatus: false) { await loadServerSettings() }
         .alert("Update server?", isPresented: $isConfirmingUpdate) {
             Button("Cancel", role: .cancel) {}
@@ -154,6 +168,27 @@ private extension ServerUpdateSettingsSection {
         }
     }
 
+    /// The server's pending Agent update, read-only: installed version, status, and its summary.
+    @ViewBuilder
+    private var agentUpdateRows: some View {
+        if let agent = updateTargets?.agent, let status = Self.agentStatusText(agent) {
+            SettingsDivider()
+            SettingsValueRow(title: String(localized: "Hermes Agent")) {
+                Text(agent.currentVersion ?? String(localized: "Unknown"))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+            if agent.offersSummary {
+                updateNoteRow(systemImage: "arrow.up.circle", tint: .blue, text: status)
+            } else {
+                updateNoteRow(systemImage: "checkmark.circle", tint: .secondary, text: status)
+            }
+            UpdateSummaryButton(info: agent) {
+                summaryRequest = UpdateSummaryRequest(target: .agent, info: agent)
+            }
+        }
+    }
+
     /// A finish step leaves nothing behind, so it has no count.
     private static func updateAvailableText(behind: Int) -> String {
         behind > 0 ? String(localized: "Update available · \(behind) behind") : String(localized: "Update available")
@@ -245,8 +280,11 @@ private extension ServerUpdateSettingsSection {
         isLoading = false
 
         do {
-            serverUpdateState = try await client.updatesCheck().webuiUpdateState
+            let response = try await client.updatesCheck()
+            updateTargets = response
+            serverUpdateState = response.webuiUpdateState
         } catch {
+            updateTargets = nil
             serverUpdateState = nil
         }
     }
@@ -257,6 +295,7 @@ private extension ServerUpdateSettingsSection {
         isCheckingForUpdates = true
         do {
             let response = try await APIClient(baseURL: server).updatesCheckForced()
+            updateTargets = response
             serverUpdateState = response.webuiUpdateState
             forcedCheckOutcome = response.forcedCheckOutcome
         } catch {
@@ -335,4 +374,24 @@ private enum ServerUpdateApplyPhase: Equatable {
     case recovering
     case blocked
     case failed
+}
+
+extension ServerUpdateSettingsSection {
+    /// Words the server's Agent state; nil hides the row (checks off, ignored, or no Agent block).
+    static func agentStatusText(_ agent: UpdateTargetInfo) -> String? {
+        switch agent.state {
+        case "release_ready":
+            agent.targetVersion.map { String(localized: "\($0) available") } ?? String(localized: "Update available")
+        case "commits_behind":
+            String(localized: "\(agent.behind ?? 0) commits behind")
+        case "up_to_date":
+            String(localized: "Up to date")
+        case "finish", "manual", "local_changes":
+            String(localized: "Update on the server")
+        case "check_failed":
+            String(localized: "Couldn't check for updates")
+        default:
+            nil
+        }
+    }
 }
