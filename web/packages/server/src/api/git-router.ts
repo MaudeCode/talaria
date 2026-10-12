@@ -4,7 +4,7 @@ import { gitContract } from '@maudecode/talaria-web-contracts'
 import { HttpError, requireFields, type ApiContext } from './router.js'
 import { requestSessionIdGuard } from './session-visibility.js'
 import type { RequestContext } from '../http/context.js'
-import { cleanGeneratedCommitMessage, enclosingRepoRoot, gitBadge, GitWorkspaceError, WORKSPACE_BUSY_MESSAGE, WORKSPACE_GIT_DESTRUCTIVE_ENV, type GitStatus } from '../workspace/git.js'
+import { cleanGeneratedCommitMessage, enclosingRepoRoot, gitBadge, GitWorkspaceError, WORKSPACE_GIT_DESTRUCTIVE_ENV, type GitStatus } from '../workspace/git.js'
 import { REMOTE_WORKSPACE_UNSUPPORTED_CODE, REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE } from '../workspace/workspaces.js'
 import { removeWorktreeForSession, worktreeStatusForSession } from '../workspace/worktrees.js'
 import { isSafeSessionId, type Session } from '../sessions/session.js'
@@ -88,8 +88,12 @@ function rollbackTarget(ctx: RequestContext, input: { workspace?: string | undef
   return { workspace, allowed: [workspace] }
 }
 
-/** A request or Agent refusal (unknown checkpoint, uncaptured nested repository) is a 400 with its message; a sidecar that cannot answer is a 503/500. */
+/**
+ * A request or Agent refusal (unknown checkpoint, uncaptured nested repository) is a 400 with its message; a workspace Git
+ * or a run holds is a 409; a sidecar that cannot answer is a 503/500.
+ */
 function rollbackError(error: unknown): HttpError {
+  if (error instanceof GitWorkspaceError) return new HttpError(409, error.message, { code: error.code })
   if (error instanceof SidecarError && error.condition !== 'checkpoint_failed') return new HttpError(error.condition === 'sidecar_unavailable' ? 503 : 500, sanitizeError(error), { condition: error.condition })
   return new HttpError(400, (error as Error).message)
 }
@@ -183,7 +187,7 @@ export const gitRouter = os.router({
       const { workspace, allowed } = rollbackTarget(ctx, input)
       if (!workspace || !checkpoint) throw new HttpError(400, 'workspace and checkpoint query parameters are required')
       try {
-        return await ctx.deps.rollback.diff(workspace, checkpoint, allowed) as never
+        return await ctx.deps.git.holdCheckpoint(workspace, () => ctx.deps.rollback.diff(workspace, checkpoint, allowed)) as never
       } catch (error) {
         throw rollbackError(error)
       }
@@ -193,11 +197,9 @@ export const gitRouter = os.router({
       const checkpoint = input.checkpoint ?? input.id
       const { workspace, allowed } = rollbackTarget(ctx, input)
       if (!workspace || !checkpoint) throw new HttpError(400, 'workspace and checkpoint are required')
-      // Refused while Git holds the workspace, and held for the whole restore so no run, terminal, file write, or Git
-      // mutation starts there while the Agent rewrites its files.
-      if (ctx.deps.git.workspaceBusy(workspace)) throw new HttpError(409, WORKSPACE_BUSY_MESSAGE)
+      // Held for the whole restore so no run, terminal, file write, or Git mutation starts there while the Agent rewrites its files.
       try {
-        return await ctx.deps.git.holdWorkspace(workspace, () => ctx.deps.rollback.restore(workspace, checkpoint, allowed)) as never
+        return await ctx.deps.git.holdCheckpoint(workspace, () => ctx.deps.rollback.restore(workspace, checkpoint, allowed)) as never
       } catch (error) {
         throw rollbackError(error)
       }

@@ -81,6 +81,21 @@ describe('workspace checkpoints through the Agent (TAL-913)', () => {
     expect(res.status).toBe(503)
   })
 
+  it('refuses a diff or restore while a run is active in the workspace, since its checkpoint capture shares the store', async () => {
+    s.deps.registry.activeRuns.set('ckpt-run', { stream_id: 'ckpt-run', session_id: 'other', started_at: 0, phase: 'running', workspace: join(ws, 'sub'), model: null, provider: null, ephemeral: false })
+    try {
+      let res = await s.get(`/api/rollback/diff?workspace=${encodeURIComponent(ws)}&checkpoint=${HASH}`)
+      expect({ status: res.status, body: await json(res) }).toMatchObject({ status: 409, body: { code: 'active_stream' } })
+      res = await post(s, '/api/rollback/restore', { workspace: ws, checkpoint: HASH })
+      expect({ status: res.status, body: await json(res) }).toMatchObject({ status: 409, body: { code: 'active_stream' } })
+      expect(sidecar.calls).toEqual([])
+      // Listing reads only the Agent's log, so it still answers during a run.
+      expect((await s.get(`/api/rollback/list?workspace=${encodeURIComponent(ws)}`)).status).toBe(200)
+    } finally {
+      s.deps.registry.activeRuns.delete('ckpt-run')
+    }
+  })
+
   it('refuses a checkpoint id or workspace it cannot vouch for before asking the Agent', async () => {
     expect((await s.get(`/api/rollback/diff?workspace=${encodeURIComponent(ws)}&checkpoint=../abc123`)).status).toBe(400)
     expect((await s.get(`/api/rollback/list?workspace=${encodeURIComponent(s.state)}`)).status).toBe(400)
