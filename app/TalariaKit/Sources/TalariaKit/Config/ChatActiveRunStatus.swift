@@ -95,6 +95,19 @@ public struct ChatActiveRunStatusPresentation: Equatable {
         kind.accessibilityLabel(agentName: agentName)
     }
 
+    /// How long the run has gone on as of `now`, shown after the label in T3 Code's units (TAL-922):
+    /// "42s" under a minute, "5m" under an hour, then "1h 30m". Nil when the chip shows no elapsed time.
+    public func elapsedTime(now: Date, locale: Locale = .autoupdatingCurrent) -> String? {
+        guard let runStartedAt else { return nil }
+        let seconds = max(0, Int(now.timeIntervalSince(runStartedAt)))
+        let (duration, units): (Int, Set<Duration.UnitsFormatStyle.Unit>) = switch seconds {
+        case ..<60: (seconds, [.seconds])
+        case ..<3_600: (seconds / 60 * 60, [.minutes])
+        default: (seconds / 60 * 60, [.hours, .minutes])
+        }
+        return Duration.seconds(duration).formatted(.units(allowed: units, width: .narrow, zeroValueUnits: .show(length: 1)).locale(locale))
+    }
+
     /// How long the run has gone on as of `now`, read after the label: "running for 1 minute,
     /// 23 seconds". Nil when the chip shows no elapsed time.
     public func accessibilityElapsedTime(now: Date, locale: Locale = .autoupdatingCurrent) -> String? {

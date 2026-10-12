@@ -727,6 +727,24 @@ final class ChatActiveRunStatusPolicyTests: XCTestCase {
         XCTAssertEqual(elapsed(3_723), "running for 1 hour, 2 minutes, 3 seconds")
         XCTAssertEqual(elapsed(-5), "running for 0 seconds", "A clock behind the run start reads as just started")
     }
+
+    func testChipShowsTheElapsedTimeInT3CodeUnits() {
+        let start = Date(timeIntervalSince1970: 1_000)
+        let presentation = ChatActiveRunStatusPresentation(kind: .active, runStartedAt: start)
+        let locale = Locale(identifier: "en_US")
+        func elapsed(_ seconds: TimeInterval) -> String? {
+            presentation.elapsedTime(now: start.addingTimeInterval(seconds), locale: locale)
+        }
+
+        XCTAssertEqual(elapsed(1), "1s")
+        XCTAssertEqual(elapsed(42.9), "42s")
+        XCTAssertEqual(elapsed(300), "5m")
+        XCTAssertEqual(elapsed(359), "5m", "Minutes drop the seconds")
+        XCTAssertEqual(elapsed(3_600), "1h 0m")
+        XCTAssertEqual(elapsed(5_400), "1h 30m")
+        XCTAssertEqual(elapsed(-5), "0s", "A clock behind the run start reads as just started")
+        XCTAssertNil(ChatActiveRunStatusPresentation(kind: .active).elapsedTime(now: start))
+    }
 }
 
 final class AssistantTurnTimestampFormatterTests: XCTestCase {

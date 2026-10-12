@@ -416,7 +416,7 @@ test('live label box covers its glyphs so the shimmer never clips descenders', a
     const label = page.locator('.live-run-label')
     await expect(label).toHaveText('Working')
     // Opened mid-run, the clock counts from the server's run start, not from 0:00 (TAL-922).
-    await expect(page.locator('.live-run-elapsed')).toHaveText(/^1:1\d$/)
+    await expect(page.locator('.live-run-elapsed')).toHaveText('1m')
     await expect(label).toHaveCSS('animation-name', 'reasoning-title-glow')
     // background-clip:text paints only inside the box, so it must span the font's full ascent and descent.
     const { box, glyphs } = await label.evaluate((el) => {

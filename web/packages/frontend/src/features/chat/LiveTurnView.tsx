@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react'
 import { Link } from '@tanstack/react-router'
 import { m } from '../../paraglide/messages.js'
+import { useLocale } from '../../i18n/useLocale'
 import { ArrowUp, Pencil, X } from 'lucide-react'
 import type { LiveTurn, PendingSteerRow } from '../../stream/reducer'
 import { sendSteerNow, withdrawSteer } from '../../api/endpoints'
@@ -91,17 +92,20 @@ export function LiveStatusPill({ turn, background = false }: { turn: LiveTurn; b
   )
 }
 
-/** Time since the run started (TAL-922), redrawn each second. Hidden from the live region so it is not announced every tick. */
+/** Time since the run started in T3 Code's units (TAL-922): `42s`, then `5m`, then `1h 30m`. Redrawn each second and
+ *  hidden from the live region so it is not announced every tick. */
 function RunElapsed({ since }: { since: number }) {
+  const locale = useLocale()
   const [now, setNow] = useState(Date.now)
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(id)
   }, [])
-  const total = Math.max(0, Math.floor((now - since) / 1000))
-  const [h, min, s] = [Math.floor(total / 3600), Math.floor(total / 60) % 60, total % 60]
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return <span className="live-run-elapsed" aria-hidden="true">{h ? `${h}:${pad(min)}:${pad(s)}` : `${min}:${pad(s)}`}</span>
+  const unit = (n: number, u: 'hour' | 'minute' | 'second') => new Intl.NumberFormat(locale, { style: 'unit', unit: u, unitDisplay: 'narrow' }).format(n)
+  const seconds = Math.max(0, Math.floor((now - since) / 1000))
+  const minutes = Math.floor(seconds / 60)
+  const text = seconds < 60 ? unit(seconds, 'second') : minutes < 60 ? unit(minutes, 'minute') : `${unit(Math.floor(minutes / 60), 'hour')} ${unit(minutes % 60, 'minute')}`
+  return <span className="live-run-elapsed" aria-hidden="true">{text}</span>
 }
 
 /** Laurel-wreath activity indicator: ten leaves brighten in turn around the ring (styles in chat.css). */

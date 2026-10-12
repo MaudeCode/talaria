@@ -71,18 +71,19 @@ describe('live elapsed time (TAL-922)', () => {
 
   it('reads "Working <elapsed>" from the turn start and ticks each second', () => {
     vi.useFakeTimers({ now: 1_000_000 })
-    const view = render(<LiveStatusPill turn={at(1_000_000 - 83_000)} />)
-    expect(pills(view.container)[0]).toHaveTextContent('Working 1:23')
+    const view = render(<LiveStatusPill turn={at(1_000_000 - 59_000)} />)
+    expect(pills(view.container)[0]).toHaveTextContent('Working 59s')
     act(() => { vi.advanceTimersByTime(1000) })
-    expect(pills(view.container)[0]).toHaveTextContent('Working 1:24')
+    expect(pills(view.container)[0]).toHaveTextContent('Working 1m')
   })
 
-  it('formats seconds, minutes, and hours', () => {
+  it("formats seconds, minutes, and hours in T3 Code's units", () => {
     vi.useFakeTimers({ now: 10_000_000 })
     const label = (ms: number) => { const v = render(<LiveStatusPill turn={at(10_000_000 - ms)} />); const t = pills(v.container)[0]!.textContent; v.unmount(); return t }
-    expect(label(5_000)).toContain('Working 0:05')
-    expect(label(754_000)).toContain('Working 12:34')
-    expect(label(3_723_000)).toContain('Working 1:02:03')
+    expect(label(1_000)).toMatch(/Working 1s$/)
+    expect(label(359_000)).toMatch(/Working 5m$/)
+    expect(label(3_600_000)).toMatch(/Working 1h 0m$/)
+    expect(label(5_400_000)).toMatch(/Working 1h 30m$/)
   })
 
   it('shows no time while reconnecting or on background work', () => {
