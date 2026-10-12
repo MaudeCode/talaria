@@ -160,7 +160,8 @@ review thread, and only then is that ticket filed.
 - **Identity:** upstream, base and candidate tags with SHAs, compare link, and
   non-merge commit count.
 - **Filed:** each ticket link and the finding it covers, plus tickets commented
-  on, and for a Hermes Agent release the support ticket with its blockers.
+  on, and for a Hermes Agent release the support ticket with its blockers once
+  filed.
 - **Held for approval:** numbered so the owner can approve by number.
 - **Already present and irrelevant:** grouped summaries.
 - **Uncertainty:** only what the review could not resolve, each with the step
