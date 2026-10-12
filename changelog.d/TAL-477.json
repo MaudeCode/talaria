@@ -1,0 +1,14 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Every section list, from Settings and Memory to Skills, Tasks and archived chats, now matches the Chats list, and Tasks' sections collapse.",
+      "highlight": false
+    },
+    {
+      "category": "Fixed",
+      "summary": "Picking a section in the slide-out sidebar no longer stutters as it closes.",
+      "highlight": false
+    }
+  ]
+}

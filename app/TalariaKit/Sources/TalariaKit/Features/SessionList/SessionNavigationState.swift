@@ -13,13 +13,8 @@ public enum SessionNavigationDestination: Hashable, Identifiable {
     }
 
     public var compactRootUtility: SessionListUtilityDestination? {
-        guard case .utility(let utility) = self else { return nil }
-        switch utility {
-        case .archived, .scheduled, .webhook:
-            return nil
-        default:
-            return utility
-        }
+        guard case .utility(let utility) = self, !utility.listsSessions else { return nil }
+        return utility
     }
 
     /// Scheduled and webhook lists show the session list's own rows, so the list keeps polling

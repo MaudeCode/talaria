@@ -64,41 +64,43 @@ struct ArchivedSessionsView: View {
 
     @ViewBuilder
     private var content: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                if viewModel.isLoading && viewModel.sessions.isEmpty {
-                    ArchivedStatusRow(title: String(localized: "Loading archived sessions..."), systemImage: "archivebox")
-                        .padding(.horizontal, 24)
-                } else if let errorMessage = viewModel.errorMessage, viewModel.sessions.isEmpty {
-                    VStack(alignment: .leading, spacing: 10) {
-                        ArchivedStatusRow(title: String(localized: "Could not load archived sessions"), systemImage: "exclamationmark.triangle")
-
-                        Text(errorMessage)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(3)
-
-                        Button("Try Again") {
-                            Task { await load() }
-                        }
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.primary)
-                    }
+        SidebarList {
+            if viewModel.sessions.isEmpty {
+                statusRow
                     .padding(.horizontal, 24)
-                } else if viewModel.sessions.isEmpty {
-                    ArchivedStatusRow(title: String(localized: "No archived sessions"), systemImage: "archivebox")
-                        .padding(.horizontal, 24)
-                } else {
-                    VStack(spacing: 2) {
-                        ForEach(viewModel.sessions) { session in
-                            archivedSessionRow(for: session)
-                        }
-                    }
-                    .padding(.horizontal, 12)
+                    .sessionsScreenListRow()
+            } else {
+                ForEach(viewModel.sessions) { session in
+                    archivedSessionRow(for: session)
                 }
             }
-            .padding(.top, 28)
-            .padding(.bottom, 44)
+        }
+    }
+
+    /// Loading, failure or empty, while there are no sessions to list.
+    @ViewBuilder
+    private var statusRow: some View {
+        if viewModel.isLoading {
+            ArchivedStatusRow(title: String(localized: "Loading archived sessions..."), systemImage: "archivebox")
+        } else if let errorMessage = viewModel.errorMessage {
+            VStack(alignment: .leading, spacing: 10) {
+                ArchivedStatusRow(title: String(localized: "Could not load archived sessions"), systemImage: "exclamationmark.triangle")
+
+                Text(errorMessage)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+
+                Button("Try Again") {
+                    Task { await load() }
+                }
+                // A List makes a default-styled button's whole row its tap target.
+                .buttonStyle(.plain)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.primary)
+            }
+        } else {
+            ArchivedStatusRow(title: String(localized: "No archived sessions"), systemImage: "archivebox")
         }
     }
 
@@ -121,7 +123,7 @@ struct ArchivedSessionsView: View {
 
             unarchiveButton(for: session)
         }
-        .selectedRowBackground(session.sessionId == selectedSessionID)
+        .sidebarRow(isSelected: session.sessionId == selectedSessionID)
         .contextMenu {
             Button {
                 unarchive(session)

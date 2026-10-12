@@ -61,29 +61,22 @@ struct SkillsView: View {
                 Text("No skills match \"\(searchText)\".")
             }
         } else {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 24) {
-                    ForEach(filteredGroups, id: \.category) { group in
-                        SkillCategorySection(
-                            category: group.category,
-                            skills: group.skills,
-                            selection: $selection,
-                            togglingSkillNames: viewModel.togglingSkillNames,
-                            onToggleSkill: { skill, enabled in
-                                await toggle(skill: skill, enabled: enabled)
-                            }
-                        )
-                    }
+            SidebarList {
+                ForEach(filteredGroups, id: \.category) { group in
+                    SidebarSectionHeader(group.category)
+                    SkillRows(
+                        skills: group.skills,
+                        selection: $selection,
+                        togglingSkillNames: viewModel.togglingSkillNames,
+                        onToggleSkill: { skill, enabled in
+                            await toggle(skill: skill, enabled: enabled)
+                        }
+                    )
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 18)
-                .padding(.bottom, 32)
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .refreshable {
                 await loadSkills()
             }
-            .background(Color(.systemBackground))
         }
     }
 

@@ -37,27 +37,35 @@ struct MemoryView: View {
         } else if !viewModel.hasLoaded {
             ProgressView("Loading memory...")
         } else {
-            List {
-                ForEach(MemorySection.allCases) { section in
-                    SectionSelectionRow(item: .memory(.section(section)), selection: $selection) {
-                        MemoryHeaderRow(
-                            title: section.title,
-                            systemImage: section.systemImage,
-                            modifiedAt: viewModel.modifiedAt(for: section)
-                        ) {
-                            EmptyView()
-                        }
-                    }
-                }
-
-                if viewModel.showsProjectContext {
-                    SectionSelectionRow(item: .memory(.projectContext), selection: $selection) {
-                        ProjectContextSectionHeader(modifiedAt: viewModel.projectContextMtime)
-                    }
-                }
+            SidebarList {
+                fileRows
             }
             .refreshable {
                 await loadMemory(viewModel, onAPIError: onAPIError)
+            }
+        }
+    }
+}
+
+private extension MemoryView {
+    /// One row per Memory document.
+    @ViewBuilder
+    var fileRows: some View {
+        ForEach(MemorySection.allCases) { section in
+            SectionSelectionRow(item: .memory(.section(section)), selection: $selection) {
+                MemoryHeaderRow(
+                    title: section.title,
+                    systemImage: section.systemImage,
+                    modifiedAt: viewModel.modifiedAt(for: section)
+                ) {
+                    EmptyView()
+                }
+            }
+        }
+
+        if viewModel.showsProjectContext {
+            SectionSelectionRow(item: .memory(.projectContext), selection: $selection) {
+                ProjectContextSectionHeader(modifiedAt: viewModel.projectContextMtime)
             }
         }
     }

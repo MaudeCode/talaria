@@ -257,6 +257,26 @@ final class SessionNavigationStateTests: XCTestCase {
         XCTAssertEqual(events, [.refreshedSessions])
     }
 
+    /// A section leaves no chat behind, and at regular width the list keeps polling beside
+    /// every section, so returning to Chats from one must not reload the list while the
+    /// sidebar slides closed (TAL-477).
+    func testLeavingASectionDoesNotRefreshSessions() {
+        var state = SessionNavigationState()
+        state.select(.memory)
+        let oldDestination = state.destination
+        state.clearDestination()
+        var events: [ReturnRefreshEvent] = []
+
+        SessionListReturnRefresh.run(
+            from: oldDestination,
+            to: state.destination,
+            suppressEmptyPlaceholders: { events.append(.suppressedPlaceholders) },
+            refreshSessions: { events.append(.refreshedSessions) }
+        )
+
+        XCTAssertTrue(events.isEmpty, "Leaving a section refreshed the session list: \(events)")
+    }
+
     /// Regular width switches straight from one session to another without ever
     /// passing through a nil destination, and the session being left can still
     /// have a newer title or message count on the server.

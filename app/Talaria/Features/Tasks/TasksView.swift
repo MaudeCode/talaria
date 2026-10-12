@@ -74,46 +74,8 @@ struct TasksView: View {
                 Text("Scheduled jobs from the Hermes server will appear here.")
             }
         } else {
-            List {
-                Section {
-                    HStack {
-                        Label("Running now", systemImage: "bolt.fill")
-                        Spacer()
-                        Text("\(viewModel.activeRunningCount)")
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                if !viewModel.recentCompletions.isEmpty {
-                    // One row per job (its latest run), not a run archive.
-                    Section("Recent Completions") {
-                        ForEach(viewModel.recentCompletions) { completion in
-                            if let job = viewModel.job(for: completion) {
-                                SectionSelectionRow(item: .task(id: job.id), selection: $selection) {
-                                    CronCompletionRowView(completion: completion)
-                                }
-                            } else {
-                                CronCompletionRowView(completion: completion)
-                            }
-                        }
-                    }
-                }
-
-                Section("Scheduled Jobs") {
-                    if viewModel.jobs.isEmpty {
-                        // Stale completions can outlive their jobs; keep the feed visible.
-                        Text("No scheduled jobs.")
-                            .foregroundStyle(.secondary)
-                    }
-                    ForEach(viewModel.jobs) { job in
-                        SectionSelectionRow(item: .task(id: job.id), selection: $selection) {
-                            CronJobRowView(
-                                job: job,
-                                runningElapsed: viewModel.runningElapsed(for: job)
-                            )
-                        }
-                    }
-                }
+            SidebarList {
+                taskRows
             }
             .refreshable {
                 await loadTasks()
@@ -131,6 +93,63 @@ struct TasksView: View {
             onAPIError(lastError)
         }
         await feed
+    }
+}
+
+/// Where the Tasks list remembers which of its sections are collapsed.
+enum TaskSidebarDisclosureSettings {
+    static let recentCompletionsAreExpandedKey = "tasksSidebar.recentCompletionsAreExpanded"
+    static let scheduledJobsAreExpandedKey = "tasksSidebar.scheduledJobsAreExpanded"
+}
+
+private extension TasksView {
+    /// Recent completions and scheduled jobs with the running count.
+    @ViewBuilder
+    var taskRows: some View {
+        if !viewModel.recentCompletions.isEmpty {
+            // One row per job (its latest run), not a run archive.
+            SidebarDisclosureSection(
+                String(localized: "Recent Completions"),
+                storageKey: TaskSidebarDisclosureSettings.recentCompletionsAreExpandedKey
+            ) {
+                ForEach(viewModel.recentCompletions) { completion in
+                    if let job = viewModel.job(for: completion) {
+                        SectionSelectionRow(item: .task(id: job.id), selection: $selection) {
+                            CronCompletionRowView(completion: completion)
+                        }
+                    } else {
+                        CronCompletionRowView(completion: completion)
+                            .sidebarRowPadding()
+                            .sidebarRow(isSelected: false)
+                    }
+                }
+            }
+        }
+
+        SidebarDisclosureSection(
+            String(localized: "Scheduled Jobs"),
+            storageKey: TaskSidebarDisclosureSettings.scheduledJobsAreExpandedKey
+        ) {
+            Label("\(viewModel.activeRunningCount) running", systemImage: "bolt.fill")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        } content: {
+            if viewModel.jobs.isEmpty {
+                // Stale completions can outlive their jobs; keep the feed visible.
+                Text("No scheduled jobs.")
+                    .foregroundStyle(.secondary)
+                    .sidebarRowPadding()
+                    .sidebarRow(isSelected: false)
+            }
+            ForEach(viewModel.jobs) { job in
+                SectionSelectionRow(item: .task(id: job.id), selection: $selection) {
+                    CronJobRowView(
+                        job: job,
+                        runningElapsed: viewModel.runningElapsed(for: job)
+                    )
+                }
+            }
+        }
     }
 }
 

@@ -45,7 +45,7 @@ struct SessionListView: View {
     @State private var isSearchPresented = false
     @State private var selectedProjectID: String?
     @State private var sidebarScrollPosition: String?
-    @State private var isAppSidebarPresented = false
+    @State private var appSidebar = AppSidebarPresentation()
     @State private var isPresentingUpdateNotifications: Bool
     @AccessibilityFocusState private var openNavigationIsFocused: Bool
     @AccessibilityFocusState private var archiveUndoIsFocused: Bool
@@ -148,20 +148,17 @@ struct SessionListView: View {
     }
 
     var body: some View {
-        AppSidebarContainer(isPresented: $isAppSidebarPresented) {
+        AppSidebarContainer(presentation: appSidebar, onPresentationChange: appSidebarPresentationChanged) { isPresented in
             AppSidebarDrawer(
-                isPresented: isAppSidebarPresented,
+                isPresented: isPresented,
                 selection: appSidebarSelection,
                 sectionVisibility: appSidebarSectionVisibility,
                 serverName: appSidebarServerName,
                 activeProfileName: appSidebarProfileName,
                 quotaSources: appSidebarQuotaSources,
-                newChat: {
-                    isAppSidebarPresented = false
-                    openNewChat()
-                },
+                newChat: { closeAppSidebar(then: openNewChat) },
                 select: selectAppSidebarDestination,
-                close: { isAppSidebarPresented = false }
+                close: { appSidebar.isPresented = false }
             )
         } content: {
             ZStack {
@@ -387,17 +384,6 @@ struct SessionListView: View {
             .onChange(of: requestedNewChat) {
                 openRequestedNewChatIfNeeded()
             }
-            .onChange(of: isAppSidebarPresented) { _, isPresented in
-                if isPresented {
-                    reloadAppSidebarQuotaSources()
-                    return
-                }
-                Task { @MainActor in
-                    await Task.yield()
-                    guard !isAppSidebarPresented else { return }
-                    openNavigationIsFocused = true
-                }
-            }
             .onChange(of: showsProjectsSection) {
                 // The "All" button that clears a project filter lives in the
                 // Projects header, so hiding the section mid-filter would strand
@@ -565,6 +551,9 @@ struct SessionListView: View {
                 sectionRoot(section)
             }
         }
+        // Loading, empty and error states sit on the lists' background, not the column's gray.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(.systemBackground))
         .toolbar {
             // A full-width section's hidden column must not hold a second drawer button.
             if !section.isFullWidth {
@@ -919,7 +908,7 @@ struct SessionListView: View {
     }
 
     private var content: some View {
-        List {
+        SidebarList {
             if viewModel.isViewingCachedData {
                 OfflineCacheBanner()
                     .padding(.top, 16)
@@ -1018,14 +1007,7 @@ struct SessionListView: View {
                 .sessionsScreenListRow()
                 .accessibilityHidden(true)
         }
-        .listStyle(.plain)
-        // Let rows hug their content instead of the 44pt default minimum, so the
-        // single-line utility/disclosure rows aren't padded out and stay aligned
-        // with the tightly-packed navigation rows.
-        .environment(\.defaultMinListRowHeight, 0)
-        .scrollContentBackground(.hidden)
         .scrollPosition(id: $sidebarScrollPosition)
-        .background(Color(.systemBackground))
         .scrollDismissesKeyboard(.interactively)
         .refreshable {
             await refreshSessionsAndActiveProfile()
@@ -1113,7 +1095,7 @@ struct SessionListView: View {
 
     private var sidebarButton: some View {
         Button {
-            isAppSidebarPresented = true
+            appSidebar.isPresented = true
         } label: {
             Image(systemName: "sidebar.left")
                 .font(.body.weight(.semibold))
@@ -1171,6 +1153,17 @@ struct SessionListView: View {
     }
 
     private func selectAppSidebarDestination(_ destination: AppSidebarDestination) {
+        closeAppSidebar { navigate(to: destination) }
+    }
+
+    /// Closing first hands the slide to the render server before the next screen builds, so the
+    /// slide keeps moving while it does (TAL-477).
+    private func closeAppSidebar(then navigate: () -> Void) {
+        appSidebar.isPresented = false
+        navigate()
+    }
+
+    private func navigate(to destination: AppSidebarDestination) {
         switch destination {
         case .chats:
             navigationState.clearDestination()
@@ -1189,8 +1182,18 @@ struct SessionListView: View {
         case .settings:
             navigationState.select(.settings(nil))
         }
+    }
 
-        isAppSidebarPresented = false
+    private func appSidebarPresentationChanged(_ isPresented: Bool) {
+        if isPresented {
+            reloadAppSidebarQuotaSources()
+            return
+        }
+        Task { @MainActor in
+            await Task.yield()
+            guard !appSidebar.isPresented else { return }
+            openNavigationIsFocused = true
+        }
     }
 
     private func reloadAppSidebarQuotaSources() {
@@ -1201,12 +1204,16 @@ struct SessionListView: View {
         let sources = ProviderQuotaWidgetSnapshotStore().load()?.sources ?? []
         let hiddenProviderIDs = ProviderQuotaVisibilitySettings.hiddenProviderIDs(from: hiddenProviderData)
         let byID = Dictionary(uniqueKeysWithValues: sources.map { ($0.sourceID, $0) })
-        appSidebarQuotaSources = selectedIDs
+        let quotaSources = selectedIDs
             .compactMap { byID[$0] }
             .filter { source in
                 guard let providerID = source.providerID?.lowercased() else { return true }
                 return !hiddenProviderIDs.contains(providerID)
             }
+        // Opening the sidebar reloads these; an unchanged list must not redraw the whole screen.
+        if quotaSources != appSidebarQuotaSources {
+            appSidebarQuotaSources = quotaSources
+        }
     }
 
     private var providerQuotaRefreshTaskID: String {

@@ -146,8 +146,7 @@ final class AppScreenVisualReferenceTests: XCTestCase {
 
         for scheme in [ColorScheme.light, .dark] {
             try VisualReference.assertMatchesReference(
-                SkillCategorySection(
-                    category: "Fixture",
+                SkillRows(
                     skills: [skill],
                     selection: .constant(nil),
                     togglingSkillNames: [],

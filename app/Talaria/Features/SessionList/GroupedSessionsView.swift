@@ -15,7 +15,7 @@ struct GroupedSessionsView: View {
     @State private var searchText = ""
 
     var body: some View {
-        List {
+        SidebarList {
             if sessions.isEmpty {
                 SessionListStatusRow(
                     title: searchText.isEmpty
@@ -42,9 +42,6 @@ struct GroupedSessionsView: View {
                 }
             }
         }
-        .listStyle(.plain)
-        .environment(\.defaultMinListRowHeight, 0)
-        .scrollContentBackground(.hidden)
         .navigationTitle(title)
         .searchable(text: $searchText, prompt: "Search sessions")
     }

@@ -62,7 +62,6 @@ struct AppSidebarDrawer: View {
                 closeNavigationIsFocused = true
             }
         }
-        .accessibilityHidden(!isPresented)
     }
 
     private var drawerContent: some View {

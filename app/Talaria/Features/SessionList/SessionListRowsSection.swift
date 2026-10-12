@@ -17,8 +17,6 @@ struct SessionListRowsSection: View {
 
     var body: some View {
         sessionsHeaderRow
-            .padding(.top, 16)
-            .sessionsScreenListRow()
 
         if viewModel.isLoading && viewModel.sessions.isEmpty {
             sessionLoadingSkeletonRows
@@ -49,25 +47,13 @@ struct SessionListRowsSection: View {
     }
 
     private var sessionsHeaderRow: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-                if !isSearchActive {
-                    Text("Sessions")
-                        .font(.title3.bold())
-                        .foregroundStyle(.primary)
-                }
-
-                Spacer()
-
-                if viewModel.isSearchingRemoteSessions {
-                    ProgressView()
-                        .controlSize(.small)
-                        .accessibilityLabel("Searching sessions")
-                }
+        SidebarSectionHeader(title: isSearchActive ? nil : String(localized: "Sessions")) {
+            if viewModel.isSearchingRemoteSessions {
+                ProgressView()
+                    .controlSize(.small)
+                    .accessibilityLabel("Searching sessions")
             }
         }
-        .padding(.horizontal, 24)
-        .padding(.bottom, 12)
     }
 
     private var sessionLoadingSkeletonRows: some View {

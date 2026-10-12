@@ -17,4 +17,14 @@ public enum SessionListUtilityDestination: Hashable, Identifiable {
     case webhook
 
     public var id: Self { self }
+
+    /// Archived, scheduled and webhook are lists of chats; the rest are app sections.
+    public var listsSessions: Bool {
+        switch self {
+        case .archived, .scheduled, .webhook:
+            return true
+        default:
+            return false
+        }
+    }
 }
