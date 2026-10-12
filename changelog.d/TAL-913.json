@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The workspace Checkpoints panel lists, compares, and restores the Agent's checkpoints again, and Web chats take checkpoints when checkpoints.enabled is on in the profile's config.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
