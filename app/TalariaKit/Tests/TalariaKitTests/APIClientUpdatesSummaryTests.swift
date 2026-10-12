@@ -41,6 +41,7 @@ final class APIClientUpdatesSummaryTests: APIClientTestCase {
             {
               "ok": true, "target": "agent", "summary": "", "generated_by": "llm",
               "source": "release_notes", "cached": false,
+              "current_version": "v2026.9.24", "target_version": "v0.21.7",
               "summary_sections": [
                 { "title": "What you'll notice", "items": ["Chats open faster."] },
                 { "title": "Worth knowing", "items": ["This summary covers v0.21.6 and v0.21.7."] }
@@ -53,6 +54,8 @@ final class APIClientUpdatesSummaryTests: APIClientTestCase {
 
         XCTAssertEqual(response.source, "release_notes")
         XCTAssertEqual(response.generatedBy, "llm")
+        XCTAssertEqual(response.currentVersion, "v2026.9.24")
+        XCTAssertEqual(response.targetVersion, "v0.21.7")
         XCTAssertEqual(response.summarySections, [
             .init(title: "What you'll notice", items: ["Chats open faster."]),
             .init(title: "Worth knowing", items: ["This summary covers v0.21.6 and v0.21.7."])

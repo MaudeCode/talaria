@@ -737,6 +737,8 @@ export const UpdateTargetSchema = z.looseObject({ name: z.string().optional(), c
 export const UpdatesCheckSchema = z.looseObject({ disabled: z.boolean().optional(), cached: z.boolean().optional(), channel: z.string().optional(), agent_channel: z.enum(['stable', 'experimental']).optional(), checked_at: z.number().optional(), include_agent: z.boolean().optional(), webui: UpdateTargetSchema.nullable().optional(), agent: UpdateTargetSchema.nullable().optional() })
 export const UpdatesSummarySchema = z.object({
   ok: z.boolean(), target: z.enum(['webui', 'agent']), summary: z.string(),
+  current_version: z.string().nullable().describe('The installed version this summary starts from.'),
+  target_version: z.string().nullable().describe('The version this summary leads to, when the update names one.'),
   summary_sections: z.array(z.object({ title: z.string(), items: z.array(z.string()) })).describe('Display-ready headed bullet lists; empty when nothing is pending.'),
   generated_by: z.enum(['llm', 'fallback', 'none']).describe('`fallback` when no model answered; `none` when the target has no pending update to summarize.'),
   source: z.enum(['release_notes', 'commits', 'none']).describe('Stable targets summarize the release notes they install; commit-tracking targets, or unreadable notes, use commit subjects.'),

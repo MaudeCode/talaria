@@ -45,7 +45,7 @@ struct ServerUpdateSettingsSection: View {
             serverUpdateCheckAction
             serverUpdateNote
             UpdateSummaryButton(info: updateTargets?.webui) {
-                summaryRequest = UpdateSummaryRequest(target: .webui, info: updateTargets?.webui)
+                summaryRequest = UpdateSummaryRequest(target: .webui)
             }
             serverUpdateAction
             agentUpdateRows
@@ -54,8 +54,7 @@ struct ServerUpdateSettingsSection: View {
         .sheet(item: $summaryRequest) { request in
             UpdateSummarySheet(
                 model: UpdateSummaryModel(target: request.target, client: APIClient(baseURL: server)),
-                name: request.name,
-                range: request.range
+                name: request.name
             )
         }
         .refreshesLive(showsStatus: false) { await loadServerSettings() }
@@ -175,13 +174,16 @@ private extension ServerUpdateSettingsSection {
             let status = UpdateNote(agent: agent)
             SettingsDivider()
             SettingsValueRow(title: String(localized: "Hermes Agent")) {
-                Text(agent.versionRange ?? agent.currentVersion ?? String(localized: "Unknown"))
+                Text(
+                    versionRange(agent.currentVersion, agent.targetVersion)
+                        ?? agent.currentVersion ?? String(localized: "Unknown")
+                )
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
             }
             updateNoteRow(systemImage: status.systemImage, tint: status.tint, text: status.text)
             UpdateSummaryButton(info: agent) {
-                summaryRequest = UpdateSummaryRequest(target: .agent, info: agent)
+                summaryRequest = UpdateSummaryRequest(target: .agent)
             }
         }
     }

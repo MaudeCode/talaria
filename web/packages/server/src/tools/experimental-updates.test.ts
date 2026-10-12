@@ -215,6 +215,22 @@ describe('Experimental npm updates (TAL-378)', () => {
     expect(readFileSync(join(backup, 'projects.json'), 'utf8')).toBe('{"projects":[]}')
   })
 
+  it('summarizes a switch back to Stable from that Stable release\'s notes (TAL-759)', async () => {
+    const running = release(`web-exp-v${expVersion('3.0.0', OLD_EXP)}`, expVersion('3.0.0', OLD_EXP), OLD_EXP)
+    const n = npmInstall(running, {})
+    const getJson: GetJson = async (path, opts) => (opts.asset ? stableGetJson(path, opts) : [{ tag_name: 'web-v2.0.0', published_at: '2026-01-01', assets: [], body: 'Stable 2.0.0 notes' }, ...(await stableGetJson(path, opts) as Dict[])])
+    const prompts: string[] = []
+    const svc = new UpdateService({
+      webRoot: n.packageRoot, git: runGit, npm: n.npm, getJson, experimental: unusedRegistry, identity: identity(running), webuiVersion: 'web-exp',
+      agentDir: () => null, channel: () => 'stable', includeAgent: () => false,
+      blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
+      scheduleRestart: () => undefined, gatewayRestart: () => Promise.resolve({ status: 'completed' }), llm: (_system, user) => { prompts.push(user); return Promise.resolve('- Notice: Stable again') }, log: () => undefined,
+    })
+    expect((await svc.check(true, false, 'stable')).webui).toMatchObject({ channel_switch: true, behind: 1 })
+    expect(await svc.summarize('webui')).toMatchObject({ source: 'release_notes', target_version: 'web-v2.0.0' })
+    expect(prompts[0]).toContain('<release tag="web-v2.0.0">\nStable 2.0.0 notes\n</release>')
+  })
+
   it('switches Experimental to Stable even when Stable has an older version', async () => {
     const running = release(`web-exp-v${expVersion('3.0.0', OLD_EXP)}`, expVersion('3.0.0', OLD_EXP), OLD_EXP)
     const n = npmInstall(running, { '@maudecode/talaria-web@2.0.0': STABLE })

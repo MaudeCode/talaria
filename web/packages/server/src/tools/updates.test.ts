@@ -810,7 +810,7 @@ describe('Agent checkout updates', () => {
     const { svc, prompts } = summaryService(a, { getPublicJson })
     await svc.check(true)
     const result = await svc.summarize('agent')
-    expect(result).toMatchObject({ ok: true, target: 'agent', source: 'release_notes', generated_by: 'llm', cached: false, summary_sections: [{ title: "What you'll notice", items: ['Chats open faster.'] }] })
+    expect(result).toMatchObject({ ok: true, target: 'agent', current_version: 'v1.0.0', target_version: 'v2.1.0', source: 'release_notes', generated_by: 'llm', cached: false, summary_sections: [{ title: "What you'll notice", items: ['Chats open faster.'] }] })
     expect(paths).toEqual(['/repos/Synthetic/agent/releases/tags/v2.0.0', '/repos/Synthetic/agent/releases/tags/v2.1.0'])
     expect(prompts).toHaveLength(1)
     expect(prompts[0]!.indexOf('Release notes for v2.0.0')).toBeGreaterThan(-1)
@@ -861,7 +861,7 @@ describe('Agent checkout updates', () => {
     git(a.origin, 'tag', 'v2.1.0')
     let calls = 0
     const { svc } = summaryService(a, { getPublicJson: notesFor([]), llm: () => { calls += 1; return Promise.reject(new Error('model unavailable')) } })
-    expect(await svc.summarize('agent')).toEqual({ ok: true, target: 'agent', summary: '', summary_sections: [], generated_by: 'none', source: 'none', cached: false })
+    expect(await svc.summarize('agent')).toEqual({ ok: true, target: 'agent', current_version: null, target_version: null, summary: '', summary_sections: [], generated_by: 'none', source: 'none', cached: false })
     expect(calls).toBe(0)
     await svc.check(true)
     // A check cached before update checks were turned off is never summarized.

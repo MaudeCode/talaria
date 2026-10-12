@@ -384,7 +384,7 @@ describe('SystemSection update paths', () => {
 
   it('summarizes an update with AI in a dialog, fetched only after the click and sending only the target', async () => {
     vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ webui: current, agent: target('release_ready', { behind: 3, can_apply: true, summary_available: true, current_version: 'v2026.9.24', target_version: 'v0.21.7' }) })
-    vi.mocked(api.fetchUpdatesSummary).mockResolvedValue({ ok: true, target: 'agent', summary: '', generated_by: 'llm', source: 'release_notes', cached: false, summary_sections: [{ title: "What you'll notice", items: ['Chats load faster.'] }, { title: 'Worth knowing', items: ['Two releases are combined here.'] }] })
+    vi.mocked(api.fetchUpdatesSummary).mockResolvedValue({ ok: true, target: 'agent', current_version: 'v2026.9.24', target_version: 'v0.21.7', summary: '', generated_by: 'llm', source: 'release_notes', cached: false, summary_sections: [{ title: "What you'll notice", items: ['Chats load faster.'] }, { title: 'Worth knowing', items: ['Two releases are combined here.'] }] })
     renderSystem()
     const path = await screen.findByRole('region', { name: 'Hermes Agent' })
     expect(within(screen.getByRole('region', { name: 'Talaria Web' })).queryByRole('button', { name: 'Summarize with AI' })).not.toBeInTheDocument()
@@ -392,8 +392,8 @@ describe('SystemSection update paths', () => {
     expect(api.fetchUpdatesSummary).not.toHaveBeenCalled()
     await userEvent.click(within(path).getByRole('button', { name: 'Summarize with AI' }))
     const dialog = await screen.findByRole('dialog', { name: "What's new in Hermes Agent" })
-    expect(within(dialog).getByText('v2026.9.24 → v0.21.7')).toBeInTheDocument()
     expect(await within(dialog).findByText("What you'll notice")).toBeInTheDocument()
+    expect(within(dialog).getByText('v2026.9.24 → v0.21.7')).toBeInTheDocument()
     expect(within(dialog).getByText('Chats load faster.')).toBeInTheDocument()
     expect(within(dialog).getByText('Two releases are combined here.')).toBeInTheDocument()
     expect(api.fetchUpdatesSummary).toHaveBeenCalledTimes(1)
@@ -402,7 +402,7 @@ describe('SystemSection update paths', () => {
 
   it('offers Retry after a failed summary and shows no button when the server offers none', async () => {
     vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ webui: behind(2), agent: target('commits_behind', { behind: 3, can_apply: true }) })
-    vi.mocked(api.fetchUpdatesSummary).mockRejectedValueOnce(new Error('model unavailable')).mockResolvedValueOnce({ ok: true, target: 'webui', summary: '', generated_by: 'fallback', source: 'commits', cached: false, summary_sections: [{ title: "What you'll notice", items: ['Talaria Web has 2 update(s) available.'] }] })
+    vi.mocked(api.fetchUpdatesSummary).mockRejectedValueOnce(new Error('model unavailable')).mockResolvedValueOnce({ ok: true, target: 'webui', current_version: null, target_version: null, summary: '', generated_by: 'fallback', source: 'commits', cached: false, summary_sections: [{ title: "What you'll notice", items: ['Talaria Web has 2 update(s) available.'] }] })
     renderSystem()
     const web = await screen.findByRole('region', { name: 'Talaria Web' })
     expect(within(screen.getByRole('region', { name: 'Hermes Agent' })).queryByRole('button', { name: 'Summarize with AI' })).not.toBeInTheDocument()

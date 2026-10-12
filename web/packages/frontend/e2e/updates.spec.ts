@@ -188,7 +188,7 @@ test('Summarize with AI opens a dialog with the server summary of one pending up
   }) }))
   await page.route('**/api/updates/summary', (route) => {
     summaries.push(route.request().postDataJSON())
-    return route.fulfill({ json: { ok: true, target: 'agent', summary: '', generated_by: 'llm', source: 'release_notes', cached: false, summary_sections: [
+    return route.fulfill({ json: { ok: true, target: 'agent', current_version: 'v2026.9.24', target_version: 'v0.21.7', summary: '', generated_by: 'llm', source: 'release_notes', cached: false, summary_sections: [
       { title: "What you'll notice", items: ['Updates now follow tagged releases, so the Agent only moves to published versions.', 'Persistent Shell respects your settings, including environment-based defaults.', 'Requests to the Codex service are compressed, so less data is uploaded.'] },
       { title: 'Worth knowing', items: ['This summary covers the release notes for v0.21.6 and v0.21.7.'] },
     ] } })
@@ -226,7 +226,7 @@ test('a failed Web summary offers Retry, and Retry asks the server again (TAL-75
   await page.route('**/api/updates/summary', (route) => {
     summaries.push(route.request().postDataJSON())
     if (summaries.length === 1) return route.fulfill({ status: 500, json: { error: 'model unavailable' } })
-    return route.fulfill({ json: { ok: true, target: 'webui', summary: '', generated_by: 'llm', source: 'release_notes', cached: false, summary_sections: [
+    return route.fulfill({ json: { ok: true, target: 'webui', current_version: 'web-v1.17.0', target_version: 'web-v1.18.0', summary: '', generated_by: 'llm', source: 'release_notes', cached: false, summary_sections: [
       { title: "What you'll notice", items: ['Settings shows a summary of each pending update.'] },
     ] } })
   })
@@ -234,10 +234,10 @@ test('a failed Web summary offers Retry, and Retry asks the server again (TAL-75
   await settle(page)
   await page.getByRole('region', { name: 'Talaria Web', exact: true }).getByRole('button', { name: 'Summarize with AI', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: "What's new in Talaria Web" })
-  await expect(dialog.getByText('web-v1.17.0 → web-v1.18.0', { exact: true })).toBeVisible()
   await expect(dialog.getByText("Couldn't summarize what's new.", { exact: true })).toBeVisible()
   await dialog.getByRole('button', { name: 'Retry', exact: true }).click()
   await expect(dialog.getByText('Settings shows a summary of each pending update.', { exact: true })).toBeVisible()
+  await expect(dialog.getByText('web-v1.17.0 → web-v1.18.0', { exact: true })).toBeVisible()
   expect(summaries).toEqual([{ target: 'webui' }, { target: 'webui' }])
   // The first summary fails on purpose.
   errors.splice(0, errors.length, ...errors.filter((e) => !/api\/updates\/summary|status of 500/.test(e)))

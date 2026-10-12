@@ -104,8 +104,6 @@ export function SystemSection() {
   const cachedCurrent = updates.data !== undefined && (updates.data.channel ?? channel) === channel && (updates.data.agent_channel ?? agentChannel) === agentChannel
   const webStatus = pathStatus(webUpdate, WEB, { failed: updates.isError && !cachedCurrent, pending: updates.isPending })
   const agentStatus = pathStatus(agentUpdate, AGENT, { failed: updates.isError && !cachedCurrent, pending: updates.isPending })
-  const webInstalled = webUpdate?.current_version ?? str('webui_version', bootstrap.webui_version)
-  const agentInstalled = agentUpdate?.current_version ?? str('agent_version', '—')
   const heading = 'text-[15px] font-semibold text-text'
   return (
     <div className="flex flex-col gap-9" data-section="system">
@@ -115,24 +113,24 @@ export function SystemSection() {
           <Button onClick={() => checkNow.mutate()} disabled={checkNow.isPending}>{checkNow.isPending ? m.settings_checking() : bool('ignore_agent_updates') ? m.system_check_web() : m.system_check_both()}</Button>
         </div>
         <div className="grid gap-x-10 gap-y-8 [grid-template-columns:repeat(auto-fit,minmax(min(100%,19rem),1fr))]">
-          <UpdatePath id="systemWebPath" title={WEB} installed={webInstalled} status={webStatus}
+          <UpdatePath id="systemWebPath" title={WEB} installed={webUpdate?.current_version ?? str('webui_version', bootstrap.webui_version)} status={webStatus}
             channel={<Select id="settingsUpdateChannel" aria-label={m.settings_label_web_update_channel()} disabled={!canManage} value={channel} onValueChange={setChannel}>
               <option value="stable">{m.settings_update_channel_stable()}</option>
               <option value="experimental">{m.settings_update_channel_experimental()}</option>
             </Select>}
             action={canManage && webUpdate?.can_apply ? <Button variant="primary" onClick={() => applyWeb.mutate({})} disabled={applyWeb.isPending}>{applyWeb.isPending ? m.update_updating() : webUpdate.state === 'finish' ? m.system_finish_update() : m.system_apply_web_update()}</Button> : null}
             manualLink={webUpdate?.manual_link === true}
-            summary={webUpdate?.summary_available ? <UpdateSummary target="webui" name={WEB} installed={webInstalled} info={webUpdate} /> : null}>
+            summary={webUpdate?.summary_available ? <UpdateSummary target="webui" name={WEB} info={webUpdate} /> : null}>
             <FieldRow label={m.settings_label_auto_apply_updates()} hint={m.system_auto_apply_hint()} htmlFor="settingsAutoApplyUpdates" inline><Switch id="settingsAutoApplyUpdates" disabled={!canManage || !bool('check_for_updates', true)} checked={bool('auto_apply_updates')} onCheckedChange={(checked) => set({ auto_apply_updates: checked })} /></FieldRow>
           </UpdatePath>
-          <UpdatePath id="systemAgentPath" title={AGENT} installed={agentInstalled} status={agentStatus}
+          <UpdatePath id="systemAgentPath" title={AGENT} installed={agentUpdate?.current_version ?? str('agent_version', '—')} status={agentStatus}
             channel={<Select id="settingsAgentUpdateChannel" aria-label={m.settings_label_agent_update_channel()} disabled={!canManage} value={agentChannel} onValueChange={setAgentChannel}>
               <option value="stable">{m.settings_update_channel_stable()}</option>
               <option value="experimental">{m.settings_update_channel_experimental()}</option>
             </Select>}
             action={canManage && agentUpdate?.can_apply ? <Button variant="primary" onClick={() => applyAgent.mutate({})} disabled={applyAgent.isPending}>{applyAgent.isPending ? m.update_updating() : m.system_apply_agent_update()}</Button> : null}
             warning={agentUpdate?.can_apply && agentUpdate.unsupported === true ? m.system_agent_unsupported_warning() : null}
-            summary={agentUpdate?.summary_available ? <UpdateSummary target="agent" name={AGENT} installed={agentInstalled} info={agentUpdate} /> : null}>
+            summary={agentUpdate?.summary_available ? <UpdateSummary target="agent" name={AGENT} info={agentUpdate} /> : null}>
             <FieldRow label={m.settings_label_ignore_agent_updates()} hint={m.system_agent_manual_hint()} htmlFor="settingsIgnoreAgentUpdates" inline><Switch id="settingsIgnoreAgentUpdates" checked={bool('ignore_agent_updates')} onCheckedChange={(checked) => save.mutate({ ignore_agent_updates: checked }, { onError: fail, onSettled: () => { void qc.invalidateQueries({ queryKey: keys.updates.check }) } })} /></FieldRow>
           </UpdatePath>
         </div>
@@ -226,13 +224,13 @@ function pathStatus(t: Target | null | undefined, name: string, { failed, pendin
 }
 
 /** "Summarize with AI" and its dialog: the server's summary of this target's pending update, requested only once the dialog opens. */
-function UpdateSummary({ target, name, installed, info }: { target: 'webui' | 'agent'; name: string; installed: string; info: Target }) {
+function UpdateSummary({ target, name, info }: { target: 'webui' | 'agent'; name: string; info: Target }) {
   const [open, setOpen] = useState(false)
   const summary = useQuery({ queryKey: [...keys.updates.summary, target, info.current_sha, info.latest_sha, info.target_version, info.behind], queryFn: () => api.fetchUpdatesSummary(target), enabled: open, staleTime: Infinity, retry: false })
   return (
     <>
       <div className="mt-2"><Button onClick={() => setOpen(true)}>{m.system_summarize_with_ai()}</Button></div>
-      <Dialog open={open} onOpenChange={setOpen} title={m.system_summary_title({ name })} description={info.target_version ? `${installed} → ${info.target_version}` : undefined} className="w-[min(92vw,600px)]">
+      <Dialog open={open} onOpenChange={setOpen} title={m.system_summary_title({ name })} description={summary.data?.current_version && summary.data.target_version ? `${summary.data.current_version} → ${summary.data.target_version}` : undefined} className="w-[min(92vw,600px)]">
         <div className="max-h-[60vh] overflow-y-auto text-sm">
           {summary.isPending ? <p role="status" className="text-muted">{m.system_whats_new_loading()}</p>
             : summary.isError ? (

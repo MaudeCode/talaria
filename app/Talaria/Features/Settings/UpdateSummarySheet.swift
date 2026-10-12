@@ -8,7 +8,7 @@ import TalariaKit
 final class UpdateSummaryModel {
     enum Phase: Equatable {
         case loading
-        case loaded([UpdatesSummaryResponse.Section])
+        case loaded(UpdatesSummaryResponse)
         case failed
     }
 
@@ -24,7 +24,7 @@ final class UpdateSummaryModel {
     func load() async {
         phase = .loading
         do {
-            phase = try await .loaded(client.updatesSummary(target: target).summarySections)
+            phase = try await .loaded(client.updatesSummary(target: target))
         } catch {
             phase = .failed
         }
@@ -36,16 +36,10 @@ struct UpdateSummarySheet: View {
     @Environment(\.dismiss) private var dismiss
     @State var model: UpdateSummaryModel
     let name: String
-    /// Installed → target version, when the server reports both.
-    let range: String?
 
     var body: some View {
         NavigationStack {
             List {
-                if let range {
-                    Text(range)
-                        .foregroundStyle(.secondary)
-                }
                 switch model.phase {
                 case .loading:
                     HStack(spacing: 8) {
@@ -60,8 +54,13 @@ struct UpdateSummarySheet: View {
                     Button("Retry") {
                         Task { await model.load() }
                     }
-                case let .loaded(sections):
-                    ForEach(sections, id: \.self) { section in
+                case let .loaded(summary):
+                    // The range the server summarized, which a check from another device may have moved on from.
+                    if let range = versionRange(summary.currentVersion, summary.targetVersion) {
+                        Text(range)
+                            .foregroundStyle(.secondary)
+                    }
+                    ForEach(summary.summarySections, id: \.self) { section in
                         Section(section.title) {
                             ForEach(section.items, id: \.self) { item in
                                 Text(item)
@@ -97,27 +96,23 @@ struct UpdateSummaryButton: View {
     }
 }
 
-/// A presented summary: which target, and the words its sheet shows.
+/// A presented summary: which target, and the name its sheet shows.
 struct UpdateSummaryRequest: Identifiable {
     let target: UpdateTarget
     let name: String
-    let range: String?
 
     var id: UpdateTarget { target }
 
-    init(target: UpdateTarget, info: UpdateTargetInfo?) {
+    init(target: UpdateTarget) {
         self.target = target
         name = target == .webui ? String(localized: "Talaria Web") : String(localized: "Hermes Agent")
-        range = info?.versionRange
     }
 }
 
-extension UpdateTargetInfo {
-    /// "installed → target" when the server reports both.
-    var versionRange: String? {
-        guard let currentVersion, let targetVersion else { return nil }
-        return "\(currentVersion) → \(targetVersion)"
-    }
+/// "installed → target" when both are known.
+func versionRange(_ current: String?, _ target: String?) -> String? {
+    guard let current, let target else { return nil }
+    return "\(current) → \(target)"
 }
 
 /// A status line under the Agent update row: the server's state in words, and the icon beside them.

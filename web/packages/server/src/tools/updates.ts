@@ -170,7 +170,7 @@ export function githubJson(fetchImpl: typeof fetch, env: Record<string, string |
 export interface PublishedRelease { tag: string; version: string; sourceRevision: string; releaseSet: string; image: string; npm: string | null; manifestReleaseSet: string; runtime: Dict; release_url: string
   /** Completed channel releases newer than the `installed` version passed to `publishedWebRelease`, this one included; 1 when it was not passed. */
   releasesBehind: number
-  /** The published notes of the releases `releasesBehind` counts, oldest first; empty when `installed` was not passed. */
+  /** The published notes of the releases `releasesBehind` counts, oldest first; only this release's when `installed` was not passed. */
   notes: ReleaseNote[]
 }
 
@@ -268,7 +268,7 @@ export async function publishedWebRelease(channel: Channel, getJson: GetJson, no
       runtime: { tag: componentTag, version: component.version, sourceRevision: source, releaseSet: source, contracts: supported, compatibleAgent: agent },
       release_url: `${REPOSITORY_URL}/releases/tag/${tag}`,
       releasesBehind: versions.size,
-      notes: installed === undefined ? [] : published.flatMap((item) => {
+      notes: published.flatMap((item) => {
         const itemTag = str(item.tag_name)
         const body = str(item.body).replace(PUBLICATION_MARKER, '').trim()
         return tagPattern.test(itemTag) && versions.has(itemTag.split('-v').pop() ?? '') && body ? [{ tag: itemTag, body }] : []
@@ -485,7 +485,7 @@ export async function checkWebUpdate(webRoot: string | null, currentVersion: str
   {
     if (npmInstall && channel === 'stable' && release.npm && npmInstallChannel(npmInstall, id) === 'experimental') {
       // A channel switch installs the newest Stable package regardless of version order (TAL-343).
-      return { ...result, current_sha: id.release().sourceRevision ?? null, behind: 1, no_git: true, install_kind: 'npm', npm: release.npm, manual_update: false, channel_switch: true, message: `Switching to Stable installs npm release ${release.version}.` }
+      return { ...result, current_sha: id.release().sourceRevision ?? null, behind: 1, no_git: true, install_kind: 'npm', npm: release.npm, manual_update: false, channel_switch: true, release_notes: release.notes, message: `Switching to Stable installs npm release ${release.version}.` }
     }
     if (npmInstall && channel === 'stable' && release.npm && !str(id.release().tag).startsWith('web-exp-v')) {
       const comparison = compareVersions(npmInstall.version, release.version)
@@ -1347,7 +1347,10 @@ export class UpdateService {
    */
   async summarize(target: 'webui' | 'agent', checksOff = false): Promise<Dict> {
     const info = dict(this.cachedStatus()[target])
-    if (updateTargetView(target, info, checksOff).summary_available !== true) return { ok: true, target, summary: '', summary_sections: [], generated_by: 'none', source: 'none', cached: false }
+    const view = updateTargetView(target, info, checksOff)
+    // The range this answer covers, so a client labels the summary it got rather than the status it last loaded.
+    const range = { current_version: typeof info.current_version === 'string' ? info.current_version : null, target_version: view.target_version ?? null }
+    if (view.summary_available !== true) return { ok: true, target, ...range, summary: '', summary_sections: [], generated_by: 'none', source: 'none', cached: false }
     // Keyed on the range alone, so a repeat answers before any git or GitHub read.
     const cacheKey = createHash('sha256').update(canon({ target, channel: info.channel ?? null, release_based: info.release_based === true, behind: info.behind, current_sha: info.current_sha ?? null, latest_sha: info.latest_sha ?? null, current_version: info.current_version ?? null, latest_version: info.latest_version ?? null })).digest('hex')
     const cached = this.summaries.get(cacheKey)
@@ -1369,7 +1372,7 @@ export class UpdateService {
       try { candidate = (await this.deps.llm(system, user)).trim(); if (candidate) generatedBy = 'llm' } catch { candidate = '' }
     }
     const [sections, summary] = formatSections(candidate, [detail])
-    const result: Dict = { ok: true, target, summary, summary_sections: sections, generated_by: generatedBy, source: detail.source, cached: false }
+    const result: Dict = { ok: true, target, ...range, summary, summary_sections: sections, generated_by: generatedBy, source: detail.source, cached: false }
     // Only a model's answer is kept: a fallback (no model, a model or GitHub error) tries again on the next request.
     if (generatedBy === 'llm') {
       if (this.summaries.size >= 16) this.summaries.delete(this.summaries.keys().next().value!)

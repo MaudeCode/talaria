@@ -97,18 +97,23 @@ public struct UpdatesSummaryResponse: Decodable, Equatable {
     }
 
     public let summarySections: [Section]
+    /// The range this summary covers: installed version, and the target when the update names one.
+    public let currentVersion: String?
+    public let targetVersion: String?
     let target: String?
     let generatedBy: String?
     /// `release_notes`, `commits`, or `none`.
     let source: String?
 
     private enum CodingKeys: String, CodingKey {
-        case summarySections, target, generatedBy, source
+        case summarySections, currentVersion, targetVersion, target, generatedBy, source
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         summarySections = (try? container.decodeIfPresent([Section].self, forKey: .summarySections)) ?? []
+        currentVersion = container.decodeLossyStringIfPresent(forKey: .currentVersion)
+        targetVersion = container.decodeLossyStringIfPresent(forKey: .targetVersion)
         target = container.decodeLossyStringIfPresent(forKey: .target)
         generatedBy = container.decodeLossyStringIfPresent(forKey: .generatedBy)
         source = container.decodeLossyStringIfPresent(forKey: .source)

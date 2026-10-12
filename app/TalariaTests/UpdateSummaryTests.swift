@@ -8,6 +8,7 @@ final class UpdateSummaryTests: APIClientTestCase {
     private static let sectionsJSON = """
     {
       "ok": true, "target": "agent", "summary": "", "generated_by": "llm", "source": "release_notes", "cached": false,
+      "current_version": "v2026.9.24", "target_version": "v0.21.7",
       "summary_sections": [
         { "title": "What you'll notice", "items": ["Chats open faster."] },
         { "title": "Worth knowing", "items": ["This summary covers v0.21.6 and v0.21.7."] }
@@ -37,10 +38,11 @@ final class UpdateSummaryTests: APIClientTestCase {
             await model.load()
 
             XCTAssertEqual(bodies, [["target": target.rawValue]])
-            XCTAssertEqual(model.phase, .loaded([
+            guard case let .loaded(summary) = model.phase else { return XCTFail("Not loaded: \(model.phase)") }
+            XCTAssertEqual(summary.summarySections, [
                 .init(title: "What you'll notice", items: ["Chats open faster."]),
                 .init(title: "Worth knowing", items: ["This summary covers v0.21.6 and v0.21.7."])
-            ]))
+            ])
         }
     }
 
@@ -60,13 +62,11 @@ final class UpdateSummaryTests: APIClientTestCase {
         }
         let window = try hostWindow(UpdateSummarySheet(
             model: UpdateSummaryModel(target: .agent, client: client),
-            name: "Hermes Agent",
-            range: "v2026.9.24 → v0.21.7"
+            name: "Hermes Agent"
         ))
 
         let loading = { !HostedAccessibility.elements(in: window, labelContaining: "Summarizing what's new").isEmpty }
         XCTAssertTrue(waitUntil(loading), "Elements: \(HostedAccessibility.labels(in: window))")
-        XCTAssertNotNil(HostedAccessibility.element(in: window, label: "v2026.9.24 → v0.21.7"))
         answered.signal()
 
         XCTAssertTrue(waitUntil { HostedAccessibility.element(in: window, label: "Retry") != nil },
@@ -77,6 +77,8 @@ final class UpdateSummaryTests: APIClientTestCase {
         XCTAssertTrue(waitUntil { HostedAccessibility.element(in: window, label: "Chats open faster.") != nil },
                       "Elements: \(HostedAccessibility.labels(in: window))")
         XCTAssertFalse(HostedAccessibility.elements(in: window, labelContaining: "Worth knowing").isEmpty)
+        // The range shown is the one the server summarized.
+        XCTAssertNotNil(HostedAccessibility.element(in: window, label: "v2026.9.24 → v0.21.7"))
         XCTAssertEqual(requests, 2)
     }
 
@@ -96,12 +98,11 @@ final class UpdateSummaryTests: APIClientTestCase {
         XCTAssertEqual(taps, 1)
     }
 
-    func testTheSheetNamesEachTargetAndItsVersionRange() throws {
-        let agent = try Self.target(#"{ "current_version": "v2026.9.24", "target_version": "v0.21.7" }"#)
-        XCTAssertEqual(UpdateSummaryRequest(target: .agent, info: agent).name, "Hermes Agent")
-        XCTAssertEqual(UpdateSummaryRequest(target: .agent, info: agent).range, "v2026.9.24 → v0.21.7")
-        XCTAssertEqual(UpdateSummaryRequest(target: .webui, info: nil).name, "Talaria Web")
-        XCTAssertNil(UpdateSummaryRequest(target: .webui, info: nil).range)
+    func testTheSheetNamesEachTargetAndFormatsAKnownRange() {
+        XCTAssertEqual(UpdateSummaryRequest(target: .agent).name, "Hermes Agent")
+        XCTAssertEqual(UpdateSummaryRequest(target: .webui).name, "Talaria Web")
+        XCTAssertEqual(versionRange("v2026.9.24", "v0.21.7"), "v2026.9.24 → v0.21.7")
+        XCTAssertNil(versionRange("v2026.9.24", nil))
     }
 
     func testTheAgentRowWordsEveryServerState() throws {

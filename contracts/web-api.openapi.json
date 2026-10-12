@@ -51542,6 +51542,28 @@
                     "summary": {
                       "type": "string"
                     },
+                    "current_version": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The installed version this summary starts from."
+                    },
+                    "target_version": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The version this summary leads to, when the update names one."
+                    },
                     "summary_sections": {
                       "type": "array",
                       "items": {
@@ -51590,6 +51612,8 @@
                     "ok",
                     "target",
                     "summary",
+                    "current_version",
+                    "target_version",
                     "summary_sections",
                     "generated_by",
                     "source",
