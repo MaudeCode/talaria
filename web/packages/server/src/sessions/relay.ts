@@ -169,7 +169,7 @@ export interface RelayPublisherDeps {
   profileHome: (profile: string) => string
   profilesMatch: (row: string | null | undefined, active: string | null | undefined) => boolean
   /** The profile's messageful Agent `state.db` sessions (`readImportableAgentSessionRows`). */
-  agentSessions: (profile: string) => Record<string, unknown>[]
+  agentSessions: (profile: string) => Promise<Record<string, unknown>[]>
   fetch: () => typeof fetch
   now: () => number
   log: (line: string) => void
@@ -412,7 +412,13 @@ export class RelayPublisher {
   }
 
   /** Record every messageful Web or Agent session that started in an enrolled profile since tracking began. */
-  private observeStarted(): StartedLedger {
+  private async observeStarted(): Promise<StartedLedger> {
+    // Agent rows come from the listing worker first, so the ledger's load-to-save stays synchronous.
+    const agentRows = new Map<string, Record<string, unknown>[]>()
+    for (const [profile, cfg] of Object.entries(this.config.profiles)) {
+      if (!this.publishes(profile, cfg)) continue
+      try { agentRows.set(profile, await this.deps.agentSessions(profile)) } catch { agentRows.set(profile, []) }
+    }
     const ledger = this.loadStarted()
     const nowMs = Math.floor(this.deps.now() * 1000)
     let changed = this.trackProfiles(ledger)
@@ -424,8 +430,7 @@ export class RelayPublisher {
       const floor = Math.max(entry.floor, nowMs - STARTED_WINDOW_MS)
       for (const [sid, e] of entry.sessions) if (e.startedAt < floor) { entry.sessions.delete(sid); changed = true }
       // A compressed Agent chat keeps its lineage root's id and start, so later segments are not new sessions.
-      let agent: Record<string, unknown>[] = []
-      try { agent = this.deps.agentSessions(profile) } catch { agent = [] }
+      const agent = agentRows.get(profile) ?? []
       const seen = [
         ...index.filter((row) => Number(row.message_count) > 0 && this.deps.profilesMatch(row.profile as string | null | undefined, profile)).map((row) => [row.session_id, row.created_at]),
         ...agent.map((row) => [row._lineage_root_id || row.id, row.started_at]),
@@ -444,7 +449,7 @@ export class RelayPublisher {
 
   /** Announce each newly observed session once, oldest first, to the relay scope of the profile that owns it. */
   async publishStarted(): Promise<void> {
-    const ledger = this.observeStarted()
+    const ledger = await this.observeStarted()
     for (const [profile, cfg] of Object.entries(this.config.profiles)) {
       if (!this.publishes(profile, cfg)) continue
       const unsent = [...(ledger.get(cfg.profile_id)?.sessions ?? [])].filter(([, e]) => !e.sent).sort((a, b) => a[1].startedAt - b[1].startedAt)

@@ -26,7 +26,7 @@ function publisher(): RelayPublisher {
     registry: new StreamRegistry(), presence: new PresenceLeases(() => clock), now: () => clock, log: vi.fn(),
     pending: { approvalPending: () => ({ pending: null, pending_count: 0 }), clarifyPending: () => ({ pending: null, pending_count: 0 }) },
     store: { get: () => { throw new Error('unused') }, readIndexEntries: () => index },
-    agentSessions: (profile: string) => agent[profile] ?? [],
+    agentSessions: (profile: string) => Promise.resolve(agent[profile] ?? []),
     profileHome: (profile: string) => join(home, profile),
     profilesMatch: (row: string | null | undefined, active: string | null | undefined) => (row ?? 'default') === active,
     fetch: () => (url: string, init: { body: string }) => { sent.push({ url, body: JSON.parse(init.body) as Row }); return respond(url) },

@@ -52,7 +52,7 @@ it('publishes exactly the shared publisher-session-started fixture', async () =>
     const deps = {
       registry: new StreamRegistry(), presence: new PresenceLeases(() => now), now: () => now, log: vi.fn(),
       store: { readIndexEntries: () => index },
-      agentSessions: () => [],
+      agentSessions: () => Promise.resolve([]),
       profileHome: () => home,
       profilesMatch: (row: string | null | undefined, active: string | null | undefined) => (row ?? 'default') === active,
       fetch: () => (url: string, init: { body: string }) => { requests.push({ url, body: init.body }); return Promise.resolve(new Response('{}')) },

@@ -8,7 +8,7 @@
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { cheapChangeFingerprint, readImportableAgentSessionRows, type Dict } from './state-db.js'
+import { cheapChangeFingerprintAsync, readImportableAgentSessionRowsAsync, type Dict } from './state-db.js'
 import { str } from '../util.js'
 
 export const GATEWAY_POLL_INTERVAL_S = 5
@@ -34,10 +34,10 @@ export function snapshotHash(sessions: Dict[]): string {
 }
 
 /** Python `_get_agent_sessions_from_db`: the watcher's lightweight projection (null when the read failed). */
-export function agentSessionsFromDb(dbPath: string, onError?: (reason: string, error: unknown) => void): Dict[] | null {
+export async function agentSessionsFromDb(dbPath: string, onError?: (reason: string, error: unknown) => void): Promise<Dict[] | null> {
   if (!existsSync(dbPath)) return []
   try {
-    return readImportableAgentSessionRows(dbPath, { limit: 200 }).map((row) => ({
+    return (await readImportableAgentSessionRowsAsync(dbPath, { limit: 200 })).map((row) => ({
       session_id: row.id, title: row.title || 'Agent Session', model: row.model || null,
       message_count: Number(row.message_count) || Number(row.actual_message_count) || 0,
       created_at: row.started_at, updated_at: row.last_activity ?? row.started_at, source: row.source || 'cli',
@@ -59,6 +59,7 @@ export class GatewayWatcher {
   private lastCheapFp = ''
   private lastFullProjectionAt: number | null = null
   private lastErrorLogAt = Number.NEGATIVE_INFINITY
+  private polling: Promise<boolean> | null = null
 
   constructor(readonly profileName: string, readonly hermesHome: string, private readonly opts: { now: () => number; log: (line: string) => void; pollIntervalMs?: number }) {
     this.stateDbPath = join(hermesHome, 'state.db')
@@ -73,10 +74,12 @@ export class GatewayWatcher {
     this.stopping = false
     const tick = (): void => {
       if (this.stopping) return
-      try { this.pollOnce() } catch (error) { this.warnFailure('poll loop raised', error) }
-      if (this.stopping) return
-      this.timer = setTimeout(tick, this.opts.pollIntervalMs ?? GATEWAY_POLL_INTERVAL_S * 1000)
-      this.timer.unref()
+      // The next tick is armed only once this poll settles, so the timer never stacks polls.
+      void this.pollOnce().catch((error: unknown) => { this.warnFailure('poll loop raised', error) }).then(() => {
+        if (this.stopping || this.timer !== null) return
+        this.timer = setTimeout(() => { this.timer = null; tick() }, this.opts.pollIntervalMs ?? GATEWAY_POLL_INTERVAL_S * 1000)
+        this.timer.unref()
+      })
     }
     tick()
   }
@@ -139,16 +142,24 @@ export class GatewayWatcher {
     }
   }
 
-  /** One change-detection pass; returns true when the projection ran. */
-  pollOnce(now = this.opts.now()): boolean {
+  /** One change-detection pass; returns true when the projection ran. A call while a pass is in flight skips (false). */
+  pollOnce(now = this.opts.now()): Promise<boolean> {
+    if (this.polling) return Promise.resolve(false)
+    const pass = this.poll(now).finally(() => { this.polling = null })
+    this.polling = pass
+    return pass
+  }
+
+  private async poll(now: number): Promise<boolean> {
     const exists = existsSync(this.stateDbPath)
     // Never publish an empty first snapshot before the Agent has created state.db.
     if (!exists && this.lastFullProjectionAt === null && !this.lastHash) return false
-    const cheapFp = exists ? cheapChangeFingerprint(this.stateDbPath, (reason, error) => { this.warnFailure(reason, error) }) : ''
+    const cheapFp = exists ? await cheapChangeFingerprintAsync(this.stateDbPath, (reason, error) => { this.warnFailure(reason, error) }) : ''
     const parityDue = this.lastFullProjectionAt === null || now - this.lastFullProjectionAt >= PROJECTION_PARITY_INTERVAL_S
     if (cheapFp !== null && cheapFp === this.lastCheapFp && !parityDue) return false
-    const sessions = agentSessionsFromDb(this.stateDbPath, (reason, error) => { this.warnFailure(reason, error) })
-    if (sessions === null) return false
+    const sessions = await agentSessionsFromDb(this.stateDbPath, (reason, error) => { this.warnFailure(reason, error) })
+    // A watcher stopped mid-pass has already sent its subscribers the end sentinel.
+    if (sessions === null || this.stopping) return false
     const hash = snapshotHash(sessions)
     if (cheapFp !== null) this.lastCheapFp = cheapFp
     this.lastFullProjectionAt = now

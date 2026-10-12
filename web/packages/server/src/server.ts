@@ -10,6 +10,7 @@ import { readFileSync } from 'node:fs'
 import type { App } from './app.js'
 import type { ServerConfig } from './config.js'
 import { fixCredentialPermissions, warnUnauthenticatedBind } from './startup.js'
+import { stopStateDbWorker } from './sessions/state-db.js'
 
 export async function isAlreadyServing(host: string, port: number): Promise<boolean> {
   const probeHost = ['0.0.0.0', '', '::'].includes(host) ? '127.0.0.1' : host
@@ -91,6 +92,7 @@ export async function startServer(app: App, config: ServerConfig, opts: { log?: 
     await hygiene
     // Auth state is persisted write-behind: land pending session and login-attempt writes before the process exits.
     await app.deps.auth.flushPersistence()
+    await stopStateDbWorker()
   }
   if (opts.signals ?? true) {
     let requested = false

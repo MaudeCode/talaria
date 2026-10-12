@@ -417,6 +417,8 @@ export interface ListParams {
   truncatedSources?: ReadonlySet<string>
   /** TAL-590: removes the sidebar rows' orphaned imports (Python #3238) and answers their ids, which the list drops. */
   pruneOrphanedImports?: (rows: Row[]) => Set<string>
+  /** The sidebar's `allSessions` rows when the caller already read them for its state.db lookups (TAL-920). */
+  webuiRows?: Row[]
 }
 
 export interface GatewayIdentity { session_key: string; chat_id: string; thread_id: string; chat_type: string; user_id: string; platform: string; raw_source: string }
@@ -483,8 +485,7 @@ export function isClaimableCliSource(meta: Row, stateDbSource: string): boolean 
  * unreadable state.db (null) locks every candidate, since an unknown owner is not a released one.
  */
 export function withOwnerLocks(rows: Row[], stateDbSources: (ids: string[]) => Map<string, string> | null): Row[] {
-  const webuiOwned = (r: Row): boolean => ['source_tag', 'raw_source', 'session_source'].some((k) => ['webui', 'fork'].includes(str(r[k]).trim().toLowerCase()))
-  const candidates = rows.filter((r) => !r.read_only && !webuiOwned(r)).map((r) => str(r.session_id))
+  const candidates = ownerLockCandidates(rows)
   if (!candidates.length) return rows
   const owners = stateDbSources(candidates)
   const locked = new Set(candidates.filter((sid) => {
@@ -493,6 +494,12 @@ export function withOwnerLocks(rows: Row[], stateDbSources: (ids: string[]) => M
     return Boolean(source) && !isClaimableCliSource({ source_tag: source, ...normalizeAgentSessionSource(source) }, source)
   }))
   return locked.size ? rows.map((r) => (locked.has(str(r.session_id)) ? { ...r, read_only: true } : r)) : rows
+}
+
+/** The ids `withOwnerLocks` asks `stateDbSources` about: rows not already read-only and not WebUI- or fork-born. */
+export function ownerLockCandidates(rows: Row[]): string[] {
+  const webuiOwned = (r: Row): boolean => ['source_tag', 'raw_source', 'session_source'].some((k) => ['webui', 'fork'].includes(str(r[k]).trim().toLowerCase()))
+  return rows.filter((r) => !r.read_only && !webuiOwned(r)).map((r) => str(r.session_id))
 }
 
 /** Python `_session_is_subagent_view_only` on a row: a delegated child by any source marker. */
@@ -692,7 +699,7 @@ export interface ListPayload {
 
 /** Python `_build_session_list_cache_payload`; of its orphaned-sidecar prunes only the imported one (#3238) applies. */
 export function buildSessionListPayload(store: SessionStore, params: ListParams): ListPayload {
-  let webuiSessions: Row[] = allSessions(store, { sidebarMetadataOnly: true }).map((r) => ({ ...r, is_cli_session: isCliSessionRow(r) }))
+  let webuiSessions: Row[] = (params.webuiRows ?? allSessions(store, { sidebarMetadataOnly: true })).map((r) => ({ ...r, is_cli_session: isCliSessionRow(r) }))
   const orphans = params.pruneOrphanedImports?.(webuiSessions)
   if (orphans?.size) webuiSessions = webuiSessions.filter((r) => !orphans.has(str(r.session_id)))
   // Before the state.db overlay below replaces the sidecar's own source fields, which the WebUI-born exception reads.
