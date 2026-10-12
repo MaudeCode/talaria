@@ -1,6 +1,6 @@
 import { mkdirSync, realpathSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
@@ -94,6 +94,32 @@ describe('workspace checkpoints through the Agent (TAL-913)', () => {
     } finally {
       s.deps.registry.activeRuns.delete('ckpt-run')
     }
+  })
+
+  it('keeps the profile checkpoint store to one user at a time: a run elsewhere in the profile blocks a diff, and a restore blocks new turns', async () => {
+    // The Agent's store is one per profile and its lock does not wait, so a capture in another workspace would be skipped.
+    const elsewhere = join(s.state, 'elsewhere')
+    mkdirSync(elsewhere, { recursive: true })
+    expect((await post(s, '/api/workspaces/add', { path: elsewhere })).status).toBe(200)
+    const other = String(((await json(await post(s, '/api/session/new', { workspace: elsewhere }))).session as Json).session_id)
+    sidecar.calls.length = 0
+    s.deps.registry.activeRuns.set('elsewhere-run', { stream_id: 'elsewhere-run', session_id: other, started_at: 0, phase: 'running', workspace: elsewhere, model: null, provider: null, ephemeral: false })
+    try {
+      const res = await s.get(`/api/rollback/diff?workspace=${encodeURIComponent(ws)}&checkpoint=${HASH}`)
+      expect({ status: res.status, body: await json(res) }).toMatchObject({ status: 409, body: { code: 'active_stream' } })
+      expect(sidecar.calls).toEqual([])
+    } finally {
+      s.deps.registry.activeRuns.delete('elsewhere-run')
+    }
+    let release!: () => void
+    const gate = new Promise<void>((r) => { release = r })
+    sidecar.respond('checkpoints.restore', async () => { await gate; return { restored_to: HASH.slice(0, 8), reason: 'before write_file' } })
+    const restoring = post(s, '/api/rollback/restore', { workspace: ws, checkpoint: HASH })
+    await vi.waitFor(() => { expect(sidecar.calls.map((c) => c.method)).toContain('checkpoints.restore') })
+    const turn = await post(s, '/api/chat/start', { session_id: other, message: 'hi' })
+    expect({ status: turn.status, body: await json(turn) }).toMatchObject({ status: 409, body: { error: 'Checkpoints are being restored or compared. Retry when that finishes.' } })
+    release()
+    expect((await restoring).status).toBe(200)
   })
 
   it('refuses a checkpoint id or workspace it cannot vouch for before asking the Agent', async () => {

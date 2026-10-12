@@ -54,6 +54,15 @@ def _agent_result(result: dict) -> dict:
     return result
 
 
+def _owned(manager, workspace: str, checkpoint: str) -> str:
+    """The full hash of ``checkpoint`` among ``workspace``'s own checkpoints. The store is shared by every project and the
+    Agent's diff and restore accept any commit in it, so another workspace's hash would check that tree out here."""
+    matches = [c["hash"] for c in manager.list_checkpoints(workspace) if c.get("hash") and str(c["hash"]).startswith(checkpoint.lower())]
+    if len(matches) != 1:
+        raise RpcError(f"Checkpoint '{checkpoint}' is not a checkpoint of this workspace", condition="checkpoint_failed")
+    return matches[0]
+
+
 def register(registry) -> None:
     @registry.method("checkpoints.list")
     def list_(ctx: CallContext, params: dict) -> dict:
@@ -67,12 +76,14 @@ def register(registry) -> None:
     def diff(ctx: CallContext, params: dict) -> dict:
         workspace, checkpoint = _param(params, "workspace"), _param(params, "checkpoint")
         with scoped_home(profile_home_param(params)):
-            result = _agent_result(_manager().diff(workspace, checkpoint))
+            manager = _manager()
+            result = _agent_result(manager.diff(workspace, _owned(manager, workspace, checkpoint)))
         return {"stat": str(result.get("stat") or ""), "diff": str(result.get("diff") or "")}
 
     @registry.method("checkpoints.restore")
     def restore(ctx: CallContext, params: dict) -> dict:
         workspace, checkpoint = _param(params, "workspace"), _param(params, "checkpoint")
         with scoped_home(profile_home_param(params)):
-            result = _agent_result(_manager().restore(workspace, checkpoint))
+            manager = _manager()
+            result = _agent_result(manager.restore(workspace, _owned(manager, workspace, checkpoint)))
         return {"restored_to": str(result.get("restored_to") or ""), "reason": str(result.get("reason") or "")}

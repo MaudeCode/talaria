@@ -5,14 +5,18 @@
  */
 import { realpathSync, statSync } from 'node:fs'
 import { SidecarError, type SidecarLike } from '../sidecar/client.js'
+import { GitWorkspaceError } from './git.js'
 import { str } from '../util.js'
 
 const CHECKPOINT_ID_RE = /^[A-Za-z0-9_-][A-Za-z0-9_.-]{0,63}$/
+export const CHECKPOINT_STORE_BUSY_MESSAGE = 'Checkpoints are being restored or compared. Retry when that finishes.'
 
 export interface RollbackDeps {
   sidecar: () => SidecarLike | null
   profileHome: () => string
   knownWorkspaces: () => string[]
+  /** Whether a run in the profile at this home is active: its turn may be capturing a checkpoint into the same store. */
+  activeRunInProfile: (profileHome: string) => boolean
 }
 
 export interface CheckpointFile { file: string; status: 'modified' | 'added' | 'deleted' }
@@ -24,7 +28,33 @@ export function validateCheckpointId(checkpoint: unknown): string {
 }
 
 export class RollbackStore {
+  /** Profile homes whose checkpoint store a diff or restore is using, with the number of holders. */
+  private readonly busyStores = new Map<string, number>()
+
   constructor(readonly deps: RollbackDeps) {}
+
+  /** Whether a diff or restore is using the checkpoint store at `profileHome`; no turn in that profile starts meanwhile. */
+  storeBusy(profileHome: string): boolean {
+    return (this.busyStores.get(profileHome) ?? 0) > 0
+  }
+
+  /**
+   * Run `fn` with the profile's checkpoint store to itself. The Agent keeps one store per profile and its store lock does
+   * not wait, so a turn capturing a checkpoint anywhere in the profile meanwhile would skip it. Refused while a run in the
+   * profile is active; the check and the hold happen in the same tick, and turn admission refuses while the hold lasts.
+   */
+  private async exclusive<T>(fn: (profileHome: string) => Promise<T>): Promise<T> {
+    const home = this.deps.profileHome()
+    if (this.deps.activeRunInProfile(home)) throw new GitWorkspaceError('A session run is active in this profile. Wait for it to finish before comparing or restoring checkpoints.', 'active_stream')
+    this.busyStores.set(home, (this.busyStores.get(home) ?? 0) + 1)
+    try {
+      return await fn(home)
+    } finally {
+      const left = (this.busyStores.get(home) ?? 1) - 1
+      if (left > 0) this.busyStores.set(home, left)
+      else this.busyStores.delete(home)
+    }
+  }
 
   /** `allowed` adds paths the caller already vouches for (a session's own workspace) to the configured list. */
   resolveWorkspace(workspace: unknown, allowed: string[] = []): string {
@@ -65,7 +95,8 @@ export class RollbackStore {
   async diff(workspace: unknown, checkpoint: unknown, allowed: string[] = []): Promise<Record<string, unknown>> {
     const resolved = this.resolveWorkspace(workspace, allowed)
     const cid = validateCheckpointId(checkpoint)
-    const { diff } = await this.sidecar().call('checkpoints.diff', { profile_home: this.deps.profileHome(), workspace: resolved, checkpoint: cid })
+    const sidecar = this.sidecar()
+    const { diff } = await this.exclusive((home) => sidecar.call('checkpoints.diff', { profile_home: home, workspace: resolved, checkpoint: cid }))
     const filesChanged = checkpointDiffFiles(diff)
     return { checkpoint: cid, workspace: resolved, diff: diff.trimEnd(), files_changed: filesChanged, total_changes: filesChanged.length }
   }
@@ -74,10 +105,13 @@ export class RollbackStore {
   async restore(workspace: unknown, checkpoint: unknown, allowed: string[] = []): Promise<Record<string, unknown>> {
     const resolved = this.resolveWorkspace(workspace, allowed)
     const cid = validateCheckpointId(checkpoint)
-    const target = { profile_home: this.deps.profileHome(), workspace: resolved, checkpoint: cid }
     const sidecar = this.sidecar()
-    const rewritten = checkpointDiffFiles((await sidecar.call('checkpoints.diff', target)).diff).filter((f) => f.status !== 'added').map((f) => f.file)
-    await sidecar.call('checkpoints.restore', target)
+    const rewritten = await this.exclusive(async (home) => {
+      const target = { profile_home: home, workspace: resolved, checkpoint: cid }
+      const files = checkpointDiffFiles((await sidecar.call('checkpoints.diff', target)).diff).filter((f) => f.status !== 'added').map((f) => f.file)
+      await sidecar.call('checkpoints.restore', target)
+      return files
+    })
     return { ok: true, checkpoint: cid, workspace: resolved, files_restored: rewritten, files_restored_count: rewritten.length, errors: [] }
   }
 }

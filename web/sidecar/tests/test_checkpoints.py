@@ -67,9 +67,25 @@ def test_an_unknown_checkpoint_is_the_agents_refusal(handshaken: SidecarProcess,
     _take_checkpoint(hermes_home, workspace, "before edit")
     message, _ = handshaken.call("checkpoints.diff", {"profile_home": str(hermes_home), "workspace": str(workspace), "checkpoint": "0" * 40})
     assert message["error"]["data"]["condition"] == "checkpoint_failed"
-    assert "not found" in message["error"]["message"]
+    assert "not a checkpoint of this workspace" in message["error"]["message"]
     message, _ = handshaken.call("checkpoints.restore", {"profile_home": str(hermes_home), "workspace": str(workspace), "checkpoint": "--patch"})
     assert message["error"]["data"]["condition"] == "checkpoint_failed"
+
+
+def test_a_checkpoint_of_another_workspace_is_refused(handshaken: SidecarProcess, hermes_home: pathlib.Path, workspace: pathlib.Path) -> None:
+    other = hermes_home.parent / "other"
+    other.mkdir()
+    (other / "notes.txt").write_text("other project\n")
+    _take_checkpoint(hermes_home, other.resolve(), "before other edit")
+    _take_checkpoint(hermes_home, workspace, "before edit")
+    foreign = handshaken.result("checkpoints.list", {"profile_home": str(hermes_home), "workspace": str(other.resolve())})["checkpoints"][0]["hash"]
+    params = {"profile_home": str(hermes_home), "workspace": str(workspace), "checkpoint": foreign}
+    for method in ("checkpoints.diff", "checkpoints.restore"):
+        message, _ = handshaken.call(method, params)
+        assert message["error"]["data"]["condition"] == "checkpoint_failed", (method, message)
+        assert "not a checkpoint of this workspace" in message["error"]["message"]
+    assert sorted(p.name for p in workspace.iterdir()) == ["notes.txt"]
+    assert (workspace / "notes.txt").read_text() == "original text\n"
 
 
 @pytest.mark.skipif(AGENT_DIR is None or "were not captured" not in (AGENT_DIR / "tools" / "checkpoint_manager.py").read_text(),
