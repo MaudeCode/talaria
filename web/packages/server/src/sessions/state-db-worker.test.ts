@@ -5,7 +5,6 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { CliSessionSource } from './cli-sessions.js'
 import { GatewayWatcher } from './gateway-watcher.js'
-import type { RelayService } from './relay.js'
 import { Session } from './session.js'
 import { crashStateDbWorkerForTests, readImportableAgentSessionRowsAsync, setStateDbReadDelayForTests, stopStateDbWorker } from './state-db.js'
 
@@ -82,7 +81,7 @@ describe('session list state.db reads off the event loop (TAL-920)', () => {
     setStateDbReadDelayForTests(2000)
     let sessionsAt = Number.POSITIVE_INFINITY
     try {
-      const sessions = s.get(ALL_SOURCES).then(async (res) => { sessionsAt = performance.now(); return res })
+      const sessions = s.get(ALL_SOURCES).then((res) => { sessionsAt = performance.now(); return res })
       await new Promise((resolve) => setTimeout(resolve, 100))
       const healthStart = performance.now()
       const health = await s.get('/health')
