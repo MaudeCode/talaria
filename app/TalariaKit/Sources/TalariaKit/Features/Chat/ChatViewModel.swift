@@ -676,14 +676,6 @@ public final class ChatViewModel {
         return profileName == (Self.nonEmpty(selectedProfileName) ?? Self.nonEmpty(currentProfile))
     }
 
-    public var hasStreamingAssistantMessageContent: Bool {
-        guard let streamingAssistantMessageID,
-              let message = messages.first(where: { $0.messageId == streamingAssistantMessageID })
-        else { return false }
-
-        return message.content?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
-    }
-
     private func scheduleStreamingScrollTrigger() {
         guard pendingStreamingScrollTriggerTask == nil else { return }
 

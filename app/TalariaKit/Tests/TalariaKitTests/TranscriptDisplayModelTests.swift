@@ -306,58 +306,6 @@ final class TranscriptMessageTests: XCTestCase {
 }
 
 final class ChatTranscriptDisplaySettingsTests: XCTestCase {
-    func testTypingIndicatorStaysHiddenBehindVisibleThinkingAndToolCards() {
-        XCTAssertFalse(ChatTranscriptDisplaySettings.shouldShowAssistantTypingIndicator(
-            hasActiveStream: true,
-            isCancellingStream: false,
-            hasStreamingAssistantMessage: false,
-            liveReasoningText: "Inspecting files",
-            hasLiveToolCalls: false,
-            showsThinkingAndToolCards: true
-        ))
-
-        XCTAssertFalse(ChatTranscriptDisplaySettings.shouldShowAssistantTypingIndicator(
-            hasActiveStream: true,
-            isCancellingStream: false,
-            hasStreamingAssistantMessage: false,
-            liveReasoningText: "",
-            hasLiveToolCalls: true,
-            showsThinkingAndToolCards: true
-        ))
-    }
-
-    func testTypingIndicatorShowsWhenHiddenCardsAreOnlyLiveActivity() {
-        XCTAssertTrue(ChatTranscriptDisplaySettings.shouldShowAssistantTypingIndicator(
-            hasActiveStream: true,
-            isCancellingStream: false,
-            hasStreamingAssistantMessage: false,
-            liveReasoningText: "Inspecting files",
-            hasLiveToolCalls: true,
-            showsThinkingAndToolCards: false
-        ))
-
-        XCTAssertFalse(ChatTranscriptDisplaySettings.shouldShowAssistantTypingIndicator(
-            hasActiveStream: true,
-            isCancellingStream: false,
-            hasStreamingAssistantMessage: true,
-            liveReasoningText: "Inspecting files",
-            hasLiveToolCalls: true,
-            showsThinkingAndToolCards: false
-        ))
-    }
-
-    func testTypingIndicatorHidesBehindPendingClarificationPrompt() {
-        XCTAssertFalse(ChatTranscriptDisplaySettings.shouldShowAssistantTypingIndicator(
-            hasActiveStream: true,
-            isCancellingStream: false,
-            hasStreamingAssistantMessage: false,
-            hasPendingClarificationPrompt: true,
-            liveReasoningText: "",
-            hasLiveToolCalls: false,
-            showsThinkingAndToolCards: false
-        ))
-    }
-
     func testStreamingBubbleRenderingDoesNotMatchNilMessageIDs() {
         XCTAssertFalse(ChatTranscriptDisplaySettings.shouldUseStreamingBubbleRendering(
             hasActiveStream: true,
@@ -523,27 +471,16 @@ final class ChatTranscriptDisplaySettingsTests: XCTestCase {
 }
 
 final class ChatActiveRunStatusPolicyTests: XCTestCase {
-    func testStatusHidesWhenTranscriptBottomIsVisible() {
-        XCTAssertNil(ChatActiveRunStatusPolicy.presentation(
-            isStartingChat: false,
-            hasActiveStream: true,
-            activeStreamRecoveryState: .idle,
-            isCancellingStream: false,
-            isScrolledNearBottom: true
-        ))
-    }
-
-    func testStatusShowsActiveRunWhenScrolledAwayFromBottom() {
+    func testStatusShowsActiveRun() {
         let presentation = ChatActiveRunStatusPolicy.presentation(
             isStartingChat: false,
             hasActiveStream: true,
             activeStreamRecoveryState: .idle,
-            isCancellingStream: false,
-            isScrolledNearBottom: false
+            isCancellingStream: false
         )
 
         XCTAssertEqual(presentation?.kind, .active)
-        XCTAssertEqual(presentation?.label(agentName: "Maude"), "Maude is working")
+        XCTAssertEqual(presentation?.label(agentName: "Maude"), "Working")
     }
 
     func testStatusShowsStartingBeforeStreamIDExists() {
@@ -551,8 +488,7 @@ final class ChatActiveRunStatusPolicyTests: XCTestCase {
             isStartingChat: true,
             hasActiveStream: false,
             activeStreamRecoveryState: .idle,
-            isCancellingStream: false,
-            isScrolledNearBottom: false
+            isCancellingStream: false
         )
 
         XCTAssertEqual(presentation?.kind, .starting)
@@ -563,23 +499,21 @@ final class ChatActiveRunStatusPolicyTests: XCTestCase {
             isStartingChat: false,
             hasActiveStream: true,
             activeStreamRecoveryState: .reconnecting,
-            isCancellingStream: false,
-            isScrolledNearBottom: false
+            isCancellingStream: false
         )
 
         XCTAssertEqual(presentation?.kind, .reconnecting)
         XCTAssertEqual(presentation?.accessibilityLabel(agentName: "Hermes"), "Hermes is reconnecting the response stream")
     }
 
-    // TAL-449: recovery lives only in the chip above the composer, so it shows at the transcript bottom too.
-    func testRecoveryShowsEvenWhenTranscriptBottomIsVisible() {
+    // TAL-449: recovery lives only in the chip above the composer.
+    func testRecoveryShowsItsChip() {
         for state: ActiveStreamRecoveryState in [.checking, .reconnecting, .waitingForNetwork] {
             let presentation = ChatActiveRunStatusPolicy.presentation(
                 isStartingChat: false,
                 hasActiveStream: true,
                 activeStreamRecoveryState: state,
-                isCancellingStream: false,
-                isScrolledNearBottom: true
+                isCancellingStream: false
             )
             XCTAssertEqual(presentation, ChatActiveRunStatusPresentation(recoveryState: state), "\(state)")
             XCTAssertEqual(presentation?.reservesTranscriptSpace, true, "\(state)")
@@ -591,8 +525,7 @@ final class ChatActiveRunStatusPolicyTests: XCTestCase {
             isStartingChat: true,
             hasActiveStream: true,
             activeStreamRecoveryState: .checking,
-            isCancellingStream: true,
-            isScrolledNearBottom: false
+            isCancellingStream: true
         )
 
         XCTAssertEqual(presentation?.kind, .stopping)
@@ -603,20 +536,17 @@ final class ChatActiveRunStatusPolicyTests: XCTestCase {
             isStartingChat: false,
             hasActiveStream: false,
             activeStreamRecoveryState: .idle,
-            isCancellingStream: false,
-            isScrolledNearBottom: false
+            isCancellingStream: false
         ))
     }
 
-    // TAL-436: syncing shows at any scroll position.
-    func testSyncingShowsEvenWhenTranscriptBottomIsVisible() {
+    func testSyncingShowsItsChip() {
         let presentation = ChatActiveRunStatusPolicy.presentation(
             isStartingChat: false,
             hasActiveStream: false,
             activeStreamRecoveryState: .idle,
             isCancellingStream: false,
-            isSyncingTranscript: true,
-            isScrolledNearBottom: true
+            isSyncingTranscript: true
         )
 
         XCTAssertEqual(presentation?.kind, .syncing)
@@ -631,8 +561,7 @@ final class ChatActiveRunStatusPolicyTests: XCTestCase {
             hasActiveStream: true,
             activeStreamRecoveryState: .reconnecting,
             isCancellingStream: false,
-            isSyncingTranscript: true,
-            isScrolledNearBottom: false
+            isSyncingTranscript: true
         )
 
         XCTAssertEqual(presentation?.kind, .syncing)
@@ -653,16 +582,14 @@ final class ChatActiveRunStatusPolicyTests: XCTestCase {
             hasActiveStream: true,
             activeStreamRecoveryState: .idle,
             isCancellingStream: true,
-            isSyncingTranscript: true,
-            isScrolledNearBottom: false
+            isSyncingTranscript: true
         )?.kind, .stopping)
         XCTAssertEqual(ChatActiveRunStatusPolicy.presentation(
             isStartingChat: true,
             hasActiveStream: false,
             activeStreamRecoveryState: .idle,
             isCancellingStream: false,
-            isSyncingTranscript: true,
-            isScrolledNearBottom: false
+            isSyncingTranscript: true
         )?.kind, .starting)
     }
 
@@ -701,8 +628,7 @@ final class ChatActiveRunStatusPolicyTests: XCTestCase {
                 hasActiveStream: true,
                 activeStreamRecoveryState: recovery,
                 isCancellingStream: isCancellingStream,
-                activeRunStartedAt: start,
-                isScrolledNearBottom: false
+                activeRunStartedAt: start
             )
         }
 
@@ -726,6 +652,24 @@ final class ChatActiveRunStatusPolicyTests: XCTestCase {
         XCTAssertEqual(elapsed(120), "running for 2 minutes")
         XCTAssertEqual(elapsed(3_723), "running for 1 hour, 2 minutes, 3 seconds")
         XCTAssertEqual(elapsed(-5), "running for 0 seconds", "A clock behind the run start reads as just started")
+    }
+
+    func testChipShowsTheElapsedTimeInT3CodeUnits() {
+        let start = Date(timeIntervalSince1970: 1_000)
+        let presentation = ChatActiveRunStatusPresentation(kind: .active, runStartedAt: start)
+        let locale = Locale(identifier: "en_US")
+        func elapsed(_ seconds: TimeInterval) -> String? {
+            presentation.elapsedTime(now: start.addingTimeInterval(seconds), locale: locale)
+        }
+
+        XCTAssertEqual(elapsed(1), "1s")
+        XCTAssertEqual(elapsed(42.9), "42s")
+        XCTAssertEqual(elapsed(300), "5m")
+        XCTAssertEqual(elapsed(359), "5m", "Minutes drop the seconds")
+        XCTAssertEqual(elapsed(3_600), "1h 0m")
+        XCTAssertEqual(elapsed(5_400), "1h 30m")
+        XCTAssertEqual(elapsed(-5), "0s", "A clock behind the run start reads as just started")
+        XCTAssertNil(ChatActiveRunStatusPresentation(kind: .active).elapsedTime(now: start))
     }
 }
 

@@ -35,24 +35,24 @@ describe('stream attach cursor (TAL-316)', () => {
   afterEach(() => { resetConnectionsForTests() })
 
   it('resumes a reloaded session from the detail transcript cursor for that stream', async () => {
-    await attachToStream(SID, 'run-a', { stream_id: 'run-a', seq: 0 })
+    await attachToStream(SID, 'run-a', { transcript_seq: { stream_id: 'run-a', seq: 0 } })
     expect(opened.map((o) => [o.streamId, o.replay])).toEqual([['run-a', { afterSeq: 0, afterEventId: '' }]])
   })
 
   it('attaches live without replay when the detail states no cursor, or a cursor for another stream', async () => {
-    await attachToStream(SID, 'run-a', null)
+    await attachToStream(SID, 'run-a')
     teardown(SID)
-    await attachToStream(SID, 'run-b', { stream_id: 'run-a', seq: 7 })
+    await attachToStream(SID, 'run-b', { transcript_seq: { stream_id: 'run-a', seq: 7 } })
     expect(opened.map((o) => [o.streamId, o.replay])).toEqual([['run-a', null], ['run-b', null]])
   })
 
   it('an in-page reconnect keeps its own same-stream cursor, and replayed events render once', async () => {
-    await attachToStream(SID, 'run-a', { stream_id: 'run-a', seq: 0 })
+    await attachToStream(SID, 'run-a', { transcript_seq: { stream_id: 'run-a', seq: 0 } })
     opened[0]!.onEvent(token('Hello'), 'run-a:1')
     opened[0]!.onEvent(token(' world'), 'run-a:2')
     // The first connection drops; the page reattaches to the same stream with its own cursor, not the detail's.
     readyState = 2
-    await attachToStream(SID, 'run-a', { stream_id: 'run-a', seq: 0 })
+    await attachToStream(SID, 'run-a', { transcript_seq: { stream_id: 'run-a', seq: 0 } })
     expect(opened[1]?.replay).toEqual({ afterSeq: 2, afterEventId: 'run-a:2' })
     // An overlapping frame the server still delivers is dropped by its sequence, never by its text.
     opened[1]!.onEvent(token(' world'), 'run-a:2')
@@ -67,12 +67,12 @@ describe('server pending steers on attach and Stop (TAL-425)', () => {
   const steer = (steer_id: string) => ({ steer_id, text: steer_id, submitted_at: 1, state: 'pending' as const, actions: { edit: true, cancel: true, send_now: true } })
 
   it('a reloaded tab shows the run\'s pending steers from the session detail', async () => {
-    await attachToStream(SID, 'run-a', null, [steer('s1'), steer('s2')])
+    await attachToStream(SID, 'run-a', { pending_steers: [steer('s1'), steer('s2')] })
     expect(getStreamState().turns[SID]!.pendingSteers.map((p) => p.steerId)).toEqual(['s1', 's2'])
   })
 
   it('a Stop puts a withdrawn steer back in the composer of the tab that sent it, and nowhere else', async () => {
-    await attachToStream(SID, 'run-a', null, [steer('mine'), steer('theirs')])
+    await attachToStream(SID, 'run-a', { pending_steers: [steer('mine'), steer('theirs')] })
     const returned: string[] = []
     const stop = onReturnToComposer(SID, (text) => { returned.push(text) })
     rememberOwnSteer('mine')
@@ -88,7 +88,7 @@ describe('server pending steers on attach and Stop (TAL-425)', () => {
     rememberOwnSteer('taken')
     // The ids live in this tab's sessionStorage, so a reloaded page still knows what it sent.
     expect(JSON.parse(sessionStorage.getItem('talaria-own-steers') ?? '[]')).toEqual(expect.arrayContaining(['kept', 'taken']))
-    await attachToStream(SID, 'run-a', null, [steer('kept'), steer('taken')])
+    await attachToStream(SID, 'run-a', { pending_steers: [steer('kept'), steer('taken')] })
     opened[0]!.onEvent(parseChatEvent('steer_consumed', JSON.stringify({ steer_id: 'taken', text: 'taken' }))!, '')
     expect(JSON.parse(sessionStorage.getItem('talaria-own-steers') ?? '[]')).not.toContain('taken')
     // No composer is mounted for the session yet: the stopped text waits for it instead of being dropped.
@@ -105,7 +105,7 @@ describe('finished background work (TAL-372)', () => {
   afterEach(() => { resetConnectionsForTests() })
 
   it('is the server\'s record in the background card, never a toast or a per-tab acknowledgement', async () => {
-    await attachToStream(SID, 'run-a', null)
+    await attachToStream(SID, 'run-a')
     opened[0]!.onEvent(parseChatEvent('bg_task_complete', JSON.stringify({ session_id: SID, task_id: 'proc_1', summary: 'Background process proc_1 completed (exit_code=2).' }))!, '')
     expect(showToast).not.toHaveBeenCalled()
     expect((api as Record<string, unknown>).ackBackgroundTask).not.toHaveBeenCalled()

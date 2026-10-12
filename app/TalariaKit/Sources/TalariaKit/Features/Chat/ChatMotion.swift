@@ -29,10 +29,6 @@ public enum ChatMotion {
         reduceMotion ? nil : .easeOut(duration: 0.15)
     }
 
-    public static func typingIndicator(reduceMotion: Bool) -> Animation? {
-        reduceMotion ? nil : .easeInOut(duration: 0.9).repeatForever(autoreverses: true)
-    }
-
     public static func bottomOverlayTransition(reduceMotion: Bool) -> AnyTransition {
         reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity)
     }

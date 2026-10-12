@@ -68,7 +68,7 @@ describe('turn worklog presentation', () => {
     run.emit({ event: 'token', data: { text: 'Final answer' } })
     const view = render(<View activity={liveActivity(run.turn)} />)
     expect(view.container.querySelector('.tool-worklog-summary')).toBeNull()
-    expect(view.container.textContent).not.toContain('Responding…')
+    expect(view.container.querySelector('.live-run-status')).toBeNull()
     expect(view.container.querySelector('[data-tool-id="a"]')).toBeVisible()
     expect(view.container.querySelectorAll('[data-activity-sequence-group]')).toHaveLength(0)
     run.emit({ event: 'done', data: {} })

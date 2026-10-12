@@ -32,9 +32,7 @@ struct ChatTranscriptView: View {
     /// The run state is still being confirmed by the first session load (TAL-250).
     let showsRunStateCheck: Bool
     let clarificationPrompt: ClarificationPromptState?
-    let hidesRunStatusAccessibility: Bool
     let showsThinkingAndToolCards: Bool
-    let showsAssistantTypingIndicator: Bool
     let shouldFollowLatestMessage: Bool
     /// True while a disclosure toggle animates; suspends the bottom size-change
     /// anchor and follow-driven scrolls so the tapped row stays stationary.
@@ -360,7 +358,6 @@ struct ChatTranscriptView: View {
 
             transcriptLooseBlocks
             liveResponseBlocks
-            typingIndicator
             turnChangesCard
             inlineCommitButton
 
@@ -492,15 +489,6 @@ struct ChatTranscriptView: View {
             RunStatusChip(ChatActiveRunStatusPresentation(kind: .checking), agentName: assistantName)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
-        }
-    }
-
-    @ViewBuilder
-    private var typingIndicator: some View {
-        if showsAssistantTypingIndicator {
-            AssistantTypingIndicatorView()
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityHidden(hidesRunStatusAccessibility)
         }
     }
 

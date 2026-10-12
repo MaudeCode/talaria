@@ -2197,7 +2197,7 @@
 	"worklog_interrupted": "Task interrupted",
 	"worklog_tool_limit": "Tool limit reached",
 	"worklog_context_limit": "Context limit reached",
-	"live_streaming": "Responding…",
+	"live_working": "Working",
 	"live_cancelled": "Stopped",
 	"live_error": "The response failed",
 	"live_continuation": "Open the continuation session",

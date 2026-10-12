@@ -1,6 +1,8 @@
-import { useLayoutEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react'
 import { Link } from '@tanstack/react-router'
 import { m } from '../../paraglide/messages.js'
+import { useLocale } from '../../i18n/useLocale'
+import { formatDurationUnits } from '../../i18n/units'
 import { ArrowUp, Pencil, X } from 'lucide-react'
 import type { LiveTurn, PendingSteerRow } from '../../stream/reducer'
 import { sendSteerNow, withdrawSteer } from '../../api/endpoints'
@@ -80,13 +82,35 @@ function PendingSteerMessage({ sessionId, steer }: { sessionId: string; steer: P
 /** The live turn's status, docked as a centered pill above the composer so it never takes transcript space. */
 /** `background`: the server says a background result started this turn (`active_turn_origin`, TAL-460). */
 export function LiveStatusPill({ turn, background = false }: { turn: LiveTurn; background?: boolean }) {
+  const reconnecting = turn.status === 'reconnecting'
   return (
     <div className="live-run-status flex items-center gap-2 text-muted" role="status" aria-live="polite">
       <LaurelSpinner />
-      <span className="live-run-label">{turn.status === 'reconnecting' ? m.live_reconnecting() : background ? m.live_background() : m.live_streaming()}</span>
+      <span className="live-run-label">{reconnecting ? m.live_reconnecting() : background ? m.live_background() : m.live_working()}</span>
+      {!reconnecting && !background && <>{' '}<RunElapsed since={turn.startedAt} /></>}
       {turn.tps != null && <span className="font-mono text-[11px] tabular-nums opacity-75" title="Tokens per second">{turn.tps.toFixed(1)} tok/s</span>}
     </div>
   )
+}
+
+/** Time since the run started in T3 Code's units (TAL-922): `42s`, then `5m`, then `1h 30m`. Redrawn each second and
+ *  hidden from the live region so it is not announced every tick. */
+function RunElapsed({ since }: { since: number }) {
+  const locale = useLocale()
+  const [now, setNow] = useState(Date.now)
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [])
+  const seconds = Math.max(0, Math.floor((now - since) / 1000))
+  const minutes = Math.floor(seconds / 60)
+  const text =
+    seconds < 60
+      ? formatDurationUnits(locale, [seconds, 'second'])
+      : minutes < 60
+        ? formatDurationUnits(locale, [minutes, 'minute'])
+        : formatDurationUnits(locale, [Math.floor(minutes / 60), 'hour'], [minutes % 60, 'minute'])
+  return <span className="live-run-elapsed" aria-hidden="true">{text}</span>
 }
 
 /** Laurel-wreath activity indicator: ten leaves brighten in turn around the ring (styles in chat.css). */

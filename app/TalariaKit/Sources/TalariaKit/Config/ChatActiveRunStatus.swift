@@ -16,7 +16,8 @@ public enum ChatActiveRunStatusKind: Equatable {
         case .starting:
             return String(localized: "Starting response")
         case .active:
-            return String(localized: "\(agentName) is working")
+            // The elapsed time follows it: "Working 42s" (TAL-922).
+            return String(localized: "Working")
         case .background:
             return String(localized: "Working on background results")
         case .checking:
@@ -94,14 +95,29 @@ public struct ChatActiveRunStatusPresentation: Equatable {
         kind.accessibilityLabel(agentName: agentName)
     }
 
+    /// How long the run has gone on as of `now`, shown after the label in T3 Code's units (TAL-922):
+    /// "42s" under a minute, "5m" under an hour, then "1h 30m". Nil when the chip shows no elapsed time.
+    public func elapsedTime(now: Date, locale: Locale = .autoupdatingCurrent) -> String? {
+        guard let seconds = elapsedSeconds(now: now) else { return nil }
+        guard seconds >= 60 else {
+            return Duration.seconds(seconds).formatted(.units(allowed: [.seconds], width: .narrow, zeroValueUnits: .show(length: 1)).locale(locale))
+        }
+        let units: Set<Duration.UnitsFormatStyle.Unit> = seconds < 3_600 ? [.minutes] : [.hours, .minutes]
+        return Duration.seconds(seconds / 60 * 60).formatted(.units(allowed: units, width: .narrow, zeroValueUnits: .show(length: 1)).locale(locale))
+    }
+
     /// How long the run has gone on as of `now`, read after the label: "running for 1 minute,
     /// 23 seconds". Nil when the chip shows no elapsed time.
     public func accessibilityElapsedTime(now: Date, locale: Locale = .autoupdatingCurrent) -> String? {
-        guard let runStartedAt else { return nil }
-        let seconds = max(0, Int(now.timeIntervalSince(runStartedAt)))
+        guard let seconds = elapsedSeconds(now: now) else { return nil }
         let duration = Duration.seconds(seconds)
             .formatted(.units(allowed: [.hours, .minutes, .seconds], width: .wide).locale(locale))
         return String(localized: "running for \(duration)")
+    }
+
+    /// Whole seconds since the run started, never negative; nil without a start.
+    private func elapsedSeconds(now: Date) -> Int? {
+        runStartedAt.map { max(0, Int(now.timeIntervalSince($0))) }
     }
 
     /// Whether this is the "Syncing messages" pill (TAL-436).
@@ -124,33 +140,26 @@ public enum ChatActiveRunStatusPolicy {
         isCancellingStream: Bool,
         isSyncingTranscript: Bool = false,
         isBackgroundTurn: Bool = false,
-        activeRunStartedAt: Date? = nil,
-        isScrolledNearBottom: Bool
+        activeRunStartedAt: Date? = nil
     ) -> ChatActiveRunStatusPresentation? {
-        if !isScrolledNearBottom {
-            if isCancellingStream {
-                return ChatActiveRunStatusPresentation(kind: .stopping)
-            }
-            if isStartingChat {
-                return ChatActiveRunStatusPresentation(kind: .starting)
-            }
+        if isCancellingStream {
+            return ChatActiveRunStatusPresentation(kind: .stopping)
+        }
+        if isStartingChat {
+            return ChatActiveRunStatusPresentation(kind: .starting)
         }
 
-        // Syncing has no inline twin at the transcript tail, so it shows at any scroll
-        // position, and it stands in for run progress and recovery until the transcript is current.
+        // Syncing stands in for run progress and recovery until the transcript is current.
         if isSyncingTranscript {
             return ChatActiveRunStatusPresentation(kind: .syncing)
         }
 
-        // Stream recovery never shows in the transcript, so it floats at any scroll position (TAL-449).
         if let recovery = ChatActiveRunStatusPresentation(
             recoveryState: activeStreamRecoveryState,
             runStartedAt: activeRunStartedAt
         ) {
             return recovery
         }
-
-        guard !isScrolledNearBottom else { return nil }
 
         guard hasActiveStream else { return nil }
         return ChatActiveRunStatusPresentation(

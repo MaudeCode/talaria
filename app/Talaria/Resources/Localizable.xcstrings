@@ -50337,108 +50337,108 @@
         }
       }
     },
-    "%@ is working" : {
+    "Working" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@ يعمل"
+            "value" : "يعمل"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@ arbeitet"
+            "value" : "Arbeitet"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@ está trabajando"
+            "value" : "Trabajando"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@ travaille"
+            "value" : "En cours"
           }
         },
         "he" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@ עובד"
+            "value" : "עובד"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@ sta lavorando"
+            "value" : "In corso"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@が作業中です"
+            "value" : "作業中"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@가 작업 중이에요"
+            "value" : "작업 중"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@ is bezig"
+            "value" : "Bezig"
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@ pracuje"
+            "value" : "Pracuje"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "O %@ está trabalhando"
+            "value" : "Trabalhando"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@ работает"
+            "value" : "Работает"
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@ çalışıyor"
+            "value" : "Çalışıyor"
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@ کام کر رہا ہے"
+            "value" : "کام جاری"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@ 正在工作"
+            "value" : "工作中"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@ 正在工作"
+            "value" : "工作中"
           }
         },
         "zh-HK" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@ 正在工作"
+            "value" : "工作中"
           }
         }
       }
@@ -109113,112 +109113,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Talaria 無法在 App 內還原已封存的看板。"
-          }
-        }
-      }
-    },
-    "Talaria is preparing a response" : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Talaria يحضّر ردًا"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Talaria bereitet eine Antwort vor"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Talaria está preparando una respuesta"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Talaria prépare une réponse"
-          }
-        },
-        "he" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Talaria מכין תגובה"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Talaria sta preparando una risposta"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Talariaが応答を準備しています"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Talaria가 응답을 준비하고 있어요"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Talaria bereidt een antwoord voor"
-          }
-        },
-        "pl" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Talaria przygotowuje odpowiedź"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "O Talaria está preparando uma resposta"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Talaria готовит ответ"
-          }
-        },
-        "tr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Talaria bir yanıt hazırlıyor"
-          }
-        },
-        "ur" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Talaria جواب تیار کر رہا ہے"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Talaria 正在准备回复"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Talaria 正在準備回覆"
-          }
-        },
-        "zh-HK" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Talaria 正在準備回覆"
           }
         }
       }

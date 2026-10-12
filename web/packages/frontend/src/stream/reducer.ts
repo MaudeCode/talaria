@@ -89,8 +89,9 @@ export interface LiveTurn {
 }
 
 export type StreamAction =
-  | { type: 'start'; sessionId: string; streamId: string; turnId: string | null; userMessageId: string | null; userText: string; now: number }
-  | { type: 'attach'; sessionId: string; streamId: string; now: number; replay: boolean }
+  /** `serverStartedAt`: the server's `pending_started_at` (epoch seconds), which starts the turn clock. */
+  | { type: 'start'; sessionId: string; streamId: string; turnId: string | null; userMessageId: string | null; userText: string; now: number; serverStartedAt?: number | null | undefined }
+  | { type: 'attach'; sessionId: string; streamId: string; now: number; replay: boolean; serverStartedAt?: number | null | undefined }
   | { type: 'connection'; sessionId: string; streamId: string; status: 'open' | 'error' | 'reconnecting' }
   | { type: 'event'; sessionId: string; streamId: string; event: ChatEvent; lastEventId: string; now: number }
   | { type: 'settle'; sessionId: string; streamId: string; session: Session | null }
@@ -121,9 +122,15 @@ export function isTerminal(status: TurnStatus): boolean {
   return TERMINAL.has(status)
 }
 
-function newTurn(sessionId: string, streamId: string, now: number): LiveTurn {
+/** The server's run start in ms, clamped to this device's clock so a server clock ahead of it never holds the timer at
+ *  0:00; `fallback` until the server reports a usable one. */
+function runStart(serverStartedAt: number | null | undefined, fallback: number, now: number): number {
+  return serverStartedAt != null && serverStartedAt > 0 ? Math.min(serverStartedAt * 1000, now) : fallback
+}
+
+function newTurn(sessionId: string, streamId: string, now: number, serverStartedAt?: number | null): LiveTurn {
   return {
-    sessionId, streamId, turnId: null, userMessageId: null, userText: '', startedAt: now, status: 'starting',
+    sessionId, streamId, turnId: null, userMessageId: null, userText: '', startedAt: runStart(serverStartedAt, now, now), status: 'starting',
     segments: [], tools: {}, toolOrder: [], reasoningText: '', reasoningTitles: [], lastEventId: '', lastSeq: 0,
     usage: null, tps: null, contextStatus: null, warning: null, error: null, cancelledMessage: null, approval: null, clarify: null,
     pendingSteers: [], closedSteerIds: [], compression: null, title: null, doneSession: null, doneAt: null, streamEnded: false, goal: null, replayed: false, claimsPersistedRows: true,
@@ -299,15 +306,15 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
 export function streamReducer(state: StreamState, action: StreamAction): StreamState {
   switch (action.type) {
     case 'start': {
-      const turn = { ...newTurn(action.sessionId, action.streamId, action.now), turnId: action.turnId, userMessageId: action.userMessageId, userText: action.userText, status: 'connecting' as const }
+      const turn = { ...newTurn(action.sessionId, action.streamId, action.now, action.serverStartedAt), turnId: action.turnId, userMessageId: action.userMessageId, userText: action.userText, status: 'connecting' as const }
       return { turns: { ...state.turns, [action.sessionId]: turn } }
     }
     case 'attach': {
       const existing = state.turns[action.sessionId]
       if (existing?.streamId === action.streamId && existing && !isTerminal(existing.status)) {
-        return { turns: { ...state.turns, [action.sessionId]: { ...existing, status: 'reconnecting', replayed: action.replay } } }
+        return { turns: { ...state.turns, [action.sessionId]: { ...existing, status: 'reconnecting', replayed: action.replay, startedAt: runStart(action.serverStartedAt, existing.startedAt, action.now) } } }
       }
-      return { turns: { ...state.turns, [action.sessionId]: { ...newTurn(action.sessionId, action.streamId, action.now), status: 'connecting', replayed: action.replay, claimsPersistedRows: action.replay } } }
+      return { turns: { ...state.turns, [action.sessionId]: { ...newTurn(action.sessionId, action.streamId, action.now, action.serverStartedAt), status: 'connecting', replayed: action.replay, claimsPersistedRows: action.replay } } }
     }
     case 'connection': {
       const turn = state.turns[action.sessionId]

@@ -123,9 +123,9 @@ test(`live tool batches settle once: ${limited ? 'tool limit' : 'completed'}`, a
   try {
   await page.goto(`/session/${sid}`)
   const outer = page.locator('.live-turn > .assistant-turn-blocks > .activity')
-  // Live work is inline with no turn-level "Responding…" disclosure; the status is a pill docked above the composer.
+  // Live work is inline with no turn-level "Working" disclosure; the status is a pill docked above the composer.
   await expect(outer.locator(':scope > button')).toHaveCount(0)
-  await expect(page.locator('.live-turn').getByRole('button', { name: /Responding/ })).toHaveCount(0)
+  await expect(page.locator('.live-turn').getByRole('button', { name: /Working/ })).toHaveCount(0)
   await expect(page.locator('.live-turn .live-run-status')).toHaveCount(0)
   const spinner = page.locator('.live-run-status')
   await expect(spinner).toHaveCount(1)
@@ -401,7 +401,7 @@ test('final-only mode retains recovered user steering', async ({ page }) => {
 
 test('live label box covers its glyphs so the shimmer never clips descenders', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' })
-  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'live-label', title: 'Live label', messages: [{ role: 'user', id: 1, content: 'Hello' }], active_stream_id: 'label-run' } } }))
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'live-label', title: 'Live label', messages: [{ role: 'user', id: 1, content: 'Hello' }], active_stream_id: 'label-run', pending_started_at: Date.now() / 1000 - 75 } } }))
   await page.route('**/api/chat/stream/status?**', (route) => route.fulfill({ json: { active: true, stream_id: 'label-run', replay_available: true } }))
   const server = createServer((_request, response) => {
     response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Access-Control-Allow-Origin': process.env.HERMES_E2E_BASE_URL!, 'Access-Control-Allow-Credentials': 'true' })
@@ -414,7 +414,9 @@ test('live label box covers its glyphs so the shimmer never clips descenders', a
   try {
     await page.goto('/session/live-label')
     const label = page.locator('.live-run-label')
-    await expect(label).toHaveText('Responding…')
+    await expect(label).toHaveText('Working')
+    // Opened mid-run, the clock counts from the server's run start, not from 0:00 (TAL-922).
+    await expect(page.locator('.live-run-elapsed')).toHaveText('1m')
     await expect(label).toHaveCSS('animation-name', 'reasoning-title-glow')
     // background-clip:text paints only inside the box, so it must span the font's full ascent and descent.
     const { box, glyphs } = await label.evaluate((el) => {

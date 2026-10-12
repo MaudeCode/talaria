@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "While a response runs, the status chip above the composer reads \"Working\" with the elapsed time (\"42s\", \"5m\", \"1h 30m\"), counted from when the run started on the server, in both the app and Talaria Web. In the app, the chip now also shows while you are at the bottom of the chat, replacing the breathing dot.",
+      "highlight": false,
+      "components": ["app", "web"]
+    }
+  ]
+}

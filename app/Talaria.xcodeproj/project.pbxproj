@@ -233,7 +233,6 @@
 		C100A0000000000000000001 /* RelayConnectionSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C100A0000000000000000101 /* RelayConnectionSettingsView.swift */; };
 		C107O0000000000000000001 /* ChatScrollObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000101 /* ChatScrollObserver.swift */; };
 		C107O0000000000000000002 /* ChatVerticalScrollAxisGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000102 /* ChatVerticalScrollAxisGuard.swift */; };
-		C107O0000000000000000003 /* AssistantTypingIndicatorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000103 /* AssistantTypingIndicatorView.swift */; };
 		C107O0000000000000000004 /* BottomComposerMaterialFade.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000104 /* BottomComposerMaterialFade.swift */; };
 		C107O0000000000000000006 /* ChatTranscriptLoadingSkeletonView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000106 /* ChatTranscriptLoadingSkeletonView.swift */; };
 		C107O0000000000000000007 /* ChatTranscriptLoadingSkeletonRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000107 /* ChatTranscriptLoadingSkeletonRow.swift */; };
@@ -651,7 +650,6 @@
 		C100A0000000000000000101 /* RelayConnectionSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayConnectionSettingsView.swift; sourceTree = "<group>"; };
 		C107O0000000000000000101 /* ChatScrollObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatScrollObserver.swift; sourceTree = "<group>"; };
 		C107O0000000000000000102 /* ChatVerticalScrollAxisGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatVerticalScrollAxisGuard.swift; sourceTree = "<group>"; };
-		C107O0000000000000000103 /* AssistantTypingIndicatorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantTypingIndicatorView.swift; sourceTree = "<group>"; };
 		C107O0000000000000000104 /* BottomComposerMaterialFade.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomComposerMaterialFade.swift; sourceTree = "<group>"; };
 		C107O0000000000000000106 /* ChatTranscriptLoadingSkeletonView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTranscriptLoadingSkeletonView.swift; sourceTree = "<group>"; };
 		C107O0000000000000000107 /* ChatTranscriptLoadingSkeletonRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTranscriptLoadingSkeletonRow.swift; sourceTree = "<group>"; };
@@ -1145,7 +1143,6 @@
 				C05100000000000000000014 /* ChatTranscriptSupportingViews.swift */,
 				C107O0000000000000000101 /* ChatScrollObserver.swift */,
 				C107O0000000000000000102 /* ChatVerticalScrollAxisGuard.swift */,
-				C107O0000000000000000103 /* AssistantTypingIndicatorView.swift */,
 				C107O0000000000000000104 /* BottomComposerMaterialFade.swift */,
 				C107O0000000000000000106 /* ChatTranscriptLoadingSkeletonView.swift */,
 				C107O0000000000000000107 /* ChatTranscriptLoadingSkeletonRow.swift */,
@@ -1740,7 +1737,6 @@
 				C23400000000000000000003 /* StreamingLabView.swift in Sources */,
 				C107O0000000000000000001 /* ChatScrollObserver.swift in Sources */,
 				C107O0000000000000000002 /* ChatVerticalScrollAxisGuard.swift in Sources */,
-				C107O0000000000000000003 /* AssistantTypingIndicatorView.swift in Sources */,
 				C107O0000000000000000004 /* BottomComposerMaterialFade.swift in Sources */,
 				C107O0000000000000000006 /* ChatTranscriptLoadingSkeletonView.swift in Sources */,
 				C107O0000000000000000007 /* ChatTranscriptLoadingSkeletonRow.swift in Sources */,
