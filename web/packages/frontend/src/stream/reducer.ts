@@ -122,14 +122,15 @@ export function isTerminal(status: TurnStatus): boolean {
   return TERMINAL.has(status)
 }
 
-/** The server's run start in ms, or `fallback` until the server reports one. */
-function runStart(serverStartedAt: number | null | undefined, fallback: number): number {
-  return serverStartedAt == null ? fallback : serverStartedAt * 1000
+/** The server's run start in ms, clamped to this device's clock so a server clock ahead of it never holds the timer at
+ *  0:00; `fallback` until the server reports a usable one. */
+function runStart(serverStartedAt: number | null | undefined, fallback: number, now: number): number {
+  return serverStartedAt != null && serverStartedAt > 0 ? Math.min(serverStartedAt * 1000, now) : fallback
 }
 
 function newTurn(sessionId: string, streamId: string, now: number, serverStartedAt?: number | null): LiveTurn {
   return {
-    sessionId, streamId, turnId: null, userMessageId: null, userText: '', startedAt: runStart(serverStartedAt, now), status: 'starting',
+    sessionId, streamId, turnId: null, userMessageId: null, userText: '', startedAt: runStart(serverStartedAt, now, now), status: 'starting',
     segments: [], tools: {}, toolOrder: [], reasoningText: '', reasoningTitles: [], lastEventId: '', lastSeq: 0,
     usage: null, tps: null, contextStatus: null, warning: null, error: null, cancelledMessage: null, approval: null, clarify: null,
     pendingSteers: [], closedSteerIds: [], compression: null, title: null, doneSession: null, doneAt: null, streamEnded: false, goal: null, replayed: false, claimsPersistedRows: true,
@@ -311,7 +312,7 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
     case 'attach': {
       const existing = state.turns[action.sessionId]
       if (existing?.streamId === action.streamId && existing && !isTerminal(existing.status)) {
-        return { turns: { ...state.turns, [action.sessionId]: { ...existing, status: 'reconnecting', replayed: action.replay, startedAt: runStart(action.serverStartedAt, existing.startedAt) } } }
+        return { turns: { ...state.turns, [action.sessionId]: { ...existing, status: 'reconnecting', replayed: action.replay, startedAt: runStart(action.serverStartedAt, existing.startedAt, action.now) } } }
       }
       return { turns: { ...state.turns, [action.sessionId]: { ...newTurn(action.sessionId, action.streamId, action.now, action.serverStartedAt), status: 'connecting', replayed: action.replay, claimsPersistedRows: action.replay } } }
     }

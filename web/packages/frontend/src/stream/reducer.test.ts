@@ -267,6 +267,10 @@ describe('stream reducer: every lifecycle exit', () => {
     expect(start(1_700_000_000)).toBe(1_700_000_000_000)
     expect(start(null)).toBe(now)
     expect(start(undefined)).toBe(now)
+    expect(start(0)).toBe(now)
+    expect(start(Number.NaN)).toBe(now)
+    // A server clock ahead of this device still starts the timer now, not at a future instant.
+    expect(start(1_700_000_500)).toBe(now)
     let s = streamReducer(initialStreamState, { type: 'attach', sessionId: SID, streamId: STREAM, now, replay: true, serverStartedAt: 1_700_000_000 })
     expect(s.turns[SID]!.startedAt).toBe(1_700_000_000_000)
     s = streamReducer(s, { type: 'attach', sessionId: SID, streamId: STREAM, now: now + 5000, replay: true })
