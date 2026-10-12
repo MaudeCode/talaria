@@ -123,12 +123,14 @@ question "What does `<repo>` `<base>..<candidate>` need from Talaria?". That
 skill dedupes against open and recent tickets, branches, and PRs, decides `sf`
 readiness, and reads tickets back. It is a user-level skill from
 `kiliantyler/skills`, not part of this repository. When it is not installed,
-file nothing and list every bug and feature under "Held for approval" instead.
+file nothing and list every bug, feature, and support ticket under "Held for
+approval" instead.
 On top of its rules:
 
 - Attach the workspace `upstream` label and the consumer's scope: `web` for the
   Agent and WebUI, `app` for Hermex. Add `contracts` when the change touches
-  `web/packages/contracts`.
+  `web/packages/contracts`. Every ticket a Hermes Agent review files or comments
+  on also gets `agent-compat`.
 - Put the upstream release tag and commit, PR, or blob links (at exact SHAs) in
   the body.
 - Follow the server-owned-state rule in the root `AGENTS.md`: client features
@@ -138,16 +140,14 @@ On top of its rules:
 - When a ticket adds a server field that a client it does not cover must render,
   file that client's adoption ticket in the same run, blocked by the server
   ticket.
-- **Hermes Agent release tag only:** file one "Support Hermes Agent `<tag>` and
-  pin the Web sidecar to it" ticket (`web`, `upstream`), blocked by every
-  **bug** ticket filed or commented on in this run. Features do not block it:
-  they use the release, they are not needed to run on it. Its acceptance
-  criteria: `scripts/check-agent-compatibility.py --release <tag>` passes,
+- For a Hermes Agent release tag, file one **support ticket**, "Support Hermes
+  Agent `<tag>` and pin the Web sidecar to it", even when nothing blocks it.
+  Every **bug** ticket this run files or comments on blocks it, as does each
+  held finding once approved and filed as a bug. Its acceptance criteria:
+  `scripts/check-agent-compatibility.py --release <tag>` passes,
   `web/sidecar/agent_support.json` holds the newest three releases, and
-  `web/sidecar/agent_dependency.json` pins `<tag>`. File it even when no bug
-  blocks it; when an open support ticket for `<tag>` exists, add this run's
-  blockers to it instead. A `--candidate main` review files none, since main is never
-  supported.
+  `web/sidecar/agent_dependency.json` pins `<tag>`. An open support ticket for
+  `<tag>` takes this run's blockers instead.
 
 File nothing for a **hold**. List it in the report with its evidence and the
 ticket you would file. The owner approves held findings by replying in the
@@ -158,7 +158,7 @@ review thread, and only then is that ticket filed.
 - **Identity:** upstream, base and candidate tags with SHAs, compare link, and
   non-merge commit count.
 - **Filed:** each ticket link and the finding it covers, plus tickets commented
-  on and the Agent support ticket with its blockers.
+  on, and for a Hermes Agent release the support ticket with its blockers.
 - **Held for approval:** numbered so the owner can approve by number.
 - **Already present and irrelevant:** grouped summaries.
 - **Uncertainty:** only what the review could not resolve, each with the step
