@@ -122,6 +122,35 @@ describe('workspace checkpoints through the Agent (TAL-913)', () => {
     expect((await restoring).status).toBe(200)
   })
 
+  it('runs checkpoint operations on one profile store one at a time, across workspaces', async () => {
+    const second = join(s.state, 'second-ws')
+    mkdirSync(second, { recursive: true })
+    expect((await post(s, '/api/workspaces/add', { path: second })).status).toBe(200)
+    sidecar.calls.length = 0
+    let release!: () => void
+    const gate = new Promise<void>((r) => { release = r })
+    let inFlight = 0
+    let overlapped = false
+    sidecar.respond('checkpoints.diff', async (params) => {
+      inFlight += 1
+      if (inFlight > 1) overlapped = true
+      if (params.workspace === ws) await gate
+      inFlight -= 1
+      return { stat: '', diff: DIFF }
+    })
+    const first = s.get(`/api/rollback/diff?workspace=${encodeURIComponent(ws)}&checkpoint=${HASH}`)
+    await vi.waitFor(() => { expect(sidecar.calls).toHaveLength(1) })
+    const next = s.get(`/api/rollback/diff?workspace=${encodeURIComponent(realpathSync(second))}&checkpoint=${HASH}`)
+    await new Promise((r) => setTimeout(r, 50))
+    // The second waits for the first instead of reaching the shared store alongside it.
+    expect(sidecar.calls).toHaveLength(1)
+    release()
+    expect((await first).status).toBe(200)
+    expect((await next).status).toBe(200)
+    expect(overlapped).toBe(false)
+    expect(sidecar.calls.map((c) => (c.params as Json).workspace)).toEqual([ws, realpathSync(second)])
+  })
+
   it('refuses a checkpoint id or workspace it cannot vouch for before asking the Agent', async () => {
     expect((await s.get(`/api/rollback/diff?workspace=${encodeURIComponent(ws)}&checkpoint=../abc123`)).status).toBe(400)
     expect((await s.get(`/api/rollback/list?workspace=${encodeURIComponent(s.state)}`)).status).toBe(400)

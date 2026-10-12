@@ -30,6 +30,8 @@ export function validateCheckpointId(checkpoint: unknown): string {
 export class RollbackStore {
   /** Profile homes whose checkpoint store a diff or restore is using, with the number of holders. */
   private readonly busyStores = new Map<string, number>()
+  /** Each profile store's last queued operation; the next one starts after it settles. */
+  private readonly storeQueues = new Map<string, Promise<unknown>>()
 
   constructor(readonly deps: RollbackDeps) {}
 
@@ -40,19 +42,24 @@ export class RollbackStore {
 
   /**
    * Run `fn` with the profile's checkpoint store to itself. The Agent keeps one store per profile and its store lock does
-   * not wait, so a turn capturing a checkpoint anywhere in the profile meanwhile would skip it. Refused while a run in the
-   * profile is active; the check and the hold happen in the same tick, and turn admission refuses while the hold lasts.
+   * not wait (older Agents have none), so a turn capturing a checkpoint, or a second diff or restore, anywhere in the
+   * profile meanwhile would fail or race. Refused while a run in the profile is active; the check and the hold happen in
+   * the same tick, turn admission refuses while the hold lasts, and operations on one store run one after another.
    */
   private async exclusive<T>(fn: (profileHome: string) => Promise<T>): Promise<T> {
     const home = this.deps.profileHome()
     if (this.deps.activeRunInProfile(home)) throw new GitWorkspaceError('A session run is active in this profile. Wait for it to finish before comparing or restoring checkpoints.', 'active_stream')
     this.busyStores.set(home, (this.busyStores.get(home) ?? 0) + 1)
+    const run = (this.storeQueues.get(home) ?? Promise.resolve()).then(() => fn(home))
+    const settled = run.catch(() => undefined)
+    this.storeQueues.set(home, settled)
     try {
-      return await fn(home)
+      return await run
     } finally {
       const left = (this.busyStores.get(home) ?? 1) - 1
       if (left > 0) this.busyStores.set(home, left)
       else this.busyStores.delete(home)
+      if (this.storeQueues.get(home) === settled) this.storeQueues.delete(home)
     }
   }
 
