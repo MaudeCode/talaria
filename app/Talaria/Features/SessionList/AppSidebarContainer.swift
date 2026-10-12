@@ -228,6 +228,8 @@ final class AppSidebarController: UIViewController {
     private func reflect(isPresented: Bool) {
         tint.isUserInteractionEnabled = isPresented
         contentHost.view.accessibilityElementsHidden = isPresented
+        // The closed sidebar sits under the screen; VoiceOver must not reach it there.
+        sidebarHost.view.accessibilityElementsHidden = !isPresented
         edgePanArbiter.isSidebarPresented = isPresented
     }
 
