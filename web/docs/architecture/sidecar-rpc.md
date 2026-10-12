@@ -116,6 +116,7 @@ under Hermes Agent's context-local home override (`talaria_sidecar/home.py`).
 | `chat` | `start`, `interrupt`, `steer`, `evict_agent` | `start`: `token`, `reasoning`, `interim_assistant`, `tool`, `tool_complete`, `approval`, `clarify`, `clarify_resolved`, `compressing`, `warning`, `status`, `context_status`; the settled transcript, usage, and terminal status come back as the result |
 | `approval`, `clarify` | `approval.pending`, `approval.respond`, `approval.set_yolo`, `clarify.respond` | |
 | `worktree` | `create` | |
+| `checkpoints` | `list`, `diff`, `restore` | |
 | `config` | `get`, `set` | |
 
 What stays in the server, by design: WebUI files and `config.yaml` / `.env`

@@ -4301,6 +4301,99 @@
     ],
     "additionalProperties": false
   },
+  "checkpoints.list": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "checkpoints": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "hash": {
+              "type": "string"
+            },
+            "short_hash": {
+              "type": "string"
+            },
+            "timestamp": {
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            },
+            "files_changed": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "insertions": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "deletions": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "hash",
+            "short_hash",
+            "timestamp",
+            "reason",
+            "files_changed",
+            "insertions",
+            "deletions"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "store": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "checkpoints",
+      "store"
+    ],
+    "additionalProperties": false
+  },
+  "checkpoints.diff": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "stat": {
+        "type": "string"
+      },
+      "diff": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "stat",
+      "diff"
+    ],
+    "additionalProperties": false
+  },
+  "checkpoints.restore": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "restored_to": {
+        "type": "string"
+      },
+      "reason": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "restored_to",
+      "reason"
+    ],
+    "additionalProperties": false
+  },
   "config.get": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

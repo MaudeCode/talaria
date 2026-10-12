@@ -386,7 +386,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   })
   // A working-tree mutation refuses while a run is active anywhere it would change files.
   const git = new GitRunner({ env, activeRunIn: (path) => [...registry.activeRuns.values()].some((run) => Boolean(run.workspace) && pathsOverlap(run.workspace, path)) })
-  const rollback = new RollbackStore({ hermesHome: () => profileHome(activeProfile()), knownWorkspaces: () => workspaces.load(activeProfile()).map((w) => w.path) })
+  const rollback = new RollbackStore({ sidecar: () => sidecar, profileHome: () => profileHome(activeProfile()), knownWorkspaces: () => workspaces.load(activeProfile()).map((w) => w.path) })
   const uploads = new UploadInbox(attachmentRoot)
   const channels = new SessionChannels()
   const pending = new PendingPrompts(events, now)

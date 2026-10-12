@@ -9,7 +9,7 @@ import { REMOTE_WORKSPACE_UNSUPPORTED_CODE, REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE
 import { removeWorktreeForSession, worktreeStatusForSession } from '../workspace/worktrees.js'
 import { isSafeSessionId, type Session } from '../sessions/session.js'
 import { sanitizeError } from '../workspace/media.js'
-import { RollbackInternalError } from '../workspace/rollback.js'
+import { SidecarError } from '../sidecar/client.js'
 import { str } from '../util.js'
 
 const os = implement(gitContract).$context<ApiContext>().use(requestSessionIdGuard)
@@ -88,9 +88,9 @@ function rollbackTarget(ctx: RequestContext, input: { workspace?: string | undef
   return { workspace, allowed: [workspace] }
 }
 
-/** Python rollback handlers: `ValueError` → 400 with the message, anything else → 500 with the sanitised text. */
+/** A request or Agent refusal (unknown checkpoint, uncaptured nested repository) is a 400 with its message; a sidecar that cannot answer is a 503/500. */
 function rollbackError(error: unknown): HttpError {
-  if (error instanceof RollbackInternalError) return new HttpError(500, sanitizeError(error))
+  if (error instanceof SidecarError && error.condition !== 'checkpoint_failed') return new HttpError(error.condition === 'sidecar_unavailable' ? 503 : 500, sanitizeError(error), { condition: error.condition })
   return new HttpError(400, (error as Error).message)
 }
 
@@ -169,34 +169,35 @@ export const gitRouter = os.router({
     })),
   },
   rollback: {
-    list: os.rollback.list.handler(({ input, context: { ctx } }) => {
+    list: os.rollback.list.handler(async ({ input, context: { ctx } }) => {
       const { workspace, allowed } = rollbackTarget(ctx, input)
       if (!workspace) throw new HttpError(400, 'workspace query parameter is required')
       try {
-        return ctx.deps.rollback.list(workspace, allowed) as never
+        return await ctx.deps.rollback.list(workspace, allowed) as never
       } catch (error) {
         throw rollbackError(error)
       }
     }),
-    diff: os.rollback.diff.handler(({ input, context: { ctx } }) => {
+    diff: os.rollback.diff.handler(async ({ input, context: { ctx } }) => {
       const checkpoint = input.checkpoint ?? input.id
       const { workspace, allowed } = rollbackTarget(ctx, input)
       if (!workspace || !checkpoint) throw new HttpError(400, 'workspace and checkpoint query parameters are required')
       try {
-        return ctx.deps.rollback.diff(workspace, checkpoint, allowed) as never
+        return await ctx.deps.rollback.diff(workspace, checkpoint, allowed) as never
       } catch (error) {
         throw rollbackError(error)
       }
     }),
-    restore: os.rollback.restore.handler(({ input, context: { ctx } }) => {
+    restore: os.rollback.restore.handler(async ({ input, context: { ctx } }) => {
       if (!Object.keys(input).length) throw new HttpError(400, 'request body is required')
       const checkpoint = input.checkpoint ?? input.id
       const { workspace, allowed } = rollbackTarget(ctx, input)
       if (!workspace || !checkpoint) throw new HttpError(400, 'workspace and checkpoint are required')
-      // The restore is synchronous, so refusing while Git holds the workspace keeps the two from overlapping.
+      // Refused while Git holds the workspace, and held for the whole restore so no run, terminal, file write, or Git
+      // mutation starts there while the Agent rewrites its files.
       if (ctx.deps.git.workspaceBusy(workspace)) throw new HttpError(409, WORKSPACE_BUSY_MESSAGE)
       try {
-        return ctx.deps.rollback.restore(workspace, checkpoint, allowed) as never
+        return await ctx.deps.git.holdWorkspace(workspace, () => ctx.deps.rollback.restore(workspace, checkpoint, allowed)) as never
       } catch (error) {
         throw rollbackError(error)
       }

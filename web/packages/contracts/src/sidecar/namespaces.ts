@@ -292,6 +292,15 @@ export const CONFIG_METHODS = {
 export const WORKTREE_METHODS = {
   'worktree.create': { params: ProfileHomeParams.extend({ repo_root: z.string().min(1) }), result: z.object({ path: z.string(), branch: z.string(), repo_root: z.string(), base: z.string().nullable() }) },
 } as const
+/** TAL-913: a workspace's checkpoints, read and restored through the Agent's `CheckpointManager`; `store` is its shared git store. */
+const CheckpointTarget = ProfileHomeParams.extend({ workspace: z.string().min(1) })
+export const AgentCheckpointSchema = z.object({ hash: z.string(), short_hash: z.string(), timestamp: z.string(), reason: z.string(), files_changed: z.number().int(), insertions: z.number().int(), deletions: z.number().int() })
+export const CHECKPOINTS_METHODS = {
+  'checkpoints.list': { params: CheckpointTarget, result: z.object({ checkpoints: z.array(AgentCheckpointSchema), store: z.string() }) },
+  /** `diff` is `git diff <checkpoint> --cached` over the workspace: `a/` is the checkpoint, `b/` the files now. */
+  'checkpoints.diff': { params: CheckpointTarget.extend({ checkpoint: z.string().min(1) }), result: z.object({ stat: z.string(), diff: z.string() }) },
+  'checkpoints.restore': { params: CheckpointTarget.extend({ checkpoint: z.string().min(1) }), result: z.object({ restored_to: z.string(), reason: z.string() }) },
+} as const
 // ── chat / approval / clarify ──────────────────────────────────────────
 export const ChatUsageSchema = z.object({ prompt_tokens: z.number().int(), completion_tokens: z.number().int(), cache_read_tokens: z.number().int(), cache_write_tokens: z.number().int(), estimated_cost_usd: z.number().nullable() })
 /**
