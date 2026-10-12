@@ -51,8 +51,7 @@ the view models and presentation logic behind every screen (chat, sessions,
 Kanban, settings, workspace, auth). The App, the share extension and the Live
 Activity widget link it. Its tests run on macOS without a simulator; CI runs
 them on every App change, beside the App build for testing and the
-simulator-hosted `TalariaTests` (one shard; releases run it too). No UI test
-runs in CI (TAL-877):
+simulator-hosted `TalariaTests` (one shard; releases run it too):
 
 ```zsh
 swift test --package-path TalariaKit
@@ -80,8 +79,7 @@ CI measures coverage on the same `swift test` run it gates on and reports it in
 the package tests job summary: line and function coverage of
 `TalariaKit/Sources` in total and per top-level directory. Package checkouts,
 generated resource accessors and the tests themselves are excluded. The
-`app-package-coverage` artifact (`ui-suite-package-coverage` from the full
-suite) keeps `coverage.txt`, the per-file table, and `coverage.json`, the
+`app-package-coverage` artifact keeps `coverage.txt`, the per-file table, and `coverage.json`, the
 per-line `llvm-cov export`; it is uploaded after failed runs too and kept for 14
 days. Simulator-hosted App target code (`Talaria/`, the extensions) runs in the
 hosted unit tests shard and is not in the number.
@@ -123,18 +121,19 @@ Agent/MCP flow:
   It reuses the pool's runtime/model. `--refresh` replaces the whole pool only
   when every device is unleased and shut down. See the
   [shared pool guide](docs/ios-simulator-pool.md) for cross-project adoption.
-- Use `scripts/test-ios [test-identifier ...]` for XCTest validation. It serializes
+- Use `scripts/test-ios [test-identifier ...]` for XCTest validation; with no
+  identifier it runs `TalariaTests`. It serializes
   XCTest within one worktree; worktrees run concurrently, each on its own lease
   from the cross-project pool, which erases each device on release. If the test host never connects ("The test
   runner hung before establishing connection") and no test case failed, the
   runner re-leases a device and retries that pass exactly once; real failures never retry.
-  XCUI launches a DEBUG-only local fixture under the isolated `.xctest` app and app-group identity,
-  with in-memory authentication, draft, and cache state. It does not read simulator
-  login state or contact an external server. A skipped functional `TalariaUITests`
-  test fails the run. Performance-only UI measurements run on `main` CI instead
-  of every pull request; they remain part of the full local suite. See
+  Tests run in process under the isolated `.xctest` app and app-group identity,
+  with in-memory authentication, draft, and cache state; they do not read
+  simulator login state or contact an external server. See
   [performance budgets](docs/performance-budgets.md) for what is measured, the
-  baselines behind each threshold, and how to compare a run.
+  baselines behind each threshold, and how to compare a run. Flows that need the
+  system to deliver a gesture, sheet or launch are checked on a phone:
+  [phone checks](docs/phone-checks.md).
 - Use `scripts/run-ios` for manual worktree testing. It leases one pool simulator,
   builds the isolated `.xctest` app, launches the deterministic fixture, and opens
   Simulator. Keep the command running for the manual session, then press Control-C
@@ -184,7 +183,6 @@ Recognized variables:
 
 - `IOS_SIMULATOR_POOL_SIZE` — simulator count for `scripts/setup-ios-test-pool`.
 - `IOS_SIMULATOR_ID` — shared simulator selection, with `TALARIA_SIMULATOR_ID` as an alias for `scripts/test-ios`.
-- `TALARIA_TEST_WORKER_COUNT` — parallel UI test workers for `scripts/test-ios` (default `4`; CI instead splits the suite across simulators with `ci/test_shards.py`, one worker each). Xcode clones the leased simulator per worker. `TalariaTests` runs first in its own pass on the leased device without clones: a clone that launches the unit-test host while Xcode installs the UI runner there loses the runner. Unfiltered runs also skip the measurement-only performance UI classes, as CI does; name a class to run it. Classes that need an iPad or a Pro Max (`DEVICE_CLASSES` in `ci/test_shards.py`) never run on the leased iPhone, where they would skip: they run last, each on an available local simulator whose name matches (`iPad …`, `… Pro Max`), and CI's catch-all shard runs them on the hosted image's matching simulator.
 - `TALARIA_LIVE_CONTRACT_RESPONSES` — path to a live-response manifest for the TalariaKit live decoding test, supplied by `scripts/validate-upstream-contract` and CI, not a persistent local setting.
 - `TALARIA_DEVICE_ID` — physical iPhone selection for `scripts/run-ios-device`,
   as either the hardware UDID or the CoreDevice identifier from

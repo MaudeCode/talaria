@@ -1,43 +1,13 @@
 #if DEBUG
-import AppIntents
 import Foundation
 import os
-import notify
 import UIKit
 import TalariaKit
 
 @MainActor
 struct UITestFixtureEnvironment {
     nonisolated static let launchArgument = UITestFixtureLaunch.launchArgument
-    nonisolated static let relayConnectedArgument = UITestFixtureLaunch.relayConnectedArgument
     nonisolated static let approvalBypassArgument = "--ui-test-approval-bypass"
-    /// Its Darwin notify state turns 1 when the fixture answers a session's approval-bypass read, so a UI test can wait
-    /// for the App to learn the state instead of for the composer, which renders first (TAL-664). A state, unlike a
-    /// post seen through `notify_check`, has no false positive.
-    nonisolated static let approvalBypassAnsweredName = "dev.kil.talaria.ui-test.approval-bypass-answered"
-    nonisolated static let reauthenticationArgument = "--ui-test-reauthentication"
-    nonisolated static let trustedReauthenticationArgument = "--ui-test-reauthentication-trusted"
-    /// Launches with no saved server so the fixture lands on onboarding.
-    nonisolated static let onboardingArgument = "--ui-test-onboarding"
-    /// Fails every server-list Keychain write after launch, so a UI test can see an
-    /// identity save fail and stay retryable (TAL-123).
-    nonisolated static let identitySaveFailsArgument = "--ui-test-identity-save-fails"
-    /// Runs the "New Chat" App Intent at launch, so a UI test can exercise the real
-    /// intent → `AppIntentRouter` → `ContentView` drain path (TAL-77). XCUITest has no
-    /// supported way to run an App Intent through Shortcuts or Siri deterministically.
-    nonisolated static let newChatIntentArgument = "--ui-test-intent-new-chat"
-    /// Writes one shared-import draft while the app is backgrounded, the way the share
-    /// extension does, so a UI test can reopen through `talaria://share` and see it import.
-    nonisolated static let pendingShareArgument = "--ui-test-pending-share"
-    nonisolated static let pendingShareDraft = "FixtureSharedDraft"
-    /// Restores two staged photos into the fixture chat's draft, so the composer's attachment
-    /// strip is reached through draft restore rather than the out-of-process Photos picker,
-    /// which can stay on "Loading…" on a starved hosted runner (TAL-649).
-    nonisolated static let draftAttachmentsArgument = "--ui-test-draft-attachments"
-    /// Scales the deterministic transcript and session list up for the performance
-    /// budgets (TAL-75). The functional fixtures keep the small counts so their
-    /// scrolling and layout assertions stay fast.
-    nonisolated static let denseArgument = "--ui-test-dense"
     /// Serves a transcript of very long bodies in the server's collapsed shape (TAL-456), the
     /// shape that ran the App out of memory before it rendered excerpts.
     nonisolated static let longBodiesArgument = "--ui-test-long-bodies"
@@ -53,39 +23,12 @@ struct UITestFixtureEnvironment {
     nonisolated static let compressionReferenceArgument = "--ui-test-compression-reference"
     /// Serves the fixture chat as a branch of "Fixture Session 01", which opens with its own transcript (TAL-454).
     nonisolated static let branchedFromArgument = "--ui-test-branched-from"
-    /// TAL-149: 100 messages paged by `msg_before`, each reply with a Worked disclosure, so Load Older has history.
-    nonisolated static let olderMessagesArgument = "--ui-test-older-messages"
-    /// Adds a pinned long-titled chat and scheduled and webhook groups whose server counts say
-    /// more exist than are listed, so the sidebar's row and group chrome can be inspected (TAL-482).
-    nonisolated static let sidebarVarietyArgument = "--ui-test-sidebar-variety"
-    /// Serves one project and lists a chat created in a project, so a UI test can start a chat
-    /// under a project filter and find it there (TAL-455).
-    nonisolated static let projectsArgument = "--ui-test-projects"
-    nonisolated static let updateNotificationsArgument = "--ui-test-update-notifications"
-    /// Offers a server update that, once applied, restarts and then fails with the server's own
-    /// explanation, so Settings can be seen following the update's notification (TAL-558).
-    nonisolated static let serverUpdateArgument = "--ui-test-server-update"
     /// Answers the chat's first transcript load, so the cache exists, then holds every reopen
     /// until the test releases it, so "Syncing messages" stays over the cached rows (TAL-436).
     nonisolated static let holdTranscriptReloadsArgument = "--ui-test-hold-transcript-reloads"
-    /// Holds only the chat's first transcript load, so a relaunch shows the transcript it cached
-    /// before the server answers, and every later load (rejoining a run, settling it) goes through
-    /// (TAL-80).
-    nonisolated static let holdFirstTranscriptLoadArgument = "--ui-test-hold-first-transcript-load"
-    /// Changes server data while the app is in the background, the way another client or a
-    /// scheduled run would: the fixture chat gains a reply and Tasks gains a job, so UI tests can
-    /// see open screens catch up on return (TAL-434, TAL-435).
-    nonisolated static let changeWhileBackgroundedArgument = "--ui-test-change-while-backgrounded"
-    /// Keeps the offline cache and cached responses across relaunches (TAL-437); without it each
-    /// fixture launch starts with empty caches. The reset argument empties them first.
-    nonisolated static let persistentCacheArgument = "--ui-test-persistent-cache"
-    nonisolated static let resetPersistentCacheArgument = "--ui-test-reset-persistent-cache"
     /// Holds every `/api/sessions` read until the test releases it, so a relaunch shows what it
     /// painted from cache (TAL-437).
     nonisolated static let holdSessionListArgument = "--ui-test-hold-session-list"
-    /// Holds `/api/session/new` until the test releases it, so a new chat's composer can be seen
-    /// and typed in while its session is still starting (TAL-636).
-    nonisolated static let holdSessionCreationArgument = "--ui-test-hold-session-creation"
     /// Fails the first `/api/session/new` with a server error, so a UI test can see a new chat's
     /// composer report it and retry (TAL-636).
     nonisolated static let failFirstSessionCreationArgument = "--ui-test-fail-first-session-creation"
@@ -93,36 +36,16 @@ struct UITestFixtureEnvironment {
     /// out while a slow runner snapshots the list before tapping Undo (TAL-650). TalariaKit's
     /// `SessionListArchiveUndoTests` covers the expiry itself.
     nonisolated static let holdArchiveUndoArgument = "--ui-test-hold-archive-undo"
+    /// Opens the Chats list with its update notifications sheet up.
+    nonisolated static let updateNotificationsArgument = "--ui-test-update-notifications"
 
-    nonisolated static var keepsCachesAcrossLaunches: Bool {
-        let arguments = ProcessInfo.processInfo.arguments
-        return arguments.contains(persistentCacheArgument) && !arguments.contains(resetPersistentCacheArgument)
-    }
-
-    /// The fixture's response-cache directory, emptied once per launch unless a journey keeps it.
+    /// The fixture's response-cache directory, emptied once per launch.
     nonisolated static let responseCacheRoot: URL? = {
         guard ProcessInfo.processInfo.arguments.contains(launchArgument) else { return nil }
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("ui-test-response-cache", isDirectory: true)
-        if !keepsCachesAcrossLaunches { try? FileManager.default.removeItem(at: root) }
+        try? FileManager.default.removeItem(at: root)
         return root
     }()
-
-    /// A disk store for the offline cache when a journey keeps caches across relaunches;
-    /// nil keeps the fixture's in-memory store.
-    nonisolated static let persistentCacheStoreURL: URL? = {
-        let arguments = ProcessInfo.processInfo.arguments
-        guard arguments.contains(persistentCacheArgument) else { return nil }
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("ui-test-cache.store")
-        if arguments.contains(resetPersistentCacheArgument) {
-            for suffix in ["", "-shm", "-wal"] {
-                try? FileManager.default.removeItem(at: URL(fileURLWithPath: url.path + suffix))
-            }
-        }
-        return url
-    }()
-    nonisolated static var isDense: Bool {
-        ProcessInfo.processInfo.arguments.contains(denseArgument)
-    }
     nonisolated static var hasLongBodies: Bool {
         ProcessInfo.processInfo.arguments.contains(longBodiesArgument)
     }
@@ -144,17 +67,7 @@ struct UITestFixtureEnvironment {
     nonisolated static var hasBranchedFrom: Bool {
         ProcessInfo.processInfo.arguments.contains(branchedFromArgument)
     }
-    nonisolated static var hasOlderMessages: Bool {
-        ProcessInfo.processInfo.arguments.contains(olderMessagesArgument)
-    }
-    nonisolated static var hasSidebarVariety: Bool {
-        ProcessInfo.processInfo.arguments.contains(sidebarVarietyArgument)
-    }
-    nonisolated static var hasProjects: Bool {
-        ProcessInfo.processInfo.arguments.contains(projectsArgument)
-    }
     nonisolated static let serverURL = UITestFixtureLaunch.serverURL
-    nonisolated static var relayCredentials: TalariaRelayCredentials { UITestFixtureLaunch.relayCredentials }
 
     let authManager: AuthManager
     let client: APIClient
@@ -168,10 +81,6 @@ struct UITestFixtureEnvironment {
             UITestChatFixtureState.shared.startChat()
             initialDrafts[fixtureSessionDraft] = ChatDraft(text: "Ordinary fixture draft")
         }
-        let stagedPhotosDraft = ProcessInfo.processInfo.arguments.contains(draftAttachmentsArgument) ? fixtureSessionDraft : nil
-        UITestFixtureHold.shared.listen()
-        if UITestLifecycleFixture.isEnabled { UITestLifecycleServer.shared.listen() }
-        UITestFixtureURLProtocol.WorkspaceFixture.listenForGitWriteGrant()
         // Theme is a standard-defaults preference a test can change, so every fixture
         // launch starts from the same appearance even if a previous run left it switched.
         UserDefaults.standard.set(AppTheme.system.rawValue, forKey: AppTheme.storageKey)
@@ -180,8 +89,7 @@ struct UITestFixtureEnvironment {
         if UIApplication.shared.alternateIconName != nil {
             UIApplication.shared.setAlternateIconName(nil)
         }
-        // The chat toolbar's Files and Git controls are hideable in Settings, and the
-        // workspace tests reach their destinations through them, so restore both.
+        // The chat toolbar's Files and Git controls are hideable in Settings, so every launch shows both.
         UserDefaults.standard.set(true, forKey: SectionVisibilitySettings.chatFilesKey)
         UserDefaults.standard.set(true, forKey: SectionVisibilitySettings.chatGitKey)
         // Tests reach the composer's controls through its strip, so every launch starts with it shown.
@@ -195,7 +103,7 @@ struct UITestFixtureEnvironment {
             ComposerSTTProviderPreference.defaultValue.rawValue,
             forKey: ComposerSTTProviderPreference.storageKey
         )
-        UserDefaults.standard.set(chatScenario == nil && !UITestLifecycleFixture.isEnabled, forKey: StreamedTextAnimationSettings.isEnabledKey)
+        UserDefaults.standard.set(chatScenario == nil, forKey: StreamedTextAnimationSettings.isEnabledKey)
         UserDefaults.standard.set(true, forKey: ChatTranscriptDisplaySettings.showsThinkingAndToolCardsKey)
         UserDefaults.standard.set(
             chatScenario != nil,
@@ -222,12 +130,6 @@ struct UITestFixtureEnvironment {
         UserDefaults.standard.removeObject(forKey: SessionSidebarDisclosureSettings.scheduledSessionsAreExpandedKey)
         UserDefaults.standard.removeObject(forKey: SessionSidebarDisclosureSettings.webhookSessionsAreExpandedKey)
 
-        prepareSharedImportInbox()
-        UITestFixtureURLProtocol.prepareChangeWhileBackgrounded()
-        if ProcessInfo.processInfo.arguments.contains(newChatIntentArgument) {
-            Task { _ = try? await NewChatIntent().perform() }
-        }
-
         let keychain = UITestFixtureKeychainStore(serverURL: serverURL)
         let defaultsName = "dev.kil.talaria.ui-test-fixture"
         let defaults = UserDefaults(suiteName: defaultsName)!
@@ -243,66 +145,28 @@ struct UITestFixtureEnvironment {
             profileEntityCache: ProfileEntityCache(defaults: nil),
             serverRegistry: ServerRegistry(keychain: keychain, identityDefaults: defaults)
         )
-        keychain.failsServerListSaves = ProcessInfo.processInfo.arguments.contains(identitySaveFailsArgument)
         return UITestFixtureEnvironment(
             authManager: authManager,
             client: client,
-            draftStore: ChatDraftStore(
-                persistence: UITestFixtureDraftPersistence(drafts: initialDrafts, stagedPhotosDraft: stagedPhotosDraft)
-            )
+            draftStore: ChatDraftStore(persistence: UITestFixtureDraftPersistence(drafts: initialDrafts))
         )
     }
 }
 
-private extension UITestFixtureEnvironment {
-    /// The shared-import inbox lives in the app group, outside the app's own storage, so a
-    /// draft left by an earlier run would replay into this launch. Reuses the share host's
-    /// reset (TAL-81), which removes the whole inbox: draining only the pending items would
-    /// leave a record an interrupted run reserved, and an identical draft deduplicates
-    /// against a reservation still holding its lease. Only this journey resets, so a test
-    /// that relaunches to inspect what consumption left behind still sees it.
-    static func prepareSharedImportInbox() {
-        guard ProcessInfo.processInfo.arguments.contains(pendingShareArgument) else { return }
-        ShareExtensionUITestHost.resetSharedState()
-        guard let inbox = TalariaShareDraft.containerURL() else { return }
-        // The extension writes its draft while Talaria is in the background, so the fixture
-        // does too. Seeding at launch instead would let the initial import consume the draft
-        // before any share URL was delivered, leaving the URL nothing to do.
-        NotificationCenter.default.addObserver(
-            forName: UIApplication.didEnterBackgroundNotification,
-            object: nil,
-            queue: .main
-        ) { _ in
-            try? TalariaShareDraft.savePendingDraft(pendingShareDraft, in: inbox)
-        }
-    }
-}
-
-/// Responses held until the UI test posts `releaseNotification`, so a loading state stays up however long a
-/// slow runner takes to find it (TAL-401). A release answers only the loads held when it lands and is never
-/// banked for a later one, so one launch can hold several screens' loads in turn; the test repeats the release
-/// until what it waits for appears, which also covers a request still on its way (TAL-402).
+/// Responses held until the test calls `release()`, so a loading state stays up however long a slow runner takes
+/// to find it (TAL-401). A release answers only the loads held when it lands and is never banked for a later one, so
+/// one test can hold several screens' loads in turn (TAL-402).
 final class UITestFixtureHold: @unchecked Sendable {
     static let shared = UITestFixtureHold()
-    /// Matches `TalariaUITestCase.releaseHeldLoads` in the UI tests.
-    static let releaseNotification = "dev.kil.talaria.ui-test.release-held-loads"
 
     private let lock = NSLock()
     private var held: [() -> Void] = []
-    private var token: Int32 = 0
-
-    /// Registers at launch, before any screen can render the loading state the test answers.
-    func listen() {
-        notify_register_dispatch(Self.releaseNotification, &token, .global()) { [weak self] _ in
-            self?.release()
-        }
-    }
 
     func hold(_ send: @escaping () -> Void) {
         lock.withLock { held.append(send) }
     }
 
-    /// Sends every held load; hosted tests call it directly instead of posting the notification (TAL-856).
+    /// Sends every held load.
     func release() {
         let loads = lock.withLock {
             defer { held = [] }
@@ -315,20 +179,12 @@ final class UITestFixtureHold: @unchecked Sendable {
 private final class UITestFixtureKeychainStore: KeychainStoring {
     private let lock = NSLock()
     private var values: [String: String]
-    private var failsServerListSavesValue = false
-    var failsServerListSaves: Bool {
-        get { lock.withLock { failsServerListSavesValue } }
-        set { lock.withLock { failsServerListSavesValue = newValue } }
-    }
 
     init(serverURL: URL) {
-        values = ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.onboardingArgument)
-            ? [:]
-            : [KeychainStore.Key.serverURL.rawValue: serverURL.absoluteString]
+        values = [KeychainStore.Key.serverURL.rawValue: serverURL.absoluteString]
     }
 
     func save(_ value: String, forKey key: KeychainStore.Key) throws {
-        if key == .servers, failsServerListSaves { throw CocoaError(.fileWriteUnknown) }
         lock.withLock { values[key.rawValue] = value }
     }
 
@@ -355,31 +211,13 @@ private final class UITestFixtureKeychainStore: KeychainStoring {
 
 private actor UITestFixtureDraftPersistence: ChatDraftPersisting {
     private var drafts: [ChatDraftKey: ChatDraft]
-    /// The draft that gains two staged photos on the first load, which writes their durable
-    /// copies the way staging does.
-    private var stagedPhotosDraft: ChatDraftKey?
 
-    init(drafts: [ChatDraftKey: ChatDraft] = [:], stagedPhotosDraft: ChatDraftKey? = nil) {
+    init(drafts: [ChatDraftKey: ChatDraft] = [:]) {
         self.drafts = drafts
-        self.stagedPhotosDraft = stagedPhotosDraft
     }
 
     func load() async -> [ChatDraftKey: ChatDraft] {
-        if let key = stagedPhotosDraft {
-            stagedPhotosDraft = nil
-            let photo = UIGraphicsImageRenderer(size: CGSize(width: 64, height: 48)).pngData { context in
-                UIColor.systemBlue.setFill()
-                context.fill(CGRect(x: 0, y: 0, width: 64, height: 48))
-            }
-            for index in 1...2 {
-                let name = "fixture-photo-\(index).png"
-                guard let file = try? await ChatDraftAttachmentStore.shared.save(data: photo, suggestedFilename: name) else { continue }
-                drafts[key, default: ChatDraft()].attachments.append(ChatDraftAttachment(pending: PendingAttachment(
-                    name: name, path: "", mime: "image/png", isImage: true, draftFileName: file
-                )))
-            }
-        }
-        return drafts
+        drafts
     }
 
     func write(_ drafts: [ChatDraftKey: ChatDraft]) async throws {
@@ -413,6 +251,21 @@ private final class UITestChatFixtureState: @unchecked Sendable {
     private var steerID: String?
     private var withdrawnSteerID: String?
     private var cancelled = false
+
+    /// A fresh launch's state, for hosted tests that start the fixture once per test (TAL-856).
+    func reset() {
+        condition.lock()
+        started = false
+        settled = false
+        approvalAnswered = false
+        clarificationAnswered = false
+        clarificationAnswers = [:]
+        steerID = nil
+        withdrawnSteerID = nil
+        cancelled = false
+        condition.broadcast()
+        condition.unlock()
+    }
 
     func startChat() {
         condition.lock()
@@ -523,60 +376,44 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     static let sessionTitle = "UI Fixture Session"
     private static let recoveryState = NSLock()
     nonisolated(unsafe) private static var approvalBypassOverride: Bool?
-    private static let approvalBypassAnsweredToken: Int32 = {
-        var token: Int32 = 0
-        notify_register_check(UITestFixtureEnvironment.approvalBypassAnsweredName, &token)
-        return token
-    }()
     /// The session's toolsets as the fixture saved them (TAL-631); nil is the profile's defaults.
     private static let sessionToolsets = OSAllocatedUnfairLock<[String]?>(initialState: nil)
-    nonisolated(unsafe) private static var sessionReads = 0
     nonisolated(unsafe) private static var transcriptReads = 0
-    nonisolated(unsafe) private static var hasChangedWhileBackgrounded = false
-    static let replyFromElsewhere = "FixtureReplyFromElsewhere"
-    nonisolated(unsafe) private static var recovered = false
-    nonisolated(unsafe) private static var urgentNotificationAcknowledged = false
-    nonisolated(unsafe) private static var readUpdateNotificationIDs: Set<String> = ["ui-update-succeeded"]
-    nonisolated(unsafe) private static var dismissedUpdateNotificationIDs: Set<String> = []
-    nonisolated(unsafe) private static var serverUpdateAppliedAt: Date?
-    private static var testsServerUpdate: Bool {
-        ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.serverUpdateArgument)
-    }
     nonisolated(unsafe) private static var archivedSessionIDs: Set<String> = []
-    private static var testsReauthentication: Bool {
-        ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.reauthenticationArgument)
-    }
-    private static var testsTrustedReauthentication: Bool {
-        ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.trustedReauthenticationArgument)
-    }
     private static let chatStreamID = "ui-fixture-stream"
     static let pendingSteerID = "steer-ui-fixture-web"
     static let pendingSteerText = "Check the backup logs too"
     private static let chatState = UITestChatFixtureState.shared
     private let lifecycleLock = NSLock()
     private var stopped = false
+    /// Bumped by each hosted test's reset: a load an earlier test started counts as stopped, so its scripted stream
+    /// ends instead of answering the next test's scenario (TAL-856).
+    private static let generation = OSAllocatedUnfairLock(initialState: 0)
+    private static let generationHeader = "X-UI-Fixture-Generation"
+    private let startedGeneration = UITestFixtureURLProtocol.generation.withLock { $0 }
 
     /// Puts the fixture's per-launch server state back to a fresh launch's, for hosted tests that start the fixture in
     /// process once per test (TAL-856).
     static func resetForHostedTest() {
+        generation.withLock { $0 += 1 }
         approvalBypassOverride = nil
         sessionToolsets.withLock { $0 = nil }
-        sessionReads = 0
         transcriptReads = 0
-        hasChangedWhileBackgrounded = false
-        recovered = false
-        urgentNotificationAcknowledged = false
-        readUpdateNotificationIDs = ["ui-update-succeeded"]
-        dismissedUpdateNotificationIDs = []
-        serverUpdateAppliedAt = nil
         archivedSessionIDs = []
+        backgroundDismissed.withLock { $0 = false }
         didFailSessionCreation = false
+        chatState.reset()
     }
 
     static func configure(_ configuration: URLSessionConfiguration) {
         guard ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.launchArgument) else { return }
         configuration.protocolClasses = [Self.self]
             + (configuration.protocolClasses ?? []).filter { $0 != Self.self }
+        // A session remembers the hosted test it was made in, so a screen an earlier test left running cannot reach the
+        // next test's scenario (TAL-856).
+        var headers = configuration.httpAdditionalHeaders ?? [:]
+        headers[generationHeader] = String(generation.withLock { $0 })
+        configuration.httpAdditionalHeaders = headers
         // A held load waits for the test's release, not for URLSession's 60 s default: XCTest's own wait for the App to
         // go idle blocked a hosted test for 58 s, and the held Git status read failed before its release (TAL-672).
         configuration.timeoutIntervalForRequest = .infinity
@@ -593,23 +430,19 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             client?.urlProtocol(self, didFailWithError: URLError(.badURL))
             return
         }
+        if let made = request.value(forHTTPHeaderField: Self.generationHeader), made != String(Self.generation.withLock { $0 }) {
+            client?.urlProtocol(self, didFailWithError: URLError(.cancelled))
+            return
+        }
 
         if UITestChatScenario.current != nil, url.path == "/api/chat/stream" {
             startScriptedChatStream(url: url)
             return
         }
 
-        if let failure = Self.panelRequestFailure(for: url) {
-            client?.urlProtocol(self, didFailWithError: failure)
-            return
-        }
-
         let holdsSessionList = url.path == "/api/sessions"
             && ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.holdSessionListArgument)
-        let holdsSessionCreation = url.path == "/api/session/new"
-            && ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.holdSessionCreationArgument)
-        if Self.holdsPanelLoad(for: url) || Self.holdsWorkspaceRead(for: url) || Self.holdsTranscriptReload(for: url)
-            || holdsSessionList || holdsSessionCreation {
+        if Self.holdsTranscriptReload(for: url) || holdsSessionList {
             UITestFixtureHold.shared.hold { [weak self] in
                 guard let self, !self.isStopped else { return }
                 self.sendResponse(for: url)
@@ -620,59 +453,23 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         sendResponse(for: url)
     }
 
-    static var changedWhileBackgrounded: Bool {
-        recoveryState.withLock { hasChangedWhileBackgrounded }
-    }
-
-    static func prepareChangeWhileBackgrounded() {
-        guard ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.changeWhileBackgroundedArgument) else { return }
-        NotificationCenter.default.addObserver(
-            forName: UIApplication.didEnterBackgroundNotification,
-            object: nil,
-            queue: .main
-        ) { _ in
-            recoveryState.withLock { hasChangedWhileBackgrounded = true }
-        }
-    }
-
     private static func holdsTranscriptReload(for url: URL) -> Bool {
-        let arguments = ProcessInfo.processInfo.arguments
-        let holdsFirst = arguments.contains(UITestFixtureEnvironment.holdFirstTranscriptLoadArgument)
         guard url.path == "/api/session",
-              holdsFirst || arguments.contains(UITestFixtureEnvironment.holdTranscriptReloadsArgument)
+              ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.holdTranscriptReloadsArgument)
         else { return false }
         return recoveryState.withLock {
             transcriptReads += 1
-            return holdsFirst ? transcriptReads == 1 : transcriptReads > 1
+            return transcriptReads > 1
         }
     }
 
     private func sendResponse(for url: URL) {
-        if handleLifecycleRequest(url) { return }
-        let isEventStream = url.path.hasSuffix("/stream")
-        let contentType = Self.workspaceContentType(for: url)
-            ?? (isEventStream ? "text/event-stream" : "application/json")
-        let requiresSignIn = Self.recoveryState.withLock {
-            if Self.testsReauthentication, url.path == "/api/sessions" {
-                Self.sessionReads += 1
-                if Self.testsTrustedReauthentication {
-                    return Self.sessionReads > 1
-                        && request.value(forHTTPHeaderField: "X-Fixture-Authorization") != "fixture-token"
-                }
-                return Self.sessionReads > 1 && !Self.recovered
-            }
-            if Self.testsReauthentication, url.path == "/api/auth/login" { Self.recovered = true }
-            return false
-        }
-        var headers = ["Content-Type": contentType]
-        if Self.testsReauthentication, url.path == "/api/auth/login" {
-            headers["Set-Cookie"] = "hermes_session=fixture-renewed; Path=/; Secure; HttpOnly"
-        }
+        let contentType = url.path.hasSuffix("/stream") ? "text/event-stream" : "application/json"
         let response = HTTPURLResponse(
             url: url,
-            statusCode: requiresSignIn ? 401 : (Self.failsSessionCreation(url) ? 500 : Self.workspaceStatusCode(for: request)),
+            statusCode: Self.failsSessionCreation(url) ? 500 : 200,
             httpVersion: "HTTP/1.1",
-            headerFields: headers
+            headerFields: ["Content-Type": contentType]
         )!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         if UITestChatScenario.current != nil,
@@ -687,7 +484,6 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     override func stopLoading() {
         lifecycleLock.withLock { stopped = true }
         Self.chatState.wakeWaiters()
-        if UITestLifecycleFixture.isEnabled { UITestLifecycleServer.shared.wake() }
     }
 
     private static let sessionCreationFailureLock = NSLock()
@@ -706,37 +502,18 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
 
     private static func responseData(for request: URLRequest) -> Data {
         guard let url = request.url else { return json([:]) }
-        if let panelData = panelResponseData(for: request, url: url) { return panelData }
-        if let workspaceData = workspaceResponseData(for: request) {
-            return workspaceData
-        }
         switch url.path {
         case "/health":
             return json(["status": "ok"])
         case "/api/auth/status":
-            if testsTrustedReauthentication {
-                return json([
-                    "auth_enabled": true,
-                    "logged_in": request.value(forHTTPHeaderField: "X-Fixture-Authorization") == "fixture-token",
-                    "password_auth_enabled": false,
-                    "trusted_auth_enabled": true
-                ])
-            }
-            if testsReauthentication {
-                let offersSSO = ProcessInfo.processInfo.arguments.contains("--ui-test-reauthentication-both")
-                return json([
-                    "auth_enabled": true, "logged_in": recoveryState.withLock { recovered },
-                    "password_auth_enabled": true, "oidc_enabled": offersSSO,
-                    "oidc_native_handoff_enabled": offersSSO
-                ])
-            }
             return json(["auth_enabled": false, "logged_in": true])
         case "/api/auth/login":
             return json(["ok": true])
+        case "/api/sessions" where URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
+            .contains { $0.name == "include_archived" && $0.value == "1" } == true:
+            return archivedSessionsResponse()
         case "/api/sessions":
-            return sessionsResponse(firstTitle: testsTrustedReauthentication
-                && request.value(forHTTPHeaderField: "X-Fixture-Authorization") == "fixture-token"
-                ? "Header recovery confirmed" : sessionTitle)
+            return sessionsResponse()
         case "/api/session/archive":
             let body = requestJSON(request)
             if let id = body["session_id"] as? String, let archived = body["archived"] as? Bool {
@@ -757,7 +534,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
                 ("cli", "show_cli_sessions"), ("claude_code", "show_claude_code_sessions"),
                 ("cron", "show_cron_sessions"), ("webhook", "show_webhook_sessions")
             ].filter { value($0.1) == "0" }.map(\.0)
-            let list = (try? JSONSerialization.jsonObject(with: sessionsResponse(firstTitle: sessionTitle))) as? [String: Any]
+            let list = (try? JSONSerialization.jsonObject(with: sessionsResponse())) as? [String: Any]
             let matches = (list?["sessions"] as? [[String: Any]] ?? []).filter { row in
                 let rowProject = row["project_id"] as? String
                 if let projectID, projectID == "none" ? rowProject != nil : rowProject != projectID { return false }
@@ -768,8 +545,6 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         case "/api/sessions/bulk":
             let ids = requestJSON(request)["session_ids"] as? [String] ?? []
             return json(["results": ids.map { ["session_id": $0, "ok": true] }])
-        case "/api/session" where UITestFixtureEnvironment.hasOlderMessages:
-            return pagedSessionResponse(url)
         case "/api/session" where UITestFixtureEnvironment.hasBranchedFrom:
             return branchedSessionResponse(url)
         case "/api/session":
@@ -794,14 +569,10 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             // "new chat in <profile>" entry point pinned the session (TAL-77).
             let body = requestJSON(request)
             let requestedProfile = body["profile"] as? String
-            var created = session(
+            let created = session(
                 id: newSessionID,
                 title: requestedProfile.map { "New Fixture Chat (\($0))" } ?? "New Fixture Chat"
             )
-            if let projectID = body["project_id"] as? String {
-                created["project_id"] = projectID
-                createdSessionProjectID.withLock { $0 = projectID }
-            }
             return json(["session": created])
         case "/api/upload":
             // Shared attachments upload before the composer can show them, so the
@@ -817,9 +588,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
                 "is_image": isImage
             ])
         case "/api/projects":
-            return json(["projects": UITestFixtureEnvironment.hasProjects
-                ? [["project_id": "ui-fixture-project", "name": "Fixture Project"]]
-                : []])
+            return json(["projects": []])
         case "/api/profiles":
             return json([
                 "profiles": [[
@@ -906,37 +675,8 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             return json(["ok": !answers.isEmpty])
         case "/api/clarify/pending":
             return json(["pending_count": 0])
-        case "/api/settings" where testsServerUpdate:
-            return json(["webui_version": "web-v1.2.2"])
-        case "/api/updates/check" where testsServerUpdate:
-            return json(["webui": ["behind": 1, "state": "commits_behind", "can_apply": true]])
-        case "/api/updates/apply" where testsServerUpdate:
-            recoveryState.withLock { serverUpdateAppliedAt = Date() }
-            return json(["ok": true, "target": "webui", "restart_scheduled": true, "notification_id": serverUpdateNotificationID])
-        case "/api/update-notifications" where testsServerUpdate:
-            return json(serverUpdateNotificationsEnvelope())
         case "/api/update-notifications":
-            guard ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.updateNotificationsArgument) else {
-                return json(["scope_id": "ui-fixture-scope", "notifications": [], "unread_count": 0, "clearable_count": 0, "can_clear": false])
-            }
-            return json(updateNotificationsEnvelope())
-        case "/api/update-notifications/clear":
-            recoveryState.withLock {
-                dismissedUpdateNotificationIDs.formUnion(["ui-update-applying", "ui-update-blocked", "ui-update-succeeded"])
-                if urgentNotificationAcknowledged { dismissedUpdateNotificationIDs.insert("ui-update-urgent") }
-            }
-            return json(updateNotificationsEnvelope())
-        case let path where path.hasPrefix("/api/update-notifications/") && path.hasSuffix("/read"):
-            let id = path.split(separator: "/").dropLast().last.map(String.init) ?? "ui-update-applying"
-            _ = recoveryState.withLock { readUpdateNotificationIDs.insert(id) }
-            return json(updateNotificationRecord(id: id))
-        case let path where path.hasPrefix("/api/update-notifications/") && path.hasSuffix("/dismiss"):
-            let id = path.split(separator: "/").dropLast().last.map(String.init) ?? ""
-            recoveryState.withLock { dismissedUpdateNotificationIDs.insert(id); readUpdateNotificationIDs.insert(id) }
-            return json(["ok": true])
-        case let path where path.hasPrefix("/api/update-notifications/") && path.contains("/actions/"):
-            recoveryState.withLock { urgentNotificationAcknowledged = true; readUpdateNotificationIDs.insert("ui-update-urgent") }
-            return json(updateNotificationRecord(id: "ui-update-urgent"))
+            return json(["scope_id": "ui-fixture-scope", "notifications": [], "unread_count": 0, "clearable_count": 0, "can_clear": false])
         case "/api/session/toolsets":
             // Like the server: trimmed, blanks dropped, nothing left is the profile's defaults.
             let names = (requestJSON(request)["toolsets"] as? [String] ?? [])
@@ -952,7 +692,6 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
                 return approvalBypassOverride
                     ?? ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.approvalBypassArgument)
             }
-            if request.httpMethod != "POST" { notify_set_state(approvalBypassAnsweredToken, 1) }
             return json(["ok": true, "yolo_enabled": enabled])
         case "/api/chat/stream", "/api/approval/stream", "/api/clarify/stream", "/api/kanban/events/stream":
             return Data("event: stream_end\ndata: {}\n\n".utf8)
@@ -961,48 +700,23 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         }
     }
 
-    private static func sessionsResponse(firstTitle: String) -> Data {
-        let sessionCount = UITestFixtureEnvironment.isDense ? 300 : 18
+    private static func sessionsResponse() -> Data {
         let archivedIDs = recoveryState.withLock { archivedSessionIDs }
-        var sessions: [[String: Any]] = (0..<sessionCount).map { index in
+        let sessions: [[String: Any]] = (0..<18).map { index in
             session(
                 id: index == 0 ? sessionID : "ui-fixture-session-\(index)",
-                title: index == 0 ? firstTitle : String(format: "Fixture Session %02d", index)
+                title: index == 0 ? sessionTitle : String(format: "Fixture Session %02d", index)
             )
         }.filter { !archivedIDs.contains($0["session_id"] as? String ?? "") }
-        // The server lists a chat created in a project from then on (TAL-455).
-        if let projectID = createdSessionProjectID.withLock({ $0 }) {
-            var created = session(id: newSessionID, title: "New Fixture Chat")
-            created["project_id"] = projectID
-            sessions.insert(created, at: 0)
-        }
-        guard UITestFixtureEnvironment.hasSidebarVariety else {
-            return json(["sessions": sessions, "archived_count": 0])
-        }
-        var pinned = session(id: "ui-fixture-pinned", title: "Pinned fixture chat with a title long enough to wrap")
-        pinned["pinned"] = true
-        // The server lists pinned rows first, and the list keeps its order (TAL-306).
-        sessions.insert(pinned, at: 0)
-        for index in 1...6 {
-            var row = session(id: "cron_fixture_\(index)", title: "Scheduled Fixture \(index)")
-            row["source_tag"] = "cron"
-            row["source_kind"] = "cron"
-            sessions.append(row)
-        }
-        for index in 1...2 {
-            var row = session(id: "ui-fixture-webhook-\(index)", title: "Webhook Fixture \(index)")
-            row["source_tag"] = "webhook"
-            row["source_kind"] = "webhook"
-            sessions.append(row)
-        }
-        return json([
-            "sessions": sessions,
-            "archived_count": 0,
-            "scheduled_session_count": 200,
-            "scheduled_sessions_truncated": true,
-            "webhook_session_count": 2,
-            "webhook_sessions_truncated": false
-        ])
+        return json(["sessions": sessions, "archived_count": 0])
+    }
+
+    /// The one archived row, which only the archived-sessions screen requests.
+    private static func archivedSessionsResponse() -> Data {
+        var archived = session(id: "ui-fixture-archived-session", title: "Fixture Archived Session")
+        archived["archived"] = true
+        archived["message_count"] = 3
+        return json(["sessions": [archived], "archived_count": 1])
     }
 
     private static func sessionResponse() -> Data {
@@ -1042,8 +756,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             detail["messages"] = transcriptMediaMessages
             return json(["session": detail])
         }
-        let messageCount = UITestFixtureEnvironment.isDense ? 600 : 48
-        var messages: [[String: Any]] = (0..<messageCount).map { index in
+        var messages: [[String: Any]] = (0..<48).map { index in
             [
                 "role": index.isMultiple(of: 2) ? "user" : "assistant",
                 "content": "Fixture message \(index + 1) contains deterministic transcript content for scrolling.",
@@ -1051,13 +764,6 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             ]
         }
         messages.append(contentsOf: linkInteractionMessages)
-        if WorkspaceFixture.isEnabled {
-            messages.append(workspaceFileLinkMessage)
-        }
-        if changedWhileBackgrounded {
-            messages.append(["role": "user", "content": "Asked from another client", "message_id": "ui-fixture-elsewhere-user", "_ts": 2_000_000_200])
-            messages.append(["role": "assistant", "content": replyFromElsewhere, "message_id": "ui-fixture-elsewhere-assistant", "_ts": 2_000_000_201])
-        }
         var detail = session(id: sessionID, title: sessionTitle)
         detail["messages"] = messages
         return json(["session": detail])
@@ -1078,38 +784,9 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         return json(["session": detail])
     }
 
-    /// The page ending before `msg_before` (the newest page without it), with its `_messages_offset`.
-    private static func pagedSessionResponse(_ url: URL) -> Data {
-        let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
-        func value(_ name: String) -> Int? { query.first { $0.name == name }?.value.flatMap(Int.init) }
-        let end = min(value("msg_before") ?? pagedMessages.count, pagedMessages.count)
-        let start = max(0, end - (value("msg_limit") ?? pagedMessages.count))
-        var detail = session(id: sessionID, title: sessionTitle)
-        detail["messages"] = Array(pagedMessages[start..<end])
-        detail["message_count"] = pagedMessages.count
-        detail["_messages_offset"] = start
-        return json(["session": detail])
-    }
-
-    private static let pagedMessages: [[String: Any]] = (0..<50).flatMap { turn -> [[String: Any]] in
-        let answer = "Paged answer \(turn + 1)."
-        let thinking = (1...8).map { "Paged reasoning \(turn + 1), line \($0)." }.joined(separator: "\n")
-        return [
-            ["role": "user", "content": "Paged prompt \(turn + 1)", "message_id": "paged-user-\(turn)", "_turn_id": "paged-\(turn)", "_ts": 2_000_000_000 + turn * 2],
-            [
-                "role": "assistant", "content": answer, "message_id": "paged-reply-\(turn)", "_turn_id": "paged-\(turn)", "_ts": 2_000_000_001 + turn * 2,
-                "_anchor_activity_scene": [
-                    "version": "activity_scene_v1", "final_answer": answer, "terminal_state": "completed",
-                    "activity_rows": [["row_id": "paged-thinking-\(turn)", "order_index": 0, "role": "reasoning", "text": thinking, "titles": ["Paging"]]]
-                ] as [String: Any]
-            ]
-        ]
-    }
-
     static let backgroundResultText = "The repo has three packages."
     private static let backgroundDismissed = OSAllocatedUnfairLock(initialState: false)
     private static let newSessionID = "ui-fixture-new-session"
-    private static let createdSessionProjectID = OSAllocatedUnfairLock<String?>(initialState: nil)
 
     /// TAL-372: a running delegation and a finished `/background` task the server pins, until the task is dismissed.
     private static func backgroundTasks() -> [[String: Any]] {
@@ -1221,16 +898,6 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             "message_id": "long-prompt-user", "_ts": 2_000_000_002, "_collapsible": true
         ],
         ["role": "assistant", "content": "Read the whole prompt.", "message_id": "long-prompt-reply", "_ts": 2_000_000_003]
-    ]
-
-    /// A link to a workspace file with a line target, which the chat opens in
-    /// the source viewer instead of handing to the system (TAL-169). Only the
-    /// workspace fixture serves the file, so only it carries the message.
-    private static let workspaceFileLinkMessage: [String: Any] = [
-        "role": "assistant",
-        "content": "See [FixtureFileLink](/fixture/\(WorkspaceFixture.textFileName):2) for the second line.",
-        "message_id": "ui-fixture-file-link-assistant",
-        "_ts": 2_000_000_102
     ]
 
     /// Mixed text-and-link content that pins deterministic long-press targets for
@@ -1456,7 +1123,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         [
             "session_id": id,
             "title": title,
-            "message_count": UITestFixtureEnvironment.isDense ? 600 : 48,
+            "message_count": 48,
             "last_message_at": 2_000_000_000,
             "sort_ts": 2_000_000_000,
             "workspace": "/fixture",
@@ -1497,152 +1164,6 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
                 ]]
             ]]
         ])
-    }
-
-    private static func updateNotification(
-        id: String,
-        target: String,
-        phase: String,
-        title: String,
-        message: String,
-        updatedAt: String,
-        readAt: Any
-    ) -> [String: Any] {
-        [
-            "id": id,
-            "kind": "update",
-            "target": target,
-            "phase": phase,
-            "severity": phase == "blocked" ? "warning" : "info",
-            "persistent": false,
-            "requires_acknowledgement": false,
-            "actions": [],
-            "destination": ["key": "settings.system", "label": "Open System settings"],
-            "title": title,
-            "message": message,
-            "created_at": updatedAt,
-            "updated_at": updatedAt,
-            "read_at": readAt,
-            "acknowledged_at": NSNull(),
-            "acknowledged_action_id": NSNull(),
-            "verified_revision": phase == "succeeded" ? String(repeating: "a", count: 40) : NSNull(),
-            "verified_version": phase == "succeeded" ? "web-v1.2.3" : NSNull(),
-            "unread": readAt is NSNull,
-            "active": phase == "applying" || phase == "restarting",
-            "requires_interaction": false,
-            "can_dismiss": true
-        ]
-    }
-
-    private static func urgentUpdateNotification(acknowledged: Bool, read: Bool) -> [String: Any] {
-        [
-            "id": "ui-update-urgent",
-            "kind": "system",
-            "target": NSNull(),
-            "phase": "attention",
-            "severity": "critical",
-            "persistent": true,
-            "requires_acknowledgement": true,
-            "actions": [["id": "acknowledge", "label": "Acknowledge", "style": "primary", "acknowledges": true]],
-            "destination": ["key": "settings.system", "label": "Open System settings"],
-            "title": "Action required",
-            "message": "Please acknowledge this server notice before it can be cleared.",
-            "created_at": "2026-09-26T13:24:00Z",
-            "updated_at": "2026-09-26T13:24:00Z",
-            "read_at": read ? "2026-09-26T13:25:00Z" : NSNull(),
-            "acknowledged_at": acknowledged ? "2026-09-26T13:25:00Z" : NSNull(),
-            "acknowledged_action_id": acknowledged ? "acknowledge" : NSNull(),
-            "verified_revision": NSNull(),
-            "verified_version": NSNull(),
-            "unread": !read,
-            "active": false,
-            "requires_interaction": !acknowledged,
-            "can_dismiss": acknowledged
-        ]
-    }
-
-    private static func updateNotificationsEnvelope() -> [String: Any] {
-        let snapshot = recoveryState.withLock {
-            (urgentNotificationAcknowledged, readUpdateNotificationIDs, dismissedUpdateNotificationIDs)
-        }
-        let notifications = allUpdateNotifications(acknowledged: snapshot.0, readIDs: snapshot.1)
-            .filter { !snapshot.2.contains($0["id"] as? String ?? "") }
-        let clearableCount = notifications.filter {
-            ($0["requires_acknowledgement"] as? Bool) != true || snapshot.0
-        }.count
-        return [
-            "scope_id": "ui-fixture-scope",
-            "notifications": notifications,
-            "unread_count": notifications.filter { ($0["read_at"] as? NSNull) != nil }.count,
-            "clearable_count": clearableCount,
-            "can_clear": clearableCount > 0
-        ]
-    }
-
-    private static let serverUpdateNotificationID = "ui-server-update"
-    static let serverUpdateFailureDetail = "The local webui repo has unresolved merge conflicts."
-
-    /// The applied update stays `restarting` for a few seconds, long enough to see Settings
-    /// follow it, then fails with the apply's own explanation in `detail` (TAL-558).
-    private static func serverUpdateNotificationsEnvelope() -> [String: Any] {
-        let appliedAt = recoveryState.withLock { serverUpdateAppliedAt }
-        var notifications: [[String: Any]] = []
-        if let appliedAt {
-            let failed = Date().timeIntervalSince(appliedAt) > 6
-            var record = updateNotification(
-                id: serverUpdateNotificationID, target: "webui", phase: failed ? "failed" : "restarting",
-                title: "Talaria Web update",
-                message: failed
-                    ? "The update could not be completed. Open System settings for details."
-                    : "The update is installed. Talaria Web is restarting.",
-                updatedAt: "2026-10-05T12:00:00Z", readAt: NSNull()
-            )
-            record["detail"] = failed ? serverUpdateFailureDetail : NSNull()
-            notifications.append(record)
-        }
-        return [
-            "scope_id": "ui-fixture-scope",
-            "notifications": notifications,
-            "unread_count": notifications.count,
-            "clearable_count": notifications.count,
-            "can_clear": !notifications.isEmpty
-        ]
-    }
-
-    private static func updateNotificationRecord(id: String) -> [String: Any] {
-        let snapshot = recoveryState.withLock { (urgentNotificationAcknowledged, readUpdateNotificationIDs) }
-        return allUpdateNotifications(acknowledged: snapshot.0, readIDs: snapshot.1)
-            .first { ($0["id"] as? String) == id }
-            ?? updateNotification(
-                id: id,
-                target: "webui",
-                phase: "applying",
-                title: "Talaria Web update",
-                message: "Installing the selected Talaria Web update.",
-                updatedAt: "2026-09-26T13:21:00Z",
-                readAt: "2026-09-26T13:25:00Z"
-            )
-    }
-
-    private static func allUpdateNotifications(acknowledged: Bool, readIDs: Set<String>) -> [[String: Any]] {
-        [
-            urgentUpdateNotification(acknowledged: acknowledged, read: readIDs.contains("ui-update-urgent")),
-            updateNotification(
-                id: "ui-update-applying", target: "webui", phase: "applying",
-                title: "Talaria Web update", message: "Installing the selected Talaria Web update.",
-                updatedAt: "2026-09-26T13:21:00Z", readAt: readIDs.contains("ui-update-applying") ? "2026-09-26T13:25:00Z" : NSNull()
-            ),
-            updateNotification(
-                id: "ui-update-blocked", target: "agent", phase: "blocked",
-                title: "Hermes Agent update", message: "The update is waiting for active work to finish.",
-                updatedAt: "2026-09-26T13:13:00Z", readAt: readIDs.contains("ui-update-blocked") ? "2026-09-26T13:25:00Z" : NSNull()
-            ),
-            updateNotification(
-                id: "ui-update-succeeded", target: "webui", phase: "succeeded",
-                title: "Talaria Web update", message: "Talaria Web was updated successfully.",
-                updatedAt: "2026-09-26T12:48:00Z", readAt: "2026-09-26T12:49:00Z"
-            )
-        ]
     }
 
     /// TAL-388: one pinned slot, one saved model the catalog no longer lists, and the rest on Auto.
@@ -1846,7 +1367,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     var isStopped: Bool {
-        lifecycleLock.withLock { stopped }
+        lifecycleLock.withLock { stopped } || startedGeneration != Self.generation.withLock { $0 }
     }
 
     private func send(events: [(String, [String: Any])]) {

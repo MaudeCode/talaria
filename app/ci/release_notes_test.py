@@ -392,20 +392,99 @@ class ReleaseNotesTests(unittest.TestCase):
         self.write("changelog.d/TAL-3.json", "malformed")
         self.cli("validate", "--base", baseline, "--target", pr_head, error="TAL-3.json")
 
-    def test_project_edits_naming_only_test_files_can_skip(self):
-        project = "Talaria.xcodeproj/project.pbxproj"
-        self.write(project, "A1 /* Feature.swift in Sources */,\n")
-        self.write("Talaria/Feature.swift", "// app\n")
+    def project(self, tests=True, extra_test=False, setting="5.0"):
+        objects = ["\t\tAAAAAAAAAAAAAAAAAAAAAAA1 /* App.swift in Sources */ = {isa = PBXBuildFile; };"]
+        if extra_test:
+            objects.append("\t\tBBBBBBBBBBBBBBBBBBBBBBB3 /* MoreTests.swift in Sources */ = {isa = PBXBuildFile; };")
+        if tests:
+            objects += [
+                "\t\tBBBBBBBBBBBBBBBBBBBBBBB1 /* AppTests.swift in Sources */ = {isa = PBXBuildFile; };",
+                "\t\tBBBBBBBBBBBBBBBBBBBBBBB2 /* TalariaTests */ = {",
+                "\t\t\tisa = PBXNativeTarget;",
+                "\t\t\tbuildPhases = (",
+                "\t\t\t\tCCCCCCCCCCCCCCCCCCCCCCC1 /* Sources */,",
+                "\t\t\t);",
+                "\t\t};",
+                "\t\tCCCCCCCCCCCCCCCCCCCCCCC1 /* Sources */ = {",
+                "\t\t\tfiles = (",
+                "\t\t\t\tBBBBBBBBBBBBBBBBBBBBBBB1 /* AppTests.swift in Sources */,",
+                *(["\t\t\t\tBBBBBBBBBBBBBBBBBBBBBBB3 /* MoreTests.swift in Sources */,"] if extra_test else []),
+                "\t\t\t);",
+                "\t\t};",
+            ]
+        objects += [
+            "\t\tDDDDDDDDDDDDDDDDDDDDDDD1 /* Project object */ = {",
+            "\t\t\tTargetAttributes = {",
+            *(["\t\t\t\tBBBBBBBBBBBBBBBBBBBBBBB2 = {", "\t\t\t\t\tCreatedOnToolsVersion = 27.0;", "\t\t\t\t};"] if tests else []),
+            "\t\t\t};",
+            "\t\t\ttargets = (",
+            *(["\t\t\t\tBBBBBBBBBBBBBBBBBBBBBBB2 /* TalariaTests */,"] if tests else []),
+            "\t\t\t);",
+            f"\t\t\tSWIFT_VERSION = {setting};",
+            "\t\t};",
+        ]
+        self.write("Talaria.xcodeproj/project.pbxproj", "// !$*UTF8*$!\n{\n\tobjects = {\n" + "\n".join(objects) + "\n\t};\n}\n")
+
+    def scheme(self, tests=True, launch="Debug"):
+        testable = '      <TestableReference>\n         <BuildableReference BlueprintName = "TalariaTests"/>\n      </TestableReference>\n'
+        self.write("Talaria.xcodeproj/xcshareddata/xcschemes/Talaria.xcscheme",
+                   f'<Scheme>\n   <TestAction>\n{testable if tests else ""}   </TestAction>\n   <LaunchAction buildConfiguration = "{launch}"/>\n</Scheme>\n')
+
+    def test_project_and_scheme_edits_to_tests_alone_can_skip(self):
+        self.project()
+        self.scheme()
+        self.write("Talaria/App.swift", "// app\n")
+        self.write("TalariaTests/AppTests.swift", "// test\n")
         self.add_fragment(2)
-        self.commit("TAL-2: app feature")
+        self.commit("TAL-2: app with tests")
         base = self.git("rev-parse", "HEAD")
-        self.write(project, "A1 /* Feature.swift in Sources */,\nB1 /* FeatureTests.swift in Sources */,\n")
-        self.write("TalariaTests/FeatureTests.swift", "// test\n")
+        self.project(extra_test=True)
+        self.write("TalariaTests/MoreTests.swift", "// test\n")
         self.write("changelog.d/TAL-3.json", '{"skip":"Tests only"}')
         self.commit("TAL-3: add a test")
         self.cli("validate", "--base", base)
-        self.write(project, "A1 /* Feature.swift in Sources */,\nB1 /* FeatureTests.swift in Sources */,\nSWIFT_VERSION = 6.0;\n")
+        self.git("rm", "-rq", "TalariaTests")
+        self.project(tests=False)
+        self.scheme(tests=False)
+        self.commit("TAL-3: remove the test target")
+        self.cli("validate", "--base", base)
+        self.project(tests=False, setting="6.0")
         self.commit("TAL-3: change a build setting")
+        self.cli("validate", "--base", base, error="require user-facing entries")
+        self.project(tests=False)
+        self.scheme(tests=False, launch="Release")
+        self.commit("TAL-3: change how the App launches")
+        self.cli("validate", "--base", base, error="require user-facing entries")
+
+    def test_a_project_edit_to_an_app_file_named_like_a_test_needs_entries(self):
+        project = "Talaria.xcodeproj/project.pbxproj"
+        def write(app_member):
+            line = "\t\tAAAAAAAAAAAAAAAAAAAAAAA1 /* Shared.swift in Sources */ = {isa = PBXBuildFile; };\n" if app_member else ""
+            self.write(project, "{\n\tobjects = {\n" + line + "\t};\n}\n")
+        write(True)
+        self.write("Talaria/Shared.swift", "// app\n")
+        self.write("TalariaTests/Shared.swift", "// test\n")
+        self.add_fragment(2)
+        self.commit("TAL-2: shared names")
+        base = self.git("rev-parse", "HEAD")
+        write(False)
+        self.write("changelog.d/TAL-3.json", '{"skip":"Tests only"}')
+        self.commit("TAL-3: drop the App's Shared.swift from its sources")
+        self.cli("validate", "--base", base, error="require user-facing entries")
+
+    def test_changes_inside_debug_blocks_can_skip(self):
+        self.write("Talaria/Feature.swift", "func load() {\n    #if DEBUG\n    fixture()\n    #else\n    live()\n    #endif\n}\n")
+        self.write("Talaria/Config/Host.swift", "#if DEBUG\nstruct Host {}\n#endif\n")
+        self.add_fragment(2)
+        self.commit("TAL-2: feature")
+        base = self.git("rev-parse", "HEAD")
+        self.write("Talaria/Feature.swift", "func load() {\n    #if DEBUG\n    otherFixture()\n    #else\n    live()\n    #endif\n}\n")
+        self.git("rm", "-q", "Talaria/Config/Host.swift")
+        self.write("changelog.d/TAL-3.json", '{"skip":"DEBUG only"}')
+        self.commit("TAL-3: change the DEBUG branch")
+        self.cli("validate", "--base", base)
+        self.write("Talaria/Feature.swift", "func load() {\n    #if DEBUG\n    otherFixture()\n    #else\n    cached()\n    #endif\n}\n")
+        self.commit("TAL-3: change the shipped branch")
         self.cli("validate", "--base", base, error="require user-facing entries")
 
     def test_app_changes_cannot_use_only_skip_or_another_tickets_metadata(self):

@@ -68,21 +68,19 @@ dependency:
 
 | Workflow | Job | Native dependency |
 |---|---|---|
-| `app-tests.yml` | `app-build` | `app/ci/build-for-testing` once, uploaded as the `ui-suite-build` artifact for the test shard |
-| `app-tests.yml` | `app-test` | `xcodebuild test-without-building` in the simulator: one shard of the hosted unit tests (TalariaTests) on pull requests, main pushes and at release; a hand-dispatched UI suite adds the launch smoke and UI tests in four shards |
+| `app-tests.yml` | `app-build` | `app/ci/build-for-testing` once, uploaded as the `app-test-build` artifact for the test job |
+| `app-tests.yml` | `app-test` | `xcodebuild test-without-building` in the simulator: the hosted unit tests (TalariaTests) on pull requests, main pushes and at release |
 | `app-tests.yml` | `package-test` | `swift test` for TalariaKit (every native contract class and the live Web contract test); a release's hosted-tests call leaves it to `contracts` |
 | `ci.yml` | `app-tooling` | exercises the macOS `lockf`/`simctl` runner scripts with fakes |
 | `fuzz-soak.yml` | `soak` | `swift test` for TalariaKit's fuzz soak class |
-| `ui-performance.yml` | `measure` | `xcodebuild test` in the simulator |
 | `ios-release-build.yml` | `build` | `xcodebuild archive`, Keychain signing, IPA export |
 | `release-set.yml` | `contracts` | both App contract gates at once: the selected App against every supported Web, plus its whole TalariaKit suite when it ships, and the previously released App against the selected Web; `swift test`, or the simulator for an App from before TAL-399 |
 | `release-set.yml` | `app-dry-build` | unsigned `xcodebuild archive` |
 
 A release that ships the App runs its simulator-hosted unit tests on the exact
 release source (`app-hosted-tests`: `app-tests.yml` in pull-request mode, the App
-build and one TalariaTests shard), dry runs included. No UI test gates a release
-(TAL-877). `build-gate` requires that job to succeed when the App ships and to
-be skipped otherwise.
+build and one TalariaTests job), dry runs included. `build-gate` requires that
+job to succeed when the App ships and to be skipped otherwise.
 
 The organization runs at most five macOS jobs at once, and a release needs at
 most four (TAL-414):
@@ -90,8 +88,8 @@ most four (TAL-414):
 - `contracts` runs both App contract gates on one runner, at once, each with its
   own receipt. With `swift test` they take about five minutes together; with
   an App from before TAL-399, which builds and tests in the simulator, about ten.
-- The hosted tests' build and its one shard take two more: the shard queues once
-  the build holds a runner (TAL-413) and boots its simulator while it builds.
+- The hosted tests' build and its test job take two more: the test job queues
+  once the build holds a runner (TAL-413) and boots its simulator while it builds.
 - The package tests run in `contracts` instead of on another runner:
   `contracts` already builds the release source's TalariaKit tests, so the whole
   package suite adds about 30 seconds there (`--package-suite`).
@@ -109,8 +107,8 @@ times are estimates from the measured jobs of dry runs 36555256618 and
 | Time | Event |
 |---|---|
 | 0:00-0:50 | `authorization`, then `prepare` |
-| 0:50 | `contracts`, the hosted tests' build and the App build start; the hosted shard starts and boots |
-| 4:05 | the hosted tests' build uploads; the shard runs about a minute of tests |
+| 0:50 | `contracts`, the hosted tests' build and the App build start; the hosted test job starts and boots |
+| 4:05 | the hosted tests' build uploads; the test job runs about a minute of tests |
 | 6:00 | `contracts` done with `swift test` (next release: about 11:00, see below) |
 | 6:25 | App build done; `build-gate` |
 | 6:50 | `relay-publish` starts (about 1:30) |
@@ -121,16 +119,16 @@ times are estimates from the measured jobs of dry runs 36555256618 and
 The next release still tests a previous App from before TAL-399, so `contracts`
 finishes at about 11:20 and moves `build-gate` to about 11:30 and the manifest
 to about 18:45 (about 20 minutes after the tag push). Queue time does not count
-toward a job's timeout. A release may overlap pull-request CI or a hand-dispatched
-UI suite, and whichever macOS jobs then do not fit start as slots free up.
-A job that holds a macOS slot never waits for a queued macOS job, so the plan
-cannot deadlock. The `timeline` job writes every job's queue, start and finish
-time into the step summary, and the publication jobs and `contracts` record
+toward a job's timeout. A release may overlap pull-request CI, and whichever
+macOS jobs then do not fit start as slots free up. A job that holds a macOS
+slot never waits for a queued macOS job, so the plan cannot deadlock. The
+`timeline` job writes every job's queue, start and finish time into the step
+summary, and the publication jobs and `contracts` record
 their phases (npm publish and readback, GHCR copy, TestFlight transfer and
 processing, Web probe, builds and simulator boot) there too, so each dry run
 and release measures this plan. Every simulator job uses the image's
 own iPhone 17 on the runtime matching the selected Xcode's SDK, as `ci.yml`
-does: the fuzz soak and UI performance boot it with the pinned
+does: the App hosted tests boot it with the pinned
 `futureware-tech/simulator-action` and run plain `xcodebuild`; the contract
 gates hand its identifier to the tested App's own `scripts/test-ios`
 (`IOS_SIMULATOR_ID`), which boots, uses and shuts down that one device for each
@@ -143,7 +141,7 @@ and deletes it in an `always()` step. Provisioning profiles come from
 `apple-actions/download-provisioning-profiles`.
 
 CI's Web contract probe uploads its live responses as the run's
-`contract-fixture` artifact for App shard 0 (see
+`contract-fixture` artifact for the App package tests (see
 [contract validation](../CONTRACT_TESTS.md)); the Web end-to-end suite runs in
 six Playwright shards and the Docker smoke in one job per Compose variant
 (five). Release-plan preparation, Web/Relay fixture suites, Agent verification,

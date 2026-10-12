@@ -99,15 +99,17 @@ final class SessionListHostedTests: XCTestCase {
         XCTAssertTrue(synced, "Syncing messages stayed after the server answered")
     }
 
-    /// The alert the window's screen presented, once it is on screen.
-    private func presentedAlert(in window: UIWindow, timeout: TimeInterval = 5) async -> UIAlertController? {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            var controller = window.rootViewController
-            while let presented = controller?.presentedViewController { controller = presented }
-            if let alert = controller as? UIAlertController { return alert }
-            try? await Task.sleep(for: .milliseconds(50))
-        }
-        return nil
+    /// A New Chat whose session fails to start says so in its composer, with Send off, and Retry starts it (TAL-636).
+    func testNewChatReportsAFailedStartInItsComposerAndRetries() async throws {
+        let fixture = try FixtureApp(["--ui-test-fail-first-session-creation"], for: self)
+        let window = try hostWindow(fixture.sessionList())
+        HostedAccessibility.activate(try await requireElement(in: window, label: "New Chat"))
+
+        let retry = try await requireElement(in: window, label: "Retry", "The composer does not offer Retry after a failed start")
+        let send = HostedAccessibility.element(in: window, label: "Send")
+        XCTAssertTrue(send?.accessibilityTraits.contains(.notEnabled) ?? true, "Send is enabled before the chat started")
+        HostedAccessibility.activate(retry)
+        _ = try await requireElement(in: window, label: "Select model", "Retry did not start the chat")
+        XCTAssertNil(HostedAccessibility.element(in: window, label: "Retry"))
     }
 }

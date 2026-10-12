@@ -210,11 +210,6 @@ struct RelayConnectionManagementView: View {
     private func loadCredentials() async {
         credentials = TalariaRelayConfigurationStore.load()
         guard let credentials else { return }
-        #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.relayConnectedArgument) {
-            return
-        }
-        #endif
         guard let subscriptions = try? await TalariaRelayClient(credentials: credentials).publisherSubscriptions() else {
             return
         }

@@ -29,32 +29,12 @@ repo="$test_root/repo"
 peer="$test_root/peer"
 fake_bin="$test_root/bin"
 state="$test_root/state"
-mkdir -p "$repo/scripts" "$repo/ci" "$repo/.xcodebuildmcp" "$fake_bin" "$state"
+mkdir -p "$repo/scripts" "$repo/.xcodebuildmcp" "$fake_bin" "$state"
 cp "$source_root/scripts/test-ios" "$repo/scripts/test-ios"
-cp "$source_root/ci/test_shards.py" "$repo/ci/test_shards.py"
 cp "$source_root/scripts/load-env" "$repo/scripts/load-env"
 cp "$source_root/scripts/ios-simulator-pool" "$repo/scripts/ios-simulator-pool"
-cp "$source_root/scripts/prepare-ui-simulator" "$repo/scripts/prepare-ui-simulator"
 chmod +x "$repo/scripts/test-ios" "$repo/scripts/load-env"
 
-cat > "$repo/scripts/assert-no-skipped-ui-tests" <<'EOF'
-#!/bin/zsh
-exit 0
-EOF
-cat > "$repo/scripts/seed-simulator-photo" <<'EOF'
-#!/bin/zsh
-[[ ! -e "$TALARIA_TEST_STATE/seed-fail" ]] || exit 3
-print -r -- "$1" >> "$TALARIA_TEST_STATE/seeded"
-EOF
-cat > "$repo/scripts/ready-simulator-notifications" <<'EOF'
-#!/bin/zsh
-print -r -- "$1" >> "$TALARIA_TEST_STATE/notifications-readied"
-print -r -- "ready $1" >> "$TALARIA_TEST_STATE/events"
-EOF
-cat > "$repo/scripts/ready-simulator-documents" <<'EOF'
-#!/bin/zsh
-print -r -- "$1" >> "$TALARIA_TEST_STATE/documents-readied"
-EOF
 cat > "$repo/.xcodebuildmcp/config.yaml" <<'EOF'
 defaults:
   simulatorName: "iPhone 17"
@@ -63,10 +43,6 @@ cat > "$fake_bin/xcrun" <<'EOF'
 #!/bin/zsh
 if [[ "$*" == "simctl list devices available --json" ]]; then
     <"${TALARIA_DEVICE_FIXTURE:?}"
-elif [[ "$1 $2" == "simctl spawn" ]]; then
-    print -r -- "${@:3}" >> "$TALARIA_TEST_STATE/spawned"
-elif [[ "$1 $2" == "simctl bootstatus" || "$1 $2" == "simctl push" ]]; then
-    print -r -- "$2 $3" >> "$TALARIA_TEST_STATE/xcrun-calls"
 elif [[ "$1 $2 $3 $4" == "xcresulttool get test-results summary" ]]; then
     bundle=""
     for (( index = 1; index <= $#; index++ )); do
@@ -114,9 +90,7 @@ for (( index = 1; index <= ${#args}; index++ )); do
     esac
 done
 
-print -rl -- "$@" > "$state/last-args"
 [[ ! -e TalariaTests/VisualReferences/.record ]] || print -r -- "${selectors[1]:-}" >> "$state/recorded"
-print -rl -- "$@" >> "$state/all-args"
 lock="$state/counter.lock"
 while ! mkdir "$lock" 2>/dev/null; do sleep 0.01; done
 read -r active < "$state/active"
@@ -126,7 +100,6 @@ active=$(( active + 1 ))
 print -r -- "$active" > "$state/active"
 print -r -- "$maximum" > "$state/maximum"
 print -r -- "$destination|$result_bundle|${(j: :)selectors}|$parallel" >> "$state/runs"
-print -r -- "run ${(j: :)selectors}|$parallel" >> "$state/events"
 rmdir "$lock"
 
 sleep "${TALARIA_FAKE_XCODEBUILD_SECONDS:-0.08}"
@@ -146,13 +119,10 @@ print -r -- "$(( active - 1 ))" > "$state/active"
 rmdir "$lock"
 exit "$exit_status"
 EOF
-chmod +x "$repo/scripts/assert-no-skipped-ui-tests" "$repo/scripts/seed-simulator-photo" "$repo/scripts/ready-simulator-notifications" "$repo/scripts/ready-simulator-documents" "$fake_bin/xcrun" "$fake_bin/xcodebuild"
+chmod +x "$fake_bin/xcrun" "$fake_bin/xcodebuild"
 
 cat > "$state/pool-devices" <<'EOF'
-{"devices":{"com.apple.CoreSimulator.SimRuntime.iOS-27-0":[{"name":"iOS Test 1","udid":"AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA","state":"Shutdown"},{"name":"iOS Test 2","udid":"BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB","state":"Shutdown"},{"name":"iPad (A16)","udid":"EEEEEEEE-EEEE-EEEE-EEEE-EEEEEEEEEEEE","state":"Shutdown"},{"name":"iPhone 17 Pro Max","udid":"FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF","state":"Shutdown"}]}}
-EOF
-cat > "$state/no-ipad-devices" <<'EOF'
-{"devices":{"com.apple.CoreSimulator.SimRuntime.iOS-27-0":[{"name":"iOS Test 1","udid":"AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA","state":"Shutdown"},{"name":"iPhone 17 Pro Max","udid":"FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF","state":"Shutdown"}]}}
+{"devices":{"com.apple.CoreSimulator.SimRuntime.iOS-27-0":[{"name":"iOS Test 1","udid":"AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA","state":"Shutdown"},{"name":"iOS Test 2","udid":"BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB","state":"Shutdown"}]}}
 EOF
 cat > "$state/fallback-devices" <<'EOF'
 {"devices":{"com.apple.CoreSimulator.SimRuntime.iOS-27-0":[{"name":"iPhone 16","udid":"DDDDDDDD-DDDD-DDDD-DDDD-DDDDDDDDDDDD","state":"Shutdown"}]}}
@@ -299,133 +269,12 @@ read -r active < "$state/active"
 [[ "$maximum" == 1 && "$active" == 0 ]]
 [[ ! -e "$lock_file.owner" ]]
 
-: > "$state/all-args"
-"$repo/scripts/test-ios" TalariaUITests > "$state/whole-target.log" 2>&1
-grep -Fqx -- '-skip-testing:TalariaUITests/SidebarPerformanceUITests' "$state/all-args"
-# The clone phase leaves the notification journey to its own phase on the leased device.
-grep -Fqx -- '-skip-testing:TalariaUITests/ResponseCompletionAlertUITests' "$state/all-args"
-grep -Fqx -- '-only-testing:TalariaUITests/ResponseCompletionAlertUITests' "$state/all-args"
-"$repo/scripts/test-ios" TalariaUITests/SidebarPerformanceUITests > "$state/explicit-performance.log" 2>&1
-! grep -Fqx -- '-skip-testing:TalariaUITests/SidebarPerformanceUITests' "$state/last-args"
-
-# A clone that installs and launches the unit-test host while Xcode installs the UI
-# runner there loses the runner (TAL-487), so the targets run in separate phases:
-# unit tests on the leased device, then UI tests on its clones.
-phases_for() {
-    local before
-    before=$(wc -l < "$state/runs")
-    "$repo/scripts/test-ios" "$@" > "$state/phases.log" 2>&1
-    tail -n "+$(( before + 1 ))" "$state/runs" | cut -d'|' -f3-
-}
-# A clone's notification service does not answer, so the notification journey runs last on the
-# leased device (TAL-80).
-# Classes that need an iPad or a Pro Max skip on the pool's iPhone, so they run last, each on a matching
-# simulator (TAL-471).
-regular=TalariaUITests/RegularWidthNavigationUITests
-rotating=TalariaUITests/SizeClassRoundTripUITests
-expected=$'-only-testing:TalariaTests|NO\n-only-testing:TalariaUITests|YES\n-only-testing:TalariaUITests/ResponseCompletionAlertUITests|NO'
-expected+=$'\n'"-only-testing:$regular|NO"$'\n'"-only-testing:$rotating|NO"
-[[ "$(phases_for)" == "$expected" ]] || {
-    print -u2 "Expected a full run to test TalariaTests without clones, TalariaUITests on clones, the notification journey without clones, then each destination class on its simulator:"
-    tail -n 5 "$state/runs" | cut -d'|' -f3- >&2
-    exit 1
-}
-[[ "$(tail -n 2 "$state/runs" | cut -d'|' -f1)" == $'platform=iOS Simulator,id=EEEEEEEE-EEEE-EEEE-EEEE-EEEEEEEEEEEE\nplatform=iOS Simulator,id=FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF' ]]
-grep -q "Not preparing personal simulator EEEEEEEE" "$state/phases.log"
-: > "$state/all-args"
-"$repo/scripts/test-ios" TalariaUITests > "$state/destination-skips.log" 2>&1
-grep -Fqx -- "-skip-testing:$regular" "$state/all-args"
-grep -Fqx -- "-skip-testing:$rotating" "$state/all-args"
-expected="-only-testing:$regular/testOne|NO"
-[[ "$(phases_for "$regular/testOne")" == "$expected" ]] || {
-    print -u2 "Expected a selected destination test to run alone on its simulator."
-    exit 1
-}
-[[ "$(tail -n 1 "$state/runs" | cut -d'|' -f1)" == 'platform=iOS Simulator,id=EEEEEEEE-EEEE-EEEE-EEEE-EEEEEEEEEEEE' ]]
+# With no selector, a run tests TalariaTests on the leased device without clones.
 before=$(wc -l < "$state/runs")
-if TALARIA_DEVICE_FIXTURE="$state/no-ipad-devices" "$repo/scripts/test-ios" TalariaUITests > "$state/no-ipad.log" 2>&1; then
-    print -u2 "Expected a run without a matching simulator to fail."
-    exit 1
-fi
-grep -q "No shut-down iOS simulator's name matches '\^iPad'" "$state/no-ipad.log"
-[[ $(wc -l < "$state/runs") == "$before" ]]  # It fails before testing anything.
-expected=$'-only-testing:TalariaUITests/ResponseCompletionAlertUITests/testAlert|NO'
-[[ "$(phases_for TalariaUITests/ResponseCompletionAlertUITests/testAlert)" == "$expected" ]] || {
-    print -u2 "Expected a selected notification journey to run alone without clones."
-    exit 1
-}
-expected=$'-only-testing:TalariaUITests/ResponseCompletionAlertUITests|NO'
-[[ "$(TALARIA_TEST_WORKER_COUNT=1 phases_for TalariaUITests/ResponseCompletionAlertUITests)" == "$expected" ]] || {
-    print -u2 "Expected a single-worker run to keep its one phase."
-    exit 1
-}
-expected=$'-only-testing:TalariaTests/Unit|NO\n-only-testing:TalariaUITests/First -only-testing:TalariaUITests/Second|YES'
-[[ "$(phases_for TalariaUITests/First TalariaTests/Unit TalariaUITests/Second)" == "$expected" ]] || {
-    print -u2 "Expected mixed selectors to split into a unit phase, then a UI phase."
-    exit 1
-}
-
-# Only a disposable pool device is seeded with a photo and has its notification service readied
-# (TAL-651); a personal simulator keeps its library and its processes.
-: > "$state/seeded"
-: > "$state/notifications-readied"
-: > "$state/documents-readied"
-: > "$state/spawned"
-"$repo/scripts/test-ios" TalariaUITests/PoolSeed > "$state/pool-seed.log" 2>&1
-[[ "$(<"$state/seeded")" == (AAAAAAAA|BBBBBBBB)-* ]]
-# ...and has the keyboard's slide-to-type introduction marked as shown (TAL-668).
-[[ "$(<"$state/spawned")" == (AAAAAAAA|BBBBBBBB)-*" defaults write com.apple.keyboard.preferences DidShowContinuousPathIntroduction -bool true" ]]
-TALARIA_DEVICE_FIXTURE="$state/fallback-devices" IOS_SIMULATOR_ID=DDDDDDDD-DDDD-DDDD-DDDD-DDDDDDDDDDDD \
-    "$repo/scripts/test-ios" TalariaUITests/PersonalSeed > "$state/personal-seed.log" 2>&1
-grep -q "Not preparing personal simulator DDDDDDDD" "$state/personal-seed.log"
-[[ $(wc -l < "$state/seeded" | tr -d ' ') == 1 ]]
-[[ "$(<"$state/notifications-readied")" == (AAAAAAAA|BBBBBBBB)-* ]]
-[[ $(wc -l < "$state/notifications-readied" | tr -d ' ') == 1 ]]
-# ...and has its document picker warmed (TAL-751).
-[[ "$(<"$state/documents-readied")" == (AAAAAAAA|BBBBBBBB)-* ]]
-[[ $(wc -l < "$state/documents-readied" | tr -d ' ') == 1 ]]
-
-# The parallel UI phase can leave the leased device's notification service hanging, so the
-# notification journey's serial phase readies it again right before testing (TAL-682).
-: > "$state/events"
-"$repo/scripts/test-ios" TalariaUITests/ResponseCompletionAlertUITests TalariaUITests/SettingsStructureUITests \
-    > "$state/serial-ready.log" 2>&1
-events=("${(@f)$(<"$state/events")}")
-leased=${events[1]#ready }
-expected="ready $leased"$'\n'"run -only-testing:TalariaUITests/SettingsStructureUITests|YES"
-expected+=$'\n'"ready $leased"$'\n'"run -only-testing:TalariaUITests/ResponseCompletionAlertUITests|NO"
-[[ "${(F)events}" == "$expected" ]] || {
-    print -u2 "Expected the notification service to be readied right before the serial phase:"
-    print -u2 -r -- "${(F)events}"
-    exit 1
-}
-: > "$state/events"
-TALARIA_DEVICE_FIXTURE="$state/fallback-devices" IOS_SIMULATOR_ID=DDDDDDDD-DDDD-DDDD-DDDD-DDDDDDDDDDDD \
-    "$repo/scripts/test-ios" TalariaUITests/ResponseCompletionAlertUITests TalariaUITests/SettingsStructureUITests \
-    > "$state/personal-serial.log" 2>&1
-! grep -q '^ready' "$state/events"
-
-# Xcode shuts the leased device down to clone it, and a push to a shut-down device fails at once, which
-# the probe would take for an answer: readiness boots the device before probing it (TAL-682).
-: > "$state/xcrun-calls"
-zsh "$source_root/scripts/ready-simulator-notifications" AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA
-[[ "$(<"$state/xcrun-calls")" == $'bootstatus AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA\npush AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA' ]] || {
-    print -u2 "Expected notification readiness to boot the simulator before probing it:"
-    cat "$state/xcrun-calls" >&2
-    exit 1
-}
-
-# A failed seed stops before testing and still returns its lease.
-touch "$state/seed-fail"
-if "$repo/scripts/test-ios" TalariaUITests/SeedFails > "$state/seed-fails.log" 2>&1; then
-    print -u2 "Expected a failed photo seed to fail the run."
-    exit 1
-fi
-rm "$state/seed-fail"
-[[ $(runs_for TalariaUITests/SeedFails) == 0 ]]
-leases=("$state"/pool/leases/*.lock(N))
-(( ${#leases} == 0 )) || {
-    print -u2 "A failed photo seed left pool leases behind: ${leases[*]}"
+"$repo/scripts/test-ios" > "$state/default.log" 2>&1
+[[ "$(tail -n "+$(( before + 1 ))" "$state/runs" | cut -d'|' -f3-)" == '-only-testing:TalariaTests|NO' ]] || {
+    print -u2 "Expected a run without selectors to test TalariaTests in one pass without clones:"
+    tail -n "+$(( before + 1 ))" "$state/runs" | cut -d'|' -f3- >&2
     exit 1
 }
 
@@ -465,4 +314,4 @@ wait "$owner"
 unset TALARIA_FAKE_XCODEBUILD_SECONDS
 [[ ! -e "$marker" ]]
 
-print "test-ios worktree admission, selection, runner-hang retry, photo seeding and cleanup checks passed ($rounds concurrent rounds)."
+print "test-ios worktree admission, selection, runner-hang retry and cleanup checks passed ($rounds concurrent rounds)."

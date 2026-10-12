@@ -2,8 +2,8 @@
 # Usage: ci/report-test-failures LOG SHA CONTEXT
 #        ci/report-test-failures --passed SHA CONTEXT
 # Follows an xcodebuild log and, for each failing test, posts a failure commit status on SHA under CONTEXT naming it, so
-# a watcher (ci/watch-ui-suite) sees the failure while the job still runs: GitHub serves a job's log only once the job
-# ends, which kept failures from their fixer for 10 to 25 minutes a run (TAL-673). Runs until it gets SIGTERM. Needs
+# the failure shows while the job still runs: GitHub serves a job's log only once the job ends. Runs until it gets
+# SIGTERM. Needs
 # GH_TOKEN with statuses: write, GITHUB_REPOSITORY, GITHUB_SERVER_URL and GITHUB_RUN_ID. A failed post is skipped: the
 # job's own result still reports the failure. --passed posts success under CONTEXT instead, once the shard's tests
 # passed: GitHub keeps each context's latest status, so a passing rerun of the commit replaces an earlier failure.

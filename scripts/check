@@ -39,20 +39,14 @@ case "$component" in
     python3 app/ci/load_env_test.py
     python3 app/scripts/test-ios-device-selection
     python3 app/scripts/test-run-ios-device
-    python3 app/scripts/test-assert-no-skipped-ui-tests
     python3 app/scripts/test-validate-upstream-contract
-    python3 app/ci/test_shards_test.py
     ruby app/ci/select_testflight_build_number_test.rb
     ruby app/ci/upload_testflight_test.rb
     ruby app/ci/test_ios_runner_test.rb
     app/ci/require_successful_main_ci_test.sh
     app/ci/wait_for_job_test.sh
     app/ci/memory_sampler_test.sh
-    app/ci/find_ui_suite_run_test.sh
-    app/ci/ui_suite_failed_jobs_test.sh
     app/ci/report_test_failures_test.sh
-    app/ci/watch_ui_suite_test.sh
-    app/ci/ui_suite_wait_turn_test.sh
     app/ci/validate_release_tag_test.sh
     actionlint
     git diff --check

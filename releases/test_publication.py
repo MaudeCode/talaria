@@ -409,22 +409,15 @@ class PublicationTests(unittest.TestCase):
         for name in ("currentContracts", "previousAppContracts"):
             self.assertIn(f"--name {name}", gate)
         # The App's hosted unit tests run on the release source whenever the App ships, dry runs included, through
-        # app-tests.yml's pull-request mode: the App build and one TalariaTests shard, no UI test (TAL-877). The
-        # contracts job runs the package tests (--package-suite).
-        for retired in ("ui-suite", "ui-suite-lookup", "ui-suite-built"):
-            self.assertNotIn(retired, jobs)
+        # app-tests.yml's pull-request mode: the App build and one TalariaTests job. The contracts job runs the
+        # package tests (--package-suite).
         hosted = jobs["app-hosted-tests"]
         self.assertEqual(hosted["uses"], "./.github/workflows/app-tests.yml")
         self.assertEqual(hosted["with"], {"mode": "pull-request", "ref": "${{ needs.prepare.outputs.source }}",
                                           "package_tests": False})
         self.assertEqual(hosted["if"], "needs.prepare.outputs.app_changed == 'true'")
-        # The test shard posts failing tests as commit statuses while it runs (TAL-673).
+        # The test job posts failing tests as commit statuses while it runs (TAL-673).
         self.assertEqual(hosted["permissions"], {"contents": "read", "actions": "read", "statuses": "write"})
-        document = json.loads(subprocess.check_output([
-            "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))",
-            str(root / ".github/workflows/release-set.yml")], text=True))
-        for trigger in ("workflow_call", "workflow_dispatch"):
-            self.assertNotIn("ui_shards", document["on"][trigger]["inputs"])
         app_tests = json.loads(subprocess.check_output([
             "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))",
             str(root / ".github/workflows/app-tests.yml")], text=True))
@@ -479,27 +472,6 @@ class PublicationTests(unittest.TestCase):
                     with self.subTest(path=path.name):
                         self.assertNotIn("--name", line)
 
-    def test_ui_performance_runs_on_its_own_schedule(self):
-        # Measurement-only UI classes stay out of every PR and main-push suite and run serially on a schedule.
-        root = Path(__file__).resolve().parents[1]
-        def workflow(name):
-            return json.loads(subprocess.check_output([
-                "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))",
-                str(root / ".github/workflows" / name),
-            ], text=True))
-        # PR and main CI skip them in every shard through app/ci/test_shards.py (tested there).
-        shards = (root / "app/ci/test_shards.py").read_text()
-        classes = re.findall(r'"(TalariaUITests/\w+PerformanceUITests)"', shards)
-        self.assertEqual(len(classes), 4)
-        scheduled = workflow("ui-performance.yml")
-        self.assertIn("schedule", scheduled["on"])
-        self.assertIn("workflow_dispatch", scheduled["on"])
-        measure = json.dumps(scheduled["jobs"]["measure"])
-        for name in classes:
-            self.assertIn(f"-only-testing:{name}", measure)
-        self.assertIn("-parallel-testing-enabled NO", measure)
-        self.assertIn("scripts/report-performance-metrics", measure)
-
     def test_linux_jobs_running_ruby_tooling_set_up_ruby(self):
         # Tag validation (cli.py prepare) and TestFlight upload (publish.py app) shell out to Ruby, so every Linux
         # job that runs them pins it first instead of relying on whatever the runner image ships.
@@ -553,8 +525,7 @@ class PublicationTests(unittest.TestCase):
                                 check(broken, stage, dry)
 
     def test_app_hosted_tests_gate_every_release_that_ships_the_app(self):
-        # The App's hosted unit tests gate every release that ships the App, dry runs included, and never run otherwise;
-        # no UI test gates a release (TAL-877).
+        # The App's hosted unit tests gate every release that ships the App, dry runs included, and never run otherwise.
         base = {name: {"result": "success"} for name in ("prepare", "contracts", "component-contracts",
                                                           "agent", "app-dry-build")}
         base["prepare"]["outputs"] = {"app_changed": "true", "web_changed": "false", "relay_changed": "false"}

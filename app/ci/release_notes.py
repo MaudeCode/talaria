@@ -2,6 +2,7 @@
 """Validate tracked release fragments and render notes from immutable Git refs."""
 
 import argparse
+import difflib
 from datetime import datetime, timezone
 import html
 import io
@@ -137,28 +138,165 @@ def repository_only(path):
         or re.fullmatch(r"[A-Z][A-Z_]*", path) is not None
         or path.startswith((
             "web/", "relay/", "contracts/", "releases/", "docs/", "ci/", "scripts/", ".github/", ".agents/", ".agy/", ".codex/",
-            ".xcodebuildmcp/", DIRECTORY + "/", "TalariaTests/", "TalariaUITests/", "TalariaKit/Tests/",
+            ".xcodebuildmcp/", DIRECTORY + "/", "TalariaKit/Tests/",
             # The UI-test fixture server is compiled only into DEBUG builds (`#if DEBUG`), so it never ships.
             "Talaria/Config/UITestFixture",
         ))
+        or TEST_DIRECTORY.match(path) is not None
         or path in {".gitignore", ".gitattributes", ".gitleaksignore", "CLAUDE.md"}
     )
 
 
 PROJECT = "Talaria.xcodeproj/project.pbxproj"
-TEST_DIRECTORIES = ("TalariaTests/", "TalariaUITests/")
+SCHEMES = "Talaria.xcodeproj/xcshareddata/xcschemes/"
+# The App's test bundles: TalariaTests, and test targets since removed whose files historical ranges still delete.
+TEST_DIRECTORY = re.compile(r"(Talaria\w*Tests)/")
+OBJECT = re.compile(r"^(\t+)([0-9A-Z]{24})(?: /\* (.*?) \*/)? = \{$|^\t\t([0-9A-Z]{24}) /\* (.*?) \*/ = \{.*\};$")
 
 
-def test_membership_only(base, target):
-    # A project edit whose every line names a test-target file only adds or removes tests; the App builds the same.
-    def tests(paths):
-        return {Path(path).name for path in paths.splitlines() if path.removeprefix("app/").startswith(TEST_DIRECTORIES)}
-    names = tests(git("ls-tree", "-r", "--name-only", "--full-tree", base))
-    names |= tests(git("ls-tree", "-r", "--name-only", "--full-tree", target) if target
-                   else git("ls-files", "--full-name", "--cached", "--others", "--exclude-standard", ":(top)"))
-    diff = git("diff", "-U0", base, *([target] if target else []), "--", f":(top){PROJECT}", f":(top)app/{PROJECT}")
-    lines = [line for line in diff.splitlines() if line[:1] in "+-" and not line.startswith(("+++", "---"))]
-    return all((match := re.search(r"/\* (.+?)(?: in \w+)? \*/", line)) and match.group(1) in names for line in lines)
+def source_at(ref, path):
+    """The file at `ref` (the working tree without one); a file that is absent there is empty."""
+    if ref:
+        try:
+            return git("show", f"{ref}:{path}", strip=False)
+        except ValueError:
+            return ""
+    file = Path(git("rev-parse", "--show-toplevel")) / path
+    return file.read_text(encoding="utf-8") if file.exists() else ""
+
+
+def changed_lines(base, target, path):
+    """Each side's lines, with the indices the change removed from the base and added in the target."""
+    before = source_at(base, path).split("\n")
+    after = source_at(target, path).split("\n")
+    removed, added = [], []
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, before, after, autojunk=False).get_opcodes():
+        if tag != "equal":
+            removed += range(i1, i2)
+            added += range(j1, j2)
+    return (before, removed), (after, added)
+
+
+def project_test_only(base, target, path, names):
+    # A project edit that touches only test targets and what only they use leaves the App building as before. An
+    # object is a test's when its name is a test file or target, or when only test objects mention it; every other
+    # object, less its lines naming test objects, must stay the same.
+    def parse(source):
+        objects, outside, current = {}, [], None
+        for line in source.split("\n"):
+            if current is None and (match := OBJECT.match(line)) and len(match[1] or "\t\t") == 2:
+                identifier, comment = (match[4], match[5]) if match[4] else (match[2], match[3])
+                objects[identifier] = (comment, [line])
+                current = None if match[4] else identifier
+            elif current is not None:
+                objects[current][1].append(line)
+                current = None if line == "\t\t};" else current
+            else:
+                outside.append(line)
+        tests = {identifier for identifier, (comment, _) in objects.items()
+                 if comment and re.sub(r' in \w+$|^Build configuration list for PBXNativeTarget "|"$', "", comment) in names}
+        while grown := {identifier for identifier in objects if identifier not in tests
+                        and (users := {other for other, (_, lines) in objects.items() if other != identifier
+                                       and any(identifier in line for line in lines)})
+                        and users <= tests}:
+            tests |= grown
+        return objects, outside, tests
+
+    def without_tests(lines, tests):
+        kept, skip = [], None
+        for line in lines:
+            if skip is not None:
+                skip = None if line == skip else skip
+            elif (match := OBJECT.match(line)) and match[2] in tests:
+                skip = match[1] + "};"
+            elif not any(identifier in line for identifier in tests):
+                kept.append(line)
+        return kept
+
+    before, before_outside, before_tests = parse(source_at(base, path))
+    after, after_outside, after_tests = parse(source_at(target, path))
+    if before_outside != after_outside:
+        return False
+    for identifier in before.keys() | after.keys():
+        if identifier not in after:
+            if identifier not in before_tests:
+                return False
+        elif identifier not in before:
+            if identifier not in after_tests:
+                return False
+        elif not (identifier in before_tests and identifier in after_tests) and \
+                without_tests(before[identifier][1], before_tests) != without_tests(after[identifier][1], after_tests):
+            return False
+    return True
+
+
+def scheme_test_only(base, target, path):
+    # A scheme edit inside its test references only changes which tests run.
+    def check(lines, indices):
+        inside, testable = False, set()
+        for number, line in enumerate(lines):
+            if "<TestableReference" in line:
+                inside = True
+            if inside:
+                testable.add(number)
+            if "</TestableReference>" in line:
+                inside = False
+        return set(indices) <= testable
+    return all(check(*side) for side in changed_lines(base, target, path))
+
+
+def debug_whole(text):
+    """Whether every non-blank line of a Swift file is inside `#if DEBUG`."""
+    lines = text.split("\n")
+    return debug_lines(lines) >= {number for number, line in enumerate(lines) if line.strip()}
+
+
+def debug_lines(lines):
+    debug, stack = set(), []
+    for number, line in enumerate(lines):
+        directive = line.strip()
+        if directive.startswith("#if"):
+            stack.append(directive == "#if DEBUG")
+        if any(stack):
+            debug.add(number)
+        if directive.startswith(("#else", "#elseif")) and stack:
+            # The other branch of a DEBUG check is what ships.
+            stack[-1] = False
+        if directive.startswith("#endif") and stack:
+            stack.pop()
+    return debug
+
+
+def debug_only(base, target, path):
+    # Code inside `#if DEBUG` is compiled out of the shipped App, so a change confined to it changes no release.
+    def check(lines, indices):
+        debug = debug_lines(lines)
+        return all(number in debug or not lines[number].strip() for number in indices)
+    return all(check(*side) for side in changed_lines(base, target, path))
+
+
+def test_support_only(base, target, path):
+    files = {path.removeprefix("app/") for path in git("ls-tree", "-r", "--name-only", "--full-tree", base).splitlines()}
+    files |= {path.removeprefix("app/") for path in (
+        git("ls-tree", "-r", "--name-only", "--full-tree", target) if target
+        else git("ls-files", "--full-name", "--cached", "--others", "--exclude-standard", ":(top)")).splitlines()}
+    # Test bundles' files, and the DEBUG-only UI-test fixture the App target compiles.
+    tests = {file for file in files if TEST_DIRECTORY.match(file) or file.startswith("Talaria/Config/UITestFixture")}
+    prefix = "app/" if git("ls-tree", "--full-tree", "--name-only", base, "app/" + PROJECT) else ""
+    if path == PROJECT:
+        # A Swift file that is DEBUG-only from end to end never ships, so neither does its project membership.
+        tests |= {other for other in changes(base, target) if other.endswith(".swift")
+                  and all(debug_whole(text) for ref in (base, target) if (text := source_at(ref, prefix + other)))}
+        # The project names files by basename, so a name a shipping file also has counts as the App's.
+        names = {Path(file).name for file in tests} - {Path(file).name for file in files - tests}
+        targets = {match[1] for file in files if (match := TEST_DIRECTORY.match(file))}
+        names |= {name + suffix for name in targets | {"TalariaTests"} for suffix in ("", ".xctest")}
+        return project_test_only(base, target, prefix + path, names)
+    if path.startswith(SCHEMES):
+        return scheme_test_only(base, target, prefix + path)
+    if path.endswith(".swift"):
+        return debug_only(base, target, prefix + path)
+    return False
 
 
 def validate(base=None, target=None):
@@ -178,7 +316,7 @@ def validate(base=None, target=None):
         has_app_entries = any("app" in entry.get("components", ["app"])
                               for data in selected.values() for entry in data.get("entries", []))
         app_changes = [path for path in changed if not repository_only(path)
-                       and not (path == PROJECT and test_membership_only(base, target))]
+                       and not test_support_only(base, target, path)]
         if app_changes and not has_app_entries:
             raise ValueError("app or unclassified changes require user-facing entries; skip is only for repository/docs/test work")
         # Subjects identify tickets only; release prose always comes from JSON.

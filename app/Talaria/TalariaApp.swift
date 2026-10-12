@@ -124,10 +124,6 @@ struct TalariaApp: App {
         let arguments = ProcessInfo.processInfo.arguments
 
         #if DEBUG
-        if ShareExtensionUITestHost.resetsSharedState {
-            ShareExtensionUITestHost.resetSharedState()
-        }
-        ShareOpenFixtureMode.storeHoldsStatus(ShareExtensionUITestHost.isActive)
         let fixture = arguments.contains(UITestFixtureEnvironment.launchArgument)
             ? UITestFixtureEnvironment.make()
             : nil
@@ -142,11 +138,6 @@ struct TalariaApp: App {
         // entitlement (TAL-91 configuration sync) must not turn on SwiftData's
         // automatic mirroring, which also rejects the cache's unique keys.
         var cacheConfiguration = ModelConfiguration(isStoredInMemoryOnly: usesUITestFixture, cloudKitDatabase: .none)
-        #if DEBUG
-        if usesUITestFixture, let storeURL = UITestFixtureEnvironment.persistentCacheStoreURL {
-            cacheConfiguration = ModelConfiguration(url: storeURL, cloudKitDatabase: .none)
-        }
-        #endif
         let cacheContainer = try! ModelContainer(
             for: CachedSession.self, CachedMessage.self,
             configurations: cacheConfiguration
@@ -216,13 +207,6 @@ struct TalariaApp: App {
                     draftStore: uiTestFixture?.draftStore
                 )
                     .preferredColorScheme(AppTheme.storedValue(appThemeRawValue).colorScheme)
-                    // TAL-81: overlaid rather than a root of its own, so the share
-                    // extension's `talaria://share` open lands on the real import path.
-                    .overlay(alignment: .top) {
-                        if ShareExtensionUITestHost.isActive {
-                            ShareExtensionUITestHostBar()
-                        }
-                    }
             }
             #else
             ContentView(authManager: authManager)
