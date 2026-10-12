@@ -156,11 +156,7 @@ struct SessionListView: View {
                 serverName: appSidebarServerName,
                 activeProfileName: appSidebarProfileName,
                 quotaSources: appSidebarQuotaSources,
-                newChat: {
-                    // Closing first starts the slide before the new chat builds (TAL-477).
-                    appSidebar.isPresented = false
-                    openNewChat()
-                },
+                newChat: { closeAppSidebar(then: openNewChat) },
                 select: selectAppSidebarDestination,
                 close: { appSidebar.isPresented = false }
             )
@@ -1157,9 +1153,17 @@ struct SessionListView: View {
     }
 
     private func selectAppSidebarDestination(_ destination: AppSidebarDestination) {
-        // Closing first hands the slide to the render server before the section builds (TAL-477).
-        appSidebar.isPresented = false
+        closeAppSidebar { navigate(to: destination) }
+    }
 
+    /// Closing first hands the slide to the render server before the next screen builds, so the
+    /// slide keeps moving while it does (TAL-477).
+    private func closeAppSidebar(then navigate: () -> Void) {
+        appSidebar.isPresented = false
+        navigate()
+    }
+
+    private func navigate(to destination: AppSidebarDestination) {
         switch destination {
         case .chats:
             navigationState.clearDestination()
@@ -1185,8 +1189,6 @@ struct SessionListView: View {
             reloadAppSidebarQuotaSources()
             return
         }
-        // Only VoiceOver needs the focus moved, and moving it redraws this whole screen.
-        guard UIAccessibility.isVoiceOverRunning else { return }
         Task { @MainActor in
             await Task.yield()
             guard !appSidebar.isPresented else { return }

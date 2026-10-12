@@ -1,4 +1,5 @@
 import UIKit
+import SwiftUI
 import XCTest
 @testable import Talaria
 
@@ -6,7 +7,7 @@ import XCTest
 /// however deep the stack sits in the controller tree (TAL-462), and wins over a list row's
 /// swipe actions that start at the same edge (TAL-490).
 @MainActor
-final class SidebarEdgePanGestureTests: XCTestCase {
+final class SidebarEdgePanArbiterTests: XCTestCase {
     private var window: UIWindow!
 
     override func setUp() {
@@ -30,14 +31,14 @@ final class SidebarEdgePanGestureTests: XCTestCase {
         window.rootViewController = root
         window.makeKeyAndVisible()
 
-        XCTAssertFalse(SidebarEdgePanGesture.visibleStackOwnsEdgeSwipe(in: window))
+        XCTAssertFalse(SidebarEdgePanArbiter.visibleStackOwnsEdgeSwipe(in: window))
 
         navigation.pushViewController(UIViewController(), animated: false)
-        XCTAssertTrue(SidebarEdgePanGesture.visibleStackOwnsEdgeSwipe(in: window))
+        XCTAssertTrue(SidebarEdgePanArbiter.visibleStackOwnsEdgeSwipe(in: window))
 
         navigation.view.removeFromSuperview()
         XCTAssertFalse(
-            SidebarEdgePanGesture.visibleStackOwnsEdgeSwipe(in: window),
+            SidebarEdgePanArbiter.visibleStackOwnsEdgeSwipe(in: window),
             "A stack that is not on screen must not block the sidebar"
         )
     }
@@ -46,10 +47,10 @@ final class SidebarEdgePanGestureTests: XCTestCase {
         let root = UIViewController()
         window.rootViewController = root
         window.makeKeyAndVisible()
-        XCTAssertFalse(SidebarEdgePanGesture.visibleStackOwnsEdgeSwipe(in: window))
+        XCTAssertFalse(SidebarEdgePanArbiter.visibleStackOwnsEdgeSwipe(in: window))
 
         root.present(UIViewController(), animated: false)
-        XCTAssertTrue(SidebarEdgePanGesture.visibleStackOwnsEdgeSwipe(in: window))
+        XCTAssertTrue(SidebarEdgePanArbiter.visibleStackOwnsEdgeSwipe(in: window))
     }
 
     func testARowSwipeStartingAtTheEdgeWaitsForTheSidebarPan() throws {
@@ -65,7 +66,7 @@ final class SidebarEdgePanGestureTests: XCTestCase {
         list.addGestureRecognizer(rowSwipe)
         let edgePan = UIScreenEdgePanGestureRecognizer()
         window.addGestureRecognizer(edgePan)
-        let arbiter: UIGestureRecognizerDelegate = SidebarEdgePanGesture.Coordinator()
+        let arbiter: UIGestureRecognizerDelegate = SidebarEdgePanArbiter()
 
         func waitsForEdgePan(_ other: UIGestureRecognizer) -> Bool {
             arbiter.gestureRecognizer?(edgePan, shouldBeRequiredToFailBy: other) ?? false
@@ -83,5 +84,32 @@ final class SidebarEdgePanGestureTests: XCTestCase {
         parent.addChild(child)
         parent.view.addSubview(child.view)
         child.didMove(toParent: parent)
+    }
+}
+
+/// The sidebar container slides the screen with a transform, which UIKit counts against safe
+/// areas; neither host may lose an inset and lay itself out again on open or close (TAL-477).
+@MainActor
+final class AppSidebarSafeAreaTests: XCTestCase {
+    func testOpeningKeepsBothHostsSafeAreas() throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+        let window = UIWindow(windowScene: scene)
+        defer { window.isHidden = true }
+        let presentation = AppSidebarPresentation()
+        let controller = AppSidebarController(presentation: presentation)
+        controller.setRoots(sidebar: AnyView(Color.clear), content: AnyView(Color.clear))
+        window.rootViewController = controller
+        window.makeKeyAndVisible()
+        // A leading inset like a landscape iPhone's notch.
+        controller.additionalSafeAreaInsets = UIEdgeInsets(top: 20, left: 50, bottom: 10, right: 30)
+        controller.view.layoutIfNeeded()
+        let hosts = controller.children.map(\.view!)
+        let closed = hosts.map(\.safeAreaInsets)
+
+        presentation.isPresented = true
+        controller.view.layoutIfNeeded()
+        hosts.forEach { $0.layoutIfNeeded() }
+
+        XCTAssertEqual(hosts.map(\.safeAreaInsets), closed, "Opening the sidebar changed a host's safe area")
     }
 }

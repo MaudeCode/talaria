@@ -17,9 +17,10 @@ public enum SessionListReturnRefresh {
         // nothing on the server.
         guard let oldValue, oldValue != newValue else { return }
 
-        // An app section leaves no chat behind, and the list keeps polling beside every section,
-        // so reloading it here only stalled the sidebar sliding closed over Chats (TAL-477).
-        // Chat lists still refresh: archived can unarchive chats.
+        // An app section leaves no chat behind, and the list already stays current without this:
+        // at regular width it keeps polling beside every section, and at compact width its own
+        // refresh restarts when it comes back on screen. Reloading here only stalled the sidebar
+        // sliding closed over Chats (TAL-477). Chat lists still refresh: archived can unarchive.
         if case .utility(let utility) = oldValue, !utility.listsSessions { return }
 
         if case .newChat = oldValue {
