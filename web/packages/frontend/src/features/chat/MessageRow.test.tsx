@@ -99,7 +99,7 @@ describe('background updates (TAL-460)', () => {
   })
 
   it('says the run is working on background results only while the server says a background result started it', () => {
-    const turn = { status: 'streaming', tps: null } as unknown as LiveTurn
+    const turn = { status: 'streaming', startedAt: Date.now(), tps: null } as unknown as LiveTurn
     const { rerender } = render(<LiveStatusPill turn={turn} background />)
     expect(screen.getByRole('status')).toHaveTextContent('Working on background results')
     rerender(<LiveStatusPill turn={turn} />)

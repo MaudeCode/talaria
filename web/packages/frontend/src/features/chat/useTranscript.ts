@@ -79,7 +79,7 @@ export function useTranscript(sessionId: string | null) {
     if (live?.streamId === streamId && !isTerminal(live.status)) return
     if (attachedStream.current === streamId) return
     attachedStream.current = streamId
-    void attachToStream(sessionId, streamId, session.transcript_seq ?? null, session.pending_steers ?? [], session.pending_started_at ?? null).catch(() => undefined)
+    void attachToStream(sessionId, streamId, session).catch(() => undefined)
   }, [sessionId, session, live])
 
   // Passive exit: leaving the session releases the EventSource, never cancels the backend run.

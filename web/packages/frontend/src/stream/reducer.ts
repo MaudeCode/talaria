@@ -122,9 +122,9 @@ export function isTerminal(status: TurnStatus): boolean {
   return TERMINAL.has(status)
 }
 
-/** The server's run start in ms; local `now` when it is missing or invalid, and never in the future. */
-function runStart(serverStartedAt: number | null | undefined, now: number): number {
-  return typeof serverStartedAt === 'number' && Number.isFinite(serverStartedAt) && serverStartedAt > 0 ? Math.min(serverStartedAt * 1000, now) : now
+/** The server's run start in ms, or `fallback` until the server reports one. */
+function runStart(serverStartedAt: number | null | undefined, fallback: number): number {
+  return serverStartedAt == null ? fallback : serverStartedAt * 1000
 }
 
 function newTurn(sessionId: string, streamId: string, now: number, serverStartedAt?: number | null): LiveTurn {
@@ -311,7 +311,7 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
     case 'attach': {
       const existing = state.turns[action.sessionId]
       if (existing?.streamId === action.streamId && existing && !isTerminal(existing.status)) {
-        return { turns: { ...state.turns, [action.sessionId]: { ...existing, status: 'reconnecting', replayed: action.replay, startedAt: Math.min(existing.startedAt, runStart(action.serverStartedAt, action.now)) } } }
+        return { turns: { ...state.turns, [action.sessionId]: { ...existing, status: 'reconnecting', replayed: action.replay, startedAt: runStart(action.serverStartedAt, existing.startedAt) } } }
       }
       return { turns: { ...state.turns, [action.sessionId]: { ...newTurn(action.sessionId, action.streamId, action.now, action.serverStartedAt), status: 'connecting', replayed: action.replay, claimsPersistedRows: action.replay } } }
     }

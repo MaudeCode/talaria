@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { Transcript } from './Transcript'
 import { LiveStatusPill } from './LiveTurnView'
-import { initialStreamState, streamReducer, type LiveTurn, type StreamAction } from '../../stream/reducer'
+import { initialStreamState, streamReducer, type StreamAction } from '../../stream/reducer'
 import type { ChatEvent } from '../../contracts/sse'
 import type { ActivityMode } from './blocks/Worklog'
 import * as api from '../../api/endpoints'
@@ -64,7 +64,10 @@ describe('live status', () => {
 
 describe('live elapsed time (TAL-922)', () => {
   afterEach(() => { vi.useRealTimers() })
-  const at = (startedAt: number, status = 'streaming') => ({ status, startedAt, tps: null }) as unknown as LiveTurn
+  const at = (startedAt: number, reconnecting = false) => {
+    const started = streamReducer(initialStreamState, { type: 'start', sessionId: 's', streamId: 'run', turnId: null, userMessageId: null, userText: '', now: startedAt })
+    return reconnecting ? streamReducer(started, { type: 'connection', sessionId: 's', streamId: 'run', status: 'reconnecting' }).turns.s! : started.turns.s!
+  }
 
   it('reads "Working <elapsed>" from the turn start and ticks each second', () => {
     vi.useFakeTimers({ now: 1_000_000 })
@@ -84,7 +87,7 @@ describe('live elapsed time (TAL-922)', () => {
 
   it('shows no time while reconnecting or on background work', () => {
     vi.useFakeTimers({ now: 1_000_000 })
-    const view = render(<LiveStatusPill turn={at(0, 'reconnecting')} />)
+    const view = render(<LiveStatusPill turn={at(0, true)} />)
     expect(pills(view.container)[0]).toHaveTextContent(/^Reconnecting…$/)
     view.rerender(<LiveStatusPill turn={at(0)} background />)
     expect(pills(view.container)[0]).toHaveTextContent(/^Working on background results$/)

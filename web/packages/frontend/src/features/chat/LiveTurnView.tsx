@@ -98,7 +98,6 @@ function RunElapsed({ since }: { since: number }) {
     const id = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(id)
   }, [])
-  if (!Number.isFinite(since)) return null
   const total = Math.max(0, Math.floor((now - since) / 1000))
   const [h, min, s] = [Math.floor(total / 3600), Math.floor(total / 60) % 60, total % 60]
   const pad = (n: number) => String(n).padStart(2, '0')
