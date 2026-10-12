@@ -12,3 +12,4 @@ changes touch before it ships.
 | Saving transcript audio | In a chat with an audio tile, tap Export and save it to Files | `ChatHostedTests.testServerMediaRendersInsideTheMarkdownAroundIt` (the exporter opens) |
 | Clarification with the keyboard up | Answer a batch clarification: the keyboard is not raised at first, the grip drags the question area, and Next stays above the keyboard once typing | `StreamHostedTests.testBatchClarificationShowsChoicesAndDeliversTypedAndMultiSelectAnswers` |
 | Editing a pending steer with the keyboard up | Type a draft, then tap Edit on a pending steer: the steer joins the draft | `ChatHostedTests.testPendingSteerFromAnotherDeviceOffersSendNowEditAndCancel` |
+| Long press on Show more | Hold Show more past half a second: the body expands and no message menu opens | `ChatHostedTests.testLongBodiesOpenCollapsedAndExpandInPlace` (the press resolves to the control) |

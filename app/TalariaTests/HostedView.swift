@@ -156,6 +156,11 @@ enum HostedAccessibility {
 extension UIView {
     /// Whether a view of `type` is anywhere under this one.
     func containsView<View: UIView>(ofType type: View.Type) -> Bool {
-        self is View || subviews.contains { $0.containsView(ofType: type) }
+        firstView(ofType: type) != nil
+    }
+
+    /// The first view of `type` under this one, depth first.
+    func firstView<View: UIView>(ofType type: View.Type) -> View? {
+        self as? View ?? subviews.lazy.compactMap { $0.firstView(ofType: type) }.first
     }
 }

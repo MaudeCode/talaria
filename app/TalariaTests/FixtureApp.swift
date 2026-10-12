@@ -164,12 +164,18 @@ extension XCTestCase {
         timeout: TimeInterval = 10,
         where match: @escaping (NSObject) -> Bool
     ) async -> Bool {
+        await awaitCondition(timeout: timeout) { !HostedAccessibility.elements(in: window).contains(where: match) }
+    }
+
+    /// Waits for `condition` without blocking the main actor the screen's tasks run on, and reports whether it held.
+    @MainActor
+    func awaitCondition(timeout: TimeInterval = 10, _ condition: @escaping () -> Bool) async -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
-            if !HostedAccessibility.elements(in: window).contains(where: match) { return true }
+            if condition() { return true }
             try? await Task.sleep(for: .milliseconds(50))
         }
-        return !HostedAccessibility.elements(in: window).contains(where: match)
+        return condition()
     }
 
     /// The chat composer's text view, once the chat has one.

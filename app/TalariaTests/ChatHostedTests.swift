@@ -11,8 +11,14 @@ final class ChatHostedTests: XCTestCase {
     func testServerMediaRendersInsideTheMarkdownAroundIt() async throws {
         let window = try await hostFixtureChat(["--ui-test-transcript-media"])
         _ = try await requireElement(in: window, label: "Linked chart", "The linked image did not render as a thumbnail")
-        XCTAssertFalse(elements(named: "chart.png", in: window).isEmpty, "The list item's image did not render")
-        XCTAssertFalse(elements(named: "Chart", in: window).isEmpty, "The image inside bold text did not render under its alt text")
+        // Thumbnails show a spinner until their bytes load, then the image in its 132-point box or, on failure, a
+        // shorter unavailable chip under the same alt-text name.
+        let loaded = await awaitCondition { !window.containsView(ofType: UIActivityIndicatorView.self) }
+        XCTAssertTrue(loaded, "The thumbnails never finished loading")
+        for name in ["Linked chart", "chart.png", "Chart"] {
+            let thumbnail = try XCTUnwrap(elements(named: name, in: window).first, "Missing the \(name) thumbnail")
+            XCTAssertEqual(thumbnail.accessibilityFrame.height, 132, accuracy: 1, "The \(name) thumbnail shows no image")
+        }
         let labels = HostedAccessibility.labels(in: window)
         XCTAssertTrue(labels.contains { $0.contains("narration.mp3") }, "The audio file did not render as a tile")
         XCTAssertFalse(labels.contains { $0.contains("**") }, "Bold text around an image rendered literally")
@@ -29,6 +35,7 @@ final class ChatHostedTests: XCTestCase {
         let window = try await hostFixtureChat(["--ui-test-long-bodies"])
         _ = try await requireElement(in: window, label: "Show more", "A long body did not open collapsed")
         let showMore = try XCTUnwrap(elements(named: "Show more", in: window).last)
+        XCTAssertEqual(try messageMenuTarget(at: showMore, in: window), .control, "A long press on Show more opens the message menu")
         HostedAccessibility.activate(showMore)
         let showLess = try await requireElement(in: window, label: "Show less", "The collapsed body did not expand")
         HostedAccessibility.activate(showLess)
@@ -91,6 +98,23 @@ final class ChatHostedTests: XCTestCase {
         XCTAssertTrue(edited, "The edited steer is still pending")
         let draft = await composerTextView(in: window)
         XCTAssertEqual(draft?.text, "Draft\n\nCheck the backup logs too")
+    }
+
+    /// What the transcript's long press resolves to at `element`'s centre (TAL-485): the press handler's own registry
+    /// and policy, read from the hosted transcript. The touch arbitration itself is the phone check's.
+    private func messageMenuTarget(at element: NSObject, in window: UIWindow) throws -> ChatMessageMenuTarget? {
+        let host = try XCTUnwrap(window.firstView(ofType: ChatMessageMenuHostView.self), "The transcript has no long-press handler")
+        let stored = Dictionary(uniqueKeysWithValues: Mirror(reflecting: host).children.compactMap { child in
+            child.label.map { ($0, child.value) }
+        })
+        let registry = try XCTUnwrap(stored["registry"] as? ChatMessageMenuRegistry)
+        let scrollView = try XCTUnwrap(host.superview.flatMap { sequence(first: $0, next: \.superview).first { $0 is UIScrollView } })
+        let frame = window.convert(element.accessibilityFrame, from: nil)
+        let point = scrollView.convert(CGPoint(x: frame.midX, y: frame.midY), from: window)
+        guard let hit = registry.hit(at: point, in: scrollView) else { return nil }
+        return ChatMessageMenuPolicy.target(
+            at: hit.localPoint, linkRegions: hit.content.linkRegions, controlRegions: hit.content.controlRegions
+        )
     }
 
     /// The controller the window's screen presented on top, once it is on screen.

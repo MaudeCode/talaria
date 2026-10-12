@@ -572,14 +572,14 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     private var stopped = false
     /// Bumped by each hosted test's reset: a load an earlier test started counts as stopped, so its scripted stream
     /// ends instead of answering the next test's scenario (TAL-856).
-    nonisolated(unsafe) private static var generation = 0
+    private static let generation = OSAllocatedUnfairLock(initialState: 0)
     private static let generationHeader = "X-UI-Fixture-Generation"
-    private let startedGeneration = UITestFixtureURLProtocol.generation
+    private let startedGeneration = UITestFixtureURLProtocol.generation.withLock { $0 }
 
     /// Puts the fixture's per-launch server state back to a fresh launch's, for hosted tests that start the fixture in
     /// process once per test (TAL-856).
     static func resetForHostedTest() {
-        generation += 1
+        generation.withLock { $0 += 1 }
         approvalBypassOverride = nil
         sessionToolsets.withLock { $0 = nil }
         sessionReads = 0
@@ -602,7 +602,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         // A session remembers the hosted test it was made in, so a screen an earlier test left running cannot reach the
         // next test's scenario (TAL-856).
         var headers = configuration.httpAdditionalHeaders ?? [:]
-        headers[generationHeader] = String(generation)
+        headers[generationHeader] = String(generation.withLock { $0 })
         configuration.httpAdditionalHeaders = headers
         // A held load waits for the test's release, not for URLSession's 60 s default: XCTest's own wait for the App to
         // go idle blocked a hosted test for 58 s, and the held Git status read failed before its release (TAL-672).
@@ -620,7 +620,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             client?.urlProtocol(self, didFailWithError: URLError(.badURL))
             return
         }
-        if let made = request.value(forHTTPHeaderField: Self.generationHeader), made != String(Self.generation) {
+        if let made = request.value(forHTTPHeaderField: Self.generationHeader), made != String(Self.generation.withLock { $0 }) {
             client?.urlProtocol(self, didFailWithError: URLError(.cancelled))
             return
         }
@@ -1877,7 +1877,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     var isStopped: Bool {
-        lifecycleLock.withLock { stopped } || startedGeneration != Self.generation
+        lifecycleLock.withLock { stopped } || startedGeneration != Self.generation.withLock { $0 }
     }
 
     private func send(events: [(String, [String: Any])]) {
