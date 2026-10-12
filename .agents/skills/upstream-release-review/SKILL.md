@@ -159,7 +159,10 @@ On top of its rules:
     `discover-tickets`' rule to record prerequisites on dependent work.
   - Apply `sf` when the ticket's content is otherwise ready. Software-factory
     resolves blockers first, so its open `blocks` relations are not a
-    readiness gate.
+    readiness gate. A held finding that would be a compatibility bug has no
+    ticket to relate yet: until the owner answers it, the support ticket takes
+    the `decision` gate instead of `sf`. Swap it to `sf` once each such finding
+    is filed and related, or declined.
   - When a support ticket for `<tag>` is already open, apply these relations
     and `sf` to it instead of filing another.
 
