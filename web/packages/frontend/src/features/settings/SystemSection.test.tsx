@@ -12,7 +12,7 @@ vi.mock('../../api/endpoints', () => ({
   fetchSettings: vi.fn(() => Promise.resolve(settingsState)),
   fetchSystemHealth: vi.fn(() => Promise.resolve({ status: 'ok' })),
   fetchAgentHealth: vi.fn(() => Promise.resolve({ alive: true })),
-  fetchUpdatesCheck: vi.fn(() => Promise.resolve({ cached: true, webui: { behind: 0, state: 'up_to_date', can_apply: false, installed_unverified: false, manual_link: false, target_version: null }, agent: { behind: 0, state: 'up_to_date', can_apply: false, installed_unverified: false, manual_link: false, target_version: null } })),
+  fetchUpdatesCheck: vi.fn(() => Promise.resolve({ cached: true, webui: { behind: 0, state: 'up_to_date', can_apply: false, installed_unverified: false, manual_link: false, target_version: null, summary_available: false }, agent: { behind: 0, state: 'up_to_date', can_apply: false, installed_unverified: false, manual_link: false, target_version: null } })),
   checkUpdatesNow: vi.fn(),
   passkeysList: vi.fn(),
   applyUpdates: vi.fn(),
@@ -31,9 +31,9 @@ import { UpdatesCheckSchema, type UpdateTargetSchema } from '../../contracts'
 import type { z } from 'zod'
 
 /** A server-decided update target (TAL-559): the raw check fields plus the server's state and apply availability. */
-const target = (state: z.infer<typeof UpdateTargetSchema>['state'], fields: Record<string, unknown> = {}) => ({ can_apply: false, installed_unverified: false, manual_link: false, target_version: null, ...fields, state })
+const target = (state: z.infer<typeof UpdateTargetSchema>['state'], fields: Record<string, unknown> = {}) => ({ can_apply: false, installed_unverified: false, manual_link: false, target_version: null, summary_available: false, ...fields, state })
 const current = target('up_to_date', { behind: 0 })
-const behind = (n: number) => target('commits_behind', { behind: n, can_apply: true })
+const behind = (n: number) => target('commits_behind', { behind: n, can_apply: true, summary_available: true })
 
 function renderSystem() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
@@ -382,29 +382,43 @@ describe('SystemSection update paths', () => {
     expect(screen.queryByText(/update status is unavailable/i)).not.toBeInTheDocument()
   })
 
-  it("shows the What's new summary in the path that has the update", async () => {
-    settingsState.whats_new_summary_enabled = true
-    const agent = behind(3)
-    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ webui: current, agent })
-    vi.mocked(api.fetchUpdatesSummary).mockResolvedValue({ ok: true, summary_sections: [{ title: "What you'll notice", items: ['Chats load faster.'] }, { title: 'Worth knowing', items: ['Three updates are combined here.'] }] })
+  it('summarizes an update with AI in a dialog, fetched only after the click and sending only the target', async () => {
+    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ webui: current, agent: target('release_ready', { behind: 3, can_apply: true, summary_available: true, current_version: 'v2026.9.24', target_version: 'v0.21.7' }) })
+    vi.mocked(api.fetchUpdatesSummary).mockResolvedValue({ ok: true, target: 'agent', summary: '', generated_by: 'llm', source: 'release_notes', cached: false, summary_sections: [{ title: "What you'll notice", items: ['Chats load faster.'] }, { title: 'Worth knowing', items: ['Two releases are combined here.'] }] })
     renderSystem()
     const path = await screen.findByRole('region', { name: 'Hermes Agent' })
-    expect(await within(path).findByText("What you'll notice")).toBeInTheDocument()
-    expect(within(path).getByText('Chats load faster.')).toBeInTheDocument()
-    expect(within(path).getByText('Worth knowing')).toBeInTheDocument()
-    expect(within(path).getByText('Three updates are combined here.')).toBeInTheDocument()
-    expect(api.fetchUpdatesSummary).toHaveBeenCalledTimes(1)
-    expect(api.fetchUpdatesSummary).toHaveBeenCalledWith('agent', agent)
-  })
-
-  it("fetches no What's new summary while the setting is off", async () => {
-    settingsState.whats_new_summary_enabled = false
-    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ webui: behind(2), agent: behind(3) })
-    renderSystem()
-    expect(await screen.findByRole('button', { name: /update agent/i })).toBeInTheDocument()
+    expect(within(screen.getByRole('region', { name: 'Talaria Web' })).queryByRole('button', { name: 'Summarize with AI' })).not.toBeInTheDocument()
     await new Promise((r) => setTimeout(r, 50))
     expect(api.fetchUpdatesSummary).not.toHaveBeenCalled()
-    expect(screen.queryByText("What you'll notice")).not.toBeInTheDocument()
+    await userEvent.click(within(path).getByRole('button', { name: 'Summarize with AI' }))
+    const dialog = await screen.findByRole('dialog', { name: "What's new in Hermes Agent" })
+    expect(within(dialog).getByText('v2026.9.24 → v0.21.7')).toBeInTheDocument()
+    expect(await within(dialog).findByText("What you'll notice")).toBeInTheDocument()
+    expect(within(dialog).getByText('Chats load faster.')).toBeInTheDocument()
+    expect(within(dialog).getByText('Two releases are combined here.')).toBeInTheDocument()
+    expect(api.fetchUpdatesSummary).toHaveBeenCalledTimes(1)
+    expect(api.fetchUpdatesSummary).toHaveBeenCalledWith('agent')
+  })
+
+  it('offers Retry after a failed summary and shows no button when the server offers none', async () => {
+    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ webui: behind(2), agent: target('commits_behind', { behind: 3, can_apply: true }) })
+    vi.mocked(api.fetchUpdatesSummary).mockRejectedValueOnce(new Error('model unavailable')).mockResolvedValueOnce({ ok: true, target: 'webui', summary: '', generated_by: 'fallback', source: 'commits', cached: false, summary_sections: [{ title: "What you'll notice", items: ['Talaria Web has 2 update(s) available.'] }] })
+    renderSystem()
+    const web = await screen.findByRole('region', { name: 'Talaria Web' })
+    expect(within(screen.getByRole('region', { name: 'Hermes Agent' })).queryByRole('button', { name: 'Summarize with AI' })).not.toBeInTheDocument()
+    await userEvent.click(within(web).getByRole('button', { name: 'Summarize with AI' }))
+    const dialog = await screen.findByRole('dialog', { name: "What's new in Talaria Web" })
+    expect(await within(dialog).findByText("Couldn't summarize what's new.")).toBeInTheDocument()
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Retry' }))
+    expect(await within(dialog).findByText('Talaria Web has 2 update(s) available.')).toBeInTheDocument()
+    expect(api.fetchUpdatesSummary).toHaveBeenCalledTimes(2)
+    expect(api.fetchUpdatesSummary).toHaveBeenLastCalledWith('webui')
+  })
+
+  it("no longer offers the Summarize What's New setting", async () => {
+    renderSystem()
+    expect(await screen.findByRole('button', { name: /check web and agent now/i })).toBeInTheDocument()
+    expect(screen.queryByText("Summarize What's New with AI")).not.toBeInTheDocument()
   })
 
   it('opens a setting explanation from its help button', async () => {

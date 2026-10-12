@@ -693,6 +693,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   deps.updates = new UpdateService({
     webRoot: config.webRoot,
     getJson: githubJson(lazyFetch, env),
+    getPublicJson: githubJson(lazyFetch, env, 'https://api.github.com'),
     experimental: ghcrExperimental(lazyFetch),
     stateDir: config.stateDir,
     identity: { release: () => release, stamped: () => stampedRelease, runningSourceRevision: () => runningSourceRevision },
@@ -719,7 +720,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
       return sidecar.call('gateway.restart', { profile_home: profileHome(activeProfile()) }, { timeoutMs: 300_000 })
     },
     llm: async (system, user) => {
-      if (!sidecar || !pyBool(settings.load().whats_new_summary_enabled)) return ''
+      if (!sidecar) return ''
       const result = await sidecar.call('aux.complete', { profile_home: profileHome(activeProfile()), task: 'update_summary', messages: [{ role: 'system', content: system }, { role: 'user', content: user }] })
       return result.text
     },

@@ -107,7 +107,6 @@
     "voice_mode_button": false,
     "voice_silence_ms": 1800,
     "webui_version": "0.0.0-fixture",
-    "whats_new_summary_enabled": false,
     "worklog_details_expanded_default": false,
     "workspace_todos_tab": false
   },
