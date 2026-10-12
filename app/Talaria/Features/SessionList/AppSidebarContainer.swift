@@ -1,164 +1,340 @@
 import SwiftUI
 import TalariaKit
+import UIKit
 
+/// Whether the app sidebar is open. The container animates every change the moment it is made,
+/// and only the sidebar reads it in SwiftUI, so opening and closing never redraws the screen
+/// that owns it (TAL-477).
+@Observable
+final class AppSidebarPresentation {
+    var isPresented = false {
+        didSet {
+            guard isPresented != oldValue else { return }
+            didChange?(isPresented)
+        }
+    }
+
+    @ObservationIgnored fileprivate var didChange: ((Bool) -> Void)?
+}
+
+/// The slide-out sidebar behind the app's screen. Core Animation runs the slide, so it keeps its
+/// frames while the main thread builds the section just picked in the sidebar (TAL-477).
 struct AppSidebarContainer<Sidebar: View, Content: View>: View {
-    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.layoutDirection) private var layoutDirection
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Binding private var isPresented: Bool
-    @State private var dragTranslation: CGFloat = 0
 
-    private let sidebar: Sidebar
+    private let presentation: AppSidebarPresentation
+    private let onPresentationChange: (Bool) -> Void
+    private let sidebar: (Bool) -> Sidebar
     private let content: Content
 
     init(
-        isPresented: Binding<Bool>,
-        @ViewBuilder sidebar: () -> Sidebar,
+        presentation: AppSidebarPresentation,
+        onPresentationChange: @escaping (Bool) -> Void,
+        @ViewBuilder sidebar: @escaping (_ isPresented: Bool) -> Sidebar,
         @ViewBuilder content: () -> Content
     ) {
-        _isPresented = isPresented
-        self.sidebar = sidebar()
+        self.presentation = presentation
+        self.onPresentationChange = onPresentationChange
+        self.sidebar = sidebar
         self.content = content()
     }
 
     var body: some View {
-        GeometryReader { proxy in
-            let revealWidth = min(360, proxy.size.width * 0.84)
-            let progress = progress(revealWidth: revealWidth)
-            let horizontalDirection: CGFloat = layoutDirection == .rightToLeft ? -1 : 1
-            let surfaceTint = colorScheme == .dark ? Color.white : Color.black
-            let surfaceWidth = proxy.size.width
-                + proxy.safeAreaInsets.leading
-                + proxy.safeAreaInsets.trailing
-            let surfaceHeight = proxy.size.height
-                + proxy.safeAreaInsets.top
-                + proxy.safeAreaInsets.bottom
+        AppSidebarHost(
+            presentation: presentation,
+            sidebar: AnyView(AppSidebarRoot(presentation: presentation, sidebar: sidebar)),
+            content: AnyView(content),
+            isRightToLeft: layoutDirection == .rightToLeft,
+            reduceMotion: reduceMotion,
+            onPresentationChange: onPresentationChange
+        )
+        .ignoresSafeArea()
+    }
+}
 
-            ZStack(alignment: .topLeading) {
-                Color(.systemBackground)
-                    .ignoresSafeArea()
+/// Reads the presentation inside the sidebar's own hosting controller.
+private struct AppSidebarRoot<Sidebar: View>: View {
+    let presentation: AppSidebarPresentation
+    let sidebar: (Bool) -> Sidebar
 
-                sidebar
-                    .frame(width: revealWidth, height: proxy.size.height)
-                    .scaleEffect(reduceMotion ? 1 : 0.96 + 0.04 * progress, anchor: .leading)
-                    .opacity(reduceMotion ? 1 : 0.25 + 0.75 * progress)
+    var body: some View {
+        sidebar(presentation.isPresented)
+    }
+}
 
-                content
-                    .frame(width: surfaceWidth, height: surfaceHeight)
-                    .overlay {
-                        if isPresented {
-                            surfaceTint.opacity(0.12 * progress)
-                                .contentShape(Rectangle())
-                                .highPriorityGesture(
-                                    dragGesture(
-                                        containerWidth: proxy.size.width,
-                                        revealWidth: revealWidth
-                                    )
-                                )
-                                .onTapGesture { isPresented = false }
-                                .accessibilityHidden(true)
-                        } else {
-                            surfaceTint.opacity(0.12 * progress)
-                                .allowsHitTesting(false)
-                                .accessibilityHidden(true)
-                        }
-                    }
-                    .clipShape(surfaceShape(progress: progress))
-                    .shadow(
-                        color: .black.opacity(0.28 * progress),
-                        radius: 24 * progress,
-                        x: -8 * horizontalDirection * progress
-                    )
-                    // Unlike the shadow, SwiftUI mirrors the offset under RTL, which slides the
-                    // surface toward the trailing edge there too.
-                    .offset(
-                        x: revealWidth * progress - proxy.safeAreaInsets.leading,
-                        y: -proxy.safeAreaInsets.top
-                    )
-                    .accessibilityHidden(isPresented)
-                    .accessibilityElement(children: .contain)
-                    .accessibilityIdentifier("app-main-surface")
-            }
-            .gesture(
-                SidebarEdgePanGesture(
-                    isSidebarPresented: isPresented,
-                    isRightToLeft: layoutDirection == .rightToLeft,
-                    onChanged: { dragTranslation = $0 },
-                    onEnded: { projectedTranslation in
-                        dragTranslation = 0
-                        isPresented = AppSidebarGesturePolicy.progress(
-                            isPresented: false,
-                            translationWidth: projectedTranslation,
-                            revealWidth: revealWidth,
-                            isRightToLeft: layoutDirection == .rightToLeft
-                        ) >= 0.5
-                    }
-                )
-            )
+private struct AppSidebarHost: UIViewControllerRepresentable {
+    let presentation: AppSidebarPresentation
+    let sidebar: AnyView
+    let content: AnyView
+    let isRightToLeft: Bool
+    let reduceMotion: Bool
+    let onPresentationChange: (Bool) -> Void
+
+    func makeUIViewController(context: Context) -> AppSidebarController {
+        AppSidebarController(presentation: presentation)
+    }
+
+    func updateUIViewController(_ controller: AppSidebarController, context: Context) {
+        controller.onPresentationChange = onPresentationChange
+        controller.isRightToLeft = isRightToLeft
+        controller.reduceMotion = reduceMotion
+        // Each hosting controller starts its own environment; hand it this one whole, so the
+        // screens inside see the model context and everything else set above them.
+        controller.setRoots(
+            sidebar: AnyView(sidebar.environment(\.self, context.environment)),
+            content: AnyView(content.environment(\.self, context.environment))
+        )
+    }
+}
+
+final class AppSidebarController: UIViewController {
+    var onPresentationChange: (Bool) -> Void = { _ in }
+    var isRightToLeft = false {
+        didSet {
+            guard isRightToLeft != oldValue else { return }
+            edgePan.edges = isRightToLeft ? .right : .left
+            edgePanArbiter.isRightToLeft = isRightToLeft
+            view.setNeedsLayout()
         }
-        .animation(
-            reduceMotion ? .easeOut(duration: 0.12) : .snappy(duration: 0.28),
-            value: isPresented
-        )
+    }
+    var reduceMotion = false
+
+    private let presentation: AppSidebarPresentation
+    private let sidebarHost = UIHostingController(rootView: AnyView(EmptyView()))
+    private let contentHost = UIHostingController(rootView: AnyView(EmptyView()))
+    /// Carries the content's slide and its shadow; the clipped surface sits inside it.
+    private let surface = UIView()
+    private let clip = UIView()
+    private let tint = UIView()
+    private let edgePan = UIScreenEdgePanGestureRecognizer()
+    private let edgePanArbiter = SidebarEdgePanGesture.Coordinator()
+    private let surfacePan = UIPanGestureRecognizer()
+    private var dragStartX: CGFloat = 0
+    /// Where the visuals were last put, so a layout pass mid-drag keeps the drag's position.
+    private var progress: CGFloat = 0
+
+    init(presentation: AppSidebarPresentation) {
+        self.presentation = presentation
+        super.init(nibName: nil, bundle: nil)
+        presentation.didChange = { [weak self] isPresented in
+            self?.presentationChanged(isPresented)
+        }
     }
 
-    private func progress(revealWidth: CGFloat) -> CGFloat {
-        AppSidebarGesturePolicy.progress(
-            isPresented: isPresented,
-            translationWidth: dragTranslation,
-            revealWidth: revealWidth,
-            isRightToLeft: layoutDirection == .rightToLeft
-        )
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is unavailable")
     }
 
-    private func surfaceShape(progress: CGFloat) -> AnyShape {
-        if #available(iOS 26.0, *) {
-            AnyShape(
-                ConcentricRectangle(
-                    corners: .concentric(minimum: .fixed(56 * progress))
-                )
+    func setRoots(sidebar: AnyView, content: AnyView) {
+        sidebarHost.rootView = sidebar
+        contentHost.rootView = content
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .systemBackground
+
+        embed(sidebarHost, in: view)
+        sidebarHost.view.backgroundColor = .clear
+
+        surface.layer.shadowColor = UIColor.black.cgColor
+        surface.layer.shadowRadius = 24
+        view.addSubview(surface)
+        clip.clipsToBounds = true
+        clip.layer.cornerCurve = .continuous
+        surface.addSubview(clip)
+        embed(contentHost, in: clip)
+        clip.accessibilityIdentifier = "app-main-surface"
+
+        tint.backgroundColor = UIColor { traits in
+            (traits.userInterfaceStyle == .dark ? UIColor.white : .black).withAlphaComponent(0.12)
+        }
+        tint.isAccessibilityElement = false
+        tint.accessibilityElementsHidden = true
+        tint.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tintTapped)))
+        surfacePan.addTarget(self, action: #selector(surfacePanned(_:)))
+        tint.addGestureRecognizer(surfacePan)
+        clip.addSubview(tint)
+
+        edgePan.edges = .left
+        edgePan.delegate = edgePanArbiter
+        edgePan.addTarget(self, action: #selector(edgePanned(_:)))
+        view.addGestureRecognizer(edgePan)
+
+        reflect(isPresented: presentation.isPresented)
+        progress = presentation.isPresented ? 1 : 0
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        let bounds = view.bounds
+        let insets = view.safeAreaInsets
+        let width = revealWidth
+        // Frames are laid out untransformed; apply(progress:) moves them afterwards.
+        sidebarHost.view.transform = .identity
+        surface.transform = .identity
+        let leadingInset = isRightToLeft ? insets.right : insets.left
+        sidebarHost.view.layer.anchorPoint = CGPoint(x: isRightToLeft ? 1 : 0, y: 0.5)
+        sidebarHost.view.frame = CGRect(
+            x: isRightToLeft ? bounds.width - leadingInset - width : 0,
+            y: 0,
+            width: leadingInset + width,
+            height: bounds.height
+        )
+        surface.frame = bounds
+        clip.frame = surface.bounds
+        contentHost.view.frame = clip.bounds
+        tint.frame = clip.bounds
+        surface.layer.shadowPath = UIBezierPath(roundedRect: surface.bounds, cornerRadius: 56).cgPath
+        apply(progress: progress)
+    }
+
+    /// The width the content slides aside, measured inside the safe area as before (TAL-416).
+    private var revealWidth: CGFloat {
+        let insets = view.safeAreaInsets
+        return min(360, (view.bounds.width - insets.left - insets.right) * 0.84)
+    }
+
+    private var direction: CGFloat {
+        isRightToLeft ? -1 : 1
+    }
+
+    private func embed(_ child: UIViewController, in container: UIView) {
+        addChild(child)
+        container.addSubview(child.view)
+        child.didMove(toParent: self)
+    }
+
+    /// Every visual that follows the sidebar's position, from closed (0) to open (1).
+    private func apply(progress: CGFloat) {
+        self.progress = progress
+        surface.transform = CGAffineTransform(translationX: revealWidth * progress * direction, y: 0)
+        surface.layer.shadowOpacity = Float(0.28 * progress)
+        surface.layer.shadowOffset = CGSize(width: -8 * direction * progress, height: 0)
+        clip.layer.cornerRadius = 56 * progress
+        tint.alpha = progress
+        if reduceMotion {
+            sidebarHost.view.transform = .identity
+            sidebarHost.view.alpha = 1
+        } else {
+            let scale = 0.96 + 0.04 * progress
+            sidebarHost.view.transform = CGAffineTransform(scaleX: scale, y: scale)
+            sidebarHost.view.alpha = 0.25 + 0.75 * progress
+        }
+    }
+
+    private func reflect(isPresented: Bool) {
+        tint.isUserInteractionEnabled = isPresented
+        contentHost.view.accessibilityElementsHidden = isPresented
+        edgePanArbiter.isSidebarPresented = isPresented
+    }
+
+    private func presentationChanged(_ isPresented: Bool) {
+        reflect(isPresented: isPresented)
+        animate(to: isPresented ? 1 : 0)
+        // Hand the slide to the render server now, before this turn's SwiftUI update builds
+        // whatever screen the sidebar just picked.
+        CATransaction.flush()
+        onPresentationChange(isPresented)
+    }
+
+    private func animate(to progress: CGFloat) {
+        let changes = { self.apply(progress: progress) }
+        if reduceMotion {
+            UIView.animate(
+                withDuration: 0.12,
+                delay: 0,
+                options: [.curveEaseOut, .beginFromCurrentState, .allowUserInteraction],
+                animations: changes
             )
         } else {
-            AnyShape(RoundedRectangle(cornerRadius: 42 * progress, style: .continuous))
+            UIView.animate(
+                springDuration: 0.28,
+                bounce: 0.15,
+                delay: 0,
+                options: [.beginFromCurrentState, .allowUserInteraction],
+                animations: changes
+            )
+        }
+        // The shadow's opacity and offset are layer-only, so UIView's animation leaves them out.
+        for keyPath in ["shadowOpacity", "shadowOffset"] {
+            let shadow = CABasicAnimation(keyPath: keyPath)
+            shadow.fromValue = surface.layer.presentation()?.value(forKeyPath: keyPath)
+            shadow.duration = reduceMotion ? 0.12 : 0.28
+            shadow.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            surface.layer.add(shadow, forKey: keyPath)
         }
     }
 
-    private func dragGesture(
-        containerWidth: CGFloat,
-        revealWidth: CGFloat
-    ) -> some Gesture {
-        DragGesture(minimumDistance: 10, coordinateSpace: .global)
-            .onChanged { value in
-                guard AppSidebarGesturePolicy.accepts(
-                    isPresented: isPresented,
-                    canPopVisibleStack: false,
-                    startX: value.startLocation.x,
-                    containerWidth: containerWidth,
-                    translation: value.translation,
-                    isRightToLeft: layoutDirection == .rightToLeft
-                ) else { return }
+    /// Where a drag of `translation` would leave the sidebar, from 0 (closed) to 1 (open).
+    private func dragProgress(_ translation: CGFloat) -> CGFloat {
+        AppSidebarGesturePolicy.progress(
+            isPresented: presentation.isPresented,
+            translationWidth: translation,
+            revealWidth: revealWidth,
+            isRightToLeft: isRightToLeft
+        )
+    }
 
-                dragTranslation = value.translation.width
-            }
-            .onEnded { value in
-                defer { dragTranslation = 0 }
+    /// Opens or closes from where a drag let go, and settles back if that changes nothing.
+    private func settle(projectedTranslation: CGFloat) {
+        let shouldOpen = dragProgress(projectedTranslation) >= 0.5
+        if shouldOpen == presentation.isPresented {
+            animate(to: shouldOpen ? 1 : 0)
+        } else {
+            presentation.isPresented = shouldOpen
+        }
+    }
 
-                guard AppSidebarGesturePolicy.accepts(
-                    isPresented: isPresented,
-                    canPopVisibleStack: false,
-                    startX: value.startLocation.x,
-                    containerWidth: containerWidth,
-                    translation: value.translation,
-                    isRightToLeft: layoutDirection == .rightToLeft
-                ) else { return }
+    /// UIScrollView's normal deceleration, so a flick carries the drawer the rest of the way.
+    private func projected(_ recognizer: UIPanGestureRecognizer) -> CGFloat {
+        let rate = UIScrollView.DecelerationRate.normal.rawValue
+        return recognizer.translation(in: nil).x + recognizer.velocity(in: nil).x / 1_000 * rate / (1 - rate)
+    }
 
-                isPresented = AppSidebarGesturePolicy.progress(
-                    isPresented: isPresented,
-                    translationWidth: value.predictedEndTranslation.width,
-                    revealWidth: revealWidth,
-                    isRightToLeft: layoutDirection == .rightToLeft
-                ) >= 0.5
-            }
+    @objc private func edgePanned(_ recognizer: UIScreenEdgePanGestureRecognizer) {
+        switch recognizer.state {
+        case .changed:
+            apply(progress: dragProgress(recognizer.translation(in: nil).x))
+        case .ended:
+            settle(projectedTranslation: projected(recognizer))
+        case .cancelled, .failed:
+            settle(projectedTranslation: 0)
+        default:
+            break
+        }
+    }
+
+    @objc private func tintTapped() {
+        presentation.isPresented = false
+    }
+
+    /// The open sidebar follows any horizontal drag over the screen beside it.
+    @objc private func surfacePanned(_ recognizer: UIPanGestureRecognizer) {
+        let translation = recognizer.translation(in: nil)
+        if recognizer.state == .began {
+            dragStartX = recognizer.location(in: nil).x - translation.x
+        }
+        let accepted = AppSidebarGesturePolicy.accepts(
+            isPresented: presentation.isPresented,
+            canPopVisibleStack: false,
+            startX: dragStartX,
+            containerWidth: view.bounds.width,
+            translation: CGSize(width: translation.x, height: translation.y),
+            isRightToLeft: isRightToLeft
+        )
+        switch recognizer.state {
+        case .changed where accepted:
+            apply(progress: dragProgress(translation.x))
+        case .ended where accepted:
+            settle(projectedTranslation: projected(recognizer))
+        case .ended, .cancelled, .failed:
+            settle(projectedTranslation: 0)
+        default:
+            break
+        }
     }
 }
 
@@ -166,45 +342,7 @@ struct AppSidebarContainer<Sidebar: View, Content: View>: View {
 /// navigation stacks' back gestures. UIKit arbitrates it: it never begins over a sheet or while
 /// the visible stack can pop or is mid-transition, and the system pop gestures win any race
 /// (TAL-462).
-struct SidebarEdgePanGesture: UIGestureRecognizerRepresentable {
-    let isSidebarPresented: Bool
-    let isRightToLeft: Bool
-    let onChanged: (CGFloat) -> Void
-    /// The projected end translation; zero when the pan is cancelled.
-    let onEnded: (CGFloat) -> Void
-
-    func makeCoordinator(converter: CoordinateSpaceConverter) -> Coordinator {
-        Coordinator()
-    }
-
-    func makeUIGestureRecognizer(context: Context) -> UIScreenEdgePanGestureRecognizer {
-        let recognizer = UIScreenEdgePanGestureRecognizer()
-        recognizer.delegate = context.coordinator
-        return recognizer
-    }
-
-    func updateUIGestureRecognizer(_ recognizer: UIScreenEdgePanGestureRecognizer, context: Context) {
-        recognizer.edges = isRightToLeft ? .right : .left
-        context.coordinator.isSidebarPresented = isSidebarPresented
-        context.coordinator.isRightToLeft = isRightToLeft
-    }
-
-    func handleUIGestureRecognizerAction(_ recognizer: UIScreenEdgePanGestureRecognizer, context: Context) {
-        let translation = recognizer.translation(in: nil).x
-        switch recognizer.state {
-        case .changed:
-            onChanged(translation)
-        case .ended:
-            // UIScrollView's normal deceleration, so a flick carries the drawer the rest of the way.
-            let rate = UIScrollView.DecelerationRate.normal.rawValue
-            onEnded(translation + recognizer.velocity(in: nil).x / 1_000 * rate / (1 - rate))
-        case .cancelled, .failed:
-            onEnded(0)
-        default:
-            break
-        }
-    }
-
+enum SidebarEdgePanGesture {
     final class Coordinator: NSObject, UIGestureRecognizerDelegate {
         var isSidebarPresented = false
         var isRightToLeft = false
