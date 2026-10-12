@@ -145,6 +145,22 @@ def repository_only(path):
     )
 
 
+PROJECT = "Talaria.xcodeproj/project.pbxproj"
+TEST_DIRECTORIES = ("TalariaTests/", "TalariaUITests/")
+
+
+def test_membership_only(base, target):
+    # A project edit whose every line names a test-target file only adds or removes tests; the App builds the same.
+    def tests(paths):
+        return {Path(path).name for path in paths.splitlines() if path.removeprefix("app/").startswith(TEST_DIRECTORIES)}
+    names = tests(git("ls-tree", "-r", "--name-only", "--full-tree", base))
+    names |= tests(git("ls-tree", "-r", "--name-only", "--full-tree", target) if target
+                   else git("ls-files", "--full-name", "--cached", "--others", "--exclude-standard", ":(top)"))
+    diff = git("diff", "-U0", base, *([target] if target else []), "--", f":(top){PROJECT}", f":(top)app/{PROJECT}")
+    lines = [line for line in diff.splitlines() if line[:1] in "+-" and not line.startswith(("+++", "---"))]
+    return all((match := re.search(r"/\* (.+?)(?: in \w+)? \*/", line)) and match.group(1) in names for line in lines)
+
+
 def validate(base=None, target=None):
     if target and not base:
         raise ValueError("--target requires --base for change-scope validation")
@@ -161,7 +177,9 @@ def validate(base=None, target=None):
             raise ValueError(f"missing release metadata: add {DIRECTORY}/TAL-<number>.json with entries or an explicit skip reason")
         has_app_entries = any("app" in entry.get("components", ["app"])
                               for data in selected.values() for entry in data.get("entries", []))
-        if any(not repository_only(path) for path in changed) and not has_app_entries:
+        app_changes = [path for path in changed if not repository_only(path)
+                       and not (path == PROJECT and test_membership_only(base, target))]
+        if app_changes and not has_app_entries:
             raise ValueError("app or unclassified changes require user-facing entries; skip is only for repository/docs/test work")
         # Subjects identify tickets only; release prose always comes from JSON.
         subjects = git("log", "--first-parent", "--no-merges", "--format=%s", f"{base}..{target or 'HEAD'}")

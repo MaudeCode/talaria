@@ -302,7 +302,8 @@ final class UITestFixtureHold: @unchecked Sendable {
         lock.withLock { held.append(send) }
     }
 
-    private func release() {
+    /// Sends every held load; hosted tests call it directly instead of posting the notification (TAL-856).
+    func release() {
         let loads = lock.withLock {
             defer { held = [] }
             return held
@@ -554,6 +555,23 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     private static let chatState = UITestChatFixtureState.shared
     private let lifecycleLock = NSLock()
     private var stopped = false
+
+    /// Puts the fixture's per-launch server state back to a fresh launch's, for hosted tests that start the fixture in
+    /// process once per test (TAL-856).
+    static func resetForHostedTest() {
+        approvalBypassOverride = nil
+        sessionToolsets.withLock { $0 = nil }
+        sessionReads = 0
+        transcriptReads = 0
+        hasChangedWhileBackgrounded = false
+        recovered = false
+        urgentNotificationAcknowledged = false
+        readUpdateNotificationIDs = ["ui-update-succeeded"]
+        dismissedUpdateNotificationIDs = []
+        serverUpdateAppliedAt = nil
+        archivedSessionIDs = []
+        didFailSessionCreation = false
+    }
 
     static func configure(_ configuration: URLSessionConfiguration) {
         guard ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.launchArgument) else { return }
