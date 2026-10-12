@@ -452,7 +452,7 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     expect(webui).toMatchObject({ state: 'release_ready', summary_available: true })
     expect(webui).not.toHaveProperty('release_notes')
     expect(await svc.summarize('webui')).toMatchObject({ target: 'webui', source: 'release_notes', generated_by: 'llm' })
-    expect(prompts[0]).toContain('## web-v2.0.0\nChats open faster.')
+    expect(prompts[0]).toContain('<release tag="web-v2.0.0">\nChats open faster.\n</release>')
     expect(prompts[0]).not.toContain('talaria-publication')
   })
 
@@ -864,8 +864,14 @@ describe('Agent checkout updates', () => {
     expect(await svc.summarize('agent')).toEqual({ ok: true, target: 'agent', summary: '', summary_sections: [], generated_by: 'none', source: 'none', cached: false })
     expect(calls).toBe(0)
     await svc.check(true)
+    // A check cached before update checks were turned off is never summarized.
+    expect(await svc.summarize('agent', true)).toMatchObject({ generated_by: 'none', source: 'none' })
+    expect(calls).toBe(0)
     expect(await svc.summarize('agent')).toMatchObject({ generated_by: 'fallback', source: 'release_notes', summary_sections: [{ title: "What you'll notice", items: ['Hermes Agent v2.0.0, v2.1.0 are available.'] }] })
     expect(calls).toBe(1)
+    // A fallback is not cached, so the next request asks the model again.
+    await svc.summarize('agent')
+    expect(calls).toBe(2)
   })
 
   function agentService(agent: string, git: GitRun, events: string[]): UpdateService {

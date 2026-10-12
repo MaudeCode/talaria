@@ -217,3 +217,28 @@ test('Summarize with AI opens a dialog with the server summary of one pending up
   await expect(page.getByRole('dialog', { name: "What's new in Hermes Agent" }).getByText("What you'll notice", { exact: true })).toBeVisible()
   expect(summaries).toHaveLength(1)
 })
+
+test('a failed Web summary offers Retry, and Retry asks the server again (TAL-759)', async ({ page, errors }) => {
+  const summaries: unknown[] = []
+  await page.route('**/api/updates/check', (route) => route.fulfill({ json: updatesCheckView({
+    cached: true, webui: { behind: 2, release_based: true, current_version: 'web-v1.17.0', latest_version: 'web-v1.18.0', install_kind: 'npm', no_git: true, manual_update: false }, agent: { behind: 0 },
+  }) }))
+  await page.route('**/api/updates/summary', (route) => {
+    summaries.push(route.request().postDataJSON())
+    if (summaries.length === 1) return route.fulfill({ status: 500, json: { error: 'model unavailable' } })
+    return route.fulfill({ json: { ok: true, target: 'webui', summary: '', generated_by: 'llm', source: 'release_notes', cached: false, summary_sections: [
+      { title: "What you'll notice", items: ['Settings shows a summary of each pending update.'] },
+    ] } })
+  })
+  await page.goto('/settings/system')
+  await settle(page)
+  await page.getByRole('region', { name: 'Talaria Web', exact: true }).getByRole('button', { name: 'Summarize with AI', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: "What's new in Talaria Web" })
+  await expect(dialog.getByText('web-v1.17.0 → web-v1.18.0', { exact: true })).toBeVisible()
+  await expect(dialog.getByText("Couldn't summarize what's new.", { exact: true })).toBeVisible()
+  await dialog.getByRole('button', { name: 'Retry', exact: true }).click()
+  await expect(dialog.getByText('Settings shows a summary of each pending update.', { exact: true })).toBeVisible()
+  expect(summaries).toEqual([{ target: 'webui' }, { target: 'webui' }])
+  // The first summary fails on purpose.
+  errors.splice(0, errors.length, ...errors.filter((e) => !/api\/updates\/summary|status of 500/.test(e)))
+})

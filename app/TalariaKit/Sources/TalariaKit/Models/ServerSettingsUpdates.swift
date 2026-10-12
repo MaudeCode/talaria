@@ -83,11 +83,9 @@ public struct UpdateTargetInfo: Decodable, Equatable {
 }
 
 /// The two update targets a Web server reports and summarizes.
-public enum UpdateTarget: String, Encodable, Identifiable, Sendable {
+public enum UpdateTarget: String, Encodable, Sendable {
     case webui
     case agent
-
-    public var id: String { rawValue }
 }
 
 /// `POST /api/updates/summary` (TAL-759): the server's summary of one target's pending update,

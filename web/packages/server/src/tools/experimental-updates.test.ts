@@ -117,6 +117,31 @@ describe('Experimental npm updates (TAL-378)', () => {
     expect(await checkWebUpdate(switching.packageRoot, 'web-v2.0.0', 'experimental', runGit, getJson, identity(stable), switching.npm, g.registry)).toMatchObject({ behind: 4, channel_switch: true })
   })
 
+  it('summarizes an Experimental update from the Web commits it installs (TAL-759)', async () => {
+    const running = release(`web-exp-v${expVersion('2.0.0', OLD_EXP)}`, expVersion('2.0.0', OLD_EXP), OLD_EXP)
+    const n = npmInstall(running, {})
+    const g = fakeGhcr(TARBALL)
+    const paths: string[] = []
+    const getJson: GetJson = (path, opts) => {
+      paths.push(path)
+      if (path === `/commits/${OLD_EXP}`) return Promise.resolve({ sha: OLD_EXP, commit: { committer: { date: '2026-10-01T00:00:00Z' } } })
+      if (path.startsWith(`/commits?sha=${NEW_EXP}&path=web&since=`)) return Promise.resolve([{ sha: NEW_EXP, commit: { message: 'TAL-1: Chats open faster\n\nBody text' } }, { sha: OLD_EXP, commit: { message: 'installed' } }])
+      return stableGetJson(path, opts)
+    }
+    const prompts: string[] = []
+    const svc = new UpdateService({
+      webRoot: n.packageRoot, git: runGit, npm: n.npm, getJson, experimental: g.registry, identity: identity(running), webuiVersion: 'web-exp',
+      agentDir: () => null, channel: () => 'experimental', includeAgent: () => false,
+      blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
+      scheduleRestart: () => undefined, gatewayRestart: () => Promise.resolve({ status: 'completed' }), llm: (_system, user) => { prompts.push(user); return Promise.resolve('- Notice: Chats open faster') }, log: () => undefined,
+    })
+    await svc.check(true, false, 'experimental')
+    expect(await svc.summarize('webui')).toMatchObject({ source: 'commits', generated_by: 'llm' })
+    expect(prompts[0]).toContain('- TAL-1: Chats open faster')
+    expect(prompts[0]).not.toContain('installed')
+    expect(paths).toContain(`/commits?sha=${NEW_EXP}&path=web&since=${encodeURIComponent('2026-10-01T00:00:00Z')}&per_page=26`)
+  })
+
   it('reports an Experimental npm install current at the tag revision and behind otherwise', async () => {
     const running = release(`web-exp-v${expVersion('2.0.0', OLD_EXP)}`, expVersion('2.0.0', OLD_EXP), OLD_EXP)
     const behind = npmInstall(running, {})

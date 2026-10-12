@@ -104,11 +104,12 @@ final class UpdateSummaryTests: APIClientTestCase {
         XCTAssertNil(UpdateSummaryRequest(target: .webui, info: nil).range)
     }
 
-    func testTheAgentRowWordsTheServerState() throws {
-        let status = { (json: String) in try ServerUpdateSettingsSection.agentStatusText(Self.target(json)) }
+    func testTheAgentRowWordsEveryServerState() throws {
+        let status = { (json: String) in try UpdateNote(agent: Self.target(json)).text }
         XCTAssertEqual(try status(#"{ "state": "release_ready", "target_version": "v0.21.7" }"#), "v0.21.7 available")
         XCTAssertEqual(try status(#"{ "state": "commits_behind", "behind": 14 }"#), "14 commits behind")
         XCTAssertEqual(try status(#"{ "state": "up_to_date", "behind": 0 }"#), "Up to date")
-        XCTAssertNil(try status(#"{ "state": "off", "behind": 0 }"#))
+        XCTAssertEqual(try status(#"{ "state": "off", "behind": 0 }"#), "Update checks are off")
+        XCTAssertEqual(try status(#"{ "behind": null }"#), "Unknown")
     }
 }

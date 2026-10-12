@@ -171,18 +171,15 @@ private extension ServerUpdateSettingsSection {
     /// The server's pending Agent update, read-only: installed version, status, and its summary.
     @ViewBuilder
     private var agentUpdateRows: some View {
-        if let agent = updateTargets?.agent, let status = Self.agentStatusText(agent) {
+        if let agent = updateTargets?.agent {
+            let status = UpdateNote(agent: agent)
             SettingsDivider()
             SettingsValueRow(title: String(localized: "Hermes Agent")) {
-                Text(agent.currentVersion ?? String(localized: "Unknown"))
+                Text(agent.versionRange ?? agent.currentVersion ?? String(localized: "Unknown"))
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
             }
-            if agent.offersSummary {
-                updateNoteRow(systemImage: "arrow.up.circle", tint: .blue, text: status)
-            } else {
-                updateNoteRow(systemImage: "checkmark.circle", tint: .secondary, text: status)
-            }
+            updateNoteRow(systemImage: status.systemImage, tint: status.tint, text: status.text)
             UpdateSummaryButton(info: agent) {
                 summaryRequest = UpdateSummaryRequest(target: .agent, info: agent)
             }
@@ -374,24 +371,4 @@ private enum ServerUpdateApplyPhase: Equatable {
     case recovering
     case blocked
     case failed
-}
-
-extension ServerUpdateSettingsSection {
-    /// Words the server's Agent state; nil hides the row (checks off, ignored, or no Agent block).
-    static func agentStatusText(_ agent: UpdateTargetInfo) -> String? {
-        switch agent.state {
-        case "release_ready":
-            agent.targetVersion.map { String(localized: "\($0) available") } ?? String(localized: "Update available")
-        case "commits_behind":
-            String(localized: "\(agent.behind ?? 0) commits behind")
-        case "up_to_date":
-            String(localized: "Up to date")
-        case "finish", "manual", "local_changes":
-            String(localized: "Update on the server")
-        case "check_failed":
-            String(localized: "Couldn't check for updates")
-        default:
-            nil
-        }
-    }
 }

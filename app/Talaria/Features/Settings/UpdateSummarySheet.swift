@@ -107,11 +107,49 @@ struct UpdateSummaryRequest: Identifiable {
 
     init(target: UpdateTarget, info: UpdateTargetInfo?) {
         self.target = target
-        name = target == .webui ? "Talaria Web" : "Hermes Agent"
-        if let current = info?.currentVersion, let next = info?.targetVersion {
-            range = "\(current) → \(next)"
-        } else {
-            range = nil
+        name = target == .webui ? String(localized: "Talaria Web") : String(localized: "Hermes Agent")
+        range = info?.versionRange
+    }
+}
+
+extension UpdateTargetInfo {
+    /// "installed → target" when the server reports both.
+    var versionRange: String? {
+        guard let currentVersion, let targetVersion else { return nil }
+        return "\(currentVersion) → \(targetVersion)"
+    }
+}
+
+/// A status line under the Agent update row: the server's state in words, and the icon beside them.
+struct UpdateNote {
+    let text: String
+    let systemImage: String
+    let tint: Color
+
+    init(agent: UpdateTargetInfo) {
+        switch agent.state {
+        case "release_ready":
+            text = agent.targetVersion.map { String(localized: "\($0) available") }
+                ?? String(localized: "Update available")
+            (systemImage, tint) = ("arrow.up.circle", .blue)
+        case "commits_behind":
+            text = String(localized: "\(agent.behind ?? 0) commits behind")
+            (systemImage, tint) = ("arrow.up.circle", .blue)
+        case "up_to_date":
+            text = String(localized: "Up to date")
+            (systemImage, tint) = ("checkmark.circle", .secondary)
+        case "finish", "manual", "local_changes":
+            text = String(localized: "Update on the server")
+            (systemImage, tint) = ("exclamationmark.triangle", .orange)
+        case "check_failed":
+            text = String(localized: "Couldn't check for updates")
+            (systemImage, tint) = ("exclamationmark.triangle", .orange)
+        case "off":
+            text = String(localized: "Update checks are off")
+            (systemImage, tint) = ("minus.circle", .secondary)
+        default:
+            text = String(localized: "Unknown")
+            (systemImage, tint) = ("questionmark.circle", .secondary)
         }
     }
 }
