@@ -118,20 +118,20 @@ function sidebarListParams(ctx: RequestContext, input: SessionsListQuery): Param
 
 export const sessionsRouter = os.router({
   sessions: {
-    list: os.sessions.list.handler(({ input, context: { ctx } }) => run(() => {
-      const { body, etag } = ctx.deps.sessions.list(sidebarListParams(ctx, input))
+    list: os.sessions.list.handler(({ input, context: { ctx } }) => run(async () => {
+      const { body, etag } = await ctx.deps.sessions.list(sidebarListParams(ctx, input))
       ctx.extraResponseHeaders = { etag }
       if (ifNoneMatchMatches(ctx.header('if-none-match') ?? '', etag)) ctx.notModified = true
       return body
     })),
-    search: os.sessions.search.handler(({ input, context: { ctx } }) => run(() => {
+    search: os.sessions.search.handler(({ input, context: { ctx } }) => run(async () => {
       // Python: `int(depth)` falls back to 5 when malformed.
       const depthRaw = (input.depth ?? '5').trim()
       const depth = /^[+-]?\d+$/.test(depthRaw) ? Math.max(0, Number.parseInt(depthRaw, 10)) : 5
       const opts = { content: (input.content ?? '1') === '1', depth, allProfiles: allProfilesEnabled(ctx, input.all_profiles) }
       // TAL-308: any sidebar filter answers from the sidebar's own rows; without one the store-only search stays.
       if (SIDEBAR_SEARCH_KEYS.some((k) => input[k] !== undefined)) {
-        return ctx.deps.sessions.sidebarSearch(input.q ?? '', sidebarListParams(ctx, input), { ...opts, projectId: input.project_id?.trim() || null }) as { sessions: Record<string, unknown>[]; all_profiles: boolean; active_profile: string; query?: string; count?: number }
+        return await ctx.deps.sessions.sidebarSearch(input.q ?? '', sidebarListParams(ctx, input), { ...opts, projectId: input.project_id?.trim() || null }) as { sessions: Record<string, unknown>[]; all_profiles: boolean; active_profile: string; query?: string; count?: number }
       }
       return ctx.deps.sessions.search(input.q ?? '', opts) as { sessions: Record<string, unknown>[]; all_profiles: boolean; active_profile: string; query?: string; count?: number }
     })),

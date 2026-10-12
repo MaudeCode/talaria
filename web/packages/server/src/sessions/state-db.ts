@@ -7,6 +7,7 @@
  */
 import { existsSync, openSync, readSync, closeSync, statSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
+import { Worker } from 'node:worker_threads'
 import { str } from '../util.js'
 import { MESSAGING_SOURCES } from './source-kind.js'
 import { looksLikeDefaultCliTitle, normalizeSourceName } from './titles.js'
@@ -222,6 +223,10 @@ export interface ReadRowsOptions {
 }
 
 const warnedNoSourceColumn = new Set<string>()
+let readDelayMs = 0
+
+/** Test hook: every sidebar listing read blocks its thread this long first, standing in for a slow `state.db` (TAL-920). */
+export function setStateDbReadDelayForTests(ms: number): void { readDelayMs = ms }
 
 /**
  * Python `read_importable_agent_session_rows`. The recency slice is bounded to
@@ -236,6 +241,7 @@ export function readImportableAgentSessionRows(dbPath: string, opts: ReadRowsOpt
   const limit = opts.limit === undefined ? 200 : opts.limit
   const exclude = opts.excludeSources === undefined ? ['cron', 'webui'] : opts.excludeSources
   const include = opts.includeSources ?? null
+  if (readDelayMs > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, readDelayMs)
   const db = openStateDbReadonly(dbPath)
   try {
     const sessionCols = tableColumns(db, 'sessions')
@@ -472,6 +478,108 @@ export function cheapChangeFingerprint(dbPath: string, onError?: (reason: string
     onError?.('change check failed', error)
     return null
   }
+}
+
+// ── off-thread listing (TAL-920) ──────────────────────────────────────────
+
+type ListingCall =
+  | { op: 'rows'; dbPath: string; opts: Omit<ReadRowsOptions, 'log'> }
+  | { op: 'fingerprint'; dbPath: string }
+  | { op: 'sources' | 'existing'; dbPath: string; ids: string[] }
+  | { op: 'crash' }
+/** A request to the listing worker; `delayMs` carries the test read delay across the thread boundary. */
+export type StateDbWorkerRequest = ListingCall & { id: number; delayMs: number }
+/** The call's result or error message, plus the log lines and `[reason, message]` failures it reported in the worker. */
+export interface StateDbWorkerReply { id: number; value?: unknown; error?: string; logs: string[]; failures: [string, string][] }
+
+interface PendingCall { resolve: (reply: StateDbWorkerReply) => void; reject: (error: Error) => void }
+interface ListingWorker { worker: Worker; pending: Map<number, PendingCall> }
+
+let listingWorker: ListingWorker | null = null
+let nextCallId = 0
+
+/** Reject every call still waiting on `current` and forget it, so the next call starts a fresh worker. */
+function retireListingWorker(current: ListingWorker, error: Error): void {
+  if (listingWorker === current) listingWorker = null
+  for (const call of current.pending.values()) call.reject(error)
+  current.pending.clear()
+}
+
+/** The lazily started, long-lived listing worker; requests run one at a time in arrival order. */
+function startedListingWorker(): ListingWorker {
+  if (listingWorker) return listingWorker
+  // Source runs (vitest) load the TypeScript worker; the build runs the compiled one beside this module.
+  const ext = import.meta.url.endsWith('.ts') ? 'ts' : 'js'
+  const current: ListingWorker = { worker: new Worker(new URL(`./state-db-worker.${ext}`, import.meta.url)), pending: new Map() }
+  current.worker.unref()
+  current.worker.on('message', (reply: StateDbWorkerReply) => {
+    const call = current.pending.get(reply.id)
+    if (!call) return
+    current.pending.delete(reply.id)
+    if (!current.pending.size) current.worker.unref()
+    call.resolve(reply)
+  })
+  current.worker.on('error', (error: Error) => { retireListingWorker(current, error) })
+  current.worker.on('exit', (code) => { retireListingWorker(current, new Error(`state.db worker exited with code ${String(code)}`)) })
+  listingWorker = current
+  return current
+}
+
+function callListingWorker(call: ListingCall): Promise<StateDbWorkerReply> {
+  const current = startedListingWorker()
+  const id = ++nextCallId
+  return new Promise((resolve, reject) => {
+    current.pending.set(id, { resolve, reject })
+    // A call in flight keeps the process alive until it settles; an idle worker never does.
+    current.worker.ref()
+    current.worker.postMessage({ ...call, id, delayMs: readDelayMs } satisfies StateDbWorkerRequest)
+  })
+}
+
+/** `readImportableAgentSessionRows` on the listing worker, so a slow `state.db` never blocks the event loop. Rejects when the worker fails. */
+export async function readImportableAgentSessionRowsAsync(dbPath: string, opts: ReadRowsOptions = {}): Promise<Dict[]> {
+  const { log, ...query } = opts
+  const reply = await callListingWorker({ op: 'rows', dbPath, opts: query })
+  for (const line of reply.logs) log?.(line)
+  if (reply.error !== undefined) throw new Error(reply.error)
+  return reply.value as Dict[]
+}
+
+/** `cheapChangeFingerprint` on the listing worker; a worker failure reports as a failed change check. */
+export async function cheapChangeFingerprintAsync(dbPath: string, onError?: (reason: string, error: unknown) => void): Promise<string | null> {
+  let reply: StateDbWorkerReply
+  try {
+    reply = await callListingWorker({ op: 'fingerprint', dbPath })
+  } catch (error) {
+    onError?.('change check failed', error)
+    return null
+  }
+  for (const [reason, message] of reply.failures) onError?.(reason, new Error(message))
+  return reply.value as string | null
+}
+
+/** `stateDbSessionSources` on the listing worker; a worker failure is an unreadable state.db (null), so owners stay locked. */
+export async function stateDbSessionSourcesAsync(dbPath: string, sessionIds: Iterable<string>): Promise<Map<string, string> | null> {
+  try { return (await callListingWorker({ op: 'sources', dbPath, ids: [...sessionIds] })).value as Map<string, string> | null } catch { return null }
+}
+
+/** `agentSessionRowsExisting` on the listing worker; a worker failure assumes every row present, so nothing is pruned. */
+export async function agentSessionRowsExistingAsync(dbPath: string, sessionIds: Iterable<string>): Promise<Set<string>> {
+  const ids = [...sessionIds]
+  try { return (await callListingWorker({ op: 'existing', dbPath, ids })).value as Set<string> } catch { return new Set(ids.map((s) => s.trim()).filter(Boolean)) }
+}
+
+/** Test hook: the listing worker exits abruptly while this call is in flight. */
+export function crashStateDbWorkerForTests(): Promise<unknown> {
+  return callListingWorker({ op: 'crash' })
+}
+
+/** Stop the listing worker (server shutdown). Calls in flight reject; a later call starts a new worker. */
+export async function stopStateDbWorker(): Promise<void> {
+  const current = listingWorker
+  if (!current) return
+  retireListingWorker(current, new Error('state.db worker stopped'))
+  await current.worker.terminate()
 }
 
 // ── message reader ────────────────────────────────────────────────────────

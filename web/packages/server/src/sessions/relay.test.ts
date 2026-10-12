@@ -284,7 +284,7 @@ describe('relay publisher failure handling', () => {
       await s.deps.relay.pair({ relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'x' }, 'default', true)
       const base = loadRelayConfig(s.state)!
       const config: RelayConfig = { ...base, profiles: { ...base.profiles, other: { identity: '', profile_id: 'prf_other' } } }
-      const publisher = new RelayPublisher(config, { registry: s.deps.registry, pending: s.deps.pending, store: s.deps.sessionStore, presence: s.deps.relay.presence, profileHome: s.deps.profileHome, profilesMatch: s.deps.profilesMatch, agentSessions: () => [], fetch: () => s.deps.fetch, now: () => Date.now() / 1000, log: (l) => s.logs.push(l) })
+      const publisher = new RelayPublisher(config, { registry: s.deps.registry, pending: s.deps.pending, store: s.deps.sessionStore, presence: s.deps.relay.presence, profileHome: s.deps.profileHome, profilesMatch: s.deps.profilesMatch, agentSessions: () => Promise.resolve([]), fetch: () => s.deps.fetch, now: () => Date.now() / 1000, log: (l) => s.logs.push(l) })
       relay.failOnly = 'prf_other'
       relay.snapshotStatus = 403
       await publisher.publishSnapshot(true)
@@ -310,7 +310,7 @@ describe('relay publisher failure handling', () => {
     try {
       await s.deps.relay.pair({ relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'x' }, 'default', true)
       let clock = 1_800_000_000
-      const publisher = new RelayPublisher(loadRelayConfig(s.state)!, { registry: s.deps.registry, pending: s.deps.pending, store: s.deps.sessionStore, presence: s.deps.relay.presence, profileHome: s.deps.profileHome, profilesMatch: s.deps.profilesMatch, agentSessions: () => [], fetch: () => s.deps.fetch, now: () => clock, log: (l) => s.logs.push(l) })
+      const publisher = new RelayPublisher(loadRelayConfig(s.state)!, { registry: s.deps.registry, pending: s.deps.pending, store: s.deps.sessionStore, presence: s.deps.relay.presence, profileHome: s.deps.profileHome, profilesMatch: s.deps.profilesMatch, agentSessions: () => Promise.resolve([]), fetch: () => s.deps.fetch, now: () => clock, log: (l) => s.logs.push(l) })
       const sid = String(((await json(await post(s, '/api/session/new', { title: 'Ended run' }))).session as Json).session_id)
       s.deps.registry.activeRuns.set('stream-t', { stream_id: 'stream-t', session_id: sid, started_at: 1, phase: 'running', workspace: s.state, model: null, provider: null, ephemeral: false })
       publisher.noteTerminal('stream-t', 'completed')

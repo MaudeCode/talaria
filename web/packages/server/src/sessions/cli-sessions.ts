@@ -4,16 +4,20 @@
  * window plus bounded cron, webhook, and kanban passes, with UI-owned title and
  * archived state from any WebUI sidecar file and the deleted-session tombstone
  * honoured. Results are cached for 5 s per profile keyed on the database stamp.
+ * `read` queries `state.db` on the listing worker so the event loop stays free
+ * (TAL-920); `readSync` serves single-session lookups that are still synchronous.
  */
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { isCliSessionRow, normalizeAgentSessionSource, readImportableAgentSessionRows, type Dict } from './state-db.js'
+import { isCliSessionRow, normalizeAgentSessionSource, readImportableAgentSessionRows, readImportableAgentSessionRowsAsync, type Dict, type ReadRowsOptions } from './state-db.js'
+import { sanitizeSessionRow } from './list.js'
 import type { SessionStore } from './store.js'
 import { str } from '../util.js'
 
 export const CLI_VISIBLE_SESSION_LIMIT = 20
 const BACKGROUND_PROJECT_CHIP_LIMIT = 200
 const CACHE_TTL_S = 5
+const BACKGROUND_KINDS = ['cron', 'webhook', 'kanban'] as const
 
 export interface CliSessionsDeps {
   store: SessionStore
@@ -38,6 +42,20 @@ function dbStamp(path: string): string {
   try { const st = statSync(path, { bigint: true }); return `${st.size.toString()}:${st.mtimeNs.toString()}:${st.ino.toString()}` } catch { return 'missing' }
 }
 
+interface CacheSlot { cacheKey: string; key: string; dbPath: string; sourceFilter: string | null }
+/** One sidebar build's state.db reads: the interactive window (`kind` null), then each background kind when unfiltered. */
+interface ListingQuery { kind: string | null; opts: ReadRowsOptions }
+/** A query's rows, or the error a background kind's read failed with. */
+type QueryResult = Dict[] | Error
+/** Every query's result in `queries` order; null when there is no state.db, an Error when the interactive read failed. */
+type QueryResults = QueryResult[] | null | Error
+
+/** A background kind's failed read is kept as its result; the interactive read's failure fails the build. */
+function backgroundFailure(query: ListingQuery, error: unknown): Error {
+  if (query.kind === null) throw error
+  return error as Error
+}
+
 export class CliSessionSource {
   private readonly cache = new Map<string, { key: string; until: number; rows: Dict[]; truncated: ReadonlySet<string> }>()
   constructor(private readonly deps: CliSessionsDeps) {}
@@ -47,35 +65,104 @@ export class CliSessionSource {
   invalidate(): void { this.cache.clear() }
 
   /** Python `get_cli_sessions(profile=...)` for one profile; Claude Code imports are not projected here. */
-  load(profile: string, opts: CliLoadOptions = {}): Dict[] {
-    return this.read(profile, opts).rows
+  async load(profile: string, opts: CliLoadOptions = {}): Promise<Dict[]> {
+    return (await this.read(profile, opts)).rows
   }
 
   /** `load` plus the source kinds whose rows stopped at the per-kind window, from the same read (TAL-482). */
-  read(profile: string, opts: CliLoadOptions = {}): CliSessionRead {
+  async read(profile: string, opts: CliLoadOptions = {}): Promise<CliSessionRead> {
+    const slot = this.slot(profile, opts)
+    const hit = this.cached(slot)
+    if (hit) return hit
+    const now = this.deps.now()
+    let results: QueryResults = null
+    try {
+      if (existsSync(slot.dbPath)) {
+        const settled: QueryResult[] = []
+        for (const query of this.queries(slot)) settled.push(await readImportableAgentSessionRowsAsync(slot.dbPath, query.opts).catch((error: unknown) => backgroundFailure(query, error)))
+        results = settled
+      }
+    } catch (error) {
+      results = error as Error
+    }
+    return this.store(slot, now, profile, results)
+  }
+
+  /** `read` with the state.db queries on this thread, for single-session lookups whose callers are synchronous. */
+  readSync(profile: string, opts: CliLoadOptions = {}): CliSessionRead {
+    const slot = this.slot(profile, opts)
+    const hit = this.cached(slot)
+    if (hit) return hit
+    const now = this.deps.now()
+    let results: QueryResults
+    try {
+      results = existsSync(slot.dbPath) ? this.queries(slot).map((query) => { try { return readImportableAgentSessionRows(slot.dbPath, query.opts) } catch (error) { return backgroundFailure(query, error) } }) : null
+    } catch (error) {
+      results = error as Error
+    }
+    return this.store(slot, now, profile, results)
+  }
+
+  private slot(profile: string, opts: CliLoadOptions): CacheSlot {
     const dbPath = this.dbPath(profile)
     const sourceFilter = str(opts.sourceFilter).trim().toLowerCase() || null
-    const cacheKey = `${profile}\n${sourceFilter ?? ''}`
-    const key = `${dbPath}\n${dbStamp(dbPath)}\n${dbStamp(`${dbPath}-wal`)}`
-    const hit = this.cache.get(cacheKey)
-    const now = this.deps.now()
-    if (hit?.key === key && hit.until > now) return { rows: hit.rows.map((r) => ({ ...r })), truncated: hit.truncated }
+    return { cacheKey: `${profile}\n${sourceFilter ?? ''}`, key: `${dbPath}\n${dbStamp(dbPath)}\n${dbStamp(`${dbPath}-wal`)}`, dbPath, sourceFilter }
+  }
+
+  private cached(slot: CacheSlot): CliSessionRead | null {
+    const hit = this.cache.get(slot.cacheKey)
+    if (hit?.key !== slot.key || hit.until <= this.deps.now()) return null
+    return { rows: hit.rows.map((r) => ({ ...r })), truncated: hit.truncated }
+  }
+
+  /** Build the rows, degrade a failed read or build to none with the Python log line, and cache the outcome. */
+  private store(slot: CacheSlot, now: number, profile: string, results: QueryResults): CliSessionRead {
     let rows: Dict[]
     const truncated = new Set<string>()
     try {
-      rows = this.loadUncached(profile, dbPath, sourceFilter, truncated)
+      if (results instanceof Error) throw results
+      rows = results ? this.build(profile, slot, results, truncated) : []
     } catch (error) {
-      this.deps.log(`[webui] get_cli_sessions() failed; check state.db schema or path (${dbPath}): ${(error as Error).message}`)
+      this.deps.log(`[webui] get_cli_sessions() failed; check state.db schema or path (${slot.dbPath}): ${(error as Error).message}`)
       rows = []
     }
-    this.cache.set(cacheKey, { key, until: now + CACHE_TTL_S, rows, truncated })
+    this.cache.set(slot.cacheKey, { key: slot.key, until: now + CACHE_TTL_S, rows, truncated })
     return { rows: rows.map((r) => ({ ...r })), truncated }
   }
 
-  private sidecarMeta(sid: string): { title: string | null; archived: boolean } {
-    const session = this.deps.store.loadMetadataOnly(sid)
-    if (!session) return { title: null, archived: false }
-    return { title: str(session.title).trim() || null, archived: session.archived }
+  private queries(slot: CacheSlot): ListingQuery[] {
+    const { sourceFilter } = slot
+    const log = this.deps.log
+    const interactiveLimit = sourceFilter === null ? CLI_VISIBLE_SESSION_LIMIT : BACKGROUND_PROJECT_CHIP_LIMIT
+    // A filtered read takes one row past its window too, so a single-source list knows more exist (TAL-482).
+    const out: ListingQuery[] = [{ kind: null, opts: { limit: sourceFilter === null ? interactiveLimit : interactiveLimit + 1, excludeSources: sourceFilter === null ? [...BACKGROUND_KINDS] : null, includeSources: sourceFilter === null ? null : [sourceFilter], log } }]
+    // One row past the cap tells the sidebar that more sessions of this kind exist than it lists (TAL-482).
+    if (sourceFilter === null) for (const kind of BACKGROUND_KINDS) out.push({ kind, opts: { limit: BACKGROUND_PROJECT_CHIP_LIMIT + 1, excludeSources: null, includeSources: [kind], log } })
+    return out
+  }
+
+  /**
+   * The UI-owned title and archived flag of each state.db row's WebUI sidecar, from the session index parsed once per
+   * build; only a sidecar file the index does not list is read (TAL-920).
+   */
+  private sidecarMetaLookup(): (sid: string) => { title: string | null; archived: boolean } {
+    const store = this.deps.store
+    let persisted: Set<string> | null = null
+    let indexed: Map<string, Dict> | null = null
+    return (sid) => {
+      persisted ??= store.persistedIds()
+      if (!persisted.has(sid)) return { title: null, archived: false }
+      if (indexed === null) {
+        let entries: Dict[] = []
+        try { entries = store.readIndexEntries() } catch { /* every sidecar falls back to its file */ }
+        indexed = new Map(entries.flatMap((entry) => { const row = sanitizeSessionRow(entry, store, '_index.json'); return row ? [[str(row.session_id), row] as const] : [] }))
+      }
+      const entry = indexed.get(sid)
+      if (entry) return { title: (str(entry.title) || 'Untitled').trim() || null, archived: Boolean(entry.archived) }
+      const session = store.loadMetadataOnly(sid)
+      if (!session) return { title: null, archived: false }
+      return { title: str(session.title).trim() || null, archived: session.archived }
+    }
   }
 
   private cronJobNames(home: string): Map<string, string> {
@@ -89,8 +176,8 @@ export class CliSessionSource {
     return names
   }
 
-  private loadUncached(profile: string, dbPath: string, sourceFilter: string | null, truncated: Set<string>): Dict[] {
-    if (!existsSync(dbPath)) return []
+  private build(profile: string, slot: CacheSlot, results: QueryResult[], truncated: Set<string>): Dict[] {
+    const { sourceFilter } = slot
     const home = this.deps.profileHome(profile)
     let workspace: string | null = null
     const cliWorkspace = (): string => { workspace ??= this.deps.lastWorkspace(profile); return workspace }
@@ -102,6 +189,7 @@ export class CliSessionSource {
       cronNames ??= this.cronJobNames(home)
       return cronNames.get(parts[1] ?? '') ?? null
     }
+    const sidecarMeta = this.sidecarMetaLookup()
     const tombstone = this.deps.store.loadDeletedTombstone()
     const out: Dict[] = []
     const seen = new Set<string>()
@@ -116,7 +204,7 @@ export class CliSessionSource {
       const meta = normalizeAgentSessionSource(row.source || sourceTag)
       let title = str(row.title) || null
       if (!title && sourceTag === 'cron') title = cronTitle(sid) ?? title
-      const sidecar = this.sidecarMeta(sid)
+      const sidecar = sidecarMeta(sid)
       if (sidecar.title) title = sidecar.title
       return {
         session_id: sid, title: title ?? defaultTitle, workspace: cliWorkspace(), model: row.model || null,
@@ -133,10 +221,8 @@ export class CliSessionSource {
         is_cli_session: isCliSessionRow({ ...row, ...meta }),
       }
     }
-    const background = new Set(['cron', 'webhook', 'kanban'])
     const interactiveLimit = sourceFilter === null ? CLI_VISIBLE_SESSION_LIMIT : BACKGROUND_PROJECT_CHIP_LIMIT
-    // A filtered read takes one row past its window too, so a single-source list knows more exist (TAL-482).
-    const interactive = readImportableAgentSessionRows(dbPath, { limit: sourceFilter === null ? interactiveLimit : interactiveLimit + 1, excludeSources: sourceFilter === null ? ['cron', 'webhook', 'kanban'] : null, includeSources: sourceFilter === null ? null : [sourceFilter], log: this.deps.log })
+    const interactive = results[0] as Dict[]
     if (sourceFilter !== null && interactive.length > interactiveLimit) truncated.add(sourceFilter)
     for (const row of sourceFilter === null ? interactive : interactive.slice(0, interactiveLimit)) {
       const sid = str(row.id)
@@ -146,10 +232,10 @@ export class CliSessionSource {
       seen.add(sid)
     }
     if (sourceFilter !== null) return out
-    for (const kind of background) {
+    BACKGROUND_KINDS.forEach((kind, i) => {
       try {
-        // One row past the cap tells the sidebar that more sessions of this kind exist than it lists (TAL-482).
-        const rows = readImportableAgentSessionRows(dbPath, { limit: BACKGROUND_PROJECT_CHIP_LIMIT + 1, excludeSources: null, includeSources: [kind], log: this.deps.log })
+        const rows = results[i + 1] ?? []
+        if (rows instanceof Error) throw rows
         if (rows.length > BACKGROUND_PROJECT_CHIP_LIMIT) truncated.add(kind)
         for (const row of rows.slice(0, BACKGROUND_PROJECT_CHIP_LIMIT)) {
           const sid = str(row.id)
@@ -160,7 +246,7 @@ export class CliSessionSource {
       } catch (error) {
         this.deps.log(`[webui] ${kind} sidebar second pass failed: ${(error as Error).message}`)
       }
-    }
+    })
     return out
   }
 }

@@ -395,7 +395,7 @@ export function gatewayProbePayload(ctx: RequestContext, watcher: GatewayWatcher
 const truthyQuery = (value: string | null): boolean => ['1', 'true', 'yes', 'on'].includes((value ?? '').trim().toLowerCase())
 const MERGED_SIDEBAR_DRAIN_MS = 250
 
-function initialGatewaySessions(ctx: RequestContext): Record<string, unknown>[] {
+function initialGatewaySessions(ctx: RequestContext): Promise<Record<string, unknown>[]> {
   return ctx.deps.cliSessions.load(ctx.deps.activeProfile(), {})
 }
 
@@ -431,7 +431,7 @@ export async function handleSessionEvents(ctx: RequestContext): Promise<void> {
   try {
     sse.start()
     if (wantGateway && gatewayStatus) sse.event('gateway_status', gatewayStatus)
-    if (gatewaySub) sse.event('sessions_changed', { type: 'sessions_changed', sessions: initialGatewaySessions(ctx), stream: 'gateway' })
+    if (gatewaySub) sse.event('sessions_changed', { type: 'sessions_changed', sessions: await initialGatewaySessions(ctx), stream: 'gateway' })
     let lastWrite = Date.now()
     for (;;) {
       if (!(await sse.ready())) return
@@ -483,7 +483,7 @@ export async function handleGatewayStream(ctx: RequestContext): Promise<void> {
   ctx.res.on('close', () => { abort.abort() })
   try {
     sse.start()
-    sse.event('sessions_changed', { sessions: initialGatewaySessions(ctx) })
+    sse.event('sessions_changed', { sessions: await initialGatewaySessions(ctx) })
     for (;;) {
       if (!(await sse.ready())) return
       const event = await nextWithin((signal) => sub.next(signal), SSE_HEARTBEAT_INTERVAL_MS, abort.signal)

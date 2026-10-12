@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Loading the session list on a busy host no longer freezes Talaria Web, so a slow Agent history read can no longer get the server restarted and stop a running reply.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

@@ -12,14 +12,14 @@ import { buildActiveTurnToken, copyJson, redactSessionData, redactValue, stripPu
 import type { DraftStore } from './drafts.js'
 import { DraftVersionConflict, normalizeDraftVersion } from './drafts.js'
 import type { SessionEventBus } from './events.js'
-import { allSessions, buildSessionListPayload, CLI_IDENTITY_FIELDS, isClaimableCliSource, isMessagingSessionRecord, withOwnerLocks, withSessionWireFlags, lineageRootId, mergeCliSidebarMetadata, sessionListResponse, sessionSearchMatches, sessionSearchMessageText, sessionSearchPreview, sessionSearchTerms, type ListParams, type ListResponse, type Row, type RuntimeOverlay } from './list.js'
+import { allSessions, buildSessionListPayload, CLI_IDENTITY_FIELDS, isClaimableCliSource, isMessagingSessionRecord, ownerLockCandidates, withOwnerLocks, withSessionWireFlags, lineageRootId, mergeCliSidebarMetadata, sessionListResponse, sessionSearchMatches, sessionSearchMessageText, sessionSearchPreview, sessionSearchTerms, type ListParams, type ListResponse, type Row, type RuntimeOverlay } from './list.js'
 import { anchorSceneIntOrNull, fullToolResult, hydrateAnchorActivityScenes, normalizeAnchorSceneMessageRef, readAnchorSceneRows, storeAnchorScene, withTurnIds } from './anchor.js'
 import { COMPRESSION_RECOVERY_ACTION_START_FOCUSED, compressionRecoveryPayload, isSafeSessionId, lastMessageTimestamp, Session, sharePath, stripAttachedFilesMarker, titleFrom, type Message } from './session.js'
 import { SessionBusy, SessionNotFound, statSignature, type SessionStore } from './store.js'
 import { UNSETTLED_TODO_KEY, attachTodoState } from './todo.js'
 import { isClaudeCodeSessionId, type ClaudeCodeSessionSource } from './claude-code.js'
 import { auditSessionRecovery, repairSafeSessionRecovery, type RecoveryDeps } from './recovery.js'
-import { agentSessionRowsExisting, CONVERSATION_ROUND_THRESHOLD, countConversationRounds, stateDbCompressionLineage, stateDbTailToolContent, stateDbLineageReport, stateDbSessionMessages, stateDbSessionRead, stateDbSessionRow, stateDbSessionSources, stateDbTimestampSeconds, type StateDbRead } from './state-db.js'
+import { agentSessionRowsExisting, agentSessionRowsExistingAsync, CONVERSATION_ROUND_THRESHOLD, countConversationRounds, stateDbCompressionLineage, stateDbTailToolContent, stateDbLineageReport, stateDbSessionMessages, stateDbSessionRead, stateDbSessionRow, stateDbSessionSources, stateDbSessionSourcesAsync, stateDbTimestampSeconds, type StateDbRead } from './state-db.js'
 import { completionIncomplete, fallbackHandoffSummary, HANDOFF_SYSTEM_PROMPT, handoffMarker, handoffPayload, handoffTranscript, messageHandoffPayload, sameHandoff } from './handoff.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, compressionReference, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { SidecarError, type SidecarLike } from '../sidecar/client.js'
@@ -128,7 +128,9 @@ export interface SessionServiceDeps {
   yolo: { isEnabled: (sid: string) => boolean; set: (sid: string, enabled: boolean) => void }
   /** state.db sidebar rows for a profile (Python `get_cli_sessions`); null when the projection is unavailable. */
   /** `truncated`: source kinds whose rows stopped at the per-kind window on this read (TAL-482). */
-  cliSessions: (profile: string, opts: { sourceFilter: string | null }) => { rows: Row[]; truncated: ReadonlySet<string> }
+  cliSessions: (profile: string, opts: { sourceFilter: string | null }) => Promise<{ rows: Row[]; truncated: ReadonlySet<string> }>
+  /** `cliSessions` read on this thread, for the synchronous single-session lookups. */
+  cliSessionsSync: (profile: string, opts: { sourceFilter: string | null }) => { rows: Row[]; truncated: ReadonlySet<string> }
   /** TAL-551: read-only Claude Code transcripts, listed with the CLI rows when both toggles are on. */
   claudeCode?: ClaudeCodeSessionSource
   profileHome: (profile: string) => string
@@ -268,22 +270,40 @@ export class SessionService {
    * an orphan, while a stream id a crash left behind does not count as one.
    */
   private orphanedImports(rows: Row[]): Set<string> {
-    const candidates = rows.filter((r) => r.read_only && ['cli', 'api'].includes(sourceKind(r)) && this.visibleToActiveProfile(str(r.profile) || null) && !this.activeRunBlocking(str(r.session_id)))
-      .map((r) => str(r.session_id))
+    const candidates = this.orphanCandidates(rows)
     if (!candidates.length) return new Set()
     const existing = agentSessionRowsExisting(this.stateDbPath(null), candidates)
     return new Set(candidates.filter((sid) => !existing.has(sid)))
+  }
+
+  private orphanCandidates(rows: Row[]): string[] {
+    return rows.filter((r) => r.read_only && ['cli', 'api'].includes(sourceKind(r)) && this.visibleToActiveProfile(str(r.profile) || null) && !this.activeRunBlocking(str(r.session_id)))
+      .map((r) => str(r.session_id))
   }
 
   private isOrphanedImport(sid: string): boolean {
     try { return this.orphanedImports([this.store.get(sid, { metadataOnly: true }).compact()]).size > 0 } catch { return false }
   }
 
-  /** The list's prune: an orphan's sidecar goes, as nothing else ever removes it. */
-  private readonly pruneOrphanedImports = (rows: Row[]): Set<string> => {
-    const orphans = this.orphanedImports(rows)
-    for (const sid of orphans) this.store.deleteFiles(sid)
-    return orphans
+  /**
+   * The list's owner locks and orphan prune (an orphan's sidecar goes, as nothing else ever removes it), with their
+   * state.db reads made on the listing worker up front so the synchronous build never opens state.db (TAL-920).
+   */
+  private async listStateDbLookups(rows: Row[]): Promise<Pick<ListParams, 'stateDbSources' | 'pruneOrphanedImports'>> {
+    const dbPath = this.stateDbPath(null)
+    const ownerIds = ownerLockCandidates(rows)
+    const owners = ownerIds.length ? await stateDbSessionSourcesAsync(dbPath, ownerIds) : new Map<string, string>()
+    const checked = new Set(this.orphanCandidates(rows))
+    const existing = checked.size ? await agentSessionRowsExistingAsync(dbPath, checked) : new Set<string>()
+    return {
+      stateDbSources: () => owners,
+      pruneOrphanedImports: (current) => {
+        // Only an id the worker checked can be an orphan; a row that became a candidate meanwhile waits for the next list.
+        const orphans = new Set(this.orphanCandidates(current).filter((sid) => checked.has(sid) && !existing.has(sid)))
+        for (const sid of orphans) this.store.deleteFiles(sid)
+        return orphans
+      },
+    }
   }
 
   /** The persisted flag folded with the state.db owner lock (TAL-358): the one read-only rule for mutation gates and the wire. */
@@ -454,7 +474,7 @@ export class SessionService {
   private lookupCliMeta(sid: string): Row | null {
     try {
       if (isClaudeCodeSessionId(sid)) return this.claudeCodeRows().find((r) => str(r.session_id) === sid) ?? null
-      return this.deps.cliSessions(this.deps.activeProfile(), { sourceFilter: null }).rows.find((r) => str(r.session_id) === sid) ?? null
+      return this.deps.cliSessionsSync(this.deps.activeProfile(), { sourceFilter: null }).rows.find((r) => str(r.session_id) === sid) ?? null
     } catch {
       return null
     }
@@ -844,16 +864,18 @@ export class SessionService {
 
   // ── list / search ────────────────────────────────────────────────────────
 
-  list(params: Omit<ListParams, 'activeProfile' | 'isolatedProfileMode' | 'profilesMatch' | 'cliRows' | 'gatewayIdentity' | 'stateDbSources' | 'truncatedSources' | 'pruneOrphanedImports'>): { body: ListResponse; etag: string } {
+  async list(params: Omit<ListParams, 'activeProfile' | 'isolatedProfileMode' | 'profilesMatch' | 'cliRows' | 'gatewayIdentity' | 'stateDbSources' | 'truncatedSources' | 'pruneOrphanedImports' | 'webuiRows'>): Promise<{ body: ListResponse; etag: string }> {
     const activeProfile = this.deps.activeProfile()
     const wantState = params.showCliSessions || params.showCronSessions || params.showWebhookSessions || params.showKanbanSessions
     // Python reads every profile's state.db under all_profiles; this port projects the active profile only.
-    const cliRead = wantState ? this.deps.cliSessions(activeProfile, { sourceFilter: params.sourceFilter ?? null }) : undefined
+    const cliRead = wantState ? await this.deps.cliSessions(activeProfile, { sourceFilter: params.sourceFilter ?? null }) : undefined
     const claudeCodeRows = params.showCliSessions && params.showClaudeCodeSessions ? this.claudeCodeRows() : []
     const cliRows = cliRead ? [...cliRead.rows, ...claudeCodeRows] : undefined
     const gatewayIdentity = loadGatewaySessionIdentityMap(join(this.deps.profileHome(activeProfile), 'sessions', 'sessions.json'))
     const truncatedSources = cliRead?.truncated
-    const payload = buildSessionListPayload(this.store, { ...params, ...(cliRows ? { cliRows } : {}), ...(truncatedSources ? { truncatedSources } : {}), gatewayIdentity, stateDbSources: this.stateDbSources, pruneOrphanedImports: this.pruneOrphanedImports, activeProfile, isolatedProfileMode: this.deps.isolatedProfileMode(), profilesMatch: this.deps.profilesMatch })
+    const webuiRows = allSessions(this.store, { sidebarMetadataOnly: true })
+    const lookups = await this.listStateDbLookups(webuiRows)
+    const payload = buildSessionListPayload(this.store, { ...params, ...(cliRows ? { cliRows } : {}), ...(truncatedSources ? { truncatedSources } : {}), gatewayIdentity, ...lookups, webuiRows, activeProfile, isolatedProfileMode: this.deps.isolatedProfileMode(), profilesMatch: this.deps.profilesMatch })
     return sessionListResponse(payload, this.deps.runtime, this.deps.redactEnabled(), this.deps.now(), this.workspaceNames())
   }
 
@@ -889,8 +911,8 @@ export class SessionService {
    * archived, projection and order), narrowed to `projectId` (`none`: rows without a project), then matched on the
    * title, then the metadata the row shows (workspace path and name, model, provider, profile, source label), then message content.
    */
-  sidebarSearch(q: string, params: Parameters<SessionService['list']>[0], opts: { content: boolean; depth: number; projectId: string | null }): Record<string, unknown> {
-    let rows = this.list(params).body.sessions
+  async sidebarSearch(q: string, params: Parameters<SessionService['list']>[0], opts: { content: boolean; depth: number; projectId: string | null }): Promise<Record<string, unknown>> {
+    let rows = (await this.list(params)).body.sessions
     if (opts.projectId === 'none') rows = rows.filter((r) => !r.project_id)
     else if (opts.projectId) rows = rows.filter((r) => str(r.project_id) === opts.projectId)
     const query = q.toLowerCase().trim()
