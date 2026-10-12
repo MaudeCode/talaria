@@ -142,14 +142,30 @@ On top of its rules:
   ticket.
 - For a Hermes Agent release tag, file one **support ticket**, "Support Hermes
   Agent `<tag>` and pin the Web sidecar to it", even when nothing blocks it.
-  Every **bug** ticket this run files or comments on blocks it, as does each
-  held finding once approved and filed as a bug; feature tickets do not. A
-  `main` or SHA candidate files none. Its acceptance criteria:
+  A `main` or SHA candidate files none. Its acceptance criteria:
   `scripts/check-agent-compatibility.py --release <tag>` passes,
   `web/sidecar/agent_support.json` holds the newest three releases with
   `validatedBy` naming the support ticket for `<tag>`, and
-  `web/sidecar/agent_dependency.json` pins `<tag>`. An open support ticket for
-  `<tag>` takes this run's blockers instead.
+  `web/sidecar/agent_dependency.json` pins `<tag>`.
+  - Only **compatibility bugs** block it: every open bug ticket where Talaria
+    breaks against the candidate (step 3), such as a removed or re-signatured
+    name, a changed file format or schema, or a checker or install path that
+    fails on it, whether this run filed it, commented on it, or found it open,
+    plus each held finding once approved and filed as a compatibility bug.
+    Pre-range defects are not compatibility bugs.
+  - The newest open support ticket for an earlier Agent release also blocks it,
+    so pins land in release order.
+  - Record blockers only as Kaneo `blocks` relations. This overrides
+    `discover-tickets`' rule to record prerequisites on dependent work.
+  - Apply `sf` when the ticket's content is otherwise ready. Software-factory
+    resolves blockers first, so its open `blocks` relations are not a
+    readiness gate. A held finding that would be a compatibility bug has no
+    ticket to relate yet: until the owner answers it, the support ticket takes
+    the `decision` gate instead of `sf`. Swap it to `sf` once each such finding
+    is filed and related, or declined.
+  - When a support ticket for `<tag>` is already open, apply these relations
+    and this readiness rule (`sf` or `decision`) to it instead of filing
+    another.
 
 File nothing for a **hold**. List it in the report with its evidence and the
 ticket you would file. The owner approves held findings by replying in the
@@ -160,8 +176,8 @@ review thread, and only then is that ticket filed.
 - **Identity:** upstream, base and candidate tags with SHAs, compare link, and
   non-merge commit count.
 - **Filed:** each ticket link and the finding it covers, plus tickets commented
-  on, and for a Hermes Agent release the support ticket with its blockers once
-  filed.
+  on, and for a Hermes Agent release the support ticket and its `blocks`
+  relations.
 - **Held for approval:** numbered so the owner can approve by number.
 - **Already present and irrelevant:** grouped summaries.
 - **Uncertainty:** only what the review could not resolve, each with the step
