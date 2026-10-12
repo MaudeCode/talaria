@@ -143,9 +143,11 @@ On top of its rules:
 - For a Hermes Agent release tag, file one **support ticket**, "Support Hermes
   Agent `<tag>` and pin the Web sidecar to it", even when nothing blocks it.
   Every **bug** ticket this run files or comments on blocks it, as does each
-  held finding once approved and filed as a bug. Its acceptance criteria:
+  held finding once approved and filed as a bug; feature tickets do not. A
+  `main` or SHA candidate files none. Its acceptance criteria:
   `scripts/check-agent-compatibility.py --release <tag>` passes,
-  `web/sidecar/agent_support.json` holds the newest three releases, and
+  `web/sidecar/agent_support.json` holds the newest three releases with
+  `validatedBy` naming the support ticket for `<tag>`, and
   `web/sidecar/agent_dependency.json` pins `<tag>`. An open support ticket for
   `<tag>` takes this run's blockers instead.
 
