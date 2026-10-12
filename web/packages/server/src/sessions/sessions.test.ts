@@ -1564,6 +1564,27 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     expect(await served(sid)).not.toContain('tool output')
   })
 
+  it('a CLI row committed while a failed turn settles stays in the transcript and reaches the next turn (TAL-921)', async () => {
+    const sid = await seeded([['user', 'u1', 100], ['assistant', 'a1', 101]])
+    await turn(sid, 'first')
+    const service = s.deps.sessions
+    const read = service.stateDbRead.bind(service)
+    // The CLI commits right after the settlement's first state.db read.
+    let armed = false
+    const spy = vi.spyOn(service, 'stateDbRead').mockImplementation((session) => {
+      const rows = read(session)
+      if (armed) { armed = false; commit(sid, [['user', 'CLI meanwhile', 300]]) }
+      return rows
+    })
+    try {
+      sidecar.respond('chat.start', () => { commitAgentRows(sid, toolRound('inspect')); armed = true; throw new SidecarError('sidecar exited', { condition: 'sidecar_unavailable' }) })
+      const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'inspect' }))
+      await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    } finally { spy.mockRestore() }
+    expect((await served(sid)).filter((c) => c === 'CLI meanwhile')).toEqual(['CLI meanwhile'])
+    expect((await nextHistory(sid)).filter((m) => m.content === 'CLI meanwhile')).toHaveLength(1)
+  })
+
   it('a compression-exhausted failure leaves the next turn\'s history as it was (TAL-921)', async () => {
     const sid = await seeded([['user', 'u1', 100], ['assistant', 'a1', 101]])
     await turn(sid, 'first')

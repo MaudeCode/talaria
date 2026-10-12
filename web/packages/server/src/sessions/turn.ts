@@ -13,6 +13,7 @@ import type { SidecarLike } from '../sidecar/client.js'
 import { SidecarError } from '../sidecar/client.js'
 import type { SessionStore } from './store.js'
 import type { SessionService } from './service.js'
+import type { StateDbRead } from './state-db.js'
 import { HttpFailure, markSessionTitleGenerated } from './service.js'
 import type { SessionEventBus } from './events.js'
 import { StreamRegistry, SessionChannels, type StreamChannel } from './streams.js'
@@ -1013,11 +1014,13 @@ export class TurnRunner {
     s.messages.push(errorMessage)
     this.keepLiveState(s, streamId)
     this.persistConsumedSteers(s, streamId, startedAt, this.deps.now())
-    // TAL-921: the next prompt remembers the turn's work; an exhausted compression's work would only overflow again.
-    const context = payload.type === 'compression_exhausted' ? null : this.unsettledContext(s, streamId, agentRows)
+    // TAL-921: the next prompt remembers the turn's work; an exhausted compression's work would only overflow again. One
+    // read builds the context and settles, so a row committed in between is never covered without reaching either.
+    const read = this.deps.service().stateDbRead(s)
+    const context = payload.type === 'compression_exhausted' ? null : this.unsettledContext(streamId, agentRows, read)
     if (context) s.context_messages = context
     const stop = this.stopContexts.get(streamId)
-    this.deps.service().settleStateDb(s, { turnId: streamId, previousContext: stop?.previousContext ?? [], agentRows, startId: stop?.stateDbStartId ?? null })
+    this.deps.service().settleStateDb(s, { turnId: streamId, previousContext: stop?.previousContext ?? [], agentRows, startId: stop?.stateDbStartId ?? null, read })
     try { this.deps.store.save(s) } catch (error) { this.deps.log(`[webui] WARNING: failed to save error turn for ${s.session_id}: ${(error as Error).message}`) }
     // The kept live counters are the session's usage now, so the insights row follows them (the runtime logs failures).
     void this.deps.syncUsage?.(s, str(s.model) || null)
@@ -1026,10 +1029,16 @@ export class TurnRunner {
     this.deps.events.publish('session_error', { profile: s.profile, sessionId: s.session_id })
   }
 
-  /** TAL-921: the model context a turn that ends without its settled result leaves: the work its Agent reported or committed. */
-  private unsettledContext(s: Session, streamId: string, agentRows: Message[] | null): Message[] | null {
+  /**
+   * TAL-921: the model context a turn that ends without its settled result leaves: the work its Agent reported, else the
+   * rows it committed past its starting read in `read`, the read its settlement uses.
+   */
+  private unsettledContext(streamId: string, agentRows: Message[] | null, read: StateDbRead): Message[] | null {
     const stop = this.stopContexts.get(streamId)
-    return stop ? this.deps.service().unsettledTurnContext(s, { ...stop, streamedText: (this.registry.partialText.get(streamId) ?? []).join(''), agentRows, startId: stop.stateDbStartId }) : null
+    if (!stop) return null
+    const after = stop.stateDbStartId
+    const stateRows = after === null ? [] : read.rows.filter((m) => typeof m._state_db_row_id === 'number' && m._state_db_row_id > after)
+    return this.deps.service().unsettledTurnContext({ ...stop, streamedText: (this.registry.partialText.get(streamId) ?? []).join(''), agentRows, stateRows })
   }
 
   private materializePendingUserTurn(s: Session, activeTurnToken: string | null, turnId: string): boolean {
@@ -1105,28 +1114,31 @@ export class TurnRunner {
     }
     const stop = this.stopContexts.get(streamId)
     const canonical = stop !== undefined && checkpoint !== null && checkpointTurnStart(checkpoint, stop.msgText, stop.historyLength) !== null
-    const settle = (): Message[] | null => {
+    // TAL-921: one state.db read builds the context and settles the turn.
+    const settle = (read: StateDbRead): Message[] | null => {
       if (!stop) return null
       if (canonical) stop.checkpointed = true
-      return this.unsettledContext(current, streamId, checkpoint as Message[] | null)
+      return this.unsettledContext(streamId, checkpoint as Message[] | null, read)
     }
     if (current.messages.some((m) => isCancelMarker(m)) && current.active_stream_id === null && !current.pending_user_message) {
       // The worker's canonical result can arrive after cancel() settled without a checkpoint (the interrupt reply failed
       // or timed out): it replaces this stream's context and never adds a second Stop row. A settlement that already had
       // one keeps it, so work the Agent finished after the Stop stays out.
       const ownStop = current.messages.some((m) => isCancelMarker(m) && m._turn_id === streamId)
-      const late = canonical && !stop.checkpointed && ownStop ? settle() : null
-      if (late) current.context_messages = dedupeContext(late)
       // TAL-493: the worker's rows committed after the first settlement are covered by what it reports; others are kept.
-      if (late || (ownStop && checkpoint)) {
-        this.deps.service().settleStateDb(current, { turnId: streamId, previousContext: stop?.previousContext ?? [], agentRows: checkpoint as Message[], startId: stop?.stateDbStartId ?? null })
+      if (ownStop && checkpoint) {
+        const read = this.deps.service().stateDbRead(current)
+        const late = canonical && !stop.checkpointed ? settle(read) : null
+        if (late) current.context_messages = dedupeContext(late)
+        this.deps.service().settleStateDb(current, { turnId: streamId, previousContext: stop?.previousContext ?? [], agentRows: checkpoint as Message[], startId: stop?.stateDbStartId ?? null, read })
         try { this.deps.store.save(current) } catch { return false }
       }
       return true
     }
     const startedAt = current.pending_started_at
     this.materializePendingUserTurn(current, buildActiveTurnToken(streamId, current.pending_started_at), streamId)
-    const context = settle()
+    const read = this.deps.service().stateDbRead(current)
+    const context = settle(read)
     if (context) current.context_messages = dedupeContext(context)
     current.active_stream_id = null
     current.pending_user_message = null
@@ -1139,7 +1151,7 @@ export class TurnRunner {
     }
     this.keepLiveState(current, streamId)
     this.persistConsumedSteers(current, streamId, startedAt, this.deps.now())
-    this.deps.service().settleStateDb(current, { turnId: streamId, previousContext: stop?.previousContext ?? [], agentRows: checkpoint as Message[] | null, startId: stop?.stateDbStartId ?? null })
+    this.deps.service().settleStateDb(current, { turnId: streamId, previousContext: stop?.previousContext ?? [], agentRows: checkpoint as Message[] | null, startId: stop?.stateDbStartId ?? null, read })
     try { this.deps.store.save(current) } catch { return false }
     void this.deps.syncUsage?.(current, str(current.model) || null)
     this.deps.pending.clearApprovals(current.session_id)

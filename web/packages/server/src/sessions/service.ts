@@ -375,8 +375,8 @@ export class SessionService {
    * `startId` (the highest id the turn read when it started) are its own unreported work: covered, never shown. Rows the
    * turn started from but the transcript lacks (a CLI continuation read into its context) are kept before the turn.
    */
-  settleStateDb(s: Session, turn: { turnId: string; previousContext: Message[]; agentRows?: Message[] | null; startId?: number | null }): void {
-    const read = this.stateDbRead(s)
+  settleStateDb(s: Session, turn: { turnId: string; previousContext: Message[]; agentRows?: Message[] | null; startId?: number | null; read?: StateDbRead }): void {
+    const read = turn.read ?? this.stateDbRead(s)
     const startedWith = new Set(turn.previousContext.flatMap((m) => (typeof m._state_db_row_id === 'number' ? [m._state_db_row_id] : [])))
     const earlier = mergeSessionMessagesAppendOnly(s.messages, read.rows.filter((m) => typeof m._state_db_row_id === 'number' && startedWith.has(m._state_db_row_id)), { stateDbSeenId: -1 }).slice(s.messages.length)
     const added = new Map<string, number>()
@@ -425,19 +425,24 @@ export class SessionService {
 
   /**
    * TAL-921: the model context a turn leaves when it ends without its settled result (an error, a Stop, a dead run), as a
-   * Stop's: the Agent's rows when they hold the turn's prompt, else its own state.db rows (from its prompt to the next
-   * one), then the prose that streamed past them. `stateRows` are the rows committed after the turn started; without them,
-   * the rows past `startId`. Null when it captured nothing the model can use.
+   * Stop's: the Agent's rows when they hold the turn's prompt, else its own rows among `stateRows` (the state.db rows
+   * committed after it started), then the prose that streamed past them. Null when it captured nothing the model can use.
    */
-  unsettledTurnContext(s: Session, turn: { previousContext: Message[]; prompt: string | Record<string, unknown>[]; msgText: string; streamedText: string; historyLength: number; agentRows?: Message[] | null; startId?: number | null; stateRows?: Message[] }): Message[] | null {
+  unsettledTurnContext(turn: { previousContext: Message[]; prompt: string | Record<string, unknown>[]; msgText: string; streamedText: string; historyLength: number; agentRows?: Message[] | null; stateRows: Message[] }): Message[] | null {
     const reported = turn.agentRows && checkpointTurnStart(turn.agentRows, turn.msgText, turn.historyLength) !== null ? turn.agentRows : null
-    const after = turn.startId ?? null
-    const stateRows = reported ? [] : turn.stateRows ?? (after === null ? [] : this.stateDbRead(s).rows.filter((m) => typeof m._state_db_row_id === 'number' && m._state_db_row_id > after))
-    // This turn's settlement covers its rows. Without their row ids, the next settlement never reads them as a CLI
-    // continuation the transcript lacks.
-    const ownRows = reported ? null : runStateDbRows(stateRows, turn.msgText)?.map((m) => Object.fromEntries(Object.entries(m).filter(([k]) => k !== '_state_db_row_id' && k !== '_state_db_generation'))) ?? null
-    const context = stoppedTurnContext(turn.previousContext, reported ?? (ownRows && [...turn.previousContext, ...ownRows]), turn.prompt, turn.msgText, turn.streamedText, turn.historyLength)
-    return context && dedupeContext(context)
+    const own = reported ? null : runStateDbRows(turn.stateRows, turn.msgText)
+    const checkpoint = reported ?? (own && [...turn.previousContext, ...own])
+    const context = stoppedTurnContext(turn.previousContext, checkpoint, turn.prompt, turn.msgText, turn.streamedText, turn.historyLength)
+    if (!context) return null
+    if (!own || !checkpoint || checkpointTurnStart(checkpoint, turn.msgText, turn.historyLength) === null) return dedupeContext(context)
+    // The context holds the turn's own state.db rows from its prompt on. The Agent persisted the prompt's text only, so the
+    // prompt row carries what the turn sent (attached files, images). This turn's settlement covers the rows: without
+    // their ids, the next one never reads them as a CLI continuation the transcript lacks.
+    const at = turn.previousContext.length
+    return dedupeContext(context.map((m, i) => {
+      if (i === at) return { role: 'user', content: turn.prompt, ...(m.timestamp != null ? { timestamp: m.timestamp } : {}) }
+      return i > at && i < at + own.length ? Object.fromEntries(Object.entries(m).filter(([k]) => k !== '_state_db_row_id' && k !== '_state_db_generation')) : m
+    }))
   }
 
   /**
@@ -835,13 +840,13 @@ export class SessionService {
       // was sent; then the prose that streamed past them.
       const prompt = attachedFilesPrompt(pendingText, attachments)
       const streamed = output.map((m) => str(m.content)).filter(Boolean).join('\n\n')
-      target.context_messages = this.unsettledTurnContext(target, { previousContext, prompt, msgText: pendingText, streamedText: streamed, historyLength: previousContext.length, stateRows: runRows }) ?? dedupeContext([...structuredClone(previousContext), { role: 'user', content: prompt }])
+      target.context_messages = this.unsettledTurnContext({ previousContext, prompt, msgText: pendingText, streamedText: streamed, historyLength: previousContext.length, stateRows: runRows }) ?? dedupeContext([...structuredClone(previousContext), { role: 'user', content: prompt }])
     }
     if (target.hasPendingPrompt || output.length) {
       target.messages.push(...output)
       if (!answered) target.messages.push({ role: 'assistant', content: '**Interrupted:** The reply was interrupted before it could be saved.', timestamp: Math.trunc(this.deps.now()), _error: true, _turn_id: turnId })
       // Settled like a turn: the Agent's own rows are covered by the recovered turn; without them, every row past the run's start is.
-      this.settleStateDb(target, { turnId, previousContext, agentRows: ownRows, startId: stateDbSeenId(before) ?? (read.idCapable ? 0 : null) })
+      this.settleStateDb(target, { turnId, previousContext, agentRows: ownRows, startId: stateDbSeenId(before) ?? (read.idCapable ? 0 : null), read })
     }
     target.active_stream_id = null
     target.pending_user_message = null

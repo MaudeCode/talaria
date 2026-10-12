@@ -149,6 +149,20 @@ describe('stale-stream cleanup with a run journal', () => {
     expect(said(after.context_messages)).toEqual([['user', 'hi'], ['assistant', 'hello'], ['user', '[Attached files: /tmp/report.pdf]'], ['assistant', 'Reading it']])
   })
 
+  it('a prompt with files the Agent committed keeps the files in the model context, with the run\'s work (TAL-921)', async () => {
+    const history = [{ role: 'user', content: 'hi', timestamp: 1 }, { role: 'assistant', content: 'hello', timestamp: 2 }]
+    const doc = { path: '/tmp/report.pdf', mime: 'application/pdf', name: 'report.pdf' }
+    let startedAt = 0
+    const sid = await deadRun('deadrun921files', [['token', { text: 'Reading it' }]], (session) => {
+      startedAt = Number(session.pending_started_at)
+      Object.assign(session, { pending_attachments: [doc], messages: [...history], context_messages: [...history] })
+    })
+    // The Agent persists the prompt's text without the files it was sent with.
+    stateDb(sid, [['user', 'hi', 1], ['assistant', 'hello', 2], ['user', 'summarize the repo', startedAt + 1], ['assistant', 'Checking the tree.', startedAt + 2]])
+    const after = recovered(sid)
+    expect(said(after.context_messages)).toEqual([['user', 'hi'], ['assistant', 'hello'], ['user', 'summarize the repo\n\n[Attached files: /tmp/report.pdf]'], ['assistant', 'Checking the tree.'], ['assistant', 'Reading it']])
+  })
+
   it('a done run whose last segment is reasoning only is no answer', async () => {
     const sid = await deadRun('deadrun536thinking', [...work, ['reasoning', { text: 'That should do.' }], ['done', { terminal_state: 'completed', session: { messages: [] } }]])
     const { messages } = recovered(sid)
