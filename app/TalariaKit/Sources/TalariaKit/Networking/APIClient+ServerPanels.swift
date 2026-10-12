@@ -186,12 +186,21 @@ extension APIClient {
     /// Applies a pending repo update. The server pulls `--ff-only` and then
     /// restarts itself, so the caller must tolerate a brief connection outage
     /// and re-poll afterwards. Defaults to the `webui` target (issue #180 scope;
-    /// no `agent` target, `/force`, or `/summary`).
+    /// no `agent` target or `/force`).
     public func applyUpdate(target: String = "webui") async throws -> UpdatesApplyResponse {
         try await send(
             endpoint: .updatesApply,
             method: "POST",
-            body: UpdatesApplyRequest(target: target)
+            body: UpdateTargetRequest(target: target)
+        )
+    }
+
+    /// "Summarize with AI" (TAL-759): the server summarizes its own last check of `target`, so only the target is sent.
+    public func updatesSummary(target: UpdateTarget) async throws -> UpdatesSummaryResponse {
+        try await send(
+            endpoint: .updatesSummary,
+            method: "POST",
+            body: UpdateTargetRequest(target: target.rawValue)
         )
     }
 
@@ -271,7 +280,7 @@ private struct ProfileCreateRequest: Encodable {
     let apiKey: String?
 }
 
-private struct UpdatesApplyRequest: Encodable {
+private struct UpdateTargetRequest: Encodable {
     let target: String
 }
 

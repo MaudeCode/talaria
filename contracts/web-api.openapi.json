@@ -50555,6 +50555,10 @@
                                 }
                               ],
                               "description": "The version the update path leads to, when one is shown."
+                            },
+                            "summary_available": {
+                              "type": "boolean",
+                              "description": "TAL-759: offer \"Summarize with AI\" for this target (`release_ready` or `commits_behind`)."
                             }
                           },
                           "required": [
@@ -50562,7 +50566,8 @@
                             "can_apply",
                             "installed_unverified",
                             "manual_link",
-                            "target_version"
+                            "target_version",
+                            "summary_available"
                           ],
                           "additionalProperties": {}
                         },
@@ -50710,6 +50715,10 @@
                                 }
                               ],
                               "description": "The version the update path leads to, when one is shown."
+                            },
+                            "summary_available": {
+                              "type": "boolean",
+                              "description": "TAL-759: offer \"Summarize with AI\" for this target (`release_ready` or `commits_behind`)."
                             }
                           },
                           "required": [
@@ -50717,7 +50726,8 @@
                             "can_apply",
                             "installed_unverified",
                             "manual_link",
-                            "target_version"
+                            "target_version",
+                            "summary_available"
                           ],
                           "additionalProperties": {}
                         },
@@ -50938,6 +50948,10 @@
                                 }
                               ],
                               "description": "The version the update path leads to, when one is shown."
+                            },
+                            "summary_available": {
+                              "type": "boolean",
+                              "description": "TAL-759: offer \"Summarize with AI\" for this target (`release_ready` or `commits_behind`)."
                             }
                           },
                           "required": [
@@ -50945,7 +50959,8 @@
                             "can_apply",
                             "installed_unverified",
                             "manual_link",
-                            "target_version"
+                            "target_version",
+                            "summary_available"
                           ],
                           "additionalProperties": {}
                         },
@@ -51093,6 +51108,10 @@
                                 }
                               ],
                               "description": "The version the update path leads to, when one is shown."
+                            },
+                            "summary_available": {
+                              "type": "boolean",
+                              "description": "TAL-759: offer \"Summarize with AI\" for this target (`release_ready` or `commits_behind`)."
                             }
                           },
                           "required": [
@@ -51100,7 +51119,8 @@
                             "can_apply",
                             "installed_unverified",
                             "manual_link",
-                            "target_version"
+                            "target_version",
+                            "summary_available"
                           ],
                           "additionalProperties": {}
                         },
@@ -51485,24 +51505,18 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "updates": {
-                    "type": "object",
-                    "propertyNames": {
-                      "type": "string"
-                    },
-                    "additionalProperties": {}
-                  },
                   "target": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
+                    "enum": [
+                      "webui",
+                      "agent"
+                    ],
+                    "type": "string"
                   }
-                }
+                },
+                "required": [
+                  "target"
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -51515,8 +51529,40 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "target": {
+                      "enum": [
+                        "webui",
+                        "agent"
+                      ],
+                      "type": "string"
+                    },
                     "summary": {
                       "type": "string"
+                    },
+                    "current_version": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The installed version this summary starts from."
+                    },
+                    "target_version": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The version this summary leads to, when the update names one."
                     },
                     "summary_sections": {
                       "type": "array",
@@ -51537,30 +51583,42 @@
                           "title",
                           "items"
                         ]
-                      }
+                      },
+                      "description": "Display-ready headed bullet lists; empty when nothing is pending."
                     },
-                    "text": {
-                      "type": "string"
+                    "generated_by": {
+                      "enum": [
+                        "llm",
+                        "fallback",
+                        "none"
+                      ],
+                      "type": "string",
+                      "description": "`fallback` when no model answered; `none` when the target has no pending update to summarize."
                     },
-                    "ok": {
+                    "source": {
+                      "enum": [
+                        "release_notes",
+                        "commits",
+                        "none"
+                      ],
+                      "type": "string",
+                      "description": "Stable targets summarize the release notes they install; commit-tracking targets, or unreadable notes, use commit subjects."
+                    },
+                    "cached": {
                       "type": "boolean"
-                    },
-                    "error": {
-                      "type": "string"
-                    },
-                    "diff_links": {
-                      "type": "array",
-                      "items": {
-                        "anyOf": [
-                          {},
-                          {
-                            "type": "null"
-                          }
-                        ]
-                      }
                     }
                   },
-                  "additionalProperties": {}
+                  "required": [
+                    "ok",
+                    "target",
+                    "summary",
+                    "current_version",
+                    "target_version",
+                    "summary_sections",
+                    "generated_by",
+                    "source",
+                    "cached"
+                  ]
                 }
               }
             }

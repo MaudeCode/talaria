@@ -227,6 +227,7 @@ final class ContractReadinessTests: APIClientTestCase {
             .init(name: "settings", endpoint: .settings, path: "/api/settings"),
             .init(name: "updates check", endpoint: .updatesCheck, path: "/api/updates/check"),
             .init(name: "updates apply", endpoint: .updatesApply, path: "/api/updates/apply"),
+            .init(name: "updates summary", endpoint: .updatesSummary, path: "/api/updates/summary"),
             .init(name: "update notifications", endpoint: .updateNotifications, path: "/api/update-notifications"),
             .init(name: "clear update notifications", endpoint: .updateNotificationsClear, path: "/api/update-notifications/clear"),
             .init(name: "read update notification", endpoint: .updateNotificationRead(id: "notice-123"), path: "/api/update-notifications/notice-123/read"),

@@ -66,7 +66,7 @@ function sourceInstall(): Install {
   // The production URL stays configured; only this fixture's transport is redirected to its own repository.
   git(client, 'remote', 'set-url', 'origin', 'https://github.com/MaudeCode/talaria.git')
   const runtime = { tag: 'web-v2.0.0', version: '2.0.0', sourceRevision: latest, releaseSet: latest, contracts: { appWeb: [1], webRelay: [2] }, compatibleAgent: { ...PIN['x-talaria'], image: PIN.services['hermes-agent'].image } }
-  const release: PublishedRelease = { tag: 'web-v2.0.0', version: '2.0.0', sourceRevision: latest, releaseSet: latest, image: `ghcr.io/maudecode/talaria-web@sha256:${'f'.repeat(64)}`, npm: null, manifestReleaseSet: latest, runtime, release_url: `${REPOSITORY_URL}/releases/tag/release-set-${latest}`, releasesBehind: 1 }
+  const release: PublishedRelease = { tag: 'web-v2.0.0', version: '2.0.0', sourceRevision: latest, releaseSet: latest, image: `ghcr.io/maudecode/talaria-web@sha256:${'f'.repeat(64)}`, npm: null, manifestReleaseSet: latest, runtime, release_url: `${REPOSITORY_URL}/releases/tag/release-set-${latest}`, releasesBehind: 1, notes: [] }
   const id = { release: DEV as Dict, stamped: DEV as Dict, running: null as string | null }
   const identity: ReleaseIdentity = { release: () => id.release, stamped: () => id.stamped, runningSourceRevision: () => id.running }
   const commands: string[][] = []
@@ -436,32 +436,24 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     expect(result.release_url).toBe(s.release.release_url)
   })
 
-  it('the summary cache separates filtered experimental commits and reuses exact ranges', async () => {
+  it('summarizes the published notes of the Stable Web releases an npm update installs (TAL-759)', async () => {
     const s = sourceInstall()
-    write(join(s.upstream, 'app/client.swift'), '// unrelated App change\n')
-    git(s.upstream, 'add', '.')
-    git(s.upstream, 'commit', '-m', 'synthetic unrelated App update')
-    git(s.client, 'fetch', s.upstream, 'main')
-    const latest = git(s.upstream, 'rev-parse', 'HEAD')
-    const { svc } = service(s)
-    const info = { behind: 1, current_sha: s.old, latest_sha: latest }
-    const stable = await svc.summarize({ webui: { ...info, channel: 'stable' } }, null)
-    const experimental = await svc.summarize({ webui: { ...info, channel: 'experimental' } }, null)
-    expect((stable.targets as Dict[])[0]?.commits).toContain('synthetic unrelated App update')
-    expect((experimental.targets as Dict[])[0]?.commits).toEqual(['synthetic published release'])
-    expect(stable.cache_key).not.toBe(experimental.cache_key)
-    expect(stable.generated_by).toBe('fallback')
-    expect(String(stable.summary)).toContain("What you'll notice")
-    expect((await svc.summarize({ webui: { ...info, channel: 'stable' } }, null)).cached).toBe(true)
-    expect((await svc.summarize({}, null)).summary_sections).toEqual([{ title: "What you'll notice", items: ['Updates are available.'] }])
-  })
-
-  it('an LLM summary is split into Notice and Worth knowing sections', async () => {
-    const s = sourceInstall()
-    const { svc } = service(s, { llm: () => Promise.resolve('- Notice: Sessions load faster\n- Worth knowing: the sidebar was rebuilt\n- Notice: sessions load faster') })
-    const result = await svc.summarize({ webui: { behind: 1, current_sha: s.old, latest_sha: s.latest } }, 'webui')
-    expect(result.generated_by).toBe('llm')
-    expect(result.summary_sections).toEqual([{ title: "What you'll notice", items: ['Sessions load faster.'] }, { title: 'Worth knowing', items: ['The sidebar was rebuilt.'.replace('The', 'the')] }])
+    const n = npmPackageInstall(s)
+    const notes = { tag_name: 'web-v2.0.0', published_at: '2026-09-19T00:00:00Z', assets: [], body: 'Chats open faster.\n\n<!-- talaria-publication:{"tag":"web-v2.0.0"} -->' }
+    const getJson: GetJson = async (path, opts) => (opts.asset ? s.getJson(path, opts) : [notes, ...(await s.getJson(path, opts) as Dict[])])
+    const prompts: string[] = []
+    const svc = new UpdateService({
+      webRoot: n.packageRoot, git: s.run, npm: n.npm, getJson, identity: s.identity, webuiVersion: 'web-v1.0.0',
+      agentDir: () => null, channel: () => 'stable', includeAgent: () => false,
+      blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
+      scheduleRestart: () => undefined, gatewayRestart: () => Promise.resolve({ status: 'completed' }), llm: (_system, user) => { prompts.push(user); return Promise.resolve('- Notice: Chats open faster') }, log: () => undefined,
+    })
+    const webui = updatesCheckView(await svc.check(true, false, 'stable')).webui as Dict
+    expect(webui).toMatchObject({ state: 'release_ready', summary_available: true })
+    expect(webui).not.toHaveProperty('release_notes')
+    expect(await svc.summarize('webui')).toMatchObject({ target: 'webui', source: 'release_notes', generated_by: 'llm' })
+    expect(prompts[0]).toContain('<release tag="web-v2.0.0">\nChats open faster.\n</release>')
+    expect(prompts[0]).not.toContain('talaria-publication')
   })
 
   it('refuses to apply while chat work is active and reports the blockers', async () => {
@@ -797,6 +789,91 @@ describe('Agent checkout updates', () => {
     expect((await checkAgentUpdate(a.agent, runGit)).behind).toBe(0)
   })
 
+  function summaryService(a: { agent: string; origin: string }, opts: { channel?: 'stable' | 'experimental'; getPublicJson?: GetJson; llm?: (system: string, user: string) => Promise<string> } = {}): { svc: UpdateService; prompts: string[] } {
+    // The checkout fetches its local origin but reports a GitHub remote, whose releases `getPublicJson` stubs.
+    const run: GitRun = (args, cwd, t) => (args[0] === 'remote' && args[1] === 'get-url' ? Promise.resolve({ ok: true, out: 'https://github.com/Synthetic/agent.git' }) : runGit(args, cwd, t))
+    const prompts: string[] = []
+    const svc = new UpdateService({
+      webRoot: join(tmp(), 'web'), git: run, getJson: noReleases, ...(opts.getPublicJson ? { getPublicJson: opts.getPublicJson } : {}), identity: { release: () => DEV, stamped: () => DEV, runningSourceRevision: () => null }, webuiVersion: 'x',
+      agentDir: () => a.agent, channel: () => 'stable', agentChannel: () => opts.channel ?? 'stable', includeAgent: () => true, blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
+      scheduleRestart: () => undefined, gatewayRestart: () => Promise.resolve({ status: 'completed' }), llm: (system, user) => { prompts.push(user); return opts.llm ? opts.llm(system, user) : Promise.resolve('- Notice: Chats open faster') }, log: () => undefined,
+    })
+    return { svc, prompts }
+  }
+
+  it('summarizes the Stable release notes between the installed and target tags, not commit subjects (TAL-759)', async () => {
+    const a = agentInstall()
+    git(a.origin, 'commit', '--allow-empty', '-m', 'synthetic internal refactor')
+    git(a.origin, 'tag', 'v2.1.0')
+    const paths: string[] = []
+    const getPublicJson: GetJson = (path) => { paths.push(path); const tag = path.split('/').pop() ?? ''; return Promise.resolve({ tag_name: tag, draft: false, body: `Release notes for ${tag}` }) }
+    const { svc, prompts } = summaryService(a, { getPublicJson })
+    await svc.check(true)
+    const result = await svc.summarize('agent')
+    expect(result).toMatchObject({ ok: true, target: 'agent', current_version: 'v1.0.0', target_version: 'v2.1.0', source: 'release_notes', generated_by: 'llm', cached: false, summary_sections: [{ title: "What you'll notice", items: ['Chats open faster.'] }] })
+    expect(paths).toEqual(['/repos/Synthetic/agent/releases/tags/v2.0.0', '/repos/Synthetic/agent/releases/tags/v2.1.0'])
+    expect(prompts).toHaveLength(1)
+    expect(prompts[0]!.indexOf('Release notes for v2.0.0')).toBeGreaterThan(-1)
+    expect(prompts[0]!.indexOf('Release notes for v2.0.0')).toBeLessThan(prompts[0]!.indexOf('Release notes for v2.1.0'))
+    expect(prompts[0]).not.toContain('synthetic internal refactor')
+    expect(await svc.summarize('agent')).toMatchObject({ cached: true, source: 'release_notes' })
+    expect(prompts).toHaveLength(1)
+  })
+
+  const notesFor = (paths: string[], body = (tag: string) => `Release notes for ${tag}`): GetJson => (path) => { paths.push(path); const tag = path.split('/').pop() ?? ''; return Promise.resolve({ tag_name: tag, body: body(tag) }) }
+
+  it('Experimental Agent updates summarize commit subjects and never read release notes', async () => {
+    const a = agentInstall()
+    git(a.origin, 'commit', '--allow-empty', '-m', 'synthetic experimental change')
+    const paths: string[] = []
+    const { svc, prompts } = summaryService(a, { channel: 'experimental', getPublicJson: notesFor(paths) })
+    await svc.check(true)
+    expect(await svc.summarize('agent')).toMatchObject({ source: 'commits', generated_by: 'llm' })
+    expect(prompts[0]).toContain('- synthetic experimental change')
+    expect(paths).toEqual([])
+  })
+
+  it('falls back to commit subjects when no Stable release notes can be read', async () => {
+    const a = agentInstall()
+    const { svc, prompts } = summaryService(a, { getPublicJson: () => Promise.reject(new ReleaseUnavailable('GitHub answered 404')) })
+    await svc.check(true)
+    expect(await svc.summarize('agent')).toMatchObject({ source: 'commits' })
+    expect(prompts[0]).toContain('- agent v2')
+  })
+
+  it('keeps the newest releases within the prompt caps and names what the summary covers', async () => {
+    const a = agentInstall()
+    for (let i = 1; i <= 10; i++) { git(a.origin, 'commit', '--allow-empty', '-m', `release ${String(i)}`); git(a.origin, 'tag', `v2.${String(i)}.0`) }
+    const paths: string[] = []
+    const { svc, prompts } = summaryService(a, { getPublicJson: notesFor(paths, (tag) => (tag === 'v2.10.0' ? 'x'.repeat(9000) : `Release notes for ${tag}`)) })
+    await svc.check(true)
+    const result = await svc.summarize('agent')
+    expect(paths).toHaveLength(10)
+    expect(paths[0]).toBe('/repos/Synthetic/agent/releases/tags/v2.1.0')
+    expect(prompts[0]).not.toContain('Release notes for v2.0.0')
+    expect(prompts[0]).not.toContain('x'.repeat(8001))
+    expect((result.summary_sections as Dict[])[1]).toEqual({ title: 'Worth knowing', items: [expect.stringMatching(/^Hermes Agent has 11 releases to install; this summary covers the release notes for v2\.1\.0, .*v2\.10\.0\.$/)] })
+  })
+
+  it('answers none without a pending update and keeps deterministic sections when the model fails', async () => {
+    const a = agentInstall()
+    git(a.origin, 'commit', '--allow-empty', '-m', 'synthetic internal refactor')
+    git(a.origin, 'tag', 'v2.1.0')
+    let calls = 0
+    const { svc } = summaryService(a, { getPublicJson: notesFor([]), llm: () => { calls += 1; return Promise.reject(new Error('model unavailable')) } })
+    expect(await svc.summarize('agent')).toEqual({ ok: true, target: 'agent', current_version: null, target_version: null, summary: '', summary_sections: [], generated_by: 'none', source: 'none', cached: false })
+    expect(calls).toBe(0)
+    await svc.check(true)
+    // A check cached before update checks were turned off is never summarized.
+    expect(await svc.summarize('agent', true)).toMatchObject({ generated_by: 'none', source: 'none' })
+    expect(calls).toBe(0)
+    expect(await svc.summarize('agent')).toMatchObject({ generated_by: 'fallback', source: 'release_notes', summary_sections: [{ title: "What you'll notice", items: ['Hermes Agent v2.0.0, v2.1.0 are available.'] }] })
+    expect(calls).toBe(1)
+    // A fallback is not cached, so the next request asks the model again.
+    await svc.summarize('agent')
+    expect(calls).toBe(2)
+  })
+
   function agentService(agent: string, git: GitRun, events: string[]): UpdateService {
     return new UpdateService({
       webRoot: join(tmp(), 'web'), git, getJson: noReleases, identity: { release: () => DEV, stamped: () => DEV, runningSourceRevision: () => null }, webuiVersion: 'x',
@@ -1042,9 +1119,9 @@ describe('restart when safe', () => {
 describe('update status view (TAL-559)', () => {
   const view = (name: 'webui' | 'agent', info: Dict, off = false): Dict => {
     const v = updateTargetView(name, info, off)
-    return { state: v.state, can_apply: v.can_apply, installed_unverified: v.installed_unverified, manual_link: v.manual_link, target_version: v.target_version }
+    return { state: v.state, can_apply: v.can_apply, installed_unverified: v.installed_unverified, manual_link: v.manual_link, target_version: v.target_version, summary_available: v.summary_available }
   }
-  const row = (state: string, can_apply = false, extra: Dict = {}): Dict => ({ state, can_apply, installed_unverified: false, manual_link: false, target_version: null, ...extra })
+  const row = (state: string, can_apply = false, extra: Dict = {}): Dict => ({ state, can_apply, installed_unverified: false, manual_link: false, target_version: null, summary_available: state === 'release_ready' || state === 'commits_behind', ...extra })
   it.each<[string, 'webui' | 'agent', Dict, boolean, Dict]>([
     ['up to date', 'webui', { behind: 0 }, false, row('up_to_date')],
     ['Stable release ready', 'webui', { behind: 1, release_based: true, current_version: 'web-v1.2.3', latest_version: 'web-v1.3.0', install_kind: 'npm', no_git: true, manual_update: false }, false, row('release_ready', true, { target_version: 'web-v1.3.0' })],

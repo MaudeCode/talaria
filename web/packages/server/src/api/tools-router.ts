@@ -447,7 +447,7 @@ export const toolsRouter = os.router({
     apply: os.updates.apply.handler(({ input, context: { ctx } }) => run(() => { const target = updateTarget(input.target); return applyWithNotification(ctx, target, () => ctx.deps.updates.apply(target, bodyChannel(input.channel), () => true, { agentChannel: input.agent_channel, confirmedRevision: input.confirmed_agent_revision }), input.confirmed_agent_revision !== undefined, input.tab_id) as never })),
     force: os.updates.force.handler(({ input, context: { ctx } }) => run(() => { const target = updateTarget(input.target); return applyWithNotification(ctx, target, () => ctx.deps.updates.force(target, bodyChannel(input.channel), { agentChannel: input.agent_channel, confirmedRevision: input.confirmed_agent_revision }), input.confirmed_agent_revision !== undefined, input.tab_id) as never })),
     clearLock: os.updates.clearLock.handler(({ input, context: { ctx } }) => run(() => { const target = updateTarget(input.target); return applyWithNotification(ctx, target, () => ctx.deps.updates.clearLock(target, { agentChannel: input.agent_channel, confirmedRevision: input.confirmed_agent_revision }), input.confirmed_agent_revision !== undefined, input.tab_id) as never })),
-    summary: os.updates.summary.handler(({ input, context: { ctx } }) => run(() => ctx.deps.updates.summarize(input.updates ?? {}, input.target) as never)),
+    summary: os.updates.summary.handler(({ input, context: { ctx } }) => run(() => ctx.deps.updates.summarize(input.target, ctx.deps.settings.load().check_for_updates === false) as never)),
   },
   updateNotifications: {
     list: os.updateNotifications.list.handler(({ input, context: { ctx } }) => run(async () => {

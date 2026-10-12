@@ -15,6 +15,9 @@ struct ServerUpdateSettingsSection: View {
     @State private var isCheckingForUpdates = false
     @State private var forcedCheckOutcome: UpdatesCheckResponse.ForcedCheckOutcome?
     @State private var isPresentingForcedCheckResult = false
+    /// The server's last update check, for its per-target summary offers and the Agent row.
+    @State private var updateTargets: UpdatesCheckResponse?
+    @State private var summaryRequest: UpdateSummaryRequest?
 
     var body: some View {
         Group {
@@ -41,9 +44,19 @@ struct ServerUpdateSettingsSection: View {
 
             serverUpdateCheckAction
             serverUpdateNote
+            UpdateSummaryButton(info: updateTargets?.webui) {
+                summaryRequest = UpdateSummaryRequest(target: .webui)
+            }
             serverUpdateAction
+            agentUpdateRows
         }
         .task { await loadServerSettings() }
+        .sheet(item: $summaryRequest) { request in
+            UpdateSummarySheet(
+                model: UpdateSummaryModel(target: request.target, client: APIClient(baseURL: server)),
+                name: request.name
+            )
+        }
         .refreshesLive(showsStatus: false) { await loadServerSettings() }
         .alert("Update server?", isPresented: $isConfirmingUpdate) {
             Button("Cancel", role: .cancel) {}
@@ -154,6 +167,27 @@ private extension ServerUpdateSettingsSection {
         }
     }
 
+    /// The server's pending Agent update, read-only: installed version, status, and its summary.
+    @ViewBuilder
+    private var agentUpdateRows: some View {
+        if let agent = updateTargets?.agent {
+            let status = UpdateNote(agent: agent)
+            SettingsDivider()
+            SettingsValueRow(title: String(localized: "Hermes Agent")) {
+                Text(
+                    versionRange(agent.currentVersion, agent.targetVersion)
+                        ?? agent.currentVersion ?? String(localized: "Unknown")
+                )
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+            updateNoteRow(systemImage: status.systemImage, tint: status.tint, text: status.text)
+            UpdateSummaryButton(info: agent) {
+                summaryRequest = UpdateSummaryRequest(target: .agent)
+            }
+        }
+    }
+
     /// A finish step leaves nothing behind, so it has no count.
     private static func updateAvailableText(behind: Int) -> String {
         behind > 0 ? String(localized: "Update available · \(behind) behind") : String(localized: "Update available")
@@ -245,8 +279,11 @@ private extension ServerUpdateSettingsSection {
         isLoading = false
 
         do {
-            serverUpdateState = try await client.updatesCheck().webuiUpdateState
+            let response = try await client.updatesCheck()
+            updateTargets = response
+            serverUpdateState = response.webuiUpdateState
         } catch {
+            updateTargets = nil
             serverUpdateState = nil
         }
     }
@@ -257,6 +294,7 @@ private extension ServerUpdateSettingsSection {
         isCheckingForUpdates = true
         do {
             let response = try await APIClient(baseURL: server).updatesCheckForced()
+            updateTargets = response
             serverUpdateState = response.webuiUpdateState
             forcedCheckOutcome = response.forcedCheckOutcome
         } catch {

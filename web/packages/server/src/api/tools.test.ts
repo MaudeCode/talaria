@@ -372,10 +372,9 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     expect(typeof body.notification_id).toBe('string')
     res = await post(s, '/api/updates/apply', { target: 'x' })
     expect(res.status).toBe(400)
-    res = await post(s, '/api/updates/summary', { updates: { webui: { behind: 2 } } })
-    body = await json(res)
-    expect(body.generated_by).toBe('fallback')
-    expect(body.summary).toContain('WebUI has 2 update(s) available.')
+    // The server summarizes its own last check; clients send only the target.
+    expect((await post(s, '/api/updates/summary', { updates: { webui: { behind: 2 } }, target: 'webui' })).status).toBe(400)
+    expect(await json(await post(s, '/api/updates/summary', { target: 'webui' }))).toMatchObject({ ok: true, target: 'webui', generated_by: 'none', source: 'none', summary_sections: [] })
     // A check made while Agent updates were ignored must not keep the Agent off once they are re-enabled.
     await post(s, '/api/settings', { ignore_agent_updates: true })
     expect((await json(await post(s, '/api/updates/check', { force: true }))).agent).toMatchObject({ ignored: true, state: 'off' })
@@ -384,7 +383,7 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     res = await post(s, '/api/settings', { check_for_updates: false })
     expect(res.status).toBe(200)
     res = await s.get('/api/updates/check')
-    const off = { state: 'off', can_apply: false, installed_unverified: false, manual_link: false, target_version: null }
+    const off = { state: 'off', can_apply: false, installed_unverified: false, manual_link: false, target_version: null, summary_available: false }
     expect(await json(res)).toEqual({ disabled: true, webui: off, agent: off })
     res = await post(s, '/api/updates/check', { force: true })
     expect((await json(res)).channel).toBe('stable')

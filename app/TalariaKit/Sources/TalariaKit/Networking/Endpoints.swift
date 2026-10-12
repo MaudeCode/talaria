@@ -106,6 +106,7 @@ public enum Endpoint {
     case talariaRelayPair
     case updatesCheck
     case updatesApply
+    case updatesSummary
     case updateNotifications
     case updateNotificationsClear
     case updateNotificationRead(id: String)
@@ -354,6 +355,8 @@ public enum Endpoint {
             return "/api/updates/check"
         case .updatesApply:
             return "/api/updates/apply"
+        case .updatesSummary:
+            return "/api/updates/summary"
         case .updateNotifications:
             return "/api/update-notifications"
         case .updateNotificationsClear:

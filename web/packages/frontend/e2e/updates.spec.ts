@@ -180,38 +180,65 @@ for (const scenario of [
   })
 }
 
-test("What's new: the summary loads into the update path only once the setting is on (TAL-609)", async ({ page }, testInfo) => {
-  let settings = { update_channel: 'stable', check_for_updates: true, whats_new_summary_enabled: false }
+test('Summarize with AI opens a dialog with the server summary of one pending update (TAL-759)', async ({ page }, testInfo) => {
   const summaries: unknown[] = []
-  await page.route('**/api/settings', (route) => {
-    if (route.request().method() === 'POST') settings = { ...settings, ...route.request().postDataJSON() as Partial<typeof settings> }
-    return route.fulfill({ json: settings })
-  })
   await page.route('**/api/updates/check', (route) => route.fulfill({ json: updatesCheckView({
-    cached: true, webui: { behind: 2, current_sha: 'a'.repeat(40), latest_sha: 'b'.repeat(40) }, agent: { behind: 0 },
+    cached: true, webui: { behind: 0 },
+    agent: { behind: 3, release_based: true, current_version: 'v2026.9.24', latest_version: 'v0.21.7', current_sha: 'a'.repeat(40), latest_sha: 'b'.repeat(40) },
   }) }))
   await page.route('**/api/updates/summary', (route) => {
     summaries.push(route.request().postDataJSON())
-    return route.fulfill({ json: { ok: true, generated_by: 'llm', summary_sections: [
-      { title: "What you'll notice", items: ['Chats open faster after a restart.', 'The model picker remembers your last choice.'] },
-      { title: 'Worth knowing', items: ['This summary combines both pending updates.'] },
+    return route.fulfill({ json: { ok: true, target: 'agent', current_version: 'v2026.9.24', target_version: 'v0.21.7', summary: '', generated_by: 'llm', source: 'release_notes', cached: false, summary_sections: [
+      { title: "What you'll notice", items: ['Updates now follow tagged releases, so the Agent only moves to published versions.', 'Persistent Shell respects your settings, including environment-based defaults.', 'Requests to the Codex service are compressed, so less data is uploaded.'] },
+      { title: 'Worth knowing', items: ['This summary covers the release notes for v0.21.6 and v0.21.7.'] },
     ] } })
   })
   await page.goto('/settings/system')
   await settle(page)
-  const web = page.getByRole('region', { name: 'Talaria Web', exact: true })
-  await expect(web.getByText('Talaria Web is 2 commits behind', { exact: true })).toBeVisible()
-  await expect(web.getByText("What you'll notice", { exact: true })).toHaveCount(0)
-  await page.screenshot({ path: testInfo.outputPath('whats-new-off.png'), fullPage: true })
+  const agent = page.getByRole('region', { name: 'Hermes Agent', exact: true })
+  await expect(agent.getByText('Hermes Agent v0.21.7 is available', { exact: true })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Talaria Web', exact: true }).getByRole('button', { name: 'Summarize with AI' })).toHaveCount(0)
+  await expect(page.getByRole('switch', { name: "Summarize What's New with AI" })).toHaveCount(0)
   expect(summaries).toEqual([])
-  await page.getByRole('switch', { name: "Summarize What's New with AI", exact: true }).click()
-  await expect.poll(() => settings.whats_new_summary_enabled).toBe(true)
-  await expect(web.getByText("What you'll notice", { exact: true })).toBeVisible()
-  await expect(web.getByText('Chats open faster after a restart.', { exact: true })).toBeVisible()
-  await expect(web.getByText('Worth knowing', { exact: true })).toBeVisible()
-  await expect(web.getByText('This summary combines both pending updates.', { exact: true })).toBeVisible()
-  await expect(page.getByRole('region', { name: 'Hermes Agent', exact: true }).getByText("What you'll notice")).toHaveCount(0)
-  expect(summaries).toEqual([{ updates: { webui: expect.objectContaining({ behind: 2, current_sha: 'a'.repeat(40), latest_sha: 'b'.repeat(40) }) }, target: 'webui' }])
+  await page.screenshot({ path: testInfo.outputPath('summary-button.png'), fullPage: true })
+  await agent.getByRole('button', { name: 'Summarize with AI', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: "What's new in Hermes Agent" })
+  await expect(dialog.getByText('v2026.9.24 → v0.21.7', { exact: true })).toBeVisible()
+  await expect(dialog.getByText("What you'll notice", { exact: true })).toBeVisible()
+  await expect(dialog.getByText('Persistent Shell respects your settings, including environment-based defaults.', { exact: true })).toBeVisible()
+  await expect(dialog.getByText('This summary covers the release notes for v0.21.6 and v0.21.7.', { exact: true })).toBeVisible()
+  expect(summaries).toEqual([{ target: 'agent' }])
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-  await page.screenshot({ path: testInfo.outputPath('whats-new-on.png'), fullPage: true })
+  await page.screenshot({ path: testInfo.outputPath('summary-dialog.png') })
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+  await expect(dialog).toBeHidden()
+  // Reopening the same range answers from the query cache.
+  await agent.getByRole('button', { name: 'Summarize with AI', exact: true }).click()
+  await expect(page.getByRole('dialog', { name: "What's new in Hermes Agent" }).getByText("What you'll notice", { exact: true })).toBeVisible()
+  expect(summaries).toHaveLength(1)
+})
+
+test('a failed Web summary offers Retry, and Retry asks the server again (TAL-759)', async ({ page, errors }) => {
+  const summaries: unknown[] = []
+  await page.route('**/api/updates/check', (route) => route.fulfill({ json: updatesCheckView({
+    cached: true, webui: { behind: 2, release_based: true, current_version: 'web-v1.17.0', latest_version: 'web-v1.18.0', install_kind: 'npm', no_git: true, manual_update: false }, agent: { behind: 0 },
+  }) }))
+  await page.route('**/api/updates/summary', (route) => {
+    summaries.push(route.request().postDataJSON())
+    if (summaries.length === 1) return route.fulfill({ status: 500, json: { error: 'model unavailable' } })
+    return route.fulfill({ json: { ok: true, target: 'webui', current_version: 'web-v1.17.0', target_version: 'web-v1.18.0', summary: '', generated_by: 'llm', source: 'release_notes', cached: false, summary_sections: [
+      { title: "What you'll notice", items: ['Settings shows a summary of each pending update.'] },
+    ] } })
+  })
+  await page.goto('/settings/system')
+  await settle(page)
+  await page.getByRole('region', { name: 'Talaria Web', exact: true }).getByRole('button', { name: 'Summarize with AI', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: "What's new in Talaria Web" })
+  await expect(dialog.getByText("Couldn't summarize what's new.", { exact: true })).toBeVisible()
+  await dialog.getByRole('button', { name: 'Retry', exact: true }).click()
+  await expect(dialog.getByText('Settings shows a summary of each pending update.', { exact: true })).toBeVisible()
+  await expect(dialog.getByText('web-v1.17.0 → web-v1.18.0', { exact: true })).toBeVisible()
+  expect(summaries).toEqual([{ target: 'webui' }, { target: 'webui' }])
+  // The first summary fails on purpose.
+  errors.splice(0, errors.length, ...errors.filter((e) => !/api\/updates\/summary|status of 500/.test(e)))
 })

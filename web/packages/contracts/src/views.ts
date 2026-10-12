@@ -732,9 +732,19 @@ export const UpdateTargetSchema = z.looseObject({ name: z.string().optional(), c
   installed_unverified: z.boolean().describe('`release_ready` only: the installed revision sits on no release tag.'),
   manual_link: z.boolean().describe('Show the manual-install (releases) link.'),
   target_version: z.string().nullable().describe('The version the update path leads to, when one is shown.'),
+  summary_available: z.boolean().describe('TAL-759: offer "Summarize with AI" for this target (`release_ready` or `commits_behind`).'),
 })
 export const UpdatesCheckSchema = z.looseObject({ disabled: z.boolean().optional(), cached: z.boolean().optional(), channel: z.string().optional(), agent_channel: z.enum(['stable', 'experimental']).optional(), checked_at: z.number().optional(), include_agent: z.boolean().optional(), webui: UpdateTargetSchema.nullable().optional(), agent: UpdateTargetSchema.nullable().optional() })
-export const UpdatesSummarySchema = z.looseObject({ summary: z.string().optional(), summary_sections: z.array(z.object({ title: z.string(), items: z.array(z.string()) })).optional(), text: z.string().optional(), ok: z.boolean().optional(), error: z.string().optional(), diff_links: z.array(Json).optional() })
+export const UpdatesSummarySchema = z.object({
+  ok: z.boolean(), target: z.enum(['webui', 'agent']), summary: z.string(),
+  current_version: z.string().nullable().describe('The installed version this summary starts from.'),
+  target_version: z.string().nullable().describe('The version this summary leads to, when the update names one.'),
+  summary_sections: z.array(z.object({ title: z.string(), items: z.array(z.string()) })).describe('Display-ready headed bullet lists; empty when nothing is pending.'),
+  generated_by: z.enum(['llm', 'fallback', 'none']).describe('`fallback` when no model answered; `none` when the target has no pending update to summarize.'),
+  source: z.enum(['release_notes', 'commits', 'none']).describe('Stable targets summarize the release notes they install; commit-tracking targets, or unreadable notes, use commit subjects.'),
+  cached: z.boolean(),
+})
+export type UpdatesSummary = z.infer<typeof UpdatesSummarySchema>
 export const UpdateApplySchema = z.looseObject({ ok: z.boolean().optional(), status: z.string().optional(), error: z.string().optional(), message: z.string().optional(), lock: Json.optional(), confirmation_required: z.boolean().optional(), candidate_revision: z.string().optional(), supported_revision: z.string().optional(), supported_version: z.string().optional(), agent_channel: z.enum(['stable', 'experimental']).optional(), notification_id: z.uuid().optional(), channel_switch: z.boolean().optional(), backup_dir: z.string().nullable().optional(), backup_failed: z.boolean().optional(), stash_conflict: z.boolean().optional() })
 export const UpdateNotificationPhaseSchema = z.enum(['applying', 'awaiting_confirmation', 'restarting', 'succeeded', 'blocked', 'failed', 'unknown'])
 export const UpdateNotificationActionSchema = z.object({

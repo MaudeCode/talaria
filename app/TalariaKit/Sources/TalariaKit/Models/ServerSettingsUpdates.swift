@@ -56,23 +56,68 @@ public struct DefaultModelResponse: Decodable, Equatable {
 /// `{ "disabled": true }` opt-out payload, and failed/`stale_check` responses
 /// all omit different keys, and we never crash on a shape we don't expect.
 public struct UpdatesCheckResponse: Decodable, Equatable {
-    let webui: UpdateTargetInfo?
-    let agent: UpdateTargetInfo?
+    public let webui: UpdateTargetInfo?
+    public let agent: UpdateTargetInfo?
     let checkedAt: Double?
     let disabled: Bool?
 }
 
-struct UpdateTargetInfo: Decodable, Equatable {
+public struct UpdateTargetInfo: Decodable, Equatable {
     let name: String?
-    let behind: Int?
+    public let behind: Int?
     let currentSha: String?
     let latestSha: String?
     let branch: String?
     let repoUrl: String?
     let compareUrl: String?
+    public let currentVersion: String?
     /// TAL-559: the server-decided status and apply availability.
-    let state: String?
+    public let state: String?
     let canApply: Bool?
+    /// The version the update leads to, when the server shows one.
+    public let targetVersion: String?
+    /// TAL-759: the server offers "Summarize with AI" for this target; nil from older servers.
+    let summaryAvailable: Bool?
+
+    public var offersSummary: Bool { summaryAvailable == true }
+}
+
+/// The two update targets a Web server reports and summarizes.
+public enum UpdateTarget: String, Encodable, Sendable {
+    case webui
+    case agent
+}
+
+/// `POST /api/updates/summary` (TAL-759): the server's summary of one target's pending update,
+/// already split into display-ready headed bullet lists. Missing sections decode as empty.
+public struct UpdatesSummaryResponse: Decodable, Equatable {
+    public struct Section: Decodable, Equatable, Hashable {
+        public let title: String
+        public let items: [String]
+    }
+
+    public let summarySections: [Section]
+    /// The range this summary covers: installed version, and the target when the update names one.
+    public let currentVersion: String?
+    public let targetVersion: String?
+    let target: String?
+    let generatedBy: String?
+    /// `release_notes`, `commits`, or `none`.
+    let source: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case summarySections, currentVersion, targetVersion, target, generatedBy, source
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        summarySections = (try? container.decodeIfPresent([Section].self, forKey: .summarySections)) ?? []
+        currentVersion = container.decodeLossyStringIfPresent(forKey: .currentVersion)
+        targetVersion = container.decodeLossyStringIfPresent(forKey: .targetVersion)
+        target = container.decodeLossyStringIfPresent(forKey: .target)
+        generatedBy = container.decodeLossyStringIfPresent(forKey: .generatedBy)
+        source = container.decodeLossyStringIfPresent(forKey: .source)
+    }
 }
 
 extension UpdatesCheckResponse {

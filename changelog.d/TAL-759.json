@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Summarize with AI explains a pending Web or Agent update in a dialog, built from the release notes of the versions it installs instead of raw commits.",
+      "highlight": false,
+      "components": ["web"]
+    },
+    {
+      "category": "Added",
+      "summary": "Settings shows the server's pending Agent update and can summarize either update with AI in a sheet.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

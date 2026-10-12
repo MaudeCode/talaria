@@ -62,7 +62,6 @@ export function settingsDefaults(opts: { defaultWorkspace: string; botName: stri
     update_channel: 'stable',
     agent_update_channel: 'stable',
     ignore_agent_updates: false,
-    whats_new_summary_enabled: false,
     tts_enabled: false,
     tts_auto_read: false,
     tts_engine: 'browser',

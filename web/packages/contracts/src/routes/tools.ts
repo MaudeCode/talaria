@@ -82,7 +82,7 @@ export const toolsContract = {
     apply: oc.route({ method: 'POST', path: '/api/updates/apply', tags }).input(Target).output(UpdateApplySchema),
     force: oc.route({ method: 'POST', path: '/api/updates/force', tags }).input(Target).output(UpdateApplySchema),
     clearLock: oc.route({ method: 'POST', path: '/api/updates/clear_lock', tags }).input(Target).output(UpdateApplySchema),
-    summary: oc.route({ method: 'POST', path: '/api/updates/summary', tags }).input(z.object({ updates: Loose.optional(), target: z.string().nullable().optional() })).output(UpdatesSummarySchema),
+    summary: oc.route({ method: 'POST', path: '/api/updates/summary', tags }).input(z.strictObject({ target: z.enum(['webui', 'agent']) })).output(UpdatesSummarySchema),
   },
   updateNotifications: {
     list: oc.route({ method: 'GET', path: '/api/update-notifications', tags, summary: 'Server-owned update operation history for the authenticated owner and active profile. A Web tab passes its tab_id and loaded_build so the server compares that build and keeps its tab-scoped refresh notice.' }).input(z.object({ tab_id: TabIdSchema.optional(), loaded_build: FrontendBuildIdSchema.optional() })).output(UpdateNotificationsSchema),
