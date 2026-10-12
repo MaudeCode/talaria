@@ -35,6 +35,7 @@ import { agentSteerText, assistantReplyAddedAfterCurrentTurn, attachedFilesPromp
 import { mayBecomeSilentReply, turnOrigin, withBackgroundUpdates } from './background-updates.js'
 import { countExchanges, fallbackTitleFromExchange, firstExchangeSnippets, isGenericFallbackTitle, latestExchangeSnippets, looksInvalidGeneratedTitle, looksLikeDefaultCliTitle, sanitizeGeneratedTitle, titleLanguageMismatch, titlePrompts } from './titles.js'
 import { WORKSPACE_BUSY_MESSAGE } from '../workspace/git.js'
+import { CHECKPOINT_STORE_BUSY_MESSAGE } from '../workspace/rollback.js'
 import type { WorkspaceRegistry } from '../workspace/workspaces.js'
 import { str } from '../util.js'
 import { toolEditDiff } from './tool-display.js'
@@ -78,6 +79,8 @@ export interface TurnRunnerDeps {
   updateInProgress?: () => boolean
   /** Whether a Git mutation or worktree removal is changing this workspace; no run starts inside it meanwhile. */
   workspaceBusy?: (workspace: string) => boolean
+  /** TAL-913: a checkpoint diff or restore holds the profile's checkpoint store, which a turn's capture would collide with. */
+  checkpointStoreBusy?: (profile: string | null) => boolean
   /** Runs after the run is retired (Python teardown idle hook: deferred process wakeups). */
   onTurnEnd?: (sessionId: string) => void
   /** TAL-576: the profile's authoritative config file (`AgentConfig.path`); `<home>/config.yaml` when absent. */
@@ -312,6 +315,7 @@ export class TurnRunner {
     if (this.deps.updateInProgress?.()) return { error: 'Web is updating. Retry after it restarts.', _status: 503 }
     if (this.deps.profileDeleting?.(s.profile ?? null)) return { error: `Profile '${str(s.profile)}' is being deleted.`, _status: 409 }
     if (this.deps.workspaceBusy?.(opts.workspace)) return { error: WORKSPACE_BUSY_MESSAGE, _status: 409 }
+    if (this.deps.checkpointStoreBusy?.(s.profile ?? null)) return { error: CHECKPOINT_STORE_BUSY_MESSAGE, _status: 409 }
     const locked = s.active_stream_id
     if (locked) {
       if (this.registry.liveIds.has(locked) || this.registry.activeRuns.has(locked)) return { error: 'session already has an active stream', active_stream_id: locked, _status: 409 }

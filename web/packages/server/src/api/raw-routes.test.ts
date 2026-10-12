@@ -3,11 +3,10 @@ import { readZip } from '../workspace/unzip.js'
 import { folderZipMaxBytes, folderZipMaxFiles } from './raw-routes.js'
 import { homedir } from 'node:os'
 import { mkdtempSync, rmSync } from 'node:fs'
-import { appendFileSync, closeSync, existsSync, ftruncateSync, linkSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
+import { appendFileSync, closeSync, existsSync, ftruncateSync, linkSync, mkdirSync, openSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
-import { workspaceHash } from '../workspace/rollback.js'
 
 type Json = Record<string, unknown>
 const post = (s: TestServer, path: string, body: unknown): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
@@ -345,69 +344,6 @@ describe('raw byte routes', () => {
     expect((await s.get(`/api/media?path=${encodeURIComponent('~/photo.png')}`)).status).not.toBe(200)
     expect((await s.get(`/api/media?path=${encodeURIComponent(join(ws, 'page.html'))}`)).headers.get('content-disposition')).toContain('attachment')
     expect((await s.get(`/api/media?path=${encodeURIComponent(join(ws, 'page.html'))}&inline=1`)).headers.get('content-security-policy')).toBe('sandbox allow-scripts')
-  })
-
-  it('lists, diffs, and restores agent checkpoints for a configured workspace', async () => {
-    // The default workspace is seeded into the list as 'Home', so it is already a known checkpoint target.
-    expect(((await json(await s.get('/api/workspaces'))).workspaces as Json[]).map((w) => w.path)).toContain(ws)
-    const ckpt = join(s.state, 'checkpoints', workspaceHash(ws), 'abc123')
-    mkdirSync(ckpt, { recursive: true })
-    mkdirSync(join(ckpt, 'docs'), { recursive: true })
-    writeFileSync(join(ckpt, 'docs', 'a.txt'), 'alpha\ngamma\n')
-    writeFileSync(join(ckpt, 'removed.txt'), 'gone\n')
-    symlinkSync('/etc/hosts', join(ckpt, 'link'))
-    const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.com', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.com', GIT_CONFIG_GLOBAL: '/dev/null' }
-    for (const args of [['init', '-q'], ['add', '-A'], ['commit', '-q', '-m', 'checkpoint before edit']]) expect(spawnSync('git', args, { cwd: ckpt, env }).status).toBe(0)
-    let res = await s.get(`/api/rollback/list?workspace=${encodeURIComponent(ws)}`)
-    expect(res.status).toBe(200)
-    const list = await json(res)
-    expect((list.checkpoints as Json[]).map((c) => c.id)).toEqual(['abc123'])
-    expect((list.checkpoints as Json[])[0]).toMatchObject({ message: 'checkpoint before edit', files: 3 })
-    res = await s.get(`/api/rollback/diff?workspace=${encodeURIComponent(ws)}&id=abc123`)
-    expect(res.status).toBe(200)
-    const diff = await json(res)
-    expect(diff.files_changed).toEqual([{ file: 'docs/a.txt', status: 'modified' }, { file: 'removed.txt', status: 'deleted' }])
-    // TAL-571: one line per diff line; each line's own ending is dropped before the '\n' join, so no blank line follows it.
-    expect(diff.diff).toContain('--- a/docs/a.txt\n+++ b/docs/a.txt\n@@ -1,2 +1 @@\n alpha\n-gamma\n--- a/removed.txt')
-    expect(diff.diff).toContain('--- a/removed.txt\n+++ /dev/null\n@@ -1,1 +0,0 @@\n-gone')
-    expect(diff.diff).not.toContain('link')
-    res = await post(s, '/api/rollback/restore', { workspace: ws, id: 'abc123' })
-    expect(res.status).toBe(200)
-    const restored = await json(res)
-    expect((restored.files_restored as string[]).sort()).toEqual(['docs/a.txt', 'removed.txt'])
-    expect(readFileSync(join(ws, 'docs', 'a.txt'), 'utf8')).toBe('alpha\ngamma\n')
-    expect(readFileSync(join(ws, 'removed.txt'), 'utf8')).toBe('gone\n')
-    expect(readdirSync(ws)).not.toContain('link')
-    expect((await s.get(`/api/rollback/diff?workspace=${encodeURIComponent(ws)}&checkpoint=../abc123`)).status).toBe(400)
-    expect((await s.get(`/api/rollback/list?workspace=${encodeURIComponent(s.state)}`)).status).toBe(400)
-    expect((await s.get('/api/rollback/list')).status).toBe(400)
-  })
-
-  it('serves checkpoints for a session whose workspace is not a configured one (TAL-571)', async () => {
-    // A worktree-backed chat works in a generated directory that is not in the configured workspace list.
-    const wt = join(s.state, 'tal571-worktree')
-    mkdirSync(wt, { recursive: true })
-    writeFileSync(join(wt, 'notes.txt'), 'edited\n')
-    const wsid = await newSession(s, ws)
-    const session = s.deps.sessionStore.get(wsid)
-    session.workspace = wt
-    s.deps.sessionStore.save(session)
-    const ckpt = join(s.state, 'checkpoints', workspaceHash(wt), 'wt1')
-    mkdirSync(ckpt, { recursive: true })
-    writeFileSync(join(ckpt, 'notes.txt'), 'saved\n')
-    const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.com', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.com', GIT_CONFIG_GLOBAL: '/dev/null' }
-    for (const args of [['init', '-q'], ['add', '-A'], ['commit', '-q', '-m', 'worktree checkpoint']]) expect(spawnSync('git', args, { cwd: ckpt, env }).status).toBe(0)
-    // By path alone the worktree is still refused; the session vouches for its own workspace and nothing else.
-    expect((await s.get(`/api/rollback/list?workspace=${encodeURIComponent(wt)}`)).status).toBe(400)
-    let res = await s.get(`/api/rollback/list?session_id=${wsid}`)
-    expect(res.status).toBe(200)
-    expect(((await json(res)).checkpoints as Json[]).map((c) => c.id)).toEqual(['wt1'])
-    res = await s.get(`/api/rollback/diff?session_id=${wsid}&checkpoint=wt1`)
-    expect((await json(res)).files_changed).toEqual([{ file: 'notes.txt', status: 'modified' }])
-    res = await post(s, '/api/rollback/restore', { session_id: wsid, checkpoint: 'wt1' })
-    expect(res.status).toBe(200)
-    expect(readFileSync(join(wt, 'notes.txt'), 'utf8')).toBe('saved\n')
-    expect((await s.get('/api/rollback/list?session_id=missing-session')).status).toBe(404)
   })
 
   it('reports worktree status for a worktree-backed session', async () => {

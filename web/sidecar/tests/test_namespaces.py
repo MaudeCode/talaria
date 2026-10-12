@@ -25,6 +25,14 @@ def _seed_state_db(home: pathlib.Path) -> None:
     subprocess.run([AGENT_PYTHON, "-c", code, str(AGENT_DIR), str(home)], check=True, env=isolated_env(home, PATH="/usr/bin:/bin"))
 
 
+def _seed_checkpoint(home: pathlib.Path, workspace: pathlib.Path) -> None:
+    """One Agent checkpoint of ``workspace`` before an edit, as a CLI turn with checkpoints enabled takes it."""
+    (workspace / "notes.txt").write_text("original text\n", encoding="utf-8")
+    code = "import sys; sys.path.append(sys.argv[1]); from tools.checkpoint_manager import CheckpointManager; assert CheckpointManager(enabled=True).ensure_checkpoint(sys.argv[2], 'before write_file')"
+    subprocess.run([AGENT_PYTHON, "-c", code, str(AGENT_DIR), str(workspace)], check=True, env=isolated_env(home, PATH="/usr/bin:/bin"))
+    (workspace / "notes.txt").write_text("edited by the agent\n", encoding="utf-8")
+
+
 def run_scenarios(proc: SidecarProcess, home: pathlib.Path):
     """Yield ``(method, params, message, frames)`` for every scenario plus the dynamic ones."""
     profile = home / "profiles" / "alpha"
@@ -84,6 +92,16 @@ def run_scenarios(proc: SidecarProcess, home: pathlib.Path):
     for method, params in dynamic:
         message, frames = proc.call(method, params, timeout=60)
         yield method, params, message, frames
+    project = home.parent / "project"
+    project.mkdir(exist_ok=True)
+    _seed_checkpoint(home, project)
+    target = {"profile_home": str(home), "workspace": str(project)}
+    message, frames = proc.call("checkpoints.list", target, timeout=60)
+    yield "checkpoints.list", target, message, frames
+    checkpoint = {**target, "checkpoint": message["result"]["checkpoints"][0]["hash"]}
+    for method in ("checkpoints.diff", "checkpoints.restore"):
+        message, frames = proc.call(method, checkpoint, timeout=60)
+        yield method, checkpoint, message, frames
 
 
 @requires_agent

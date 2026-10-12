@@ -387,7 +387,13 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   })
   // A working-tree mutation refuses while a run is active anywhere it would change files.
   const git = new GitRunner({ env, activeRunIn: (path) => [...registry.activeRuns.values()].some((run) => Boolean(run.workspace) && pathsOverlap(run.workspace, path)) })
-  const rollback = new RollbackStore({ hermesHome: () => profileHome(activeProfile()), knownWorkspaces: () => workspaces.load(activeProfile()).map((w) => w.path) })
+  const rollback = new RollbackStore({
+    sidecar: () => sidecar, profileHome: () => profileHome(activeProfile()), knownWorkspaces: () => workspaces.load(activeProfile()).map((w) => w.path),
+    // A run whose session cannot be read counts as one in the profile: refusing is the safe answer.
+    activeRunInProfile: (home) => [...registry.activeRuns.values()].some((run) => {
+      try { return profileHome(store.get(run.session_id, { metadataOnly: true }).profile ?? activeProfile()) === home } catch { return true }
+    }),
+  })
   const uploads = new UploadInbox(attachmentRoot)
   const channels = new SessionChannels()
   const pending = new PendingPrompts(events, now)
@@ -416,6 +422,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     profileDeleting: (profile) => profiles.isDeleting(profile),
     updateInProgress: () => deps.updates.blocksNewWork(),
     workspaceBusy: (workspace) => deps.git.workspaceBusy(workspace),
+    checkpointStoreBusy: (profile) => rollback.storeBusy(profileHome(profile ?? activeProfile())),
     syncTitle: (session) => sessions.deps.syncTitle(session),
     // Python `sync_session_usage` after a settled turn: with `sync_to_insights` on, the state.db row carries the usage.
     syncUsage: async (session, model) => {

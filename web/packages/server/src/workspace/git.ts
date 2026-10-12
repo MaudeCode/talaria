@@ -25,6 +25,7 @@ export const DIFF_SIZE_LIMIT = 512 * 1024
 export const COMMIT_MESSAGE_DIFF_LIMIT = 64 * 1024
 export const WORKSPACE_GIT_DESTRUCTIVE_ENV = 'HERMES_WEBUI_WORKSPACE_GIT_DESTRUCTIVE'
 export const WORKSPACE_BUSY_MESSAGE = 'A Git operation is running in this workspace.'
+const ACTIVE_RUN_MESSAGE = 'A session run is active. Wait for it to finish before running this Git operation.'
 export const WORKSPACE_WRITE_BUSY_MESSAGE = 'A file operation is running in this workspace.'
 const GIT_ENV_SCRUB_KEYS = ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM', 'GIT_CONFIG_COUNT', 'GIT_CONFIG_PARAMETERS', 'GIT_ASKPASS', 'SSH_ASKPASS', 'GIT_SSH', 'GIT_SSH_COMMAND', 'GIT_GLOB_PATHSPECS', 'GIT_NOGLOB_PATHSPECS', 'GIT_ICASE_PATHSPECS']
 const GIT_ENV_SCRUB_PREFIXES = ['GIT_CONFIG_KEY_', 'GIT_CONFIG_VALUE_']
@@ -219,6 +220,16 @@ export class GitRunner {
   /** Whether `path` overlaps a held workspace (the same directory, inside it, or containing it). */
   workspaceBusy(path: string): boolean {
     return overlapsAny(this.busy, path)
+  }
+
+  /**
+   * A checkpoint diff or restore at `path` (TAL-913): refused while Git holds it or a run is active there, since the
+   * Agent's per-turn checkpoint capture stages into the same store index, and held busy so no run starts meanwhile.
+   */
+  holdCheckpoint<T>(path: string, fn: () => Promise<T>): Promise<T> {
+    if (this.workspaceBusy(path)) throw new GitWorkspaceError(WORKSPACE_BUSY_MESSAGE, 'operation_in_progress')
+    if (this.deps.activeRunIn?.(path)) throw new GitWorkspaceError(ACTIVE_RUN_MESSAGE, 'active_stream')
+    return this.holdWorkspace(path, fn)
   }
 
   /** Run an asynchronous workspace writer at `path`: refused while Git holds it, and Git mutations refuse meanwhile. */
@@ -434,7 +445,7 @@ export class GitRunner {
   }
 
   private assertRepoFree(repoRoot: string): void {
-    if (this.deps.activeRunIn?.(repoRoot)) throw new GitWorkspaceError('A session run is active. Wait for it to finish before running this Git operation.', 'active_stream')
+    if (this.deps.activeRunIn?.(repoRoot)) throw new GitWorkspaceError(ACTIVE_RUN_MESSAGE, 'active_stream')
     if (overlapsAny(this.writing, repoRoot)) throw new GitWorkspaceError(WORKSPACE_WRITE_BUSY_MESSAGE, 'operation_in_progress')
   }
 

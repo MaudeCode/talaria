@@ -28,6 +28,7 @@ from typing import Any
 from ..errors import InvalidParams, RpcError
 from ..home import profile_home_param, scoped_home
 from ..rpc import CallContext
+from .checkpoints import checkpoint_kwargs
 
 log = logging.getLogger("talaria_sidecar.chat")
 
@@ -632,6 +633,7 @@ def _agent_signature(model: str, provider, runtime: dict, toolsets, home: str, k
         # Bound at construction too: a reasoning-effort change from the composer must build a fresh agent.
         "reasoning_config": kwargs.get("reasoning_config"),
         "request_overrides": kwargs.get("request_overrides"),
+        "checkpoints": [kwargs.get(name) for name in ("checkpoints_enabled", "checkpoint_max_snapshots", "checkpoint_max_total_size_mb", "checkpoint_max_file_size_mb")],
         # Entries may carry their own ``api_key``.
         "fallback_model": hashlib.sha256(json.dumps(kwargs.get("fallback_model"), sort_keys=True, default=str).encode("utf-8")).hexdigest()[:16],
     }
@@ -1100,6 +1102,10 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
         request_overrides = _main_model_request_overrides(resolved_model, resolved_provider)
         if request_overrides and _supported(AIAgent, "request_overrides"):
             kwargs["request_overrides"] = request_overrides
+        # TAL-913: the profile's ``checkpoints`` section, as the Agent's own CLI and gateway turns read it.
+        for name, value in checkpoint_kwargs().items():
+            if _supported(AIAgent, name):
+                kwargs[name] = value
         signature = _agent_signature(resolved_model, resolved_provider, runtime, toolsets, str(params.get("profile_home")), kwargs)
         agent = None
 
