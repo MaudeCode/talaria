@@ -138,33 +138,27 @@ public enum ChatActiveRunStatusPolicy {
         isCancellingStream: Bool,
         isSyncingTranscript: Bool = false,
         isBackgroundTurn: Bool = false,
-        activeRunStartedAt: Date? = nil,
-        isScrolledNearBottom: Bool
+        activeRunStartedAt: Date? = nil
     ) -> ChatActiveRunStatusPresentation? {
-        if !isScrolledNearBottom {
-            if isCancellingStream {
-                return ChatActiveRunStatusPresentation(kind: .stopping)
-            }
-            if isStartingChat {
-                return ChatActiveRunStatusPresentation(kind: .starting)
-            }
+        // The chip docks above the composer at any scroll position, like Talaria Web's run row (TAL-922).
+        if isCancellingStream {
+            return ChatActiveRunStatusPresentation(kind: .stopping)
+        }
+        if isStartingChat {
+            return ChatActiveRunStatusPresentation(kind: .starting)
         }
 
-        // Syncing has no inline twin at the transcript tail, so it shows at any scroll
-        // position, and it stands in for run progress and recovery until the transcript is current.
+        // Syncing stands in for run progress and recovery until the transcript is current.
         if isSyncingTranscript {
             return ChatActiveRunStatusPresentation(kind: .syncing)
         }
 
-        // Stream recovery never shows in the transcript, so it floats at any scroll position (TAL-449).
         if let recovery = ChatActiveRunStatusPresentation(
             recoveryState: activeStreamRecoveryState,
             runStartedAt: activeRunStartedAt
         ) {
             return recovery
         }
-
-        guard !isScrolledNearBottom else { return nil }
 
         guard hasActiveStream else { return nil }
         return ChatActiveRunStatusPresentation(

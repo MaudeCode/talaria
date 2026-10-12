@@ -1478,8 +1478,7 @@ struct ChatView: View {
             isCancellingStream: viewModel.isCancellingStream,
             isSyncingTranscript: showsSyncingPill,
             isBackgroundTurn: viewModel.isBackgroundTurnActive,
-            activeRunStartedAt: viewModel.activeRunStartedAt,
-            isScrolledNearBottom: isScrolledNearBottom
+            activeRunStartedAt: viewModel.activeRunStartedAt
         )
     }
 

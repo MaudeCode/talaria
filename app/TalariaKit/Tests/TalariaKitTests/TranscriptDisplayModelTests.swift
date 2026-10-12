@@ -523,23 +523,13 @@ final class ChatTranscriptDisplaySettingsTests: XCTestCase {
 }
 
 final class ChatActiveRunStatusPolicyTests: XCTestCase {
-    func testStatusHidesWhenTranscriptBottomIsVisible() {
-        XCTAssertNil(ChatActiveRunStatusPolicy.presentation(
-            isStartingChat: false,
-            hasActiveStream: true,
-            activeStreamRecoveryState: .idle,
-            isCancellingStream: false,
-            isScrolledNearBottom: true
-        ))
-    }
-
-    func testStatusShowsActiveRunWhenScrolledAwayFromBottom() {
+    // TAL-922: the chip docks above the composer at any scroll position, like Talaria Web.
+    func testStatusShowsActiveRun() {
         let presentation = ChatActiveRunStatusPolicy.presentation(
             isStartingChat: false,
             hasActiveStream: true,
             activeStreamRecoveryState: .idle,
-            isCancellingStream: false,
-            isScrolledNearBottom: false
+            isCancellingStream: false
         )
 
         XCTAssertEqual(presentation?.kind, .active)
@@ -551,8 +541,7 @@ final class ChatActiveRunStatusPolicyTests: XCTestCase {
             isStartingChat: true,
             hasActiveStream: false,
             activeStreamRecoveryState: .idle,
-            isCancellingStream: false,
-            isScrolledNearBottom: false
+            isCancellingStream: false
         )
 
         XCTAssertEqual(presentation?.kind, .starting)
@@ -563,23 +552,21 @@ final class ChatActiveRunStatusPolicyTests: XCTestCase {
             isStartingChat: false,
             hasActiveStream: true,
             activeStreamRecoveryState: .reconnecting,
-            isCancellingStream: false,
-            isScrolledNearBottom: false
+            isCancellingStream: false
         )
 
         XCTAssertEqual(presentation?.kind, .reconnecting)
         XCTAssertEqual(presentation?.accessibilityLabel(agentName: "Hermes"), "Hermes is reconnecting the response stream")
     }
 
-    // TAL-449: recovery lives only in the chip above the composer, so it shows at the transcript bottom too.
-    func testRecoveryShowsEvenWhenTranscriptBottomIsVisible() {
+    // TAL-449: recovery lives only in the chip above the composer.
+    func testRecoveryShowsItsChip() {
         for state: ActiveStreamRecoveryState in [.checking, .reconnecting, .waitingForNetwork] {
             let presentation = ChatActiveRunStatusPolicy.presentation(
                 isStartingChat: false,
                 hasActiveStream: true,
                 activeStreamRecoveryState: state,
-                isCancellingStream: false,
-                isScrolledNearBottom: true
+                isCancellingStream: false
             )
             XCTAssertEqual(presentation, ChatActiveRunStatusPresentation(recoveryState: state), "\(state)")
             XCTAssertEqual(presentation?.reservesTranscriptSpace, true, "\(state)")
@@ -591,8 +578,7 @@ final class ChatActiveRunStatusPolicyTests: XCTestCase {
             isStartingChat: true,
             hasActiveStream: true,
             activeStreamRecoveryState: .checking,
-            isCancellingStream: true,
-            isScrolledNearBottom: false
+            isCancellingStream: true
         )
 
         XCTAssertEqual(presentation?.kind, .stopping)
@@ -603,20 +589,18 @@ final class ChatActiveRunStatusPolicyTests: XCTestCase {
             isStartingChat: false,
             hasActiveStream: false,
             activeStreamRecoveryState: .idle,
-            isCancellingStream: false,
-            isScrolledNearBottom: false
+            isCancellingStream: false
         ))
     }
 
-    // TAL-436: syncing shows at any scroll position.
-    func testSyncingShowsEvenWhenTranscriptBottomIsVisible() {
+    // TAL-436
+    func testSyncingShowsItsChip() {
         let presentation = ChatActiveRunStatusPolicy.presentation(
             isStartingChat: false,
             hasActiveStream: false,
             activeStreamRecoveryState: .idle,
             isCancellingStream: false,
-            isSyncingTranscript: true,
-            isScrolledNearBottom: true
+            isSyncingTranscript: true
         )
 
         XCTAssertEqual(presentation?.kind, .syncing)
@@ -631,8 +615,7 @@ final class ChatActiveRunStatusPolicyTests: XCTestCase {
             hasActiveStream: true,
             activeStreamRecoveryState: .reconnecting,
             isCancellingStream: false,
-            isSyncingTranscript: true,
-            isScrolledNearBottom: false
+            isSyncingTranscript: true
         )
 
         XCTAssertEqual(presentation?.kind, .syncing)
@@ -653,16 +636,14 @@ final class ChatActiveRunStatusPolicyTests: XCTestCase {
             hasActiveStream: true,
             activeStreamRecoveryState: .idle,
             isCancellingStream: true,
-            isSyncingTranscript: true,
-            isScrolledNearBottom: false
+            isSyncingTranscript: true
         )?.kind, .stopping)
         XCTAssertEqual(ChatActiveRunStatusPolicy.presentation(
             isStartingChat: true,
             hasActiveStream: false,
             activeStreamRecoveryState: .idle,
             isCancellingStream: false,
-            isSyncingTranscript: true,
-            isScrolledNearBottom: false
+            isSyncingTranscript: true
         )?.kind, .starting)
     }
 
@@ -701,8 +682,7 @@ final class ChatActiveRunStatusPolicyTests: XCTestCase {
                 hasActiveStream: true,
                 activeStreamRecoveryState: recovery,
                 isCancellingStream: isCancellingStream,
-                activeRunStartedAt: start,
-                isScrolledNearBottom: false
+                activeRunStartedAt: start
             )
         }
 
