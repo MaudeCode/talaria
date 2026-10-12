@@ -289,7 +289,7 @@ describe('Composer', () => {
   })
   it('shows the running turn in the top tab and slides it out when the turn ends (TAL-429)', async () => {
     const { container, rerenderWith } = renderComposer(writable, running())
-    expect(container.querySelector('.composer-tab .live-run-status')).toHaveTextContent('Responding…')
+    expect(container.querySelector('.composer-tab .live-run-status')).toHaveTextContent('Working')
     dispatch({ type: 'event', sessionId: 's1', streamId: 'run', event: { event: 'done', data: {} }, lastEventId: 'run:1', now: 1 })
     rerenderWith(getStreamState().turns.s1!)
     // The ended row stays for its exit slide, with the tab leaving alongside it, then both are gone.

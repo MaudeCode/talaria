@@ -50337,108 +50337,108 @@
         }
       }
     },
-    "%@ is working" : {
+    "Working" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@ يعمل"
+            "value" : "يعمل"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@ arbeitet"
+            "value" : "Arbeitet"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@ está trabajando"
+            "value" : "Trabajando"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@ travaille"
+            "value" : "En cours"
           }
         },
         "he" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@ עובד"
+            "value" : "עובד"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@ sta lavorando"
+            "value" : "In corso"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@が作業中です"
+            "value" : "作業中"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@가 작업 중이에요"
+            "value" : "작업 중"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@ is bezig"
+            "value" : "Bezig"
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@ pracuje"
+            "value" : "Pracuje"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "O %@ está trabalhando"
+            "value" : "Trabalhando"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@ работает"
+            "value" : "Работает"
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@ çalışıyor"
+            "value" : "Çalışıyor"
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@ کام کر رہا ہے"
+            "value" : "کام جاری"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@ 正在工作"
+            "value" : "工作中"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@ 正在工作"
+            "value" : "工作中"
           }
         },
         "zh-HK" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@ 正在工作"
+            "value" : "工作中"
           }
         }
       }

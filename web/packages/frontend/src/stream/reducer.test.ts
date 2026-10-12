@@ -261,6 +261,22 @@ describe('stream reducer: every lifecycle exit', () => {
     expect(liveText(s.turns[SID]!)).toBe('r1')
     expect(s.turns[SID]!.status).toBe('done')
   })
+  it('starts the turn clock at the server run start, never later than a known one (TAL-922)', () => {
+    const now = 1_700_000_100_000
+    const start = (serverStartedAt: number | null | undefined) => streamReducer(initialStreamState, { type: 'start', sessionId: SID, streamId: STREAM, turnId: null, userMessageId: null, userText: '', now, serverStartedAt }).turns[SID]!.startedAt
+    expect(start(1_700_000_000)).toBe(1_700_000_000_000)
+    expect(start(null)).toBe(now)
+    expect(start(undefined)).toBe(now)
+    expect(start(Number.NaN)).toBe(now)
+    expect(start(0)).toBe(now)
+    expect(start(1_700_000_500)).toBe(now)
+    let s = streamReducer(initialStreamState, { type: 'attach', sessionId: SID, streamId: STREAM, now, replay: true, serverStartedAt: 1_700_000_000 })
+    expect(s.turns[SID]!.startedAt).toBe(1_700_000_000_000)
+    s = streamReducer(s, { type: 'attach', sessionId: SID, streamId: STREAM, now: now + 5000, replay: true, serverStartedAt: 1_700_000_050 })
+    expect(s.turns[SID]!.startedAt).toBe(1_700_000_000_000)
+    s = streamReducer(s, { type: 'attach', sessionId: SID, streamId: STREAM, now: now + 6000, replay: true, serverStartedAt: 1_699_999_990 })
+    expect(s.turns[SID]!.startedAt).toBe(1_699_999_990_000)
+  })
   it('session replacement: a new start for the same session replaces the turn', () => {
     let s = started()
     s = ev(s, 'token', { text: 'old' })

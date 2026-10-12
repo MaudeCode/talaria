@@ -178,7 +178,7 @@ async function settleFromServer(sessionId: string, streamId: string): Promise<vo
       const st = await api.fetchStreamStatus(streamId).catch(() => null)
       if (st?.active) {
         const replay = resumeFrom(sessionId, streamId, session.transcript_seq)
-        dispatch({ type: 'attach', sessionId, streamId, now: Date.now(), replay: replay !== null })
+        dispatch({ type: 'attach', sessionId, streamId, now: Date.now(), replay: replay !== null, serverStartedAt: session.pending_started_at })
         open(sessionId, streamId, replay)
         return
       }
@@ -207,13 +207,13 @@ export async function startTurn(input: StartTurnInput) {
 export function adoptTurn(sessionId: string, message: string, res: ChatStartResponse): void {
   // A silent control message is admitted without a turn (`status: suppressed`).
   if (!res.stream_id) { invalidateSession(sessionId); return }
-  dispatch({ type: 'start', sessionId, streamId: res.stream_id, turnId: res.turn_id ?? null, userMessageId: res.user_message_id === undefined || res.user_message_id === null ? null : String(res.user_message_id), userText: message, now: Date.now() })
+  dispatch({ type: 'start', sessionId, streamId: res.stream_id, turnId: res.turn_id ?? null, userMessageId: res.user_message_id === undefined || res.user_message_id === null ? null : String(res.user_message_id), userText: message, now: Date.now(), serverStartedAt: res.pending_started_at })
   open(sessionId, res.stream_id, null)
   invalidateSession(sessionId)
 }
 
 /** Re-attach to a run the server reports as active (hard refresh, tab restore, sidebar switch). */
-export async function attachToStream(sessionId: string, streamId: string, transcriptSeq: Session['transcript_seq'] = null, pendingSteers: PendingSteer[] = []): Promise<void> {
+export async function attachToStream(sessionId: string, streamId: string, transcriptSeq: Session['transcript_seq'] = null, pendingSteers: PendingSteer[] = [], pendingStartedAt: Session['pending_started_at'] = null): Promise<void> {
   const existing = live.get(sessionId)
   if (existing?.streamId === streamId && existing.handle.readyState() !== SSE_CLOSED) return
   const st = await api.fetchStreamStatus(streamId)
@@ -222,7 +222,7 @@ export async function attachToStream(sessionId: string, streamId: string, transc
     return
   }
   const replay = resumeFrom(sessionId, streamId, transcriptSeq)
-  dispatch({ type: 'attach', sessionId, streamId, now: Date.now(), replay: replay !== null })
+  dispatch({ type: 'attach', sessionId, streamId, now: Date.now(), replay: replay !== null, serverStartedAt: pendingStartedAt })
   dispatch({ type: 'pending_steers', sessionId, streamId, steers: pendingSteers })
   open(sessionId, streamId, replay)
 }

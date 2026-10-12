@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { Transcript } from './Transcript'
 import { LiveStatusPill } from './LiveTurnView'
-import { initialStreamState, streamReducer, type StreamAction } from '../../stream/reducer'
+import { initialStreamState, streamReducer, type LiveTurn, type StreamAction } from '../../stream/reducer'
 import type { ChatEvent } from '../../contracts/sse'
 import type { ActivityMode } from './blocks/Worklog'
 import * as api from '../../api/endpoints'
@@ -53,12 +53,41 @@ describe('live status', () => {
     const [pill, ...rest] = pills(view.container)
     expect(rest).toHaveLength(0)
     expect(pill).toHaveAttribute('role', 'status')
-    expect(pill).toHaveTextContent('Responding…')
+    expect(pill).toHaveTextContent('Working')
     expect(pill).toHaveTextContent('42.1 tok/s')
     expect(pill!.querySelectorAll('svg.live-laurel .laurel-leaf')).toHaveLength(10)
     run.reconnect()
     view.rerender(<LiveStatusPill turn={run.turn} />)
     expect(pills(view.container)[0]).toHaveTextContent('Reconnecting…')
+  })
+})
+
+describe('live elapsed time (TAL-922)', () => {
+  afterEach(() => { vi.useRealTimers() })
+  const at = (startedAt: number, status = 'streaming') => ({ status, startedAt, tps: null }) as unknown as LiveTurn
+
+  it('reads "Working <elapsed>" from the turn start and ticks each second', () => {
+    vi.useFakeTimers({ now: 1_000_000 })
+    const view = render(<LiveStatusPill turn={at(1_000_000 - 83_000)} />)
+    expect(pills(view.container)[0]).toHaveTextContent('Working 1:23')
+    act(() => { vi.advanceTimersByTime(1000) })
+    expect(pills(view.container)[0]).toHaveTextContent('Working 1:24')
+  })
+
+  it('formats seconds, minutes, and hours', () => {
+    vi.useFakeTimers({ now: 10_000_000 })
+    const label = (ms: number) => { const v = render(<LiveStatusPill turn={at(10_000_000 - ms)} />); const t = pills(v.container)[0]!.textContent; v.unmount(); return t }
+    expect(label(5_000)).toContain('Working 0:05')
+    expect(label(754_000)).toContain('Working 12:34')
+    expect(label(3_723_000)).toContain('Working 1:02:03')
+  })
+
+  it('shows no time while reconnecting or on background work', () => {
+    vi.useFakeTimers({ now: 1_000_000 })
+    const view = render(<LiveStatusPill turn={at(0, 'reconnecting')} />)
+    expect(pills(view.container)[0]).toHaveTextContent(/^Reconnecting…$/)
+    view.rerender(<LiveStatusPill turn={at(0)} background />)
+    expect(pills(view.container)[0]).toHaveTextContent(/^Working on background results$/)
   })
 })
 

@@ -103,7 +103,7 @@ describe('background updates (TAL-460)', () => {
     const { rerender } = render(<LiveStatusPill turn={turn} background />)
     expect(screen.getByRole('status')).toHaveTextContent('Working on background results')
     rerender(<LiveStatusPill turn={turn} />)
-    expect(screen.getByRole('status')).toHaveTextContent('Responding…')
+    expect(screen.getByRole('status')).toHaveTextContent('Working')
   })
 })
 

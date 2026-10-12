@@ -543,7 +543,7 @@ final class ChatActiveRunStatusPolicyTests: XCTestCase {
         )
 
         XCTAssertEqual(presentation?.kind, .active)
-        XCTAssertEqual(presentation?.label(agentName: "Maude"), "Maude is working")
+        XCTAssertEqual(presentation?.label(agentName: "Maude"), "Working")
     }
 
     func testStatusShowsStartingBeforeStreamIDExists() {

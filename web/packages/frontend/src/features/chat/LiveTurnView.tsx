@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react'
 import { Link } from '@tanstack/react-router'
 import { m } from '../../paraglide/messages.js'
 import { ArrowUp, Pencil, X } from 'lucide-react'
@@ -80,13 +80,29 @@ function PendingSteerMessage({ sessionId, steer }: { sessionId: string; steer: P
 /** The live turn's status, docked as a centered pill above the composer so it never takes transcript space. */
 /** `background`: the server says a background result started this turn (`active_turn_origin`, TAL-460). */
 export function LiveStatusPill({ turn, background = false }: { turn: LiveTurn; background?: boolean }) {
+  const reconnecting = turn.status === 'reconnecting'
   return (
     <div className="live-run-status flex items-center gap-2 text-muted" role="status" aria-live="polite">
       <LaurelSpinner />
-      <span className="live-run-label">{turn.status === 'reconnecting' ? m.live_reconnecting() : background ? m.live_background() : m.live_streaming()}</span>
+      <span className="live-run-label">{reconnecting ? m.live_reconnecting() : background ? m.live_background() : m.live_working()}</span>
+      {!reconnecting && !background && <>{' '}<RunElapsed since={turn.startedAt} /></>}
       {turn.tps != null && <span className="font-mono text-[11px] tabular-nums opacity-75" title="Tokens per second">{turn.tps.toFixed(1)} tok/s</span>}
     </div>
   )
+}
+
+/** Time since the run started (TAL-922), redrawn each second. Hidden from the live region so it is not announced every tick. */
+function RunElapsed({ since }: { since: number }) {
+  const [now, setNow] = useState(Date.now)
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [])
+  if (!Number.isFinite(since)) return null
+  const total = Math.max(0, Math.floor((now - since) / 1000))
+  const [h, min, s] = [Math.floor(total / 3600), Math.floor(total / 60) % 60, total % 60]
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return <span className="live-run-elapsed" aria-hidden="true">{h ? `${h}:${pad(min)}:${pad(s)}` : `${min}:${pad(s)}`}</span>
 }
 
 /** Laurel-wreath activity indicator: ten leaves brighten in turn around the ring (styles in chat.css). */

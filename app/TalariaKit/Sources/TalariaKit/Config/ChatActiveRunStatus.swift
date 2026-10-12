@@ -16,7 +16,8 @@ public enum ChatActiveRunStatusKind: Equatable {
         case .starting:
             return String(localized: "Starting response")
         case .active:
-            return String(localized: "\(agentName) is working")
+            // The elapsed time follows it: "Working 1:23" (TAL-922).
+            return String(localized: "Working")
         case .background:
             return String(localized: "Working on background results")
         case .checking:

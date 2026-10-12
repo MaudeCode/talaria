@@ -27,7 +27,7 @@ struct StatusChip: View {
     var accessibilityLabel: String?
     let icon: Icon
     var emphasis: Emphasis = .standard
-    /// When set, the time since then follows the label ("· 1:23"). The system advances it, so
+    /// When set, the time since then follows the label ("Working 1:23"). The system advances it, so
     /// the chip does not redraw each second.
     var elapsedSince: Date?
 
@@ -55,7 +55,7 @@ struct StatusChip: View {
     private var caption: Text {
         guard let elapsedSince else { return Text(label) }
         return Text(label)
-            + Text(verbatim: " · ")
+            + Text(verbatim: " ")
             + Text(timerInterval: elapsedSince...Date.distantFuture, countsDown: false).monospacedDigit()
     }
 
