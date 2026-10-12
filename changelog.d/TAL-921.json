@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "After a reply fails or is stopped, the next message remembers the tool work it had already done instead of starting over.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

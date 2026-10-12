@@ -23,7 +23,7 @@ import { agentSessionRowsExisting, CONVERSATION_ROUND_THRESHOLD, countConversati
 import { completionIncomplete, fallbackHandoffSummary, HANDOFF_SYSTEM_PROMPT, handoffMarker, handoffPayload, handoffTranscript, messageHandoffPayload, sameHandoff } from './handoff.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, compressionReference, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { SidecarError, type SidecarLike } from '../sidecar/client.js'
-import { agentSteerText, attachedFilesPrompt, attachmentObjects, dedupeContext, isContextCompressionMarker, journalOutputRows, looksLikeCurrentUserTurn, stoppedTurnContext, mergeSessionMessagesAppendOnly, messageIdentity, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, type ToolResultView } from './merge.js'
+import { agentSteerText, attachedFilesPrompt, attachmentObjects, checkpointTurnStart, dedupeContext, isContextCompressionMarker, journalOutputRows, looksLikeCurrentUserTurn, stoppedTurnContext, mergeSessionMessagesAppendOnly, messageIdentity, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, type ToolResultView } from './merge.js'
 import { withBackgroundUpdates } from './background-updates.js'
 import { sourceKind } from './source-kind.js'
 import { withBackgroundLinks, type Receipt } from './background-tasks.js'
@@ -424,6 +424,23 @@ export class SessionService {
   }
 
   /**
+   * TAL-921: the model context a turn leaves when it ends without its settled result (an error, a Stop, a dead run), as a
+   * Stop's: the Agent's rows when they hold the turn's prompt, else its own state.db rows (from its prompt to the next
+   * one), then the prose that streamed past them. `stateRows` are the rows committed after the turn started; without them,
+   * the rows past `startId`. Null when it captured nothing the model can use.
+   */
+  unsettledTurnContext(s: Session, turn: { previousContext: Message[]; prompt: string | Record<string, unknown>[]; msgText: string; streamedText: string; historyLength: number; agentRows?: Message[] | null; startId?: number | null; stateRows?: Message[] }): Message[] | null {
+    const reported = turn.agentRows && checkpointTurnStart(turn.agentRows, turn.msgText, turn.historyLength) !== null ? turn.agentRows : null
+    const after = turn.startId ?? null
+    const stateRows = reported ? [] : turn.stateRows ?? (after === null ? [] : this.stateDbRead(s).rows.filter((m) => typeof m._state_db_row_id === 'number' && m._state_db_row_id > after))
+    // This turn's settlement covers its rows. Without their row ids, the next settlement never reads them as a CLI
+    // continuation the transcript lacks.
+    const ownRows = reported ? null : runStateDbRows(stateRows, turn.msgText)?.map((m) => Object.fromEntries(Object.entries(m).filter(([k]) => k !== '_state_db_row_id' && k !== '_state_db_generation'))) ?? null
+    const context = stoppedTurnContext(turn.previousContext, reported ?? (ownRows && [...turn.previousContext, ...ownRows]), turn.prompt, turn.msgText, turn.streamedText, turn.historyLength)
+    return context && dedupeContext(context)
+  }
+
+  /**
    * Python `reconciled_state_db_messages_for_session(prefer_context=True)`: the model history is the owner context
    * extended append-only with the Agent's state.db rows (a CLI continuation of this session reaches the model), except
    * for a compressed context whose anchor cannot be verified — that stays context-only.
@@ -806,7 +823,8 @@ export class SessionService {
     const read = this.stateDbRead(target)
     const runStart = target.pending_started_at || events[0]?.created_at || this.deps.now()
     const before = read.rows.filter((m) => Number(m.timestamp) < runStart)
-    const ownRows = target.hasPendingPrompt ? runStateDbRows(read.rows.filter((m) => Number(m.timestamp) >= runStart), pendingText) : null
+    const runRows = read.rows.filter((m) => Number(m.timestamp) >= runStart)
+    const ownRows = target.hasPendingPrompt ? runStateDbRows(runRows, pendingText) : null
     // Without this turn's rows: an eager save already put its prompt in the transcript a fresh context falls back to.
     const previousContext = this.modelContext(target, before).filter((m) => m._turn_id !== turnId)
     if (target.hasPendingPrompt) {
@@ -817,7 +835,7 @@ export class SessionService {
       // was sent; then the prose that streamed past them.
       const prompt = attachedFilesPrompt(pendingText, attachments)
       const streamed = output.map((m) => str(m.content)).filter(Boolean).join('\n\n')
-      target.context_messages = dedupeContext(stoppedTurnContext(previousContext, ownRows ? [...previousContext, ...ownRows] : null, prompt, pendingText, streamed, previousContext.length) ?? [...structuredClone(previousContext), { role: 'user', content: prompt }])
+      target.context_messages = this.unsettledTurnContext(target, { previousContext, prompt, msgText: pendingText, streamedText: streamed, historyLength: previousContext.length, stateRows: runRows }) ?? dedupeContext([...structuredClone(previousContext), { role: 'user', content: prompt }])
     }
     if (target.hasPendingPrompt || output.length) {
       target.messages.push(...output)

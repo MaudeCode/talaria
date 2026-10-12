@@ -30,7 +30,7 @@ import { withSessionWireFlags } from './list.js'
 import { hydrateAnchorActivityScenes, turnTerminalState, withTurnIds } from './anchor.js'
 import { persistentStateChanges, persistentStateSnapshot } from './state-saved.js'
 import { maxIterationsFromConfig, maxTokensFromConfig, processWakeupMaxIterations, reasoningConfigFromConfig, webuiEphemeralSystemPrompt, workspaceSystemMessage } from './turn-context.js'
-import { agentSteerText, assistantReplyAddedAfterCurrentTurn, attachedFilesPrompt, buildPartialMessage, dedupeContext, checkpointTurnStart, extractToolCallsFromMessages, hasNativeImages, injectMaxIterationSummaryFallback, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitDisplayText, stateDbSeenId, joinReasoning, reasoningFieldsText, stoppedTurnContext, toolOutcome, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withToolCallOutcomes, withoutMaxIterationSummaryRequest, withNativeImagesRestored, withoutNativeImages, withoutToolImages } from './merge.js'
+import { agentSteerText, assistantReplyAddedAfterCurrentTurn, attachedFilesPrompt, buildPartialMessage, dedupeContext, checkpointTurnStart, extractToolCallsFromMessages, hasNativeImages, injectMaxIterationSummaryFallback, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitDisplayText, stateDbSeenId, joinReasoning, reasoningFieldsText, toolOutcome, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withToolCallOutcomes, withoutMaxIterationSummaryRequest, withNativeImagesRestored, withoutNativeImages, withoutToolImages } from './merge.js'
 import { mayBecomeSilentReply, turnOrigin, withBackgroundUpdates } from './background-updates.js'
 import { countExchanges, fallbackTitleFromExchange, firstExchangeSnippets, isGenericFallbackTitle, latestExchangeSnippets, looksInvalidGeneratedTitle, looksLikeDefaultCliTitle, sanitizeGeneratedTitle, titleLanguageMismatch, titlePrompts } from './titles.js'
 import { WORKSPACE_BUSY_MESSAGE } from '../workspace/git.js'
@@ -1013,6 +1013,9 @@ export class TurnRunner {
     s.messages.push(errorMessage)
     this.keepLiveState(s, streamId)
     this.persistConsumedSteers(s, streamId, startedAt, this.deps.now())
+    // TAL-921: the next prompt remembers the turn's work; an exhausted compression's work would only overflow again.
+    const context = payload.type === 'compression_exhausted' ? null : this.unsettledContext(s, streamId, agentRows)
+    if (context) s.context_messages = context
     const stop = this.stopContexts.get(streamId)
     this.deps.service().settleStateDb(s, { turnId: streamId, previousContext: stop?.previousContext ?? [], agentRows, startId: stop?.stateDbStartId ?? null })
     try { this.deps.store.save(s) } catch (error) { this.deps.log(`[webui] WARNING: failed to save error turn for ${s.session_id}: ${(error as Error).message}`) }
@@ -1021,6 +1024,12 @@ export class TurnRunner {
     this.deps.pending.clearApprovals(s.session_id)
     this.deps.pending.clearClarifies(s.session_id)
     this.deps.events.publish('session_error', { profile: s.profile, sessionId: s.session_id })
+  }
+
+  /** TAL-921: the model context a turn that ends without its settled result leaves: the work its Agent reported or committed. */
+  private unsettledContext(s: Session, streamId: string, agentRows: Message[] | null): Message[] | null {
+    const stop = this.stopContexts.get(streamId)
+    return stop ? this.deps.service().unsettledTurnContext(s, { ...stop, streamedText: (this.registry.partialText.get(streamId) ?? []).join(''), agentRows, startId: stop.stateDbStartId }) : null
   }
 
   private materializePendingUserTurn(s: Session, activeTurnToken: string | null, turnId: string): boolean {
@@ -1099,7 +1108,7 @@ export class TurnRunner {
     const settle = (): Message[] | null => {
       if (!stop) return null
       if (canonical) stop.checkpointed = true
-      return stoppedTurnContext(stop.previousContext, checkpoint, stop.prompt, stop.msgText, (this.registry.partialText.get(streamId) ?? []).join(''), stop.historyLength)
+      return this.unsettledContext(current, streamId, checkpoint as Message[] | null)
     }
     if (current.messages.some((m) => isCancelMarker(m)) && current.active_stream_id === null && !current.pending_user_message) {
       // The worker's canonical result can arrive after cancel() settled without a checkpoint (the interrupt reply failed
