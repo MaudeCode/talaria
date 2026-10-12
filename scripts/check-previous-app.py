@@ -26,7 +26,7 @@ def commit(ref):
 
 
 def runner_avoids_clones(app_sha):
-    """Whether this App revision's own test-ios runs one worker on the leased simulator without cloning it.
+    """Whether this App revision's own test-ios runs on the leased simulator without cloning it.
 
     Older runners clone even for one worker, and back-to-back runs on a reused checkout race the previous
     clone's teardown, so only these revisions may share a warm checkout (TAL-304)."""
@@ -36,7 +36,8 @@ def runner_avoids_clones(app_sha):
                                              stderr=subprocess.DEVNULL)
         except subprocess.CalledProcessError:
             continue
-        return "(( TALARIA_TEST_WORKER_COUNT > 1 )) && parallel_testing=YES" in script
+        return ("(( TALARIA_TEST_WORKER_COUNT > 1 )) && parallel_testing=YES" in script
+                or "-parallel-testing-enabled NO" in script and "-parallel-testing-enabled YES" not in script)
     return False
 
 

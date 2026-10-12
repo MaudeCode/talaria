@@ -1,37 +1,28 @@
-# Interface (stable; ci.yml, ui-suite.yml and release-set.yml call it):
-#   uses: ./.github/workflows/app-tests.yml   (the caller grants contents: read and actions: read)
+# Interface (stable; ci.yml and release-set.yml call it):
+#   uses: ./.github/workflows/app-tests.yml   (the caller grants contents: read, actions: read and statuses: write)
 #   with:
-#     mode: pull-request | contracts | full
-#       Every mode runs the TalariaKit package tests with `swift test` on macOS, without a simulator: about
+#     mode: pull-request | contracts
+#       Both modes run the TalariaKit package tests with `swift test` on macOS, without a simulator: about
 #       94% of the unit tests, including every native contract class (TAL-399).
 #       That run measures TalariaKit/Sources coverage: the job summary shows it and the app-package-coverage
-#       artifact (ui-suite-package-coverage in full mode) keeps the per-file and per-line report (TAL-67).
-#       pull-request: plus the App build for testing (App, extensions and both test bundles) and one simulator
-#       shard running the hosted unit tests (TalariaTests: UIKit views, visual references, App bundle resources),
-#       never the UI tests (TAL-877). Pull requests, main pushes and the release gate run it.
+#       artifact keeps the per-file and per-line report (TAL-67).
+#       pull-request: plus the App build for testing (App, extensions and the hosted test bundle) and one simulator
+#       job running the hosted unit tests (TalariaTests: UIKit views, App Intents and widget configuration types,
+#       visual references, performance budgets, App bundle resources). Pull requests, main pushes and the release
+#       gate run it.
 #       contracts: the package tests alone; a contract-only change leaves the App sources alone.
-#       full: plus every simulator-hosted unit and UI test, launch smoke included, in `shards` shards (the UI
-#       suite), dispatched by hand only.
 #     contracts: true | false  - the package job also waits for this run's "Web contract probe" job and runs the
 #       live decoding test against its contract-fixture artifact.
 #     ref: optional commit to check out (default: the triggering commit).
-#     only_testing: optional space-separated test identifiers; one shard runs exactly these (ui-suite.yml dispatch).
-#     test_iterations: runs of each selected test (default 1); above 1 stops at the first failing iteration.
-#     shards: full mode's simulator test shards, 1 to 6 (default 4; a release passes its own count, TAL-414).
 #     package_tests: false leaves out the package tests job (default true); a release runs the same suite in its
 #       contracts job instead (TAL-414).
-#     queue_attempt: the run attempt that passed ui-suite.yml's queue; every macOS job fails on any other attempt
-#       before its checkout (TAL-679). Empty (default) for every other caller.
 #   No outputs: the calling job's result is the suite's result.
-# Jobs are named "App build"/"App build started"/"App hosted tests"/"App package tests", or "UI suite build"/"UI
-# suite build started"/"UI suite tests (shard N)"/"UI suite package tests" in full mode; the build artifact is
-# ui-suite-build in both.
-# Test shards boot their simulator while the build runs on another runner (TAL-380): hosted macOS allows five
-# concurrent jobs, and a simulator's first boot beside a build on one three-core runner slowed both. Each shard
-# polls the jobs API for the build's upload from before its boot (TAL-405). The shards queue only once the build
-# holds a runner (TAL-413), so no shard ever holds a macOS slot its own build is still queued for.
-# The simulator-hosted unit tests (UIKit views, App Intents and widget configuration types, visual references,
-# performance budgets, App bundle resources) run in every mode but contracts; only full mode adds the UI tests.
+# Jobs are named "App build"/"App build started"/"App hosted tests"/"App package tests"; the build artifact is
+# app-test-build.
+# The test job boots its simulator while the build runs on another runner (TAL-380): hosted macOS allows five
+# concurrent jobs, and a simulator's first boot beside a build on one three-core runner slowed both. It polls the
+# jobs API for the build's upload from before its boot (TAL-405), and queues only once the build holds a runner
+# (TAL-413), so it never holds a macOS slot its own build is still queued for.
 
 name: App tests
 
@@ -47,22 +38,9 @@ on:
       ref:
         type: string
         default: ""
-      only_testing:
-        type: string
-        default: ""
-      # A string, like the ui-suite.yml dispatch input that feeds it; the jobs convert it.
-      test_iterations:
-        type: string
-        default: "1"
-      shards:
-        type: number
-        default: 4
       package_tests:
         type: boolean
         default: true
-      queue_attempt:
-        type: string
-        default: ""
 
 permissions:
   contents: read
@@ -72,29 +50,19 @@ defaults:
     working-directory: app
 
 env:
-  # The build job the test shards wait for.
-  BUILD_JOB: ${{ inputs.mode == 'full' && 'UI suite build' || 'App build' }}
-  BUILD_ARTIFACT: ui-suite-build
+  # The build job the test job waits for.
+  BUILD_JOB: App build
+  BUILD_ARTIFACT: app-test-build
 
 jobs:
   app-build:
-    name: ${{ inputs.mode == 'full' && 'UI suite build' || 'App build' }}
-    # Builds on its own runner while the test shards boot their simulators. A contract-only
+    name: App build
+    # Builds on its own runner while the test job boots its simulator. A contract-only
     # change leaves the App sources alone, so its package tests are the whole check.
     if: inputs.mode != 'contracts'
     runs-on: xcode-27
     timeout-minutes: 45
     steps:
-      # "Re-run failed jobs" skips ui-suite.yml's passed Queue job, so a retried job would run beside another suite.
-      # This step is the workflow's own, ahead of the checkout of the tested commit (TAL-679).
-      - &queue-guard
-        name: Refuse an attempt that skipped the queue
-        if: inputs.queue_attempt != '' && inputs.queue_attempt != format('{0}', github.run_attempt)
-        working-directory: .
-        run: |
-          echo "::error::This UI suite attempt skipped its queue: use Re-run all jobs, not Re-run failed jobs."
-          exit 1
-
       - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref || github.sha }}
@@ -116,7 +84,7 @@ jobs:
           # keeps the bundles' executables and signatures intact.
           cd DerivedData/Build
           products=(Products/*.xctestrun)
-          for product in Talaria.app TalariaUITests-Runner.app TalariaLiveActivityWidget.appex TalariaShareExtension.appex; do
+          for product in Talaria.app TalariaLiveActivityWidget.appex TalariaShareExtension.appex; do
             products+=("Products/Debug-iphonesimulator/${product}")
           done
           tar -cf "${RUNNER_TEMP}/app-build.tar" "${products[@]}"
@@ -135,7 +103,7 @@ jobs:
     # TalariaKit (models, networking, persistence, sync, view models) tests on macOS with `swift test`: no
     # simulator and no app host (TAL-399). It runs beside the build; only the live contract test waits for the
     # Web probe. The fuzz soak class belongs to the scheduled Fuzz Soak workflow.
-    name: ${{ inputs.mode == 'full' && 'UI suite' || 'App' }} package tests
+    name: App package tests
     if: inputs.package_tests
     runs-on: xcode-27
     timeout-minutes: 30
@@ -147,7 +115,6 @@ jobs:
       CONTRACTS_SELECTED: ${{ inputs.contracts }}
       LIVE_CONTRACT_TEST: TalariaKitTests.APIClientSessionListTests testLiveUpstreamContractResponsesDecodeWhenSupplied
     steps:
-      - *queue-guard
       - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref || github.sha }}
@@ -202,19 +169,19 @@ jobs:
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ inputs.mode == 'full' && 'ui-suite' || 'app' }}-package-coverage
+          name: app-package-coverage
           path: app/coverage/
           retention-days: 14
           overwrite: true
           if-no-files-found: ignore
 
   build-started:
-    # Two suites queued together once filled all five hosted macOS slots with shards waiting for builds that never got
-    # a runner, and every shard timed out without a test (TAL-413). The shards therefore queue only once their build
-    # holds a runner: every shard that holds a slot then waits at most for a build that is running. This Linux job
+    # Two suites queued together once filled all five hosted macOS slots with test jobs waiting for builds that never
+    # got a runner, and every one timed out without a test (TAL-413). The test job therefore queues only once its build
+    # holds a runner: a test job that holds a slot then waits at most for a build that is running. This Linux job
     # holds no macOS slot while the build queues, and queue time counts toward no job's timeout, so it may wait long.
     # "Re-run failed jobs" keeps this job's success, so after a failed build use "Re-run all jobs" to keep the gate.
-    name: ${{ inputs.mode == 'full' && 'UI suite build started' || 'App build started' }}
+    name: App build started
     if: inputs.mode != 'contracts'
     runs-on: ubuntu-latest
     timeout-minutes: 355
@@ -235,41 +202,28 @@ jobs:
         run: ci/wait-for-job "${BUILD_JOB}" 20700 "Set up job"
 
   app-test:
-    # Each shard boots its simulator to completion while the build runs on another runner and a background poll
-    # watches for the build's upload, then downloads the build. Pull-request mode runs one shard of the hosted unit
-    # tests (TalariaTests) and no UI test (TAL-877); full mode adds the launch smoke and the UI tests (TAL-399).
-    name: ${{ inputs.mode == 'full' && format('UI suite tests (shard {0})', matrix.shard) || 'App hosted tests' }}
+    # Boots its simulator to completion while the build runs on another runner and a background poll watches for the
+    # build's upload, then downloads the build and runs the hosted unit tests (TalariaTests).
+    name: App hosted tests
     needs: build-started
     if: inputs.mode != 'contracts'
     runs-on: xcode-27
-    # An iterated dispatch repeats minutes-long UI tests, so it gets the hosted job maximum. Otherwise the test step's
-    # own limit ends the tests, and this one only backs it up: setup takes up to about 15 minutes before that step,
-    # and a loaded runner took 9 minutes over a single report after it (TAL-670).
-    timeout-minutes: ${{ fromJSON(inputs.test_iterations) > 1 && 360 || 75 }}
+    # The test step's own limit ends the tests, and this one only backs it up: setup takes up to about 15 minutes
+    # before that step, and a loaded runner took 9 minutes over a single report after it (TAL-670).
+    timeout-minutes: 75
     permissions:
       contents: read
       # Reads this run's job list to wait for the build.
       actions: read
       # ci/report-test-failures posts each failing test as a commit status while the job runs (TAL-673).
       statuses: write
-    strategy:
-      fail-fast: false
-      matrix:
-        # inputs.shards UI suite shards (1 to 6; another count runs one); one for a scoped UI suite dispatch (TAL-401).
-        shard: ${{ inputs.mode == 'full' && inputs.only_testing == '' && fromJSON('[null,[0],[0,1],[0,1,2],[0,1,2,3],[0,1,2,3,4],[0,1,2,3,4,5]]')[inputs.shards] || fromJSON('[0]') }}
     env:
-      SHARD: ${{ matrix.shard }}
-      SHARD_COUNT: ${{ strategy.job-total }}
-      # Pull-request mode selects the hosted unit tests' whole target.
-      ONLY_TESTING: ${{ inputs.mode != 'full' && 'TalariaTests' || inputs.only_testing }}
-      FAILURE_STATUS: ${{ inputs.mode == 'full' && format('UI suite failures (shard {0})', matrix.shard) || 'App hosted test failures' }}
-      TEST_ITERATIONS: ${{ inputs.test_iterations }}
+      FAILURE_STATUS: App hosted test failures
       RESULT_BUNDLE_PATH: TestResults.xcresult
       # Relative to app/, like the result bundle; the memory log uploads on every run (TAL-419).
       MEMORY_LOG: memory.log
       XCODEBUILD_LOG: xcodebuild-test.log
     steps:
-      - *queue-guard
       - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref || github.sha }}
@@ -301,7 +255,7 @@ jobs:
           erase_before_boot: false
           wait_for_boot: true
           boot_timeout_seconds: 600
-          # A shard with destination runs shuts this one down first (TAL-669); the hosted runner is discarded anyway.
+          # The hosted runner is discarded anyway.
           shutdown_after_job: false
 
       # The keyboard's slide-to-type introduction marked as shown (TAL-668), the notification service answering
@@ -355,25 +309,8 @@ jobs:
           handoff="unknown"
           [[ -z "${uploaded}" ]] || handoff="$((start_epoch - uploaded)) s"
           echo "- Build upload → download start: ${handoff}" | tee -a "${GITHUB_STEP_SUMMARY}"
-
-      - name: Select this shard's tests
-        run: |
-          set -euo pipefail
           mkdir -p Build
           tar -C Build -xf "${RUNNER_TEMP}/app-build.tar"
-          # Classes that need an iPad or a Pro Max skip on this iPhone, so they run after this shard's own tests on the
-          # image's matching simulator instead (TAL-471): devices.txt holds one simulator and its identifiers per line.
-          runtime="com.apple.CoreSimulator.SimRuntime.iOS-${IOS_SIMULATOR_OS//./-}"
-          if [[ -n "${ONLY_TESTING}" ]]; then
-            # shellcheck disable=SC2086 # One identifier per word.
-            python3 ci/test_shards.py --only-testing ${ONLY_TESTING} > selection.txt
-            # shellcheck disable=SC2086
-            python3 ci/test_shards.py --devices --runtime "${runtime}" --only-testing ${ONLY_TESTING} > devices.txt
-          else
-            python3 ci/test_shards.py --shards "${SHARD_COUNT}" --shard "${SHARD}" > selection.txt
-            python3 ci/test_shards.py --shards "${SHARD_COUNT}" --shard "${SHARD}" --devices --runtime "${runtime}" > devices.txt
-          fi
-          echo "Shard ${SHARD} of ${SHARD_COUNT}: $(grep -c -- '-only-testing:' selection.txt) selected, $(grep -c -- '-skip-testing:' selection.txt) skipped entries, $(wc -l < devices.txt | tr -d ' ') other simulator(s)"
 
       # The memory sampler runs for the whole step; "Report memory" stops it, summarizes it and uploads its log.
       # The step's own limit ends a stuck run inside the job's, so the steps after it still upload the result bundle
@@ -381,7 +318,7 @@ jobs:
       # Within it, XCTest's per-test limit (10 minutes by default) fails a hung test by name, with a spindump, and the
       # run goes on.
       - name: Test without building
-        timeout-minutes: ${{ fromJSON(inputs.test_iterations) > 1 && 330 || 45 }}
+        timeout-minutes: 45
         env:
           SIMULATOR_ID: ${{ steps.sim.outputs.udid }}
           GH_TOKEN: ${{ github.token }}
@@ -390,76 +327,34 @@ jobs:
           nohup ci/memory-sampler watch "${MEMORY_LOG}" "${XCODEBUILD_LOG}" > /dev/null 2>&1 < /dev/null &
           echo $! > "${RUNNER_TEMP}/memory-sampler.pid"
           # A job's log is unreadable until the job ends, so each failing test also goes out as a commit status the
-          # moment it fails, for ci/watch-ui-suite and the fixer (TAL-673).
+          # moment it fails (TAL-673).
           ci/report-test-failures "${XCODEBUILD_LOG}" "$(git rev-parse HEAD)" "${FAILURE_STATUS}" < /dev/null &
           reporter=$!
           trap 'kill "${reporter}" 2>/dev/null || true' EXIT
           start_seconds=${SECONDS}
-          selection=()
-          while IFS= read -r option; do selection+=("${option}"); done < selection.txt
-          [[ "${TEST_ITERATIONS}" =~ ^[1-9][0-9]*$ ]] || { echo "test_iterations must be a positive integer, got '${TEST_ITERATIONS}'" >&2; exit 1; }
           xctestrun=(Build/Products/*.xctestrun)
-          # Usage: run_tests simulator result-bundle option...
-          run_tests() {
-            local simulator=$1 bundle=$2
-            shift 2
-            if (( TEST_ITERATIONS > 1 )); then set -- "$@" -test-iterations "${TEST_ITERATIONS}" -run-tests-until-failure; fi
-            xcodebuild test-without-building \
-              -xctestrun "${xctestrun[0]}" \
-              -destination "platform=iOS Simulator,id=${simulator}" \
-              -testLanguage en \
-              -testRegion US \
-              -resultBundlePath "${bundle}" \
-              -collect-test-diagnostics never \
-              -test-timeouts-enabled YES \
-              -parallel-testing-enabled NO \
-              "$@" 2>&1 | tee -a "${XCODEBUILD_LOG}"
-          }
-          # A scoped run of destination classes alone selects nothing for this simulator. Every run goes ahead after
-          # an earlier one fails, so each run reports its own result; the step fails if any did. No run collects the
-          # simulator's diagnostics: on a hosted runner that waited 600 s on every shard, passing or failing, and never
-          # returned any (TAL-669). The result bundle keeps each failure's screenshots, recording and logs.
+          # No run collects the simulator's diagnostics: on a hosted runner that waited 600 s on every run, passing or
+          # failing, and never returned any (TAL-669). The result bundle keeps each failure's screenshots and logs.
           status=0
-          if [[ -s selection.txt ]]; then
-            run_tests "${SIMULATOR_ID}" "${RESULT_BUNDLE_PATH}" "${selection[@]}" || status=$?
-          fi
-          # One simulator at a time, booted once: the iPad's boot took its render server to 5.8 GB beside the shard's
-          # still-booted iPhone, swapping out the simulators' daemons until XCTest's queries timed out, and booting each
-          # destination ahead of the build as well only doubled that and kept the catch-all's tests waiting 12 minutes
-          # (UI suite run 37655746691). Each destination finishes its first boot, and has its keyboard introduction
-          # marked as shown (TAL-668), before its tests start, and shuts down after them (TAL-669).
-          [[ ! -s devices.txt ]] || xcrun simctl shutdown "${SIMULATOR_ID}"
-          index=0
-          while IFS=$'\t' read -r device identifiers; do
-            index=$((index + 1))
-            options=()
-            for identifier in ${identifiers}; do options+=("-only-testing:${identifier}"); done
-            xcrun simctl boot "${device}" < /dev/null
-            xcrun simctl bootstatus "${device}" -b > /dev/null < /dev/null
-            scripts/prepare-ui-simulator --keyboard-only "${device}" < /dev/null
-            # Its render server's post-boot burst (2.9-6.4 GB) passes before XCTest's bootstrap starts (TAL-696). The
-            # shard's own iPhone has its burst during setup, or none: shard 1 of run 38144004591 peaked at 406 MB.
-            ci/memory-sampler settle 600 < /dev/null | tee -a "${GITHUB_STEP_SUMMARY}"
-            run_tests "${device}" "DestinationResults-${index}.xcresult" "${options[@]}" < /dev/null || status=$?
-            xcrun simctl shutdown "${device}" < /dev/null
-          done < devices.txt
+          xcodebuild test-without-building \
+            -xctestrun "${xctestrun[0]}" \
+            -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" \
+            -only-testing:TalariaTests \
+            -testLanguage en \
+            -testRegion US \
+            -resultBundlePath "${RESULT_BUNDLE_PATH}" \
+            -collect-test-diagnostics never \
+            -test-timeouts-enabled YES \
+            -parallel-testing-enabled NO 2>&1 | tee -a "${XCODEBUILD_LOG}" || status=$?
           duration_seconds=$((SECONDS - start_seconds))
-          echo "### App shard ${SHARD} of ${SHARD_COUNT}" >> "${GITHUB_STEP_SUMMARY}"
+          echo "### App hosted tests" >> "${GITHUB_STEP_SUMMARY}"
           echo "- Test without building: ${duration_seconds}s" >> "${GITHUB_STEP_SUMMARY}"
-          # A passing shard replaces an earlier run's failure status on this commit with success.
+          # A passing run replaces an earlier run's failure status on this commit with success.
           [[ "${status}" != 0 ]] || ci/report-test-failures --passed "$(git rev-parse HEAD)" "${FAILURE_STATUS}"
           # CoreSimulator's own log says what booted or shut down a simulator mid-test, which no result bundle records
-          # (TAL-869). Beside the bundles, so the failure upload keeps its layout.
+          # (TAL-869). Beside the bundle, so the failure upload keeps its layout.
           [[ "${status}" == 0 ]] || cp "${HOME}/Library/Logs/CoreSimulator/CoreSimulator.log" CoreSimulator.log || true
           exit "${status}"
-
-      - name: Reject skipped UI tests
-        timeout-minutes: 5
-        run: |
-          set -euo pipefail
-          for bundle in "${RESULT_BUNDLE_PATH}" DestinationResults-*.xcresult; do
-            [[ ! -e "${bundle}" ]] || scripts/assert-no-skipped-ui-tests "${bundle}"
-          done
 
       # Ahead of the reports, so a slow report never costs the evidence its time (TAL-670).
       - name: Upload test results on failure
@@ -468,10 +363,9 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ env.BUILD_ARTIFACT }}-test-results-shard-${{ matrix.shard }}
+          name: app-test-results
           path: |
             app/TestResults.xcresult
-            app/DestinationResults-*.xcresult
             app/CoreSimulator.log
           retention-days: 14
           overwrite: true
@@ -493,7 +387,7 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ env.BUILD_ARTIFACT }}-memory-shard-${{ matrix.shard }}
+          name: app-test-memory
           path: app/${{ env.MEMORY_LOG }}
           retention-days: 30
           overwrite: true
@@ -562,7 +456,7 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ env.BUILD_ARTIFACT }}-performance-metrics-shard-${{ matrix.shard }}
+          name: app-performance-metrics
           path: |
             app/performance-metrics.json
             app/performance-metrics.txt

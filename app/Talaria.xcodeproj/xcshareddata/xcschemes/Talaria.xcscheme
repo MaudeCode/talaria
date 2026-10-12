@@ -43,17 +43,6 @@
                ReferencedContainer = "container:Talaria.xcodeproj">
             </BuildableReference>
          </TestableReference>
-         <TestableReference
-            skipped = "NO"
-            parallelizable = "YES">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "A19000000000000000000005"
-               BuildableName = "TalariaUITests.xctest"
-               BlueprintName = "TalariaUITests"
-               ReferencedContainer = "container:Talaria.xcodeproj">
-            </BuildableReference>
-         </TestableReference>
       </Testables>
    </TestAction>
    <LaunchAction

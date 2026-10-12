@@ -4,7 +4,6 @@
 import importlib.util
 from copy import deepcopy
 import os
-import plistlib
 from pathlib import Path
 import subprocess
 import tempfile
@@ -19,29 +18,6 @@ CONSUMERS = {"app", "web_server", "web_frontend", "relay", "contracts"}
 
 
 class RoutingTests(unittest.TestCase):
-    def test_app_ui_scope(self):
-        assert not routing.app_ui_required(["app/Talaria/Networking/APIClient.swift"])
-        assert not routing.app_ui_required(["app/TalariaKit/Sources/TalariaKit/Networking/APIClient.swift"])
-        assert not routing.app_ui_required(["app/TalariaKit/Tests/TalariaKitTests/SSEClientTests.swift"])
-        assert routing.app_ui_required(["app/TalariaKit/Sources/TalariaKit/Features/Chat/ChatViewModel.swift"])
-        assert routing.app_ui_required(["app/TalariaKit/Sources/TalariaKit/Platform/PlatformHooks.swift"])
-        assert not routing.app_ui_required(["app/Talaria/Resources/Info.plist"], metadata_only_plists=["app/Talaria/Resources/Info.plist"])
-        assert routing.app_ui_required(["app/Talaria/Resources/Info.plist"])
-        assert routing.same_plist_ui(plistlib.dumps({}), plistlib.dumps({"TalariaRelease": {"version": "1.0.0"}}))
-        assert not routing.same_plist_ui(plistlib.dumps({}), plistlib.dumps({"UISupportedInterfaceOrientations": ["portrait"]}))
-        assert routing.app_ui_required(["app/Talaria/Features/Chat/ChatView.swift"])
-        assert routing.app_ui_required(["app/Talaria/ContentView.swift"])
-        assert routing.app_ui_required(["app/TalariaUITests/TalariaUITests.swift"])
-        assert routing.app_ui_required(["app/TalariaLiveActivityWidget/ProviderQuotaWidgetView.swift"])
-        assert routing.app_ui_required(["app/TalariaShareExtension/ShareViewController.swift"])
-        assert routing.app_ui_required(["app/NewComponent/Unknown.swift"])
-        assert routing.app_ui_required(["new-component/runtime.swift"])
-        assert not routing.app_ui_required(["app/Talaria/TalariaApp.swift"], scene_unchanged=True)
-        assert routing.app_ui_required(["app/Talaria/TalariaApp.swift"])
-        assert routing.same_app_scene("init() {}\nvar body: some Scene { Main() }", "init() { log() }\nvar body: some Scene { Main() }")
-        assert not routing.same_app_scene("var body: some Scene { Main() }", "var body: some Scene { Other() }")
-        assert not routing.same_app_scene("unknown", "unknown")
-
     def test_path_classes(self):
         cases = [
             (["changelog.d/TAL-123.json"], set()),
@@ -55,7 +31,6 @@ class RoutingTests(unittest.TestCase):
             (["app/TalariaKit/Tests/TalariaKitTests/ChatDraftStoreTests.swift"], {"app"}),
             # The Docker plugin action sets up Compose/Buildx for the smoke, so it runs the smoke too.
             ([".github/actions/docker-plugins/action.yml"], {"docker", "tooling"}),
-            ([".github/workflows/ui-performance.yml"], {"app", "tooling"}),
             # Every script is mapped; an unmapped one would select the full suite.
             (["scripts/check-release-contracts.py"], {"contracts", "tooling"}),
             (["scripts/check"], {"tooling"}),
@@ -107,13 +82,11 @@ class RoutingTests(unittest.TestCase):
             ([".github/workflows/relay-verify.yml"], {"relay", "tooling"}),
             ([".github/workflows/ci.yml"], {"app", "contracts", "tooling"}),
             ([".github/workflows/app-tests.yml"], {"app", "contracts", "tooling"}),
-            ([".github/workflows/ui-suite.yml"], {"tooling"}),
-            ([".github/workflows/ui-suite-failed.yml"], {"tooling"}),
             ([".github/actions/setup-xcode/action.yml"], {"app", "tooling"}),
-            (["app/ci/test_shards.py", "app/ci/test-shard-weights.json"], {"app", "tooling"}),
+            (["app/ci/build-for-testing", "app/ci/package-coverage"], {"app", "tooling"}),
             (["app/ci/build-for-testing", "app/ci/wait-for-job", "app/ci/gh-api-poll"], {"app", "tooling"}),
             (["app/ci/package-coverage"], {"app", "tooling"}),
-            (["app/ci/test_shards_test.py", "app/ci/wait_for_job_test.sh"], {"tooling"}),
+            (["app/ci/wait_for_job_test.sh"], {"tooling"}),
             (["scripts/check-hosted-runners.py", "scripts/test-check-hosted-runners.py"], {"tooling"}),
             (["scripts/changed-components.py"], {"tooling"}),
             (["scripts/new-unknown-tool.py"], ALL),
@@ -146,14 +119,10 @@ class RoutingTests(unittest.TestCase):
                 git("commit", "-m", name)
                 return git("rev-parse", "HEAD")
 
-            def classify(base, head, *options, expected_ui=None):
+            def classify(base, head, *options):
                 result = subprocess.run([os.sys.executable, str(SCRIPT), f"--base={base}", f"--head={head}", *options],
                                         cwd=root, env=env, text=True, capture_output=True, check=True)
                 flags = dict(line.split("=", 1) for line in result.stdout.splitlines())
-                ui = flags.pop("app_ui")
-                self.assertIn(ui, {"true", "false"})
-                if expected_ui is not None:
-                    self.assertEqual(ui, str(expected_ui).lower())
                 self.assertEqual(set(flags), ALL)
                 self.assertLessEqual(set(flags.values()), {"true", "false"})
                 return {key for key, value in flags.items() if value == "true"}
@@ -169,26 +138,26 @@ class RoutingTests(unittest.TestCase):
             odd = root / "web/packages/frontend/name\napp=false\n.tsx"
             odd.write_text("synthetic")
             head = commit("frontend change")
-            self.assertEqual(classify(moved, head, expected_ui=False), {"web_frontend"})
+            self.assertEqual(classify(moved, head), {"web_frontend"})
             self.assertEqual(classify(base, head), {"web_server", "web_frontend"})
             git("update-ref", "refs/remotes/origin/main", moved)
             # A parent change merged since the event's base SHA must not make
             # the child PR rerun the parent's component checks.
-            self.assertEqual(classify("refs/remotes/origin/main", head, "--merge-base", expected_ui=False), {"web_frontend"})
+            self.assertEqual(classify("refs/remotes/origin/main", head, "--merge-base"), {"web_frontend"})
             git("checkout", "-b", "diverged", base)
             (root / "app").mkdir()
             (root / "app/README.md").write_text("docs")
             other = commit("base branch advanced")
             self.assertEqual(classify(other, head, "--merge-base"), {"web_server", "web_frontend"})
-            self.assertEqual(classify(head, head, expected_ui=True), ALL)
-            self.assertEqual(classify("0" * 40, head, expected_ui=True), ALL)
+            self.assertEqual(classify(head, head), ALL)
+            self.assertEqual(classify("0" * 40, head), ALL)
             self.assertEqual(classify("--output=should-not-exist", head), ALL)
             self.assertFalse((root / "should-not-exist").exists())
 
             (root / "scripts").mkdir()
             (root / "scripts/new-unknown-tool.py").write_text("unknown shared tooling\n")
             unknown = commit("unknown shared tool")
-            self.assertEqual(classify(other, unknown, expected_ui=True), ALL)
+            self.assertEqual(classify(other, unknown), ALL)
 
             def check_diff(*options):
                 return subprocess.run([os.sys.executable, str(SCRIPT), "--check-diff", *options],
@@ -207,41 +176,6 @@ class RoutingTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("trailing whitespace", result.stdout)
             self.assertNotEqual(check_diff("--base", "missing-ref").returncode, 0)
-
-    def test_unreadable_app_config_requires_the_ui_suite(self):
-        with tempfile.TemporaryDirectory(prefix="talaria-ci-plist-") as temporary:
-            root = Path(temporary)
-            env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
-            plist = root / "app/Talaria/Resources/Info.plist"
-            entry = root / "app/Talaria/TalariaApp.swift"
-
-            def commit(name):
-                for args in (("add", "-A"), ("commit", "-m", name)):
-                    subprocess.run(["git", "-c", "user.name=Synthetic", "-c", "user.email=test@example.invalid",
-                                    "-c", "commit.gpgsign=false", *args], cwd=root, env=env, check=True,
-                                   capture_output=True)
-                return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, env=env, text=True).strip()
-
-            def app_ui(base, head):
-                result = subprocess.run([os.sys.executable, str(SCRIPT), f"--base={base}", f"--head={head}"],
-                                        cwd=root, env=env, text=True, capture_output=True)
-                self.assertEqual(result.returncode, 0, result.stderr)
-                return dict(line.split("=", 1) for line in result.stdout.splitlines())["app_ui"]
-
-            subprocess.run(["git", "init", "-b", "main"], cwd=root, env=env, check=True, capture_output=True)
-            plist.parent.mkdir(parents=True)
-            plist.write_bytes(plistlib.dumps({"CFBundleName": "Talaria"}))
-            entry.write_text("init() {}\nvar body: some Scene { Main() }\n")
-            base = commit("base")
-            plist.write_bytes(plistlib.dumps({"CFBundleName": "Talaria", "TalariaRelease": {"version": "1.0.0"}}))
-            entry.write_text("init() { log() }\nvar body: some Scene { Main() }\n")
-            metadata = commit("release metadata and startup diagnostics only")
-            self.assertEqual(app_ui(base, metadata), "false")
-            plist.write_text("<plist><dict><key>Unclosed")
-            self.assertEqual(app_ui(base, commit("malformed property list")), "true")
-            plist.write_bytes(plistlib.dumps({"CFBundleName": "Talaria"}))
-            entry.unlink()
-            self.assertEqual(app_ui(metadata, commit("missing App entry point")), "true")
 
     def test_gate_rejects_missing_or_skipped_required_checks(self):
         job_suites = {"app": {"app", "contracts"}, "app-tooling": {"app_tooling"},

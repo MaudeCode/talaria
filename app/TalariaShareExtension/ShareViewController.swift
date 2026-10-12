@@ -1,8 +1,5 @@
 import UIKit
 import TalariaKit
-#if DEBUG
-import notify
-#endif
 
 @MainActor
 final class ShareViewController: UIViewController {
@@ -89,15 +86,6 @@ final class ShareViewController: UIViewController {
     private func openTalaria() {
         let url = TalariaShareDraft.openURL
 
-        #if DEBUG
-        // TAL-81: no host can make `open` fail on demand, so the UI tests select the
-        // launch path they are validating through the shared app group.
-        if ShareOpenFixtureMode.current != .normal {
-            openTalariaViaWorkaround(url)
-            return
-        }
-        #endif
-
         extensionContext?.open(url, completionHandler: { [weak self] success in
             Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -111,13 +99,6 @@ final class ShareViewController: UIViewController {
     }
 
     private func openTalariaViaWorkaround(_ url: URL) {
-        #if DEBUG
-        if ShareOpenFixtureMode.current == .manualOnly {
-            showManualOpenFallback()
-            return
-        }
-        #endif
-
         let application = containingApplicationResponder()
         if let application, open(url, using: application) {
             extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)
@@ -218,37 +199,7 @@ final class ShareViewController: UIViewController {
     /// sheet closes itself.
     private let statusDwell: TimeInterval = 2.5
 
-    #if DEBUG
-    private var statusReleaseToken: Int32 = NOTIFY_TOKEN_INVALID
-
-    /// Closes the sheet when the UI test posts `ShareOpenFixtureMode.releaseStatusNotification`,
-    /// or after a minute if it never does.
-    private func completeRequestWhenTestReleasesStatus() {
-        notify_register_dispatch(ShareOpenFixtureMode.releaseStatusNotification, &statusReleaseToken, .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.finishHeldStatus() }
-        }
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 60_000_000_000)
-            self?.finishHeldStatus()
-        }
-    }
-
-    private func finishHeldStatus() {
-        guard statusReleaseToken != NOTIFY_TOKEN_INVALID else { return }
-        notify_cancel(statusReleaseToken)
-        statusReleaseToken = NOTIFY_TOKEN_INVALID
-        extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)
-    }
-    #endif
-
     private func completeRequest(after delay: TimeInterval) {
-        #if DEBUG
-        // TAL-402: under the UI-test share host the status stays until the test has read it.
-        if ShareOpenFixtureMode.holdsStatus {
-            completeRequestWhenTestReleasesStatus()
-            return
-        }
-        #endif
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
             extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)

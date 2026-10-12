@@ -64,10 +64,11 @@ class ContractRunnerTests(unittest.TestCase):
         previous = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(previous)
         runners = {"new": 'parallel_testing=NO\n(( TALARIA_TEST_WORKER_COUNT > 1 )) && parallel_testing=YES\n',
+                   "serial": 'xcodebuild test \\\n    -parallel-testing-enabled NO \\\n',
                    "old": '-parallel-testing-enabled YES \\\n'}
         for name, script in runners.items():
             with self.subTest(runner=name), patch.object(previous.subprocess, "check_output", return_value=script):
-                self.assertEqual(previous.runner_avoids_clones("a" * 40), name == "new")
+                self.assertEqual(previous.runner_avoids_clones("a" * 40), name in ("new", "serial"))
 
     def test_failing_fixture_gate_prints_its_own_output(self):
         # The component log reaches only the diagnostics artifact; a failure must show the test's own output in the job log.

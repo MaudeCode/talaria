@@ -101,14 +101,14 @@ jobs:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
   app-hosted-tests:
     # The App's simulator-hosted unit tests (app-tests.yml in pull-request mode: the App build and one TalariaTests
-    # shard) on the exact release source whenever the App ships, dry runs included; no UI test gates a release
-    # (TAL-877). The contracts job runs the package tests instead (TAL-414).
+    # job) on the exact release source whenever the App ships, dry runs included. The contracts job runs the package
+    # tests instead (TAL-414).
     needs: prepare
     if: needs.prepare.outputs.app_changed == 'true'
     permissions:
       contents: read
       actions: read
-      # app-tests.yml's test shard posts failing tests as commit statuses (TAL-673).
+      # app-tests.yml's test job posts failing tests as commit statuses (TAL-673).
       statuses: write
     uses: ./.github/workflows/app-tests.yml
     with:
@@ -122,7 +122,7 @@ jobs:
     # the previously released App from Git and tests it against the selected Web. Both spend minutes probing Webs
     # beside their builds, so they run at once, with `swift test` (TAL-399) or one of them in the simulator; two Apps
     # from before TAL-399 would share the one simulator, so they take turns. One runner for both leaves the other macOS slots to the
-    # hosted tests' build and shard and the App build (releases/README.md).
+    # hosted tests' build and test job and the App build (releases/README.md).
     needs: prepare
     runs-on: xcode-27
     timeout-minutes: 120

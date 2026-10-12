@@ -39,12 +39,7 @@ public enum TalariaRelayConnectionState: Equatable {
 public enum TalariaRelayConfigurationStore {
     public static func load(keychain: any KeychainStoring = KeychainStore()) -> TalariaRelayCredentials? {
         #if DEBUG
-        let arguments = ProcessInfo.processInfo.arguments
-        if arguments.contains(UITestFixtureLaunch.launchArgument) {
-            return arguments.contains(UITestFixtureLaunch.relayConnectedArgument)
-                ? UITestFixtureLaunch.relayCredentials
-                : nil
-        }
+        if ProcessInfo.processInfo.arguments.contains(UITestFixtureLaunch.launchArgument) { return nil }
         #endif
         guard let encoded = try? keychain.load(.talariaRelay),
               let data = encoded.data(using: .utf8)
@@ -601,11 +596,6 @@ public enum TalariaRelayAppleCredentialStatus: Equatable {
 
 public enum TalariaRelayAppleCredentialState {
     public static func status(userID: String) async -> TalariaRelayAppleCredentialStatus {
-        #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains(UITestFixtureLaunch.relayConnectedArgument) {
-            return .authorized
-        }
-        #endif
         return await withCheckedContinuation { continuation in
             ASAuthorizationAppleIDProvider().getCredentialState(forUserID: userID) { state, error in
                 continuation.resume(returning: resolvedStatus(state: state, error: error))

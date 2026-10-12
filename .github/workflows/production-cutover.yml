@@ -37,7 +37,7 @@ jobs:
     permissions:
       contents: write
       actions: read
-      # app-tests.yml's test shards post failing tests as commit statuses (TAL-673).
+      # app-tests.yml's hosted tests post failing tests as commit statuses (TAL-673).
       statuses: write
       packages: write
       id-token: write

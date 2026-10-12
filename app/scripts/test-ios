@@ -57,19 +57,6 @@ print -r -- $$ > "$owner_file"
 ios_pool_acquire
 destination="platform=iOS Simulator,id=$simulator_id"
 
-# Only a disposable pool device is prepared: it is erased on release, while a personal simulator
-# keeps its state. UI tests pick from Photos, so it gets a photo they own (TAL-633). The completion
-# alert test needs the notification service, which a fresh boot can leave hanging until its dasd
-# restarts (TAL-651); a personal simulator's processes are never restarted.
-prepare_ui_simulator() {
-    if [[ "$simulator_disposable" == true ]]; then
-        # Explicit exits: zsh skips the EXIT trap, and the lease release, when errexit fires in a function.
-        scripts/prepare-ui-simulator "$simulator_id" || exit $?
-    else
-        print -u2 "Not preparing personal simulator $simulator_id: Photos picker tests use its library, and its notification service is not restarted."
-    fi
-}
-
 # True when the bundle's only failures are the pre-test runner hang (the test
 # host never connected to testmanagerd), so no test case failed and one clean
 # retry is safe (TAL-105 evidence, TAL-145).
@@ -83,80 +70,8 @@ runner_hang_only() {
         ' >/dev/null 2>&1
 }
 
-# Hosted unit tests and UI tests run as separate xcodebuild phases. In one parallel
-# run Xcode can start a UI runner session on a clone that is still installing and
-# launching the unit-test host; the runner install is then lost and its launch fails
-# with "Unknown application display identifier" (TAL-487). Unit tests take seconds,
-# so they run first on the leased device without clones.
-(( $# )) || set -- TalariaTests TalariaUITests
-typeset -a unit_filters ui_filters
-for selector in "$@"; do
-    if [[ "${selector%%/*}" == TalariaTests ]]; then
-        unit_filters+=("-only-testing:$selector")
-    else
-        ui_filters+=("-only-testing:$selector")
-    fi
-done
-# Classes that need an iPad or a Pro Max skip on the pool's iPhone (ci/test_shards.py's DEVICE_CLASSES), so the
-# other phases skip them and they run last, each on a matching local simulator (TAL-471). A missing match fails
-# before any test runs.
-typeset -a device_skips device_runs
-if (( ${#ui_filters} )); then
-    ui_selectors=("${ui_filters[@]#-only-testing:}")
-    device_selection=$(python3 "$repo_root/ci/test_shards.py" --only-testing "${ui_selectors[@]}") || exit $?
-    device_list=$(python3 "$repo_root/ci/test_shards.py" --devices --only-testing "${ui_selectors[@]}") || exit $?
-    ui_filters=(${(M)${(f)device_selection}:#-only-testing:*})
-    device_skips=(${(M)${(f)device_selection}:#-skip-testing:*})
-    device_runs=(${(f)device_list})
-fi
-# The measuring performance UI classes add minutes of scrolling and relaunching;
-# the scheduled UI Performance workflow records them. Selecting an entire target
-# must not enable these extended checks; name their class or method explicitly
-# to run it.
-typeset -a extended_skips
-for extended_class in \
-    TalariaUITests/SidebarPerformanceUITests \
-    TalariaUITests/LaunchPerformanceUITests \
-    TalariaUITests/TranscriptPerformanceUITests \
-    TalariaUITests/NavigationPerformanceUITests; do
-    explicitly_selected=0
-    for selector in "$@"; do
-        if [[ "$selector" == "$extended_class" || "$selector" == "$extended_class/"* ]]; then
-            explicitly_selected=1
-            break
-        fi
-    done
-    (( explicitly_selected )) || extended_skips+=("-skip-testing:$extended_class")
-done
-# Xcode clones the leased simulator once per UI worker; the clones are removed when
-# the run ends and the pool erases the lease. A single worker runs on the leased
-# device itself: a clone per run would race the previous run's clone teardown on
-# the same device (TAL-304).
-TALARIA_TEST_WORKER_COUNT=${TALARIA_TEST_WORKER_COUNT:-4}
-parallel_testing=NO
-(( TALARIA_TEST_WORKER_COUNT > 1 )) && parallel_testing=YES
-# A parallel-testing clone's notification service does not answer, so a class that needs a
-# delivered local notification runs on the leased device itself, after the parallel UI phase
-# (a clone made after it would inherit its app state), as CI runs every class without clones
-# (TAL-80).
-typeset -a serial_ui_classes=(TalariaUITests/ResponseCompletionAlertUITests)
-typeset -a parallel_ui_filters serial_ui_filters serial_skips
-if [[ "$parallel_testing" == YES ]]; then
-    for filter in "${ui_filters[@]}"; do
-        selector=${filter#-only-testing:}
-        for serial_class in "${serial_ui_classes[@]}"; do
-            if [[ "$selector" == TalariaUITests ]]; then
-                serial_ui_filters+=("-only-testing:$serial_class")
-                serial_skips+=("-skip-testing:$serial_class")
-            elif [[ "$selector" == "$serial_class" || "$selector" == "$serial_class/"* ]]; then
-                serial_ui_filters+=("$filter")
-                continue 2
-            fi
-        done
-        parallel_ui_filters+=("$filter")
-    done
-    ui_filters=("${parallel_ui_filters[@]}")
-fi
+(( $# )) || set -- TalariaTests
+typeset -a filters=("${@/#/-only-testing:}")
 
 cd "$repo_root"
 # Clear first: a recording run killed before its EXIT trap would otherwise leave
@@ -168,77 +83,41 @@ if [[ -n "${TALARIA_RECORD_VISUAL_REFERENCES:-}" ]]; then
     owns_visual_reference_marker=true
 fi
 
-# Usage: run_tests phase parallel-testing filter...
-run_tests() {
-    local phase=$1 parallel_testing=$2 attempt=1 xcodebuild_status
-    shift 2
-    while true; do
-        result_bundle="$runtime_dir/results/$(date +%Y%m%d-%H%M%S)-$$-$phase-$attempt.xcresult"
-        print "Simulator: $destination"
-        print "Result bundle: $result_bundle"
+attempt=1
+while true; do
+    result_bundle="$runtime_dir/results/$(date +%Y%m%d-%H%M%S)-$$-$attempt.xcresult"
+    print "Simulator: $destination"
+    print "Result bundle: $result_bundle"
 
-        xcodebuild test -quiet \
-            -project Talaria.xcodeproj \
-            -scheme Talaria \
-            -destination "$destination" \
-            -testLanguage en \
-            -testRegion US \
-            -derivedDataPath "$runtime_dir/derived-data" \
-            -disableAutomaticPackageResolution \
-            -parallel-testing-enabled "$parallel_testing" \
-            -parallel-testing-worker-count "$TALARIA_TEST_WORKER_COUNT" \
-            -enableCodeCoverage NO \
-            -collect-test-diagnostics never \
-            -resultBundlePath "$result_bundle" \
-            APP_IDENTIFIER_SUFFIX=.xctest \
-            "$@" &
-        xcodebuild_pid=$!
-        if wait "$xcodebuild_pid"; then
-            xcodebuild_pid=""
-            return
-        else
-            xcodebuild_status=$?
-        fi
+    xcodebuild test -quiet \
+        -project Talaria.xcodeproj \
+        -scheme Talaria \
+        -destination "$destination" \
+        -testLanguage en \
+        -testRegion US \
+        -derivedDataPath "$runtime_dir/derived-data" \
+        -disableAutomaticPackageResolution \
+        -parallel-testing-enabled NO \
+        -enableCodeCoverage NO \
+        -collect-test-diagnostics never \
+        -resultBundlePath "$result_bundle" \
+        APP_IDENTIFIER_SUFFIX=.xctest \
+        "${filters[@]}" &
+    xcodebuild_pid=$!
+    if wait "$xcodebuild_pid"; then
         xcodebuild_pid=""
-        if (( attempt == 1 )) && runner_hang_only "$result_bundle"; then
-            print -u2 "The test runner hung before establishing connection and no test case failed; releasing $simulator_id and retrying once."
-            ios_pool_release
-            ios_pool_acquire || exit "$xcodebuild_status"
-            destination="platform=iOS Simulator,id=$simulator_id"
-            [[ "$phase" == unit ]] || prepare_ui_simulator
-            attempt=2
-            continue
-        fi
-        exit "$xcodebuild_status"
-    done
-}
-
-(( ${#unit_filters} == 0 )) || run_tests unit NO "${unit_filters[@]}"
-(( ${#ui_filters} + ${#serial_ui_filters} == 0 )) || prepare_ui_simulator
-if (( ${#ui_filters} )); then
-    run_tests ui "$parallel_testing" "${ui_filters[@]}" "${extended_skips[@]}" "${serial_skips[@]}" "${device_skips[@]}"
-    scripts/assert-no-skipped-ui-tests "$result_bundle"
-fi
-if (( ${#serial_ui_filters} )); then
-    # Xcode shuts the leased device down to clone it, so the notification journey would start from a
-    # fresh boot whose notification service can hang (TAL-651): it is booted and readied first (TAL-682).
-    if (( ${#ui_filters} )) && [[ "$simulator_disposable" == true ]]; then
-        scripts/ready-simulator-notifications "$simulator_id" || exit $?
+        exit 0
+    else
+        xcodebuild_status=$?
     fi
-    run_tests ui-serial NO "${serial_ui_filters[@]}"
-    scripts/assert-no-skipped-ui-tests "$result_bundle"
-fi
-for device_run in "${device_runs[@]}"; do
-    ios_pool_release
-    # Leased by ID, like a personal simulator, whatever runtime or model the run selected.
-    IOS_SIMULATOR_ID=${device_run%%$'\t'*} IOS_SIMULATOR_RUNTIME="" IOS_SIMULATOR_DEVICE_TYPE=""
-    ios_pool_acquire
-    destination="platform=iOS Simulator,id=$simulator_id"
-    prepare_ui_simulator
-    typeset -a device_filters=()
-    for identifier in ${(z)device_run#*$'\t'}; do
-        device_filters+=("-only-testing:$identifier")
-    done
-    run_tests destination NO "${device_filters[@]}"
-    scripts/assert-no-skipped-ui-tests "$result_bundle"
+    xcodebuild_pid=""
+    if (( attempt == 1 )) && runner_hang_only "$result_bundle"; then
+        print -u2 "The test runner hung before establishing connection and no test case failed; releasing $simulator_id and retrying once."
+        ios_pool_release
+        ios_pool_acquire || exit "$xcodebuild_status"
+        destination="platform=iOS Simulator,id=$simulator_id"
+        attempt=2
+        continue
+    fi
+    exit "$xcodebuild_status"
 done

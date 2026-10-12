@@ -1,7 +1,6 @@
 # Pull requests and main pushes run suites selected by the complete changed-path diff. App changes run
-# the TalariaKit package tests with `swift test`, build the App, its extensions and test bundles for
-# testing, and run the simulator-hosted unit tests (TalariaTests) in one shard; no UI test runs in CI
-# (TAL-877).
+# the TalariaKit package tests with `swift test`, build the App, its extensions and test bundle for
+# testing, and run the simulator-hosted unit tests (TalariaTests) in one simulator job.
 # Release metadata always validates; uncertain classification runs every suite.
 # The always-reporting CI Gate is the required check, including skipped jobs.
 #
@@ -91,7 +90,7 @@ jobs:
     permissions:
       contents: read
       actions: read
-      # app-tests.yml's test shards post failing tests as commit statuses (TAL-673).
+      # app-tests.yml's test job posts failing tests as commit statuses (TAL-673).
       statuses: write
     uses: ./.github/workflows/app-tests.yml
     with:

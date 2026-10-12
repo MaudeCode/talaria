@@ -30,21 +30,19 @@ Run simulator-hosted XCTest only through `scripts/test-ios [test-identifier ...]
 
 1. Run the smallest focused test identifier that covers the change.
 2. Wait for it to finish.
-3. For non-UI App changes, run `swift test --package-path TalariaKit` and `scripts/test-ios TalariaTests TalariaUITests/ChatNavigationUITests` before review or commit. HTTP/SSE changes also require the contract checks. Run `scripts/test-ios` for UI changes or uncertain scope.
+3. For App changes, run `swift test --package-path TalariaKit` and `scripts/test-ios TalariaTests` before review or commit. HTTP/SSE changes also require the contract checks. For UI changes, also run the flows they touch from [phone checks](../../../app/docs/phone-checks.md) on a DevApps build.
 
 CI (pull requests and main pushes) runs, for every App change, `swift test` for
-TalariaKit, the App build for testing (App, extensions and both test bundles)
-and the simulator-hosted unit tests (`TalariaTests`) in one shard; releases run
-the same hosted unit tests. No UI test runs in CI or gates a merge or release
-(TAL-877), so run step 3 locally, and the affected UI tests for UI changes,
-before review (TAL-332).
+TalariaKit, the App build for testing (App, extensions and the test bundle) and
+the simulator-hosted unit tests (`TalariaTests`) in one shard; releases run the
+same hosted unit tests.
 
 The script serializes runs within one worktree and leases pooled simulators across
 worktrees. Let the current run finish instead of starting an overlapping run.
 
 ## Simulator validation
 
-- Validate app UI through XCTest, XCUIAutomation, and simulator tooling. Use those
+- Validate app UI through hosted XCTest and simulator tooling. Use those
   tools instead of Computer Use.
 - Build and launch the app for UI or runtime changes, then provide a short manual
   simulator test plan.

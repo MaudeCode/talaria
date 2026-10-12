@@ -8,8 +8,6 @@
 
 /* Begin PBXBuildFile section */
 		AA1900000000000000000001 /* ReauthenticationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1900000000000000000002 /* ReauthenticationSheet.swift */; };
-		D81000000000000000000021 /* ShareExtensionUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D81000000000000000000022 /* ShareExtensionUITests.swift */; };
-		D81000000000000000000001 /* ShareExtensionUITestHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = D81000000000000000000002 /* ShareExtensionUITestHost.swift */; };
 		26AB000000000000000000B1 /* ProvidersViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26AB000000000000000000F1 /* ProvidersViewModel.swift */; };
 		26AB000000000000000388B1 /* AuxiliaryModelsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26AB000000000000000388F1 /* AuxiliaryModelsSettingsView.swift */; };
 		26AB000000000000000000B2 /* ProvidersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26AB000000000000000000F2 /* ProvidersView.swift */; };
@@ -52,6 +50,8 @@
 		C13000000000000000000001 /* ChatVerticalScrollAxisGuardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C13000000000000000000002 /* ChatVerticalScrollAxisGuardTests.swift */; };
 		C46770000000000000000001 /* ChatUIKitMenuButtonFocusTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46770000000000000000002 /* ChatUIKitMenuButtonFocusTests.swift */; };
 		C46200000000000000000001 /* SidebarEdgePanGestureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46200000000000000000002 /* SidebarEdgePanGestureTests.swift */; };
+		D857C2EF4A4AC8281AF12845 /* StreamHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856C2EF4A4AC8281AF12845 /* StreamHostedTests.swift */; };
+		D857728B73FCE582FDD1DFB3 /* ChatHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856728B73FCE582FDD1DFB3 /* ChatHostedTests.swift */; };
 		D857001159F0B34BD088CA04 /* SessionListHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856001159F0B34BD088CA04 /* SessionListHostedTests.swift */; };
 		D857297464F3055587B2ACEF /* TranscriptHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856297464F3055587B2ACEF /* TranscriptHostedTests.swift */; };
 		D857E7989860057E41C369DF /* HostedViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856E7989860057E41C369DF /* HostedViewTests.swift */; };
@@ -324,9 +324,6 @@
 		C107L0000000000000000026 /* KanbanCardDetailContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000126 /* KanbanCardDetailContent.swift */; };
 		C06900000000000000000001 /* UITestFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = C06900000000000000000002 /* UITestFixture.swift */; };
 		C06900000000000000000003 /* UITestFixture+Kanban.swift in Sources */ = {isa = PBXBuildFile; fileRef = C06900000000000000000004 /* UITestFixture+Kanban.swift */; };
-		C06900000000000000000005 /* UITestFixture+Panels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C06900000000000000000006 /* UITestFixture+Panels.swift */; };
-		C08000000000000000000001 /* UITestFixture+Lifecycle.swift in Sources */ = {isa = PBXBuildFile; fileRef = C08000000000000000000002 /* UITestFixture+Lifecycle.swift */; };
-		C06900000000000000000007 /* UITestFixture+Workspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = C06900000000000000000008 /* UITestFixture+Workspace.swift */; };
 		22AB000000000000000000B2 /* WorkspaceManagerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22AB000000000000000000F2 /* WorkspaceManagerView.swift */; };
 		C03120000000000000B004 /* GitWorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03120000000000000F004 /* GitWorkspaceView.swift */; };
 		C03120000000000000B005 /* GitDiffView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03120000000000000F005 /* GitDiffView.swift */; };
@@ -380,10 +377,6 @@
 		A710739233F64F4FA4C2B701 /* ComposerVoiceDraftComposerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A710739233F64F4FA4C2B711 /* ComposerVoiceDraftComposerTests.swift */; };
 		C0CAM000000000000000B001 /* CameraPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0CAM000000000000000B002 /* CameraPickerView.swift */; };
 		C0DEC0DE0000000000000001 /* ChatComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DEC0DE0000000000000002 /* ChatComposerView.swift */; };
-		A19000000000000000000001 /* TalariaUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A19000000000000000000002 /* TalariaUITests.swift */; };
-		A19000000000000000000101 /* AgentPanelUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A19000000000000000000102 /* AgentPanelUITests.swift */; };
-		TAL643000000000000001001 /* RegularWidthNavigationUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = TAL643000000000000000001 /* RegularWidthNavigationUITests.swift */; };
-		A19000000000000000000103 /* AppEntryPointUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A19000000000000000000104 /* AppEntryPointUITests.swift */; };
 		D74A00000000000000000006 /* AgentRunLiveActivityStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = D74A00000000000000000001 /* AgentRunLiveActivityStyle.swift */; };
 		D74A00000000000000000007 /* AgentRunIslandCompactTrailing.swift in Sources */ = {isa = PBXBuildFile; fileRef = D74A00000000000000000002 /* AgentRunIslandCompactTrailing.swift */; };
 		D74A00000000000000000008 /* AgentRunStatusDot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107M0000000000000000220 /* AgentRunStatusDot.swift */; };
@@ -400,7 +393,6 @@
 		D74A00000000000000000019 /* VisualReference.swift in Sources */ = {isa = PBXBuildFile; fileRef = D74A00000000000000000003 /* VisualReference.swift */; };
 		D74A00000000000000000020 /* LiveActivityVisualReferenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D74A00000000000000000004 /* LiveActivityVisualReferenceTests.swift */; };
 		D74A00000000000000000021 /* AppScreenVisualReferenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D74A00000000000000000005 /* AppScreenVisualReferenceTests.swift */; };
-		A19000000000000000000111 /* PerformanceUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A19000000000000000000112 /* PerformanceUITests.swift */; };
 		DF70F1E3194F55301886A523 /* LiveActivityReconciler+App.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EC8D639E3A5818B98398993 /* LiveActivityReconciler+App.swift */; };
 		D399000000000000000000B1 /* TalariaKit in Frameworks */ = {isa = PBXBuildFile; productRef = D399000000000000000000A1 /* TalariaKit */; };
 		D399000000000000000000B2 /* TalariaKit in Frameworks */ = {isa = PBXBuildFile; productRef = D399000000000000000000A2 /* TalariaKit */; };
@@ -438,13 +430,6 @@
 			remoteGlobalIDString = A04500000000000000000040;
 			remoteInfo = TalariaLiveActivityWidget;
 		};
-		A19000000000000000000008 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 1A2B3C4D5E6F700000000070 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 1A2B3C4D5E6F700000000040;
-			remoteInfo = Talaria;
-		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -464,8 +449,6 @@
 
 /* Begin PBXFileReference section */
 		AA1900000000000000000002 /* ReauthenticationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReauthenticationSheet.swift; sourceTree = "<group>"; };
-		D81000000000000000000022 /* ShareExtensionUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareExtensionUITests.swift; sourceTree = "<group>"; };
-		D81000000000000000000002 /* ShareExtensionUITestHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareExtensionUITestHost.swift; sourceTree = "<group>"; };
 		351C0F1600000000000000A1 /* Shared.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Shared.xcconfig; path = Config/Shared.xcconfig; sourceTree = "<group>"; };
 		1A2B3C4D5E6F700000000010 /* Talaria.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Talaria.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		1A2B3C4D5E6F700000000011 /* TalariaApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TalariaApp.swift; sourceTree = "<group>"; };
@@ -482,12 +465,6 @@
 		10CA110C0DE000000000B002 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		10CA110C0DE000000000B005 /* AppShortcuts.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = AppShortcuts.xcstrings; sourceTree = "<group>"; };
 		1A2B3C4D5E6F700000000015 /* TalariaTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TalariaTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		A19000000000000000000002 /* TalariaUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TalariaUITests.swift; sourceTree = "<group>"; };
-		A19000000000000000000102 /* AgentPanelUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPanelUITests.swift; sourceTree = "<group>"; };
-		TAL643000000000000000001 /* RegularWidthNavigationUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RegularWidthNavigationUITests.swift; sourceTree = "<group>"; };
-		A19000000000000000000104 /* AppEntryPointUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppEntryPointUITests.swift; sourceTree = "<group>"; };
-		A19000000000000000000112 /* PerformanceUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceUITests.swift; sourceTree = "<group>"; };
-		A19000000000000000000003 /* TalariaUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TalariaUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C10D00000000000000000006 /* AppleAccountSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleAccountSettingsView.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000B5 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F70000000411 /* OnboardingComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingComponents.swift; sourceTree = "<group>"; };
@@ -505,6 +482,8 @@
 		C13000000000000000000002 /* ChatVerticalScrollAxisGuardTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatVerticalScrollAxisGuardTests.swift; sourceTree = "<group>"; };
 		C46770000000000000000002 /* ChatUIKitMenuButtonFocusTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatUIKitMenuButtonFocusTests.swift; sourceTree = "<group>"; };
 		C46200000000000000000002 /* SidebarEdgePanGestureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarEdgePanGestureTests.swift; sourceTree = "<group>"; };
+		D856C2EF4A4AC8281AF12845 /* StreamHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamHostedTests.swift; sourceTree = "<group>"; };
+		D856728B73FCE582FDD1DFB3 /* ChatHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatHostedTests.swift; sourceTree = "<group>"; };
 		D856001159F0B34BD088CA04 /* SessionListHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListHostedTests.swift; sourceTree = "<group>"; };
 		D856297464F3055587B2ACEF /* TranscriptHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptHostedTests.swift; sourceTree = "<group>"; };
 		D856E7989860057E41C369DF /* HostedViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostedViewTests.swift; sourceTree = "<group>"; };
@@ -763,9 +742,6 @@
 		C107L0000000000000000126 /* KanbanCardDetailContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanCardDetailContent.swift; sourceTree = "<group>"; };
 		C06900000000000000000002 /* UITestFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UITestFixture.swift; sourceTree = "<group>"; };
 		C06900000000000000000004 /* UITestFixture+Kanban.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UITestFixture+Kanban.swift"; sourceTree = "<group>"; };
-		C06900000000000000000006 /* UITestFixture+Panels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UITestFixture+Panels.swift"; sourceTree = "<group>"; };
-		C08000000000000000000002 /* UITestFixture+Lifecycle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UITestFixture+Lifecycle.swift"; sourceTree = "<group>"; };
-		C06900000000000000000008 /* UITestFixture+Workspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UITestFixture+Workspace.swift"; sourceTree = "<group>"; };
 		22AB000000000000000000F2 /* WorkspaceManagerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceManagerView.swift; sourceTree = "<group>"; };
 		C03120000000000000F004 /* GitWorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitWorkspaceView.swift; sourceTree = "<group>"; };
 		C03120000000000000F005 /* GitDiffView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitDiffView.swift; sourceTree = "<group>"; };
@@ -884,13 +860,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		A19000000000000000000007 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -900,7 +869,6 @@
 				351C0F1600000000000000A1 /* Shared.xcconfig */,
 				1A2B3C4D5E6F700000000031 /* Talaria */,
 				1A2B3C4D5E6F700000000034 /* TalariaTests */,
-				A19000000000000000000004 /* TalariaUITests */,
 				B5A100000000000000000051 /* TalariaShareExtension */,
 				A04500000000000000000021 /* TalariaLiveActivityWidget */,
 				1A2B3C4D5E6F700000000032 /* Products */,
@@ -929,24 +897,10 @@
 			children = (
 				1A2B3C4D5E6F700000000010 /* Talaria.app */,
 				1A2B3C4D5E6F700000000015 /* TalariaTests.xctest */,
-				A19000000000000000000003 /* TalariaUITests.xctest */,
 				B5A100000000000000000017 /* TalariaShareExtension.appex */,
 				A04500000000000000000017 /* TalariaLiveActivityWidget.appex */,
 			);
 			name = Products;
-			sourceTree = "<group>";
-		};
-		A19000000000000000000004 /* TalariaUITests */ = {
-			isa = PBXGroup;
-			children = (
-				D81000000000000000000022 /* ShareExtensionUITests.swift */,
-				A19000000000000000000002 /* TalariaUITests.swift */,
-				A19000000000000000000102 /* AgentPanelUITests.swift */,
-				TAL643000000000000000001 /* RegularWidthNavigationUITests.swift */,
-				A19000000000000000000104 /* AppEntryPointUITests.swift */,
-				A19000000000000000000112 /* PerformanceUITests.swift */,
-			);
-			path = TalariaUITests;
 			sourceTree = "<group>";
 		};
 		1A2B3C4D5E6F700000000033 /* Resources */ = {
@@ -983,6 +937,8 @@
 				C13000000000000000000002 /* ChatVerticalScrollAxisGuardTests.swift */,
 				C46770000000000000000002 /* ChatUIKitMenuButtonFocusTests.swift */,
 				C46200000000000000000002 /* SidebarEdgePanGestureTests.swift */,
+				D856C2EF4A4AC8281AF12845 /* StreamHostedTests.swift */,
+				D856728B73FCE582FDD1DFB3 /* ChatHostedTests.swift */,
 				D856001159F0B34BD088CA04 /* SessionListHostedTests.swift */,
 				D856297464F3055587B2ACEF /* TranscriptHostedTests.swift */,
 				D856E7989860057E41C369DF /* HostedViewTests.swift */,
@@ -1345,12 +1301,8 @@
 		1A2B3C4D5E6F7000000000FA /* Config */ = {
 			isa = PBXGroup;
 			children = (
-				D81000000000000000000002 /* ShareExtensionUITestHost.swift */,
 				C06900000000000000000002 /* UITestFixture.swift */,
 				C06900000000000000000004 /* UITestFixture+Kanban.swift */,
-				C06900000000000000000006 /* UITestFixture+Panels.swift */,
-				C08000000000000000000002 /* UITestFixture+Lifecycle.swift */,
-				C06900000000000000000008 /* UITestFixture+Workspace.swift */,
 				4F9EB4168ADAD8328E21CCDF /* AppIconChoice+Current.swift */,
 			);
 			path = Config;
@@ -1540,25 +1492,6 @@
 			productReference = 1A2B3C4D5E6F700000000015 /* TalariaTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
-		A19000000000000000000005 /* TalariaUITests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = A1900000000000000000000C /* Build configuration list for PBXNativeTarget "TalariaUITests" */;
-			buildPhases = (
-				A19000000000000000000006 /* Sources */,
-				A19000000000000000000007 /* Frameworks */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				A19000000000000000000009 /* PBXTargetDependency */,
-			);
-			name = TalariaUITests;
-			packageProductDependencies = (
-			);
-			productName = TalariaUITests;
-			productReference = A19000000000000000000003 /* TalariaUITests.xctest */;
-			productType = "com.apple.product-type.bundle.ui-testing";
-		};
 		B5A100000000000000000040 /* TalariaShareExtension */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = B5A100000000000000000041 /* Build configuration list for PBXNativeTarget "TalariaShareExtension" */;
@@ -1616,10 +1549,6 @@
 						CreatedOnToolsVersion = 26.4.1;
 						TestTargetID = 1A2B3C4D5E6F700000000040;
 					};
-					A19000000000000000000005 = {
-						CreatedOnToolsVersion = 27.0;
-						TestTargetID = 1A2B3C4D5E6F700000000040;
-					};
 					B5A100000000000000000040 = {
 						CreatedOnToolsVersion = 26.4.1;
 					};
@@ -1669,7 +1598,6 @@
 			targets = (
 				1A2B3C4D5E6F700000000040 /* Talaria */,
 				1A2B3C4D5E6F700000000044 /* TalariaTests */,
-				A19000000000000000000005 /* TalariaUITests */,
 				B5A100000000000000000040 /* TalariaShareExtension */,
 				A04500000000000000000040 /* TalariaLiveActivityWidget */,
 			);
@@ -1722,7 +1650,6 @@
 				3D4F1093C37475450D78C02A /* AppIconChoice+Current.swift in Sources */,
 				AC7D8D40DE8FDF034F4AF1B1 /* OIDCWebAuthenticationPresenter.swift in Sources */,
 				DF70F1E3194F55301886A523 /* LiveActivityReconciler+App.swift in Sources */,
-				D81000000000000000000001 /* ShareExtensionUITestHost.swift in Sources */,
 				1A2B3C4D5E6F700000000001 /* TalariaApp.swift in Sources */,
 				1A2B3C4D5E6F700000000002 /* ContentView.swift in Sources */,
 				1A2B3C4D5E6F700000000338 /* TalariaAppIntents.swift in Sources */,
@@ -1904,9 +1831,6 @@
 				C107L0000000000000000026 /* KanbanCardDetailContent.swift in Sources */,
 				C06900000000000000000001 /* UITestFixture.swift in Sources */,
 				C06900000000000000000003 /* UITestFixture+Kanban.swift in Sources */,
-				C06900000000000000000005 /* UITestFixture+Panels.swift in Sources */,
-				C08000000000000000000001 /* UITestFixture+Lifecycle.swift in Sources */,
-				C06900000000000000000007 /* UITestFixture+Workspace.swift in Sources */,
 				C09300000000000000000001 /* HapticButton.swift in Sources */,
 				C43600000000000000000001 /* StatusChip.swift in Sources */,
 				C48300000000000000000001 /* RefreshToolbarButton.swift in Sources */,
@@ -2046,6 +1970,8 @@
 				C13000000000000000000001 /* ChatVerticalScrollAxisGuardTests.swift in Sources */,
 				C46770000000000000000001 /* ChatUIKitMenuButtonFocusTests.swift in Sources */,
 				C46200000000000000000001 /* SidebarEdgePanGestureTests.swift in Sources */,
+				D857C2EF4A4AC8281AF12845 /* StreamHostedTests.swift in Sources */,
+				D857728B73FCE582FDD1DFB3 /* ChatHostedTests.swift in Sources */,
 				D857001159F0B34BD088CA04 /* SessionListHostedTests.swift in Sources */,
 				D857297464F3055587B2ACEF /* TranscriptHostedTests.swift in Sources */,
 				D857E7989860057E41C369DF /* HostedViewTests.swift in Sources */,
@@ -2066,19 +1992,6 @@
 				D74A00000000000000000019 /* VisualReference.swift in Sources */,
 				D74A00000000000000000020 /* LiveActivityVisualReferenceTests.swift in Sources */,
 				D74A00000000000000000021 /* AppScreenVisualReferenceTests.swift in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		A19000000000000000000006 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				D81000000000000000000021 /* ShareExtensionUITests.swift in Sources */,
-				A19000000000000000000001 /* TalariaUITests.swift in Sources */,
-				A19000000000000000000101 /* AgentPanelUITests.swift in Sources */,
-				TAL643000000000000001001 /* RegularWidthNavigationUITests.swift in Sources */,
-				A19000000000000000000103 /* AppEntryPointUITests.swift in Sources */,
-				A19000000000000000000111 /* PerformanceUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2138,11 +2051,6 @@
 			isa = PBXTargetDependency;
 			target = 1A2B3C4D5E6F700000000040 /* Talaria */;
 			targetProxy = 1A2B3C4D5E6F700000000036 /* PBXContainerItemProxy */;
-		};
-		A19000000000000000000009 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 1A2B3C4D5E6F700000000040 /* Talaria */;
-			targetProxy = A19000000000000000000008 /* PBXContainerItemProxy */;
 		};
 		B5A100000000000000000031 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
@@ -2395,42 +2303,6 @@
 			};
 			name = Release;
 		};
-		A1900000000000000000000A /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
-				MARKETING_VERSION = 1.5;
-				PRODUCT_BUNDLE_IDENTIFIER = "$(APP_BUNDLE_IDENTIFIER).uitests";
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = Talaria;
-			};
-			name = Debug;
-		};
-		A1900000000000000000000B /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
-				MARKETING_VERSION = 1.5;
-				PRODUCT_BUNDLE_IDENTIFIER = "$(APP_BUNDLE_IDENTIFIER).uitests";
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = Talaria;
-			};
-			name = Release;
-		};
 		B5A100000000000000000042 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -2562,15 +2434,6 @@
 			buildConfigurations = (
 				1A2B3C4D5E6F700000000084 /* Debug */,
 				1A2B3C4D5E6F700000000085 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		A1900000000000000000000C /* Build configuration list for PBXNativeTarget "TalariaUITests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				A1900000000000000000000A /* Debug */,
-				A1900000000000000000000B /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
