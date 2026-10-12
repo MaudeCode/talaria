@@ -34,13 +34,14 @@ def main():
 
         def check(tag):
             # Each release gets its own checkout: the sidecar suite builds its pytest venv inside it.
+            receipt = ["--receipt", str(args.receipts.resolve() / f"{tag}.json")] if args.receipts else []
             try:
                 path = checkout(tag)
-            except subprocess.CalledProcessError as error:
-                return subprocess.CompletedProcess(error.cmd, error.returncode, stdout=f"{error}\n")
-            receipt = ["--receipt", str(args.receipts.resolve() / f"{tag}.json")] if args.receipts else []
-            return subprocess.run(["python3", str(path / "scripts/check-agent-compatibility.py"), "--release", tag, *receipt],
-                                  cwd=path, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                return subprocess.run(["python3", str(path / "scripts/check-agent-compatibility.py"), "--release", tag, *receipt],
+                                      cwd=path, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            except (subprocess.CalledProcessError, OSError) as error:
+                # Reported as this release failing, so the other releases still finish and print.
+                return subprocess.CompletedProcess(tag, 1, stdout=f"{error}\n")
 
         listing = checkout("list")
         # The selected source's own record names its supported releases and requires its active pin among them.
@@ -49,13 +50,14 @@ def main():
         failed = []
         # Releases run concurrently; each one's output prints as one block when it finishes so the job log stays readable.
         with ThreadPoolExecutor(max_workers=len(releases)) as pool:
-            for future in as_completed(futures := {pool.submit(check, tag): tag for tag in releases}):
+            futures = {pool.submit(check, tag): tag for tag in releases}
+            for future in as_completed(futures):
                 tag, result = futures[future], future.result()
                 print(f"===== Agent {tag}: {'passed' if result.returncode == 0 else 'FAILED'} =====\n{result.stdout}", end="", flush=True)
                 if result.returncode:
                     failed.append(tag)
     if failed:
-        raise RuntimeError(f"supported Agent releases failed compatibility: {', '.join(failed)}")
+        raise RuntimeError(f"supported Agent releases failed compatibility: {', '.join(sorted(failed))}")
 
 
 if __name__ == "__main__":

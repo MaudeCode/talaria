@@ -374,7 +374,7 @@ class AgentRunnerTests(unittest.TestCase):
         tags = ["v2026.9.14", "v2026.9.21", "v2026.9.24"]
         # A release fails its check, or its checkout cannot be cloned; either way the others still report.
         for failing, receipts, unclonable in ((None, False, None), (None, True, None), ("v2026.9.21", True, None),
-                                              (None, True, "v2026.9.21")):
+                                              (None, True, "v2026.9.21"), ("v2026.9.14", True, "v2026.9.24")):
             with self.subTest(failing=failing, receipts=receipts, unclonable=unclonable), tempfile.TemporaryDirectory() as temporary:
                 checked = [tag for tag in tags if tag != unclonable]
                 root = Path(temporary)
@@ -409,14 +409,14 @@ class AgentRunnerTests(unittest.TestCase):
                         patch.object(agent.subprocess, "check_output", side_effect=check_output), \
                         patch.object(agent.subprocess, "run", side_effect=run):
                     if failing or unclonable:
-                        with self.assertRaisesRegex(RuntimeError, failing or unclonable):
+                        with self.assertRaisesRegex(RuntimeError, ": " + ", ".join(sorted(filter(None, (failing, unclonable)))) + "$"):
                             agent.main()
                     else:
                         agent.main()
                 # Releases run concurrently, so a failing release does not stop the others from reporting.
                 self.assertEqual(sorted(arguments for _, arguments in checks),
                                  [["--release", tag, *(["--receipt", str((root / "receipts").resolve() / f"{tag}.json")] if receipts else [])]
-                                  for tag in checked])
+                                  for tag in sorted(checked)])
                 # Each release runs in its own checkout, so their sidecar test venvs never collide.
                 self.assertEqual(len({checkout for checkout, _ in checks}), len(checked))
                 self.assertFalse(checks[0][0].parent.exists())
