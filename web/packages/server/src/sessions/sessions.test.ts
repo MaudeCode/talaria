@@ -9,6 +9,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import type { SidecarResult } from '@maudecode/talaria-web-contracts'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { FakeSidecar } from '../sidecar/fake.js'
+import { SidecarError } from '../sidecar/client.js'
 import { str } from '../util.js'
 import { diffHunks } from '../text/diff.js'
 import { withPendingUserTurn, withoutRunningTurnOutput } from './merge.js'
@@ -1331,7 +1332,8 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'crashing' }))
     await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
     expect((await served(sid)).filter((c) => c === 'crashed work')).toEqual([])
-    expect(sent(sid).filter((c) => c === 'crashed work')).toEqual([])
+    // TAL-921: the next prompt remembers the work, once.
+    expect(sent(sid).filter((c) => c === 'crashed work')).toEqual(['crashed work'])
   })
 
   it('the first settlement of a session without a marker keeps a CLI row committed during the turn', async () => {
@@ -1477,6 +1479,148 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'cancel')
     expect((await served(sid)).filter((c) => c === 'stopped' || c === 'partial')).toEqual(['stopped', 'partial'])
     expect(s.deps.sessionStore.get(sid).state_db_seen_id).toBe(maxId(sid))
+  })
+
+  /** TAL-921: commits Agent rows that carry tool calls, tool results, or a steer's display kind to state.db for `sid`. */
+  function commitAgentRows(sid: string, list: Json[]): void {
+    commit(sid, [])
+    const db = new DatabaseSync(join(s.state, 'state.db'))
+    try {
+      const cols = new Set((db.prepare('PRAGMA table_info(messages)').all() as { name: string }[]).map((c) => c.name))
+      for (const col of ['tool_calls', 'tool_call_id', 'display_kind']) if (!cols.has(col)) db.exec(`ALTER TABLE messages ADD COLUMN ${col} TEXT`)
+      for (const m of list) db.prepare('INSERT INTO messages (session_id, role, content, timestamp, tool_calls, tool_call_id, display_kind) VALUES (?, ?, ?, ?, ?, ?, ?)').run(sid, str(m.role), str(m.content), Number(m.timestamp), m.tool_calls ? JSON.stringify(m.tool_calls) : null, str(m.tool_call_id) || null, str(m.display_kind) || null)
+    } finally { db.close() }
+  }
+  const call = { id: 'call_921', type: 'function', function: { name: 'terminal', arguments: '{}' } }
+  /** A turn's prompt and one tool round, as the Agent commits them. */
+  const toolRound = (prompt: string): Json[] => [{ role: 'user', content: prompt, timestamp: 200 }, { role: 'assistant', content: '', tool_calls: [call], timestamp: 201 }, { role: 'tool', content: 'tool output', tool_call_id: 'call_921', timestamp: 202 }]
+  const toolRoundSent = (prompt: string): Json[] => [{ role: 'user', content: prompt }, { role: 'assistant', content: '', tool_calls: ['call_921'] }, { role: 'tool', content: 'tool output', tool_call_id: 'call_921' }]
+  /** The history the next Web turn sends the Agent: each row's role, content, and tool call ids. */
+  async function nextHistory(sid: string): Promise<Json[]> {
+    let history: Json[] = []
+    sidecar.respond('chat.start', (params) => {
+      history = params.conversation_history
+      return completedTurn([...history, { role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'continued' }])
+    })
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'Continue' }))
+    await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    return history.map((m) => ({ role: m.role, content: m.content, ...(Array.isArray(m.tool_calls) ? { tool_calls: (m.tool_calls as Json[]).map((tc) => tc.id) } : {}), ...(m.tool_call_id ? { tool_call_id: m.tool_call_id } : {}) }))
+  }
+  const FIRST_SENT: Json[] = [{ role: 'user', content: 'u1' }, { role: 'assistant', content: 'a1' }, { role: 'user', content: 'first' }, { role: 'assistant', content: 'first answered' }]
+
+  it('a turn the sidecar dies under leaves its committed tool work in the next turn\'s history, closed by an assistant row (TAL-921)', async () => {
+    const sid = await seeded([['user', 'u1', 100], ['assistant', 'a1', 101]])
+    await turn(sid, 'first')
+    sidecar.respond('chat.start', () => { commitAgentRows(sid, toolRound('inspect')); throw new SidecarError('sidecar exited', { condition: 'sidecar_unavailable' }) })
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'inspect' }))
+    await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    // The transcript still shows the recovered prompt and the error, never the covered rows.
+    const shown = await served(sid)
+    expect(shown.slice(-2)).toEqual(['inspect', expect.stringContaining('sidecar exited')])
+    expect(shown).not.toContain('tool output')
+    expect(await nextHistory(sid)).toEqual([...FIRST_SENT, ...toolRoundSent('inspect'), { role: 'assistant', content: 'Operation interrupted.' }])
+    expect((await served(sid)).filter((c) => c === 'tool output')).toEqual([])
+  })
+
+  it('a turn the sidecar dies under on a fresh session leaves its work in the next turn\'s history (TAL-921)', async () => {
+    const sid = String((await newSession(s)).session_id)
+    sidecar.respond('chat.start', () => { commitAgentRows(sid, toolRound('inspect')); throw new SidecarError('sidecar exited', { condition: 'sidecar_unavailable' }) })
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'inspect' }))
+    await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    expect(await nextHistory(sid)).toEqual([...toolRoundSent('inspect'), { role: 'assistant', content: 'Operation interrupted.' }])
+    expect(await served(sid)).not.toContain('tool output')
+  })
+
+  it('an Agent-reported failure leaves the rows its result carries in the next turn\'s history (TAL-921)', async () => {
+    const sid = await seeded([['user', 'u1', 100], ['assistant', 'a1', 101]])
+    await turn(sid, 'first')
+    sidecar.respond('chat.start', (params) => {
+      commitAgentRows(sid, toolRound('inspect'))
+      const rows = toolRound(str(params.user_message)).map((m) => ({ ...m, timestamp: undefined }))
+      return { ...completedTurn([...params.conversation_history, ...rows]), failed: true, error: 'provider down' }
+    })
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'inspect' }))
+    await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    expect(await served(sid)).not.toContain('tool output')
+    expect(await nextHistory(sid)).toEqual([...FIRST_SENT, ...toolRoundSent('inspect'), { role: 'assistant', content: 'Operation interrupted.' }])
+    expect(await served(sid)).not.toContain('tool output')
+  })
+
+  it('a Stop without the Agent\'s checkpoint leaves its committed tool work in the next turn\'s history (TAL-921)', async () => {
+    const sid = await seeded([['user', 'u1', 100], ['assistant', 'a1', 101]])
+    await turn(sid, 'first')
+    sidecar.respond('chat.interrupt', () => ({ ok: true }))
+    sidecar.respond('chat.start', (params, emit, opts) => new Promise((resolve) => {
+      commitAgentRows(sid, toolRound('halt'))
+      emit({ event: 'token', data: { text: 'looking' } })
+      opts.signal?.addEventListener('abort', () => { resolve({ ...completedTurn([{ role: 'user', content: str(params.user_message) }]), status: 'cancelled' }) })
+    }))
+    const streamId = String((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'halt' }))).stream_id)
+    await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'token')
+    await s.get(`/api/chat/cancel?stream_id=${streamId}`)
+    await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'cancel')
+    expect(await served(sid)).not.toContain('tool output')
+    expect(await nextHistory(sid)).toEqual([...FIRST_SENT, ...toolRoundSent('halt'), { role: 'assistant', content: 'looking' }])
+    expect(await served(sid)).not.toContain('tool output')
+  })
+
+  it('a CLI row committed while a failed turn settles stays in the transcript and reaches the next turn (TAL-921)', async () => {
+    const sid = await seeded([['user', 'u1', 100], ['assistant', 'a1', 101]])
+    await turn(sid, 'first')
+    const service = s.deps.sessions
+    const read = service.stateDbRead.bind(service)
+    // The CLI commits right after the settlement's first state.db read.
+    let armed = false
+    const spy = vi.spyOn(service, 'stateDbRead').mockImplementation((session) => {
+      const rows = read(session)
+      if (armed) { armed = false; commit(sid, [['user', 'CLI meanwhile', 300]]) }
+      return rows
+    })
+    try {
+      sidecar.respond('chat.start', () => { commitAgentRows(sid, toolRound('inspect')); armed = true; throw new SidecarError('sidecar exited', { condition: 'sidecar_unavailable' }) })
+      const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'inspect' }))
+      await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    } finally { spy.mockRestore() }
+    expect((await served(sid)).filter((c) => c === 'CLI meanwhile')).toEqual(['CLI meanwhile'])
+    expect((await nextHistory(sid)).filter((m) => m.content === 'CLI meanwhile')).toHaveLength(1)
+  })
+
+  it('a compression-exhausted failure leaves the next turn\'s history as it was (TAL-921)', async () => {
+    const sid = await seeded([['user', 'u1', 100], ['assistant', 'a1', 101]])
+    await turn(sid, 'first')
+    sidecar.respond('chat.start', () => { commitAgentRows(sid, toolRound('overflow')); throw new SidecarError('compression_exhausted: context length exceeded and cannot compress further', { condition: 'sidecar_error' }) })
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'overflow' }))
+    await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    // The recovered prompt stays display-only: the next request never replays it.
+    expect(sent(sid)).toEqual(['u1', 'a1', 'first', 'first answered', 'overflow'])
+  })
+
+  it('a steer the Agent applied before the sidecar died reaches the next turn once, as the Agent\'s row (TAL-921)', async () => {
+    const sid = await seeded([['user', 'u1', 100], ['assistant', 'a1', 101]])
+    await turn(sid, 'first')
+    sidecar.respond('chat.steer', () => ({ accepted: true, fallback: null }))
+    let die: () => void = () => undefined
+    let emitLive: ((frame: { event: string; data: Json }) => void) | null = null
+    sidecar.respond('chat.start', (_params, emit) => new Promise((_resolve, reject) => {
+      emitLive = emit
+      die = () => {
+        commitAgentRows(sid, [...toolRound('inspect'), { role: 'user', content: 'then stop', display_kind: 'steer', timestamp: 203 }])
+        reject(new SidecarError('sidecar exited', { condition: 'sidecar_unavailable' }))
+      }
+      emit({ event: 'tool', data: { event_type: 'tool.started', name: 'terminal', args: {}, tid: 'call_921' } })
+      emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'terminal', tid: 'call_921', preview: 'tool output' } })
+    }))
+    const streamId = String((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'inspect' }))).stream_id)
+    await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'tool_complete')
+    await post(s, '/api/chat/steer', { session_id: sid, text: 'then stop', steer_id: 'steer-921' })
+    emitLive!({ event: 'steer_pending', data: { text: '' } })
+    await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'steer_consumed')
+    die()
+    await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'stream_end')
+    const messages = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).messages as Json[]
+    expect(messages.filter((m) => m._steer)).toHaveLength(1)
+    expect(await nextHistory(sid)).toEqual([...FIRST_SENT, ...toolRoundSent('inspect'), { role: 'user', content: 'then stop' }, { role: 'assistant', content: 'Operation interrupted.' }])
+    expect(await served(sid)).not.toContain('tool output')
   })
 
   it('a concurrent row that shares only its first 500 characters with a held message stays in the transcript', async () => {
