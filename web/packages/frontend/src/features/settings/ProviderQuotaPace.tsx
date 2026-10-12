@@ -1,6 +1,7 @@
 import type { z } from 'zod'
 import { m } from '../../paraglide/messages.js'
 import { useLocale } from '../../i18n/useLocale'
+import { formatDurationUnits } from '../../i18n/units'
 import type { ProviderQuotaSourceSchema } from '../../contracts'
 import { QuotaUrgency } from './QuotaThresholds'
 
@@ -8,12 +9,11 @@ type QuotaSource = z.infer<typeof ProviderQuotaSourceSchema>
 
 /** Minutes as `1d 6h` / `18h` / `45m`; formatting only, the minutes are the server's. */
 function formatMinutes(locale: string, minutes: number): string {
-  const unit = (n: number, u: 'day' | 'hour' | 'minute') => new Intl.NumberFormat(locale, { style: 'unit', unit: u, unitDisplay: 'narrow' }).format(n)
   const total = Math.round(Math.abs(minutes))
   const days = Math.floor(total / 1440)
   const hours = Math.floor((total % 1440) / 60)
-  if (days > 0) return `${unit(days, 'day')} ${unit(hours, 'hour')}`
-  return hours > 0 ? unit(hours, 'hour') : unit(total, 'minute')
+  if (days > 0) return formatDurationUnits(locale, [days, 'day'], [hours, 'hour'])
+  return hours > 0 ? formatDurationUnits(locale, [hours, 'hour']) : formatDurationUnits(locale, [total, 'minute'])
 }
 
 /** The server-selected pace window (`pace_window_index`) of a quota source and the source's urgency; every value is a TAL-409/TAL-411 contract field. */

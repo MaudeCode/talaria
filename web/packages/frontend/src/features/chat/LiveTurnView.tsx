@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent, type R
 import { Link } from '@tanstack/react-router'
 import { m } from '../../paraglide/messages.js'
 import { useLocale } from '../../i18n/useLocale'
+import { formatDurationUnits } from '../../i18n/units'
 import { ArrowUp, Pencil, X } from 'lucide-react'
 import type { LiveTurn, PendingSteerRow } from '../../stream/reducer'
 import { sendSteerNow, withdrawSteer } from '../../api/endpoints'
@@ -101,10 +102,14 @@ function RunElapsed({ since }: { since: number }) {
     const id = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(id)
   }, [])
-  const unit = (n: number, u: 'hour' | 'minute' | 'second') => new Intl.NumberFormat(locale, { style: 'unit', unit: u, unitDisplay: 'narrow' }).format(n)
   const seconds = Math.max(0, Math.floor((now - since) / 1000))
   const minutes = Math.floor(seconds / 60)
-  const text = seconds < 60 ? unit(seconds, 'second') : minutes < 60 ? unit(minutes, 'minute') : `${unit(Math.floor(minutes / 60), 'hour')} ${unit(minutes % 60, 'minute')}`
+  const text =
+    seconds < 60
+      ? formatDurationUnits(locale, [seconds, 'second'])
+      : minutes < 60
+        ? formatDurationUnits(locale, [minutes, 'minute'])
+        : formatDurationUnits(locale, [Math.floor(minutes / 60), 'hour'], [minutes % 60, 'minute'])
   return <span className="live-run-elapsed" aria-hidden="true">{text}</span>
 }
 

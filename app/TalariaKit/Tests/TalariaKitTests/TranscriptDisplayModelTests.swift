@@ -523,7 +523,6 @@ final class ChatTranscriptDisplaySettingsTests: XCTestCase {
 }
 
 final class ChatActiveRunStatusPolicyTests: XCTestCase {
-    // TAL-922: the chip docks above the composer at any scroll position, like Talaria Web.
     func testStatusShowsActiveRun() {
         let presentation = ChatActiveRunStatusPolicy.presentation(
             isStartingChat: false,
@@ -593,7 +592,6 @@ final class ChatActiveRunStatusPolicyTests: XCTestCase {
         ))
     }
 
-    // TAL-436
     func testSyncingShowsItsChip() {
         let presentation = ChatActiveRunStatusPolicy.presentation(
             isStartingChat: false,
