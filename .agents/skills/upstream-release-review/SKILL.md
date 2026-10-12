@@ -164,7 +164,8 @@ On top of its rules:
     the `decision` gate instead of `sf`. Swap it to `sf` once each such finding
     is filed and related, or declined.
   - When a support ticket for `<tag>` is already open, apply these relations
-    and `sf` to it instead of filing another.
+    and this readiness rule (`sf` or `decision`) to it instead of filing
+    another.
 
 File nothing for a **hold**. List it in the report with its evidence and the
 ticket you would file. The owner approves held findings by replying in the
