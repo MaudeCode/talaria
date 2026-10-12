@@ -6,6 +6,7 @@ import io
 import json
 import sys
 import tempfile
+import threading
 from pathlib import Path
 import subprocess
 import unittest
@@ -371,13 +372,18 @@ class AgentRunnerTests(unittest.TestCase):
         spec.loader.exec_module(agent)
         pin = {"x-talaria": {"version": "1.0.0"}, "services": {"hermes-agent": {"image": "synthetic"}}}
         tags = ["v2026.9.14", "v2026.9.21", "v2026.9.24"]
-        for failing, receipts in ((None, False), (None, True), ("v2026.9.21", True)):
-            with self.subTest(failing=failing, receipts=receipts), tempfile.TemporaryDirectory() as temporary:
+        # A release fails its check, or its checkout cannot be cloned; either way the others still report.
+        for failing, receipts, unclonable in ((None, False, None), (None, True, None), ("v2026.9.21", True, None),
+                                              (None, True, "v2026.9.21"), ("v2026.9.14", True, "v2026.9.24")):
+            with self.subTest(failing=failing, receipts=receipts, unclonable=unclonable), tempfile.TemporaryDirectory() as temporary:
+                checked = [tag for tag in tags if tag != unclonable]
                 root = Path(temporary)
                 plan = root / "plan.json"
                 plan.write_text(json.dumps({"components": {"web": {"sourceRevision": "a" * 40}},
                                             "agent": {"version": "1.0.0", "image": "synthetic"}}))
                 checks = []
+                # Every release must be running before any finishes; a sequential loop breaks the barrier.
+                running = threading.Barrier(len(checked), timeout=10)
 
                 def check_output(command, **kwargs):
                     if command[:2] == ["git", "-C"]:
@@ -388,27 +394,31 @@ class AgentRunnerTests(unittest.TestCase):
                     return json.dumps(tags).encode()
 
                 def run(command, **kwargs):
+                    if command[:2] == ["git", "clone"] and Path(command[-1]).name == unclonable:
+                        raise subprocess.CalledProcessError(128, command)
                     if command[0] == "python3":
                         checkout = kwargs["cwd"]
                         self.assertTrue(checkout.is_relative_to(root / ".codex-tmp"))
                         self.assertEqual(command[1], str(checkout / "scripts/check-agent-compatibility.py"))
                         checks.append((checkout, command[2:]))
-                        if failing in command:
-                            raise subprocess.CalledProcessError(1, command)
+                        running.wait()
+                        return subprocess.CompletedProcess(command, int(failing in command), stdout="")
 
                 argv = ["check", "--plan", str(plan), *(["--receipts", str(root / "receipts")] if receipts else [])]
                 with patch.object(agent, "ROOT", root), patch.object(sys, "argv", argv), \
                         patch.object(agent.subprocess, "check_output", side_effect=check_output), \
                         patch.object(agent.subprocess, "run", side_effect=run):
-                    if failing:
-                        with self.assertRaisesRegex(RuntimeError, failing):
+                    if failing or unclonable:
+                        with self.assertRaisesRegex(RuntimeError, ": " + ", ".join(sorted(filter(None, (failing, unclonable)))) + "$"):
                             agent.main()
                     else:
                         agent.main()
-                # A failing release does not stop the others from reporting.
-                self.assertEqual([arguments for _, arguments in checks],
+                # Releases run concurrently, so a failing release does not stop the others from reporting.
+                self.assertEqual(sorted(arguments for _, arguments in checks),
                                  [["--release", tag, *(["--receipt", str((root / "receipts").resolve() / f"{tag}.json")] if receipts else [])]
-                                  for tag in tags])
+                                  for tag in sorted(checked)])
+                # Each release runs in its own checkout, so their sidecar test venvs never collide.
+                self.assertEqual(len({checkout for checkout, _ in checks}), len(checked))
                 self.assertFalse(checks[0][0].parent.exists())
 
     def test_selected_web_pin_must_match_the_planned_agent(self):
