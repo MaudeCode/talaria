@@ -400,6 +400,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         sessionToolsets.withLock { $0 = nil }
         transcriptReads = 0
         archivedSessionIDs = []
+        backgroundDismissed.withLock { $0 = false }
         didFailSessionCreation = false
         chatState.reset()
     }

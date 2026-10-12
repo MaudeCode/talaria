@@ -276,22 +276,21 @@ def debug_only(base, target, path):
 
 
 def test_support_only(base, target, path):
-    def tests(paths):
-        # Test bundles' files, and the DEBUG-only UI-test fixture the App target compiles.
-        return {Path(path).name for path in paths.splitlines() if TEST_DIRECTORY.match(path.removeprefix("app/"))
-                or path.removeprefix("app/").startswith("Talaria/Config/UITestFixture")}
-    names = tests(git("ls-tree", "-r", "--name-only", "--full-tree", base))
-    names |= tests(git("ls-tree", "-r", "--name-only", "--full-tree", target) if target
-                   else git("ls-files", "--full-name", "--cached", "--others", "--exclude-standard", ":(top)"))
-    targets = {match[1] for ref in (base, target) if ref for path in git("ls-tree", "-d", "--name-only", "--full-tree", ref,
-                                                                       "app/").splitlines()
-               if (match := TEST_DIRECTORY.match(path.removeprefix("app/") + "/"))}
-    names |= {name + suffix for name in targets | {"TalariaTests"} for suffix in ("", ".xctest")}
+    files = {path.removeprefix("app/") for path in git("ls-tree", "-r", "--name-only", "--full-tree", base).splitlines()}
+    files |= {path.removeprefix("app/") for path in (
+        git("ls-tree", "-r", "--name-only", "--full-tree", target) if target
+        else git("ls-files", "--full-name", "--cached", "--others", "--exclude-standard", ":(top)")).splitlines()}
+    # Test bundles' files, and the DEBUG-only UI-test fixture the App target compiles.
+    tests = {file for file in files if TEST_DIRECTORY.match(file) or file.startswith("Talaria/Config/UITestFixture")}
     prefix = "app/" if git("ls-tree", "--full-tree", "--name-only", base, "app/" + PROJECT) else ""
     if path == PROJECT:
         # A Swift file that is DEBUG-only from end to end never ships, so neither does its project membership.
-        names |= {Path(other).name for other in changes(base, target) if other.endswith(".swift")
+        tests |= {other for other in changes(base, target) if other.endswith(".swift")
                   and all(debug_whole(text) for ref in (base, target) if (text := source_at(ref, prefix + other)))}
+        # The project names files by basename, so a name a shipping file also has counts as the App's.
+        names = {Path(file).name for file in tests} - {Path(file).name for file in files - tests}
+        targets = {match[1] for file in files if (match := TEST_DIRECTORY.match(file))}
+        names |= {name + suffix for name in targets | {"TalariaTests"} for suffix in ("", ".xctest")}
         return project_test_only(base, target, prefix + path, names)
     if path.startswith(SCHEMES):
         return scheme_test_only(base, target, prefix + path)

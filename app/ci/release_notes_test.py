@@ -456,6 +456,22 @@ class ReleaseNotesTests(unittest.TestCase):
         self.commit("TAL-3: change how the App launches")
         self.cli("validate", "--base", base, error="require user-facing entries")
 
+    def test_a_project_edit_to_an_app_file_named_like_a_test_needs_entries(self):
+        project = "Talaria.xcodeproj/project.pbxproj"
+        def write(app_member):
+            line = "\t\tAAAAAAAAAAAAAAAAAAAAAAA1 /* Shared.swift in Sources */ = {isa = PBXBuildFile; };\n" if app_member else ""
+            self.write(project, "{\n\tobjects = {\n" + line + "\t};\n}\n")
+        write(True)
+        self.write("Talaria/Shared.swift", "// app\n")
+        self.write("TalariaTests/Shared.swift", "// test\n")
+        self.add_fragment(2)
+        self.commit("TAL-2: shared names")
+        base = self.git("rev-parse", "HEAD")
+        write(False)
+        self.write("changelog.d/TAL-3.json", '{"skip":"Tests only"}')
+        self.commit("TAL-3: drop the App's Shared.swift from its sources")
+        self.cli("validate", "--base", base, error="require user-facing entries")
+
     def test_changes_inside_debug_blocks_can_skip(self):
         self.write("Talaria/Feature.swift", "func load() {\n    #if DEBUG\n    fixture()\n    #else\n    live()\n    #endif\n}\n")
         self.write("Talaria/Config/Host.swift", "#if DEBUG\nstruct Host {}\n#endif\n")
