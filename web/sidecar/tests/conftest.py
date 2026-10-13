@@ -1,8 +1,8 @@
 """Sidecar test harness: spawn ``python -m talaria_sidecar`` on the Agent venv.
 
-Every test owns a disposable HERMES_HOME. The Agent checkout and interpreter
-come from ``HERMES_WEBUI_AGENT_DIR`` / ``HERMES_WEBUI_PYTHON`` (``scripts/test.sh``
-provisions the pinned release); the interpreter defaults to the checkout's venv.
+Every test owns a disposable HERMES_HOME. The Agent checkout is
+``HERMES_WEBUI_AGENT_DIR`` (``scripts/test.sh`` supplies the cached pinned release
+when unset); the interpreter is ``HERMES_WEBUI_PYTHON``, else the checkout's venv.
 Tests never touch ``~/.hermes``, nor test against its Agent.
 """
 
@@ -24,7 +24,7 @@ SIDECAR_ROOT = pathlib.Path(__file__).resolve().parent.parent
 FIXTURES = pathlib.Path(__file__).resolve().parent / "fixtures"
 
 
-def discover_agent_dir() -> pathlib.Path | None:
+def configured_agent_dir() -> pathlib.Path | None:
     raw = os.environ.get("HERMES_WEBUI_AGENT_DIR", "")
     if raw and (pathlib.Path(raw).expanduser() / "run_agent.py").exists():
         return pathlib.Path(raw).expanduser().resolve()
@@ -42,7 +42,7 @@ def discover_python(agent_dir: pathlib.Path | None) -> str | None:
     return None
 
 
-AGENT_DIR = discover_agent_dir()
+AGENT_DIR = configured_agent_dir()
 AGENT_PYTHON = discover_python(AGENT_DIR)
 requires_agent = pytest.mark.skipif(AGENT_DIR is None or AGENT_PYTHON is None, reason="pinned Hermes Agent checkout with venv not found")
 

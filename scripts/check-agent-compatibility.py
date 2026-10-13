@@ -10,10 +10,9 @@ record offline and prints its tags.
 Provisions the Agent checkout and its venv on the newest Python its lockfile allows (``--python`` overrides).
 Supported releases, the active pin among them, are cached under ``$XDG_CACHE_HOME/talaria/agents/<tag>`` and
 reused; each run deletes cached releases that left the support record. Candidates and canaries use a
-temporary directory removed at exit. ``--provision PATH`` stops after the Agent probe and writes the
-``HERMES_WEBUI_AGENT_DIR`` and ``HERMES_WEBUI_PYTHON`` assignments to PATH (``web/sidecar/scripts/test.sh``
-sources them). Otherwise it runs the sidecar pytest suite on that interpreter, runs an optional extra
-command with ``HERMES_WEBUI_AGENT_DIR``/``HERMES_WEBUI_PYTHON`` set (``--command``), and verifies the
+temporary directory removed at exit. It runs the Agent probe, the sidecar pytest suite on that interpreter,
+an optional extra command with ``HERMES_WEBUI_AGENT_DIR``/``HERMES_WEBUI_PYTHON`` set (``--command``, whose
+exit status the run returns; ``web/sidecar/scripts/test.sh`` re-runs itself this way), and verifies the
 release image (unless ``--skip-docker``). ``--receipt PATH`` records the result, pass or fail, with the
 pytest JUnit report beside it.
 """
@@ -24,7 +23,6 @@ import fcntl
 import json
 import os
 import re
-import shlex
 import shutil
 import subprocess
 import sys
@@ -46,6 +44,9 @@ FORMATS = {
     "sourceRevision": r"[a-f0-9]{40}",
     "image": r"docker\.io/nousresearch/hermes-agent@sha256:[a-f0-9]{64}",
 }
+# The mcp extra (shipped in the image via [all]) lets the sidecar suite drive a real stub MCP server.
+SYNC = ["uv", "sync", "--frozen", "--no-dev", "--extra", "mcp"]
+CACHE_SUFFIXES = (".lock", ".ready", ".python", ".tmp")
 # ponytail: newest of these that the lockfile allows; extend the range when an Agent requires a newer Python.
 PYTHON_MINORS = range(11, 15)
 
@@ -200,19 +201,20 @@ def cache_root():
 
 
 def prune(root, keep):
-    """Delete cached releases outside the support record, skipping any another run holds."""
-    for lock_path in root.glob("*.lock"):
-        tag = lock_path.name.removesuffix(".lock")
-        if tag in keep:
-            continue
-        with open(lock_path, "a") as lock:
+    """Delete cached releases outside the support record, skipping any a run holds. Lock files stay, so every run
+    locks the same file for a tag."""
+    tags = {next((path.name.removesuffix(suffix) for suffix in CACHE_SUFFIXES if path.name.endswith(suffix)), path.name)
+            for path in root.iterdir()}
+    for tag in tags - keep:
+        with open(root / f"{tag}.lock", "a") as lock:
             try:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
                 continue
-            shutil.rmtree(root / tag, ignore_errors=True)
-            (root / f"{tag}.ready").unlink(missing_ok=True)
-            lock_path.unlink()
+            for path in (root / tag, root / f"{tag}.python"):
+                shutil.rmtree(path, ignore_errors=True)
+            for path in (root / f"{tag}.ready", root / f"{tag}.tmp"):
+                path.unlink(missing_ok=True)
 
 
 def provision(args, kind, identity, env, agent):
@@ -230,8 +232,7 @@ def provision(args, kind, identity, env, agent):
     if actual != sha:
         raise RuntimeError(f"Agent {ref} resolves to {actual}, not the recorded {sha}; the tag moved")
     python = args.python or lockfile_python(agent)
-    # The mcp extra (shipped in the image via [all]) lets the sidecar suite drive a real stub MCP server.
-    subprocess.run(["uv", "sync", "--frozen", "--no-dev", "--extra", "mcp", "--python", python], cwd=agent, env=env, check=True)
+    subprocess.run([*SYNC, "--python", python], cwd=agent, env=env, check=True)
     return python
 
 
@@ -240,6 +241,7 @@ def agent_checkout(args, kind, identity, env):
     """Yield a provisioned Agent checkout: a cached supported release, or a temporary candidate or canary."""
     if kind in ("candidate", "canary"):
         with tempfile.TemporaryDirectory(prefix="talaria-agent-") as directory:
+            env["UV_PYTHON_INSTALL_DIR"] = str(Path(directory) / "python")
             agent = Path(directory) / "agent"
             provision(args, kind, identity, env, agent)
             yield agent
@@ -247,20 +249,35 @@ def agent_checkout(args, kind, identity, env):
     root = cache_root()
     root.mkdir(parents=True, exist_ok=True)
     prune(root, {release["releaseTag"] for release in supported_releases(ROOT)})
-    tag, agent = identity["releaseTag"], root / identity["releaseTag"]
-    ready = root / f"{tag}.ready"
-    with open(root / f"{tag}.lock", "a") as lock:
-        # Exclusive while provisioning, shared while in use, so neither a reprovision nor a prune removes it under a run.
-        fcntl.flock(lock, fcntl.LOCK_EX)
-        marker = json.loads(ready.read_text()) if ready.is_file() else {}
+    tag = identity["releaseTag"]
+    agent, ready = root / tag, root / f"{tag}.ready"
+    # A uv-downloaded interpreter must outlive this run's HOME; it sits beside its release and is pruned with it.
+    env["UV_PYTHON_INSTALL_DIR"] = str(root / f"{tag}.python")
+
+    def current():
+        try:
+            expected = {"sourceRevision": identity["sourceRevision"], "python": args.python or lockfile_python(agent), "sync": SYNC}
+            if json.loads(ready.read_text()) != expected:
+                return False
+        except (OSError, ValueError):
+            return False
         venv = agent / ".venv/bin/python"
-        if marker.get("sourceRevision") != identity["sourceRevision"] or (args.python and marker.get("python") != args.python) \
-                or not venv.is_file() or subprocess.run([str(venv), "-c", ""], env=env, capture_output=True).returncode:
-            ready.unlink(missing_ok=True)
-            shutil.rmtree(agent, ignore_errors=True)
-            python = provision(args, kind, identity, env, agent)
-            ready.write_text(json.dumps({"sourceRevision": identity["sourceRevision"], "python": python}))
+        return venv.is_file() and subprocess.run([str(venv), "-c", ""], env=env, capture_output=True).returncode == 0
+
+    with open(root / f"{tag}.lock", "a") as lock:
+        # Shared while in use and exclusive only to provision, so runs share a release and neither a reprovision nor
+        # a prune removes it under one. Converting a flock is not atomic, so each conversion re-checks the entry.
         fcntl.flock(lock, fcntl.LOCK_SH)
+        while not current():
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            if not current():
+                ready.unlink(missing_ok=True)
+                shutil.rmtree(agent, ignore_errors=True)
+                python = provision(args, kind, identity, env, agent)
+                temporary = root / f"{tag}.tmp"
+                temporary.write_text(json.dumps({"sourceRevision": identity["sourceRevision"], "python": python, "sync": SYNC}))
+                temporary.replace(ready)
+            fcntl.flock(lock, fcntl.LOCK_SH)
         yield agent
 
 
@@ -272,9 +289,7 @@ def check(args, kind, identity, receipt, junit):
         env = {"PATH": os.environ["PATH"], "HOME": str(state / "home"), "TMPDIR": str(state / "tmp"),
                "UV_CACHE_DIR": str(state / "uv-cache"), "HERMES_HOME": str(state / "home/hermes"),
                "HERMES_WEBUI_STATE_DIR": str(state / "home/webui"), "PIP_CONFIG_FILE": os.devnull,
-               "GIT_CONFIG_NOSYSTEM": "1", "GIT_TERMINAL_PROMPT": "0",
-               # A uv-downloaded interpreter must outlive this run's HOME, or the cached venv loses its Python.
-               "UV_PYTHON_INSTALL_DIR": str(cache_root() / "python")}
+               "GIT_CONFIG_NOSYSTEM": "1", "GIT_TERMINAL_PROMPT": "0"}
         for key in ("LD_LIBRARY_PATH", "PLAYWRIGHT_BROWSERS_PATH"):
             if key in os.environ:
                 env[key] = os.environ[key]
@@ -286,9 +301,6 @@ def check(args, kind, identity, receipt, junit):
             # A canary has no release version to require; the probe still exercises imports and SessionDB.
             subprocess.run([str(agent_python), str(ROOT / "releases/agent_probe.py"), *([identity["version"]] if kind != "canary" else [])],
                            cwd=agent, env={**env, "PYTHONPATH": str(ROOT / "web/sidecar")}, check=True)
-            if args.provision:
-                args.provision.write_text("".join(f"{key}={shlex.quote(env[key])}\n" for key in ("HERMES_WEBUI_AGENT_DIR", "HERMES_WEBUI_PYTHON")))
-                return
             if not args.skip_sidecar_tests:
                 # The sidecar suite spawns `python -m talaria_sidecar` on this venv with disposable homes.
                 try:
@@ -298,7 +310,10 @@ def check(args, kind, identity, receipt, junit):
                     if junit.exists():
                         receipt["tests"] = test_counts(junit)
             if args.command:
-                subprocess.run(args.command, cwd=ROOT, env={**os.environ, **env, "PATH": os.environ["PATH"]}, check=True)
+                # The command runs while this run holds the release, and its exit status is the run's.
+                command = subprocess.run(args.command, cwd=ROOT, env={**os.environ, **env, "PATH": os.environ["PATH"]})
+                if command.returncode:
+                    raise SystemExit(command.returncode)
     if not args.skip_docker and kind != "canary":
         verify_image(identity, identity["sourceRevision"])
         receipt["imageVerified"] = True
@@ -317,8 +332,6 @@ def main():
     parser.add_argument("--command", nargs=argparse.REMAINDER, help="Extra command to run with the provisioned Agent in its environment.")
     parser.add_argument("--skip-docker", action="store_true", help="Skip the release image verification (no Docker daemon).")
     parser.add_argument("--skip-sidecar-tests", action="store_true")
-    parser.add_argument("--provision", type=Path, metavar="PATH",
-                        help="Only provision the Agent and write its shell environment assignments to PATH.")
     args = parser.parse_args()
     if args.list:
         print(json.dumps([release["releaseTag"] for release in supported_releases(ROOT)]))

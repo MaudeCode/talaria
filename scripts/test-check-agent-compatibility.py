@@ -67,6 +67,14 @@ class FakeTools:
             venv = Path(kwargs["cwd"]) / ".venv/bin"
             venv.mkdir(parents=True)
             (venv / "python").touch()
+        if command[0] == "hold-check":  # an extra --command: can another run take the release away meanwhile?
+            with open(command[1]) as lock:
+                try:
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    self.release_free = True
+                except BlockingIOError:
+                    self.release_free = False
+            return subprocess.CompletedProcess(command, int(command[2]))
         if command[0].endswith("test.sh"):
             failures = self.sidecar_failures
             for part in command:
@@ -326,13 +334,15 @@ class CheckerTests(unittest.TestCase):
         self.assertEqual((receipt["result"], receipt["tests"]["passed"]), ("success", 39))
         self.assertEqual((self.provisioned(), self.tools.ran("uv")), ([], []))
         self.tools.urlopen_mock.assert_not_called()
-        test_run = self.tools.ran("test.sh")[0]
+        self.assertEqual(len(self.tools.ran("test.sh")), 1)
         self.assertTrue(any(command[-2:] == [str(self.root / "releases/agent_probe.py"), "0.21.3"] for command in self.tools.commands))
-        self.assertTrue(test_run)
 
     def test_stale_or_broken_cache_entry_is_reprovisioned(self):
         self.receipt("--release", "v2026.9.14", "--skip-docker")
-        for damage in (lambda: (self.cache / "v2026.9.14.ready").write_text(json.dumps({"sourceRevision": "f" * 40})),
+        marker = self.cache / "v2026.9.14.ready"
+        for damage in (lambda: marker.write_text(json.dumps({**json.loads(marker.read_text()), "sourceRevision": "f" * 40})),
+                       lambda: marker.write_text(json.dumps({**json.loads(marker.read_text()), "sync": ["uv", "sync"]})),
+                       lambda: marker.write_text("{"),
                        lambda: (self.cache / "v2026.9.14/.venv/bin/python").unlink()):
             with self.subTest(damage):
                 damage()
@@ -342,9 +352,13 @@ class CheckerTests(unittest.TestCase):
         self.tools.commands.clear()
         self.receipt("--release", "v2026.9.14", "--skip-docker", "--python", "3.12")
         self.assertIn(["uv", "sync", "--frozen", "--no-dev", "--extra", "mcp", "--python", "3.12"], self.tools.commands)
+        self.tools.commands.clear()
+        self.receipt("--release", "v2026.9.14", "--skip-docker")  # back to the newest Python the lockfile allows
+        self.assertIn(["uv", "sync", "--frozen", "--no-dev", "--extra", "mcp", "--python", "3.13"], self.tools.commands)
 
     def test_release_leaving_the_record_is_deleted_unless_another_run_holds_it(self):
         self.receipt("--release", "v2026.9.14", "--skip-docker")
+        (self.cache / "v2026.9.14.python").mkdir()  # an interpreter uv downloaded for it
         self.receipt("--release", "v2026.9.24", "--skip-docker")
         newer = release("v0.21.6", "0.21.6", "d")
         self.write([*RELEASES[1:], newer], active=RELEASES[1])
@@ -355,10 +369,11 @@ class CheckerTests(unittest.TestCase):
             self.write([RELEASES[1], newer, release("v0.21.7", "0.21.7", "8")], active=RELEASES[1])
             self.receipt("--release", "v2026.9.21", "--skip-docker")
             self.assertTrue((self.cache / "v2026.9.24.ready").is_file())  # in use elsewhere
-        self.assertEqual({path.name for path in self.cache.iterdir() if path.name.startswith("v2026.9.14")}, set())
+        self.assertEqual({path.name for path in self.cache.iterdir() if path.name.startswith("v2026.9.14")}, {"v2026.9.14.lock"})
         self.receipt("--release", "v2026.9.21", "--skip-docker")
+        # Lock files stay, so every run locks the same file for a tag.
         self.assertEqual(sorted(path.name for path in self.cache.iterdir()),
-                         ["v2026.9.21", "v2026.9.21.lock", "v2026.9.21.ready"])
+                         ["v2026.9.14.lock", "v2026.9.21", "v2026.9.21.lock", "v2026.9.21.ready", "v2026.9.24.lock"])
 
     def test_candidate_and_canary_checkouts_are_removed(self):
         self.receipt("--identity", json.dumps(CANDIDATE), "--skip-docker")
@@ -370,14 +385,15 @@ class CheckerTests(unittest.TestCase):
             self.assertFalse(Path(checkout).exists())
             self.assertNotEqual(Path(checkout).parent.parent, self.cache)
 
-    def test_provision_writes_the_environment_and_runs_nothing_else(self):
-        target = self.root / "agent.env"
-        receipt = self.receipt("--provision", str(target))
-        agent = self.cache / "v2026.9.21"
-        self.assertEqual(target.read_text().splitlines(),
-                         [f"HERMES_WEBUI_AGENT_DIR={agent}", f"HERMES_WEBUI_PYTHON={agent}/.venv/bin/python"])
-        self.assertEqual((receipt["result"], receipt["imageVerified"]), ("success", False))
-        self.assertEqual((self.tools.ran("test.sh"), self.tools.ran("docker")), ([], []))
+    def test_extra_command_holds_the_release_and_returns_its_status(self):
+        lock, path = self.cache / "v2026.9.21.lock", self.root / "receipts/result.json"
+        # --command takes the rest of the arguments, so the receipt goes first.
+        self.main("--receipt", str(path), "--skip-docker", "--skip-sidecar-tests", "--command", "hold-check", str(lock), "0")
+        self.assertEqual((json.loads(path.read_text())["result"], self.tools.release_free, self.tools.ran("test.sh")),
+                         ("success", False, []))
+        with self.assertRaises(SystemExit) as raised:
+            self.main("--receipt", str(path), "--skip-docker", "--skip-sidecar-tests", "--command", "hold-check", str(lock), "3")
+        self.assertEqual((raised.exception.code, json.loads(path.read_text())["result"]), (3, "failure"))
 
     def test_lockfile_selects_the_newest_allowed_python(self):
         for requires, expected in ((">=3.11, <3.14", "3.13"), (">=3.11,<3.15", "3.14"), (">=3.12,<=3.12", "3.12"),
