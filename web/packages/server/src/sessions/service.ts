@@ -156,7 +156,7 @@ export class SessionService {
   private get store(): SessionStore { return this.deps.store }
 
   /**
-   * TAL-577: user-turn admission shared by `chat.start` and server-side wakeups, after `ensureAgentRuntimeCurrent`.
+   * User-turn admission shared by `chat.start` and automatic turns through `TurnRunner.startServerTurn`.
    * A requested workspace must be trusted; the session's own one, when its directory is gone, falls back to the last one.
    */
   turnWorkspace(s: Session, requested?: unknown): string {

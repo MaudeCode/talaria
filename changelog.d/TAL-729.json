@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Automatic chat follow-ups recover removed workspaces and use the correct model and provider.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

@@ -309,6 +309,19 @@ export class TurnRunner {
 
   // ── admission ────────────────────────────────────────────────────────────
 
+  /** Admit automatic turns through the same workspace recovery and model resolution as user turns. */
+  startServerTurn(session: Session, opts: Pick<StartTurnOptions, 'msg' | 'source' | 'goalRelated'>): ReturnType<TurnRunner['start']> {
+    try {
+      const service = this.deps.service()
+      const workspace = service.turnWorkspace(session)
+      const [model, modelProvider, normalizedModel] = service.turnModel(session)
+      return this.start(session, { ...opts, workspace, model, modelProvider, normalizedModel })
+    } catch (error) {
+      if (error instanceof HttpFailure) return { _status: error.status, error: error.message }
+      throw error
+    }
+  }
+
   /** Python `_start_chat_stream_for_session`: persist pending state, register the channel, launch the worker. */
   start(session: Session, opts: StartTurnOptions): StartTurnResponse & { _status?: number; error?: string; active_stream_id?: string | null } {
     const s = session
@@ -1603,7 +1616,7 @@ export class TurnRunner {
     let s: Session
     try { s = this.deps.store.get(sessionId) } catch { return }
     const msg = texts.join('\n')
-    const started = this.start(s, { msg, attachments: [], workspace: s.workspace, model: s.model, modelProvider: s.model_provider })
+    const started = this.startServerTurn(s, { msg })
     if (!started._status || started._status < 400) return
     if (started._status === 409 && started.active_stream_id) {
       void this.steer(sessionId, msg, msg, `steer-${randomUUID()}`).then((r) => {
@@ -1645,7 +1658,7 @@ export class TurnRunner {
     if (!proceed) return
     let current: Session
     try { current = this.deps.store.get(sessionId) } catch { return }
-    const started = this.start(current, { msg: prompt, attachments: [], workspace: current.workspace, model: current.model, modelProvider: current.model_provider, goalRelated: true })
+    const started = this.startServerTurn(current, { msg: prompt, goalRelated: true })
     if (started._status === 409 && started.active_stream_id) { this.registry.goalRelated.add(started.active_stream_id); return }
     if (started._status !== undefined && started._status >= 400) {
       this.deps.log(`[webui] WARNING: goal continuation for ${sessionId} not started (${String(started._status)}): ${str(started.error)}`)

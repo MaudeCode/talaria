@@ -1,4 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type { SidecarParams, SidecarResult } from '@maudecode/talaria-web-contracts'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
@@ -73,6 +75,76 @@ describe('/goal continuation after a goal turn settles (TAL-396)', () => {
     await idle(sid)
     expect(calls('chat.start').map((p) => str(p.user_message).split('\n').pop())).toEqual([GOAL, 'Continue toward the goal.'])
     expect(calls('goals.evaluate')).toEqual([expect.objectContaining({ session_id: sid, last_response: 'answer 1' }), expect.objectContaining({ session_id: sid, last_response: 'answer 2' })])
+  })
+
+  it.each([true, false])('admits a goal continuation after workspace deletion (TAL-729, fallback available: %s)', async (recoverable) => {
+    const sid = await newSession()
+    const session = s.deps.sessionStore.get(sid)
+    const fallback = session.workspace
+    const worktree = join(fallback, 'goal-worktree')
+    mkdirSync(worktree, { recursive: true })
+    session.workspace = worktree
+    s.deps.sessionStore.save(session)
+    sidecar.respond('chat.start', (params) => answer(params, 'progress'))
+    let evaluations = 0
+    sidecar.respond('goals.evaluate', () => {
+      if (++evaluations > 1) return achieved
+      rmSync(recoverable ? worktree : fallback, { recursive: true })
+      return continueWith('Continue toward the goal.')
+    })
+    try {
+      const frames = goalFrames(await untilEnd(await setGoal(sid)))
+      expect(calls('chat.start')[0]?.workspace).toBe(worktree)
+      if (recoverable) {
+        const next = frames.find(([event]) => event === 'goal_continue')?.[1]
+        expect(next).toBeDefined()
+        await untilEnd(str(next?.stream_id))
+        expect(calls('chat.start')[1]).toMatchObject({ workspace: fallback, user_message: 'Continue toward the goal.' })
+        expect(s.deps.sessionStore.get(sid).workspace).toBe(fallback)
+      } else {
+        expect(frames.at(-1)).toEqual(['goal', expect.objectContaining({ state: 'idle', decision: 'error' })])
+        expect(calls('chat.start')).toHaveLength(1)
+        expect(s.logs.some((line) => line.includes(`goal continuation for ${sid} not started (400)`))).toBe(true)
+      }
+      await idle(sid)
+    } finally {
+      mkdirSync(fallback, { recursive: true })
+    }
+  })
+
+  it.each(['qualified', 'stale'] as const)('resolves a %s model before a goal continuation (TAL-729)', async (kind) => {
+    const sid = await newSession()
+    sidecar.respond('chat.start', (params) => ({ ...answer(params, 'progress'), model: params.model ?? 'test-model', provider: params.model_provider ?? 'test' }))
+    if (kind === 'stale') {
+      const config = { model: { provider: 'openai-codex', default: 'gpt-5.5' } }
+      sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config }))
+      sidecar.respond('providers.auth_status', (p) => ({ status: { logged_in: false, provider: p.provider ?? '' } }))
+      sidecar.respond('plugins.providers', () => ({ providers: [] }))
+      sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: [] }))
+      writeFileSync(join(s.state, 'config.yaml'), '# synthetic model config\n')
+      s.deps.agentConfig.invalidate()
+      s.deps.catalog.invalidate()
+      await s.deps.catalog.warmSessionModelRepair(s.state)
+    }
+    let evaluations = 0
+    sidecar.respond('goals.evaluate', () => {
+      if (++evaluations > 1) return achieved
+      const session = s.deps.sessionStore.get(sid)
+      session.model = kind === 'qualified' ? '@gemini:gemini-3.1-pro-preview' : 'gemini-3.1-pro-preview'
+      session.model_provider = null
+      s.deps.sessionStore.save(session)
+      return continueWith('Continue toward the goal.')
+    })
+    const frames = goalFrames(await untilEnd(await setGoal(sid)))
+    const next = frames.find(([event]) => event === 'goal_continue')?.[1]
+    expect(next).toBeDefined()
+    await untilEnd(str(next?.stream_id))
+    await idle(sid)
+    const expected = kind === 'qualified'
+      ? { model: 'gemini-3.1-pro-preview', model_provider: 'gemini' }
+      : { model: 'gpt-5.5', model_provider: 'openai-codex' }
+    expect(calls('chat.start')[1]).toMatchObject(expected)
+    expect(s.deps.sessionStore.get(sid)).toMatchObject(expected)
   })
 
   it('stops when the turn budget is spent or the goal was paused', async () => {
