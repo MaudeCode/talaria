@@ -25,21 +25,27 @@ def agent_provider(hermes_home) -> str:
     return done.stdout.strip().splitlines()[-1]
 
 
+COMMAND_PROVIDER = "stt:\n  provider: mycmd\n  providers:\n    mycmd:\n      type: command\n      command: echo hi > {output_dir}/out.txt\n"
+
+
 @requires_agent
 @pytest.mark.parametrize(
     ("config", "expected"),
     [
-        ("stt:\n  provider: local_command\n", "local_command"),
-        ("stt:\n  provider: deepinfra\n", "deepinfra"),
+        ("stt:\n  provider: local_command\n", {"available": True, "provider": "local_command"}),
+        ("stt:\n  provider: deepinfra\n", {"available": True, "provider": "deepinfra"}),
+        (COMMAND_PROVIDER, {"available": True, "provider": "mycmd"}),
+        # The Agent passes an unknown name through; stt.transcribe fails it as not registered.
+        ("stt:\n  provider: not-registered\n", {"available": False, "provider": "not-registered"}),
         ("", None),  # auto-detect: whatever the Agent picks
     ],
 )
 def test_capability_matches_agent_provider(hermes_home, config, expected):
     (hermes_home / "config.yaml").write_text(config)
-    expected = expected or agent_provider(hermes_home)
+    expected = expected or {"available": True, "provider": agent_provider(hermes_home)}
     sidecar = SidecarProcess(hermes_home, env=STT_ENV)
     try:
         result = sidecar.result("stt.capability", {"profile_home": str(hermes_home)})
     finally:
         sidecar.close()
-    assert result == {"available": True, "provider": expected}
+    assert result == expected

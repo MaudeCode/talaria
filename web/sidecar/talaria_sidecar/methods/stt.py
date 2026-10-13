@@ -15,14 +15,25 @@ log = logging.getLogger("talaria_sidecar.stt")
 
 
 def capability() -> tuple[bool, str]:
-    """The provider the Agent's own resolver would transcribe with, so the client never disagrees with ``stt.transcribe``."""
-    try:
-        from tools.transcription_tools import _get_provider, _load_stt_config
+    """The provider the Agent's own resolver would transcribe with, so the client never disagrees with ``stt.transcribe``.
 
-        provider = str(_get_provider(_load_stt_config()) or "none")
+    ``_get_provider`` passes an unknown explicit name through, so availability takes the Agent's
+    ``check_voice_requirements`` bar: a built-in, a ``stt.providers.<name>`` command, or an available plugin."""
+    try:
+        from tools.transcription_tools import (
+            BUILTIN_STT_PROVIDERS, _get_provider, _load_stt_config, _resolve_command_stt_provider_config)
+        from tools.voice_mode import _check_plugin_stt_provider
+
+        stt_config = _load_stt_config()
+        provider = str(_get_provider(stt_config) or "none")
+        if provider == "none":
+            return False, "none"
+        available = (provider in BUILTIN_STT_PROVIDERS
+                     or _resolve_command_stt_provider_config(provider, stt_config) is not None
+                     or _check_plugin_stt_provider(provider))
     except Exception:  # noqa: BLE001 - an Agent without STT, or a broken STT config
         return False, "none"
-    return provider != "none", provider
+    return bool(available), provider
 
 
 def transcribe(audio_b64: str, suffix: str) -> str:
