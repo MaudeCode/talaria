@@ -28,6 +28,21 @@ export function compatibleAgent(webRoot: string): ReleaseInfo['compatibleAgent']
   return { ...x, image: services['hermes-agent']?.image } as ReleaseInfo['compatibleAgent']
 }
 
+export interface SupportedAgent { releaseTag: string; version: string; sourceRevision: string }
+
+/** TAL-349's verified Agent window (`sidecar/agent_support.json`); a missing, unreadable or invalid record proves nothing, so it is empty. */
+export function supportedAgents(webRoot: string): SupportedAgent[] {
+  try {
+    const releases = readJson(resolve(webRoot, 'sidecar', 'agent_support.json')).releases
+    if (!Array.isArray(releases)) return []
+    const records = releases.map((r: Record<string, unknown>) => ({ releaseTag: r.releaseTag, version: r.version, sourceRevision: r.sourceRevision }))
+    return records.every((r) => typeof r.releaseTag === 'string' && r.releaseTag !== '' && typeof r.version === 'string' && r.version !== '' && typeof r.sourceRevision === 'string' && SHA_RE.test(r.sourceRevision))
+      ? records as SupportedAgent[] : []
+  } catch {
+    return []
+  }
+}
+
 export function supportedContracts(webRoot: string): ReleaseInfo['contracts'] {
   const c = readJson(resolve(webRoot, 'contract_versions.json')) as Record<string, Record<string, number>>
   return { appWeb: [c.appWeb?.fixtureVersion ?? 0], webRelay: [c.webRelay?.protocolVersion ?? 0] }

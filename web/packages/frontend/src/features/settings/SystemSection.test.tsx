@@ -67,6 +67,38 @@ describe('SystemSection "Check now"', () => {
     await waitFor(() => expect(api.cancelUpdateNotification).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000001'))
   })
 
+  it('applies a supported Agent target without a warning or the confirm dialog', async () => {
+    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ webui: current, agent: { ...behind(1), support: 'supported', current_support: 'supported', unsupported: false } })
+    vi.mocked(api.applyUpdates).mockResolvedValue({ ok: true })
+    renderSystem()
+    await userEvent.click(await screen.findByRole('button', { name: /update agent/i }))
+    await waitFor(() => expect(api.applyUpdates).toHaveBeenCalledWith('apply', undefined, 'agent', { agent_channel: 'stable' }))
+    expect(screen.queryByText(/not officially supported/)).not.toBeInTheDocument()
+    expect(screen.queryByText('Not tested with this Talaria release.')).not.toBeInTheDocument()
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+  })
+
+  it('warns from the server support field for an unchecked target and an unchecked installed Agent', async () => {
+    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ webui: current, agent: { ...behind(1), support: 'unchecked', current_support: 'unchecked' } })
+    vi.mocked(api.applyUpdates).mockResolvedValue({ ok: false, confirmation_required: true, candidate_revision: 'b'.repeat(40), supported_version: '0.21.6', supported_revision: 'a'.repeat(40), agent_channel: 'stable' })
+    renderSystem()
+    const path = within((await screen.findByRole('heading', { name: 'Hermes Agent' })).closest('section')!)
+    expect(path.getByText('This Agent version is not officially supported by Talaria and may cause issues.')).toBeInTheDocument()
+    expect(path.getByText('Not tested with this Talaria release.')).toBeInTheDocument()
+    await userEvent.click(path.getByRole('button', { name: /update agent/i }))
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent('may cause issues')
+  })
+
+  it.each([
+    ['an older server without support', { unsupported: true }, true],
+    ['support over a contradicting unsupported', { support: 'supported' as const, unsupported: true }, false],
+  ])('warns from %s', async (_name, fields, warned) => {
+    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ webui: current, agent: { ...behind(1), ...fields } })
+    renderSystem()
+    expect(await screen.findByRole('button', { name: /update agent/i })).toBeInTheDocument()
+    expect(screen.queryByText(/not officially supported/) !== null).toBe(warned)
+  })
+
   it('cancels an unsupported Agent notification when confirmation closes with Escape', async () => {
     vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ webui: current, agent: behind(1) })
     vi.mocked(api.applyUpdates).mockResolvedValue({ ok: false, confirmation_required: true, candidate_revision: 'b'.repeat(40), supported_version: '0.21.3', supported_revision: 'a'.repeat(40), agent_channel: 'stable', notification_id: '00000000-0000-4000-8000-000000000001' })

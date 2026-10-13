@@ -19,7 +19,7 @@ import { tmpdir } from 'node:os'
 import { delimiter, dirname, isAbsolute, join, resolve } from 'node:path'
 import type { Dict } from '../config/agent-config.js'
 import { dict } from '../config/agent-config.js'
-import { validateReleaseInfo } from '../release.js'
+import { supportedAgents, validateReleaseInfo } from '../release.js'
 import { str } from '../util.js'
 import { atomicWriteText } from '../fs/atomic.js'
 import { isWithin, resolvePathLikePython } from '../workspace/paths.js'
@@ -679,20 +679,28 @@ async function agentTarget(path: string, git: GitRun, channel: Channel): Promise
 }
 
 export interface AgentUpdatePolicy {
+  /** `sourceRevision`s of the verified Agent window (`sidecar/agent_support.json`). */
+  supportedRevisions: readonly string[]
+  /** The deployment pin, named in the confirmation identity. */
   supportedRevision: string
   supportedVersion: string
   confirmedRevision?: string
   beforeMutation?: (path: string, revision: string) => Promise<void>
 }
 export interface AgentUpdateOptions { agentChannel?: Channel | undefined; confirmedRevision?: string | undefined }
+type AgentSupport = 'supported' | 'unchecked'
+/** Only an exact verified revision is supported: a moved tag, a non-tag HEAD, Experimental `main` and a missing record are all unchecked. */
+const agentSupport = (sha: unknown, policy: AgentUpdatePolicy): AgentSupport =>
+  typeof sha === 'string' && SHA.test(sha) && policy.supportedRevisions.includes(sha) ? 'supported' : 'unchecked'
 function agentWarning(info: Dict, policy: AgentUpdatePolicy): Dict {
+  const support = agentSupport(info.latest_sha, policy)
   return { candidate_revision: info.latest_sha, supported_revision: policy.supportedRevision, supported_version: policy.supportedVersion,
-    unsupported: info.latest_sha !== policy.supportedRevision }
+    support, current_support: agentSupport(info.current_sha, policy), unsupported: support === 'unchecked' }
 }
 function confirmAgent(info: Dict, policy?: AgentUpdatePolicy): Dict | null {
   // Ordinary apply handles its non-mutating no-op; force still cleans files at the same revision.
   if (!policy) return null
-  if (info.latest_sha === policy.supportedRevision) return policy.confirmedRevision && policy.confirmedRevision !== info.latest_sha
+  if (agentSupport(info.latest_sha, policy) === 'supported') return policy.confirmedRevision && policy.confirmedRevision !== info.latest_sha
     ? { ok: false, message: 'The Agent update target changed. Check for updates and try again.' } : null
   if (policy.confirmedRevision === info.latest_sha) return null
   return { ok: false, target: 'agent', agent_channel: info.channel, confirmation_required: true, ...agentWarning(info, policy),
@@ -1132,6 +1140,7 @@ export class UpdateService {
   private agentPolicy(confirmedRevision?: string): AgentUpdatePolicy {
     const supported = dict(this.deps.identity.release().compatibleAgent)
     return {
+      supportedRevisions: supportedAgents(this.deps.webRoot).map((agent) => agent.sourceRevision),
       supportedRevision: str(supported.sourceRevision), supportedVersion: str(supported.version), ...(confirmedRevision ? { confirmedRevision } : {}),
       beforeMutation: async (path, revision) => {
         if (await agentHasDependencySync(path, revision, this.git)) recordPendingAgentSync(path, this.deps.stateDir)

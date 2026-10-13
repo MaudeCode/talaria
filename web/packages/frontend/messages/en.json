@@ -2289,6 +2289,7 @@
 	"system_agent_unsupported_warning": "This Agent version is not officially supported by Talaria and may cause issues.",
 	"system_agent_unsupported_identity": "Officially supported: {version} ({supported}). Selected revision: {candidate}.",
 	"system_agent_update_anyway": "Update anyway",
+	"system_agent_installed_unchecked": "Not tested with this Talaria release.",
 	"system_updates_intro": "Talaria Web and Hermes Agent update separately. Each follows its own channel.",
 	"system_check_both": "Check Web and Agent now",
 	"system_check_updates_hint": "Checks Talaria Web and Hermes Agent in the background.",

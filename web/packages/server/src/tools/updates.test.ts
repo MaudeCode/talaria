@@ -598,7 +598,7 @@ describe('Agent checkout updates', () => {
 
   it('requires acknowledgement of the exact unsupported Agent target before changing files', async () => {
     const a = agentInstall()
-    const policy = { supportedRevision: a.v1, supportedVersion: '1.0.0' }
+    const policy = { supportedRevisions: [a.v1], supportedRevision: a.v1, supportedVersion: '1.0.0' }
     const result = await applyAgentUpdate(a.agent, runGit, 'stable', policy)
     expect(result).toMatchObject({ ok: false, confirmation_required: true, candidate_revision: a.v2 })
     expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(a.v1)
@@ -609,7 +609,7 @@ describe('Agent checkout updates', () => {
 
   it('rejects a moved confirmation and protects local files on the force path', async () => {
     const a = agentInstall()
-    const policy = { supportedRevision: a.v1, supportedVersion: '1.0.0' }
+    const policy = { supportedRevisions: [a.v1], supportedRevision: a.v1, supportedVersion: '1.0.0' }
     writeFileSync(join(a.agent, 'README'), 'local work\n')
     expect(await forceAgentUpdate(a.agent, runGit, () => undefined, 'stable', policy)).toMatchObject({ ok: false, confirmation_required: true })
     expect(readFileSync(join(a.agent, 'README'), 'utf8')).toBe('local work\n')
@@ -619,9 +619,9 @@ describe('Agent checkout updates', () => {
     expect(await applyAgentUpdate(a.agent, runGit, 'stable', { ...policy, confirmedRevision: a.v2 })).toMatchObject({ ok: false, candidate_revision: next })
     expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(a.v1)
     expect(readFileSync(join(a.agent, 'README'), 'utf8')).toBe('local work\n')
-    expect(await applyAgentUpdate(a.agent, runGit, 'stable', { supportedRevision: next, supportedVersion: '3.0.0', confirmedRevision: a.v2 })).toMatchObject({ ok: false })
+    expect(await applyAgentUpdate(a.agent, runGit, 'stable', { supportedRevisions: [next], supportedRevision: next, supportedVersion: '3.0.0', confirmedRevision: a.v2 })).toMatchObject({ ok: false })
     expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(a.v1)
-    expect(await applyAgentUpdate(a.agent, runGit, 'stable', { supportedRevision: next, supportedVersion: '3.0.0' })).toMatchObject({ ok: true })
+    expect(await applyAgentUpdate(a.agent, runGit, 'stable', { supportedRevisions: [next], supportedRevision: next, supportedVersion: '3.0.0' })).toMatchObject({ ok: true })
   })
 
   it('requires exact confirmation before force-cleaning an already-installed unsupported revision', async () => {
@@ -630,7 +630,7 @@ describe('Agent checkout updates', () => {
     git(a.agent, 'merge', '--ff-only', a.v2)
     writeFileSync(join(a.agent, 'README'), 'preserve local edit\n')
     writeFileSync(join(a.agent, 'untracked.txt'), 'preserve untracked file\n')
-    const policy = { supportedRevision: a.v1, supportedVersion: '1.0.0' }
+    const policy = { supportedRevisions: [a.v1], supportedRevision: a.v1, supportedVersion: '1.0.0' }
     expect(await applyAgentUpdate(a.agent, runGit, 'stable', policy)).toMatchObject({ ok: true, up_to_date: true })
     expect(await forceAgentUpdate(a.agent, runGit, () => undefined, 'stable', policy)).toMatchObject({ ok: false, confirmation_required: true, candidate_revision: a.v2 })
     expect(readFileSync(join(a.agent, 'README'), 'utf8')).toBe('preserve local edit\n')
@@ -705,7 +705,7 @@ describe('Agent checkout updates', () => {
     const staleHead = git(a.agent, 'symbolic-ref', 'refs/remotes/origin/HEAD')
     expect(staleHead).not.toBe(`refs/remotes/origin/${branch}`)
     expect(await checkAgentUpdate(a.agent, runGit, 'experimental')).toMatchObject({ channel: 'experimental', branch: `origin/${branch}`, behind: 1, latest_sha: a.v2 })
-    expect(await applyAgentUpdate(a.agent, runGit, 'experimental', { supportedRevision: a.v2, supportedVersion: '2.0.0' })).toMatchObject({ ok: true })
+    expect(await applyAgentUpdate(a.agent, runGit, 'experimental', { supportedRevisions: [a.v2], supportedRevision: a.v2, supportedVersion: '2.0.0' })).toMatchObject({ ok: true })
     expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(a.v2)
   })
 
@@ -727,7 +727,7 @@ describe('Agent checkout updates', () => {
     expect(git(a.agent, 'symbolic-ref', 'refs/remotes/origin/HEAD')).toBe('refs/remotes/origin/master')
     expect(git(a.agent, 'rev-parse', 'origin/master')).toBe(a.v2)
     expect(await checkAgentUpdate(a.agent, runGit, 'experimental')).toMatchObject({ branch: `origin/${branch}`, behind: 2, latest_sha: target })
-    expect(await applyAgentUpdate(a.agent, runGit, 'experimental', { supportedRevision: target, supportedVersion: '3.0.0' })).toMatchObject({ ok: true, verified_revision: target, verified_version: null })
+    expect(await applyAgentUpdate(a.agent, runGit, 'experimental', { supportedRevisions: [target], supportedRevision: target, supportedVersion: '3.0.0' })).toMatchObject({ ok: true, verified_revision: target, verified_version: null })
     expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(target)
   })
 
@@ -792,6 +792,72 @@ describe('Agent checkout updates', () => {
     expect(readFileSync(join(a.agent, 'README'), 'utf8')).toBe('local note\n') // stash popped back over the update
     expect(readFileSync(join(a.agent, 'VERSION'), 'utf8')).toBe('2.0.0\n')
     expect((await checkAgentUpdate(a.agent, runGit)).behind).toBe(0)
+  })
+
+  /** TAL-350: a service whose Web root owns this test's `sidecar/agent_support.json` (`undefined` leaves it missing). */
+  function windowService(a: { agent: string }, support: unknown, opts: { agentChannel?: 'stable' | 'experimental'; pin?: string } = {}): UpdateService {
+    const s = sourceInstall()
+    if (support !== undefined) write(join(web(s.client), 'sidecar/agent_support.json'), typeof support === 'string' ? support : JSON.stringify(support))
+    if (opts.pin) s.id.release = { ...s.id.release, compatibleAgent: { ...(s.id.release.compatibleAgent as Dict), sourceRevision: opts.pin } }
+    return new UpdateService({
+      webRoot: web(s.client), git: (args, cwd, timeout) => cwd === a.agent ? runGit(args, cwd, timeout) : s.run(args, cwd, timeout), getJson: noReleases, identity: s.identity, webuiVersion: 'test',
+      agentDir: () => a.agent, channel: () => 'experimental', agentChannel: () => opts.agentChannel ?? 'stable', includeAgent: () => true,
+      blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
+      scheduleRestart: () => undefined, gatewayRestart: () => Promise.resolve({ status: 'completed' }), sleep: () => Promise.resolve(), log: () => undefined,
+    })
+  }
+  const verified = (...revisions: string[]): Dict => ({ schemaVersion: 1, releases: revisions.map((sourceRevision, i) => ({ releaseTag: `v${i + 1}.0.0`, version: `${i + 1}.0.0`, sourceRevision })) })
+
+  it('supports any release in the verified window, not only the pin, and applies it without confirmation', async () => {
+    const a = agentInstall()
+    const svc = windowService(a, verified(a.v1, a.v2)) // The pin stays Talaria's own, outside this synthetic window.
+    expect((await svc.check(true)).agent).toMatchObject({ latest_sha: a.v2, support: 'supported', current_support: 'supported', unsupported: false })
+    expect(await svc.apply('agent')).toMatchObject({ ok: true, verified_revision: a.v2 })
+    expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(a.v2)
+  })
+
+  it('keeps the exact-SHA confirmation for a target outside the window and reports the installed Agent', async () => {
+    const a = agentInstall()
+    const svc = windowService(a, verified(a.v1))
+    expect((await svc.check(true)).agent).toMatchObject({ latest_sha: a.v2, support: 'unchecked', current_support: 'supported', unsupported: true })
+    expect(await svc.apply('agent')).toMatchObject({ ok: false, confirmation_required: true, candidate_revision: a.v2, support: 'unchecked' })
+    expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(a.v1)
+    expect(await svc.apply('agent', null, () => true, { confirmedRevision: a.v2 })).toMatchObject({ ok: true, verified_revision: a.v2 })
+    expect((await svc.check(true)).agent).toMatchObject({ current_sha: a.v2, current_support: 'unchecked' })
+  })
+
+  it('classifies a moved release tag and an Experimental main commit as unchecked', async () => {
+    const a = agentInstall()
+    git(a.origin, 'commit', '--allow-empty', '-m', 'retagged release')
+    git(a.origin, 'tag', '-f', 'v2.0.0')
+    const moved = git(a.origin, 'rev-parse', 'HEAD')
+    expect((await windowService(a, verified(a.v1, a.v2)).check(true)).agent).toMatchObject({ latest_version: 'v2.0.0', latest_sha: moved, support: 'unchecked' })
+    git(a.origin, 'commit', '--allow-empty', '-m', 'experimental only')
+    const main = git(a.origin, 'rev-parse', 'HEAD')
+    expect((await windowService(a, verified(a.v1, moved), { agentChannel: 'experimental' }).check(true)).agent).toMatchObject({ channel: 'experimental', latest_sha: main, support: 'unchecked' })
+  })
+
+  it.each<[string, (v2: string) => unknown]>([
+    ['missing', () => undefined],
+    ['unreadable', () => '{'],
+    ['listless', () => ({ schemaVersion: 1 })],
+    ['partly invalid', (v2) => ({ schemaVersion: 1, releases: [{ releaseTag: 'v2.0.0', version: '2.0.0', sourceRevision: v2 }, { releaseTag: 'v9.0.0', version: '9.0.0', sourceRevision: 'v9.0.0' }] })],
+  ])('a %s window record leaves every target unchecked, even the pin', async (_name, support) => {
+    const a = agentInstall()
+    const svc = windowService(a, support(a.v2), { pin: a.v2 })
+    expect((await svc.check(true)).agent).toMatchObject({ latest_sha: a.v2, support: 'unchecked', current_support: 'unchecked', unsupported: true })
+    expect(await svc.apply('agent')).toMatchObject({ ok: false, confirmation_required: true })
+  })
+
+  it.each(['supported', 'unchecked'])('rejects a stale confirmation for another SHA on apply, force and retry (%s target)', async (support) => {
+    const a = agentInstall()
+    const svc = windowService(a, support === 'supported' ? verified(a.v2) : verified())
+    const stale = { confirmedRevision: a.v1 }
+    for (const result of [await svc.apply('agent', null, () => true, stale), await svc.force('agent', null, stale), await svc.clearLock('agent', stale)]) {
+      expect(result.ok).toBe(false)
+      if (support === 'unchecked') expect(result).toMatchObject({ confirmation_required: true, candidate_revision: a.v2 })
+    }
+    expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(a.v1)
   })
 
   function summaryService(a: { agent: string; origin: string }, opts: { channel?: 'stable' | 'experimental'; getPublicJson?: GetJson; llm?: (system: string, user: string) => Promise<string> } = {}): { svc: UpdateService; prompts: string[] } {

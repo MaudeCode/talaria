@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Verified Hermes Agent releases now update without the unsupported-version warning, and System settings notes when the installed Agent is untested.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
