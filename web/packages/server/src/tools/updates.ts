@@ -43,6 +43,18 @@ const NETWORK_FAILURES = ['could not resolve host', 'failed to connect', 'networ
 
 export const normalizeChannel = (channel: unknown): Channel => (channel === 'experimental' ? 'experimental' : 'stable')
 
+/** TAL-946: one Stable release newer than the installed one; an apply names it by `ref`. */
+export interface UpdateVersion { version: string; ref: string; sha?: string; release_url: string | null }
+export const ONLY_STABLE_VERSIONS = 'Choosing a version is available only on the Stable channel.'
+
+/** TAL-946: the release an update installs: the listed `version` (a `ref`), else the newest listed release (none when nothing is listed). */
+function selectVersion<T extends { ref: string }>(versions: readonly T[], version: string | undefined, name: string): T | undefined {
+  if (version === undefined) return versions[0]
+  const found = versions.find((v) => v.ref === version)
+  if (!found) throw new ReleaseUnavailable(`${name} ${version} is not a newer Stable release for this installation. Check for updates and try again.`)
+  return found
+}
+
 // ── git ──────────────────────────────────────────────────────────────────────
 
 export interface GitOutcome { out: string; ok: boolean }
@@ -120,10 +132,10 @@ function normalizeRemoteUrl(remote: string): string {
   return url.replace(/\/+$/, '')
 }
 
+const isWebUrl = (url: string): boolean => { try { return ['http:', 'https:'].includes(new URL(url).protocol) } catch { return false } }
+
 function compareUrl(repoUrl: string, current: string | null, latest: string | null): string | null {
-  if (!repoUrl || !current || !latest) return null
-  try { const u = new URL(repoUrl); if (u.protocol !== 'http:' && u.protocol !== 'https:') return null } catch { return null }
-  return `${repoUrl}/compare/${current}...${latest}`
+  return repoUrl && current && latest && isWebUrl(repoUrl) ? `${repoUrl}/compare/${current}...${latest}` : null
 }
 
 const canon = (value: unknown): string => JSON.stringify(sortKeys(value))
@@ -170,11 +182,15 @@ export function githubJson(fetchImpl: typeof fetch, env: Record<string, string |
   }
 }
 
-export interface PublishedRelease { tag: string; version: string; sourceRevision: string; releaseSet: string; image: string; npm: string | null; manifestReleaseSet: string; runtime: Dict; release_url: string
+/** One completed release set's Web component. */
+export interface WebRelease { tag: string; version: string; sourceRevision: string; releaseSet: string; image: string; npm: string | null; manifestReleaseSet: string; runtime: Dict; release_url: string }
+export interface PublishedRelease extends WebRelease {
   /** Completed channel releases newer than the `installed` version passed to `publishedWebRelease`, this one included; 1 when it was not passed. */
   releasesBehind: number
   /** The published notes of the releases `releasesBehind` counts, oldest first; only this release's when `installed` was not passed. */
   notes: ReleaseNote[]
+  /** TAL-946: the counted releases whose release set is fully valid, newest first; this one first. */
+  versions: WebRelease[]
 }
 
 /** One release's published notes, for update summaries. */
@@ -215,34 +231,14 @@ export async function publishedWebRelease(channel: Channel, getJson: GetJson, no
     const manifest = await fetchJson(`/releases/assets/${String(id)}`, true)
     return { tag, m: manifest && typeof manifest === 'object' && !Array.isArray(manifest) ? (manifest as Dict) : null }
   }
-  /** Distinct completed channel versions above `installed` in the older release sets, plus `latest`. A Web tag without a completed set never counts; an unreadable set ends the count. */
-  const releasesSince = async (older: Dict[], latest: string): Promise<Set<string>> => {
-    const versions = new Set([latest])
-    if (installed === undefined || compareVersions(latest, installed) <= 0) return versions
-    try {
-      for (const release of older) {
-        const set = await manifestOf(release)
-        if (!set || !completeManifest(set.m, set.tag)) continue
-        const webTag = dict(dict(set.m.components).web).tag
-        if (typeof webTag !== 'string' || !tagPattern.test(webTag)) continue
-        const version = webTag.split('-v').pop() ?? ''
-        if (compareVersions(version, installed) <= 0) break
-        versions.add(version)
-      }
-    } catch { /* the newest release still counts */ }
-    return versions
-  }
-  for (const [index, release] of published.entries()) {
-    const set = await manifestOf(release)
-    if (!set) continue
-    const { tag, m } = set
-    if (!completeManifest(m, tag)) throw new ReleaseUnavailable('Release set is incomplete or has inconsistent provenance')
+  /** A completed manifest's Web release; null when its Web tag is on another channel. Throws on mutable or inconsistent provenance. */
+  const webRelease = (tag: string, m: Dict): WebRelease | null => {
     if (!m.components || typeof m.components !== 'object' || Array.isArray(m.components)) throw new ReleaseUnavailable('Release set lacks component metadata')
     const componentRaw = (m.components as Dict).web ?? {}
     if (!componentRaw || typeof componentRaw !== 'object' || Array.isArray(componentRaw)) throw new ReleaseUnavailable('Release set lacks Web metadata')
     const component = componentRaw as Dict
     const componentTag = component.tag
-    if (typeof componentTag !== 'string' || !tagPattern.test(componentTag)) continue
+    if (typeof componentTag !== 'string' || !tagPattern.test(componentTag)) return null
     const source = component.sourceRevision
     if (typeof source !== 'string' || !SHA.test(source) || component.releaseSet !== source || component.version !== componentTag.split('-v').pop() || typeof component.image !== 'string' || !/^ghcr\.io\/maudecode\/talaria-web@sha256:[a-f0-9]{64}$/.test(component.image)) {
       throw new ReleaseUnavailable('Web release references are mutable or inconsistent')
@@ -258,9 +254,8 @@ export async function publishedWebRelease(channel: Channel, getJson: GetJson, no
     }
     const agent = m.agent
     if (!agent || typeof agent !== 'object' || Array.isArray(agent)) throw new ReleaseUnavailable('Release set lacks Web compatibility provenance')
-    const versions = await releasesSince(published.slice(index + 1), str(component.version))
     return {
-      ...(component as unknown as PublishedRelease),
+      ...(component as unknown as WebRelease),
       tag: componentTag,
       version: str(component.version),
       sourceRevision: source,
@@ -270,7 +265,42 @@ export async function publishedWebRelease(channel: Channel, getJson: GetJson, no
       manifestReleaseSet: str(m.releaseSet),
       runtime: { tag: componentTag, version: component.version, sourceRevision: source, releaseSet: source, contracts: supported, compatibleAgent: agent },
       release_url: `${REPOSITORY_URL}/releases/tag/${tag}`,
+    }
+  }
+  /**
+   * Distinct completed channel versions above `installed` in the older release sets, plus `latest`, each with its release when that set is fully valid.
+   * A Web tag without a completed set never counts; an unreadable set ends the count.
+   */
+  const releasesSince = async (older: Dict[], latest: WebRelease): Promise<Map<string, WebRelease | null>> => {
+    const versions = new Map<string, WebRelease | null>([[latest.version, latest]])
+    if (installed === undefined || compareVersions(latest.version, installed) <= 0) return versions
+    try {
+      for (const release of older) {
+        const set = await manifestOf(release)
+        if (!set || !completeManifest(set.m, set.tag)) continue
+        const webTag = dict(dict(set.m.components).web).tag
+        if (typeof webTag !== 'string' || !tagPattern.test(webTag)) continue
+        const version = webTag.split('-v').pop() ?? ''
+        if (compareVersions(version, installed) <= 0) break
+        if (versions.has(version)) continue
+        let entry: WebRelease | null = null
+        try { entry = webRelease(set.tag, set.m) } catch { /* counted, but not installable */ }
+        versions.set(version, entry)
+      }
+    } catch { /* the newest release still counts */ }
+    return versions
+  }
+  for (const [index, release] of published.entries()) {
+    const set = await manifestOf(release)
+    if (!set) continue
+    if (!completeManifest(set.m, set.tag)) throw new ReleaseUnavailable('Release set is incomplete or has inconsistent provenance')
+    const latest = webRelease(set.tag, set.m)
+    if (!latest) continue
+    const versions = await releasesSince(published.slice(index + 1), latest)
+    return {
+      ...latest,
       releasesBehind: versions.size,
+      versions: [...versions.values()].filter((v): v is WebRelease => v !== null).sort((a, b) => compareVersions(b.version, a.version)),
       notes: published.flatMap((item) => {
         const itemTag = str(item.tag_name)
         const body = str(item.body).replace(PUBLICATION_MARKER, '').trim()
@@ -408,6 +438,11 @@ function compareVersions(installed: string, latest: string): number {
   return 0
 }
 
+/** The completed Stable npm releases an npm install at `installed` can move to, newest first. */
+const npmVersions = (release: PublishedRelease, installed: string): (WebRelease & { ref: string })[] =>
+  release.versions.filter((v) => v.npm && compareVersions(v.version, installed) > 0).map((v) => ({ ...v, ref: v.version }))
+const publicWebVersion = (v: WebRelease): UpdateVersion => ({ version: v.tag, ref: v.version, release_url: v.release_url })
+
 function diskRelease(webRoot: string): Dict | null {
   try { return validateReleaseInfo(JSON.parse(readFileSync(join(webRoot, '_release.json'), 'utf8')), webRoot) } catch { return null }
 }
@@ -493,7 +528,7 @@ export async function checkWebUpdate(webRoot: string | null, currentVersion: str
     if (npmInstall && channel === 'stable' && release.npm && !str(id.release().tag).startsWith('web-exp-v')) {
       const comparison = compareVersions(npmInstall.version, release.version)
       if (comparison > 0) return { ...result, current_sha: id.release().sourceRevision ?? null, behind: 0, no_git: true, install_kind: 'npm', manual_update: true, message: 'This npm installation is ahead of the selected Stable release.' }
-      if (comparison < 0) return { ...result, current_sha: id.release().sourceRevision ?? null, behind: release.releasesBehind, no_git: true, install_kind: 'npm', npm: release.npm, manual_update: false, release_notes: release.notes, message: `Stable npm update ${release.version} is available.` }
+      if (comparison < 0) return { ...result, current_sha: id.release().sourceRevision ?? null, behind: release.releasesBehind, no_git: true, install_kind: 'npm', npm: release.npm, manual_update: false, release_notes: release.notes, versions: npmVersions(release, npmInstall.version).map(publicWebVersion), message: `Stable npm update ${release.version} is available.` }
       const installed = diskRelease(npmInstall.packageRoot)
       if (!same(installed, release.runtime)) return { ...result, current_sha: id.release().sourceRevision ?? null, behind: null, no_git: true, install_kind: 'npm', manual_update: true, error: 'Installed npm release metadata does not match the completed release.' }
       const metadataRepair = !same(id.release(), release.runtime)
@@ -540,21 +575,26 @@ export function backupPersistedStores(stateDir: string, now: Date = new Date(), 
   return target
 }
 
-async function applyNpmWebUpdate(webRoot: string | null, channel: Channel, getJson: GetJson, id: ReleaseIdentity, npmRun: BuildRun, canApply: () => boolean, packaged: PackagedUpdateOptions): Promise<Dict> {
+async function applyNpmWebUpdate(webRoot: string | null, channel: Channel, getJson: GetJson, id: ReleaseIdentity, npmRun: BuildRun, canApply: () => boolean, packaged: PackagedUpdateOptions, version?: string): Promise<Dict> {
   const installed = await npmInstallInfo(webRoot, npmRun)
   if (!installed) return { ok: false, manual_update: true, message: 'Automatic npm updates require a direct global @maudecode/talaria-web installation.' }
   // Switching channels installs the selected channel's newest artifact regardless of version order (TAL-343).
   const switching = npmInstallChannel(installed, id) !== channel
+  if (version !== undefined && (channel !== 'stable' || switching)) return { ok: false, target: 'webui', channel, message: ONLY_STABLE_VERSIONS }
   const onDisk = diskRelease(installed.packageRoot)
   let target: { version: string; sourceRevision: string; label: string; matches: (release: Dict | null) => boolean; npm?: string; experimental?: ExperimentalRelease }
   if (channel === 'stable') {
+    const stableInstalled = new RegExp(`^${VERSION}$`).test(installed.version) ? installed.version : undefined
     let release: PublishedRelease
-    try { release = await publishedWebRelease('stable', getJson) } catch { return { ok: false, message: 'Cannot resolve a completed Talaria release. Check private-repository read access.' } }
-    if (!release.npm) return { ok: false, manual_update: true, message: 'The completed Stable release does not include an npm package identity.' }
-    target = { version: release.version, sourceRevision: release.sourceRevision, label: `npm release ${release.version}`, matches: (r) => same(r, release.runtime), npm: release.npm }
+    try { release = await publishedWebRelease('stable', getJson, undefined, stableInstalled) } catch { return { ok: false, message: 'Cannot resolve a completed Talaria release. Check private-repository read access.' } }
+    let chosen: WebRelease
+    try { chosen = (switching ? undefined : selectVersion(stableInstalled ? npmVersions(release, stableInstalled) : [], version, 'Talaria Web')) ?? release }
+    catch (error) { return { ok: false, target: 'webui', channel, message: (error as Error).message } }
+    if (!chosen.npm) return { ok: false, manual_update: true, message: 'The completed Stable release does not include an npm package identity.' }
+    target = { version: chosen.version, sourceRevision: chosen.sourceRevision, label: `npm release ${chosen.version}`, matches: (r) => same(r, chosen.runtime), npm: chosen.npm }
     if (!switching) {
       if (!canApply()) return { ok: false, message: 'Web update deferred because its settings or lifecycle changed.' }
-      const comparison = compareVersions(installed.version, release.version)
+      const comparison = compareVersions(installed.version, chosen.version)
       if (comparison > 0) return { ok: false, manual_update: true, message: 'This npm installation is ahead of the selected Stable release.' }
       if (comparison === 0 && !target.matches(onDisk)) return { ok: false, manual_update: true, message: 'Installed npm release metadata does not match the completed release.' }
     }
@@ -625,9 +665,9 @@ async function applyNpmWebUpdate(webRoot: string | null, channel: Channel, getJs
 }
 
 /** Python `apply_web_update`: installs npm releases; a source checkout is never mutated (TAL-379). */
-export async function applyWebUpdate(webRoot: string | null, channel: Channel, git: GitRun, getJson: GetJson, id: ReleaseIdentity, npmRun: BuildRun = runPackageNpm, canApply: () => boolean = () => true, packaged: PackagedUpdateOptions = {}): Promise<Dict> {
+export async function applyWebUpdate(webRoot: string | null, channel: Channel, git: GitRun, getJson: GetJson, id: ReleaseIdentity, npmRun: BuildRun = runPackageNpm, canApply: () => boolean = () => true, packaged: PackagedUpdateOptions = {}, version?: string): Promise<Dict> {
   if (await checkoutRoot(webRoot, git) !== null) return { ok: false, manual_update: true, target: 'webui', channel, message: CONTRIBUTOR_CHECKOUT_MESSAGE }
-  return applyNpmWebUpdate(webRoot, channel, getJson, id, npmRun, canApply, packaged)
+  return applyNpmWebUpdate(webRoot, channel, getJson, id, npmRun, canApply, packaged, version)
 }
 
 async function releaseTags(path: string, git: GitRun): Promise<string[]> {
@@ -659,20 +699,38 @@ async function detectDefaultBranch(path: string, git: GitRun): Promise<string> {
   throw new Error('Agent default branch is unavailable')
 }
 
-async function agentTarget(path: string, git: GitRun, channel: Channel): Promise<Dict> {
-  const ref = channel === 'experimental' ? `origin/${await detectDefaultBranch(path, git)}` : (await releaseTags(path, git))[0]
-  if (!ref) throw new Error('No stable Agent release is available')
+/** TAL-946: the Stable releases a fast-forward reaches, newest first: tags after HEAD up to `tags[0]`, each with its peeled commit; none unless the newest is one. */
+async function agentVersions(path: string, tags: string[], repoUrl: string, git: GitRun): Promise<UpdateVersion[]> {
+  const listed = tags[0] ? await git(['tag', '--list', AGENT_TAG_GLOB, '--merged', tags[0], '--no-merged', 'HEAD', '--contains', 'HEAD'], path) : null
+  if (!listed?.ok) return []
+  const range = new Set(listed.out.split('\n').map((l) => l.trim()))
+  const reachable = tags.filter((tag) => range.has(tag))
+  if (reachable[0] !== tags[0]) return []
+  const peeled = await git(['rev-parse', ...reachable.map((tag) => `${tag}^{commit}`)], path)
+  const shas = peeled.out.split('\n')
+  if (!peeled.ok || shas.length !== reachable.length || !shas.every((sha) => SHA.test(sha))) return []
+  return reachable.map((tag, i) => ({ version: tag, ref: tag, sha: shas[i]!, release_url: isWebUrl(repoUrl) ? `${repoUrl}/releases/tag/${encodeURIComponent(tag)}` : null }))
+}
+
+/** The checkout's update target: `version` (a listed Stable tag) or the channel's newest. */
+async function agentTarget(path: string, git: GitRun, channel: Channel, version?: string): Promise<Dict> {
+  if (version !== undefined && channel !== 'stable') throw new Error(ONLY_STABLE_VERSIONS)
+  const tags = channel === 'stable' ? await releaseTags(path, git) : []
+  const newest = channel === 'experimental' ? `origin/${await detectDefaultBranch(path, git)}` : tags[0]
+  if (!newest) throw new Error('No stable Agent release is available')
+  const remote = normalizeRemoteUrl((await git(['remote', 'get-url', 'origin'], path)).out)
+  const versions = await agentVersions(path, tags, remote, git)
+  const ref = selectVersion(versions, version, 'Hermes Agent')?.ref ?? newest
   const current = await git(['rev-parse', 'HEAD'], path)
   const latest = await git(['rev-parse', `${ref}^{commit}`], path)
   if (!current.ok || !latest.ok || !SHA.test(current.out) || !SHA.test(latest.out)) throw new Error('Agent Git identity is unavailable')
   const count = await git(['rev-list', '--count', `${current.out}..${latest.out}`], path)
   const behind = count.ok && /^\d+$/.test(count.out) ? Number.parseInt(count.out, 10) : null
   const manual = current.out !== latest.out && !(await canFastForwardTo(path, latest.out, git))
-  const remote = normalizeRemoteUrl((await git(['remote', 'get-url', 'origin'], path)).out)
   return {
     name: 'agent', channel, branch: ref, current_sha: current.out, latest_sha: latest.out,
     current_version: await currentReleaseTag(path, git) ?? current.out.slice(0, 12), latest_version: ref,
-    behind, release_based: channel === 'stable', repo_url: remote, compare_url: compareUrl(remote, current.out, latest.out),
+    behind, release_based: channel === 'stable', repo_url: remote, compare_url: compareUrl(remote, current.out, latest.out), versions,
     ...(behind === null ? { error: 'Agent commit count is unavailable' } : {}),
     ...(manual ? { manual_update: true, message: 'Agent checkout is ahead of or divergent from this channel; refusing to rewind it.' } : {}),
   }
@@ -687,15 +745,22 @@ export interface AgentUpdatePolicy {
   confirmedRevision?: string
   beforeMutation?: (path: string, revision: string) => Promise<void>
 }
-export interface AgentUpdateOptions { agentChannel?: Channel | undefined; confirmedRevision?: string | undefined }
+/** `version` (TAL-946) names a listed Stable release `ref` for either target; omitted, an update takes the newest. */
+export interface UpdateOptions { agentChannel?: Channel | undefined; confirmedRevision?: string | undefined; version?: string | undefined }
 type AgentSupport = 'supported' | 'unchecked'
 /** Only an exact verified revision is supported: a moved tag, a non-tag HEAD, Experimental `main` and a missing record are all unchecked. */
 const agentSupport = (sha: unknown, policy: AgentUpdatePolicy): AgentSupport =>
   typeof sha === 'string' && SHA.test(sha) && policy.supportedRevisions.includes(sha) ? 'supported' : 'unchecked'
+const SUPPORT_LABELS: Record<AgentSupport, string> = { supported: 'Supported', unchecked: 'Not tested with this Talaria' }
+/** One Agent revision's support and its one-line wording (TAL-946). */
+const supportOf = (sha: unknown, policy: AgentUpdatePolicy): { support: AgentSupport; support_label: string } => {
+  const support = agentSupport(sha, policy)
+  return { support, support_label: SUPPORT_LABELS[support] }
+}
 function agentWarning(info: Dict, policy: AgentUpdatePolicy): Dict {
-  const support = agentSupport(info.latest_sha, policy)
+  const { support, support_label } = supportOf(info.latest_sha, policy)
   return { candidate_revision: info.latest_sha, supported_revision: policy.supportedRevision, supported_version: policy.supportedVersion,
-    support, current_support: agentSupport(info.current_sha, policy), unsupported: support === 'unchecked' }
+    support, support_label, current_support: agentSupport(info.current_sha, policy), unsupported: support === 'unchecked' }
 }
 function confirmAgent(info: Dict, policy?: AgentUpdatePolicy): Dict | null {
   // Ordinary apply handles its non-mutating no-op; force still cleans files at the same revision.
@@ -735,7 +800,7 @@ async function prepareAgentMutation(path: string, info: Dict, policy?: AgentUpda
 }
 
 /** Fetch, confirm the immutable Agent target, stash, fast-forward, and restore the stash. */
-export async function applyAgentUpdate(path: string | null, git: GitRun, channel: Channel = DEFAULT_CHANNEL, policy?: AgentUpdatePolicy): Promise<Dict> {
+export async function applyAgentUpdate(path: string | null, git: GitRun, channel: Channel = DEFAULT_CHANNEL, policy?: AgentUpdatePolicy, version?: string): Promise<Dict> {
   if (!path || !existsSync(join(path, '.git'))) return { ok: false, message: 'Not a git repository' }
   const fetched = await git(['fetch', 'origin', '--quiet', '--tags', '--force'], path, 15_000)
   if (!fetched.ok) {
@@ -743,7 +808,7 @@ export async function applyAgentUpdate(path: string | null, git: GitRun, channel
     return { ok: false, message: fetchFailureMessage(fetched.out, 'Could not reach the remote repository. Check your internet connection and try again.') }
   }
   let info: Dict
-  try { info = await agentTarget(path, git, channel) } catch (error) { return { ok: false, message: (error as Error).message } }
+  try { info = await agentTarget(path, git, channel, version) } catch (error) { return { ok: false, message: (error as Error).message } }
   if (info.current_sha === info.latest_sha) {
     const verified = await verifiedAgentIdentity(path, str(info.latest_sha), git)
     if (!verified) return { ok: false, message: 'The installed Agent revision could not be verified.' }
@@ -852,12 +917,12 @@ async function recoverInterruptedAutostash(path: string, git: GitRun): Promise<v
 }
 
 /** Python `apply_force_update` (agent branch): fetch, refuse a pure-ancestor rewind, `checkout . && clean -fd && reset --hard`. */
-export async function forceAgentUpdate(path: string | null, git: GitRun, log: (line: string) => void, channel: Channel = DEFAULT_CHANNEL, policy?: AgentUpdatePolicy): Promise<Dict> {
+export async function forceAgentUpdate(path: string | null, git: GitRun, log: (line: string) => void, channel: Channel = DEFAULT_CHANNEL, policy?: AgentUpdatePolicy, version?: string): Promise<Dict> {
   if (!path || !existsSync(join(path, '.git'))) return { ok: false, message: 'Not a git repository' }
   const fetched = await git(['fetch', 'origin', '--quiet', '--tags', '--force'], path, 15_000)
   if (!fetched.ok) return { ok: false, message: fetchFailureMessage(fetched.out, 'Could not reach the remote repository. Check your connection.') }
   let info: Dict
-  try { info = await agentTarget(path, git, channel) } catch (error) { return { ok: false, message: (error as Error).message } }
+  try { info = await agentTarget(path, git, channel, version) } catch (error) { return { ok: false, message: (error as Error).message } }
   const ref = str(info.branch)
   const revision = str(info.latest_sha)
   if ((await headContainsRef(path, revision, git)) && !(await canFastForwardTo(path, revision, git))) {
@@ -1185,7 +1250,9 @@ export class UpdateService {
         if (includeAgent && marker && existsSync(marker)) {
           Object.assign(agent, { metadata_repair: true, message: 'Agent dependency sync is incomplete. Apply the update again to finish it.' })
         }
-        if (agent.latest_sha) Object.assign(agent, agentWarning(agent, this.agentPolicy()))
+        const policy = this.agentPolicy()
+        if (agent.latest_sha) Object.assign(agent, agentWarning(agent, policy))
+        if (Array.isArray(agent.versions)) agent.versions = agent.versions.map((v) => ({ ...dict(v), ...supportOf(dict(v).sha, policy) }))
         Object.assign(this.cache, { webui, agent, checked_at: this.now(), include_agent: includeAgent, channel, agent_channel: agentChannel })
         return { ...this.cache }
       } finally {
@@ -1287,7 +1354,7 @@ export class UpdateService {
   }
 
   /** Python `apply_update`. */
-  async apply(target: string, channel?: Channel | null, canApply: () => boolean = () => true, agentOptions: AgentUpdateOptions = {}): Promise<Dict> {
+  async apply(target: string, channel?: Channel | null, canApply: () => boolean = () => true, options: UpdateOptions = {}): Promise<Dict> {
     if (this.checking) await this.checking
     const pendingRestart = this.pendingRestartResponse(target)
     if (pendingRestart) return pendingRestart
@@ -1295,20 +1362,20 @@ export class UpdateService {
     const blocked = this.blockedResponse(target)
     if (blocked) return blocked
     const lifecycle = this.lifecycle
-    return this.locked(() => this.applyInner(target, channel ?? this.deps.channel(), () => lifecycle === this.lifecycle && canApply(), agentOptions))
+    return this.locked(() => this.applyInner(target, channel ?? this.deps.channel(), () => lifecycle === this.lifecycle && canApply(), options))
   }
 
-  private async applyInner(target: string, channel: Channel, canApply: () => boolean = () => true, agentOptions: AgentUpdateOptions = {}): Promise<Dict> {
+  private async applyInner(target: string, channel: Channel, canApply: () => boolean = () => true, options: UpdateOptions = {}): Promise<Dict> {
     if (target === 'webui') {
       const lifecycle = this.lifecycle
-      const result = await applyWebUpdate(this.deps.webRoot, channel, this.git, this.deps.getJson, this.deps.identity, this.deps.npm ?? runPackageNpm, canApply, { registry: this.deps.experimental, stateDir: this.deps.stateDir })
+      const result = await applyWebUpdate(this.deps.webRoot, channel, this.git, this.deps.getJson, this.deps.identity, this.deps.npm ?? runPackageNpm, canApply, { registry: this.deps.experimental, stateDir: this.deps.stateDir }, options.version)
       // Settings can cancel before mutation, but a committed replacement must finish restarting unless shutting down.
       if (result.ok && !result.up_to_date && lifecycle === this.lifecycle) { this.cache.checked_at = 0; this.autoRestartScheduled = true; this.stopAutoApply(); this.deps.scheduleRestart(); result.restart_scheduled = true }
       return result
     }
     if (target !== 'agent') return { ok: false, message: `Unknown target: ${target}` }
     const path = this.deps.agentDir()
-    const result = await applyAgentUpdate(path, this.git, agentOptions.agentChannel ?? this.agentChannel(), this.agentPolicy(agentOptions.confirmedRevision))
+    const result = await applyAgentUpdate(path, this.git, options.agentChannel ?? this.agentChannel(), this.agentPolicy(options.confirmedRevision), options.version)
     if (!result.ok) return result
     return this.finishAgent(result, path)
   }
@@ -1344,9 +1411,9 @@ export class UpdateService {
   }
 
   /** Python `apply_force_update`: Web keeps its clean-only policy; the Agent resets hard. */
-  async force(target: string, channel?: Channel | null, agentOptions: AgentUpdateOptions = {}): Promise<Dict> {
+  async force(target: string, channel?: Channel | null, options: UpdateOptions = {}): Promise<Dict> {
     if (this.checking) await this.checking
-    if (target === 'webui') return this.apply(target, channel)
+    if (target === 'webui') return this.apply(target, channel, undefined, options)
     const pendingRestart = this.pendingRestartResponse(target)
     if (pendingRestart) return pendingRestart
     const blocked = this.blockedResponse(target)
@@ -1354,14 +1421,14 @@ export class UpdateService {
     return this.locked(async () => {
       if (target !== 'agent') return { ok: false, message: `Unknown target: ${target}` }
       const path = this.deps.agentDir()
-      const result = await forceAgentUpdate(path, this.git, this.deps.log, agentOptions.agentChannel ?? this.agentChannel(), this.agentPolicy(agentOptions.confirmedRevision))
+      const result = await forceAgentUpdate(path, this.git, this.deps.log, options.agentChannel ?? this.agentChannel(), this.agentPolicy(options.confirmedRevision), options.version)
       return result.ok ? this.finishAgent(result, path) : result
     })
   }
 
   /** Python `apply_clear_lock`: never removes a lock; Web retries the clean path, the Agent gets the manual command. */
-  clearLock(target: string, agentOptions: AgentUpdateOptions = {}): Promise<Dict> {
-    if (target === 'webui') return this.apply(target).then((r) => ({ ...r, lock_recovery: { action: 'retry-only' } }))
+  clearLock(target: string, options: UpdateOptions = {}): Promise<Dict> {
+    if (target === 'webui') return this.apply(target, undefined, undefined, options).then((r) => ({ ...r, lock_recovery: { action: 'retry-only' } }))
     const pendingRestart = this.pendingRestartResponse(target)
     if (pendingRestart) return Promise.resolve(pendingRestart)
     const blocked = this.blockedResponse(target)
@@ -1374,7 +1441,7 @@ export class UpdateService {
       const manual = `rm -f ${str(inv.well_known_lock_path)}`
       if (!inv.well_known_lock_present) {
         this.cache.checked_at = 0
-        const retry = await this.applyInner(target, this.deps.channel(), () => true, agentOptions)
+        const retry = await this.applyInner(target, this.deps.channel(), () => true, options)
         return { ...retry, lock_recovery: { action: 'no-lock-found', manual_command: manual, other_locks: inv.other_locks } }
       }
       return { ok: false, message: `A git lock file (.git/index.lock) is present. The server does not delete locks automatically -- git uses O_CREAT|O_EXCL locking, which cannot be detected with advisory probes. To recover: confirm no other git process is running against this checkout, then run: ${manual}  Click "Retry update" once you have removed it.`, lock_held: true, target, manual_command: manual, well_known_lock_path: inv.well_known_lock_path, other_locks: inv.other_locks }
@@ -1493,9 +1560,13 @@ export function updateTargetView(name: 'webui' | 'agent', target: Dict, off: boo
     : 'unknown'
   const latest = typeof info.latest_version === 'string' ? info.latest_version : null
   const current = typeof info.current_version === 'string' ? info.current_version : ''
+  const canApply = ['release_ready', 'commits_behind', 'finish'].includes(state) && info.manual_update !== true && (info.no_git !== true || info.install_kind === 'npm')
+  // TAL-946: every installable Stable release, newest first; all but the newest fold behind one disclosure.
+  const versions = state === 'release_ready' && canApply && Array.isArray(info.versions) ? info.versions.map((v, i) => ({ ...dict(v), latest: i === 0, folded: i > 0 })) : []
   return {
     ...info, state,
-    can_apply: ['release_ready', 'commits_behind', 'finish'].includes(state) && info.manual_update !== true && (info.no_git !== true || info.install_kind === 'npm'),
+    can_apply: canApply,
+    versions, folded_count: Math.max(0, versions.length - 1),
     // Stable Agent reports a bare 12-hex revision when its checkout sits on no release tag.
     installed_unverified: state === 'release_ready' && (!current || /^[0-9a-f]{12}$/.test(current)),
     manual_link: name === 'webui' && state !== 'off' && info.manual_update === true && Boolean(info.error || info.dirty || info.behind !== 0),

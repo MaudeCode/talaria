@@ -66,7 +66,7 @@ function sourceInstall(): Install {
   // The production URL stays configured; only this fixture's transport is redirected to its own repository.
   git(client, 'remote', 'set-url', 'origin', 'https://github.com/MaudeCode/talaria.git')
   const runtime = { tag: 'web-v2.0.0', version: '2.0.0', sourceRevision: latest, releaseSet: latest, contracts: { appWeb: [1], webRelay: [2] }, compatibleAgent: { ...PIN['x-talaria'], image: PIN.services['hermes-agent'].image } }
-  const release: PublishedRelease = { tag: 'web-v2.0.0', version: '2.0.0', sourceRevision: latest, releaseSet: latest, image: `ghcr.io/maudecode/talaria-web@sha256:${'f'.repeat(64)}`, npm: null, manifestReleaseSet: latest, runtime, release_url: `${REPOSITORY_URL}/releases/tag/release-set-${latest}`, releasesBehind: 1, notes: [] }
+  const release: PublishedRelease = { tag: 'web-v2.0.0', version: '2.0.0', sourceRevision: latest, releaseSet: latest, image: `ghcr.io/maudecode/talaria-web@sha256:${'f'.repeat(64)}`, npm: null, manifestReleaseSet: latest, runtime, release_url: `${REPOSITORY_URL}/releases/tag/release-set-${latest}`, releasesBehind: 1, notes: [], versions: [] }
   const id = { release: DEV as Dict, stamped: DEV as Dict, running: null as string | null }
   const identity: ReleaseIdentity = { release: () => id.release, stamped: () => id.stamped, runningSourceRevision: () => id.running }
   const commands: string[][] = []
@@ -320,7 +320,8 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     expect(await checkWebUpdate(n.packageRoot, 'web-v1.0.0', 'stable', s.run, listed, s.identity, n.npm)).toMatchObject({ install_kind: 'npm', behind: 3 })
   })
 
-  function npmPackageInstall(s: Install, initial: 'success' | 'failure' | 'bad-stamp' = 'success') {
+  /** `runtimeOf` stamps the installed package of each requested version; by default every install is `s.release`. */
+  function npmPackageInstall(s: Install, initial: 'success' | 'failure' | 'bad-stamp' = 'success', runtimeOf?: (version: string) => Dict) {
     const mode = { outcome: initial }
     const globalRoot = join(tmp(), 'lib/node_modules')
     const packageRoot = join(globalRoot, '@maudecode/talaria-web')
@@ -336,12 +337,13 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
       if (args[0] === 'install') {
         if (mode.outcome === 'failure') return Promise.resolve({ ok: false, out: 'synthetic npm failure' })
         const candidate = join(args[args.indexOf('--prefix') + 1]!, 'lib/node_modules/@maudecode/talaria-web')
-        write(join(candidate, 'package.json'), JSON.stringify({ name: '@maudecode/talaria-web', version: '2.0.0', bin: { 'talaria-web': 'dist/bin/talaria-web.js', 'talaria-web-mcp': 'dist/bin/talaria-web-mcp.js' } }))
+        const version = runtimeOf ? /@maudecode\/talaria-web@(.+)$/.exec(args.at(-1)!)![1]! : '2.0.0'
+        write(join(candidate, 'package.json'), JSON.stringify({ name: '@maudecode/talaria-web', version, bin: { 'talaria-web': 'dist/bin/talaria-web.js', 'talaria-web-mcp': 'dist/bin/talaria-web-mcp.js' } }))
         write(join(candidate, 'sidecar/agent_dependency.json'), JSON.stringify(PIN))
         write(join(candidate, 'contract_versions.json'), JSON.stringify(VERSIONS))
         write(join(candidate, 'dist/bin/talaria-web.js'), '// fixture')
         write(join(candidate, 'dist/bin/talaria-web-mcp.js'), '// fixture')
-        if (mode.outcome === 'success') writeFileSync(join(candidate, '_release.json'), JSON.stringify(s.release.runtime))
+        if (mode.outcome === 'success') writeFileSync(join(candidate, '_release.json'), JSON.stringify(runtimeOf?.(version) ?? s.release.runtime))
         return Promise.resolve({ ok: true, out: '' })
       }
       return Promise.resolve({ ok: false, out: 'unexpected npm command' })
@@ -464,6 +466,67 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     expect(restarts).toEqual([])
     expect(installs()).toBe(0)
     expect(version()).toBe('1.0.0')
+  })
+
+  /** TAL-946: completed Stable sets for 2.0.0 (newest), 1.2.0 and 1.1.0 above an npm install of 1.0.0, each with its own source and package. */
+  function stableHistory() {
+    const s = sourceInstall()
+    const sets = [['2.0.0', s.latest], ['1.2.0', '2'.repeat(40)], ['1.1.0', '1'.repeat(40)], ['1.0.0', s.old]] as const
+    const sha = (version: string): string => sets.find(([v]) => v === version)![1]
+    const runtime = (version: string): Dict => ({ tag: `web-v${version}`, version, sourceRevision: sha(version), releaseSet: sha(version), contracts: { appWeb: [1], webRelay: [2] }, compatibleAgent: s.release.runtime.compatibleAgent })
+    const getJson: GetJson = (path, { asset }) => {
+      if (!asset) return Promise.resolve(sets.map(([, source], i) => ({ tag_name: `release-set-${source}`, published_at: `2026-09-1${String(9 - i)}T00:00:00Z`, assets: [{ name: 'release-set.json', id: 300 + i }] })))
+      const [version, source] = sets[Number(path.split('/').pop()) - 300]!
+      return Promise.resolve({ schemaVersion: 1, releaseSet: source, status: 'complete', contracts: { appWeb: { web: [1] }, webRelay: { web: [2] } }, agent: s.release.runtime.compatibleAgent,
+        components: { web: { tag: `web-v${version}`, version, sourceRevision: source, releaseSet: source, image: s.release.image, npm: `@maudecode/talaria-web@${version}` } } })
+    }
+    const n = npmPackageInstall(s, 'success', runtime)
+    const restarts: number[] = []
+    const svc = new UpdateService({
+      webRoot: n.packageRoot, git: s.run, npm: n.npm, getJson, identity: s.identity, webuiVersion: 'web-v1.0.0', agentDir: () => null, channel: () => 'stable', includeAgent: () => false,
+      blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
+      scheduleRestart: () => restarts.push(1), gatewayRestart: () => Promise.resolve({ status: 'completed' }), log: () => undefined,
+    })
+    const installs = (): string[] => n.calls.filter((call) => call[0] === 'install').map((call) => call.at(-1)!)
+    const version = (): string => (JSON.parse(readFileSync(join(n.packageRoot, 'package.json'), 'utf8')) as { version: string }).version
+    return { s, n, getJson, svc, restarts, installs, version }
+  }
+
+  it('lists every newer completed Stable Web release an npm install can take, newest first (TAL-946)', async () => {
+    const h = stableHistory()
+    const webui = updatesCheckView(await h.svc.check(true, false, 'stable')).webui as Dict
+    expect(webui).toMatchObject({ state: 'release_ready', behind: 3, target_version: 'web-v2.0.0', folded_count: 2 })
+    const url = (version: string): string => `${REPOSITORY_URL}/releases/tag/release-set-${version === '2.0.0' ? h.s.latest : version.split('.')[1]!.repeat(40)}`
+    expect(webui.versions).toEqual([
+      { version: 'web-v2.0.0', ref: '2.0.0', release_url: url('2.0.0'), latest: true, folded: false },
+      { version: 'web-v1.2.0', ref: '1.2.0', release_url: url('1.2.0'), latest: false, folded: true },
+      { version: 'web-v1.1.0', ref: '1.1.0', release_url: url('1.1.0'), latest: false, folded: true },
+    ])
+  })
+
+  it('installs the exact npm package of an intermediate Stable Web release (TAL-946)', async () => {
+    const h = stableHistory()
+    expect(await h.svc.apply('webui', 'stable', () => true, { version: '1.2.0' })).toMatchObject({ ok: true, npm: '@maudecode/talaria-web@1.2.0', restart_scheduled: true })
+    expect(h.installs()).toEqual(['@maudecode/talaria-web@1.2.0'])
+    expect(h.version()).toBe('1.2.0')
+    expect(h.restarts).toEqual([1])
+  })
+
+  it('without a version still installs the newest Stable Web release (TAL-946)', async () => {
+    const h = stableHistory()
+    expect(await applyWebUpdate(h.n.packageRoot, 'stable', h.s.run, h.getJson, h.s.identity, h.n.npm)).toMatchObject({ ok: true, npm: '@maudecode/talaria-web@2.0.0' })
+    expect(h.installs()).toEqual(['@maudecode/talaria-web@2.0.0'])
+  })
+
+  it('rejects an absent, installed, or Experimental Web version without installing anything (TAL-946)', async () => {
+    const h = stableHistory()
+    for (const version of ['9.0.0', '1.0.0', '0.9.0']) {
+      expect(await applyWebUpdate(h.n.packageRoot, 'stable', h.s.run, h.getJson, h.s.identity, h.n.npm, () => true, {}, version))
+        .toMatchObject({ ok: false, message: `Talaria Web ${version} is not a newer Stable release for this installation. Check for updates and try again.` })
+    }
+    expect(await h.svc.apply('webui', 'experimental', () => true, { version: '1.2.0' })).toMatchObject({ ok: false, message: 'Choosing a version is available only on the Stable channel.' })
+    expect(h.installs()).toEqual([])
+    expect(h.version()).toBe('1.0.0')
   })
 })
 
@@ -1270,6 +1333,76 @@ describe('Agent checkout updates', () => {
     expect(retried).toMatchObject({ ok: true, lock_recovery: { action: 'no-lock-found', other_locks: [] } })
     expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(a.v2)
   })
+
+  /** TAL-946: an Agent installed at v2026.9.24 with v0.21.6 and v0.21.7 published after it. */
+  function agentReleases(): { agent: string; origin: string; v5: string; v6: string; v7: string } {
+    const a = agentInstall()
+    for (const repo of [a.origin, a.agent]) git(repo, 'tag', '-d', 'v1.0.0')
+    git(a.origin, 'tag', '-d', 'v2.0.0')
+    git(a.origin, 'tag', 'v2026.9.24', a.v1)
+    git(a.agent, 'tag', 'v2026.9.24', a.v1)
+    git(a.origin, 'tag', 'v0.21.6', a.v2)
+    git(a.origin, 'commit', '--allow-empty', '-m', 'agent v0.21.7')
+    git(a.origin, 'tag', 'v0.21.7')
+    return { agent: a.agent, origin: a.origin, v5: a.v1, v6: a.v2, v7: git(a.origin, 'rev-parse', 'HEAD') }
+  }
+  const NOT_TESTED = 'Not tested with this Talaria'
+
+  it('lists every newer Stable Agent release, newest first, each with its own support (TAL-946)', async () => {
+    const r = agentReleases()
+    const svc = windowService(r, verified(r.v5, r.v6))
+    const agent = updatesCheckView(await svc.check(true)).agent as Dict
+    expect(agent).toMatchObject({ current_version: 'v2026.9.24', target_version: 'v0.21.7', support: 'unchecked', support_label: NOT_TESTED, folded_count: 1 })
+    expect(agent.versions).toEqual([
+      { version: 'v0.21.7', ref: 'v0.21.7', sha: r.v7, release_url: null, latest: true, folded: false, support: 'unchecked', support_label: NOT_TESTED },
+      { version: 'v0.21.6', ref: 'v0.21.6', sha: r.v6, release_url: null, latest: false, folded: true, support: 'supported', support_label: 'Supported' },
+    ])
+    const github: GitRun = (args, cwd, t) => (args[0] === 'remote' && args[1] === 'get-url' ? Promise.resolve({ ok: true, out: 'git@github.com:Synthetic/agent.git' }) : runGit(args, cwd, t))
+    expect(((await checkAgentUpdate(r.agent, github)).versions as Dict[]).map((v) => v.release_url)).toEqual(['https://github.com/Synthetic/agent/releases/tag/v0.21.7', 'https://github.com/Synthetic/agent/releases/tag/v0.21.6'])
+    expect(updatesCheckView(await windowService(r, verified(r.v5, r.v6), { agentChannel: 'experimental' }).check(true)).agent).toMatchObject({ state: 'commits_behind', versions: [], folded_count: 0 })
+    expect(await svc.apply('agent', null, () => true, { confirmedRevision: r.v7 })).toMatchObject({ ok: true, verified_revision: r.v7 })
+    expect(updatesCheckView(await svc.check(true)).agent).toMatchObject({ state: 'up_to_date', versions: [], folded_count: 0 })
+  })
+
+  it('installs an intermediate Agent release by fast-forwarding to its exact commit (TAL-946)', async () => {
+    const r = agentReleases()
+    const commands: string[][] = []
+    const recording: GitRun = (args, cwd, t) => { commands.push(args); return runGit(args, cwd, t) }
+    const policy = { supportedRevisions: [r.v5, r.v6], supportedRevision: r.v6, supportedVersion: '0.21.6' }
+    expect(await applyAgentUpdate(r.agent, recording, 'stable', policy, 'v0.21.6')).toMatchObject({ ok: true, ref: 'v0.21.6', verified_revision: r.v6, verified_version: 'v0.21.6' })
+    expect(commands).toContainEqual(['merge', '--ff-only', r.v6])
+    expect(git(r.agent, 'rev-parse', 'HEAD')).toBe(r.v6)
+    expect(await checkAgentUpdate(r.agent, runGit)).toMatchObject({ current_version: 'v0.21.6', latest_version: 'v0.21.7', versions: [{ ref: 'v0.21.7', sha: r.v7 }] })
+    const svc = windowService(r, verified(r.v5, r.v6))
+    expect(await svc.apply('agent', null, () => true, { version: 'v0.21.7', confirmedRevision: r.v7 })).toMatchObject({ ok: true, verified_revision: r.v7 })
+  })
+
+  it('an unchecked intermediate release needs confirmation of its own commit on apply and force (TAL-946)', async () => {
+    const r = agentReleases()
+    const policy = { supportedRevisions: [r.v5], supportedRevision: r.v5, supportedVersion: '0.21.5' }
+    expect(await applyAgentUpdate(r.agent, runGit, 'stable', policy, 'v0.21.6')).toMatchObject({ ok: false, confirmation_required: true, candidate_revision: r.v6, support: 'unchecked' })
+    for (const result of [await applyAgentUpdate(r.agent, runGit, 'stable', { ...policy, confirmedRevision: r.v7 }, 'v0.21.6'), await forceAgentUpdate(r.agent, runGit, () => undefined, 'stable', { ...policy, confirmedRevision: r.v7 }, 'v0.21.6')]) {
+      expect(result).toMatchObject({ ok: false, confirmation_required: true, candidate_revision: r.v6 })
+    }
+    expect(git(r.agent, 'rev-parse', 'HEAD')).toBe(r.v5)
+    expect(await applyAgentUpdate(r.agent, runGit, 'stable', { ...policy, confirmedRevision: r.v6 }, 'v0.21.6')).toMatchObject({ ok: true, verified_revision: r.v6 })
+    expect(git(r.agent, 'rev-parse', 'HEAD')).toBe(r.v6)
+  })
+
+  it('rejects an absent, installed, older, or Experimental Agent version without touching the checkout (TAL-946)', async () => {
+    const r = agentReleases()
+    git(r.origin, 'tag', 'v2026.9.21', r.v5)
+    const policy = { supportedRevisions: [r.v5, r.v6, r.v7], supportedRevision: r.v7, supportedVersion: '0.21.7' }
+    for (const version of ['v9.9.9', 'v2026.9.24', 'v2026.9.21', 'main']) {
+      const expected = { ok: false, message: `Hermes Agent ${version} is not a newer Stable release for this installation. Check for updates and try again.` }
+      expect(await applyAgentUpdate(r.agent, runGit, 'stable', policy, version)).toMatchObject(expected)
+      expect(await forceAgentUpdate(r.agent, runGit, () => undefined, 'stable', policy, version)).toMatchObject(expected)
+    }
+    const experimental = { ok: false, message: 'Choosing a version is available only on the Stable channel.' }
+    expect(await applyAgentUpdate(r.agent, runGit, 'experimental', policy, 'v0.21.6')).toMatchObject(experimental)
+    expect(await forceAgentUpdate(r.agent, runGit, () => undefined, 'experimental', policy, 'v0.21.6')).toMatchObject(experimental)
+    expect(git(r.agent, 'rev-parse', 'HEAD')).toBe(r.v5)
+  })
 })
 
 describe('restart when safe', () => {
@@ -1325,5 +1458,21 @@ describe('update status view (TAL-559)', () => {
     const status = updatesCheckView({ cached: true, webui: { name: 'webui', behind: 1, current_version: 'web-v1' }, agent: null })
     expect(status).toMatchObject({ cached: true, webui: { name: 'webui', behind: 1, current_version: 'web-v1', state: 'commits_behind', can_apply: true }, agent: null })
     expect(updatesCheckView({ disabled: true })).toMatchObject({ disabled: true, webui: { state: 'off', can_apply: false }, agent: { state: 'off', can_apply: false } })
+  })
+
+  it('lists versions only while a release is installable and folds all but the newest (TAL-946)', () => {
+    const versions = [{ version: 'v0.21.7', ref: 'v0.21.7' }, { version: 'v0.21.6', ref: 'v0.21.6' }]
+    expect(updateTargetView('agent', { behind: 2, release_based: true, latest_version: 'v0.21.7', versions }, false)).toMatchObject({
+      folded_count: 1, versions: [{ ref: 'v0.21.7', latest: true, folded: false }, { ref: 'v0.21.6', latest: false, folded: true }],
+    })
+    for (const [info, off] of [[{ behind: 0, versions }, false], [{ behind: 2, release_based: true, manual_update: true, versions }, false], [{ behind: 2, versions }, false], [{ behind: 2, release_based: true, versions }, true]] as const) {
+      expect(updateTargetView('agent', info, off)).toMatchObject({ versions: [], folded_count: 0 })
+    }
+  })
+
+  it('the shared updates-check fixture is this server\'s view (TAL-946)', () => {
+    const fixture = JSON.parse(readFileSync(join(WEB_ROOT, '../contracts/fixtures/updates-check.json'), 'utf8')) as Dict
+    expect(updatesCheckView(fixture)).toEqual(fixture)
+    expect(fixture).toMatchObject({ webui: { folded_count: 2 }, agent: { folded_count: 1 } })
   })
 })
