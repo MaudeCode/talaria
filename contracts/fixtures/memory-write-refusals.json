@@ -1,0 +1,12 @@
+{
+  "char_limit": {
+    "error": "MEMORY.md would hold 2,435 characters, over its 2,200-character limit. Shorten or remove entries, then save.",
+    "code": "memory_char_limit",
+    "char_limit": { "count": 2435, "limit": 2200 }
+  },
+  "mask_ambiguous": {
+    "error": "The memory page shows \"***\" for more than one hidden value, so the save cannot tell which one it means. Put it back where it was, or type the value.",
+    "code": "memory_mask_ambiguous",
+    "mask": "***"
+  }
+}

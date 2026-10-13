@@ -47858,7 +47858,7 @@
     "/api/memory/write": {
       "post": {
         "operationId": "memory.write",
-        "summary": "`section` names the file (memory, user, soul); the legacy `target` alias is accepted.",
+        "summary": "`section` names the file (memory, user, soul); the legacy `target` alias is accepted. Masks the page showed are restored to the values they hide; 422 refuses an ambiguous mask or a MEMORY.md / USER.md body over the Agent store limit.",
         "tags": [
           "tools"
         ],
@@ -47905,6 +47905,76 @@
                     "ok",
                     "section",
                     "path"
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Refused; the file is untouched.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string",
+                          "const": "memory_char_limit"
+                        },
+                        "char_limit": {
+                          "type": "object",
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "limit": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "count",
+                            "limit"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "error",
+                        "code",
+                        "char_limit"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string",
+                          "const": "memory_mask_ambiguous"
+                        },
+                        "mask": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "error",
+                        "code",
+                        "mask"
+                      ],
+                      "additionalProperties": false
+                    }
                   ]
                 }
               }

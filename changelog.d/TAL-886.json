@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Saving the memory page keeps the secrets it shows masked instead of overwriting them with the mask.",
+      "highlight": false,
+      "components": ["web"]
+    },
+    {
+      "category": "Fixed",
+      "summary": "The memory page refuses a save that would put memory or the user profile over the Agent's size limit, which used to stop the Agent from updating its memory.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
