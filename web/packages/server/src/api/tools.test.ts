@@ -2,6 +2,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, wr
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { SidecarError } from '../sidecar/client.js'
 import { FakeSidecar, loadSidecarFixtures } from '../sidecar/fake.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { sanitizeClientEvent, updateNotificationOwner, WindowLimiter } from './tools-router.js'
@@ -835,6 +836,50 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     res = await s.get('/api/csp-report', { method: 'POST', body: JSON.stringify({ 'csp-report': { 'violated-directive': 'script-src' } }), headers: { 'content-type': 'application/csp-report' } })
     expect(res.status).toBe(204)
     expect(s.logs.some((l) => l.includes('[csp-report]') && l.includes('script-src'))).toBe(true)
+  })
+})
+
+describe('agent health chat readiness', () => {
+  it('ships chat availability from the sidecar status, independent of the gateway', async () => {
+    const sidecar = new FakeSidecar()
+    let current: FakeSidecar | null = sidecar
+    const s = await bootTestServer({ sidecar, deps: (deps) => { deps.sidecar = () => current } })
+    try {
+      const chat = async (): Promise<Json> => {
+        const body = await json(await s.get('/api/health/agent'))
+        // TAL-951: no gateway runs here, and chat readiness never reads it.
+        expect(body.alive).toBeNull()
+        return body.chat as Json
+      }
+      const handshake = sidecar.describe!
+      const cases: [FakeSidecar['status'], boolean, Json][] = [
+        ['ready', false, { available: true, condition: null }],
+        ['starting', false, { available: false, condition: 'sidecar_unavailable' }],
+        ['restarting', false, { available: false, condition: 'sidecar_unavailable' }],
+        ['stopped', false, { available: false, condition: 'sidecar_unavailable' }],
+        ['incompatible', false, { available: false, condition: 'agent_incompatible' }],
+        ['incompatible', true, { available: false, condition: 'agent_runtime_stale' }],
+      ]
+      for (const [status, stale, expected] of cases) {
+        sidecar.status = status
+        sidecar.describe = { ...handshake, stale }
+        expect(await chat(), `${status}${stale ? ' (stale)' : ''}`).toEqual(expected)
+      }
+      // The checkout changed after the handshake: turn admission's live check refuses, so health says so too.
+      sidecar.status = 'ready'
+      sidecar.describe = handshake
+      sidecar.respond('runtime.ensure_current', () => { throw new SidecarError('Hermes Agent was updated', { condition: 'agent_runtime_stale' }) })
+      expect(await chat(), 'ready, checkout changed').toEqual({ available: false, condition: 'agent_runtime_stale' })
+      // A ready sidecar that cannot answer the check is not verified ready, and the wait stays well inside the browser's probe timeout.
+      let checkTimeout: number | undefined
+      sidecar.respond('runtime.ensure_current', (_params, _emit, opts) => { checkTimeout = opts.timeoutMs; throw new SidecarError('sidecar call runtime.ensure_current timed out', { condition: 'sidecar_timeout' }) })
+      expect(await chat(), 'ready, check timed out').toEqual({ available: false, condition: 'sidecar_unavailable' })
+      expect(checkTimeout).toBeLessThanOrEqual(5_000)
+      current = null
+      expect(await chat()).toEqual({ available: false, condition: 'sidecar_unavailable' })
+    } finally {
+      await s.close()
+    }
   })
 })
 

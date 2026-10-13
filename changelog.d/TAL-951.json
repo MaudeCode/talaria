@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The \"Hermes Agent is unavailable\" notice now appears only when chat cannot run, not when the messaging gateway is stopped.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

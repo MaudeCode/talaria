@@ -726,7 +726,14 @@ export const ProjectOsDashboardSchema = z.object({
   onboarding: z.looseObject({ active: z.boolean(), doc_source: z.enum(['project-os', 'root']) }).optional(), goal_summary: z.string(),
 })
 export type ProjectOsDashboard = z.infer<typeof ProjectOsDashboardSchema>
-export const AgentHealthSchema = z.looseObject({ alive: z.boolean().nullable().optional(), checked_at: z.string().optional(), details: z.looseObject({ state: z.string().optional(), reason: z.string().optional() }).optional(), gateway_chat: z.looseObject({ enabled: z.boolean().optional(), backend: z.string().optional(), base_url_configured: z.boolean().optional(), api_key_configured: z.boolean().optional() }).optional(), error: z.string().optional() })
+/** TAL-951: whether Web chat can run, from the Agent sidecar's status; `condition` says why not, null when available. */
+export const ChatReadinessSchema = z.discriminatedUnion('available', [
+  z.object({ available: z.literal(true), condition: z.null() }),
+  z.object({ available: z.literal(false), condition: z.enum(['sidecar_unavailable', 'agent_incompatible', 'agent_runtime_stale']) }),
+])
+export type ChatReadiness = z.infer<typeof ChatReadinessSchema>
+/** Messaging-gateway liveness (`alive`, `details`, `gateway_chat`) for Settings → System, plus Web chat readiness in `chat`. */
+export const AgentHealthSchema = z.looseObject({ chat: ChatReadinessSchema.optional().describe('Always sent since TAL-951; absent from older servers.'), alive: z.boolean().nullable().optional(), checked_at: z.string().optional(), details: z.looseObject({ state: z.string().optional(), reason: z.string().optional() }).optional(), gateway_chat: z.looseObject({ enabled: z.boolean().optional(), backend: z.string().optional(), base_url_configured: z.boolean().optional(), api_key_configured: z.boolean().optional() }).optional(), error: z.string().optional() })
 export const SystemHealthSchema = z.looseObject({
   available: z.boolean().optional(), status: z.string().optional(), checked_at: z.string().optional(), cpu: Json.nullable().optional(), memory: Json.nullable().optional(), disk: z.looseObject({ percent: z.number().optional(), total_bytes: z.number().optional(), used_bytes: z.number().optional() }).nullable().optional(),
   errors: z.array(z.looseObject({ code: z.string().optional(), metric: z.string().optional() })).optional(), webui_runtime: Json.optional(),

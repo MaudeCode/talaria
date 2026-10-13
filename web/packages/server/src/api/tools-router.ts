@@ -7,7 +7,7 @@ import { HttpError, requireFields, type ApiContext } from './router.js'
 import { requestSessionIdGuard } from './session-visibility.js'
 import type { RequestContext } from '../http/context.js'
 import { activeProfileName, ensureTrustedAuthSession, sessionCanManageServer } from '../auth/gate.js'
-import { HttpFailure } from '../sessions/service.js'
+import { currentChatReadiness, HttpFailure } from '../sessions/service.js'
 import { SessionNotFound } from '../sessions/store.js'
 import { insightsSessionRows } from '../sessions/state-db.js'
 import { ConfigUnavailable, type Config, type Dict } from '../config/agent-config.js'
@@ -386,7 +386,7 @@ export const toolsRouter = os.router({
   })),
   logs: os.logs.handler(({ input, context: { ctx } }) => run(() => readLogTail(home(ctx), input.file, input.tail) as never)),
   ops: {
-    agent: os.ops.agent.handler(({ context: { ctx } }) => run(() => health(ctx))),
+    agent: os.ops.agent.handler(({ context: { ctx } }) => run(async () => { const [gateway, chat] = await Promise.all([health(ctx), currentChatReadiness(ctx.deps.sidecar())]); return { ...gateway, chat } })),
     system: os.ops.system.handler(({ context: { ctx } }) => run(() => systemHealth(ctx.deps.config.homeDir, ctx.deps.runtimeDiagnostics()) as never)),
     restart: os.ops.restart.handler(({ context: { ctx } }) => run(async () => {
       const sidecar = ctx.deps.sidecar()

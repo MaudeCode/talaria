@@ -1,6 +1,10 @@
 {
   "body": {
     "alive": null,
+    "chat": {
+      "available": true,
+      "condition": null
+    },
     "checked_at": "2026-09-15T02:11:17.381595+00:00",
     "details": {
       "reason": "gateway_not_configured",

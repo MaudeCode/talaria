@@ -49074,6 +49074,46 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "chat": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "available": {
+                              "const": true
+                            },
+                            "condition": {
+                              "type": "null"
+                            }
+                          },
+                          "required": [
+                            "available",
+                            "condition"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "available": {
+                              "const": false
+                            },
+                            "condition": {
+                              "enum": [
+                                "sidecar_unavailable",
+                                "agent_incompatible",
+                                "agent_runtime_stale"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "available",
+                            "condition"
+                          ]
+                        }
+                      ],
+                      "description": "Always sent since TAL-951; absent from older servers."
+                    },
                     "alive": {
                       "anyOf": [
                         {
