@@ -25,6 +25,9 @@ _DONE = {"start": "started", "stop": "stopped", "restart": "restarted"}
 # EX_CONFIG: Agent v0.21.6 refuses a named profile's own start/restart with it, since the host gateway serves every profile.
 _REFUSED = 78
 _SERVED_WAIT_SECONDS = 15.0
+# A restart waits out the CLI's own exit budget plus this headroom; 240 s on an Agent without the budget helper.
+_RESTART_HEADROOM_SECONDS = 30.0
+_RESTART_FALLBACK_SECONDS = 240.0
 _ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
 
@@ -112,14 +115,57 @@ def control(action: str, home: Path, cli_profile: str | None, ctx: CallContext, 
         _ACTION_LOCK.release()
 
 
-def _run(action: str, home: Path, cli_profile: str | None, ctx: CallContext, *, quick_timeout: float, background_wait: float) -> dict:
-    """One ``hermes gateway <action>`` subprocess in ``home``; the caller holds ``_ACTION_LOCK``."""
-    env = dict(os.environ)
-    env["HERMES_HOME"] = str(home)
+def _profile_selector(home: Path) -> str | None:
+    """The profile the Agent names ``home`` (``default`` for the root): a selector-less verb would follow the sticky ``active_profile``."""
+    try:
+        from hermes_constants import profile_name_for_home
+    except ImportError:
+        return None
+    return profile_name_for_home(home)
+
+
+def _child_env(home: Path, profile: str | None, action: str) -> dict:
+    """The CLI's environment: a named profile's starts scrubbed of the launch profile's ``.env`` (which the sidecar's
+    ``os.environ`` carries once chat ran) so the gateway loads its own; the root profile keeps the launch environment."""
+    if profile in (None, "default"):
+        env = dict(os.environ)
+        env["HERMES_HOME"] = str(home)
+    else:
+        from hermes_cli.web_server_gateway import _profile_action_environment
+
+        env = _profile_action_environment(["--profile", profile, "gateway", action])
     env.pop("HERMES_EXEC_ASK", None)  # the sidecar's own approval posture, not the gateway's
+    return env
+
+
+def _restart_wait(home: Path) -> float:
+    """The Agent CLI's own restart wait in ``home`` plus headroom, so Web never kills a restart the CLI still waits on."""
+    try:
+        from hermes_cli.gateway import _get_restart_exit_wait_budget
+        from hermes_constants import reset_hermes_home_override, set_hermes_home_override
+    except ImportError:
+        return _RESTART_FALLBACK_SECONDS
+    token = set_hermes_home_override(home)
+    try:
+        return float(_get_restart_exit_wait_budget()) + _RESTART_HEADROOM_SECONDS
+    except Exception:  # noqa: BLE001 - an unreadable config still gets the historical wait
+        log.warning("Could not read the Agent's restart budget for %s", home, exc_info=True)
+        return _RESTART_FALLBACK_SECONDS
+    finally:
+        reset_hermes_home_override(token)
+
+
+def _run(action: str, home: Path, cli_profile: str | None, ctx: CallContext, *, quick_timeout: float, background_wait: float) -> dict:
+    """One ``hermes --profile <name> gateway <action>`` subprocess for ``home``; the caller holds ``_ACTION_LOCK``."""
+    profile = cli_profile or _profile_selector(home)
+    try:
+        env = _child_env(home, profile, action)
+    except Exception as exc:  # noqa: BLE001 - never start a named profile's gateway with another profile's credentials
+        log.warning("Could not build the %s profile's gateway environment", profile, exc_info=True)
+        return {"status": "failed", "message": f"Could not isolate the {profile} profile's environment: {getattr(exc, 'detail', None) or exc}"}
     cmd = [_hermes_command()]
-    if cli_profile:
-        cmd.extend(["--profile", cli_profile])
+    if profile:
+        cmd.extend(["--profile", profile])
     cmd.extend(["gateway", action])
     log.info("Running gateway %s via %s (HERMES_HOME=%s)", action, " ".join(cmd), home)
     try:
@@ -166,6 +212,8 @@ def _run(action: str, home: Path, cli_profile: str | None, ctx: CallContext, *, 
             proc.kill()
             proc.wait(timeout=5)
         collected()
+        if ctx.cancelled:
+            return {"status": "failed", "message": f"Gateway {action} was cancelled and its process terminated", "timed_out": True}
         return {"status": "failed", "message": f"Gateway {action} process timed out after {background_wait:.0f}s and was terminated", "timed_out": True}
     return outcome()
 
@@ -176,9 +224,9 @@ def register(registry) -> None:
         cli_profile = params.get("cli_profile")
         if cli_profile is not None and not isinstance(cli_profile, str):
             raise InvalidParams("cli_profile must be a string")
-        # A restart drains the old gateway first, so it gets longer than start or stop.
-        default_wait = 240.0 if action == "restart" else 60.0
-        return control(action, home, cli_profile or None, ctx, quick_timeout=float(params.get("quick_timeout_seconds") or 2.0), background_wait=float(params.get("background_wait_seconds") or default_wait))
+        # A restart drains the old gateway first, for as long as the CLI's own budget allows (infinite: no deadline).
+        wait = params.get("background_wait_seconds") or (_restart_wait(home) if action == "restart" else 60.0)
+        return control(action, home, cli_profile or None, ctx, quick_timeout=float(params.get("quick_timeout_seconds") or 2.0), background_wait=float(wait))
 
     @registry.method("gateway.control", requires_agent=False)
     def control_(ctx: CallContext, params: dict) -> dict:

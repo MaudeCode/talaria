@@ -436,8 +436,9 @@ export const CHAT_METHODS = {
 } as const
 const GatewayActionParams = ProfileHomeParams.extend({ cli_profile: z.string().nullable().optional(), quick_timeout_seconds: z.number().optional(), background_wait_seconds: z.number().optional() })
 /**
- * A lifecycle run of `hermes gateway <action>`. `busy` means another action holds the lock; `timed_out` marks a child killed after
- * `background_wait_seconds`. `detail` is CLI output, never shown to a browser; `reason` is the Agent's first error line of a
+ * A lifecycle run of `hermes --profile <name> gateway <action>` for the profile at `profile_home` (TAL-894). `busy` means another
+ * action holds the lock; `timed_out` marks a child killed after `background_wait_seconds` (a restart defaults to the Agent CLI's own
+ * restart budget plus 30 s) or cancelled. `detail` is CLI output, never shown to a browser; `reason` is the Agent's first error line of a
  * failed run (TAL-884), the one line the server shows.
  */
 const GatewayActionResult = z.object({ status: z.enum(['completed', 'failed', 'busy']), message: z.string(), detail: z.string().optional(), returncode: z.number().int().optional(), reason: z.string().optional(), timed_out: z.boolean().optional() })
