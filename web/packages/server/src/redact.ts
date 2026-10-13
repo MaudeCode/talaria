@@ -2,7 +2,7 @@ import { str } from './util.js'
 import { diffHunks } from './text/diff.js'
 import { isRasterDataUri } from './raster-image.js'
 import { snapshotArgs, toolArgs, toolDisplay, toolName } from './sessions/tool-display.js'
-import { messageText } from './sessions/merge.js'
+import { hasNativeImages, messageText, normalizeUserDisplay } from './sessions/merge.js'
 import { stripAttachedFilesMarker } from './sessions/session.js'
 /**
  * Credential redaction and the public session projection (Python
@@ -2001,7 +2001,7 @@ function messageDisplay(item: Record<string, unknown>): 'row' | 'hidden' | 'in_s
   if (item.role === 'tool' || item._steer) return 'in_scene'
   if (!item.role || item._background_silent || item.display_kind === 'hidden') return 'hidden'
   if (item._marker_kind) return 'row'
-  const shown = Boolean(messageText(item.content).trim()) || (Array.isArray(item.attachments) && item.attachments.length > 0)
+  const shown = Boolean(messageText(item.content).trim()) || (Array.isArray(item.attachments) && item.attachments.length > 0) || (item.role === 'user' && hasNativeImages([item]))
   if (item.role !== 'assistant') return shown ? 'row' : 'hidden'
   const hasTools = Array.isArray(item.tool_calls) && item.tool_calls.length > 0
   return shown || hasTools || Boolean(item.reasoning || item._anchor_activity_scene) ? 'row' : 'hidden'
@@ -2026,7 +2026,8 @@ function redactUserContentPart(part: unknown, enabled: boolean): unknown {
 
 function publicMessageProjection(message: unknown, enabled: boolean, activeTurnToken: string | null): unknown {
   const isActive = Boolean(message && typeof message === 'object' && (message as Record<string, unknown>).role === 'user' && activeTurnToken !== null && (message as Record<string, unknown>)._active_turn_token === activeTurnToken)
-  const scrubbed = (scrubInternalReplayFields([message], { messageRecords: true }) as unknown[])[0]
+  // Exports and nested public documents bypass scene hydration; project their user content at this boundary too.
+  const scrubbed = normalizeUserDisplay((scrubInternalReplayFields([message], { messageRecords: true }) as unknown[])[0])
   if (!scrubbed || typeof scrubbed !== 'object' || Array.isArray(scrubbed)) return redactValue(scrubbed, enabled)
   const item: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(scrubbed as Record<string, unknown>)) {

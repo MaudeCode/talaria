@@ -1,0 +1,7 @@
+{
+  "id": 1,
+  "session_id": "memory-image",
+  "role": "user",
+  "content": "\u0000json:[{\"type\": \"text\", \"text\": \"What is in this picture?\"}, {\"type\": \"image_url\", \"image_url\": {\"url\": \"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aT1sAAAAASUVORK5CYII=\"}}, {\"type\": \"text\", \"text\": \"<memory-context>\\nRecalled memory: prefers metric units.\\n</memory-context>\"}]",
+  "timestamp": 100.0
+}
