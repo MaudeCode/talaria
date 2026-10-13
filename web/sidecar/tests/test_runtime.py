@@ -193,3 +193,24 @@ def test_load_accepts_agent_packages_for_the_running_python(tmp_path, monkeypatc
     runtime = _load_with_site_packages(tmp_path, monkeypatch, tmp_path / "venv" / "lib" / f"python{running}" / "site-packages")
     assert runtime.loaded is True
     assert runtime.describe()["compatible"] is True
+
+
+def test_load_rejects_agent_packages_for_the_other_free_threading_abi(tmp_path, monkeypatch) -> None:
+    import sys
+    import sysconfig
+
+    from talaria_sidecar.runtime import AgentIncompatible
+
+    running = f"{sys.version_info[0]}.{sys.version_info[1]}"
+    other = running if sysconfig.get_config_var("Py_GIL_DISABLED") else f"{running}t"
+    venv = tmp_path / "venv"
+    venv.mkdir()
+    (venv / "pyvenv.cfg").write_text(f"version = {running}.0\nexecutable = C:\\Python\\python{other}.exe\n")
+    for site_packages in (tmp_path / "posix" / "lib" / f"python{other}" / "site-packages", venv / "Lib" / "site-packages"):
+        try:
+            _load_with_site_packages(tmp_path, monkeypatch, site_packages)
+        except AgentIncompatible as error:
+            assert f"built for Python {other} ({site_packages})" in str(error)
+        else:
+            raise AssertionError(f"load() accepted {site_packages} built for the other free-threading ABI")
+        monkeypatch.undo()
