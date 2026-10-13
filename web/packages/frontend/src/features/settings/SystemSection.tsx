@@ -129,7 +129,8 @@ export function SystemSection() {
               <option value="experimental">{m.settings_update_channel_experimental()}</option>
             </Select>}
             action={canManage && agentUpdate?.can_apply ? <Button variant="primary" onClick={() => applyAgent.mutate({})} disabled={applyAgent.isPending}>{applyAgent.isPending ? m.update_updating() : m.system_apply_agent_update()}</Button> : null}
-            warning={agentUpdate?.can_apply && agentUpdate.support === 'unchecked' ? m.system_agent_unsupported_warning() : null}
+            /* `unsupported` answers only for an older server that predates `support` (TAL-350). */
+            warning={agentUpdate?.can_apply && (agentUpdate.support ?? (agentUpdate.unsupported === true ? 'unchecked' : 'supported')) === 'unchecked' ? m.system_agent_unsupported_warning() : null}
             installedNote={agentUpdate?.current_support === 'unchecked' ? m.system_agent_installed_unchecked() : null}
             summary={agentUpdate?.summary_available ? <UpdateSummary target="agent" name={AGENT} info={agentUpdate} /> : null}>
             <FieldRow label={m.settings_label_ignore_agent_updates()} hint={m.system_agent_manual_hint()} htmlFor="settingsIgnoreAgentUpdates" inline><Switch id="settingsIgnoreAgentUpdates" checked={bool('ignore_agent_updates')} onCheckedChange={(checked) => save.mutate({ ignore_agent_updates: checked }, { onError: fail, onSettled: () => { void qc.invalidateQueries({ queryKey: keys.updates.check }) } })} /></FieldRow>

@@ -89,6 +89,16 @@ describe('SystemSection "Check now"', () => {
     expect(await screen.findByRole('alertdialog')).toHaveTextContent('may cause issues')
   })
 
+  it.each([
+    ['an older server without support', { unsupported: true }, true],
+    ['support over a contradicting unsupported', { support: 'supported' as const, unsupported: true }, false],
+  ])('warns from %s', async (_name, fields, warned) => {
+    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ webui: current, agent: { ...behind(1), ...fields } })
+    renderSystem()
+    expect(await screen.findByRole('button', { name: /update agent/i })).toBeInTheDocument()
+    expect(screen.queryByText(/not officially supported/) !== null).toBe(warned)
+  })
+
   it('cancels an unsupported Agent notification when confirmation closes with Escape', async () => {
     vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ webui: current, agent: behind(1) })
     vi.mocked(api.applyUpdates).mockResolvedValue({ ok: false, confirmation_required: true, candidate_revision: 'b'.repeat(40), supported_version: '0.21.3', supported_revision: 'a'.repeat(40), agent_channel: 'stable', notification_id: '00000000-0000-4000-8000-000000000001' })
