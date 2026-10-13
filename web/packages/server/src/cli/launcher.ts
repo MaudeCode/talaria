@@ -164,7 +164,7 @@ export async function runBootstrap(ctx: LaunchContext, args: BootstrapArgs, serv
   env.HERMES_WEBUI_PORT = String(args.port)
   env.HERMES_WEBUI_STATE_DIR ??= stateDir
   if (agentDir) env.HERMES_WEBUI_AGENT_DIR = agentDir
-  if (python) env.HERMES_WEBUI_PYTHON = python
+  // Only user-supplied Python overrides persist: each worker must rediscover the current PM generation.
   const tls = Boolean((env.HERMES_WEBUI_TLS_CERT ?? '').trim()) && Boolean((env.HERMES_WEBUI_TLS_KEY ?? '').trim())
   const scheme = tls ? 'https' : 'http'
   const foregroundReason = args.foreground ? '--foreground' : detectSupervisor(env)

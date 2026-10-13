@@ -60,6 +60,8 @@ application errors in `-32000..-32099`, one per error condition
    share their root's records. A PM selection must resolve inside that install's
    `environments/` and contain `pyvenv.cfg` and a Python interpreter; a broken
    selection is rejected without falling back to older dependencies.
+   Bootstrap preserves user-supplied interpreter overrides but does not export
+   auto-discovered paths as overrides, so restarted workers read the current PM selection.
 2. Server spawns the sidecar and sends `runtime.handshake` with
    `{rpc_version, hermes_home, state_dir}`.
 3. Sidecar uses the Agent's `pm.store_first_path` when available to

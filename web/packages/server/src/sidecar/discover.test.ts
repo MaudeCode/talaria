@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto'
-import { mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { agentCandidates, discoverAgentDir, discoverAgentDirForLaunch, discoverAgentPython } from './discover.js'
+import { runBootstrap } from '../cli/launcher.js'
 
 const scratches: string[] = []
 afterEach(() => { for (const dir of scratches.splice(0)) rmSync(dir, { recursive: true, force: true }) })
@@ -138,6 +139,37 @@ describe('Agent discovery', () => {
     const agent = discoverAgentDirForLaunch({ env: { ...f.env, PATH: bin }, hermesHome: f.hermesHome, home: f.home, webRoot: join(f.home, 'web') })
     expect(agent).toBe(f.agent)
     expect(discoverAgentPython(f.env, agent)).toBe(f.python)
+  })
+
+  it.each([false, true])('worker discovery follows a new PM generation unless the interpreter is explicitly pinned: %s', async (explicit) => {
+    const f = pmInstall()
+    writeFileSync(join(f.agent, 'run_agent.py'), '')
+    // This interpreter stands in for a successful import preflight, without loading a real Agent.
+    writeFileSync(f.python, '#!/bin/sh\nexit 0\n')
+    chmodSync(f.python, 0o755)
+    const override = join(f.home, 'operator-python')
+    writeFileSync(override, '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+    const env: Record<string, string | undefined> = { ...f.env, HERMES_WEBUI_AGENT_DIR: f.agent }
+    if (explicit) env.HERMES_WEBUI_PYTHON = override
+    const next = join(f.install, 'environments', 'generation-two', 'venv')
+    mkdirSync(join(next, 'bin'), { recursive: true })
+    writeFileSync(join(next, 'pyvenv.cfg'), '')
+    const nextPython = join(next, 'bin', 'python')
+    writeFileSync(nextPython, '')
+    const selected: (string | null)[] = []
+    const code = await runBootstrap({
+      env, hermesHome: f.hermesHome, home: f.home, webRoot: join(f.home, 'web'),
+      compatibleAgentRevision: 'synthetic', serveCommand: [], log: () => undefined,
+    }, { port: 8787, host: '127.0.0.1', noBrowser: true, skipAgentInstall: true, foreground: true }, () => {
+      // A supervisor passes the same bootstrap environment to each newly started worker.
+      selected.push(discoverAgentPython({ ...env }, f.agent, f.hermesHome))
+      f.record(next)
+      rmSync(f.generation, { recursive: true })
+      selected.push(discoverAgentPython({ ...env }, f.agent, f.hermesHome))
+      return Promise.resolve()
+    })
+    expect(code).toBe(0)
+    expect(selected).toEqual(explicit ? [override, override] : [f.python, nextPython])
   })
 })
 
