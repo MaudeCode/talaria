@@ -7,12 +7,13 @@
 import type { Session } from './session.js'
 import { isDict, messageText } from './merge.js'
 import { str } from '../util.js'
+import { backgroundEventKind } from './background-events.js'
 
 type Dict = Record<string, unknown>
 export type BackgroundUpdateKind = 'delegation' | 'process' | 'mixed' | 'other'
 /** One finished background item: an agent (by its goal), a command, or another notice (by its summary). */
 export interface BackgroundLine { kind: 'agent' | 'command' | 'other'; status: 'completed' | 'failed' | 'notice'; label: string; exit_code?: number | null }
-export interface BackgroundUpdate { kind: BackgroundUpdateKind; attention: boolean; count: number; summary: string; lines: BackgroundLine[] }
+export interface BackgroundUpdate { kind: BackgroundUpdateKind; attention: boolean; count: number; summary: string; lines: BackgroundLine[]; display_kind?: 'hidden' }
 export type TurnOrigin = 'user' | 'background'
 
 const RECORD_KEY = 'background_updates'
@@ -65,14 +66,14 @@ function label(text: unknown): string {
 
 /** The completion lines of one event: one per agent of a delegation batch, one for a command, else one notice. */
 export function eventLines(evt: Dict, prompt: string): BackgroundLine[] {
-  const type = str(evt.type ?? 'completion')
-  if (type === 'async_delegation') {
+  const kind = backgroundEventKind(evt)
+  if (kind === 'delegation') {
     const results = Array.isArray(evt.results) ? evt.results.filter(isDict) : []
     const goals = Array.isArray(evt.goals) ? evt.goals : []
     if (!results.length) return [{ kind: 'agent', status: eventUpdate(evt).attention ? 'failed' : 'completed', label: label(evt.goal) || backgroundUpdateSummary(prompt) }]
     return results.map((r, i) => ({ kind: 'agent', status: DELEGATION_DONE.has(str(r.status)) ? 'completed' : 'failed', label: label(goals[i] ?? r.goal ?? evt.goal) }))
   }
-  if (type === 'completion') {
+  if (kind === 'completion') {
     const exit = evt.exit_code === undefined || evt.exit_code === null ? null : Number(evt.exit_code)
     return [{ kind: 'command', status: exit !== null && exit !== 0 ? 'failed' : 'completed', label: label(evt.command), exit_code: exit }]
   }
@@ -81,13 +82,14 @@ export function eventLines(evt: Dict, prompt: string): BackgroundLine[] {
 
 /** Kind and attention of one completion event: failures and watch notices need attention without expanding. */
 export function eventUpdate(evt: Dict): { kind: BackgroundUpdateKind; attention: boolean } {
-  const type = str(evt.type ?? 'completion')
-  if (type === 'async_delegation') {
+  const kind = backgroundEventKind(evt)
+  if (kind === 'delegation') {
     const results = Array.isArray(evt.results) ? evt.results.filter(isDict) : []
     const failed = Boolean(evt.task_failure_notice) || Boolean(evt.error) || results.some((r) => !DELEGATION_DONE.has(str(r.status)))
     return { kind: 'delegation', attention: failed }
   }
-  if (type === 'completion') return { kind: 'process', attention: evt.exit_code !== undefined && evt.exit_code !== null && Number(evt.exit_code) !== 0 }
+  if (kind === 'completion') return { kind: 'process', attention: evt.exit_code !== undefined && evt.exit_code !== null && Number(evt.exit_code) !== 0 }
+  if (kind === 'progress') return { kind: 'process', attention: false }
   // Watch matches and watch overflow / disablement notices.
   return { kind: 'process', attention: true }
 }
@@ -102,7 +104,19 @@ export function batchUpdate(entries: { event: Dict; prompt: string }[]): Backgro
     count: entries.length,
     summary: backgroundUpdateSummary(entries[0]?.prompt ?? ''),
     lines: entries.flatMap((e) => eventLines(e.event, e.prompt)),
+    ...(entries.length && entries.every((e) => backgroundEventKind(e.event) === 'progress') ? { display_kind: 'hidden' as const } : {}),
   }
+}
+
+/** Persist the display kind on the prompt itself before the bounded per-turn metadata ages out. Also used for live reads. */
+export function withBackgroundDisplayKinds<T>(messages: T[], session: Session): T[] {
+  const recorded = session.extra[RECORD_KEY]
+  if (!isDict(recorded)) return messages
+  return messages.map((m) => {
+    if (!isDict(m) || m.role !== 'user' || m._source !== BACKGROUND_SOURCE) return m
+    const update = recorded[str(m._turn_id)]
+    return isDict(update) && update.display_kind === 'hidden' ? { ...m, display_kind: 'hidden' } : m
+  })
 }
 
 /** An update without event metadata (older records, the Agent's own rows): one line from its summary. */
@@ -146,7 +160,7 @@ function agentUpdate(m: Dict): BackgroundUpdate | null {
 export function withBackgroundUpdates<T>(messages: T[], session: Session): T[] {
   const recorded = isDict(session.extra[RECORD_KEY]) ? (session.extra[RECORD_KEY] as Dict) : {}
   const backgroundTurns = new Set<string>()
-  const stamped = messages.map((m) => {
+  const stamped = withBackgroundDisplayKinds(messages, session).map((m) => {
     if (!isDict(m) || m.role !== 'user') return m
     const update: BackgroundUpdate | null = m._source === BACKGROUND_SOURCE
       ? recordedUpdate(recorded, m._turn_id) ?? summaryUpdate('other', false, backgroundUpdateSummary(messageText(m.content)))

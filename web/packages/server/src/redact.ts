@@ -1999,7 +1999,7 @@ function isCollapsibleUserMessage(item: Record<string, unknown>): boolean {
  */
 function messageDisplay(item: Record<string, unknown>): 'row' | 'hidden' | 'in_scene' {
   if (item.role === 'tool' || item._steer) return 'in_scene'
-  if (!item.role || item._background_silent) return 'hidden'
+  if (!item.role || item._background_silent || item.display_kind === 'hidden') return 'hidden'
   if (item._marker_kind) return 'row'
   const shown = Boolean(messageText(item.content).trim()) || (Array.isArray(item.attachments) && item.attachments.length > 0)
   if (item.role !== 'assistant') return shown ? 'row' : 'hidden'

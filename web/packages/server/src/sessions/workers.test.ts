@@ -489,6 +489,31 @@ describe('background wakeups carry their update metadata (TAL-371)', () => {
     expect(row?._background_update).toEqual({ kind: 'process', attention: true, count: 1, summary: 'IMPORTANT: Background process proc_fail completed (exit_code=2).', lines: [{ kind: 'command', status: 'failed', label: 'make test', exit_code: 2 }] })
   })
 
+  it('a heartbeat starts a background-origin turn and persists its prompt hidden (TAL-790)', async () => {
+    const sid = await newSid()
+    const formatter = sidecar.responderFor('process.format_notification')
+    const prompt = '[Background process proc_beat heartbeat #1: tests are progressing]'
+    let source: unknown
+    const chat = sidecar.responderFor('chat.start')
+    sidecar.respond('process.format_notification', () => ({ text: prompt }))
+    sidecar.respond('chat.start', (params) => {
+      source = s.deps.registry.activeRuns.get(s.deps.sessionStore.get(sid).active_stream_id!)?.origin
+      return { ...completed('Tests are progressing.'), messages: [{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Tests are progressing.' }] }
+    })
+    try {
+      await s.deps.completions.processOne({ process_id: 'proc_beat', session_id: 'proc_beat', type: 'heartbeat', command: 'npm test', seq: 1, interval: 60, elapsed: 61, output: 'test passed', origin_ui_session_id: sid, consumed: false })
+      const row = await wakeupRow(sid)
+      expect(source).toBe('background')
+      expect(row).toMatchObject({ content: prompt, _display: 'hidden', display_kind: 'hidden', _background_update: { kind: 'process', attention: false } })
+      const document = JSON.parse(readFileSync(s.deps.sessionStore.pathFor(sid), 'utf8')) as { messages: Json[] }
+      expect(document.messages.find((m) => m._source === 'process_wakeup')).toMatchObject({ display_kind: 'hidden' })
+      expect((await settled(sid)).findLast((m) => m.role === 'assistant')).toMatchObject({ content: 'Tests are progressing.', _background_reply: true, _display: 'row' })
+    } finally {
+      sidecar.respond('process.format_notification', formatter)
+      sidecar.respond('chat.start', chat)
+    }
+  })
+
   it('a batch delivered after a turn is one mixed update', async () => {
     const sid = await newSid()
     s.deps.completions.recordDeferred(sid, 'deleg_mix', '[ASYNC DELEGATION BATCH COMPLETE — deleg_mix]\nresults', { process_id: 'deleg_mix', delegation_id: 'deleg_mix', type: 'async_delegation', goal: 'Scan the logs', results: [{ status: 'failed' }] })

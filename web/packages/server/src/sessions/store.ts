@@ -17,6 +17,7 @@ import { basename, join } from 'node:path'
 import { sanitizeSessionRow } from './list.js'
 import type { DraftStore } from './drafts.js'
 import type { SessionEventBus } from './events.js'
+import { withBackgroundDisplayKinds } from './background-updates.js'
 import { anchorSceneIndexFromRecords, collapseAdjacentDuplicatePartials, isSafeSessionId, Session, type SessionDefaults, type SessionInit } from './session.js'
 
 export class SessionNotFound extends Error {
@@ -383,6 +384,7 @@ export class SessionStore {
     const markerCurrent = session.state_db_seen_stamp === session.updated_at
     if (opts.touchUpdatedAt ?? true) session.updated_at = this.deps.now()
     if (markerCurrent) session.state_db_seen_stamp = session.updated_at
+    session.messages = withBackgroundDisplayKinds(session.messages, session)
     const payload = JSON.stringify(session.toDocument(), null, 2)
     const path = session.path = this.pathFor(session.session_id)
     mkdirSync(this.sessionDir, { recursive: true })

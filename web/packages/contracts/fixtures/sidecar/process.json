@@ -33,6 +33,23 @@
       "result": {
         "text": "[IMPORTANT: Background process proc_1 completed (exit code 0).\nCommand: ls\nOutput:\nok]"
       }
+    },
+    {
+      "params": {
+        "event": {
+          "type": "heartbeat",
+          "session_id": "proc_1",
+          "command": "npm test",
+          "seq": 1,
+          "interval": 60,
+          "elapsed": 61,
+          "output": "test passed",
+          "started_at": 10
+        }
+      },
+      "result": {
+        "text": "[Background process proc_1 heartbeat #1 — still running after 1m1s (next in 60s when there is new output; you will also be told when it exits).\nCommand: npm test\nOutput since last heartbeat:\ntest passed]"
+      }
     }
   ],
   "process.recover": [
