@@ -2,6 +2,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, wr
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { SidecarError } from '../sidecar/client.js'
 import { FakeSidecar, loadSidecarFixtures } from '../sidecar/fake.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { sanitizeClientEvent, updateNotificationOwner, WindowLimiter } from './tools-router.js'
@@ -864,6 +865,11 @@ describe('agent health chat readiness', () => {
         sidecar.describe = { ...handshake, stale }
         expect(await chat(), `${status}${stale ? ' (stale)' : ''}`).toEqual(expected)
       }
+      // The checkout changed after the handshake: turn admission's live check refuses, so health says so too.
+      sidecar.status = 'ready'
+      sidecar.describe = handshake
+      sidecar.respond('runtime.ensure_current', () => { throw new SidecarError('Hermes Agent was updated', { condition: 'agent_runtime_stale' }) })
+      expect(await chat(), 'ready, checkout changed').toEqual({ available: false, condition: 'agent_runtime_stale' })
       current = null
       expect(await chat()).toEqual({ available: false, condition: 'sidecar_unavailable' })
     } finally {

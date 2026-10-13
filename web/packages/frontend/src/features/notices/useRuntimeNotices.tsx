@@ -5,6 +5,7 @@ import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { isApiError } from '../../contracts/common'
+import type { ChatReadiness } from '@maudecode/talaria-web-contracts'
 import type { LiveTurn } from '../../stream/reducer'
 import type { ComposerNotice } from '../composer/ComposerTab'
 
@@ -12,7 +13,7 @@ type AgentHealth = Awaited<ReturnType<typeof api.fetchAgentHealth>>
 
 type Kind = 'thread_error' | 'server_unreachable' | 'offline' | 'agent_unavailable' | 'provider_failure' | 'compressing'
 interface Notice { kind: Kind; tone: 'error' | 'warning' | 'info'; title: string; detail?: string | undefined; /** A short state shown on the right, keeping the row to one line. */ status?: React.ReactNode; action?: { label: string; run: () => void } | undefined; dismissible: boolean }
-const CHAT_CONDITION: Record<NonNullable<AgentHealth['chat']['condition']>, () => string> = {
+const CHAT_CONDITION: Record<NonNullable<ChatReadiness['condition']>, () => string> = {
   sidecar_unavailable: m.notice_agent_sidecar_unavailable,
   agent_incompatible: m.notice_agent_incompatible,
   agent_runtime_stale: m.notice_agent_runtime_stale,
@@ -114,7 +115,9 @@ export function useRuntimeNotices({ live, onRetry, compressing }: { live: LiveTu
   const list: Notice[] = []
   if (!online) list.push({ kind: 'offline', tone: 'warning', title: m.notice_offline_title(), detail: m.notice_offline_detail(), dismissible: true })
   if (failures > 0) list.push({ kind: 'server_unreachable', tone: 'warning', title: m.notice_server_title(), status: <RetryCountdown at={(probe.data?.failedAt ?? 0) + retryDelay(failures)} busy={probe.isFetching} />, action: { label: m.retry(), run: retry }, dismissible: false })
-  if (failures === 0 && health?.chat.available === false) list.push({ kind: 'agent_unavailable', tone: 'warning', title: CHAT_CONDITION[health.chat.condition](), dismissible: true })
+  if (failures === 0 && health?.chat?.available === false) list.push({ kind: 'agent_unavailable', tone: 'warning', title: CHAT_CONDITION[health.chat.condition](), dismissible: true })
+  // Old-server fallback (TAL-951): a server without `chat` only reports gateway liveness. Delete once Stable ships `chat`.
+  else if (failures === 0 && health && !health.chat && health.alive === false) list.push({ kind: 'agent_unavailable', tone: 'warning', title: m.notice_agent_title(), detail: health.details?.reason ?? health.error, dismissible: true })
   if (live?.warning) list.push({ kind: 'provider_failure', tone: 'warning', title: live.warning, dismissible: true })
   if (live?.status === 'error' && live.error) list.push({ kind: 'thread_error', tone: 'error', title: m.live_error(), detail: live.error.message, action: onRetry ? { label: m.retry(), run: onRetry } : undefined, dismissible: true })
   if (compressing) list.push({ kind: 'compressing', tone: 'info', title: m.live_compressing(), dismissible: false })

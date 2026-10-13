@@ -49111,7 +49111,8 @@
                             "condition"
                           ]
                         }
-                      ]
+                      ],
+                      "description": "Always sent since TAL-951; absent from older servers."
                     },
                     "alive": {
                       "anyOf": [
@@ -49160,9 +49161,6 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "chat"
-                  ],
                   "additionalProperties": {}
                 }
               }

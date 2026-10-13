@@ -53,4 +53,12 @@ describe('useRuntimeNotices agent_unavailable', () => {
     render(createElement(Fragment, null, notice!.content))
     expect(screen.getByText(m.notice_agent_runtime_stale())).toBeTruthy()
   })
+
+  it('keeps the gateway warning for an older server that sends no chat readiness', async () => {
+    const shown = await notices({ alive: false, details: { state: 'down', reason: 'gateway_not_running' } })
+    const notice = shown.find((n) => n.id === 'runtime:agent_unavailable')
+    expect(notice).toBeDefined()
+    render(createElement(Fragment, null, notice!.content))
+    expect(screen.getByTitle('Hermes Agent is unavailable · gateway_not_running')).toBeTruthy()
+  })
 })

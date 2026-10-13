@@ -3,7 +3,7 @@
  * detail payload, list and search, and every mutation with its guards.
  * Runtime concerns owned by other domains arrive through `SessionServiceDeps`.
  */
-import type { PendingSteer, RecoveryAudit, RecoveryRepair } from '@maudecode/talaria-web-contracts'
+import type { ChatReadiness, PendingSteer, RecoveryAudit, RecoveryRepair } from '@maudecode/talaria-web-contracts'
 import type { RunJournal } from './journal.js'
 import { str } from '../util.js'
 import { randomUUID } from 'node:crypto'
@@ -22,7 +22,7 @@ import { auditSessionRecovery, repairSafeSessionRecovery, type RecoveryDeps } fr
 import { agentSessionRowsExisting, agentSessionRowsExistingAsync, CONVERSATION_ROUND_THRESHOLD, countConversationRounds, stateDbCompressionLineage, stateDbTailToolContent, stateDbLineageReport, stateDbSessionMessages, stateDbSessionRead, stateDbSessionRow, stateDbSessionSources, stateDbSessionSourcesAsync, stateDbTimestampSeconds, type StateDbRead } from './state-db.js'
 import { completionIncomplete, fallbackHandoffSummary, HANDOFF_SYSTEM_PROMPT, handoffMarker, handoffPayload, handoffTranscript, messageHandoffPayload, sameHandoff } from './handoff.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, compressionReference, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
-import { SidecarError, type SidecarLike } from '../sidecar/client.js'
+import { chatReadiness, SidecarError, type SidecarLike } from '../sidecar/client.js'
 import { agentSteerText, attachedFilesPrompt, attachmentObjects, checkpointTurnStart, dedupeContext, isContextCompressionMarker, journalOutputRows, looksLikeCurrentUserTurn, stoppedTurnContext, mergeSessionMessagesAppendOnly, messageIdentity, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, type ToolResultView } from './merge.js'
 import { withBackgroundUpdates } from './background-updates.js'
 import { sourceKind } from './source-kind.js'
@@ -55,6 +55,21 @@ export async function ensureAgentRuntimeCurrent(sidecar: SidecarLike | null): Pr
   } catch (error) {
     if (error instanceof SidecarError && error.condition === 'agent_runtime_stale') throw staleRuntimeFailure(error)
   }
+}
+
+/**
+ * TAL-951: whether a chat turn would be admitted now. The sidecar status gives the verdict, and a ready sidecar also
+ * runs turn admission's live loaded-revision check, since the Agent checkout can change after the handshake.
+ */
+export async function currentChatReadiness(sidecar: SidecarLike | null): Promise<ChatReadiness> {
+  const readiness = chatReadiness(sidecar)
+  if (!readiness.available) return readiness
+  try {
+    await ensureAgentRuntimeCurrent(sidecar)
+  } catch {
+    return { available: false, condition: 'agent_runtime_stale' }
+  }
+  return readiness
 }
 
 function staleRuntimeFailure(error: SidecarError): HttpFailure {
