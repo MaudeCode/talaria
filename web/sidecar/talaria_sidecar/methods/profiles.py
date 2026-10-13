@@ -155,9 +155,10 @@ GATEWAY_RUNNING_MODES = ("own", "served")
 
 
 def gateway_mode(home: Path, name: str, is_default: bool) -> str:
-    """The profile's gateway under the host multiplexer (TAL-805): ``parked`` (``hermes -p X gateway stop`` left its
-    marker; it wins, as in ``hermes -p X gateway status``), ``served`` by the live host gateway, ``own`` gateway process,
-    ``standalone`` (opted out of the host and not running), else ``stopped``. The default profile is the host itself.
+    """The profile's gateway under the host multiplexer (TAL-805): ``served`` by the live host gateway, ``own`` gateway
+    process, ``parked`` (``hermes -p X gateway stop`` left its marker and nothing runs; the marker records intent, so a
+    live ``--force`` gateway still counts, as in ``hermes -p X gateway status``), ``standalone`` (opted out of the host and
+    not running), else ``stopped``. The default profile is the host itself.
     A helper the installed Agent lacks answers no, so an Agent without the multiplexer helpers reports ``own`` or
     ``stopped``; a helper that fails answers no too, except the parked check, which fails closed to ``stopped``."""
     from hermes_cli import profiles as agent
@@ -176,14 +177,15 @@ def gateway_mode(home: Path, name: str, is_default: bool) -> str:
         return probe(helper, arg) is True
 
     named = not is_default
-    if named:
-        parked = probe("profile_is_parked", home)
-        if parked is not False:
-            return "parked" if parked else "stopped"
+    parked = probe("profile_is_parked", home) if named else False
+    if parked is None:
+        return "stopped"
     if named and asks("_served_by_running_multiplexer", name):
         return "served"
     if asks("_check_gateway_running", home):
         return "own"
+    if parked:
+        return "parked"
     if named and asks("profile_is_standalone", home):
         return "standalone"
     return "stopped"

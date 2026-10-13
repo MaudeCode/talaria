@@ -50,7 +50,9 @@ def _agent(monkeypatch: pytest.MonkeyPatch, **helpers) -> None:
 @pytest.mark.parametrize(
     ("is_default", "parked", "standalone", "served", "running", "mode"),
     [
-        (False, True, False, True, True, "parked"),  # the parked marker wins, as in `hermes -p X gateway status`
+        (False, True, False, False, False, "parked"),
+        (False, True, False, False, True, "own"),  # the marker is intent: a live `--force` gateway still runs, as in `hermes -p X gateway status`
+        (False, True, False, True, True, "served"),  # still served until the host drops it
         (False, False, False, True, True, "served"),  # the host's PID, not the profile's own
         (False, False, True, False, True, "own"),  # a standalone profile running its own gateway
         (False, False, True, False, False, "standalone"),

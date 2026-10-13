@@ -115,7 +115,7 @@ export const STATE_DB_METHODS = {
 export const CanonicalBotChatSchema = z.object({ session_id: z.string(), tip_session_id: z.string() })
 /**
  * TAL-805: a profile's gateway under the host multiplexer. `own` runs its own gateway process, `served` is served by the
- * live host gateway, `parked` was stopped through the host (`hermes -p X gateway stop`), `standalone` opted out of the host
+ * live host gateway, `parked` was stopped through the host (`hermes -p X gateway stop`) and nothing runs, `standalone` opted out of the host
  * and is not running, `stopped` is none of these. Only `own` and `served` are running; Agents without the multiplexer
  * helpers report `own` or `stopped`.
  */
