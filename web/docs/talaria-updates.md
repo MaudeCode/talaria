@@ -90,8 +90,10 @@ An already-current Agent update without pending sync remains a no-op.
 
 After a successful Agent update, Web schedules its own restart right away, but
 the messaging gateway restarts (`hermes gateway restart`) only once the gateway
-has no running work: the `active_agents` count it persists in
-`gateway_state.json` is zero, or the gateway is stopped, stale, or missing. The
+has no running work: the `active_agents` count each live gateway the restart
+can reach (the root host gateway and the profile's own) persists in
+`gateway_state.json` is zero, or the gateway is stopped, stale, or missing. A
+live gateway whose count cannot be read keeps waiting. The
 apply answers `gateway_restart: "waiting_for_idle"` without waiting. Until the
 gateway is idle, the update notification stays in `waiting_for_idle`, reports
 the running task count, and offers **Restart now**, which restarts the gateway

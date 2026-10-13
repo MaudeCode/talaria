@@ -201,36 +201,50 @@ export async function processStartTime(pid: number): Promise<number | null> {
 async function localGatewayHealth(hermesHome: string, profileHome: string, now: number): Promise<Dict> {
   const rootPid = join(hermesHome, 'gateway.pid')
   const pidPath = existsSync(rootPid) ? rootPid : existsSync(join(profileHome, 'gateway.pid')) ? join(profileHome, 'gateway.pid') : rootPid
-  const statusPath = join(dirname(pidPath), 'gateway_state.json')
-  const runtimeStatus = readJsonFile(statusPath)
+  return (await gatewayHealthAt(dirname(pidPath), now)).health
+}
+
+/** One gateway's liveness from the pid record and runtime status in `dir`, with the raw status it read. */
+async function gatewayHealthAt(dir: string, now: number): Promise<{ health: Dict; status: Dict | null }> {
+  const runtimeStatus = readJsonFile(join(dir, 'gateway_state.json'))
   const safe = runtimeDetailSubset(runtimeStatus)
   const checked = checkedAt()
+  const result = (alive: boolean | null, details: Dict) => ({ health: { alive, checked_at: checked, details }, status: runtimeStatus })
   let runningPid: number | null = null
   try {
-    const { pid, startTime } = gatewayPid(readFileSync(pidPath, 'utf8'))
+    const { pid, startTime } = gatewayPid(readFileSync(join(dir, 'gateway.pid'), 'utf8'))
     // Agent `_live_pid_from_record`: a start time known on both sides that disagrees means the pid was reused.
     const reused = async (): Promise<boolean> => { if (startTime === null) return false; const current = await processStartTime(pid); return current !== null && Math.abs(current - startTime) > START_TIME_TOLERANCE }
     if (Number.isInteger(pid) && pid > 0 && pidAlive(pid) && !(await reused())) runningPid = pid
   } catch { runningPid = null }
-  if (runningPid !== null) return { alive: true, checked_at: checked, details: { state: 'alive', ...safe } }
-  if (runtimeStatusIsFresh(runtimeStatus, now)) return { alive: true, checked_at: checked, details: { state: 'alive', reason: 'cross_container_freshness', ...safe } }
+  if (runningPid !== null) return result(true, { state: 'alive', ...safe })
+  if (runtimeStatusIsFresh(runtimeStatus, now)) return result(true, { state: 'alive', reason: 'cross_container_freshness', ...safe })
   const stoppedAge = ageSeconds(runtimeStatus, 'stopped', now)
-  if (stoppedAge !== null && stoppedAge > GATEWAY_FRESHNESS_THRESHOLD_S) return { alive: null, checked_at: checked, details: { state: 'unknown', reason: 'gateway_stale_stopped_state', ...safe } }
+  if (stoppedAge !== null && stoppedAge > GATEWAY_FRESHNESS_THRESHOLD_S) return result(null, { state: 'unknown', reason: 'gateway_stale_stopped_state', ...safe })
   const runningAge = ageSeconds(runtimeStatus, 'running', now)
-  if (runningAge !== null && runningAge > GATEWAY_FRESHNESS_THRESHOLD_S) return { alive: null, checked_at: checked, details: { state: 'unknown', reason: 'gateway_stale_running_state', ...safe } }
-  if (runtimeStatus) return { alive: false, checked_at: checked, details: { state: 'down', reason: 'gateway_not_running', ...safe } }
-  return { alive: null, checked_at: checked, details: { state: 'unknown', reason: 'gateway_not_configured' } }
+  if (runningAge !== null && runningAge > GATEWAY_FRESHNESS_THRESHOLD_S) return result(null, { state: 'unknown', reason: 'gateway_stale_running_state', ...safe })
+  if (runtimeStatus) return result(false, { state: 'down', reason: 'gateway_not_running', ...safe })
+  return result(null, { state: 'unknown', reason: 'gateway_not_configured' })
 }
 
 /**
- * TAL-953: the local gateway's in-flight work (messaging turns, cron jobs, API runs), which the Agent persists as
- * `active_agents` at every turn boundary. Only a gateway `agentHealth` judges alive can block; a missing, stopped,
- * or stale one has nothing to drain.
+ * TAL-953: the in-flight work (messaging turns, cron jobs, API runs) of every local gateway a restart of `profileHome`
+ * can reach: the root host gateway, which serves multiplexed profiles, and the profile's own. The Agent persists it as
+ * `active_agents` at every turn boundary. Only a gateway `agentHealth` would judge alive can block; a missing, stopped,
+ * or stale one has nothing to drain. A live gateway whose count cannot be read stays blocked until it can, or until
+ * Restart now.
  */
 export async function gatewayRestartBlockers(hermesHome: string, profileHome: string, now: number): Promise<RestartBlockers> {
-  const health = await localGatewayHealth(hermesHome, profileHome, now)
-  const agents = health.alive === true ? Number(dict(health.details).active_agents ?? 0) : 0
-  return { active_streams: 0, active_runs: agents, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: agents > 0 }
+  let runs = 0
+  let unknown = false
+  for (const dir of new Set([hermesHome, profileHome])) {
+    const { health, status } = await gatewayHealthAt(dir, now)
+    if (health.alive !== true) continue
+    const agents = status?.active_agents
+    if (typeof agents === 'number' && Number.isFinite(agents)) runs += Math.max(0, Math.trunc(agents))
+    else unknown = true
+  }
+  return { active_streams: 0, active_runs: runs, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: unknown || runs > 0 }
 }
 
 /** Python `build_agent_health_payload` + `gateway_chat_config_status`: remote probe (5 s single-flight cache) else local pid/state files. */

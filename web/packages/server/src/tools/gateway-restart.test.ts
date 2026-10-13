@@ -63,6 +63,35 @@ describe('gatewayRestartBlockers', () => {
     rmSync(t.home, { recursive: true, force: true })
     expect(await gatewayRestartBlockers(t.home, t.home, NOW)).toMatchObject({ restart_blocked: false })
   })
+
+  it('keeps a live gateway whose running work cannot be read blocked', async () => {
+    const t = setup()
+    t.gateway({ active_agents: 0 })
+    writeFileSync(join(t.home, 'gateway_state.json'), JSON.stringify({ gateway_state: 'running', updated_at: stamp() }))
+    expect(await gatewayRestartBlockers(t.home, t.home, NOW)).toMatchObject({ active_runs: 0, restart_blocked: true })
+    writeFileSync(join(t.home, 'gateway_state.json'), '{not json')
+    expect(await gatewayRestartBlockers(t.home, t.home, NOW)).toMatchObject({ restart_blocked: true })
+    rmSync(join(t.home, 'gateway_state.json'))
+    expect(await gatewayRestartBlockers(t.home, t.home, NOW)).toMatchObject({ restart_blocked: true })
+  })
+
+  it('counts both the root host gateway and the named profile\'s own gateway', async () => {
+    const t = setup()
+    const profile = join(t.stateDir, 'profiles', 'work')
+    mkdirSync(profile, { recursive: true })
+    const own = (agents: number): void => {
+      writeFileSync(join(profile, 'gateway.pid'), JSON.stringify({ pid: process.pid }))
+      writeFileSync(join(profile, 'gateway_state.json'), JSON.stringify({ gateway_state: 'running', active_agents: agents, updated_at: stamp() }))
+    }
+    t.gateway({ active_agents: 0 })
+    own(2)
+    expect(await gatewayRestartBlockers(t.home, profile, NOW)).toMatchObject({ active_runs: 2, restart_blocked: true })
+    t.gateway({ active_agents: 1 })
+    own(0)
+    expect(await gatewayRestartBlockers(t.home, profile, NOW)).toMatchObject({ active_runs: 1, restart_blocked: true })
+    t.gateway({ active_agents: 0 })
+    expect(await gatewayRestartBlockers(t.home, profile, NOW)).toMatchObject({ active_runs: 0, restart_blocked: false })
+  })
 })
 
 describe('GatewayRestartQueue', () => {
