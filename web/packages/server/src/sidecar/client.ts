@@ -46,7 +46,8 @@ export interface CallOptions {
 }
 
 export interface SidecarSpawnOptions {
-  python: string
+  /** Resolve at every start so PM generation replacement is observed on sidecar-only restarts. */
+  python: string | (() => string | null)
   /** Full spawn command; defaults to `<python> -m talaria_sidecar` (a scripted replay sidecar for contract runs). */
   command?: string[]
   agentDir: string
@@ -117,8 +118,12 @@ export class SidecarClient implements SidecarLike {
     if (this.closed) throw new SidecarError('sidecar client closed', { condition: 'sidecar_unavailable' })
     this.status = 'starting'
     this.describe = null
-    const [command, ...args] = this.opts.command ?? [this.opts.python, '-m', 'talaria_sidecar']
-    const child = spawn(command ?? this.opts.python, args, {
+    const [command, ...args] = this.opts.command ?? [(typeof this.opts.python === 'function' ? this.opts.python() : this.opts.python) ?? '', '-m', 'talaria_sidecar']
+    if (!command) {
+      this.scheduleRestart()
+      throw new SidecarError('Agent interpreter unavailable; retrying discovery', { condition: 'sidecar_unavailable' })
+    }
+    const child = spawn(command, args, {
       cwd: this.opts.sidecarDir,
       env: sidecarSpawnEnv(this.opts),
       stdio: ['pipe', 'pipe', 'pipe'],

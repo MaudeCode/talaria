@@ -239,6 +239,11 @@ class AgentRuntime:
             if self.loaded:
                 return
             try:
+                # Direct Agent imports skip CLI startup's PM tool PATH activation.
+                if self.agent_dir is not None and (self.agent_dir / "pm").is_dir():
+                    compose_path = getattr(importlib.import_module("pm"), "store_first_path", None)
+                    if compose_path is not None:
+                        os.environ["PATH"] = compose_path(os.environ.get("PATH", ""))
                 module = importlib.import_module("run_agent")
                 getattr(module, "AIAgent")
                 # Agent 0.21.3 snapshots its auth provider registry, discovered plugins included, when hermes_cli.auth

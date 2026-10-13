@@ -152,7 +152,7 @@ export async function runBootstrap(ctx: LaunchContext, args: BootstrapArgs, serv
     installHermesAgent(ctx.compatibleAgentRevision, log)
     agentDir = discoverAgentDirForLaunch(discover)
   }
-  const python = discoverAgentPython(env, agentDir)
+  const python = discoverAgentPython(env, agentDir, ctx.hermesHome)
   if (agentDir && python) {
     const preflight = sidecarPreflight(python, agentDir, env)
     if (!preflight.ok) throw new Error(`Python environment at ${python} cannot import Hermes Agent (${preflight.detail || 'preflight failed'}). Set HERMES_WEBUI_PYTHON to the Agent venv interpreter.`)
@@ -164,7 +164,7 @@ export async function runBootstrap(ctx: LaunchContext, args: BootstrapArgs, serv
   env.HERMES_WEBUI_PORT = String(args.port)
   env.HERMES_WEBUI_STATE_DIR ??= stateDir
   if (agentDir) env.HERMES_WEBUI_AGENT_DIR = agentDir
-  if (python) env.HERMES_WEBUI_PYTHON = python
+  // Only user-supplied Python overrides persist: each worker must rediscover the current PM generation.
   const tls = Boolean((env.HERMES_WEBUI_TLS_CERT ?? '').trim()) && Boolean((env.HERMES_WEBUI_TLS_KEY ?? '').trim())
   const scheme = tls ? 'https' : 'http'
   const foregroundReason = args.foreground ? '--foreground' : detectSupervisor(env)

@@ -52,11 +52,21 @@ application errors in `-32000..-32099`, one per error condition
 
 1. Server discovers the Agent directory and venv with the same rules as today
    (`HERMES_WEBUI_AGENT_DIR`, `$HERMES_HOME/hermes-agent`, sibling checkout,
-   `~/hermes-agent`, `/opt/hermes`, `/usr/local/lib/hermes-agent`; venv at
-   `<agent>/venv` or `<agent>/.venv`).
+   `~/hermes-agent`, `/opt/hermes`, `/usr/local/lib/hermes-agent`, then the `hermes`
+   launcher on `PATH`, including unquoted `exec` wrappers). Interpreter precedence:
+   `HERMES_WEBUI_PYTHON`, the PM generation recorded in
+   `<hermes-root>/installs/<sha256(realpath(agent))[:16]>/facts.json`, then
+   `<agent>/venv` or `<agent>/.venv` when no PM selection exists. Named profiles
+   share their root's records. A PM selection must resolve inside that install's
+   `environments/` and contain `pyvenv.cfg` and a Python interpreter; a broken
+   selection is rejected without falling back to older dependencies.
+   Bootstrap preserves user-supplied interpreter overrides but does not export
+   auto-discovered paths as overrides, so restarted workers read the current PM selection.
 2. Server spawns the sidecar and sends `runtime.handshake` with
    `{rpc_version, hermes_home, state_dir}`.
-3. Sidecar imports `run_agent`, reads its own `agent_dependency.json`, and replies
+3. Sidecar uses the Agent's `pm.store_first_path` when available to
+   expose installed tool binaries before importing `run_agent` (no packages are
+   provisioned by this PATH step), reads its own `agent_dependency.json`, and replies
    `{rpc_version, agent_revision, pinned_revision, compatible, stale, python, agent_dir, capabilities}`.
    A `rpc_version` mismatch is a fatal handshake error; the sidecar exits 3.
 4. `compatible` means Agent imports succeeded; it does not mean the installed revision equals the tested pin.
@@ -66,7 +76,11 @@ application errors in `-32000..-32099`, one per error condition
    so SSO and authorized config repair remain available. A protocol mismatch still blocks all methods.
    A stale loaded runtime blocks Agent methods with `agent_runtime_stale`.
 5. On sidecar exit the server restarts it with exponential backoff (1 s, 2 s,
-   4 s, capped at 30 s). Every in-flight request fails with
+   4 s, capped at 30 s). Each spawn re-resolves the interpreter, so a replaced PM
+   generation is picked up without a Web-worker restart. An unavailable selection
+   stays unavailable and retries discovery on the same backoff schedule, including
+   initial startup when a checkout exists but its interpreter is not yet available.
+   Every in-flight request fails with
    `sidecar_unavailable`. Session-scoped agent caches are lost.
 6. The drift guard runs inside the sidecar on every chat turn: if the Agent
    checkout revision or update markers changed since import, the call fails

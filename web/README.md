@@ -105,7 +105,7 @@ commented template.
 | Variable | Default | Description |
 |---|---|---|
 | `HERMES_WEBUI_AGENT_DIR` | auto-discovered | Hermes Agent checkout the sidecar runs against |
-| `HERMES_WEBUI_PYTHON` | Agent venv | Interpreter for the sidecar (`<agent>/venv` or `.venv`) |
+| `HERMES_WEBUI_PYTHON` | Agent venv | Interpreter override; otherwise the PM generation recorded under the Hermes root's `installs/`, then `<agent>/venv` or `.venv` for older installs |
 | `HERMES_WEBUI_HOST` | `127.0.0.1` | Bind address (`0.0.0.0` for all IPv4, `::` for all IPv6) |
 | `HERMES_WEBUI_PORT` | `8787` | Port |
 | `HERMES_HOME` | `~/.hermes` | Hermes state base directory |
