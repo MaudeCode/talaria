@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Talaria Web supports Hermes Agent v0.21.7 and installs it by default, so updating to it no longer shows an unsupported-version warning. Hermes Agent v2026.9.21 is no longer supported.",
+      "highlight": false,
+      "components": ["web"]
+    },
+    {
+      "category": "Fixed",
+      "summary": "In the Docker setup, the Agent's API server comes back after a restart that follows the Agent installing an extra dependency.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
