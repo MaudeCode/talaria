@@ -180,6 +180,50 @@ describe('/goal continuation after a goal turn settles (TAL-396)', () => {
     expect(calls('chat.start')).toHaveLength(1)
   })
 
+  it('a Stop after the answer while the goal is judged starts no continuation until the next user message (TAL-899)', async () => {
+    const sid = await newSession()
+    sidecar.respond('chat.start', (params) => answer(params, 'progress'))
+    let release: () => void = () => undefined
+    sidecar.respond('goals.evaluate', () => new Promise((resolve) => { release = () => { resolve(continueWith('Continue toward the goal.')) } }))
+    const kickoff = await setGoal(sid)
+    await vi.waitFor(() => { expect(calls('goals.evaluate')).toHaveLength(1) })
+    expect(await json(await s.get(`/api/chat/cancel?stream_id=${kickoff}`))).toMatchObject({ cancelled: false })
+    release()
+    const frames = goalFrames(await untilEnd(kickoff))
+    expect(frames.map(([event, data]) => [event, data.state, data.decision])).toEqual([['goal', 'evaluating', undefined], ['goal', 'idle', 'held']])
+    await idle(sid)
+    expect(calls('chat.start')).toHaveLength(1)
+    const session = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
+    expect(session.automatic_turns_held).toBe(true)
+
+    sidecar.respond('goals.evaluate', () => achieved)
+    const user = str((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'keep going' }))).stream_id)
+    await untilEnd(user)
+    await idle(sid)
+    expect(((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).automatic_turns_held).toBe(false)
+  })
+
+  it('a late Stop for a turn the user already followed holds nothing (TAL-899)', async () => {
+    const sid = await newSession()
+    sidecar.respond('chat.start', (params) => answer(params, 'progress'))
+    let release: () => void = () => undefined
+    let evaluations = 0
+    sidecar.respond('goals.evaluate', () => {
+      if (++evaluations > 1) return achieved
+      return new Promise((resolve) => { release = () => { resolve(continueWith('Continue toward the goal.')) } })
+    })
+    const kickoff = await setGoal(sid)
+    await vi.waitFor(() => { expect(evaluations).toBe(1) })
+    const user = str((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'keep going' }))).stream_id)
+    expect(await json(await s.get(`/api/chat/cancel?stream_id=${kickoff}`))).toMatchObject({ cancelled: false })
+    expect(s.deps.turns.automaticTurnsHeld(sid)).toBe(false)
+    release()
+    await untilEnd(kickoff)
+    await untilEnd(user)
+    await idle(sid)
+    expect(s.deps.turns.automaticTurnsHeld(sid)).toBe(false)
+  })
+
   it('a failed evaluation or failed turn ends the goal run without a continuation, and a turn without a goal shows nothing', async () => {
     const sid = await newSession()
     sidecar.respond('chat.start', (params) => answer(params, 'progress'))

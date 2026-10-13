@@ -113,6 +113,8 @@ export interface SessionServiceDeps {
     journalDegraded: (streamId: string) => boolean
     /** TAL-424: the live stream's pending steers, as clients show them. */
     pendingSteers?: (streamId: string) => PendingSteer[]
+    /** TAL-899: whether a Stop holds the session's automatic turns until the user's next turn. */
+    automaticTurnsHeld?: (sid: string) => boolean
     /** Drop the session's cached agent; `endSession` (delete/clear) also ends its approval grants and parked approvals. */
     evictAgent: (sid: string, endSession?: boolean) => void
     closeTerminal: (sid: string) => void
@@ -748,6 +750,7 @@ export class SessionService {
     // A metadata-only read lacks the history the gate counts, so it carries no flag.
     if (loadMessages) raw.can_compress = this.canCompress(s, raw.read_only === true, stateRows)
     raw.pending_steers = raw.active_stream_id ? (this.deps.runtime.pendingSteers?.(str(raw.active_stream_id)) ?? []) : []
+    raw.automatic_turns_held = this.deps.runtime.automaticTurnsHeld?.(s.session_id) ?? false
     return redactSessionData(raw, this.deps.redactEnabled())
   }
 

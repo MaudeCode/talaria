@@ -829,7 +829,8 @@
     "transcript_seq": null,
     "source_kind": "webui",
     "is_messaging_session": false,
-    "sort_ts": 0
+    "sort_ts": 0,
+    "automatic_turns_held": false
   },
   "stale_stream_session": {
     "session_id": "contract-stale",

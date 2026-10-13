@@ -4461,6 +4461,10 @@
                           },
                           "description": "TAL-424: the active stream's pending steers, oldest first."
                         },
+                        "automatic_turns_held": {
+                          "type": "boolean",
+                          "description": "TAL-899: the user pressed Stop, so no automatic turn (background wakeup or goal continuation) starts until their next message."
+                        },
                         "has_pending_user_message": {
                           "type": "boolean"
                         },
@@ -6822,6 +6826,10 @@
                           },
                           "description": "TAL-424: the active stream's pending steers, oldest first."
                         },
+                        "automatic_turns_held": {
+                          "type": "boolean",
+                          "description": "TAL-899: the user pressed Stop, so no automatic turn (background wakeup or goal continuation) starts until their next message."
+                        },
                         "has_pending_user_message": {
                           "type": "boolean"
                         },
@@ -8928,6 +8936,10 @@
                             ]
                           },
                           "description": "TAL-424: the active stream's pending steers, oldest first."
+                        },
+                        "automatic_turns_held": {
+                          "type": "boolean",
+                          "description": "TAL-899: the user pressed Stop, so no automatic turn (background wakeup or goal continuation) starts until their next message."
                         },
                         "has_pending_user_message": {
                           "type": "boolean"
@@ -12234,6 +12246,10 @@
                           },
                           "description": "TAL-424: the active stream's pending steers, oldest first."
                         },
+                        "automatic_turns_held": {
+                          "type": "boolean",
+                          "description": "TAL-899: the user pressed Stop, so no automatic turn (background wakeup or goal continuation) starts until their next message."
+                        },
                         "has_pending_user_message": {
                           "type": "boolean"
                         },
@@ -15372,6 +15388,10 @@
                             ]
                           },
                           "description": "TAL-424: the active stream's pending steers, oldest first."
+                        },
+                        "automatic_turns_held": {
+                          "type": "boolean",
+                          "description": "TAL-899: the user pressed Stop, so no automatic turn (background wakeup or goal continuation) starts until their next message."
                         },
                         "has_pending_user_message": {
                           "type": "boolean"
@@ -19217,6 +19237,10 @@
                           },
                           "description": "TAL-424: the active stream's pending steers, oldest first."
                         },
+                        "automatic_turns_held": {
+                          "type": "boolean",
+                          "description": "TAL-899: the user pressed Stop, so no automatic turn (background wakeup or goal continuation) starts until their next message."
+                        },
                         "has_pending_user_message": {
                           "type": "boolean"
                         },
@@ -21348,6 +21372,10 @@
                             ]
                           },
                           "description": "TAL-424: the active stream's pending steers, oldest first."
+                        },
+                        "automatic_turns_held": {
+                          "type": "boolean",
+                          "description": "TAL-899: the user pressed Stop, so no automatic turn (background wakeup or goal continuation) starts until their next message."
                         },
                         "has_pending_user_message": {
                           "type": "boolean"
@@ -23543,6 +23571,10 @@
                           },
                           "description": "TAL-424: the active stream's pending steers, oldest first."
                         },
+                        "automatic_turns_held": {
+                          "type": "boolean",
+                          "description": "TAL-899: the user pressed Stop, so no automatic turn (background wakeup or goal continuation) starts until their next message."
+                        },
                         "has_pending_user_message": {
                           "type": "boolean"
                         },
@@ -25723,6 +25755,10 @@
                             ]
                           },
                           "description": "TAL-424: the active stream's pending steers, oldest first."
+                        },
+                        "automatic_turns_held": {
+                          "type": "boolean",
+                          "description": "TAL-899: the user pressed Stop, so no automatic turn (background wakeup or goal continuation) starts until their next message."
                         },
                         "has_pending_user_message": {
                           "type": "boolean"
@@ -35685,6 +35721,10 @@
                           },
                           "description": "TAL-424: the active stream's pending steers, oldest first."
                         },
+                        "automatic_turns_held": {
+                          "type": "boolean",
+                          "description": "TAL-899: the user pressed Stop, so no automatic turn (background wakeup or goal continuation) starts until their next message."
+                        },
                         "has_pending_user_message": {
                           "type": "boolean"
                         },
@@ -37958,6 +37998,10 @@
                           },
                           "description": "TAL-424: the active stream's pending steers, oldest first."
                         },
+                        "automatic_turns_held": {
+                          "type": "boolean",
+                          "description": "TAL-899: the user pressed Stop, so no automatic turn (background wakeup or goal continuation) starts until their next message."
+                        },
                         "has_pending_user_message": {
                           "type": "boolean"
                         },
@@ -40125,6 +40169,10 @@
                                 ]
                               },
                               "description": "TAL-424: the active stream's pending steers, oldest first."
+                            },
+                            "automatic_turns_held": {
+                              "type": "boolean",
+                              "description": "TAL-899: the user pressed Stop, so no automatic turn (background wakeup or goal continuation) starts until their next message."
                             },
                             "has_pending_user_message": {
                               "type": "boolean"

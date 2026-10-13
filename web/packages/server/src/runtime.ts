@@ -338,6 +338,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
       activeRunStream: (sid) => registry.activeRunStreamForSession(sid),
       journalDegraded: (streamId) => registry.degradedJournals.has(streamId),
       pendingSteers: (streamId: string): PendingSteer[] => turns.pendingSteers(streamId),
+      automaticTurnsHeld: (sid: string): boolean => turns.automaticTurnsHeld(sid),
       evictAgent: (sid, endSession) => { if (sidecar) sidecar.call('chat.evict_agent', endSession ? { session_id: sid, clear_session: true } : { session_id: sid }).catch(() => undefined) },
       closeTerminal: (sid) => { deps.terminals.close(sid) },
       deleteCliSession: async (profile, sid) => {
@@ -633,7 +634,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     skills: new SkillsService({ sidecar: () => sidecar, config: agentConfig, log }),
     mcp: new McpService({ sidecar: () => sidecar, config: agentConfig, health: mcpHealth }),
     completions,
-    hygiene: new HygieneTicker({ env, stateDir: config.stateDir, port: () => config.port, journal, activeJournalPaths: () => turns.activeJournalPaths(), now, log, sweeps: [() => { completions.sweep() }] }),
+    hygiene: new HygieneTicker({ env, stateDir: config.stateDir, port: () => config.port, journal, activeJournalPaths: () => turns.activeJournalPaths(), now, log, sweeps: [() => { completions.sweep() }, () => { turns.sweep() }] }),
     mcpHealth,
     nowSeconds: now,
     // Python `_webui_runtime_payload`: the four owner sections with their `available` flags.

@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "After you press Stop, the agent stays quiet until your next message instead of resuming on its own for finished background work or goals.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
