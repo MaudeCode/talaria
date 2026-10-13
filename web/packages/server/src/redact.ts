@@ -2,7 +2,7 @@ import { str } from './util.js'
 import { diffHunks } from './text/diff.js'
 import { isRasterDataUri } from './raster-image.js'
 import { snapshotArgs, toolArgs, toolDisplay, toolName } from './sessions/tool-display.js'
-import { messageText, normalizeUserDisplay } from './sessions/merge.js'
+import { hasNativeImages, messageText, normalizeUserDisplay } from './sessions/merge.js'
 import { stripAttachedFilesMarker } from './sessions/session.js'
 /**
  * Credential redaction and the public session projection (Python
@@ -2001,7 +2001,7 @@ function messageDisplay(item: Record<string, unknown>): 'row' | 'hidden' | 'in_s
   if (item.role === 'tool' || item._steer) return 'in_scene'
   if (!item.role || item._background_silent) return 'hidden'
   if (item._marker_kind) return 'row'
-  const shown = Boolean(messageText(item.content).trim()) || (Array.isArray(item.attachments) && item.attachments.length > 0)
+  const shown = Boolean(messageText(item.content).trim()) || (Array.isArray(item.attachments) && item.attachments.length > 0) || (item.role === 'user' && hasNativeImages([item]))
   if (item.role !== 'assistant') return shown ? 'row' : 'hidden'
   const hasTools = Array.isArray(item.tool_calls) && item.tool_calls.length > 0
   return shown || hasTools || Boolean(item.reasoning || item._anchor_activity_scene) ? 'row' : 'hidden'

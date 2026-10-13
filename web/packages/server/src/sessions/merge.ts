@@ -54,8 +54,9 @@ export function messageText(content: unknown): string {
 
 /** Agent-injected memory is model context, never typed user text. Match the Agent's fence, including an unclosed tail. */
 function withoutMemoryContext(text: string): string {
-  const stripped = text.replace(/<memory-context>[\s\S]*?(?:<\/memory-context>|$)/gi, ' ')
-  return stripped === text ? text : stripped.trim()
+  const stripped = text.replace(/(?:\r?\n)?<memory-context>[\s\S]*?(?:<\/memory-context>|$)/gi, '')
+  // Remove the fence's line separator, not the prompt's indentation or trailing whitespace.
+  return stripped !== text && !stripped.trim() ? '' : stripped
 }
 
 /** Display-only user projection shared by transcript hydration and turn identity; model history stays untouched. */

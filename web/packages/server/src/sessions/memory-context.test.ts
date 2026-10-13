@@ -10,6 +10,8 @@ import type { Message } from './session.js'
 
 const fixture = JSON.parse(readFileSync(new URL('./fixtures/memory-context.json', import.meta.url), 'utf8')) as { id: number; session_id: string; role: string; content: string; timestamp: number }
 const typed = 'What is in this picture?'
+const memory = '<memory-context>\nprivate recalled context\n</memory-context>'
+const image = (JSON.parse(fixture.content.slice(6)) as Record<string, unknown>[])[1]!
 const project = (row: Message): Message => hydrateAnchorActivityScenes([row], {})[0] as Message
 
 describe('recalled memory display (TAL-888)', () => {
@@ -61,8 +63,30 @@ describe('recalled memory display (TAL-888)', () => {
     }
   })
 
+  it.each([
+    { name: 'image-only prompt', content: [image, { type: 'text', text: memory }], expected: [image] },
+    { name: 'indented string prompt', content: `    code  \n\n${memory}`, expected: '    code  \n' },
+    { name: 'indented multimodal prompt', content: [image, { type: 'text', text: `    code  \n\n${memory}` }], expected: [image, { type: 'text', text: '    code  \n' }] },
+  ])('keeps $name visible and byte-faithful in public routes', async ({ content, expected }) => {
+    const s = await bootTestServer()
+    try {
+      const session = s.deps.sessionStore.newSession()
+      session.messages = [{ role: 'user', content }]
+      s.deps.sessionStore.save(session)
+      const terminal = s.deps.turns.publicTerminalSession(session)
+      expect((terminal.messages as Message[])[0]).toMatchObject({ content: expected, _display: 'row' })
+      for (const path of ['/api/session', '/api/session/export']) {
+        const response = await s.get(`${path}?session_id=${session.session_id}`)
+        expect(response.status).toBe(200)
+        const body = await response.json() as { session?: { messages: Message[] }; messages?: Message[] }
+        const rows = body.session?.messages ?? body.messages
+        expect(rows?.[0]).toMatchObject({ content: expected, _display: 'row' })
+      }
+      expect(session.messages[0]!.content).toEqual(content)
+    } finally { await s.close() }
+  })
+
   it('strips only user memory fences, including repeated and unclosed fences, preserving plugin text and other parts', () => {
-    const memory = '<memory-context>\nprivate recalled context\n</memory-context>'
     for (const content of [
       `${typed}\n${memory}`,
       [{ type: 'text', text: typed }, { type: 'text', text: memory }],
