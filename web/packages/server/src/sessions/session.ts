@@ -52,6 +52,8 @@ export const METADATA_FIELDS = [
   'state_db_seen_boundary',
   'state_db_seen_stamp',
   'state_db_lineage',
+  'reasoning_replay_provider',
+  'reasoning_replay_from',
   'clear_generation',
   'intentional_shrink_generation',
   'gateway_routing', 'gateway_routing_history', 'llm_title_generated', 'manual_title',
@@ -268,6 +270,9 @@ export class Session {
   state_db_seen_stamp: number | null
   /** TAL-529: the state.db sessions this session's Agent wrote through compression (this id first, the live tip last). */
   state_db_lineage: string[] | null
+  /** TAL-927: the provider the last turn ran on, and when it took over; provider-issued reasoning older than that stays home. */
+  reasoning_replay_provider: string | null
+  reasoning_replay_from: number | null
   clear_generation: unknown
   intentional_shrink_generation: unknown
   gateway_routing: Record<string, unknown> | null
@@ -387,6 +392,10 @@ export class Session {
     this.state_db_seen_stamp = typeof seenStamp === 'number' && Number.isFinite(seenStamp) ? seenStamp : null
     const lineage = take('state_db_lineage', null)
     this.state_db_lineage = Array.isArray(lineage) && lineage.length > 1 && lineage.every((id) => typeof id === 'string' && id) ? lineage as string[] : null
+    const replayProvider = take('reasoning_replay_provider', null)
+    this.reasoning_replay_provider = typeof replayProvider === 'string' ? replayProvider : null
+    const replayFrom = take('reasoning_replay_from', null)
+    this.reasoning_replay_from = typeof replayFrom === 'number' && Number.isFinite(replayFrom) ? replayFrom : null
     this.clear_generation = take('clear_generation', null)
     this.intentional_shrink_generation = take('intentional_shrink_generation', null)
     const routing = take('gateway_routing', null)

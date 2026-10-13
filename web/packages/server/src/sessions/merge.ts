@@ -1154,6 +1154,8 @@ const API_SAFE_MSG_KEYS = new Set(['role', 'content', 'tool_calls', 'tool_call_i
 // TAL-927: the Agent's reload projection (`_rows_to_conversation`) restores these on assistant rows so prior reasoning
 // replays and keeps its signatures; turn history keeps them too. Persistence-only: the Agent strips them per route.
 const AGENT_ASSISTANT_REPLAY_KEYS = new Set(['reasoning', 'reasoning_details', 'codex_reasoning_items', 'codex_message_items', 'finish_reason'])
+// The opaque ones are bound to the provider that issued them.
+const PROVIDER_ISSUED_REASONING_KEYS = new Set(['reasoning_details', 'codex_reasoning_items', 'codex_message_items'])
 const OOB_USER_MESSAGE_BLOCK_RE = /\[OUT-OF-BAND\s+USER\s+MESSAGE(?:\s*(?:—|-)\s*[\s\S]*?)?\]\s*?[\s\S]*?\[\/OUT-OF-BAND\s+USER\s+MESSAGE\]/gi
 const OOB_DELIVERY_RE = /^\s*\[OUT-OF-BAND\s+USER\s+MESSAGE[^\]]*\]\s*([\s\S]*?)\s*\[\/OUT-OF-BAND\s+USER\s+MESSAGE\]\s*$/i
 
@@ -1193,9 +1195,10 @@ function stripOobBlocks(content: unknown): unknown {
  * otherwise the neighbours fuse cleanly or the prompt is stale, and replaying it would answer it again.
  * `preserveApiContent` (Python `_sanitize_messages_for_agent`) keeps the Agent's `api_content` replay sidecar on
  * user/assistant rows, every row's `timestamp`, and the assistant reasoning carriers the Agent replays (TAL-927) for
- * turn history; compression and other projections strip them all.
+ * turn history; compression and other projections strip them all. Provider-issued carriers stay only on rows stamped at
+ * or after `issuedReasoningSince`, the turn provider's start; without one they stay home too.
  */
-export function sanitizeMessagesForApi(messages: Message[], { preserveApiContent = false } = {}): Message[] {
+export function sanitizeMessagesForApi(messages: Message[], { preserveApiContent = false, issuedReasoningSince = null }: { preserveApiContent?: boolean; issuedReasoningSince?: number | null } = {}): Message[] {
   // Calls are OpenAI `tool_calls` or Anthropic-style `tool_use` content blocks; results name them by `tool_call_id`,
   // `tool_use_id`, or a user row's `tool_result` blocks.
   const toolUseIds = (msg: Message): string[] => (Array.isArray(msg.content) ? msg.content.flatMap((part) => (isDict(part) && part.type === 'tool_use' && str(part.id) ? [str(part.id)] : [])) : [])
@@ -1217,7 +1220,9 @@ export function sanitizeMessagesForApi(messages: Message[], { preserveApiContent
     const recovered = Boolean(msg._recovered) && msg.role === 'user'
     if (msg.role === 'tool') { const tid = str(msg.tool_call_id) || str(msg.tool_use_id); if (!tid || !validToolCallIds.has(tid)) continue }
     const replayCarriers = preserveApiContent && msg.role === 'assistant'
-    const sanitized = Object.fromEntries(Object.entries(msg).filter(([k]) => API_SAFE_MSG_KEYS.has(k) || (replayCarriers && AGENT_ASSISTANT_REPLAY_KEYS.has(k))))
+    const issuedHere = issuedReasoningSince !== null && Number(msg.timestamp) >= issuedReasoningSince
+    const replayKey = (k: string): boolean => replayCarriers && AGENT_ASSISTANT_REPLAY_KEYS.has(k) && (issuedHere || !PROVIDER_ISSUED_REASONING_KEYS.has(k))
+    const sanitized = Object.fromEntries(Object.entries(msg).filter(([k]) => API_SAFE_MSG_KEYS.has(k) || replayKey(k)))
     if (Array.isArray(sanitized.tool_calls) && !sanitized.tool_calls.length) Reflect.deleteProperty(sanitized, 'tool_calls')
     if (replay) sanitized.api_content = replay
     // TAL-681: the Agent re-inserts turn history when it prunes and keys display dedupe on the row timestamp, so turn
