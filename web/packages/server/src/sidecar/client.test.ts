@@ -131,6 +131,22 @@ describe('FakeSidecar', () => {
     expect(sidecarSpawnEnv(opts)).not.toHaveProperty('OPENAI_API_KEY')
   })
 
+  it('keeps Web operator secrets out of the sidecar environment', () => {
+    const env = sidecarSpawnEnv({
+      env: {
+        HERMES_WEBUI_PASSWORD: 'synthetic-pw', HERMES_WEBUI_OIDC_CLIENT_SECRET: 'synthetic-oidc', HERMES_WEBUI_PASSKEY: 'synthetic-passkey',
+        HERMES_WEBUI_GATEWAY_API_KEY: 'synthetic-gateway', TALARIA_RELEASE_TOKEN: 'synthetic-release',
+        HERMES_WEBUI_AGENT_DIR: '/agent', HERMES_WEBUI_PYTHON: '/venv/bin/python', TALARIA_SIDECAR_LOG_LEVEL: 'debug',
+        OPENAI_API_KEY: 'sk-synthetic', HTTPS_PROXY: 'http://proxy:3128',
+      },
+      hermesHome: '/h', agentDir: '/a', sidecarDir: '/s',
+    })
+    for (const key of ['HERMES_WEBUI_PASSWORD', 'HERMES_WEBUI_OIDC_CLIENT_SECRET', 'HERMES_WEBUI_PASSKEY', 'HERMES_WEBUI_GATEWAY_API_KEY', 'TALARIA_RELEASE_TOKEN']) {
+      expect(env).not.toHaveProperty(key)
+    }
+    expect(env).toMatchObject({ HERMES_WEBUI_AGENT_DIR: '/agent', HERMES_WEBUI_PYTHON: '/venv/bin/python', TALARIA_SIDECAR_LOG_LEVEL: 'debug', OPENAI_API_KEY: 'sk-synthetic', HTTPS_PROXY: 'http://proxy:3128' })
+  })
+
   it('disables Agent lazy installs even when the configured environment enables them', () => {
     expect(sidecarSpawnEnv({ env: { HERMES_DISABLE_LAZY_INSTALLS: '0' }, hermesHome: '/h', agentDir: '/a', sidecarDir: '/s' }).HERMES_DISABLE_LAZY_INSTALLS).toBe('1')
   })
