@@ -2,10 +2,13 @@
  * Hermes Agent discovery for the sidecar spawn (Python `bootstrap.py` rules):
  * `HERMES_WEBUI_AGENT_DIR`, `$HERMES_HOME/hermes-agent`, a sibling checkout of
  * this repository, `~/hermes-agent`, `/opt/hermes`, `/usr/local/lib/hermes-agent`;
- * the interpreter is `HERMES_WEBUI_PYTHON` or the Agent's `venv`/`.venv`.
+ * the interpreter is `HERMES_WEBUI_PYTHON`, the PM generation, or `venv`/`.venv`.
  */
-import { existsSync, readFileSync, statSync } from 'node:fs'
-import { delimiter, dirname, join, resolve } from 'node:path'
+import { createHash } from 'node:crypto'
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { platformDefaultHermesHome } from '../config.js'
 import { SidecarClient } from './client.js'
 
 export interface DiscoverOptions {
@@ -70,7 +73,11 @@ export function agentDirFromHermesCli(env: Record<string, string | undefined>): 
   const candidates: string[] = []
   const interp = (lines[0] ?? '').slice(2).trim().split(/\s+/)[0] ?? ''
   if (interp.startsWith('/') && !interp.endsWith('/env')) candidates.push(interp)
-  for (const line of lines.slice(1)) for (const m of line.matchAll(/['"](\/[^'"]+)['"]/g)) candidates.push(m[1] ?? '')
+  for (const line of lines.slice(1)) {
+    for (const m of line.matchAll(/['"](\/[^'"]+)['"]/g)) candidates.push(m[1] ?? '')
+    const exec = /^\s*exec\s+(\/[^\s'";|&<>]+)(?:\s|$)/.exec(line)
+    if (exec?.[1]) candidates.push(exec[1])
+  }
   for (const c of candidates) { const found = c ? walkUpForRunAgent(c) : null; if (found) return found }
   return null
 }
@@ -81,10 +88,55 @@ export function discoverAgentDirForLaunch(opts: DiscoverOptions): string | null 
   return agentDirFromHermesCli(opts.env)
 }
 
-export function discoverAgentPython(env: Record<string, string | undefined>, agentDir: string | null): string | null {
+function within(root: string, path: string): boolean {
+  const rel = relative(root, path)
+  return rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel)
+}
+
+/** Match PM's data root: named profiles share their root's install records. */
+function dependencyRoot(env: Record<string, string | undefined>, hermesHome?: string): string {
+  const home = env.HOME ?? homedir()
+  const native = platformDefaultHermesHome(env, home)
+  const selected = hermesHome ?? resolve((env.HERMES_HOME ?? '').trim().replace(/^~(?=$|\/)/, home) || native)
+  const canonical = (path: string) => { try { return realpathSync(path) } catch { return resolve(path) } }
+  if (within(canonical(native), canonical(selected))) return native
+  return basename(dirname(selected)) === 'profiles' ? dirname(dirname(selected)) : selected
+}
+
+/** Undefined means no PM selection; a broken selection fails closed instead of loading an older venv. */
+function recordedPython(root: string, agentDir: string): string | null | undefined {
+  try {
+    const key = createHash('sha256').update(realpathSync(agentDir)).digest('hex').slice(0, 16)
+    const install = join(root, 'installs', key)
+    let raw: string
+    try { raw = readFileSync(join(install, 'facts.json'), 'utf8') } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+      return null
+    }
+    let fact: unknown = JSON.parse(raw.replace(/^\uFEFF/, ''))
+    for (const key of ['packages', 'venv', 'environment']) {
+      if (typeof fact !== 'object' || fact === null || Array.isArray(fact)) return null
+      fact = (fact as Record<string, unknown>)[key]
+      if (fact === undefined) return undefined
+    }
+    const environment = fact
+    if (environment === undefined || environment === null) return undefined
+    if (typeof environment !== 'string' || !isAbsolute(environment)) return null
+    const venv = realpathSync(environment)
+    if (!within(realpathSync(join(install, 'environments')), venv) || !statSync(join(venv, 'pyvenv.cfg')).isFile()) return null
+    for (const bin of [join(venv, 'bin', 'python'), join(venv, 'Scripts', 'python.exe')]) {
+      if (existsSync(bin) && statSync(bin).isFile()) return bin
+    }
+    return null
+  } catch { return null }
+}
+
+export function discoverAgentPython(env: Record<string, string | undefined>, agentDir: string | null, hermesHome?: string): string | null {
   const explicit = (env.HERMES_WEBUI_PYTHON ?? '').trim()
   if (explicit) return explicit
   if (!agentDir) return null
+  const recorded = recordedPython(dependencyRoot(env, hermesHome), agentDir)
+  if (recorded !== undefined) return recorded
   for (const venv of ['venv', '.venv']) {
     for (const bin of [join(agentDir, venv, 'bin', 'python'), join(agentDir, venv, 'Scripts', 'python.exe')]) if (existsSync(bin)) return bin
   }
@@ -122,7 +174,7 @@ export function launchSidecar(opts: LaunchOptions): SidecarClient | null {
     return new SidecarClient({ python: scripted[0] ?? '', command: scripted, agentDir: discoverAgentDirForLaunch(opts) ?? '', sidecarDir: join(opts.webRoot, 'sidecar'), hermesHome: opts.hermesHome, env: () => stringEnv(opts.env), log: opts.log })
   }
   const agentDir = discoverAgentDirForLaunch(opts)
-  const python = discoverAgentPython(opts.env, agentDir)
+  const python = discoverAgentPython(opts.env, agentDir, opts.hermesHome)
   if (!agentDir || !python) {
     opts.log(`[sidecar] Hermes Agent not found (looked in ${agentCandidates(opts).join(', ')}); set HERMES_WEBUI_AGENT_DIR to enable chat`)
     return null

@@ -152,7 +152,7 @@ export async function runBootstrap(ctx: LaunchContext, args: BootstrapArgs, serv
     installHermesAgent(ctx.compatibleAgentRevision, log)
     agentDir = discoverAgentDirForLaunch(discover)
   }
-  const python = discoverAgentPython(env, agentDir)
+  const python = discoverAgentPython(env, agentDir, ctx.hermesHome)
   if (agentDir && python) {
     const preflight = sidecarPreflight(python, agentDir, env)
     if (!preflight.ok) throw new Error(`Python environment at ${python} cannot import Hermes Agent (${preflight.detail || 'preflight failed'}). Set HERMES_WEBUI_PYTHON to the Agent venv interpreter.`)

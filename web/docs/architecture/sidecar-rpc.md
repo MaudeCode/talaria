@@ -52,11 +52,19 @@ application errors in `-32000..-32099`, one per error condition
 
 1. Server discovers the Agent directory and venv with the same rules as today
    (`HERMES_WEBUI_AGENT_DIR`, `$HERMES_HOME/hermes-agent`, sibling checkout,
-   `~/hermes-agent`, `/opt/hermes`, `/usr/local/lib/hermes-agent`; venv at
-   `<agent>/venv` or `<agent>/.venv`).
+   `~/hermes-agent`, `/opt/hermes`, `/usr/local/lib/hermes-agent`, then the `hermes`
+   launcher on `PATH`, including unquoted `exec` wrappers). Interpreter precedence:
+   `HERMES_WEBUI_PYTHON`, the PM generation recorded in
+   `<hermes-root>/installs/<sha256(realpath(agent))[:16]>/facts.json`, then
+   `<agent>/venv` or `<agent>/.venv` when no PM selection exists. Named profiles
+   share their root's records. A PM selection must resolve inside that install's
+   `environments/` and contain `pyvenv.cfg` and a Python interpreter; a broken
+   selection is rejected without falling back to older dependencies.
 2. Server spawns the sidecar and sends `runtime.handshake` with
    `{rpc_version, hermes_home, state_dir}`.
-3. Sidecar imports `run_agent`, reads its own `agent_dependency.json`, and replies
+3. Sidecar uses the Agent's `pm.store_first_path` when available to
+   expose installed tool binaries before importing `run_agent` (no packages are
+   provisioned by this PATH step), reads its own `agent_dependency.json`, and replies
    `{rpc_version, agent_revision, pinned_revision, compatible, stale, python, agent_dir, capabilities}`.
    A `rpc_version` mismatch is a fatal handshake error; the sidecar exits 3.
 4. `compatible` means Agent imports succeeded; it does not mean the installed revision equals the tested pin.

@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Find Hermes Agent on new and custom installations so chat can start with its installed tools.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
