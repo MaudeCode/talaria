@@ -8,7 +8,7 @@
     }
   },
   "mask_ambiguous": {
-    "error": "The memory page shows \"***\" for more than one hidden value, so the save cannot tell which one it means. Put it back where it was, or type the value.",
+    "error": "The memory page shows \"***\" in place of a hidden value, and this save puts it where the server cannot tell which value, if any, it stands for. Put it back where it was, or type the value.",
     "code": "memory_mask_ambiguous",
     "mask": "***"
   },

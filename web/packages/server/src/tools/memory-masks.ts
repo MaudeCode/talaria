@@ -92,11 +92,14 @@ function within(a: string, b: string, limit: number): boolean {
   return prev[b.length]! <= limit
 }
 
+/** Masks longer than this are compared exactly, so the edit check stays cheap on a long token. */
+const MAX_NEAR = 64
+
 /** A typed token that reads as an edit of `mask` (or its marker) rather than a new value: a few characters off, or bare asterisks. */
 function nearMask(token: string, mask: string): boolean {
   const marker = markerOf(mask)
   if (marker === '***' && /^\*+$/.test(token)) return true
-  return [marker, mask.trim()].some((text) => within(token, text, Math.max(1, text.length >> 2)))
+  return [marker, mask.trim()].some((text) => (text.length > MAX_NEAR ? token === text : within(token, text, Math.max(1, text.length >> 2))))
 }
 
 const edited = (found: string): HttpFailure => new HttpFailure(422, `"${found}" hides a value the memory page does not show, and this save edits the text around it. Put it back as it was, or type the value.`, { code: 'memory_mask_edited', mask: found })
@@ -143,9 +146,10 @@ export function restoreMasks(original: string, shown: string, submitted: string)
   }
   const meanings = new Map<string, Set<string>>()
   for (const hunk of hunks) if (hunk.mask.trim()) meanings.set(hunk.mask, (meanings.get(hunk.mask) ?? new Set()).add(hunk.original))
-  // A mask the page also shows as literal text (a Markdown `***`) may stand for that text too, so it never maps back by text.
+  // A mask that may also be literal text never maps back by its text: a `***` (what a Markdown rule is typed as), or one the
+  // page also shows as literal text.
   const literal = b.map((token, j) => (hunkOf[j]! >= 0 ? '\u0000' : token)).join('')
-  for (const [mask, values] of meanings) if (new RegExp(`(?<!\\S)${escapeRe(mask)}(?!\\S)`).test(literal)) values.add(mask)
+  for (const [mask, values] of meanings) if (markerOf(mask) === '***' || new RegExp(`(?<!\\S)${escapeRe(mask)}(?!\\S)`).test(literal)) values.add(mask)
   const c = tokens(submitted)
   const pageToSave = diffTokens(b, c)
   const keptAt = new Int32Array(b.length).fill(-1)
@@ -172,14 +176,15 @@ export function restoreMasks(original: string, shown: string, submitted: string)
   const restoreLoose = (text: string): string => (maskRe ? text.replace(maskRe, (found, whole: string | undefined) => {
     const values = whole === undefined ? [] : [...meanings.get(whole)!]
     if (values.length === 1) return values[0]!
-    if (values.length > 1) throw new HttpFailure(422, `The memory page shows "${found}" for more than one hidden value, so the save cannot tell which one it means. Put it back where it was, or type the value.`, { code: 'memory_mask_ambiguous', mask: found })
+    if (values.length > 1) throw new HttpFailure(422, `The memory page shows "${found}" in place of a hidden value, and this save puts it where the server cannot tell which value, if any, it stands for. Put it back where it was, or type the value.`, { code: 'memory_mask_ambiguous', mask: found })
     throw edited(found)
   }) : text)
   // A mask the save replaced with text like it (`**` for `***`) was edited, not replaced by a new value: refuse it.
   let removed: Hunk[] = []
   let typed: string[] = []
   const settle = (): void => {
-    for (const hunk of removed) if (typed.some((token) => nearMask(token, hunk.mask))) throw edited(markerOf(hunk.mask))
+    const distinct = [...new Set(typed)]
+    for (const hunk of removed) if (distinct.some((token) => nearMask(token, hunk.mask))) throw edited(markerOf(hunk.mask))
     removed = []
     typed = []
   }

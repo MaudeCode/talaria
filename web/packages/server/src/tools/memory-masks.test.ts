@@ -59,8 +59,8 @@ describe('restoreMasks (TAL-886)', () => {
     let refusal: unknown
     try { save(original, (shown) => shown.split('\n§\n').reverse().join('\n§\n')) } catch (error) { refusal = error }
     expect(refusal).toMatchObject({ status: 422, extra: { code: 'memory_mask_ambiguous', mask: '***' } })
-    // A moved entry whose mask is unique keeps its value.
-    expect(save('a: token ghp_AbCDEFGHIJKLMNOP6789\n§\nb: password: other99', (shown) => shown.split('\n§\n').reverse().join('\n§\n'))).toBe('b: password: other99\n§\na: token ghp_AbCDEFGHIJKLMNOP6789')
+    // A moved entry whose mask is a distinctive token preview keeps its value; a moved bare `***` is refused (it may be literal).
+    expect(save('a: token ghp_AbCDEFGHIJKLMNOP6789\n§\nb: plain', (shown) => shown.split('\n§\n').reverse().join('\n§\n'))).toBe('b: plain\n§\na: token ghp_AbCDEFGHIJKLMNOP6789')
   })
 
   it('refuses a mask that the page also shows as literal text once either moves', () => {
@@ -69,6 +69,19 @@ describe('restoreMasks (TAL-886)', () => {
     try { save(original, () => '***\n§\npassword: ***\n§\nb') } catch (error) { refusal = error }
     expect(refusal).toMatchObject({ status: 422, extra: { code: 'memory_mask_ambiguous', mask: '***' } })
     expect(save(original, (shown) => shown.replace(/\nb$/, '\nc'))).toBe('password: hunter2\n§\n***\n§\nc')
+  })
+
+  it('never puts a hidden value into a newly typed `***`', () => {
+    let refusal: unknown
+    try { save('password: hunter2\n§\nnote', (shown) => `${shown}\n§\n***`) } catch (error) { refusal = error }
+    expect(refusal).toMatchObject({ status: 422, extra: { code: 'memory_mask_ambiguous', mask: '***' } })
+  })
+
+  it('bounds the edit check on a long masked token', () => {
+    const original = `${'a'.repeat(20_000)},password=hunter2`
+    const started = performance.now()
+    expect(save(original, () => `${'b'.repeat(20_000)},password=other`)).toBe(`${'b'.repeat(20_000)},password=other`)
+    expect(performance.now() - started).toBeLessThan(1_000)
   })
 
   it('writes the submitted text when nothing is masked', () => {
