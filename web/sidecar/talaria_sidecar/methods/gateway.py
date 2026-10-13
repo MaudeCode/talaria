@@ -116,11 +116,10 @@ def control(action: str, home: Path, cli_profile: str | None, ctx: CallContext, 
 
 
 def _profile_selector(home: Path) -> str | None:
-    """The profile the Agent names ``home`` (``default`` for the root): a selector-less verb would follow the sticky ``active_profile``."""
-    try:
-        from hermes_constants import profile_name_for_home
-    except ImportError:
-        return None
+    """The profile the Agent names ``home`` (``default`` for the root; None for no profile home): a selector-less verb would
+    follow the sticky ``active_profile``. Raises ImportError on an Agent without ``profile_name_for_home``."""
+    from hermes_constants import profile_name_for_home
+
     return profile_name_for_home(home)
 
 
@@ -157,10 +156,11 @@ def _restart_wait(home: Path) -> float:
 
 def _run(action: str, home: Path, cli_profile: str | None, ctx: CallContext, *, quick_timeout: float, background_wait: float) -> dict:
     """One ``hermes --profile <name> gateway <action>`` subprocess for ``home``; the caller holds ``_ACTION_LOCK``."""
-    profile = cli_profile or _profile_selector(home)
-    if profile is None and _host_root(home) is not None:
-        # Selector-less, a named profile's CLI would follow the sticky profile and inherit the launch profile's credentials.
-        return {"status": "failed", "message": f"Gateway {action} refused: the installed Hermes Agent cannot name the {home.name} profile"}
+    try:
+        profile = cli_profile or _profile_selector(home)
+    except ImportError:
+        # Selector-less, the CLI would follow the sticky profile, and a named profile's would inherit the launch profile's credentials.
+        return {"status": "failed", "message": f"Gateway {action} refused: the installed Hermes Agent cannot name the profile at {home}"}
     try:
         env = _child_env(home, profile, action)
     except Exception as exc:  # noqa: BLE001 - never start a named profile's gateway with another profile's credentials

@@ -29,6 +29,11 @@ class _Ctx:
         self.events.append((event, data))
 
 
+@pytest.fixture(autouse=True)
+def _agent_names_profiles(tmp_path, monkeypatch) -> None:
+    """In-process tests run without the Agent: stand in its profile helpers for a root at ``tmp_path/.hermes``."""
+
+
 def _script(tmp_path, body: str) -> str:
     path = tmp_path / "fake-hermes.py"
     path.write_text(textwrap.dedent(body))
@@ -193,7 +198,6 @@ def _calls(calls) -> list[str]:
 @pytest.mark.parametrize("action", ["start", "restart"])
 def test_a_refused_named_profile_starts_the_host_gateway_then_reruns_its_action(tmp_path, monkeypatch, action) -> None:
     script, calls, named = _host_cli(tmp_path)
-    _agent_profiles(monkeypatch, named.parent.parent)
     monkeypatch.setattr(gateway, "_hermes_command", lambda: sys.executable)
     monkeypatch.setattr(gateway.subprocess, "Popen", _popen_with_script(script))
     result = gateway.control(action, named, None, _Ctx(), quick_timeout=2.0, background_wait=5.0)
@@ -203,7 +207,6 @@ def test_a_refused_named_profile_starts_the_host_gateway_then_reruns_its_action(
 
 def test_a_refusal_the_host_resolves_reads_as_started_when_the_host_serves_the_profile(tmp_path, monkeypatch) -> None:
     script, calls, named = _host_cli(tmp_path, serves_after_host=False)
-    _agent_profiles(monkeypatch, named.parent.parent)
     monkeypatch.setattr(gateway, "_hermes_command", lambda: sys.executable)
     monkeypatch.setattr(gateway.subprocess, "Popen", _popen_with_script(script))
     monkeypatch.setattr(gateway, "gateway_mode", lambda home, name, is_default: "served" if (home, name, is_default) == (named, "work", False) else "stopped")
@@ -214,7 +217,6 @@ def test_a_refusal_the_host_resolves_reads_as_started_when_the_host_serves_the_p
 
 def test_an_unresolved_refusal_reports_the_agents_first_error_line(tmp_path, monkeypatch) -> None:
     script, calls, named = _host_cli(tmp_path, serves_after_host=False)
-    _agent_profiles(monkeypatch, named.parent.parent)
     monkeypatch.setattr(gateway, "_hermes_command", lambda: sys.executable)
     monkeypatch.setattr(gateway.subprocess, "Popen", _popen_with_script(script))
     monkeypatch.setattr(gateway, "gateway_mode", lambda *a: "stopped")
@@ -227,7 +229,6 @@ def test_an_unresolved_refusal_reports_the_agents_first_error_line(tmp_path, mon
 
 def test_a_failed_host_start_is_the_reported_failure(tmp_path, monkeypatch) -> None:
     script, calls, named = _host_cli(tmp_path, root_exit=3)
-    _agent_profiles(monkeypatch, named.parent.parent)
     monkeypatch.setattr(gateway, "_hermes_command", lambda: sys.executable)
     monkeypatch.setattr(gateway.subprocess, "Popen", _popen_with_script(script))
     result = gateway.control("start", named, None, _Ctx(), quick_timeout=2.0, background_wait=5.0)
@@ -238,7 +239,6 @@ def test_a_failed_host_start_is_the_reported_failure(tmp_path, monkeypatch) -> N
 def test_an_older_agent_that_starts_the_named_profile_runs_one_call(tmp_path, monkeypatch) -> None:
     named = tmp_path / ".hermes" / "profiles" / "work"
     named.mkdir(parents=True)
-    _agent_profiles(monkeypatch, tmp_path / ".hermes")
     spawned: list[list[str]] = []
     real = _popen_with_script(_script(tmp_path, "print('started')\n"))
     monkeypatch.setattr(gateway, "_hermes_command", lambda: sys.executable)
@@ -250,7 +250,6 @@ def test_an_older_agent_that_starts_the_named_profile_runs_one_call(tmp_path, mo
 @pytest.mark.parametrize(("action", "home"), [("stop", ".hermes/profiles/work"), ("start", ".hermes")])
 def test_a_refused_stop_or_root_profile_action_is_not_retried(tmp_path, monkeypatch, action, home) -> None:
     (tmp_path / home).mkdir(parents=True)
-    _agent_profiles(monkeypatch, tmp_path / ".hermes")
     spawned: list[list[str]] = []
     real = _popen_with_script(_script(tmp_path, "import sys\nprint('✗ refused')\nsys.exit(78)\n"))
     monkeypatch.setattr(gateway, "_hermes_command", lambda: sys.executable)
@@ -263,7 +262,6 @@ def test_the_host_fallback_shares_one_deadline_across_every_step(tmp_path, monke
     named = tmp_path / ".hermes" / "profiles" / "work"
     named.mkdir(parents=True)
     marker = tmp_path / "refused"
-    _agent_profiles(monkeypatch, tmp_path / ".hermes")
     script = _script(tmp_path, f"""
         import os, sys, time
         if sys.argv[1:3] == ["--profile", "default"]:
@@ -304,6 +302,7 @@ def _agent_budget(monkeypatch, budget: float | None) -> list:
     """Stand-in Agent modules: ``_get_restart_exit_wait_budget`` returns ``budget`` (absent when None); returns the homes it was scoped to."""
     scoped: list = []
     constants = types.ModuleType("hermes_constants")
+    constants.profile_name_for_home = lambda home: None
     constants.set_hermes_home_override = lambda home: scoped.append(home) or "token"
     constants.reset_hermes_home_override = lambda token: scoped.append(None)
     monkeypatch.setitem(sys.modules, "hermes_constants", constants)
@@ -447,3 +446,21 @@ def test_a_named_profile_whose_selector_cannot_be_resolved_is_refused_without_sp
     result = gateway.control(action, named, None, _Ctx(), quick_timeout=0.1, background_wait=0.1)
     assert spawned == [], spawned
     assert result["status"] == "failed" and "work" in result["message"], result
+
+
+def test_a_root_profile_action_is_refused_when_the_agent_cannot_name_profiles(tmp_path, monkeypatch) -> None:
+    root = tmp_path / ".hermes"
+    root.mkdir()
+    (root / "active_profile").write_text("work\n")
+    spawned: list[list[str]] = []
+    monkeypatch.setitem(sys.modules, "hermes_constants", types.ModuleType("hermes_constants"))  # an Agent without profile_name_for_home
+    monkeypatch.setattr(gateway, "_hermes_command", lambda: sys.executable)
+
+    def popen(cmd, **kwargs):
+        spawned.append(cmd)
+        raise FileNotFoundError(cmd[0])
+
+    monkeypatch.setattr(gateway.subprocess, "Popen", popen)
+    result = gateway.control("restart", root, None, _Ctx(), quick_timeout=0.1, background_wait=0.1)
+    assert spawned == [], spawned
+    assert result["status"] == "failed" and "refused" in result["message"], result
