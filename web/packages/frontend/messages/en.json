@@ -1746,6 +1746,9 @@
 	"profile_api_keys_configured": "API keys configured",
 	"profile_gateway_running": "Gateway running",
 	"profile_gateway_stopped": "Gateway stopped",
+	"profile_gateway_served": "Gateway served by host",
+	"profile_gateway_parked": "Gateway parked",
+	"profile_gateway_standalone": "Standalone gateway stopped",
 	"profile_active": "ACTIVE",
 	"profile_no_configuration": "No configuration",
 	"profile_skill_count": [

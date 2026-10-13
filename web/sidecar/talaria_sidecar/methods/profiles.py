@@ -151,20 +151,47 @@ def canonical_bot_chat(home: Path) -> dict | None:
             pass
 
 
+GATEWAY_RUNNING_MODES = ("own", "served")
+
+
+def gateway_mode(home: Path, name: str, is_default: bool) -> str:
+    """The profile's gateway under the host multiplexer (TAL-805): ``parked`` (``hermes -p X gateway stop`` left its
+    marker; it wins, as in ``hermes -p X gateway status``), ``served`` by the live host gateway, ``own`` gateway process,
+    ``standalone`` (opted out of the host and not running), else ``stopped``. The default profile is the host itself.
+    A helper the installed Agent lacks, or one that fails, answers no, so an Agent without the multiplexer helpers
+    reports ``own`` or ``stopped``."""
+    from hermes_cli import profiles as agent
+
+    def asks(helper: str, arg) -> bool:
+        try:
+            return bool(getattr(agent, helper)(arg))
+        except Exception:  # noqa: BLE001
+            return False
+
+    named = not is_default
+    if named and asks("profile_is_parked", home):
+        return "parked"
+    if named and asks("_served_by_running_multiplexer", name):
+        return "served"
+    if asks("_check_gateway_running", home):
+        return "own"
+    if named and asks("profile_is_standalone", home):
+        return "standalone"
+    return "stopped"
+
+
 def _row(home: Path, name: str, is_default: bool) -> dict:
-    from hermes_cli.profiles import _check_gateway_running, _read_config_model
+    from hermes_cli.profiles import _read_config_model
 
     try:
         model, provider = _read_config_model(home)
     except Exception:  # noqa: BLE001
         model, provider = None, None
-    try:
-        gateway_running = bool(_check_gateway_running(home))
-    except Exception:  # noqa: BLE001
-        gateway_running = False
+    mode = gateway_mode(home, name, is_default)
     enabled, total = skills_stats(home)
     return {
-        "name": name, "path": str(home), "is_default": is_default, "gateway_running": gateway_running, "model": model, "provider": provider,
+        "name": name, "path": str(home), "is_default": is_default, "gateway_running": mode in GATEWAY_RUNNING_MODES, "gateway_mode": mode,
+        "model": model, "provider": provider,
         "has_env": (home / ".env").exists(), "visible": _visible(home), "skill_count": enabled, "enabled_skills": enabled, "total_skills": total,
         **bot_identity(home), "canonical_session": canonical_bot_chat(home),
     }

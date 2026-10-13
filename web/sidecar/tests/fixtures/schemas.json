@@ -1979,6 +1979,17 @@
               "minimum": -9007199254740991,
               "maximum": 9007199254740991
             },
+            "gateway_mode": {
+              "default": "stopped",
+              "type": "string",
+              "enum": [
+                "own",
+                "served",
+                "parked",
+                "standalone",
+                "stopped"
+              ]
+            },
             "display_name": {
               "default": "",
               "type": "string"
@@ -2028,6 +2039,7 @@
             "skill_count",
             "enabled_skills",
             "total_skills",
+            "gateway_mode",
             "display_name",
             "description",
             "has_avatar",
@@ -2094,6 +2106,17 @@
             "minimum": -9007199254740991,
             "maximum": 9007199254740991
           },
+          "gateway_mode": {
+            "default": "stopped",
+            "type": "string",
+            "enum": [
+              "own",
+              "served",
+              "parked",
+              "standalone",
+              "stopped"
+            ]
+          },
           "display_name": {
             "default": "",
             "type": "string"
@@ -2143,6 +2166,7 @@
           "skill_count",
           "enabled_skills",
           "total_skills",
+          "gateway_mode",
           "display_name",
           "description",
           "has_avatar",
@@ -4314,6 +4338,26 @@
     "required": [
       "status",
       "message"
+    ],
+    "additionalProperties": false
+  },
+  "gateway.mode": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "gateway_mode": {
+        "type": "string",
+        "enum": [
+          "own",
+          "served",
+          "parked",
+          "standalone",
+          "stopped"
+        ]
+      }
+    },
+    "required": [
+      "gateway_mode"
     ],
     "additionalProperties": false
   },

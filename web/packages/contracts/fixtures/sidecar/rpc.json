@@ -43,6 +43,7 @@
           "cron.status",
           "cron.update",
           "gateway.control",
+          "gateway.mode",
           "gateway.restart",
           "goals.command",
           "goals.evaluate",

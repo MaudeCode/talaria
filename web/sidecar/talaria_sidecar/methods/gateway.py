@@ -14,6 +14,7 @@ from pathlib import Path
 from ..errors import InvalidParams
 from ..home import profile_home_param
 from ..rpc import CallContext
+from .profiles import gateway_mode
 
 log = logging.getLogger("talaria_sidecar.gateway")
 # One lifecycle action at a time across every action: overlapping `hermes gateway` subprocesses race each other.
@@ -121,3 +122,10 @@ def register(registry) -> None:
     @registry.method("gateway.restart", requires_agent=False)
     def restart_(ctx: CallContext, params: dict) -> dict:
         return run(ctx, params, "restart")
+
+    @registry.method("gateway.mode")
+    def mode_(ctx: CallContext, params: dict) -> dict:
+        name = params.get("name")
+        if not isinstance(name, str) or not name.strip():
+            raise InvalidParams("name is required")
+        return {"gateway_mode": gateway_mode(profile_home_param(params), name, params.get("is_default") is True)}
