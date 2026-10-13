@@ -133,7 +133,7 @@ describe('Experimental npm updates (TAL-378)', () => {
       webRoot: n.packageRoot, git: runGit, npm: n.npm, getJson, experimental: g.registry, identity: identity(running), webuiVersion: 'web-exp',
       agentDir: () => null, channel: () => 'experimental', includeAgent: () => false,
       blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
-      scheduleRestart: () => undefined, gatewayRestart: () => Promise.resolve({ status: 'completed' }), llm: (_system, user) => { prompts.push(user); return Promise.resolve('- Notice: Chats open faster') }, log: () => undefined,
+      scheduleRestart: () => undefined, llm: (_system, user) => { prompts.push(user); return Promise.resolve('- Notice: Chats open faster') }, log: () => undefined,
     })
     await svc.check(true, false, 'experimental')
     expect(await svc.summarize('webui')).toMatchObject({ source: 'commits', generated_by: 'llm' })
@@ -224,7 +224,7 @@ describe('Experimental npm updates (TAL-378)', () => {
       webRoot: n.packageRoot, git: runGit, npm: n.npm, getJson, experimental: unusedRegistry, identity: identity(running), webuiVersion: 'web-exp',
       agentDir: () => null, channel: () => 'stable', includeAgent: () => false,
       blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
-      scheduleRestart: () => undefined, gatewayRestart: () => Promise.resolve({ status: 'completed' }), llm: (_system, user) => { prompts.push(user); return Promise.resolve('- Notice: Stable again') }, log: () => undefined,
+      scheduleRestart: () => undefined, llm: (_system, user) => { prompts.push(user); return Promise.resolve('- Notice: Stable again') }, log: () => undefined,
     })
     expect((await svc.check(true, false, 'stable')).webui).toMatchObject({ channel_switch: true, behind: 1 })
     expect(await svc.summarize('webui')).toMatchObject({ source: 'release_notes', target_version: 'web-v2.0.0' })
@@ -275,7 +275,7 @@ describe('Experimental npm updates (TAL-378)', () => {
       webRoot: n.packageRoot, npm: n.npm, getJson: stableGetJson, experimental: unusedRegistry, stateDir: state, identity: identity(running), webuiVersion: 'web-v1.0.0',
       agentDir: () => null, channel: () => 'stable', includeAgent: () => false,
       blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
-      scheduleRestart: () => undefined, gatewayRestart: () => Promise.resolve({ status: 'completed' }), log: () => undefined,
+      scheduleRestart: () => undefined, log: () => undefined,
     })
     const status = (await svc.check(true, false, 'stable')).webui as Dict
     expect(status).toMatchObject({ behind: 1, install_kind: 'npm', manual_update: false })

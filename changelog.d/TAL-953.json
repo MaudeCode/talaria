@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "After a Hermes Agent update, Talaria Web restarts the messaging gateway only once its running messaging turns, cron jobs, and API runs finish, so the gateway shuts down cleanly. The update notification shows how much work is still running and offers Restart now to restart it immediately.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

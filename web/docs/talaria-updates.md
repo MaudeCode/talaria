@@ -88,6 +88,22 @@ their existing update behavior. Chat and launcher imports never trigger lazy
 dependency installation.
 An already-current Agent update without pending sync remains a no-op.
 
+After a successful Agent update, Web schedules its own restart right away, but
+the messaging gateway restarts (`hermes gateway restart`) only once the gateway
+has no running work: the `active_agents` count each live gateway the restart
+can reach (the root host gateway and the profile's own) persists in
+`gateway_state.json` is zero, or the gateway is stopped, stale, or missing. A
+live gateway whose count cannot be read keeps waiting. The
+apply answers `gateway_restart: "waiting_for_idle"` without waiting. Until the
+gateway is idle, the update notification stays in `waiting_for_idle`, reports
+the running task count, and offers **Restart now**, which restarts the gateway
+immediately. That notification is the persisted record: a restarted Web
+resumes the wait, at most one wait runs at a time, and another Agent update
+while one waits is covered by it. No gateway restart starts while another update
+changes the Agent source, and Web exits only after a gateway restart in flight
+finishes. The manual Restart in Settings → System still restarts the gateway
+immediately.
+
 **Update Agent** keeps tracked local edits in the Agent checkout. It saves them
 with `git stash create` under a private `refs/talaria/autostash/<sha>` ref, never
 the shared stash list, and reverts exactly that patch before fast-forwarding.

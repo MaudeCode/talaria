@@ -25,7 +25,7 @@ import { sanitizeError } from '../workspace/media.js'
 import { normalizeChannel, updatesCheckView } from '../tools/updates.js'
 import { pyBool } from '../settings.js'
 import { str } from '../util.js'
-import type { UpdateNotificationScope, UpdateNotificationTarget } from '../tools/update-notifications.js'
+import { GATEWAY_RESTART_NOW, type UpdateNotificationScope, type UpdateNotificationTarget } from '../tools/update-notifications.js'
 import type { SessionInfo } from '../auth/store.js'
 
 const os = implement(toolsContract).$context<ApiContext>().use(requestSessionIdGuard)
@@ -162,6 +162,14 @@ async function applyWithNotification(
     else if (result.ok !== true) ctx.deps.updateNotifications.transition(notification.id, 'failed', null, verifiedIdentity, result.message || result.error)
     else if (target === 'webui' && result.restart_scheduled === true) {
       ctx.deps.updateNotifications.transition(notification.id, 'restarting', str(result.sourceRevision || result.candidate_revision), verifiedIdentity)
+    } else if (result.gateway_restart === 'waiting_for_idle' || (target === 'agent' && ctx.deps.gatewayRestarts.pendingId() !== null)) {
+      // TAL-953: the gateway restarts once its own work drains. A restart already waiting covers this update too, and a
+      // repeated request that found the Agent current follows that wait rather than reporting success before it.
+      const detail = result.stash_conflict === true ? str(result.message) : null
+      ctx.deps.updateNotifications.transition(notification.id, 'waiting_for_idle', null, verifiedIdentity, detail)
+      const pending = ctx.deps.gatewayRestarts.schedule(notification.id, scope.profile, detail)
+      if (pending !== notification.id) ctx.deps.updateNotifications.watch(scope, pending)
+      return { ...result, notification_id: pending }
     } else {
       // A kept Agent stash needs the user's attention; its recovery commands ride on the success record.
       ctx.deps.updateNotifications.transition(notification.id, 'succeeded', null, verifiedIdentity, result.stash_conflict === true ? result.message : undefined)
@@ -503,6 +511,7 @@ export const toolsRouter = os.router({
     action: os.updateNotifications.action.handler(({ input, context: { ctx } }) => run(async () => {
       const notification = ctx.deps.updateNotifications.action(await updateNotificationScope(ctx, input.tab_id), input.id, input.action_id)
       if (!notification) throw new HttpError(404, 'Notification action not found')
+      if (input.action_id === GATEWAY_RESTART_NOW) ctx.deps.gatewayRestarts.restartNow(notification.id)
       return notification as never
     })),
   },

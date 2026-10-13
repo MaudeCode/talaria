@@ -83,6 +83,8 @@ export async function startServer(app: App, config: ServerConfig, opts: { log?: 
   log(`  Talaria Web listening on ${scheme}://${config.host}:${port}`)
   await warnUnauthenticatedBind(config.host, typeof address === 'object' && address ? address.address : config.host, app.deps.auth, log)
   const close = async () => {
+    // TAL-953: start no post-update gateway restart, and let one in flight finish before the sidecar goes away.
+    const gatewayRestarts = app.deps.gatewayRestarts.quiesce()
     const hygiene = app.deps.hygiene.stop()
     await new Promise<void>((resolve) => {
       server.close(() => { resolve() })
@@ -90,6 +92,7 @@ export async function startServer(app: App, config: ServerConfig, opts: { log?: 
     })
     // A retention sweep finishes its current file step before the process exits.
     await hygiene
+    await gatewayRestarts
     // Auth state is persisted write-behind: land pending session and login-attempt writes before the process exits.
     await app.deps.auth.flushPersistence()
     await stopStateDbWorker()

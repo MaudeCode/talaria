@@ -7,11 +7,12 @@ import { Dialog } from '../../ui/Dialog'
 
 export type UpdateDialogTarget = 'webui' | 'agent'
 const NAMES: Record<UpdateDialogTarget, string> = { webui: 'Talaria Web', agent: 'Hermes Agent' }
+const ACTION_VARIANT = { default: 'default', primary: 'primary', destructive: 'danger' } as const
 
 export function StatusIcon({ notification }: { notification: UpdateNotification }) {
   if (notification.severity === 'critical' || notification.phase === 'failed' || notification.phase === 'unknown') return <CircleAlert className="size-5 text-error" aria-hidden="true" />
   if (notification.phase === 'succeeded') return <CheckCircle2 className="size-5 text-success" aria-hidden="true" />
-  if (notification.severity === 'warning' || notification.phase === 'blocked' || notification.phase === 'awaiting_confirmation') return <Clock3 className="size-5 text-warning" aria-hidden="true" />
+  if (notification.severity === 'warning' || notification.phase === 'blocked' || notification.phase === 'awaiting_confirmation' || notification.phase === 'waiting_for_idle') return <Clock3 className="size-5 text-warning" aria-hidden="true" />
   return <LoaderCircle className={cn('size-5 text-accent-text', notification.active && 'animate-spin')} aria-hidden="true" />
 }
 
@@ -20,7 +21,7 @@ export function StatusIcon({ notification }: { notification: UpdateNotification 
  * operation and owns every phase and outcome shown; before it arrives the dialog only says the update is
  * starting, or that the server's answer is outstanding. It never infers success from reachability.
  */
-export function UpdatingDialog({ target, row, message, lost, reconnecting, checking, onCheckAgain, onClose }: {
+export function UpdatingDialog({ target, row, message, lost, reconnecting, checking, actionPending, onAction, onCheckAgain, onClose }: {
   target: UpdateDialogTarget
   row: UpdateNotification | null
   /** The server's answer when it returned no operation record. */
@@ -29,6 +30,10 @@ export function UpdatingDialog({ target, row, message, lost, reconnecting, check
   lost: boolean
   reconnecting: boolean
   checking: boolean
+  /** A server action on `row` is in flight. */
+  actionPending: boolean
+  /** Perform one of `row`'s server actions (TAL-953: Restart now while the gateway restart waits). */
+  onAction: (actionId: string) => void
   onCheckAgain: () => void
   onClose: () => void
 }) {
@@ -50,6 +55,7 @@ export function UpdatingDialog({ target, row, message, lost, reconnecting, check
       </div>
       <div className="mt-5 flex flex-wrap justify-end gap-2">
         {unverified && <Button onClick={onCheckAgain} disabled={checking}>{m.update_dialog_check_again()}</Button>}
+        {row?.actions.map((item) => <Button key={item.id} variant={ACTION_VARIANT[item.style]} disabled={actionPending} onClick={() => { onAction(item.id) }}>{item.label}</Button>)}
         <Button variant="primary" onClick={onClose}>{m.close()}</Button>
       </div>
     </Dialog>
