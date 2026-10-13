@@ -22,6 +22,7 @@ import { dict } from '../config/agent-config.js'
 import { validateReleaseInfo } from '../release.js'
 import { str } from '../util.js'
 import { atomicWriteText } from '../fs/atomic.js'
+import { isWithin, resolvePathLikePython } from '../workspace/paths.js'
 
 export const REPOSITORY = 'MaudeCode/talaria'
 export const REPOSITORY_URL = `https://github.com/${REPOSITORY}`
@@ -1033,6 +1034,7 @@ async function agentHasDependencySync(path: string, revision: string, git: GitRu
 function recordPendingAgentSync(path: string, stateDir: string | undefined): void {
   const marker = agentSyncMarker(path, stateDir)
   if (!marker) throw new Error('Web state directory is unavailable; cannot record pending dependency sync.')
+  if (isWithin(resolvePathLikePython(marker), resolvePathLikePython(path))) throw new Error('Web update state must be outside the Agent checkout.')
   if (existsSync(marker)) return
   mkdirSync(dirname(marker), { recursive: true })
   atomicWriteText(marker, 'pending\n')

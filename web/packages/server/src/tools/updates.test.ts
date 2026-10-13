@@ -879,12 +879,12 @@ describe('Agent checkout updates', () => {
     expect(calls).toBe(2)
   })
 
-  function agentService(agent: string, git: GitRun, events: string[], agentSync?: UpdateServiceDeps['agentSync']): UpdateService {
+  function agentService(agent: string, git: GitRun, events: string[], agentSync?: UpdateServiceDeps['agentSync'], stateDir = join(agent, '../web-state')): UpdateService {
     return new UpdateService({
       webRoot: join(tmp(), 'web'), git, getJson: noReleases, identity: { release: () => DEV, stamped: () => DEV, runningSourceRevision: () => null }, webuiVersion: 'x',
       agentDir: () => agent, channel: () => 'stable', includeAgent: () => true, blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
       ...(agentSync ? { agentSync } : {}),
-      stateDir: join(agent, '../web-state'),
+      stateDir,
       scheduleRestart: () => events.push('restart'), gatewayRestart: () => { events.push('gateway'); return Promise.resolve({ status: 'completed' }) }, sleep: () => Promise.resolve(), log: () => undefined,
     })
   }
@@ -948,6 +948,20 @@ describe('Agent checkout updates', () => {
     expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(a.v2)
     const restarted = await agentService(a.agent, runGit, []).check(true)
     expect(updateTargetView('agent', restarted.agent as Dict, false)).toMatchObject({ behind: 0, state: 'finish', can_apply: true })
+  })
+
+  it.each([false, true])('refuses sync intent inside the Agent checkout before force-clean (symlink=%s)', async (symlink) => {
+    const a = agentInstall(true)
+    const state = join(a.agent, 'web-state')
+    mkdirSync(state)
+    writeFileSync(join(state, 'settings.json'), '{}')
+    const alias = join(a.agent, '../state-alias')
+    if (symlink) symlinkSync(state, alias, 'dir')
+    const svc = agentService(a.agent, runGit, [], () => Promise.resolve({ ok: false, skipped: false, detail: 'sync failed' }), symlink ? alias : state)
+    const result = await svc.force('agent', null, { confirmedRevision: a.v2 })
+    expect(result.ok).toBe(false)
+    expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(a.v1)
+    expect(readFileSync(join(state, 'settings.json'), 'utf8')).toBe('{}')
   })
 
   it('clears pending Agent sync only after confirming a legacy target', async () => {

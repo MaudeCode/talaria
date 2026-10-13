@@ -80,7 +80,9 @@ sync must succeed before the gateway
 or Web restart. A sync failure reports a failed update; retrying still runs sync
 even if Git already reached the target. Web records pending sync in its state
 directory before changing source, so an unwritable state directory stops the
-update before Git advances. Settings keeps the Agent update action available after a failed sync
+update before Git advances. For these updates, the state directory must be outside the Agent checkout,
+so Force Update cannot remove it while cleaning source. Settings keeps the Agent
+update action available after a failed sync
 or server restart until sync succeeds. Older releases without that command keep
 their existing update behavior. Chat and launcher imports never trigger lazy
 dependency installation.
