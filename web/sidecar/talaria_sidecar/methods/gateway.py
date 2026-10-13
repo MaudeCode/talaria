@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 
 from ..errors import InvalidParams
-from ..home import profile_home_param
+from ..home import _is_named_profile, profile_home_param
 from ..rpc import CallContext
 from .profiles import _bounded, gateway_mode
 
@@ -124,9 +124,9 @@ def _profile_selector(home: Path) -> str | None:
 
 
 def _child_env(home: Path, profile: str | None, action: str) -> dict:
-    """The CLI's environment: a named profile's starts scrubbed of the launch profile's ``.env`` (which the sidecar's
-    ``os.environ`` carries once chat ran) so the gateway loads its own; the root profile keeps the launch environment."""
-    if profile in (None, "default"):
+    """The CLI's environment. The sidecar's ``os.environ`` carries its launch profile's ``.env`` once chat ran, so only the
+    launch home's own root-profile action keeps it; any other profile starts scrubbed of it and loads its own ``.env``."""
+    if profile is None or (profile == "default" and not _is_named_profile(home)):
         env = dict(os.environ)
         env["HERMES_HOME"] = str(home)
     else:
@@ -137,21 +137,31 @@ def _child_env(home: Path, profile: str | None, action: str) -> dict:
     return env
 
 
-def _restart_wait(home: Path) -> float:
-    """The Agent CLI's own restart wait in ``home`` plus headroom, so Web never kills a restart the CLI still waits on."""
+# The CLI's own restart budget, read as the CLI reads it: in the child's environment once its home's .env has loaded.
+_BUDGET_SCRIPT = (
+    "import os, sys; from pathlib import Path; sys.path.insert(0, sys.argv[1]); "
+    "from hermes_cli.env_loader import load_hermes_dotenv; "
+    "load_hermes_dotenv(hermes_home=os.environ['HERMES_HOME'], project_env=Path(sys.argv[1]) / '.env'); "
+    "from hermes_cli.gateway import _get_restart_exit_wait_budget; print(_get_restart_exit_wait_budget())"
+)
+
+
+def _agent_restart_budget(env: dict) -> float:
+    import hermes_cli
+
+    agent_dir = str(Path(hermes_cli.__file__).resolve().parent.parent)
+    out = subprocess.run([sys.executable, "-c", _BUDGET_SCRIPT, agent_dir], env=env, capture_output=True, text=True, timeout=60, check=True).stdout
+    return float(out.split()[-1])
+
+
+def _restart_wait(home: Path, cli_profile: str | None = None) -> float:
+    """The Agent CLI's own restart wait for ``home`` plus headroom, so Web never kills a restart the CLI still waits on."""
     try:
-        from hermes_cli.gateway import _get_restart_exit_wait_budget
-        from hermes_constants import reset_hermes_home_override, set_hermes_home_override
-    except ImportError:
-        return _RESTART_FALLBACK_SECONDS
-    token = set_hermes_home_override(home)
-    try:
-        return float(_get_restart_exit_wait_budget()) + _RESTART_HEADROOM_SECONDS
-    except Exception:  # noqa: BLE001 - an unreadable config still gets the historical wait
+        profile = cli_profile or _profile_selector(home)
+        return _agent_restart_budget(_child_env(home, profile, "restart")) + _RESTART_HEADROOM_SECONDS
+    except Exception:  # noqa: BLE001 - an Agent without the helper, or an unreadable config, gets the historical wait
         log.warning("Could not read the Agent's restart budget for %s", home, exc_info=True)
         return _RESTART_FALLBACK_SECONDS
-    finally:
-        reset_hermes_home_override(token)
 
 
 def _run(action: str, home: Path, cli_profile: str | None, ctx: CallContext, *, quick_timeout: float, background_wait: float) -> dict:
@@ -228,7 +238,7 @@ def register(registry) -> None:
         if cli_profile is not None and not isinstance(cli_profile, str):
             raise InvalidParams("cli_profile must be a string")
         # A restart drains the old gateway first, for as long as the CLI's own budget allows (infinite: no deadline).
-        wait = params.get("background_wait_seconds") or (_restart_wait(home) if action == "restart" else 60.0)
+        wait = params.get("background_wait_seconds") or (_restart_wait(home, cli_profile or None) if action == "restart" else 60.0)
         return control(action, home, cli_profile or None, ctx, quick_timeout=float(params.get("quick_timeout_seconds") or 2.0), background_wait=float(wait))
 
     @registry.method("gateway.control", requires_agent=False)
