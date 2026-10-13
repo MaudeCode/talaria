@@ -158,6 +158,9 @@ def _restart_wait(home: Path) -> float:
 def _run(action: str, home: Path, cli_profile: str | None, ctx: CallContext, *, quick_timeout: float, background_wait: float) -> dict:
     """One ``hermes --profile <name> gateway <action>`` subprocess for ``home``; the caller holds ``_ACTION_LOCK``."""
     profile = cli_profile or _profile_selector(home)
+    if profile is None and _host_root(home) is not None:
+        # Selector-less, a named profile's CLI would follow the sticky profile and inherit the launch profile's credentials.
+        return {"status": "failed", "message": f"Gateway {action} refused: the installed Hermes Agent cannot name the {home.name} profile"}
     try:
         env = _child_env(home, profile, action)
     except Exception as exc:  # noqa: BLE001 - never start a named profile's gateway with another profile's credentials
