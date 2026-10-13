@@ -92,3 +92,56 @@ def test_turn_speed_uses_agent_route_resolver(tmp_path, model, provider, tier, b
     run = subprocess.run([AGENT_PYTHON, "-c", probe, str(AGENT_DIR)], env=isolated_env(root), capture_output=True, text=True, timeout=120)
     assert run.returncode == 0, run.stderr[-4000:]
     assert json.loads(run.stdout.strip().splitlines()[-1]) == [expected]
+
+
+# TAL-789: the resolver's ``request_overrides`` (a custom provider's ``extra_body``) reach both build sites. The entry's
+# display name differs from the ``custom:<slug>`` id the server sends, so only the resolver result carries it.
+PROXY_PROBE = PROBE.replace('chat._resolve_runtime = lambda provider, model: {"model": model, "provider": provider}\n', """
+from types import SimpleNamespace
+import agent.conversation_compression_manual as manual
+manual.compress_now = lambda agent, history, request, task_id=None: SimpleNamespace(status="noop", after_messages=history, before_tokens=0, after_tokens=0, summary=None)
+manual.render_compress_result = lambda result: []
+""").split('turn(0, "main")')[0] + """
+def compress(session):
+    params = {"profile_home": str(root), "session_id": session, "conversation_history": [], "model": "proxy-model", "model_provider": "custom:my-proxy"}
+    with scoped_home(root):
+        assert chat.compress(Ctx(), params)["status"] == "noop"
+
+turn(0, "proxy", model="proxy-model", provider="custom:my-proxy")
+turn(1, "proxy", model="proxy-model", provider="custom:my-proxy")
+compress("proxy")
+config.write_text(config.read_text().replace("talaria-proxy-user", "edited-user"))
+turn(2, "proxy", model="proxy-model", provider="custom:my-proxy")
+config.write_text(config.read_text() + "model:\\n  default: proxy-model\\n  provider: custom:my-proxy\\n  extra_body:\\n    user: main-user\\n    store: false\\n")
+turn(3, "proxy", model="proxy-model", provider="custom:my-proxy")
+print(json.dumps(seen))
+"""
+
+PROXY_CONFIG = """\
+custom_providers:
+  - name: My Proxy
+    base_url: https://proxy.example/v1
+    api_key: sk-proxy
+    extra_body:
+      user: talaria-proxy-user
+      metadata: talaria
+"""
+
+
+@requires_agent
+def test_custom_provider_extra_body_reaches_chat_and_compress(tmp_path) -> None:
+    root = tmp_path / ".hermes"
+    root.mkdir()
+    (root / "config.yaml").write_text(PROXY_CONFIG)
+    run = subprocess.run([AGENT_PYTHON, "-c", PROXY_PROBE, str(AGENT_DIR)], env=isolated_env(root), capture_output=True, text=True, timeout=120)
+    assert run.returncode == 0, run.stderr[-4000:]
+    seen = json.loads(run.stdout.strip().splitlines()[-1])
+    proxy = {"extra_body": {"user": "talaria-proxy-user", "metadata": "talaria"}}
+    # Chat (the unchanged second turn reuses the cached agent) and compress both carry the entry's body; an edit to it
+    # builds a fresh agent; a main-model ``extra_body`` wins key by key over the entry's.
+    assert seen == [
+        proxy,
+        proxy,
+        {"extra_body": {"user": "edited-user", "metadata": "talaria"}},
+        {"extra_body": {"user": "main-user", "metadata": "talaria", "store": False}},
+    ], seen
