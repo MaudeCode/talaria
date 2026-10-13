@@ -12,11 +12,15 @@ def disabled_toolsets() -> list[str]:
 
 
 def catalog(override) -> dict:
+    from hermes_cli.plugins import discover_plugins
     from model_tools import get_tool_definitions
     import toolsets
     from toolsets import get_all_toolsets, resolve_toolset
     from .chat import _profile_toolsets
+    from .commands import discover_profile_mcp_tools
 
+    discover_plugins()
+    discover_profile_mcp_tools()
     definitions = get_all_toolsets()
     disabled = disabled_toolsets()
     platform_policy = getattr(toolsets, "session_disabled_toolsets", None)

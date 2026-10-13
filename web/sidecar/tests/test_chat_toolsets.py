@@ -160,3 +160,30 @@ def test_catalog_reports_profile_policy_and_preserves_unknown_selection(handshak
     (named / 'config.yaml').write_text('platform_toolsets:\n  cli: [todo]\n')
     clean = handshaken.result('toolsets.catalog', {'profile_home': str(named), 'enabled_toolsets': None})
     assert next(r for r in clean['toolsets'] if r['name'] == 'todo')['available'] is True
+
+
+@requires_agent
+def test_catalog_discovers_named_profile_plugin_before_any_turn(handshaken, hermes_home) -> None:
+    named = hermes_home / 'profiles' / 'plugin-profile'
+    plugin = named / 'plugins' / 'catalog-plugin'
+    plugin.mkdir(parents=True)
+    (plugin / 'plugin.yaml').write_text('name: catalog-plugin\nversion: 0.0.1\n')
+    (plugin / '__init__.py').write_text('''def register(ctx):
+    ctx.register_tool(name='catalog_probe', toolset='catalog_plugin',
+        schema={'name': 'catalog_probe', 'description': 'Synthetic catalog tool', 'parameters': {'type': 'object', 'properties': {}}},
+        handler=lambda args, **kwargs: '{}')
+''')
+    config = 'plugins:\n  isolation: in_process\n  enabled: [catalog-plugin]\nplatform_toolsets:\n  cli: [catalog_plugin]\n'
+    (named / 'config.yaml').write_text(config)
+    params = {'profile_home': str(named), 'enabled_toolsets': ['file']}
+    rows = handshaken.result('toolsets.catalog', params)['toolsets']
+    dynamic = [row for row in rows if row['name'] == 'catalog_plugin']
+    assert len(dynamic) == 1, 'first-open catalog omitted the installed plugin toolset'
+    assert dynamic[0]['available'] is True and dynamic[0]['selected'] is False
+    defaults = handshaken.result('toolsets.catalog', {**params, 'enabled_toolsets': None})
+    assert 'catalog_plugin' in defaults['selected_toolsets']
+    (named / 'config.yaml').write_text(config + 'agent:\n  disabled_toolsets: [catalog_plugin]\n')
+    rows = handshaken.result('toolsets.catalog', {**params, 'enabled_toolsets': ['catalog_plugin']})['toolsets']
+    assert next(row for row in rows if row['name'] == 'catalog_plugin')['available'] is False
+    other = handshaken.result('toolsets.catalog', {'profile_home': str(hermes_home), 'enabled_toolsets': None})
+    assert not any(row['name'] == 'catalog_plugin' for row in other['toolsets'])

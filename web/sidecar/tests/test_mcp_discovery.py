@@ -191,3 +191,26 @@ def test_launch_reload_after_multiplexing_starts_replaces_its_earlier_unscoped_c
         assert _status(sidecar, named) == {"stub_b": "connected"}
     finally:
         sidecar.close()
+
+
+@requires_agent
+def test_catalog_discovers_mcp_before_any_turn_without_crossing_profiles(tmp_path) -> None:
+    script = _stub_script(tmp_path)
+    launch = tmp_path / 'home' / '.hermes'
+    named = launch / 'profiles' / 'b'
+    _configure_stub(launch, 'catalog_a', script)
+    _configure_stub(named, 'catalog_b', script)
+    sidecar = SidecarProcess(launch)
+    try:
+        def catalog(home, selection):
+            return sidecar.result('toolsets.catalog', {'profile_home': str(home), 'enabled_toolsets': selection})['toolsets']
+
+        for home, own, foreign in [(named, 'catalog_b', 'catalog_a'), (launch, 'catalog_a', 'catalog_b'), (named, 'catalog_b', 'catalog_a')]:
+            rows = catalog(home, ['file'])
+            dynamic = [row for row in rows if row['name'] in (own, 'mcp-' + own)]
+            assert len(dynamic) == 1, f'first-open catalog omitted the configured MCP server {own}'
+            assert dynamic[0]['available'] is True and dynamic[0]['selected'] is False
+            assert not any(row['name'] in (foreign, 'mcp-' + foreign) for row in rows)
+            assert _status(sidecar, home) == {own: 'connected'}
+    finally:
+        sidecar.close()

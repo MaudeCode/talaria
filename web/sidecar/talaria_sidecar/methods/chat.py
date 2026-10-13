@@ -562,16 +562,13 @@ def _discover_mcp_tools(run: _Run) -> None:
     The Agent keys connections by profile scope and skips live ones, so later turns are cheap. Runs under the call's
     ``scoped_home``; a failure leaves the turn without MCP tools rather than failing it. A Stop does not wait for a slow
     server: the turn moves on to its cancelled end while the connect finishes in the background."""
-    from .commands import retire_unscoped_launch_mcp_servers
+    from .commands import discover_profile_mcp_tools
 
     done = threading.Event()
 
     def discover() -> None:
         try:
-            from tools.mcp_tool_discovery import discover_mcp_tools
-
-            retire_unscoped_launch_mcp_servers()
-            discover_mcp_tools()
+            discover_profile_mcp_tools()
         except Exception:  # noqa: BLE001
             log.warning("MCP discovery failed", exc_info=True)
         finally:

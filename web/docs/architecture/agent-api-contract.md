@@ -132,7 +132,9 @@ Older Agents without these helpers retain the legacy list and lookup shapes.
 
 ## Toolset policy
 
-`toolsets.catalog` resolves the scoped profile's Agent toolsets, availability, and draft selection.
+`toolsets.catalog` discovers the scoped profile's plugins and MCP servers before resolving its
+Agent toolsets, availability, and draft selection. Chat and catalog requests share MCP discovery,
+including retirement of pre-multiplex launch connections.
 `POST /api/toolsets` exposes that read-only catalog for Web and App with optional `session_id`
 visibility checking. The `toolsets` body is the current draft or null for profile defaults. Clients
 render `available`, `selected`, `unavailable_reason`, `selected_toolsets`, and `using_defaults`.

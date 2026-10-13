@@ -95,6 +95,14 @@ def retire_unscoped_launch_mcp_servers() -> set[str]:
     return names
 
 
+def discover_profile_mcp_tools() -> list[str]:
+    """Connect this profile's configured servers, retiring pre-multiplex launch connections first."""
+    from tools.mcp_tool_discovery import discover_mcp_tools
+
+    retire_unscoped_launch_mcp_servers()
+    return discover_mcp_tools()
+
+
 def _reload_mcp() -> str:
     with _RELOAD_MCP_LOCK:
         try:
