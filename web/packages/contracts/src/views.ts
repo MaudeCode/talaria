@@ -704,8 +704,8 @@ export const DashboardStatusSchema = z.looseObject({ running: z.boolean(), enabl
  * Gateway status for the Settings banner (TAL-266). `running` and `configured` come from the Agent health probe; when it
  * is inconclusive, stale running metadata or known gateway sessions mark the gateway configured. `platforms` are the
  * messaging platforms of known gateway sessions; `last_active` is the gateway session index's ISO mtime while running, else "".
- * TAL-805: `gateway_mode` is the active profile's mode and decides `running` when it is not null; it is null for a remote
- * gateway or when the sidecar cannot answer.
+ * TAL-805: `gateway_mode` is the active profile's mode and decides `running` when it is not null. It is null for a remote
+ * gateway, or for the root profile when the sidecar cannot answer; a named profile whose mode is unconfirmed reads `stopped`.
  */
 export const GatewayStatusSchema = z.object({
   running: z.boolean(), configured: z.boolean(), gateway_mode: GatewayModeSchema.nullable(), platforms: z.array(z.object({ name: z.string(), label: z.string() })), last_active: z.string(), session_count: z.number().int(),

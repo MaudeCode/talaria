@@ -17,6 +17,7 @@ import { showToast } from '../toast/toast'
 import { cn } from '../../ui/cn'
 import { appUrl } from '../../lib/appRoot'
 
+// TAL-805: `gateway_running` labels rows from a server without `gateway_mode`; delete the fallback once every supported server ships the field.
 const GATEWAY_MODE_LABEL: Record<GatewayMode, () => string> = {
   own: m.profile_gateway_running, served: m.profile_gateway_served, parked: m.profile_gateway_parked, standalone: m.profile_gateway_standalone, stopped: m.profile_gateway_stopped,
 }
@@ -63,7 +64,7 @@ export function ProfilesPage() {
                 <div className="mt-0.5 flex flex-wrap gap-x-3 text-[11px] text-muted">
                   {p.model && <span>{p.provider ? `${p.provider} · ` : ''}{p.model}</span>}
                   {p.has_env ? <span>{m.profile_api_keys_configured()}</span> : <span>{m.profile_no_configuration()}</span>}
-                  {p.gateway_mode && <span>{GATEWAY_MODE_LABEL[p.gateway_mode]()}</span>}
+                  {p.gateway_mode ? <span>{GATEWAY_MODE_LABEL[p.gateway_mode]()}</span> : p.gateway_running !== undefined && <span>{p.gateway_running ? m.profile_gateway_running() : m.profile_gateway_stopped()}</span>}
                   {(p.enabled_skills ?? p.skill_count) !== undefined && <span>{m.profile_skill_count({ count: p.enabled_skills ?? p.skill_count ?? 0 })}</span>}
                 </div>
               </div>

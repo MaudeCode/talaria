@@ -66,21 +66,23 @@ function commandFailure(error: unknown, notFound: string, message: string): neve
 const health = (ctx: RequestContext): Promise<Dict> => agentHealth({ env: ctx.deps.config.env, hermesHome: ctx.deps.config.hermesHome, profileHome: () => home(ctx), fetch: () => ctx.deps.fetch, now: ctx.deps.nowSeconds })
 
 /**
- * TAL-805: the active profile's gateway mode from sidecar `gateway.mode`; null for a remote gateway or when the sidecar
- * cannot answer. The root profile's gateway in another container (`health` alive from its fresh runtime status) is
- * invisible to the sidecar's process checks, so it stays `own`; a named profile never borrows the root's health.
+ * TAL-805: the active profile's gateway mode from sidecar `gateway.mode`; null for a remote gateway. A named profile never
+ * borrows the root's health: when the sidecar cannot answer, it reads `stopped`, while the root profile reads null and keeps
+ * its health. The root profile's gateway in another container (`health` alive from its fresh runtime status) is invisible
+ * to the sidecar's process checks, so it stays `own`.
  */
 async function gatewayMode(ctx: RequestContext, health: Dict): Promise<GatewayMode | null> {
+  if (remoteGatewayBaseUrl(ctx.deps.config.env) !== null) return null
   const sidecar = ctx.deps.sidecar()
-  if (!sidecar || remoteGatewayBaseUrl(ctx.deps.config.env) !== null) return null
   const name = activeProfileName(ctx)
   const isDefault = ctx.deps.isRootProfile(name)
-  let mode: GatewayMode
+  let mode: GatewayMode | null = null
   try {
-    mode = (await sidecar.call('gateway.mode', { profile_home: home(ctx), name, is_default: isDefault }, { timeoutMs: 10_000 })).gateway_mode
+    if (sidecar) mode = (await sidecar.call('gateway.mode', { profile_home: home(ctx), name, is_default: isDefault }, { timeoutMs: 10_000 })).gateway_mode
   } catch {
-    return null
+    mode = null
   }
+  if (mode === null) return isDefault ? null : 'stopped'
   return mode === 'stopped' && isDefault && health.alive === true ? 'own' : mode
 }
 

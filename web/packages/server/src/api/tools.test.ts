@@ -482,6 +482,11 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
       const stop = await json(await s.get('/api/gateway/stop', { method: 'POST', body: '{}', headers: { cookie, 'content-type': 'application/json' } }))
       expect(stop).toMatchObject({ ok: true, action: 'stop', status: { running: false, gateway_mode: 'parked' } })
       expect(modes.at(-1)).toEqual({ profile_home: work, name: 'work', is_default: false })
+      // An unconfirmed mode never borrows the host's health for a named profile; the root profile keeps its health.
+      sidecar.respond('gateway.mode', () => { throw new Error('the sidecar cannot answer') })
+      expect(await json(await s.get('/api/gateway/status', { headers: { cookie } }))).toMatchObject({ running: false, gateway_mode: 'stopped', health: { state: 'alive' } })
+      expect(await json(await s.get('/api/gateway/status'))).toMatchObject({ running: true, gateway_mode: null })
+      sidecar.respond('gateway.mode', (params) => ({ gateway_mode: params.profile_home === work ? 'parked' : 'own' }))
       expect(await json(await s.get('/api/gateway/status'))).toMatchObject({ running: true, gateway_mode: 'own' })
     } finally {
       for (const method of ['profiles.list', 'gateway.mode', 'gateway.control'] as const) sidecar.respond(method, undefined)
