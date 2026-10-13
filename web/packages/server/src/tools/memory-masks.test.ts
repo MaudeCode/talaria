@@ -40,6 +40,21 @@ describe('restoreMasks (TAL-886)', () => {
     expect(refusal).toMatchObject({ status: 422, extra: { code: 'memory_mask_ambiguous', mask: '***' } })
   })
 
+  it('refuses an edit inside a mask instead of writing the mask over its secret', () => {
+    const refusal = (original: string, edit: (shown: string) => string): unknown => { try { save(original, edit) } catch (error) { return error } return null }
+    expect(refusal('token ghp_AbCDEFGHIJKLMNOP6789', (shown) => `${shown}.`)).toMatchObject({ status: 422, extra: { code: 'memory_mask_edited', mask: 'ghp_Ab...6789' } })
+    expect(refusal('OPENAI_API_KEY=hunter2secretvalue', (shown) => shown.replace('OPENAI_API_KEY', 'OPENAI_KEY'))).toMatchObject({ status: 422, extra: { code: 'memory_mask_edited', mask: '***' } })
+  })
+
+  it('never swaps the secrets of two entries that show the same mask', () => {
+    const original = 'a: password: hunter2\n§\nb: password: other99'
+    let refusal: unknown
+    try { save(original, (shown) => shown.split('\n§\n').reverse().join('\n§\n')) } catch (error) { refusal = error }
+    expect(refusal).toMatchObject({ status: 422, extra: { code: 'memory_mask_ambiguous', mask: '***' } })
+    // A moved entry whose mask is unique keeps its value.
+    expect(save('a: token ghp_AbCDEFGHIJKLMNOP6789\n§\nb: password: other99', (shown) => shown.split('\n§\n').reverse().join('\n§\n'))).toBe('b: password: other99\n§\na: token ghp_AbCDEFGHIJKLMNOP6789')
+  })
+
   it('writes the submitted text when nothing is masked', () => {
     expect(restoreMasks('plain', 'plain', 'edited')).toBe('edited')
   })

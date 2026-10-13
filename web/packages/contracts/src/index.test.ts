@@ -14,7 +14,7 @@ describe('contracts package', () => {
   })
   it('parses the shared memory save refusals (TAL-886)', () => {
     const fixture = shared('fixtures/memory-write-refusals.json') as Record<string, unknown>
-    expect(Object.values(fixture).map((body) => MemoryWriteRefusalSchema.parse(body).code)).toEqual(['memory_char_limit', 'memory_mask_ambiguous'])
+    expect(Object.values(fixture).map((body) => MemoryWriteRefusalSchema.parse(body).code)).toEqual(['memory_char_limit', 'memory_mask_ambiguous', 'memory_mask_edited'])
   })
   it('exports an integer sidecar RPC version', () => {
     expect(Number.isInteger(SIDECAR_RPC_VERSION)).toBe(true)

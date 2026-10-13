@@ -47858,7 +47858,7 @@
     "/api/memory/write": {
       "post": {
         "operationId": "memory.write",
-        "summary": "`section` names the file (memory, user, soul); the legacy `target` alias is accepted. Masks the page showed are restored to the values they hide; 422 refuses an ambiguous mask or a MEMORY.md / USER.md body over the Agent store limit.",
+        "summary": "`section` names the file (memory, user, soul); the legacy `target` alias is accepted. Masks the page showed are restored to the values they hide; 422 refuses an ambiguous or edited mask, or a MEMORY.md / USER.md body over the Agent store limit.",
         "tags": [
           "tools"
         ],
@@ -47915,7 +47915,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
+                  "anyOf": [
                     {
                       "type": "object",
                       "properties": {
@@ -47962,7 +47962,10 @@
                         },
                         "code": {
                           "type": "string",
-                          "const": "memory_mask_ambiguous"
+                          "enum": [
+                            "memory_mask_ambiguous",
+                            "memory_mask_edited"
+                          ]
                         },
                         "mask": {
                           "type": "string"

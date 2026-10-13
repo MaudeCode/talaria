@@ -1,6 +1,6 @@
 /** Memory panel files and saved prompts (Python `_handle_memory_read`, `_handle_memory_write`, saved prompts helpers). */
 import { closeSync, constants as fsConstants, existsSync, fstatSync, ftruncateSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { dict, isDict, type Config, type Dict } from '../config/agent-config.js'
@@ -125,7 +125,7 @@ function readCurrent(target: string): string {
     const code = (error as NodeJS.ErrnoException).code
     if (code === 'ENOENT') return ''
     if (code === 'ELOOP') throw new HttpFailure(400, 'Cannot write to a symlinked memory file')
-    if (code === 'EACCES' || code === 'EPERM') throw new HttpFailure(403, `${target.split('/').pop() ?? ''} is not readable: ${target}. Run chmod 644 on the file or fix ownership on the shared volume.`)
+    if (code === 'EACCES' || code === 'EPERM') throw new HttpFailure(403, `${basename(target)} is not readable: ${target}. Run chmod 644 on the file or fix ownership on the shared volume.`)
     throw error
   }
   try {
@@ -158,8 +158,7 @@ export async function writeMemory(profileHome: string, config: Config, section: 
   if (section !== 'soul') {
     const { count, limit } = await deps.check(section, content)
     if (count > limit) {
-      const name = section === 'memory' ? 'MEMORY.md' : 'USER.md'
-      throw new HttpFailure(422, `${name} would hold ${count.toLocaleString('en-US')} characters, over its ${limit.toLocaleString('en-US')}-character limit. Shorten or remove entries, then save.`, { code: 'memory_char_limit', char_limit: { count, limit } })
+      throw new HttpFailure(422, `${basename(target)} would hold ${count.toLocaleString('en-US')} characters, over its ${limit.toLocaleString('en-US')}-character limit. Shorten or remove entries, then save.`, { code: 'memory_char_limit', char_limit: { count, limit } })
     }
   }
   try {

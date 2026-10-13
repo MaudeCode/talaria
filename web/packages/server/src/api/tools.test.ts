@@ -19,7 +19,7 @@ type Json = Record<string, unknown>
 const post = (s: TestServer, path: string, body: unknown, method = 'POST'): Promise<Response> => s.get(path, { method, body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
 const json = async (res: Response): Promise<Json> => (await res.json()) as Json
 /** TAL-886: the shared refusal bodies the native and Web clients render. */
-const refusals = JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/memory-write-refusals.json'), 'utf8')) as Record<'char_limit' | 'mask_ambiguous', Json>
+const refusals = JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/memory-write-refusals.json'), 'utf8')) as Record<'char_limit' | 'mask_ambiguous' | 'mask_edited', Json>
 
 describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics', () => {
   let s: TestServer
@@ -223,6 +223,11 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     const res = await post(s, '/api/memory/write', { section: 'memory', content: `${moved}\n§\nbackup password: ***` })
     expect(res.status).toBe(422)
     expect(await json(res)).toEqual(refusals.mask_ambiguous)
+    expect(readFileSync(file, 'utf8')).toBe(reordered)
+    // An edit inside a mask is refused rather than written over the secret.
+    const edited = await post(s, '/api/memory/write', { section: 'memory', content: moved.replace('ghp_Ab...6789', 'ghp_Ab...6789.') })
+    expect(edited.status).toBe(422)
+    expect(await json(edited)).toEqual(refusals.mask_edited)
     expect(readFileSync(file, 'utf8')).toBe(reordered)
     // A file the server cannot read back is refused rather than overwritten blind.
     chmodSync(file, 0o200)
