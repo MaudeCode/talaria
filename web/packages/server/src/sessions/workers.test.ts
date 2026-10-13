@@ -10,7 +10,7 @@ import { CompletionDrain, formatWakeupPrompt } from './completions.js'
 import { nextSessionItem, StreamRegistry, type SessionChannels } from './streams.js'
 import { HygieneTicker, rotateWebuiLog, webuiLogPaths } from '../tools/hygiene.js'
 import { configFingerprint, McpHealthProber, probeServer } from '../tools/mcp-health.js'
-import { agentHealth, remoteGatewayBaseUrl, runtimeStatusIsFresh } from '../tools/health.js'
+import { agentHealth, processStartTime, remoteGatewayBaseUrl, runtimeStatusIsFresh } from '../tools/health.js'
 import { RunJournal } from './journal.js'
 import { str } from '../util.js'
 
@@ -1210,6 +1210,20 @@ describe('agent health', () => {
     writeFileSync(join(dir, 'gateway_state.json'), JSON.stringify({ gateway_state: 'stopped', updated_at: old }))
     expect(await agentHealth(deps)).toMatchObject({ alive: null, details: { reason: 'gateway_stale_stopped_state' } })
     writeFileSync(join(dir, 'gateway_state.json'), JSON.stringify({ gateway_state: 'stopped', updated_at: new Date().toISOString() }))
+    expect(await agentHealth(deps)).toMatchObject({ alive: false, details: { state: 'down', reason: 'gateway_not_running' } })
+    // TAL-950: the Agent writes a JSON pid record; a live gateway still starting under a stale `draining` state is alive.
+    writeFileSync(join(dir, 'gateway_state.json'), JSON.stringify({ gateway_state: 'draining', updated_at: old }))
+    const record = { pid: process.pid, kind: 'hermes-gateway', argv: ['hermes', 'gateway'], start_time: null, hermes_home: dir }
+    writeFileSync(join(dir, 'gateway.pid'), JSON.stringify(record))
+    expect(await agentHealth(deps)).toMatchObject({ alive: true, details: { state: 'alive', gateway_state: 'draining' } })
+    const started = await processStartTime(process.pid)
+    expect(started).toEqual(expect.any(Number))
+    writeFileSync(join(dir, 'gateway.pid'), JSON.stringify({ ...record, start_time: started }))
+    expect(await agentHealth(deps)).toMatchObject({ alive: true, details: { state: 'alive', gateway_state: 'draining' } })
+    // A recorded start time that disagrees with the live process is a reused pid, not the gateway.
+    writeFileSync(join(dir, 'gateway.pid'), JSON.stringify({ ...record, start_time: 1 }))
+    expect(await agentHealth(deps)).toMatchObject({ alive: false, details: { state: 'down', reason: 'gateway_not_running' } })
+    writeFileSync(join(dir, 'gateway.pid'), JSON.stringify({ pid: 999999999, kind: 'hermes-gateway' }))
     expect(await agentHealth(deps)).toMatchObject({ alive: false, details: { state: 'down', reason: 'gateway_not_running' } })
     expect(runtimeStatusIsFresh({ gateway_state: 'running', updated_at: '2026-01-01T00:00:00' }, Date.now() / 1000)).toBe(false)
   })

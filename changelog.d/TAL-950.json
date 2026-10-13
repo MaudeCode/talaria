@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Agent health reads the gateway's current pid file format, so a running gateway is no longer reported as unavailable while it starts up.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
