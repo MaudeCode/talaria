@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Chats no longer repeat your request after automatic context compression.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

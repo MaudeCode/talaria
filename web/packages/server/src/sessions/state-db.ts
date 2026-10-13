@@ -659,7 +659,7 @@ export function stateDbSessionRead(dbPath: string, sid: string, opts: { stitch?:
     const available = tableColumns(db, 'messages')
     if (!['role', 'content', 'timestamp'].every((c) => available.has(c))) return { ...none, ok: available.size > 0 }
     const hasId = available.has('id')
-    const selected = [...(hasId ? ['id'] : []), 'role', 'content', 'timestamp', ...OPTIONAL_MESSAGE_COLUMNS.filter((c) => available.has(c))]
+    const selected = [...(hasId ? ['id'] : []), ...(available.has('active') ? ['active'] : []), 'role', 'content', 'timestamp', ...OPTIONAL_MESSAGE_COLUMNS.filter((c) => available.has(c))]
     // TAL-529: an explicit lineage (the session and its compression continuations) replaces the parent walk.
     const chain = opts.lineage?.length ? [...opts.lineage] : [id]
     if (!opts.lineage?.length && (opts.stitch ?? true)) {
@@ -695,6 +695,20 @@ export function stateDbSessionRead(dbPath: string, sid: string, opts: { stitch?:
       const vouched = [available.has('compacted') ? 'a.compacted = 1' : '', available.has('tool_call_id') ? 'm.tool_call_id IS NOT NULL' : '', 'a.content = m.content'].filter(Boolean).join(' OR ')
       const twins = db.prepare(`SELECT m.id AS id, MIN(a.id) AS twin FROM messages m JOIN messages a ON a.session_id = m.session_id AND a.active = 0 AND a.role = m.role AND a.timestamp = m.timestamp AND a.id < m.id${sameCall} WHERE m.session_id IN (${chain.map(() => '?').join(', ')}) AND (m.active IS NULL OR m.active != 0) AND (${vouched}) GROUP BY m.id`).all(...chain) as Dict[]
       const twinOf = new Map(twins.map((row) => [row.id, row.twin]))
+      if (available.has('message_uid') && available.has('compacted')) {
+        // TAL-783: replay timestamps change in v31. UID matches win; unmatched/backfilled UIDs keep the timestamp rule.
+        // The Agent's UID index is active-only. Scan archives once, probing live UIDs, rather than once per live row.
+        const liveClauses = ['m.active = 1']
+        if (rows.some((row) => row.active !== 1)) liveClauses.push('(m.active IS NULL OR m.active NOT IN (0, 1))')
+        const placeholders = chain.map(() => '?').join(', ')
+        for (const live of liveClauses) {
+          const uidTwins = db.prepare(`SELECT m.id AS id, MIN(a.id) AS twin FROM messages a CROSS JOIN messages m
+            ON m.message_uid = a.message_uid AND a.id < m.id
+            WHERE a.session_id IN (${placeholders}) AND a.active = 0 AND a.compacted = 1
+              AND m.session_id IN (${placeholders}) AND ${live} GROUP BY m.id`).all(...chain, ...chain) as Dict[]
+          for (const row of uidTwins) twinOf.set(row.id, row.twin)
+        }
+      }
       for (const [i, row] of rows.entries()) {
         const twin = twinOf.get(row.id)
         if (typeof twin === 'number') projected[i]!._state_db_row_id = twin

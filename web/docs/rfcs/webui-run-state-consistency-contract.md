@@ -50,6 +50,12 @@ The server owns every layer except the client's live timeline:
 The frontend's stream reducer (`packages/frontend/src/stream/reducer.ts`) is a
 projection of SSE frames that converges on the server's settled fields.
 
+The server's read-only `state.db` projection maps compaction replays to the
+oldest compacted row with the same `message_uid` in the selected session chain.
+This preserves transcript identity when a replay gets a new timestamp. Without
+a UID match, the legacy timestamp twin rule still applies; a rewound row alone
+does not establish a compaction UID match.
+
 ## State layers
 
 | Layer | Purpose | Source-of-truth expectation | Must not do |
