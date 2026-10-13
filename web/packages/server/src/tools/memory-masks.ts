@@ -116,6 +116,9 @@ export function restoreMasks(original: string, shown: string, submitted: string)
   }
   const meanings = new Map<string, Set<string>>()
   for (const hunk of hunks) if (hunk.mask.trim()) meanings.set(hunk.mask, (meanings.get(hunk.mask) ?? new Set()).add(hunk.original))
+  // A mask the page also shows as literal text (a Markdown `***`) may stand for that text too, so it never maps back by text.
+  const literal = b.map((token, j) => (hunkOf[j]! >= 0 ? '\u0000' : token)).join('')
+  for (const [mask, values] of meanings) if (new RegExp(`(?<!\\S)${escapeRe(mask)}(?!\\S)`).test(literal)) values.add(mask)
   const c = tokens(submitted)
   const pageToSave = diffTokens(b, c)
   const keptAt = new Int32Array(b.length).fill(-1)

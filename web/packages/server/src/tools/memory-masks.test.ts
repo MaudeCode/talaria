@@ -55,6 +55,14 @@ describe('restoreMasks (TAL-886)', () => {
     expect(save('a: token ghp_AbCDEFGHIJKLMNOP6789\n§\nb: password: other99', (shown) => shown.split('\n§\n').reverse().join('\n§\n'))).toBe('b: password: other99\n§\na: token ghp_AbCDEFGHIJKLMNOP6789')
   })
 
+  it('refuses a mask that the page also shows as literal text once either moves', () => {
+    const original = 'password: hunter2\n§\n***\n§\nb'
+    let refusal: unknown
+    try { save(original, () => '***\n§\npassword: ***\n§\nb') } catch (error) { refusal = error }
+    expect(refusal).toMatchObject({ status: 422, extra: { code: 'memory_mask_ambiguous', mask: '***' } })
+    expect(save(original, (shown) => shown.replace(/\nb$/, '\nc'))).toBe('password: hunter2\n§\n***\n§\nc')
+  })
+
   it('writes the submitted text when nothing is masked', () => {
     expect(restoreMasks('plain', 'plain', 'edited')).toBe('edited')
   })
