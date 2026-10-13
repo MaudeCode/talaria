@@ -166,7 +166,8 @@ def verify_image(identity, sha):
         tagged = f"docker.io/nousresearch/hermes-agent:{tag}"
         pull = subprocess.run(["docker", "pull", tagged], stderr=subprocess.PIPE, text=True)
         sys.stderr.write(pull.stderr)
-        if pull.returncode and "not found" not in pull.stderr:
+        # The containerd image store reports a missing tag as "<ref>: not found", the classic one as "manifest unknown".
+        if pull.returncode and f"{tagged}: not found" not in pull.stderr and "manifest unknown" not in pull.stderr:
             raise subprocess.CalledProcessError(pull.returncode, pull.args, stderr=pull.stderr)
         if pull.returncode == 0 and any(ref.endswith("@" + image.rsplit("@", 1)[1])
                           for ref in json.loads(subprocess.check_output(["docker", "image", "inspect", tagged]))[0].get("RepoDigests", [])):

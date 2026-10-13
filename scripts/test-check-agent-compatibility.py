@@ -41,7 +41,7 @@ class FakeTools:
         self.attempt_digest = None  # the rc.N-<tag> Docker tag's digest
         self.remote_tags = {}  # Agent Git tag -> peeled commit
         self.missing_tags = set()  # Docker tags whose pull fails with pull_error
-        self.pull_error = "failed to resolve reference: not found"  # what Docker answers for a missing tag
+        self.pull_error = 'failed to resolve reference "{ref}": {ref}: not found'  # Docker's answer for a missing tag
         self.fetched = None
         for name, replacement in (("run", self.run), ("check_output", self.check_output)):
             patcher = patch.object(checker.subprocess, name, side_effect=replacement)
@@ -67,7 +67,7 @@ class FakeTools:
             if failures:
                 raise subprocess.CalledProcessError(1, command)
         if command[:2] == ["docker", "pull"] and command[2].rsplit(":", 1)[-1] in self.missing_tags:
-            stderr = f"Error response from daemon: {self.pull_error}\n"
+            stderr = f"Error response from daemon: {self.pull_error.format(ref=command[2])}\n"
             if kwargs.get("check"):
                 raise subprocess.CalledProcessError(1, command, stderr=stderr)
             return subprocess.CompletedProcess(command, 1, stderr=stderr)
@@ -260,10 +260,14 @@ class CheckerTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "tag image does not match"):
                     self.receipt("--release", "v2026.9.24")
                 self.assertFalse(self.last["imageVerified"])
-        with patch.multiple(self.tools, pull_error="toomanyrequests: rate limit exceeded"):
-            with self.assertRaises(subprocess.CalledProcessError):  # only a missing tag is skipped
-                self.receipt("--release", "v2026.9.24")
-            self.assertFalse(self.last["imageVerified"])
+        with patch.multiple(self.tools, pull_error="manifest for {ref} not found: manifest unknown: manifest unknown"):
+            self.assertTrue(self.receipt("--release", "v2026.9.24")["imageVerified"])  # the classic image store
+        for error in ("toomanyrequests: rate limit exceeded",
+                      'error getting credentials - err: exec: "docker-credential-gone": executable file not found in $PATH'):
+            with self.subTest(error), patch.multiple(self.tools, pull_error=error):
+                with self.assertRaises(subprocess.CalledProcessError):  # only a missing tag is skipped
+                    self.receipt("--release", "v2026.9.24")
+                self.assertFalse(self.last["imageVerified"])
 
     def test_failed_candidate_reports_counts_and_leaves_the_record_intact(self):
         record = (self.root / "web/sidecar/agent_support.json").read_bytes()
