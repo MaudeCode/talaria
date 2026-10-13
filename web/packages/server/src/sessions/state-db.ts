@@ -9,6 +9,7 @@ import { existsSync, openSync, readSync, closeSync, statSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { Worker } from 'node:worker_threads'
 import { str } from '../util.js'
+import { stateDbMessageFingerprint } from './state-db-identity.js'
 import { MESSAGING_SOURCES } from './source-kind.js'
 import { looksLikeDefaultCliTitle, normalizeSourceName } from './titles.js'
 
@@ -678,13 +679,13 @@ function replayPayload(row: Dict): { copyKey: string; replayKey: string; replay:
  * authored payload changes even after active/compacted flags change. Only unchanged timestamp copies or
  * exact request restatements inherit identity; edits (including A -> B -> A) start at their own row ID.
  */
-function replayIdentities(db: DatabaseSync, chain: string[], rows: Dict[], available: Set<string>): Map<number, { id: number; changed: boolean }> {
-  const identities = new Map<number, { id: number; changed: boolean }>()
+function replayIdentities(db: DatabaseSync, chain: string[], rows: Dict[], available: Set<string>): Map<number, { id: number; changed: boolean; sourceKey: string }> {
+  const identities = new Map<number, { id: number; changed: boolean; sourceKey: string }>()
   // Tool-result text can be pruned without changing its tool-call identity; retain the existing rule.
   const uids = [...new Set(rows.filter((row) => row.role !== 'tool').map((row) => row.message_uid).filter((uid): uid is string => typeof uid === 'string' && uid.length > 0))]
   if (!uids.length) return identities
   const liveIds = new Set(rows.map((row) => row.id))
-  type Previous = ReturnType<typeof replayPayload> & { identity: number; changed: boolean; timestamp: unknown; active: unknown; compacted: unknown }
+  type Previous = ReturnType<typeof replayPayload> & { identity: number; changed: boolean; sourceKey: string; timestamp: unknown; active: unknown; compacted: unknown }
   const previous = new Map<string, Previous>()
   const columns = ['id', 'message_uid', 'active', 'compacted', 'role', 'content', 'timestamp', ...OPTIONAL_MESSAGE_COLUMNS.filter((c) => available.has(c))]
   // One ordered scan of the selected sessions, filtering against a materialized UID set. Stream the rows;
@@ -699,8 +700,9 @@ function replayIdentities(db: DatabaseSync, chain: string[], rows: Dict[], avail
     const restatement = prior && payload.replay && payload.replayKey === prior.replayKey && (prior.active !== 0 || prior.compacted === 1)
     const identity = prior && (copy || restatement) ? prior.identity : Number(row.id)
     const changed = prior ? (copy || restatement ? prior.changed : true) : false
-    if (prior && row.role !== 'tool' && liveIds.has(row.id)) identities.set(Number(row.id), { id: identity, changed })
-    previous.set(uid, { ...payload, identity, changed, timestamp: row.timestamp, active: row.active, compacted: row.compacted })
+    const sourceKey = prior && (copy || restatement) ? prior.sourceKey : stateDbMessageFingerprint(projectStateDbMessage(row, false))
+    if (prior && row.role !== 'tool' && liveIds.has(row.id)) identities.set(Number(row.id), { id: identity, changed, sourceKey })
+    previous.set(uid, { ...payload, identity, changed, sourceKey, timestamp: row.timestamp, active: row.active, compacted: row.compacted })
   }
   return identities
 }
@@ -774,6 +776,7 @@ export function stateDbSessionRead(dbPath: string, sid: string, opts: { stitch?:
         // A known changed generation overrides even a coincidental legacy timestamp twin.
         if (identity !== undefined) {
           projected[i]!._state_db_row_id = identity.id
+          if (identity.id !== row.id) projected[i]!._state_db_source_key = identity.sourceKey
           if (identity.changed) projected[i]!._state_db_authored_change = true
         }
       }

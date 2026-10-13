@@ -37,6 +37,42 @@ describe('released Agent compaction replay identity (TAL-783)', () => {
     expect(rows.at(-1)).not.toHaveProperty('message_uid')
   })
 
+  it.each(['compacted', 'twiceCompacted'] as const)('dedupes %s without a durable seen marker', (stage) => {
+    const rows = load(stage)
+    for (const options of [{}, { stateDbSeenId: null }]) {
+      const merged = mergeSessionMessagesAppendOnly(fixture.before, rows, options)
+      expect(merged).toHaveLength(6)
+      expect(merged.slice(0, 5)).toEqual(fixture.before)
+      expect(merged[5]?.content).toMatch(/^\[CONTEXT COMPACTION/)
+    }
+  })
+
+  it('keeps an unseen edited replay and recognizes it on later reads without a marker', () => {
+    const edited = load('editedThenCompacted')
+    const merged = mergeSessionMessagesAppendOnly(fixture.before, edited)
+    expect(merged.filter((m) => m.role === 'user')).toHaveLength(3)
+    expect(merged.at(-1)?.content).toContain('Only fix the parser error')
+    const repeated = mergeSessionMessagesAppendOnly(merged, load('editedTwiceCompacted'))
+    expect(repeated.filter((m) => m.role === 'user')).toEqual(merged.filter((m) => m.role === 'user'))
+    // A legacy local transcript may hold the authored edit but no numeric row identity.
+    const authored = { role: 'user', content: 'Only fix the parser error', timestamp: 3000 }
+    expect(mergeSessionMessagesAppendOnly([...fixture.before, authored], edited).filter((m) => m.role === 'user')).toEqual([...fixture.before.filter((m) => m.role === 'user'), authored])
+  })
+
+  it('retains clear, truncate and compression boundaries when deduping unmarked replays', () => {
+    const original = load('initial')[0]!
+    const rows = load('compacted')
+    expect(mergeSessionMessagesAppendOnly(fixture.before, rows, { truncationWatermark: 1004 })).toEqual(fixture.before)
+    expect(mergeSessionMessagesAppendOnly(fixture.before, rows, { truncationWatermark: 1004, compressedWatermark: true })).toHaveLength(6)
+    expect(mergeSessionMessagesAppendOnly([], [original, ...rows], { truncationWatermark: 0 })).toEqual([])
+    const empty = mergeSessionMessagesAppendOnly([], [original, ...rows])
+    expect(empty.filter((m) => m.role === 'user')).toEqual([original])
+    const prefix = mergeSessionMessagesAppendOnly([], [original, ...rows], { truncationWatermark: 1004 })
+    expect(prefix.every((m) => Number(m.timestamp) <= 1004)).toBe(true)
+    expect(prefix.filter((m) => m.role === 'user')).toEqual([original])
+    expect(stripPublicInternalFields(rows, { messageRecords: true })).not.toHaveProperty('3._state_db_source_key')
+  })
+
   it('keeps an unobserved edit after both active generations are compacted, then dedupes later copies', () => {
     const rows = load('editedThenCompacted')
     const authored = db.prepare("SELECT id FROM messages WHERE content = 'Only fix the parser error' ORDER BY id DESC LIMIT 1").get()!

@@ -1882,7 +1882,7 @@ export function redactValue(v: unknown, enabled: boolean): unknown {
   return out
 }
 
-export const PUBLIC_MESSAGE_INTERNAL_FIELDS = new Set(['api_content', '_row_id', '_state_db_row_id', '_state_db_generation', '_state_db_authored_change', '_db_row_id', 'state_db_row_id', '_active_turn_token', '_active_turn_user', '_fork_child_turn'])
+export const PUBLIC_MESSAGE_INTERNAL_FIELDS = new Set(['api_content', '_row_id', '_state_db_row_id', '_state_db_generation', '_state_db_authored_change', '_state_db_source_key', '_db_row_id', 'state_db_row_id', '_active_turn_token', '_active_turn_user', '_fork_child_turn'])
 
 export type Json = unknown
 

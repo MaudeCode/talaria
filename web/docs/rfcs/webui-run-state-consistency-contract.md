@@ -61,7 +61,10 @@ stay distinct; UID equality alone never proves a copy.
 The reader streams those histories once and reads the live rows and archive in
 one SQLite snapshot. Its internal `_state_db_authored_change` marker prevents
 the append-only merge's text fallback from hiding a known new occurrence behind
-an older identical local row. That marker is stripped from public messages.
+an older identical local row. A fixed-width fingerprint of a verified copy's
+archived source also lets older sidecars match replays without a seen marker. The remaining rows still pass
+through the existing timestamp, clear, truncation and compression gates. Both
+internal markers are stripped from public messages.
 Tool results retain their existing tool-call/timestamp compaction rule; tables
 without UIDs retain the legacy timestamp rule. This requires no Agent changes,
 new database fields, release pins or server-side database writes.
