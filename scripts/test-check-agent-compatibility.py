@@ -2,9 +2,11 @@
 """Synthetic support records and faked Git, uv, Docker and release API; no network, Agent or credentials."""
 
 import copy
+import fcntl
 import importlib.util
 import io
 import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -54,11 +56,17 @@ class FakeTools:
     def run(self, command, **kwargs):
         command = [str(part) for part in command]
         self.commands.append(command)
+        if command[:2] == ["git", "init"]:
+            Path(command[-1]).mkdir(parents=True)
         if command[:2] == ["git", "-C"] and command[3] == "fetch":
             self.refspec = command[-1]
             self.fetched = command[-1].removeprefix("+").split(":", 1)[0]
         if command[:2] == ["git", "-C"] and command[3] == "checkout":
             (Path(command[2]) / "uv.lock").write_text(f'version = 1\nrequires-python = "{self.requires_python}"\n')
+        if command[0] == "uv":
+            venv = Path(kwargs["cwd"]) / ".venv/bin"
+            venv.mkdir(parents=True)
+            (venv / "python").touch()
         if command[0].endswith("test.sh"):
             failures = self.sidecar_failures
             for part in command:
@@ -119,6 +127,10 @@ class CheckerTests(unittest.TestCase):
         self.root = Path(temporary.name)
         (self.root / "web/sidecar").mkdir(parents=True)
         self.write(RELEASES, active=RELEASES[1])
+        self.cache = self.root / "cache/talaria/agents"
+        patcher = patch.dict(os.environ, {"XDG_CACHE_HOME": str(self.root / "cache")})
+        patcher.start()
+        self.addCleanup(patcher.stop)
         patcher = patch.object(checker, "ROOT", self.root)
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -301,6 +313,71 @@ class CheckerTests(unittest.TestCase):
         self.tools.urlopen_mock.assert_not_called()
         with self.assertRaisesRegex(ValueError, "exact commit"):
             self.main("--main", "main")
+
+    def provisioned(self):
+        return [command[-1] for command in self.tools.commands if command[:2] == ["git", "init"]]
+
+    def test_supported_release_is_cached_and_reused(self):
+        self.receipt("--release", "v2026.9.14", "--skip-docker")
+        self.assertEqual(self.provisioned(), [str(self.cache / "v2026.9.14")])
+        self.tools.commands.clear()
+        self.tools.urlopen_mock.reset_mock()
+        receipt = self.receipt("--release", "v2026.9.14", "--skip-docker")
+        self.assertEqual((receipt["result"], receipt["tests"]["passed"]), ("success", 39))
+        self.assertEqual((self.provisioned(), self.tools.ran("uv")), ([], []))
+        self.tools.urlopen_mock.assert_not_called()
+        test_run = self.tools.ran("test.sh")[0]
+        self.assertTrue(any(command[-2:] == [str(self.root / "releases/agent_probe.py"), "0.21.3"] for command in self.tools.commands))
+        self.assertTrue(test_run)
+
+    def test_stale_or_broken_cache_entry_is_reprovisioned(self):
+        self.receipt("--release", "v2026.9.14", "--skip-docker")
+        for damage in (lambda: (self.cache / "v2026.9.14.ready").write_text(json.dumps({"sourceRevision": "f" * 40})),
+                       lambda: (self.cache / "v2026.9.14/.venv/bin/python").unlink()):
+            with self.subTest(damage):
+                damage()
+                self.tools.commands.clear()
+                self.receipt("--release", "v2026.9.14", "--skip-docker")
+                self.assertEqual(self.provisioned(), [str(self.cache / "v2026.9.14")])
+        self.tools.commands.clear()
+        self.receipt("--release", "v2026.9.14", "--skip-docker", "--python", "3.12")
+        self.assertIn(["uv", "sync", "--frozen", "--no-dev", "--extra", "mcp", "--python", "3.12"], self.tools.commands)
+
+    def test_release_leaving_the_record_is_deleted_unless_another_run_holds_it(self):
+        self.receipt("--release", "v2026.9.14", "--skip-docker")
+        self.receipt("--release", "v2026.9.24", "--skip-docker")
+        newer = release("v0.21.6", "0.21.6", "d")
+        self.write([*RELEASES[1:], newer], active=RELEASES[1])
+        with open(self.cache / "v2026.9.24.lock") as held:
+            fcntl.flock(held, fcntl.LOCK_SH)
+            self.receipt("--release", "v2026.9.21", "--skip-docker")
+            self.assertTrue((self.cache / "v2026.9.24").is_dir())  # still in the record
+            self.write([RELEASES[1], newer, release("v0.21.7", "0.21.7", "8")], active=RELEASES[1])
+            self.receipt("--release", "v2026.9.21", "--skip-docker")
+            self.assertTrue((self.cache / "v2026.9.24.ready").is_file())  # in use elsewhere
+        self.assertEqual({path.name for path in self.cache.iterdir() if path.name.startswith("v2026.9.14")}, set())
+        self.receipt("--release", "v2026.9.21", "--skip-docker")
+        self.assertEqual(sorted(path.name for path in self.cache.iterdir()),
+                         ["v2026.9.21", "v2026.9.21.lock", "v2026.9.21.ready"])
+
+    def test_candidate_and_canary_checkouts_are_removed(self):
+        self.receipt("--identity", json.dumps(CANDIDATE), "--skip-docker")
+        self.write([], RELEASES[1])
+        self.receipt("--main", "9" * 40)
+        checkouts = self.provisioned()
+        self.assertEqual(len(checkouts), 2)
+        for checkout in checkouts:
+            self.assertFalse(Path(checkout).exists())
+            self.assertNotEqual(Path(checkout).parent.parent, self.cache)
+
+    def test_provision_writes_the_environment_and_runs_nothing_else(self):
+        target = self.root / "agent.env"
+        receipt = self.receipt("--provision", str(target))
+        agent = self.cache / "v2026.9.21"
+        self.assertEqual(target.read_text().splitlines(),
+                         [f"HERMES_WEBUI_AGENT_DIR={agent}", f"HERMES_WEBUI_PYTHON={agent}/.venv/bin/python"])
+        self.assertEqual((receipt["result"], receipt["imageVerified"]), ("success", False))
+        self.assertEqual((self.tools.ran("test.sh"), self.tools.ran("docker")), ([], []))
 
     def test_lockfile_selects_the_newest_allowed_python(self):
         for requires, expected in ((">=3.11, <3.14", "3.13"), (">=3.11,<3.15", "3.14"), (">=3.12,<=3.12", "3.12"),

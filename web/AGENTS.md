@@ -51,7 +51,7 @@ Follow that checklist's safety rules:
   subsystem before editing.
 - Run checks with the npm workspace commands in `TESTING.md` (`npm test -w packages/server`,
   `npm run e2e -w packages/frontend`, `sidecar/scripts/test.sh`). The sidecar suite
-  uses the pinned Agent's venv; `HERMES_WEBUI_AGENT_DIR` points it at a checkout.
+  uses the active pinned Agent release from a shared cache; `HERMES_WEBUI_AGENT_DIR` points it at a checkout.
 - The server is TypeScript on Node 24 and never imports Hermes Agent code; everything
   that needs Agent Python goes through the stdlib-only sidecar (`sidecar/talaria_sidecar`)
   and its versioned RPC in `packages/contracts`. Do not fork, patch, or vendor the Agent.

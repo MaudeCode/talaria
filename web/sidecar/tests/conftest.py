@@ -1,9 +1,9 @@
 """Sidecar test harness: spawn ``python -m talaria_sidecar`` on the Agent venv.
 
 Every test owns a disposable HERMES_HOME. The Agent checkout and interpreter
-come from ``HERMES_WEBUI_AGENT_DIR`` / ``HERMES_WEBUI_PYTHON`` or the same
-discovery rules the server uses (``~/.hermes/hermes-agent`` with its venv).
-Tests never touch ``~/.hermes``.
+come from ``HERMES_WEBUI_AGENT_DIR`` / ``HERMES_WEBUI_PYTHON`` (``scripts/test.sh``
+provisions the pinned release); the interpreter defaults to the checkout's venv.
+Tests never touch ``~/.hermes``, nor test against its Agent.
 """
 
 from __future__ import annotations
@@ -22,19 +22,12 @@ import pytest
 
 SIDECAR_ROOT = pathlib.Path(__file__).resolve().parent.parent
 FIXTURES = pathlib.Path(__file__).resolve().parent / "fixtures"
-HOME = pathlib.Path.home()
 
 
 def discover_agent_dir() -> pathlib.Path | None:
-    candidates = [
-        os.environ.get("HERMES_WEBUI_AGENT_DIR", ""),
-        str(pathlib.Path(os.environ.get("HERMES_HOME") or HOME / ".hermes") / "hermes-agent"),
-        str(HOME / ".hermes" / "hermes-agent"),
-        str(HOME / "hermes-agent"),
-    ]
-    for raw in candidates:
-        if raw and (pathlib.Path(raw).expanduser() / "run_agent.py").exists():
-            return pathlib.Path(raw).expanduser().resolve()
+    raw = os.environ.get("HERMES_WEBUI_AGENT_DIR", "")
+    if raw and (pathlib.Path(raw).expanduser() / "run_agent.py").exists():
+        return pathlib.Path(raw).expanduser().resolve()
     return None
 
 
