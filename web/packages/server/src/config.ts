@@ -38,16 +38,22 @@ export function truthy(value: string | undefined): boolean {
 }
 
 export function platformDefaultHermesHome(env: Env, home = homedir()): string {
+  // Agent treats the suffix literally, including whitespace and path separators.
+  const suffix = env.HERMES_DATA_DIR_SUFFIX ?? ''
   if (process.platform === 'win32') {
     const localAppData = (env.LOCALAPPDATA ?? '').trim()
-    if (localAppData) {
-      const next = resolve(localAppData, 'hermes')
+    if (localAppData || suffix) {
+      const next = resolve(localAppData || resolve(home, 'AppData', 'Local'), `hermes${suffix}`)
       const legacy = resolve(home, '.hermes')
-      if (existsSync(resolve(legacy, 'webui')) && !existsSync(resolve(next, 'webui'))) return legacy
+      if (!suffix && existsSync(resolve(legacy, 'webui')) && !existsSync(resolve(next, 'webui'))) return legacy
       return next
     }
   }
-  return resolve(home, '.hermes')
+  return resolve(home, `.hermes${suffix}`)
+}
+
+export function resolveHermesHome(env: Env, home = homedir()): string {
+  return resolve((env.HERMES_HOME ?? '').trim().replace(/^~(?=$|\/)/, home) || platformDefaultHermesHome(env, home))
 }
 
 function envMbBytes(raw: string | undefined, defaultMb: number, warn: (line: string) => void, name: string): number {
@@ -105,7 +111,7 @@ export function loadConfig(opts: LoadConfigOptions): ServerConfig {
   const env = opts.env ?? process.env
   const home = opts.home ?? homedir()
   const warn = opts.warn ?? ((line) => { console.error(`[webui] WARNING: ${line}`) })
-  const hermesHome = resolve((env.HERMES_HOME ?? '').trim().replace(/^~(?=$|\/)/, home) || platformDefaultHermesHome(env, home))
+  const hermesHome = resolveHermesHome(env, home)
   const stateDir = resolve((env.HERMES_WEBUI_STATE_DIR ?? '').trim().replace(/^~(?=$|\/)/, home) || resolve(hermesHome, 'webui'))
   const port = Number.parseInt(env.HERMES_WEBUI_PORT ?? '8787', 10)
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error(`Invalid HERMES_WEBUI_PORT=${JSON.stringify(env.HERMES_WEBUI_PORT)}`)

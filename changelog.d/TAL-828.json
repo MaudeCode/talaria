@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Talaria Web now uses the matching Agent data directory when a data-directory suffix is configured.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

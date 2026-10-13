@@ -42,7 +42,22 @@ _RECOVERED_HOMES: set[str] = set()
 _RECOVERY_WARNED: set[str] = set()
 _LAUNCH_ENV_LOCK = threading.Lock()
 _LAUNCH_ENV: dict[str, str] | None = None
-_PROCESS_HOME = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes").expanduser()
+
+
+def _process_home() -> Path:
+    explicit = os.environ.get("HERMES_HOME", "")
+    if explicit:
+        return Path(explicit).expanduser()
+    # Match Agent's literal suffix without importing Agent during sidecar startup.
+    suffix = os.environ.get("HERMES_DATA_DIR_SUFFIX", "")
+    if sys.platform == "win32":
+        local_appdata = os.environ.get("LOCALAPPDATA", "").strip()
+        base = Path(local_appdata) if local_appdata else Path.home() / "AppData" / "Local"
+        return base / ("hermes" + suffix)
+    return Path.home() / (".hermes" + suffix)
+
+
+_PROCESS_HOME = _process_home()
 
 
 def _is_named_profile(home: Path) -> bool:
