@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "New worktrees no longer run git filter programs configured by the repository; with Hermes Agent releases before v0.21.6, Talaria Web refuses to create a worktree in such a repository.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

@@ -15,26 +15,28 @@ from ..rpc import CallContext
 log = logging.getLogger("talaria_sidecar.worktree")
 
 
-def _setup_worktree_fn():
-    try:
-        from hermes_cli.worktree_ops import _setup_worktree
+# Repository config can name a program for a filter driver its .gitattributes selects; the checkout runs it.
+_REPO_FILTER_KEYS = r"^filter\..*\.(smudge|clean|process)$"
 
-        return _setup_worktree
-    except Exception:  # noqa: BLE001 - older Agents keep the helper in cli.py
+
+def _refuse_unneutralized_repo_filters(repo_root: str) -> None:
+    """Agents before v0.21.6 check out with the repository's filter programs live; refuse a repo that configures one.
+
+    Only global and system config are the user's own; any other scope (local, worktree, an include from either) is
+    the repository's. Unreadable config fails closed, matching the Agent's own refusal from v0.21.6.
+    """
+    try:
+        from hermes_cli._subprocess_compat import noninteractive_repo_git_env  # noqa: F401 - v0.21.6+ neutralizes them
+        return
+    except ImportError:
         pass
-    try:
-        import importlib.util
-
-        import hermes_cli
-
-        spec = importlib.util.spec_from_file_location("hermes_cli_worktree", str(Path(hermes_cli.__file__).resolve().parent.parent / "cli.py"))
-        if spec is None or spec.loader is None:
-            raise RuntimeError("cli.py not found")
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        return module._setup_worktree
-    except Exception as exc:  # noqa: BLE001
-        raise RpcError("Hermes Agent worktree helper is unavailable", condition="worktree_unavailable") from exc
+    probe = subprocess.run(["git", "-C", repo_root, "config", "--includes", "--show-scope", "-z", "--get-regexp", _REPO_FILTER_KEYS],
+                           text=True, capture_output=True, timeout=5, check=False, stdin=subprocess.DEVNULL)
+    # -z --show-scope answers "<scope>\0<key>\n<value>\0" per match.
+    scopes = set(probe.stdout.split("\0")[::2]) - {""}
+    if probe.returncode not in (0, 1) or scopes - {"global", "system"}:
+        raise RpcError("This repository configures git filter programs; update Hermes Agent to v0.21.6 or later to create a worktree here",
+                       condition="worktree_unsafe_repo")
 
 
 def create(repo_root: str) -> dict:
@@ -44,10 +46,13 @@ def create(repo_root: str) -> dict:
     probe = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=str(root), text=True, capture_output=True, timeout=5, check=False)
     if probe.returncode != 0 or not probe.stdout.strip():
         raise RpcError("Workspace is not inside a git repository", condition="not_a_repo")
-    setup = _setup_worktree_fn()
+    repo = str(Path(probe.stdout.strip()).resolve())
+    _refuse_unneutralized_repo_filters(repo)
+    from hermes_cli.worktree_ops import _setup_worktree
+
     output = io.StringIO()
     with redirect_stdout(output), redirect_stderr(output):
-        info = setup(str(Path(probe.stdout.strip()).resolve()))
+        info = _setup_worktree(repo)
     emitted = output.getvalue().strip()
     if emitted:
         log.debug("Hermes Agent worktree helper output: %s", emitted)
