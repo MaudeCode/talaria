@@ -2,11 +2,12 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Dict } from '../config/agent-config.js'
 import { GatewayRestartQueue } from './gateway-restart.js'
 import { gatewayRestartBlockers } from './health.js'
 import { GATEWAY_RESTART_NOW, UpdateNotificationStore, type UpdateNotificationScope } from './update-notifications.js'
+import { bootTestServer } from '../test/harness.js'
 
 const dirs: string[] = []
 afterEach(() => { for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true }) })
@@ -231,6 +232,7 @@ describe('GatewayRestartQueue', () => {
     t.queue.schedule(id, 'default')
     await flush()
     expect(t.row(id)?.phase).toBe('restarting')
+    expect(t.queue.restarting()).toBe(true)
     let quiesced = false
     const done = t.queue.quiesce().then(() => { quiesced = true })
     await flush()
@@ -238,6 +240,26 @@ describe('GatewayRestartQueue', () => {
     finish()
     await done
     expect(t.row(id)?.phase).toBe('succeeded')
+    expect(t.queue.restarting()).toBe(false)
+  })
+
+  it('shares the waiting record with every server owner, so another owner can follow it and restart now', () => {
+    const t = setup()
+    t.gateway({ active_agents: 1 })
+    const id = t.waiting()
+    t.queue.schedule(id, 'default')
+    const other: UpdateNotificationScope = { owner: 'oidc:other', profile: 'default', serverOwner: true, tab: 'tab-other-owner' }
+    t.store.watch(other, id)
+    expect(t.store.list(other).tab_update).toMatchObject({ id, phase: 'waiting_for_idle' })
+    expect(t.store.action(other, id, GATEWAY_RESTART_NOW)).toMatchObject({ id })
+    expect(t.store.list({ owner: 'member', profile: 'default', serverOwner: false }).notifications.some((row) => row.id === id)).toBe(false)
+  })
+
+  it('every server shutdown quiesces the queue', async () => {
+    const server = await bootTestServer()
+    const quiesce = vi.spyOn(server.deps.gatewayRestarts, 'quiesce')
+    await server.close()
+    expect(quiesce).toHaveBeenCalledOnce()
   })
 
   it('retries one transient failure and reports a failed restart with the manual command', async () => {

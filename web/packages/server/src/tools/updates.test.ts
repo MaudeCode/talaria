@@ -1131,6 +1131,16 @@ describe('Agent checkout updates', () => {
     expect(events).toEqual(['restart'])
   })
 
+  it('TAL-953: refuses an Agent update while a gateway restart runs, without touching the checkout', async () => {
+    const a = agentInstall()
+    const base = agentService(a.agent, runGit, []) as unknown as { deps: UpdateServiceDeps }
+    const svc = new UpdateService({ ...base.deps, gatewayRestarting: () => true })
+    for (const run of [() => svc.apply('agent', null, () => true, { confirmedRevision: a.v2 }), () => svc.force('agent', null, { confirmedRevision: a.v2 }), () => svc.clearLock('agent', { confirmedRevision: a.v2 })]) {
+      expect(await run()).toMatchObject({ ok: false, status: 'already_in_progress', target: 'agent' })
+    }
+    expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(a.v1)
+  })
+
   it('a conflicting local edit leaves a clean checkout, keeps the stash, and restarts onto the update', async () => {
     const a = agentInstall()
     writeFileSync(join(a.agent, 'VERSION'), 'local edit\n')

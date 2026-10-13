@@ -1170,6 +1170,8 @@ export interface UpdateServiceDeps {
   blockers: () => RestartBlockers
   /** Re-exec the server once active work drains (`restartWhenSafe`). */
   scheduleRestart: () => void
+  /** TAL-953: a post-update `hermes gateway restart` is running; Agent source must not change under it. */
+  gatewayRestarting?: () => boolean
   /** Optional update-summary generator (sidecar `aux.complete`); null keeps the deterministic fallback. */
   llm?: ((system: string, user: string) => Promise<string>) | null
   now?: () => number
@@ -1295,6 +1297,7 @@ export class UpdateService {
   blocksNewWork(): boolean { return this.applying || this.autoRestartScheduled }
 
   private pendingRestartResponse(target: string): Dict | null {
+    if (target === 'agent' && this.deps.gatewayRestarting?.()) return { ok: false, status: 'already_in_progress', target, message: 'The gateway is restarting after the last Hermes Agent update. Update again once it finishes.' }
     if (!this.autoRestartScheduled) return null
     if (target === 'webui') return { ok: true, target, restart_scheduled: true, message: 'A Web restart is already scheduled.' }
     return { ok: false, status: 'already_in_progress', target, message: 'A Talaria Web restart is already scheduled. Wait for the server to restart before updating Hermes Agent.' }

@@ -35,6 +35,9 @@ export class GatewayRestartQueue {
     this.sleep = deps.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)))
   }
 
+  /** A gateway restart is running; the Agent source must not change until it settles. */
+  restarting(): boolean { return this.inFlight !== null }
+
   /** The waiting restart's notification id, if one waits. */
   pendingId(): string | null { return this.pending?.id ?? null }
 

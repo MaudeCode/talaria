@@ -726,6 +726,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     },
     blockers: restartBlockers,
     scheduleRestart: () => { setTimeout(() => { void waitUntilRestartSafe(restartBlockers, { maxWaitMs: Infinity, log }).then(() => { deps.requestRestart() }) }, 2000).unref() },
+    gatewayRestarting: () => deps.gatewayRestarts.restarting(),
     llm: async (system, user) => {
       if (!sidecar) return ''
       const result = await sidecar.call('aux.complete', { profile_home: profileHome(activeProfile()), task: 'update_summary', messages: [{ role: 'system', content: system }, { role: 'user', content: user }] })
