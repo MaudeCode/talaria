@@ -14,7 +14,7 @@ from contextlib import closing
 from pathlib import Path
 
 from ..errors import InvalidParams, RpcError
-from ..home import profile_home_param, scoped_home
+from ..home import _PROCESS_HOME, _is_named_profile, profile_home_param, scoped_home
 from ..rpc import CallContext
 
 log = logging.getLogger("talaria_sidecar.process")
@@ -102,12 +102,47 @@ def _publish_recovered_exits(registry) -> None:
                 _RECOVERED.setdefault(session.id, session)
 
 
+_COMPLETION_BASE_HOME: Path | None = None
+_RESTORED_COMPLETION_HOMES: set[Path] = set()
+
+
+def _restore_and_sweep_completions(registry) -> None:
+    restore = getattr(registry, "restore_completions", None)
+    if not callable(restore):
+        return  # Older Agents already restore at registry import and have no orphan sweep.
+    from hermes_constants import get_hermes_home
+    from tools import async_delegation
+    from .profiles import named_profile_homes
+
+    # The Agent binds the launch home itself, even when the first drain is in a named profile.
+    restore()
+    homes = [_PROCESS_HOME, Path(get_hermes_home())]
+    if _COMPLETION_BASE_HOME is not None:
+        # The server drains one global queue. Re-enumerate so new profiles join and removed/escaped ones leave.
+        homes += [_COMPLETION_BASE_HOME, *(home for _, home in named_profile_homes(_COMPLETION_BASE_HOME))]
+    for home in dict.fromkeys(home.resolve() for home in homes):
+        try:
+            with scoped_home(home):
+                if _is_named_profile(home) and home not in _RESTORED_COMPLETION_HOMES:
+                    async_delegation.restore_undelivered_completions(registry.completion_queue)
+                    _RESTORED_COMPLETION_HOMES.add(home)
+                sweep = getattr(async_delegation, "maybe_sweep_orphaned_completions", None)
+                if callable(sweep):
+                    sweep(registry.completion_queue)
+        except Exception:  # noqa: BLE001 - retry this home without blocking other profiles or queued events
+            log.debug("Failed to restore or sweep delegation completions for %s", home, exc_info=True)
+
+
 def drain(max_events: int) -> list[dict]:
     """Pop every queued completion event; the server requeues what it does not own."""
     registry = _registry()
     completion_queue = getattr(registry, "completion_queue", None) if registry is not None else None
     if completion_queue is None:
         return []
+    try:
+        _restore_and_sweep_completions(registry)
+    except Exception:  # noqa: BLE001 - maintenance must not prevent delivery of live queued events
+        log.debug("Failed to reconcile delegation completions", exc_info=True)
     try:
         # A recovered process has no reader thread; only this probe notices its exit and queues its completion (TAL-533).
         with registry._lock:
@@ -472,6 +507,8 @@ def recover(base_home: Path) -> int:
     recovery fails the call, so the server retries."""
     from .profiles import named_profile_homes
 
+    global _COMPLETION_BASE_HOME
+    _COMPLETION_BASE_HOME = base_home
     named = [home for _, home in named_profile_homes(base_home)]
     failed = []
     for home in [base_home, *named]:

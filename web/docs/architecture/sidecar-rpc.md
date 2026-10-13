@@ -217,6 +217,18 @@ profile nobody has used since the restart still reports its exit. That
 completion has an unknown exit code and no output history. A process that
 exited while no sidecar was running is not adopted and reports nothing.
 
+Durable async-delegation results use a separate replay path (TAL-780). Before
+popping events, `process.drain` calls the Agent's `restore_completions()` when
+available, which restores the launch ledger once. It also restores each named
+profile's ledger once under `scoped_home` and calls the Agent's throttled orphan
+sweep for every served home. `process.recover` supplies the base home; each drain
+re-enumerates its contained named profiles so inactive and newly created profiles
+are covered even though the server drains only one global queue. A failed named
+replay is retried without blocking the other homes or live queued events. Older
+Agents keep their existing import-time replay. Restored events retain their
+session ownership, and delivery still uses the Agent's claim/complete/release
+ledger calls; the server requeues events it cannot route to their owner.
+
 ## Versioning
 
 `rpc_version` is an integer in the contracts package
