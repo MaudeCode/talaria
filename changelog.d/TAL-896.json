@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Chats start reliably after a native Hermes Agent update, and dependency update failures are reported before restarting.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

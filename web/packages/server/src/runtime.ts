@@ -709,6 +709,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
       return deps.version
     },
     agentDir: () => sidecar?.describe?.agent_dir ?? null,
+    agentEnv: () => ({ ...env, HERMES_HOME: config.hermesHome }),
     channel: () => normalizeChannel(settings.load().update_channel),
     agentChannel: () => normalizeChannel(settings.load().agent_update_channel),
     includeAgent: () => !pyBool(settings.load().ignore_agent_updates),

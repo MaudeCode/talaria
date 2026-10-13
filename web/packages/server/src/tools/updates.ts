@@ -20,6 +20,8 @@ import type { Dict } from '../config/agent-config.js'
 import { dict } from '../config/agent-config.js'
 import { validateReleaseInfo } from '../release.js'
 import { str } from '../util.js'
+import { discoverAgentPython } from '../sidecar/discover.js'
+import { AGENT_IMPORT_ENV } from '../sidecar/env.js'
 
 export const REPOSITORY = 'MaudeCode/talaria'
 export const REPOSITORY_URL = `https://github.com/${REPOSITORY}`
@@ -1003,6 +1005,25 @@ async function agentReleaseTagsBetween(path: string, latest: string, git: GitRun
 
 // ── service ──────────────────────────────────────────────────────────────────
 
+/** Older Agents have no PM sync entry point. Newer ones must finish it before restart. */
+async function syncAgentDependencies(path: string | null, env: Record<string, string | undefined>): Promise<GitOutcome | null> {
+  if (!path || !existsSync(join(path, 'hermes_cli', 'venv_sync.py'))) return null
+  const python = discoverAgentPython(env, path)
+  if (!python) return { ok: false, out: 'Agent Python interpreter was not found.' }
+  return new Promise((done) => {
+    execFile(python, ['-m', 'hermes_cli.venv_sync', '--project-root', path, '--json'], {
+      cwd: path, env: { ...env, ...AGENT_IMPORT_ENV, PYTHONPATH: env.PYTHONPATH ? `${path}${delimiter}${env.PYTHONPATH}` : path },
+      encoding: 'utf8', timeout: 300_000, maxBuffer: 4 * 1024 * 1024,
+    }, (error, stdout, stderr) => {
+      if (error) { done({ ok: false, out: sanitizeGitDiagnostic(stderr || stdout || error.message) }); return }
+      try {
+        const result = dict(JSON.parse(stdout))
+        done({ ok: result.ok === true, out: sanitizeGitDiagnostic(str(result.detail) || 'Agent dependency sync did not report success.') })
+      } catch { done({ ok: false, out: 'Agent dependency sync returned an invalid result.' }) }
+    })
+  })
+}
+
 export interface RestartBlockers { active_streams: number; active_runs: number; active_terminals?: number; active_cron_jobs?: number; blocking_stream_ids: string[]; blocking_run_ids: string[]; restart_blocked: boolean }
 
 export interface UpdateServiceDeps {
@@ -1023,6 +1044,8 @@ export interface UpdateServiceDeps {
   /** Re-derive the installed Web version after a check (tags can arrive after startup); returns the current label. */
   refreshWebuiVersion?: () => string
   agentDir: () => string | null
+  /** The same configured environment used to discover and spawn the sidecar. */
+  agentEnv?: () => Record<string, string | undefined>
   channel: () => Channel
   agentChannel?: () => Channel
   includeAgent: () => boolean
@@ -1226,17 +1249,22 @@ export class UpdateService {
       return result
     }
     if (target !== 'agent') return { ok: false, message: `Unknown target: ${target}` }
-    const result = await applyAgentUpdate(this.deps.agentDir(), this.git, agentOptions.agentChannel ?? this.agentChannel(), this.agentPolicy(agentOptions.confirmedRevision))
-    if (!result.ok || result.up_to_date) return result
-    return this.finishAgent(result)
+    const path = this.deps.agentDir()
+    const result = await applyAgentUpdate(path, this.git, agentOptions.agentChannel ?? this.agentChannel(), this.agentPolicy(agentOptions.confirmedRevision))
+    if (!result.ok) return result
+    return this.finishAgent(result, path)
   }
 
-  private async finishAgent(result: Dict): Promise<Dict> {
+  private async finishAgent(result: Dict, path: string | null): Promise<Dict> {
     this.cache.checked_at = 0
+    // A failed sync leaves Git advanced: an explicit retry still owes the sync and restart.
+    const synced = await syncAgentDependencies(path, this.deps.agentEnv?.() ?? process.env)
+    if (synced && !synced.ok) return { ...result, ok: false, up_to_date: false, message: `Agent source updated, but dependency sync failed: ${synced.out}` }
+    if (!synced && result.up_to_date) return result
     const [ok, gateway] = await this.restartGateway()
     if (!ok) return { ok: false, message: gateway.message ? `agent updated, but gateway restart did not complete: ${str(gateway.message)}. Run \`hermes gateway restart\` manually.` : 'agent updated, but gateway restart did not complete. Run `hermes gateway restart` manually.', target: 'agent', gateway_restart: gateway.status }
     this.deps.scheduleRestart()
-    return { ...result, restart_scheduled: true, gateway_restart: gateway.status }
+    return { ...result, ...(synced ? { up_to_date: false } : {}), restart_scheduled: true, gateway_restart: gateway.status }
   }
 
   /** Python `_ensure_gateway_restart_for_agent_update`: retry once after a transient supervisor handoff failure. */
@@ -1265,8 +1293,9 @@ export class UpdateService {
     if (blocked) return Promise.resolve(blocked)
     return this.locked(async () => {
       if (target !== 'agent') return { ok: false, message: `Unknown target: ${target}` }
-      const result = await forceAgentUpdate(this.deps.agentDir(), this.git, this.deps.log, agentOptions.agentChannel ?? this.agentChannel(), this.agentPolicy(agentOptions.confirmedRevision))
-      return result.ok ? this.finishAgent(result) : result
+      const path = this.deps.agentDir()
+      const result = await forceAgentUpdate(path, this.git, this.deps.log, agentOptions.agentChannel ?? this.agentChannel(), this.agentPolicy(agentOptions.confirmedRevision))
+      return result.ok ? this.finishAgent(result, path) : result
     })
   }
 

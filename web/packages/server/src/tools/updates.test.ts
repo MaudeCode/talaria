@@ -878,10 +878,47 @@ describe('Agent checkout updates', () => {
     return new UpdateService({
       webRoot: join(tmp(), 'web'), git, getJson: noReleases, identity: { release: () => DEV, stamped: () => DEV, runningSourceRevision: () => null }, webuiVersion: 'x',
       agentDir: () => agent, channel: () => 'stable', includeAgent: () => true, blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
+      agentEnv: () => ({ PATH: process.env.PATH, HOME: join(agent, '..'), HERMES_HOME: join(agent, '../home'), HERMES_DISABLE_LAZY_INSTALLS: '0' }),
       scheduleRestart: () => events.push('restart'), gatewayRestart: () => { events.push('gateway'); return Promise.resolve({ status: 'completed' }) }, sleep: () => Promise.resolve(), log: () => undefined,
     })
   }
   const stashes = (agent: string): string[] => git(agent, 'stash', 'list').split('\n').filter(Boolean)
+
+  it.each([['apply', 'exit'], ['force', 'exit'], ['apply', 'result'], ['apply', 'invalid']] as const)('Agent dependency sync runs after %s and handles %s failure before either restart', async (action, failure) => {
+    const a = agentInstall()
+    mkdirSync(join(a.origin, 'hermes_cli'), { recursive: true })
+    writeFileSync(join(a.origin, 'hermes_cli/venv_sync.py'), '# new release sync entry point\n')
+    git(a.origin, 'add', '.')
+    git(a.origin, 'commit', '-m', 'add dependency sync')
+    git(a.origin, 'tag', 'v3.0.0')
+    const revision = git(a.origin, 'rev-parse', 'HEAD')
+    const marker = join(a.agent, 'sync.json')
+    writeFileSync(join(a.agent, '.git/info/exclude'), '.venv/\nfail-sync\nsync.json\n')
+    const bin = join(a.agent, '.venv/bin')
+    mkdirSync(bin, { recursive: true })
+    writeFileSync(join(bin, 'python'), `#!${process.execPath}
+const fs=require('node:fs');
+const cp=require('node:child_process');
+const failed=fs.existsSync('fail-sync');
+fs.writeFileSync(${JSON.stringify(marker)},JSON.stringify({args:process.argv.slice(2),head:cp.execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),home:process.env.HERMES_HOME,lazy:process.env.HERMES_DISABLE_LAZY_INSTALLS}));
+console.log(failed && '${failure}' === 'invalid' ? 'invalid' : JSON.stringify({ok:!failed,state:failed?'failed':'synced'}));
+process.exit(failed && '${failure}' === 'exit' ? 1 : 0);
+`, { mode: 0o755 })
+    writeFileSync(join(a.agent, 'fail-sync'), '')
+    const events: string[] = []
+    const svc = agentService(a.agent, runGit, events)
+    const attempt = () => action === 'apply' ? svc.apply('agent', null, () => true, { confirmedRevision: revision }) : svc.force('agent', null, { confirmedRevision: revision })
+    const failed = await attempt()
+    expect(failed.ok).toBe(false)
+    expect(String(failed.message)).toContain('dependency sync')
+    expect(events).toEqual([])
+    expect(JSON.parse(readFileSync(marker, 'utf8'))).toEqual({ args: ['-m', 'hermes_cli.venv_sync', '--project-root', a.agent, '--json'], head: revision, home: join(a.agent, '../home'), lazy: '1' })
+    // Git already advanced: retry must still repair dependencies before declaring success.
+    rmSync(join(a.agent, 'fail-sync'))
+    const retried = await attempt()
+    expect(retried).toMatchObject({ ok: true, up_to_date: false, restart_scheduled: true })
+    expect(events).toEqual(['gateway', 'restart'])
+  })
 
   it('a conflicting local edit leaves a clean checkout, keeps the stash, and restarts onto the update', async () => {
     const a = agentInstall()

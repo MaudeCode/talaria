@@ -7,4 +7,9 @@ stdio (docs/architecture/sidecar-rpc.md). Standard library only.
 
 from __future__ import annotations
 
+import os
+
+# Also protect direct Python entry points before any method imports the Agent.
+os.environ["HERMES_DISABLE_LAZY_INSTALLS"] = "1"
+
 SIDECAR_RPC_VERSION = 18

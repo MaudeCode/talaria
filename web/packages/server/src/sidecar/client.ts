@@ -16,6 +16,8 @@ import {
   type RpcErrorObject, type RuntimeDescribe, type SidecarMethodName, type SidecarParams, type SidecarResult,
 } from '@maudecode/talaria-web-contracts'
 
+import { AGENT_IMPORT_ENV } from './env.js'
+
 export class SidecarError extends Error {
   readonly code: number
   readonly condition: string
@@ -91,6 +93,7 @@ export function sidecarSpawnEnv(opts: Pick<SidecarSpawnOptions, 'env' | 'hermesH
     PATH: process.env.PATH ?? '',
     HOME: process.env.HOME ?? '',
     ...env,
+    ...AGENT_IMPORT_ENV,
     HERMES_HOME: opts.hermesHome,
     TALARIA_SIDECAR_AGENT_DIR: opts.agentDir,
     PYTHONPATH: env?.PYTHONPATH ? `${opts.sidecarDir}${delimiter}${env.PYTHONPATH}` : opts.sidecarDir,
