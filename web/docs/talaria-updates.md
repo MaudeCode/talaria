@@ -86,6 +86,7 @@ update action available after a failed sync
 or server restart until sync succeeds. Older releases without that command keep
 their existing update behavior. Chat and launcher imports never trigger lazy
 dependency installation.
+An already-current Agent update without pending sync remains a no-op.
 
 **Update Agent** keeps tracked local edits in the Agent checkout. It saves them
 with `git stash create` under a private `refs/talaria/autostash/<sha>` ref, never

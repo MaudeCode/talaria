@@ -964,6 +964,20 @@ describe('Agent checkout updates', () => {
     expect(readFileSync(join(state, 'settings.json'), 'utf8')).toBe('{}')
   })
 
+  it('keeps an already-current modern Agent without pending sync a no-op', async () => {
+    const a = agentInstall(true)
+    const events: string[] = []
+    const svc = agentService(a.agent, runGit, events, () => { events.push('sync'); return Promise.resolve({ ok: true, skipped: false, detail: '' }) })
+    expect((await svc.check(true)).agent).toMatchObject({ behind: 1 })
+    // Another updater advances source after Settings cached the available update.
+    git(a.agent, 'merge', '--ff-only', a.v2)
+    expect(await svc.apply('agent')).toMatchObject({ ok: true, up_to_date: true })
+    expect(events).toEqual([])
+    expect(existsSync(join(a.agent, '../web-state/agent-dependency-sync'))).toBe(false)
+    const refreshed = await svc.check()
+    expect(updateTargetView('agent', refreshed.agent as Dict, false)).toMatchObject({ state: 'up_to_date', can_apply: false })
+  })
+
   it('clears pending Agent sync only after confirming a legacy target', async () => {
     const a = agentInstall(true)
     const failed = agentService(a.agent, runGit, [], () => Promise.resolve({ ok: false, skipped: false, detail: 'sync failed' }))

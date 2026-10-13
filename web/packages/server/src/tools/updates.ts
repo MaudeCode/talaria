@@ -1306,6 +1306,8 @@ export class UpdateService {
 
   private async finishAgent(result: Dict, path: string | null): Promise<Dict> {
     this.cache.checked_at = 0
+    const marker = agentSyncMarker(path, this.deps.stateDir)
+    if (result.up_to_date === true && (!marker || !existsSync(marker))) return result
     // A failed sync leaves Git advanced: an explicit retry still owes the sync and restart.
     const synced = await syncAgentDependencies(path, str(result.verified_revision), this.deps.agentSync, this.deps.stateDir, this.git)
     if (synced && !synced.ok) return { ...result, ok: false, up_to_date: false, message: `Agent source updated, but dependency sync failed: ${synced.out}` }
