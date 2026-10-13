@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import type { SidecarResult } from '@maudecode/talaria-web-contracts'
+import { SessionSchema } from '@maudecode/talaria-web-contracts'
 import { str } from '../util.js'
 import { Session } from './session.js'
 import { agentSessionRowsExisting, cheapChangeFingerprint, latestCronSessionInfo, isCliSessionRowVisible, normalizeAgentSessionSource, projectAgentSessionRows, readImportableAgentSessionRows, stateDbHasSession, stateDbLineageReport, stateDbSessionSources } from './state-db.js'
@@ -67,6 +68,26 @@ describe('state.db projection', () => {
     db = createStateDb(dbPath)
   })
   afterAll(async () => { db.close(); s.deps.gatewayWatchers.stopAll(); await s.close() })
+
+  it('keeps decoded scalar and object content within the public session contract', async ({ onTestFinished }) => {
+    onTestFinished(() => {
+      db.prepare('DELETE FROM messages WHERE session_id = ?').run('encoded-content')
+      db.prepare('DELETE FROM sessions WHERE id = ?').run('encoded-content')
+    })
+    insertSession(db, { id: 'encoded-content', source: 'cli', started_at: 100, title: 'Encoded content' })
+    const contents = [{ text: 'hello', password: 'synthetic-secret' }, 42, false]
+    for (const [i, content] of contents.entries()) {
+      db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)')
+        .run('encoded-content', 'user', '\0json:' + JSON.stringify(content), 101 + i)
+    }
+    const response = await s.get('/api/session?session_id=encoded-content')
+    const payload = await json(response)
+    expect(response.status, JSON.stringify(payload)).toBe(200)
+    const session = SessionSchema.parse(payload.session)
+    expect(session.messages?.map((m) => m.content)).toEqual([
+      '{"text":"hello","password":"***"}', '42', 'false',
+    ])
+  })
 
   it('normalizes the agent source contract', () => {
     expect(normalizeAgentSessionSource('telegram')).toEqual({ raw_source: 'telegram', session_source: 'messaging', source_label: 'Telegram' })

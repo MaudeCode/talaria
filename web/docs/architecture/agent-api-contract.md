@@ -99,3 +99,6 @@ Content decoding removes exactly one JSON wrapper and accepts any parsed JSON
 value, including a literal string beginning with the reserved prefix. Malformed
 JSON keeps its raw text. Child goal extraction uses the Agent's decoder when
 available and the same rules locally for older Agents.
+The public message projection converts decoded objects, numbers, and booleans
+to JSON text before redaction, preserving credential-key context and the existing
+client message contract.
