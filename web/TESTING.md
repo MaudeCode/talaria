@@ -10,7 +10,7 @@ provider, or the network. Run commands from `web/` unless noted.
 | Contracts | `npm run typecheck -w packages/contracts && npm run lint -w packages/contracts && npm test -w packages/contracts` | schema tests, sidecar fixtures, OpenAPI snapshot, monorepo `contracts/fixtures` (publisher snapshot signing, activity scenes) |
 | OpenAPI | `npm run openapi && git diff --exit-code -- ../contracts/web-api.openapi.json` | the committed document is the app↔web artifact |
 | Server | `npm run typecheck -w packages/server && npm run lint -w packages/server && npm test -w packages/server` | Vitest with the fake sidecar; ~330 tests |
-| Sidecar | `sidecar/scripts/test.sh` | pytest against the pinned Agent (`HERMES_WEBUI_AGENT_DIR`, else discovery); Agent-dependent cases skip without one |
+| Sidecar | `sidecar/scripts/test.sh` | pytest against `HERMES_WEBUI_AGENT_DIR`, else the active pinned Agent release, cached and reused as described below; never `~/.hermes` |
 | Frontend | `cd packages/frontend && npm run i18n:gate && npm run typecheck && npm run lint && npm test && npm run build:fast` | Vitest + in-memory contract server; the build must reproduce `static/dist` |
 | Browser | `../scripts/check-web-browser` (root) or `npm run e2e -w packages/frontend` | Playwright desktop + mobile against the built Node server; uses `sidecar/scripts/replay_sidecar.py` unless `HERMES_WEBUI_AGENT_DIR` is set |
 | Docker | `python3 scripts/check-docker.py` (root) | builds the image and smokes single/two/three-container, auto-UID, explicit-UID |
@@ -43,15 +43,19 @@ in `sidecar/agent_support.json`, each provisioned with
 `sidecar/tests` spawns `python -m talaria_sidecar` on the Agent venv with a disposable `HERMES_HOME`
 per test (`conftest.py` `SidecarProcess`). `sidecar/scripts/record-fixtures.py` regenerates the recorded
 fixtures consumed by the contracts package and the Vitest fake; commit fixture changes together with the
-method change. `scripts/check-agent-compatibility.py` (root) provisions an Agent release in a temporary
-directory, runs the Agent probe, the sidecar suite, and optionally verifies the release container image.
-Its `--receipt` records the result, test counts, Python and Web revisions.
+method change. `scripts/check-agent-compatibility.py` (root) provisions an Agent release, runs the Agent probe,
+the sidecar suite, and optionally verifies the release container image. Its `--receipt` records the result,
+test counts, Python and Web revisions. Supported releases are cached in
+`${XDG_CACHE_HOME:-~/.cache}/talaria/agents/<tag>` and reused; a release that leaves
+`sidecar/agent_support.json` is deleted, with any interpreter uv downloaded for it, by the next run whose record
+no longer lists it. Candidates (`--identity`) and canaries (`--main`) use a temporary checkout removed at exit.
 
 ## Frontend tests
 
 `packages/frontend/src/**/*.test.ts(x)` run in jsdom against the in-memory contract server; `e2e/*.spec.ts`
 run Playwright against the built assets and the Node server started by `e2e/server.ts`
-(`HERMES_E2E_PORT`, `HERMES_WEBUI_AGENT_DIR`, `HERMES_WEBUI_SIDECAR_COMMAND` are honoured). See
+(`HERMES_E2E_PORT`, `HERMES_WEBUI_AGENT_DIR`, `HERMES_WEBUI_SIDECAR_COMMAND` are honoured; without an Agent dir or
+sidecar command it uses the fixture replay sidecar). See
 `docs/architecture/frontend-migration.md` for the layout.
 
 ## Manual checks

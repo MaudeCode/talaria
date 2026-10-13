@@ -39,9 +39,8 @@ export async function bootServer(baseUrl: string, extraEnv: Record<string, strin
   mkdirSync(join(state, 'sessions'))
   const env: Record<string, string> = {}
   for (const [k, v] of Object.entries(process.env)) if (v !== undefined && !k.startsWith('HERMES_')) env[k] = v
-  // The isolated HERMES_HOME hides the developer's Agent checkout; point the sidecar at it explicitly (same default as sidecar/scripts/test.sh).
-  env.HERMES_WEBUI_AGENT_DIR = process.env.HERMES_WEBUI_AGENT_DIR ?? join(process.env.HOME ?? '', '.hermes', 'hermes-agent')
-  for (const key of ['HERMES_WEBUI_PYTHON', 'HERMES_WEBUI_SIDECAR_COMMAND']) if (process.env[key]) env[key] = process.env[key]
+  // The isolated HERMES_HOME hides the developer's ~/.hermes Agent; playwright.config.ts defaults to the replay sidecar.
+  for (const key of ['HERMES_WEBUI_AGENT_DIR', 'HERMES_WEBUI_PYTHON', 'HERMES_WEBUI_SIDECAR_COMMAND']) if (process.env[key]) env[key] = process.env[key]
   Object.assign(env, {
     HERMES_WEBUI_PORT: port,
     HERMES_WEBUI_HOST: '127.0.0.1',

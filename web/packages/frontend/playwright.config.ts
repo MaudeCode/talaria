@@ -1,3 +1,4 @@
+import { join } from 'node:path'
 import { defineConfig, devices } from '@playwright/test'
 
 /**
@@ -9,6 +10,11 @@ import { defineConfig, devices } from '@playwright/test'
 const port = Number(process.env.HERMES_E2E_PORT ?? 8797)
 process.env.HERMES_E2E_BASE_URL = `http://127.0.0.1:${port}`
 process.env.HERMES_E2E_AUTH_BASE_URL = `http://127.0.0.1:${port + 1}`
+// Without an Agent checkout or sidecar command the servers run the fixture replay sidecar, as the root
+// scripts/check-web-browser does, never the developer's ~/.hermes Agent. Set here so specs see it too.
+if (!process.env.HERMES_WEBUI_AGENT_DIR && !process.env.HERMES_WEBUI_SIDECAR_COMMAND) {
+  process.env.HERMES_WEBUI_SIDECAR_COMMAND = JSON.stringify(['python3', join(import.meta.dirname, '..', '..', 'sidecar', 'scripts', 'replay_sidecar.py')])
+}
 
 export default defineConfig({
   testDir: './e2e',

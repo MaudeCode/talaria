@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check a stable Agent release, or an exact Agent main canary, in disposable source and container state.
+"""Check a stable Agent release, or an exact Agent main canary, in a cached or disposable Agent checkout.
 
 Talaria supports exactly three stable Agent releases, recorded in ``web/sidecar/agent_support.json``; the
 active deployment pin in ``web/sidecar/agent_dependency.json`` must be one of them. Without a selector this
@@ -7,17 +7,23 @@ checks the active pin. ``--release TAG`` checks a supported release, ``--identit
 candidate, and ``--main SHA`` a canary that never enters the support record. ``--list`` validates the
 record offline and prints its tags.
 
-Provisions the Agent checkout and its venv in a temporary directory on the newest Python its lockfile
-allows (``--python`` overrides), runs the sidecar pytest suite on that interpreter, runs an optional extra
-command with ``HERMES_WEBUI_AGENT_DIR``/``HERMES_WEBUI_PYTHON`` set (``--command``), and verifies the
+Provisions the Agent checkout and its venv on the newest Python its lockfile allows (``--python`` overrides).
+Supported releases, the active pin among them, are cached under ``$XDG_CACHE_HOME/talaria/agents/<tag>`` and
+reused; each run deletes cached releases that left the support record. Candidates and canaries use a
+temporary directory removed at exit. It runs the Agent probe, the sidecar pytest suite on that interpreter,
+an optional extra command with ``HERMES_WEBUI_AGENT_DIR``/``HERMES_WEBUI_PYTHON`` set (``--command``, whose
+exit status the run returns; ``web/sidecar/scripts/test.sh`` re-runs itself this way), and verifies the
 release image (unless ``--skip-docker``). ``--receipt PATH`` records the result, pass or fail, with the
 pytest JUnit report beside it.
 """
 
 import argparse
+import contextlib
+import fcntl
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -38,6 +44,9 @@ FORMATS = {
     "sourceRevision": r"[a-f0-9]{40}",
     "image": r"docker\.io/nousresearch/hermes-agent@sha256:[a-f0-9]{64}",
 }
+# The mcp extra (shipped in the image via [all]) lets the sidecar suite drive a real stub MCP server.
+SYNC = ["uv", "sync", "--frozen", "--no-dev", "--extra", "mcp"]
+CACHE_SUFFIXES = (".lock", ".ready", ".python", ".tmp")
 # ponytail: newest of these that the lockfile allows; extend the range when an Agent requires a newer Python.
 PYTHON_MINORS = range(11, 15)
 
@@ -187,13 +196,99 @@ def verify_image(identity, sha):
         subprocess.run(["docker", "rm", "--force", name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
 
 
-def check(args, kind, identity, receipt, junit):
+def cache_root():
+    return Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "talaria/agents"
+
+
+def prune(root, keep):
+    """Delete cached releases outside the support record, skipping any a run holds. Lock files stay, so every run
+    locks the same file for a tag."""
+    tags = {next((path.name.removesuffix(suffix) for suffix in CACHE_SUFFIXES if path.name.endswith(suffix)), path.name)
+            for path in root.iterdir()}
+    for tag in tags - keep:
+        with open(root / f"{tag}.lock", "a") as lock:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                continue
+            for path in (root / tag, root / f"{tag}.python"):
+                shutil.rmtree(path, ignore_errors=True)
+            for path in (root / f"{tag}.ready", root / f"{tag}.tmp"):
+                path.unlink(missing_ok=True)
+
+
+def provision(args, kind, identity, env, agent):
     sha = identity["sourceRevision"]
     if kind != "canary":
         require_published(identity["releaseTag"])
+    ref = sha if kind == "canary" else f"refs/tags/{identity['releaseTag']}"
+    # A local release tag lets Agents that derive their version from git see the release they are.
+    for command in (["git", "init", "--quiet", str(agent)],
+                    ["git", "-C", str(agent), "fetch", "--depth=1", "--no-tags", f"https://github.com/{AGENT_REPOSITORY}.git",
+                     ref if kind == "canary" else f"+{ref}:{ref}"],
+                    ["git", "-C", str(agent), "checkout", "--quiet", "--detach", "FETCH_HEAD"]):
+        subprocess.run(command, env=env, check=True)
+    actual = subprocess.check_output(["git", "-C", str(agent), "rev-parse", "HEAD"], env=env, text=True).strip()
+    if actual != sha:
+        raise RuntimeError(f"Agent {ref} resolves to {actual}, not the recorded {sha}; the tag moved")
+    python = args.python or lockfile_python(agent)
+    subprocess.run([*SYNC, "--python", python], cwd=agent, env=env, check=True)
+    return python
+
+
+@contextlib.contextmanager
+def agent_checkout(args, kind, identity, env):
+    """Yield a provisioned Agent checkout: a cached supported release, or a temporary candidate or canary."""
+    if kind in ("candidate", "canary"):
+        with tempfile.TemporaryDirectory(prefix="talaria-agent-") as directory:
+            env["UV_PYTHON_INSTALL_DIR"] = str(Path(directory) / "python")
+            agent = Path(directory) / "agent"
+            provision(args, kind, identity, env, agent)
+            yield agent
+        return
+    root = cache_root()
+    root.mkdir(parents=True, exist_ok=True)
+    prune(root, {release["releaseTag"] for release in supported_releases(ROOT)})
+    tag = identity["releaseTag"]
+    agent, ready = root / tag, root / f"{tag}.ready"
+    # A uv-downloaded interpreter must outlive this run's HOME; it sits beside its release and is pruned with it.
+    env["UV_PYTHON_INSTALL_DIR"] = str(root / f"{tag}.python")
+
+    # An explicit --python may resolve to another interpreter each run, so only this run's own provisioning counts.
+    provisioned = {}
+
+    def current():
+        try:
+            expected = provisioned if args.python else \
+                {"sourceRevision": identity["sourceRevision"], "python": lockfile_python(agent), "sync": SYNC}
+            if not expected or json.loads(ready.read_text()) != expected:
+                return False
+        except (OSError, ValueError):
+            return False
+        venv = agent / ".venv/bin/python"
+        return venv.is_file() and subprocess.run([str(venv), "-c", ""], env=env, capture_output=True).returncode == 0
+
+    with open(root / f"{tag}.lock", "a") as lock:
+        # Shared while in use and exclusive only to provision, so runs share a release and neither a reprovision nor
+        # a prune removes it under one. Converting a flock is not atomic, so each conversion re-checks the entry.
+        fcntl.flock(lock, fcntl.LOCK_SH)
+        while not current():
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            if not current():
+                ready.unlink(missing_ok=True)
+                shutil.rmtree(agent, ignore_errors=True)
+                provisioned.update(sourceRevision=identity["sourceRevision"], python=provision(args, kind, identity, env, agent), sync=SYNC)
+                temporary = root / f"{tag}.tmp"
+                temporary.write_text(json.dumps(provisioned))
+                temporary.replace(ready)
+            fcntl.flock(lock, fcntl.LOCK_SH)
+        yield agent
+
+
+def check(args, kind, identity, receipt, junit):
     with tempfile.TemporaryDirectory(prefix="talaria-agent-compatibility-") as directory:
         state = Path(directory)
-        for name in ("home", "tmp", "agent"):
+        for name in ("home", "tmp"):
             (state / name).mkdir()
         env = {"PATH": os.environ["PATH"], "HOME": str(state / "home"), "TMPDIR": str(state / "tmp"),
                "UV_CACHE_DIR": str(state / "uv-cache"), "HERMES_HOME": str(state / "home/hermes"),
@@ -202,39 +297,29 @@ def check(args, kind, identity, receipt, junit):
         for key in ("LD_LIBRARY_PATH", "PLAYWRIGHT_BROWSERS_PATH"):
             if key in os.environ:
                 env[key] = os.environ[key]
-        agent = state / "agent"
-        ref = sha if kind == "canary" else f"refs/tags/{identity['releaseTag']}"
-        # A local release tag lets Agents that derive their version from git see the release they are.
-        for command in (["git", "init", "--quiet", str(agent)],
-                        ["git", "-C", str(agent), "fetch", "--depth=1", "--no-tags", f"https://github.com/{AGENT_REPOSITORY}.git",
-                         ref if kind == "canary" else f"+{ref}:{ref}"],
-                        ["git", "-C", str(agent), "checkout", "--quiet", "--detach", "FETCH_HEAD"]):
-            subprocess.run(command, env=env, check=True)
-        actual = subprocess.check_output(["git", "-C", str(agent), "rev-parse", "HEAD"], env=env, text=True).strip()
-        if actual != sha:
-            raise RuntimeError(f"Agent {ref} resolves to {actual}, not the recorded {sha}; the tag moved")
-        python = args.python or lockfile_python(agent)
-        # The mcp extra (shipped in the image via [all]) lets the sidecar suite drive a real stub MCP server.
-        subprocess.run(["uv", "sync", "--frozen", "--no-dev", "--extra", "mcp", "--python", python], cwd=agent, env=env, check=True)
-        agent_python = agent / ".venv/bin/python"
-        receipt["python"] = subprocess.check_output([str(agent_python), "-c", "import platform; print(platform.python_version())"],
-                                                    env=env, text=True).strip()
-        env.update(HERMES_WEBUI_AGENT_DIR=str(agent), HERMES_WEBUI_PYTHON=str(agent_python), HERMES_WEBUI_TEST_PYTHON=sys.executable)
-        # A canary has no release version to require; the probe still exercises imports and SessionDB.
-        subprocess.run([str(agent_python), str(ROOT / "releases/agent_probe.py"), *([identity["version"]] if kind != "canary" else [])],
-                       cwd=agent, env={**env, "PYTHONPATH": str(ROOT / "web/sidecar")}, check=True)
-        if not args.skip_sidecar_tests:
-            # The sidecar suite spawns `python -m talaria_sidecar` on this venv with disposable homes.
-            try:
-                subprocess.run([str(ROOT / "web/sidecar/scripts/test.sh"), f"--junitxml={junit}", *args.tests],
-                               cwd=ROOT / "web", env=env, check=True)
-            finally:
-                if junit.exists():
-                    receipt["tests"] = test_counts(junit)
-        if args.command:
-            subprocess.run(args.command, cwd=ROOT, env={**os.environ, **env, "PATH": os.environ["PATH"]}, check=True)
+        with agent_checkout(args, kind, identity, env) as agent:
+            agent_python = agent / ".venv/bin/python"
+            receipt["python"] = subprocess.check_output([str(agent_python), "-c", "import platform; print(platform.python_version())"],
+                                                        env=env, text=True).strip()
+            env.update(HERMES_WEBUI_AGENT_DIR=str(agent), HERMES_WEBUI_PYTHON=str(agent_python), HERMES_WEBUI_TEST_PYTHON=sys.executable)
+            # A canary has no release version to require; the probe still exercises imports and SessionDB.
+            subprocess.run([str(agent_python), str(ROOT / "releases/agent_probe.py"), *([identity["version"]] if kind != "canary" else [])],
+                           cwd=agent, env={**env, "PYTHONPATH": str(ROOT / "web/sidecar")}, check=True)
+            if not args.skip_sidecar_tests:
+                # The sidecar suite spawns `python -m talaria_sidecar` on this venv with disposable homes.
+                try:
+                    subprocess.run([str(ROOT / "web/sidecar/scripts/test.sh"), f"--junitxml={junit}", *args.tests],
+                                   cwd=ROOT / "web", env=env, check=True)
+                finally:
+                    if junit.exists():
+                        receipt["tests"] = test_counts(junit)
+            if args.command:
+                # The command runs while this run holds the release, and its exit status is the run's.
+                command = subprocess.run(args.command, cwd=ROOT, env={**os.environ, **env, "PATH": os.environ["PATH"]})
+                if command.returncode:
+                    raise SystemExit(command.returncode)
     if not args.skip_docker and kind != "canary":
-        verify_image(identity, sha)
+        verify_image(identity, identity["sourceRevision"])
         receipt["imageVerified"] = True
 
 

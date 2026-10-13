@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Talaria Web server gate: contracts + server lint, strict TypeScript, Vitest against the built frontend bundle,
-# the committed OpenAPI document and sidecar result schemas, and the sidecar pytest suite against the
-# pinned Hermes Agent when one is available (HERMES_WEBUI_AGENT_DIR or the
-# discovery rules in web/sidecar/tests/conftest.py; otherwise those tests skip).
+# the committed OpenAPI document and sidecar result schemas, and the sidecar pytest suite against
+# HERMES_WEBUI_AGENT_DIR, else the active pinned Agent release from the shared cache (sidecar/scripts/test.sh).
 set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 state=$(mktemp -d "${TMPDIR:-/tmp}/talaria-web-server.XXXXXX")
