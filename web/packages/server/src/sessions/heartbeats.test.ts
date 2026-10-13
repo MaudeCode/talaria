@@ -103,8 +103,13 @@ describe('process heartbeats (TAL-790)', () => {
       expect(batchUpdate([{ event: beat, prompt: agentText(beat) }])).toMatchObject({ display_kind: 'hidden', attention: false })
       expect(batchUpdate([{ event: beat, prompt: agentText(beat) }, { event: { type: 'completion', exit_code: 1 }, prompt: 'failed' }])).not.toHaveProperty('display_kind')
       await drain.processOne({ ...beat, type: 'watch_match', pattern: 'error', output: 'error found' })
+      const alert = receipts.get(sid, 'proc_beat')?.result
+      expect(alert).toContain('error found')
       await drain.processOne(beat)
-      expect(receipts.get(sid, 'proc_beat')?.status).toBe('attention')
+      expect(receipts.get(sid, 'proc_beat')).toMatchObject({ status: 'attention', result: alert })
+      await drain.processOne({ ...beat, type: 'completion', exit_code: 1, output: 'tests failed' })
+      expect(receipts.get(sid, 'proc_beat')?.status).toBe('failed')
+      expect(receipts.get(sid, 'proc_beat')?.result).toContain('tests failed')
     } finally { drain.stop() }
   })
 

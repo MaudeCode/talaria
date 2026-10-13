@@ -138,8 +138,11 @@ export function mergeReceipt(prev: Receipt | undefined, next: Partial<Receipt> &
     // Settled once: later reports may add detail (the full result, counts, child sessions) but never change the outcome.
     return { ...base, result: base.result ?? defined.result ?? null, agent_result: base.agent_result || Boolean(defined.agent_result), agents: base.agents ?? defined.agents ?? null, ...(children.length ? { children } : {}), updated_at: base.updated_at }
   }
-  // A process's matched watch needs attention until it ends; the registry only knows it is still running.
-  if (base.kind === 'process' && base.status === 'attention' && defined.status === 'running') delete defined.status
+  // A running report must preserve both a watch alert and the matched output explaining it until the process ends.
+  if (base.kind === 'process' && base.status === 'attention' && defined.status === 'running') {
+    delete defined.status
+    delete defined.result
+  }
   const merged: Receipt = { ...base, ...defined, task_id: base.task_id, kind: base.kind, ...(children.length ? { children } : {}), updated_at: now }
   if (isTerminal(merged.status)) { merged.completed_at = merged.completed_at ?? now; merged.stream_id = null }
   return merged
