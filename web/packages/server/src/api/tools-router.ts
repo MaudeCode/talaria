@@ -95,7 +95,7 @@ async function currentGatewayStatus(ctx: RequestContext): Promise<GatewayStatus>
 
 const GATEWAY_ACTION_TIMEOUT_S = 60
 
-/** Python `_handle_gateway_lifecycle` through sidecar `gateway.control`: 409 busy, 504 timeout, 500 failure; CLI output never leaves the server. */
+/** Python `_handle_gateway_lifecycle` through sidecar `gateway.control`: 409 busy, 504 timeout, 500 failure; only the Agent's first error line (`reason`) leaves the server, never its CLI output (TAL-884). */
 async function gatewayAction(ctx: RequestContext, action: 'start' | 'stop' | 'restart'): Promise<Dict> {
   const sidecar = ctx.deps.sidecar()
   if (!sidecar) throw new HttpError(500, 'Hermes Agent sidecar is not running', { ok: false, action })
@@ -107,7 +107,10 @@ async function gatewayAction(ctx: RequestContext, action: 'start' | 'stop' | 're
   }
   if (outcome.status === 'busy') throw new HttpError(409, 'Another gateway action is already in progress; try again shortly.', { ok: false, action })
   if (outcome.timed_out) throw new HttpError(504, `Gateway ${action} timed out after ${String(GATEWAY_ACTION_TIMEOUT_S)} seconds`, { ok: false, action })
-  if (outcome.status === 'failed' && outcome.returncode !== undefined) throw new HttpError(500, `Gateway ${action} failed with exit code ${String(outcome.returncode)}`, { ok: false, action, returncode: outcome.returncode })
+  if (outcome.status === 'failed' && outcome.returncode !== undefined) {
+    const error = outcome.reason ? `Gateway ${action} failed: ${outcome.reason}` : `Gateway ${action} failed with exit code ${String(outcome.returncode)}`
+    throw new HttpError(500, error, { ok: false, action, returncode: outcome.returncode })
+  }
   if (outcome.status === 'failed') throw new HttpError(500, outcome.message, { ok: false, action })
   return { ok: true, action, message: `Gateway ${action} completed.`, status: await currentGatewayStatus(ctx) }
 }

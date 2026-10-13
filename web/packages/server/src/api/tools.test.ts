@@ -549,7 +549,7 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     }
   })
 
-  it('gateway start, stop, and restart run sidecar gateway.control and never return CLI output (TAL-266)', async () => {
+  it('gateway start, stop, and restart run sidecar gateway.control and return only the Agent\'s error line, never CLI output (TAL-266, TAL-884)', async () => {
     const calls: Json[] = []
     let outcome: Json = {}
     sidecar.respond('gateway.control', (params) => { calls.push(params); return outcome as never })
@@ -574,7 +574,12 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
       outcome = { status: 'failed', message: 'Hermes CLI not found' }
       res = await post(s, '/api/gateway/start', {})
       expect([res.status, await json(res)]).toEqual([500, { error: 'Hermes CLI not found', ok: false, action: 'start' }])
-      expect(calls.map((c) => c.action)).toEqual(['start', 'stop', 'restart', 'restart', 'start'])
+      outcome = { status: 'failed', message: 'Start failed: ✗ Profile ...', detail: '✗ Profile \'work\' does not get a gateway of its own.\n  pid 4242', returncode: 78, reason: 'Profile \'work\' does not get a gateway of its own.' }
+      res = await post(s, '/api/gateway/start', {})
+      text = await res.text()
+      expect(text).not.toContain('4242')
+      expect([res.status, JSON.parse(text)]).toEqual([500, { error: 'Gateway start failed: Profile \'work\' does not get a gateway of its own.', ok: false, action: 'start', returncode: 78 }])
+      expect(calls.map((c) => c.action)).toEqual(['start', 'stop', 'restart', 'restart', 'start', 'start'])
     } finally {
       sidecar.respond('gateway.control', undefined)
     }
