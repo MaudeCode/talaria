@@ -106,7 +106,7 @@ const wording = (target: UpdateNotificationTarget, phase: UpdateNotificationPhas
     applying: `Installing the selected ${name} update.`,
     awaiting_confirmation: 'This Hermes Agent revision needs confirmation before it can be installed.',
     waiting_for_idle: gatewayWaitingMessage(0),
-    restarting: target === 'webui' ? 'The update is installed. Talaria Web is restarting.' : 'The update is installed. Hermes Agent is restarting.',
+    restarting: target === 'webui' ? 'The update is installed. Talaria Web is restarting.' : 'The update is installed. The messaging gateway is restarting.',
     succeeded: `${name} was updated successfully.`,
     blocked: 'The update is waiting for active work to finish.',
     failed: 'The update could not be completed. Open System settings for details.',
