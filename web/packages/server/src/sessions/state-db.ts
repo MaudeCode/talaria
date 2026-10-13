@@ -603,8 +603,7 @@ function decodeStateDbContent(value: unknown): unknown {
   const text = Buffer.isBuffer(value) ? value.toString('utf8') : value
   if (typeof text !== 'string' || !text.startsWith(STATE_DB_CONTENT_JSON_PREFIX)) return text
   try {
-    const decoded: unknown = JSON.parse(text.slice(STATE_DB_CONTENT_JSON_PREFIX.length))
-    return Array.isArray(decoded) ? decoded : text
+    return JSON.parse(text.slice(STATE_DB_CONTENT_JSON_PREFIX.length)) as unknown
   } catch {
     return text
   }

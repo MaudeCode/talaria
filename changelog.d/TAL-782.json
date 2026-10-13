@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Preserve special-prefix text in saved messages, tool output, and child agent goals.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

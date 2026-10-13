@@ -404,12 +404,21 @@ def _goal_text(content) -> str:
         return ""
     if content.startswith(_CONTENT_JSON_PREFIX):
         try:
-            parts = json.loads(content[len(_CONTENT_JSON_PREFIX):])
-        except ValueError:
-            return ""
-        texts = [p.get("text") for p in parts if isinstance(p, dict) and p.get("type") == "text"] if isinstance(parts, list) else []
+            from hermes_state import SessionDB
+            decode = getattr(SessionDB, "_decode_content", None)
+        except ImportError:
+            decode = None
+        if callable(decode):
+            content = decode(content)
+        else:
+            try:
+                content = json.loads(content[len(_CONTENT_JSON_PREFIX):])
+            except ValueError:
+                pass  # Legacy malformed marker rows remain literal text, as in the Agent.
+    if isinstance(content, list):
+        texts = [p.get("text") for p in content if isinstance(p, dict) and p.get("type") == "text"]
         return str(texts[0]) if texts and texts[0] else ""
-    return content.split(_IMAGE_HINTS, 1)[0]
+    return content.split(_IMAGE_HINTS, 1)[0] if isinstance(content, str) else ""
 
 
 def unit_children(unit: dict, owner: str, live: list[dict], finished: list[dict], now: float) -> list[dict]:
