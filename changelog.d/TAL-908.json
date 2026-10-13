@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Talaria Web's login password, OIDC client secret, and release token no longer reach the Agent or the commands it runs in a chat.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
