@@ -1284,3 +1284,101 @@ describe('wakeup turns pass the user-turn admission (TAL-577)', () => {
     expect(s.deps.completions.deferredCount(sid)).toBe(0)
   })
 })
+
+describe('a Stop holds automatic turns until the next user message (TAL-899)', () => {
+  let s: TestServer
+  let sidecar: FakeSidecar
+  const starts: string[] = []
+  beforeAll(async () => {
+    sidecar = new FakeSidecar()
+    s = await bootTestServer({ sidecar })
+    sidecar.respond('process.mark_consumed', () => ({ ok: true }))
+    sidecar.respond('chat.interrupt', () => ({ ok: true }))
+  })
+  afterAll(() => s.close())
+
+  const newSid = async (): Promise<string> => String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+  const completion = (sid: string, id: string): Json => ({ process_id: id, session_id: id, type: 'completion', command: 'make', exit_code: 0, output: 'ok', origin_ui_session_id: sid, consumed: false })
+  const held = async (sid: string): Promise<unknown> => ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).automatic_turns_held
+  const settled = async (): Promise<void> => {
+    for (let i = 0; i < 60 && s.deps.registry.activeRuns.size; i += 1) await new Promise((r) => setTimeout(r, 50))
+  }
+  // The user's first turn runs until stopped; every later turn answers at once.
+  const stoppableThenAnswer = (): void => {
+    starts.length = 0
+    sidecar.respond('chat.start', (params, emit, opts) => {
+      starts.push(str(params.user_message))
+      if (starts.length > 1) return completed('answered')
+      return new Promise((resolve) => {
+        emit({ event: 'token', data: { text: 'working' } })
+        opts.signal?.addEventListener('abort', () => { resolve({ ...completed(''), status: 'cancelled' }) })
+      })
+    })
+  }
+  const startAndStop = async (sid: string): Promise<string> => {
+    const stream = str((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'long task' }))).stream_id)
+    await s.sse(`/api/chat/stream?stream_id=${stream}`, (f) => f.event === 'token')
+    return stream
+  }
+  const stop = async (stream: string): Promise<void> => {
+    expect(await json(await s.get(`/api/chat/cancel?stream_id=${stream}`))).toMatchObject({ cancelled: true })
+    await s.deps.turns.finished(stream)
+    await settled()
+  }
+
+  it('a completion deferred during a stopped turn waits for the next user turn to end', async () => {
+    const sid = await newSid()
+    stoppableThenAnswer()
+    const stream = await startAndStop(sid)
+    expect(await s.deps.completions.processOne(completion(sid, 'proc_stop_deferred'))).toBe(true)
+    expect(s.deps.completions.deferredCount(sid)).toBe(1)
+    await stop(stream)
+    await s.deps.completions.drainDeferred(sid)
+    expect(starts, 'no wakeup at the stopped turn\'s teardown').toHaveLength(1)
+    expect(s.deps.completions.deferredCount(sid)).toBe(1)
+    expect(await held(sid)).toBe(true)
+
+    const next = str((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'next question' }))).stream_id)
+    expect(await held(sid)).toBe(false)
+    await s.deps.turns.finished(next)
+    await vi.waitFor(() => { expect(starts).toHaveLength(3) })
+    expect(starts[1]).toContain('next question')
+    expect(starts[2]).toContain('Background process proc_stop_deferred completed')
+    await settled()
+    expect(s.deps.completions.deferredCount(sid)).toBe(0)
+  })
+
+  it('a completion that arrives after the Stop starts no turn but still reports', async () => {
+    const sid = await newSid()
+    stoppableThenAnswer()
+    await stop(await startAndStop(sid))
+    const sub = s.deps.channels.subscribe(sid)
+    try {
+      expect(await s.deps.completions.processOne(completion(sid, 'proc_after_stop'))).toBe(true)
+      expect((await nextSessionItem(sub, 1000))?.[0]).toBe('bg_task_complete')
+    } finally {
+      s.deps.channels.unsubscribe(sid, sub)
+    }
+    await settled()
+    expect(starts).toHaveLength(1)
+    expect(s.deps.completions.deferredCount(sid)).toBe(1)
+    expect(s.deps.sessionStore.get(sid).active_stream_id).toBeNull()
+  })
+
+  it('a background turn that yields to the user does not hold automatic turns', async () => {
+    const sid = await newSid()
+    starts.length = 0
+    sidecar.respond('chat.start', (params, emit, opts) => {
+      starts.push(str(params.user_message))
+      return new Promise((resolve) => {
+        emit({ event: 'token', data: { text: 'working' } })
+        opts.signal?.addEventListener('abort', () => { resolve({ ...completed(''), status: 'cancelled' }) })
+      })
+    })
+    expect(await s.deps.completions.processOne(completion(sid, 'proc_yield'))).toBe(true)
+    expect(starts).toHaveLength(1)
+    expect(await s.deps.turns.yieldBackgroundTurn(sid)).toBe(true)
+    await settled()
+    expect(await held(sid)).toBe(false)
+  })
+})

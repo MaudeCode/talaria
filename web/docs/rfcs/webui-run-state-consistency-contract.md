@@ -43,6 +43,10 @@ The server owns every layer except the client's live timeline:
   wakeups through the same workspace recovery and model resolution as user
   turns. Admission failures start no worker; goal continuations report idle/error.
   Wakeups retain their runtime barrier and retryable stale-runtime deferral.
+  A user's Stop (even one after `done`) holds that admission until the user's
+  next turn is admitted: wakeups stay deferred for that turn's teardown, and a
+  goal continuation reports idle/held. The session field
+  `automatic_turns_held` carries the hold.
 - `packages/server/src/sessions/streams.ts` (`StreamRegistry`) holds live
   channels, stream owners, and active runs.
 - `packages/server/src/sessions/journal.ts` (`RunJournal`) writes one JSONL

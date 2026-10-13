@@ -125,6 +125,8 @@ export interface StartTurnOptions {
 /** How a turn that did not complete ended: the `apperror` frame it sent, if any, and whether it was cancelled. */
 export interface TurnFailure { apperror: Record<string, unknown> | null; cancelled: boolean }
 
+export type AdmissionResult = StartTurnResponse & { _status?: number; error?: string; active_stream_id?: string | null; held?: boolean }
+
 export interface StartTurnResponse {
   stream_id?: string
   session_id?: string
@@ -302,6 +304,8 @@ export class TurnRunner {
   private readonly stopContexts = new Map<string, { previousContext: Message[]; historyLength: number; prompt: string | Record<string, unknown>[]; msgText: string; checkpointed: boolean; stateDbStartId: number | null }>()
   /** Each turn's worker, so a stopped background turn can be awaited before the user's turn takes the session. */
   private readonly workers = new Map<string, Promise<void>>()
+  /** TAL-899: sessions whose user pressed Stop; no automatic turn starts in them until the user's next turn is admitted. */
+  private readonly stopHeld = new Set<string>()
 
   constructor(readonly deps: TurnRunnerDeps) {}
 
@@ -309,21 +313,37 @@ export class TurnRunner {
 
   // ── admission ────────────────────────────────────────────────────────────
 
-  /** Admit automatic turns through the same workspace recovery and model resolution as user turns. */
-  startServerTurn(session: Session, opts: Pick<StartTurnOptions, 'msg' | 'source' | 'goalRelated'>): ReturnType<TurnRunner['start']> {
+  /** TAL-899: whether a Stop holds the session's automatic turns (session `automatic_turns_held`). */
+  automaticTurnsHeld(sessionId: string): boolean {
+    return this.stopHeld.has(sessionId)
+  }
+
+  /**
+   * Admit automatic turns through the same workspace recovery and model resolution as user turns. After the user's Stop
+   * none starts (TAL-899): the answer is a `held` 409, and the caller keeps its work for the user's next turn.
+   */
+  startServerTurn(session: Session, opts: Pick<StartTurnOptions, 'msg' | 'source' | 'goalRelated'>): AdmissionResult {
+    if (this.stopHeld.has(session.session_id)) return { _status: 409, error: 'automatic turns are held after Stop', held: true }
     try {
       const service = this.deps.service()
       const workspace = service.turnWorkspace(session)
       const [model, modelProvider, normalizedModel] = service.turnModel(session)
-      return this.start(session, { ...opts, workspace, model, modelProvider, normalizedModel })
+      return this.admit(session, { ...opts, workspace, model, modelProvider, normalizedModel })
     } catch (error) {
       if (error instanceof HttpFailure) return { _status: error.status, error: error.message }
       throw error
     }
   }
 
+  /** A user's turn; admitting it releases the hold a Stop put on automatic turns (TAL-899). */
+  start(session: Session, opts: StartTurnOptions): AdmissionResult {
+    const response = this.admit(session, opts)
+    if (response._status === undefined) this.stopHeld.delete(session.session_id)
+    return response
+  }
+
   /** Python `_start_chat_stream_for_session`: persist pending state, register the channel, launch the worker. */
-  start(session: Session, opts: StartTurnOptions): StartTurnResponse & { _status?: number; error?: string; active_stream_id?: string | null } {
+  private admit(session: Session, opts: StartTurnOptions): AdmissionResult {
     const s = session
     if (this.deps.updateInProgress?.()) return { error: 'Web is updating. Retry after it restarts.', _status: 503 }
     if (this.deps.profileDeleting?.(s.profile ?? null)) return { error: `Profile '${str(s.profile)}' is being deleted.`, _status: 409 }
@@ -980,6 +1000,7 @@ export class TurnRunner {
     const payload = withSessionWireFlags(s.compact({ contextLengthFor: this.deps.service().deps.contextLengthFor, modelOptionFor: this.deps.service().deps.modelOptionFor }), this.registry.liveIds)
     payload.assistant_name = this.deps.service().assistantName(s)
     payload.workspace_name = this.deps.service().workspaceNames()(s)
+    payload.automatic_turns_held = this.stopHeld.has(s.session_id)
     const service = this.deps.service()
     const scened = service.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes(withBackgroundUpdates(withMarkerKinds(withTurnIds(withAttachmentObjects(s.messages))), s), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, clipToolResults: true }))
     const [window, offset] = messageWindowForDisplay(scened, TERMINAL_SSE_VISIBLE_MESSAGE_LIMIT, null)
@@ -1379,6 +1400,13 @@ export class TurnRunner {
    * `steer_withdrawn` (stopped) this Stop emitted, for the cancel response (TAL-426).
    */
   async cancel(streamId: string): Promise<{ cancelled: boolean; withdrawn: SteerWithdrawn[] }> {
+    // TAL-899: the user's Stop holds automatic turns, even one that lands after `done`.
+    const owner = this.registry.ownerSessionId(streamId) ?? this.registry.activeRuns.get(streamId)?.session_id
+    if (owner) this.stopHeld.add(owner)
+    return this.stop(streamId)
+  }
+
+  private async stop(streamId: string): Promise<{ cancelled: boolean; withdrawn: SteerWithdrawn[] }> {
     const channel = this.registry.peek(streamId)
     const run = this.registry.activeRuns.get(streamId)
     if (!channel && !run) return { cancelled: false, withdrawn: [] }
@@ -1438,7 +1466,7 @@ export class TurnRunner {
   async yieldBackgroundTurn(sessionId: string): Promise<boolean> {
     const streamId = this.registry.activeRunStreamForSession(sessionId)
     if (!streamId || this.registry.activeRuns.get(streamId)?.origin !== 'background') return false
-    await this.cancel(streamId)
+    await this.stop(streamId)
     let timer: NodeJS.Timeout | undefined
     await Promise.race([this.workers.get(streamId), new Promise((resolve) => { timer = setTimeout(resolve, BACKGROUND_UNWIND_WAIT_MS) })])
     clearTimeout(timer)
@@ -1654,11 +1682,13 @@ export class TurnRunner {
     const prompt = str(decision.continuation_prompt).trim()
     const proceed = decision.should_continue && Boolean(prompt)
     const status = { message: decision.message, message_key: decision.message_key, message_args: decision.message_args ?? [], decision: decision.verdict }
-    put('goal', { session_id: sessionId, state: proceed ? 'continuing' : 'idle', ...status })
-    if (!proceed) return
+    if (!proceed) { put('goal', { session_id: sessionId, state: 'idle', ...status }); return }
     let current: Session
     try { current = this.deps.store.get(sessionId) } catch { return }
     const started = this.startServerTurn(current, { msg: prompt, goalRelated: true })
+    // TAL-899: a Stop, even one after the answer, holds the continuation; the user's next turn is judged instead.
+    if (started.held) { put('goal', { session_id: sessionId, state: 'idle', decision: 'held', message: '' }); return }
+    put('goal', { session_id: sessionId, state: 'continuing', ...status })
     if (started._status === 409 && started.active_stream_id) { this.registry.goalRelated.add(started.active_stream_id); return }
     if (started._status !== undefined && started._status >= 400) {
       this.deps.log(`[webui] WARNING: goal continuation for ${sessionId} not started (${String(started._status)}): ${str(started.error)}`)
