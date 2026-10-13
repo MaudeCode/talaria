@@ -68,3 +68,95 @@ def test_turn_toolsets_follow_the_profile_config_unless_overridden(tmp_path) -> 
     assert isinstance(legacy, list) and "hermes" not in legacy and set(plain_tools) <= set(legacy_tools), legacy
     # A session-level override replaces the profile default.
     assert override == ["memory"]
+
+
+POLICY_PROBE = r'''
+import json, os, sys
+from pathlib import Path
+sys.path.append(sys.argv[1])
+from talaria_sidecar.home import scoped_home
+from talaria_sidecar.methods import chat
+from model_tools import get_tool_definitions, _dispatch_bridge_tool
+from agent import conversation_compression_manual as manual
+from types import SimpleNamespace
+
+seen = []
+class Agent:
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
+        self.session_id = kwargs['session_id']
+        seen.append(self)
+    def run_conversation(self, **kwargs):
+        return {'final_response': 'ok', 'messages': []}
+    def close(self):
+        pass
+class Ctx:
+    cancelled = False
+    def emit(self, *args):
+        pass
+chat._agent_class = lambda: Agent
+chat._resolve_runtime = lambda *args: {'model': 'm', 'provider': 'p', 'api_key': 'synthetic'}
+chat._discover_mcp_tools = lambda run: None
+manual.compress_now = lambda *a, **k: SimpleNamespace(status='lock_skipped', after_messages=[], before_tokens=0, after_tokens=0, summary=None)
+manual.render_compress_result = lambda result: []
+root = Path(os.environ['HERMES_HOME'])
+params = {'profile_home': str(root), 'session_id': 'policy-session', 'stream_id': 'one', 'model': 'm', 'model_provider': 'p', 'user_message': 'hi', 'enabled_toolsets': ['todo', 'file'], 'conversation_history': []}
+
+def catalog(agent):
+    kw = {k: agent.kwargs.get(k) for k in ('enabled_toolsets', 'disabled_toolsets')}
+    raw = get_tool_definitions(**kw, quiet_mode=True, skip_tool_search_assembly=True)
+    search, _ = _dispatch_bridge_tool('tool_search', {'queries': ['todo']}, **kw)
+    describe, _ = _dispatch_bridge_tool('tool_describe', {'names': ['todo_list']}, **kw)
+    return {'tools': [d['function']['name'] for d in raw], 'search': search, 'describe': describe}
+
+with scoped_home(root):
+    assert chat.start(Ctx(), params)['status'] == 'completed'
+    initial = catalog(seen[-1])
+(root / 'config.yaml').write_text('agent:\n  disabled_toolsets: [todo]\nplatform_toolsets:\n  cli: [file, todo]\n')
+with scoped_home(root):
+    assert chat.start(Ctx(), {**params, 'stream_id': 'two'})['status'] == 'completed'
+    turn = catalog(seen[-1])
+    chat.compress(Ctx(), params)
+    compression = catalog(seen[-1])
+print(json.dumps({'initial': initial, 'turn': turn, 'compression': compression, 'constructions': len(seen)}))
+'''
+
+
+@requires_agent
+def test_disabled_toolsets_win_over_overrides_and_cached_agents(tmp_path) -> None:
+    root = tmp_path / '.hermes'
+    root.mkdir()
+    (root / 'config.yaml').write_text('platform_toolsets:\n  cli: [file, todo]\n')
+    run = subprocess.run([AGENT_PYTHON, '-c', POLICY_PROBE, str(AGENT_DIR)], env=isolated_env(root), capture_output=True, text=True, timeout=120)
+    assert run.returncode == 0, run.stderr[-4000:]
+    result = json.loads(run.stdout.strip().splitlines()[-1])
+    assert 'todo_list' in result['initial']['tools']
+    assert 'todo_list' in result['initial']['search']
+    for path in ('turn', 'compression'):
+        assert 'todo_list' not in result[path]['tools'], f'{path} re-enabled disabled todo: {result[path]}'
+        assert 'read_file' in result[path]['tools']
+        assert 'todo_list' not in json.dumps(result[path]['search'])
+        assert 'todo_list' in json.loads(result[path]['describe'])['not_found']
+    assert result['constructions'] == 3, 'a policy change must replace the cached Agent'
+
+
+@requires_agent
+def test_catalog_reports_profile_policy_and_preserves_unknown_selection(handshaken, hermes_home) -> None:
+    (hermes_home / 'config.yaml').write_text('agent:\n  disabled_toolsets: "[\'todo\']"\nplatform_toolsets:\n  cli: [file, todo]\n')
+    params = {'profile_home': str(hermes_home), 'enabled_toolsets': ['todo', 'file', 'missing-toolset']}
+    result = handshaken.result('toolsets.catalog', params)
+    rows = {r['name']: r for r in result['toolsets']}
+    assert rows['todo']['available'] is False
+    assert rows['todo']['unavailable_reason'] == 'disabled'
+    assert rows['todo']['selected'] is True
+    assert rows['file']['available'] is True
+    assert rows['missing-toolset']['available'] is False
+    assert result['selected_toolsets'] == params['enabled_toolsets']
+    defaults = handshaken.result('toolsets.catalog', {**params, 'enabled_toolsets': None})
+    assert defaults['using_defaults'] is True
+    assert 'todo' not in defaults['selected_toolsets']
+    named = hermes_home / 'profiles' / 'clean'
+    named.mkdir(parents=True)
+    (named / 'config.yaml').write_text('platform_toolsets:\n  cli: [todo]\n')
+    clean = handshaken.result('toolsets.catalog', {'profile_home': str(named), 'enabled_toolsets': None})
+    assert next(r for r in clean['toolsets'] if r['name'] == 'todo')['available'] is True

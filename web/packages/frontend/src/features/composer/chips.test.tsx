@@ -34,7 +34,7 @@ let catalog: unknown = PLUGIN_CATALOG
 // The server's registry: every entry named, the default one `Home` (TAL-303).
 const WORKSPACES = { workspaces: [{ path: '/src/talaria-main', name: 'Talaria' }, { path: '/src/scratch', name: 'scratch' }], last: '/src/talaria-main' }
 
-vi.mock('../../api/endpoints', () => ({ fetchModels: vi.fn(() => Promise.resolve(catalog)), fetchWorkspaces: vi.fn(() => Promise.resolve(WORKSPACES)) }))
+vi.mock('../../api/endpoints', () => ({ fetchToolsetsCatalog: vi.fn(() => Promise.resolve({ toolsets: [{ name: 'file', description: 'Files', available: true, selected: true, unavailable_reason: null }, { name: 'todo', description: 'Tasks', available: false, selected: false, unavailable_reason: 'disabled' }], selected_toolsets: ['file'], using_defaults: true })), fetchModels: vi.fn(() => Promise.resolve(catalog)), fetchWorkspaces: vi.fn(() => Promise.resolve(WORKSPACES)) }))
 import { ModelChip, ToolsetsChip, WorkspaceChip } from './chips'
 
 function renderChip(props: { model: string | null; optionId: string | null }, onChange = vi.fn()) {
@@ -92,13 +92,15 @@ describe('ModelChip', () => {
 })
 
 describe('ToolsetsChip', () => {
-  it('keeps the toolsets explanation behind a help button', async () => {
-    render(<ToolsetsChip value={null} onChange={vi.fn()} />)
+  it('renders server selection and refuses unavailable choices', async () => {
+    const onChange = vi.fn()
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={qc}><ToolsetsChip value={null} onChange={onChange} /></QueryClientProvider>)
     await userEvent.click(screen.getByRole('button'))
-    await screen.findByRole('textbox', { name: 'Session toolsets' })
-    expect(screen.queryByText(/Comma-separated toolset names/)).not.toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'About Session toolsets' }))
-    expect(await screen.findByText(/Comma-separated toolset names/)).toBeVisible()
+    expect(await screen.findByRole('checkbox', { name: 'file' })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: /todo/ })).toBeDisabled()
+    await userEvent.click(screen.getByRole('button', { name: 'Use profile defaults' }))
+    expect(onChange).toHaveBeenCalledWith(null)
   })
 })
 
@@ -123,4 +125,16 @@ describe('WorkspaceChip (TAL-303)', () => {
     cleanup()
     expect(await chip({ value: '/src/unlisted' })).toHaveTextContent('—')
   })
+})
+
+it('does not offer saves when the toolset catalog fails', async () => {
+  const api = await import('../../api/endpoints')
+  vi.mocked(api.fetchToolsetsCatalog).mockRejectedValueOnce(new Error('offline'))
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(<QueryClientProvider client={qc}><ToolsetsChip value={null} onChange={vi.fn()} /></QueryClientProvider>)
+  await userEvent.click(screen.getByRole('button'))
+  expect(await screen.findByRole('alert')).toHaveTextContent('Could not load toolsets.')
+  expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument()
+  await userEvent.click(screen.getByRole('button', { name: 'Retry' }))
+  expect(await screen.findByRole('checkbox', { name: 'file' })).toBeEnabled()
 })

@@ -49,3 +49,24 @@ final class ComposerChipLayoutTests: XCTestCase {
         XCTAssertEqual(fittedWidth(offered: full), full, accuracy: 0.5, "A chip that fits keeps its full title", file: file, line: line)
     }
 }
+
+@MainActor
+final class ComposerToolsetsHostedTests: XCTestCase {
+    func testToolsetPicker() async throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let catalog = try decoder.decode(ToolsetsCatalog.self, from: Data(#"{"toolsets":[{"name":"file","available":true,"selected":true},{"name":"todo","available":false,"selected":false,"unavailable_reason":"disabled"}],"selected_toolsets":["file"],"using_defaults":true}"#.utf8))
+        let window = try hostWindow(ComposerToolsetsSheet(loadCatalog: { catalog }, onSave: { _ in }))
+        _ = await awaitElement(in: window) { $0.accessibilityLabel?.contains("todo") == true }
+        _ = try await requireElement(in: window, label: "Session toolsets")
+        let attachment = XCTAttachment(image: UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        })
+        attachment.name = "toolsets-after"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        let disabled = await awaitElement(in: window) { $0.accessibilityLabel?.contains("todo") == true }
+        XCTAssertNotNil(disabled, "The catalog must show the operator-disabled toolset")
+        XCTAssertTrue(try XCTUnwrap(disabled).accessibilityTraits.contains(.notEnabled))
+    }
+}

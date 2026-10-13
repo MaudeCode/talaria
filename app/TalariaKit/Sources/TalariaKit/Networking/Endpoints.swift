@@ -37,6 +37,7 @@ public enum Endpoint {
     case moveSession
     case sessionYolo(sessionID: String?)
     case sessionToolsets
+    case toolsetsCatalog
     case exportSession(sessionID: String, format: SessionExportFormat)
     case projects
     case createProject
@@ -217,6 +218,8 @@ public enum Endpoint {
             return "/api/session/move"
         case .sessionYolo:
             return "/api/session/yolo"
+        case .toolsetsCatalog:
+            return "/api/toolsets"
         case .sessionToolsets:
             return "/api/session/toolsets"
         case .exportSession:

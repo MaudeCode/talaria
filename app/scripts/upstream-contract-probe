@@ -260,6 +260,15 @@ class Probe:
         )
         session_id = str(session["session_id"])
 
+        catalog = self.require_keys(
+            "toolset catalog",
+            self.request("toolset catalog", "/api/toolsets", method="POST",
+                         body={"session_id": session_id, "toolsets": None}, fixture="toolsets_catalog"),
+            "toolsets", "selected_toolsets", "using_defaults",
+        )
+        for row in catalog["toolsets"]:
+            self.require_keys("toolset policy", row, "name", "available", "selected", "unavailable_reason")
+
         query = urllib.parse.urlencode({"session_id": session_id, "messages": 1})
         self.require_keys(
             "session detail",

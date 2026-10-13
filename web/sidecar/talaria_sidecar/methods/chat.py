@@ -29,6 +29,7 @@ from ..errors import InvalidParams, RpcError
 from ..home import profile_home_param, scoped_home
 from ..rpc import CallContext
 from .checkpoints import checkpoint_kwargs
+from .toolsets import disabled_toolsets
 
 log = logging.getLogger("talaria_sidecar.chat")
 
@@ -630,6 +631,7 @@ def _agent_signature(model: str, provider, runtime: dict, toolsets, home: str, k
         "model": model, "provider": provider, "base_url": runtime.get("base_url"), "api_key": key_digest,
         "api_mode": runtime.get("api_mode"), "acp_command": runtime.get("acp_command"), "acp_args": runtime.get("acp_args"),
         "credential_pool": pool_identity, "toolsets": toolsets, "home": home,
+        "disabled_toolsets": kwargs.get("disabled_toolsets"),
         "max_iterations": kwargs.get("max_iterations"), "max_tokens": kwargs.get("max_tokens"),
         # Bound at construction too: a reasoning-effort change from the composer must build a fresh agent.
         "reasoning_config": kwargs.get("reasoning_config"),
@@ -1088,6 +1090,7 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             platform="webui",
             quiet_mode=True,
             enabled_toolsets=toolsets,
+            disabled_toolsets=disabled_toolsets(),
             session_id=session_id,
             stream_delta_callback=on_token,
             reasoning_callback=on_reasoning,
@@ -1370,6 +1373,7 @@ def compress(ctx: CallContext, params: dict) -> dict:
         platform="webui",
         quiet_mode=True,
         enabled_toolsets=toolsets,
+        disabled_toolsets=disabled_toolsets(),
         session_id=session_id,
     )
     for name, value in (

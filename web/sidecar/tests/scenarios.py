@@ -25,6 +25,7 @@ SCENARIOS: list[tuple[str, dict]] = [
     ("goals.command", {"session_id": "sess-1", "profile_home": "{home}", "args": "resume"}),
     ("goals.restore", {"session_id": "sess-1", "profile_home": "{home}", "snapshot": None}),
     ("goals.command", {"session_id": "sess-1", "profile_home": "{home}", "args": "clear"}),
+    ("toolsets.catalog", {"profile_home": "{home}", "enabled_toolsets": None}),
     # commands / plugins
     ("commands.registry", {"profile_home": "{home}"}),
     ("commands.exec", {"profile_home": "{home}", "command": "/reload-skills"}),

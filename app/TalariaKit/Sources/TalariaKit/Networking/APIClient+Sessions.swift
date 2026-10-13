@@ -228,6 +228,10 @@ extension APIClient {
         )
     }
 
+    public func fetchToolsetsCatalog(sessionID: String, toolsets: [String]?) async throws -> ToolsetsCatalog {
+        try await send(endpoint: .toolsetsCatalog, method: "POST", body: SessionToolsetsRequest(sessionId: sessionID, toolsets: toolsets))
+    }
+
     /// Sets the session's toolset override; nil restores the profile's defaults (TAL-631).
     public func setSessionToolsets(sessionID: String, toolsets: [String]?) async throws -> SessionToolsetsResponse {
         try await send(
@@ -322,4 +326,20 @@ private struct MoveSessionRequest: Encodable {
 private struct SessionYoloRequest: Encodable {
     let sessionId: String
     let enabled: Bool
+}
+
+/// Policy and current draft selection computed by the server for the request's profile.
+public struct ToolsetsCatalog: Decodable, Sendable {
+    public let toolsets: [ToolsetChoice]
+    public let selectedToolsets: [String]
+    public let usingDefaults: Bool?
+}
+
+public struct ToolsetChoice: Decodable, Identifiable, Sendable {
+    public var id: String { name }
+    public let name: String
+    public let description: String?
+    public let available: Bool?
+    public let selected: Bool?
+    public let unavailableReason: String?
 }

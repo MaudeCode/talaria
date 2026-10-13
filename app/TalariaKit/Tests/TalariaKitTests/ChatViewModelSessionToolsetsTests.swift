@@ -3,6 +3,20 @@ import XCTest
 
 /// The strip's toolsets control shows and sets the session's server-side toolset override (TAL-631).
 final class ChatViewModelSessionToolsetsTests: APIClientTestCase {
+    func testCatalogRequestPreservesProfileDefaults() async throws {
+        let client = makeClient { request in
+            XCTAssertEqual(request.url?.path, "/api/toolsets")
+            XCTAssertEqual(request.httpMethod, "POST")
+            let body = try apiTestJSONBody(from: request)
+            XCTAssertEqual(body["session_id"] as? String, "session-abc")
+            XCTAssertTrue(body["toolsets"] is NSNull)
+            return apiTestJSONResponse(#"{"toolsets":[{"name":"todo","available":false,"selected":false,"unavailable_reason":"disabled"}],"selected_toolsets":["file"],"using_defaults":true}"#, for: request)
+        }
+        let catalog = try await client.fetchToolsetsCatalog(sessionID: "session-abc", toolsets: nil)
+        XCTAssertEqual(catalog.toolsets.first?.available, false)
+        XCTAssertEqual(catalog.selectedToolsets, ["file"])
+    }
+
     @MainActor
     func testToolsetsShowTheServerValueAndSavesRoundTripIncludingProfileDefaults() async throws {
         var savedBodies: [[String: Any]] = []
