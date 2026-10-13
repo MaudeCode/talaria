@@ -85,7 +85,7 @@ const noReleases: GetJson = () => { throw new Error('Main must not query release
 const web = (client: string): string => join(client, 'web')
 
 describe('Web source updates (test_tal203_source_update.py)', () => {
-  function service(s: Install, opts: { channel?: 'stable' | 'experimental'; getJson?: GetJson; agentDir?: string | null; blockers?: () => RestartBlockers; gateway?: () => Promise<Dict>; llm?: (system: string, user: string) => Promise<string>; autoApply?: () => boolean; checkEnabled?: () => boolean; npm?: BuildRun; autoNotification?: UpdateServiceDeps['autoNotification'] } = {}): { svc: UpdateService; restarts: number[] } {
+  function service(s: Install, opts: { channel?: 'stable' | 'experimental'; getJson?: GetJson; agentDir?: string | null; blockers?: () => RestartBlockers; llm?: (system: string, user: string) => Promise<string>; autoApply?: () => boolean; checkEnabled?: () => boolean; npm?: BuildRun; autoNotification?: UpdateServiceDeps['autoNotification'] } = {}): { svc: UpdateService; restarts: number[] } {
     const restarts: number[] = []
     const svc = new UpdateService({
       webRoot: web(s.client), git: s.run, getJson: opts.getJson ?? s.getJson, identity: s.identity, webuiVersion: 'development',
@@ -94,7 +94,7 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
       ...(opts.checkEnabled ? { checkEnabled: opts.checkEnabled } : {}),
       ...(opts.autoNotification ? { autoNotification: opts.autoNotification } : {}),
       blockers: opts.blockers ?? (() => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false })),
-      scheduleRestart: () => restarts.push(1), gatewayRestart: opts.gateway ?? (() => Promise.resolve({ status: 'completed' })), llm: opts.llm ?? null, sleep: () => Promise.resolve(), log: () => undefined,
+      scheduleRestart: () => restarts.push(1), llm: opts.llm ?? null, log: () => undefined,
     })
     return { svc, restarts }
   }
@@ -362,7 +362,7 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
       ...(opts.autoApply ? { autoApply: opts.autoApply } : {}), ...(opts.checkEnabled ? { checkEnabled: opts.checkEnabled } : {}),
       ...(opts.autoNotification ? { autoNotification: opts.autoNotification } : {}),
       blockers: opts.blockers ?? (() => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false })),
-      scheduleRestart: () => restarts.push(1), gatewayRestart: () => Promise.resolve({ status: 'completed' }), llm: null, sleep: () => Promise.resolve(), log: () => undefined,
+      scheduleRestart: () => restarts.push(1), llm: null, log: () => undefined,
     })
     const installs = (): number => n.calls.filter((call) => call[0] === 'install').length
     const version = (): string => (JSON.parse(readFileSync(join(n.packageRoot, 'package.json'), 'utf8')) as { version: string }).version
@@ -377,7 +377,7 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
       webRoot: n.packageRoot, git: s.run, npm: n.npm, getJson: s.getJson, identity: s.identity, webuiVersion: 'web-v1.0.0',
       agentDir: () => null, channel: () => 'stable', includeAgent: () => false, autoApply: () => true,
       blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
-      scheduleRestart: () => restarts.push(1), gatewayRestart: () => Promise.resolve({ status: 'completed' }), log: () => undefined,
+      scheduleRestart: () => restarts.push(1), log: () => undefined,
     })
     const status = (await svc.check(true, false, 'stable')).webui as Dict
     expect(status).toMatchObject({ behind: 1, install_kind: 'npm', manual_update: false, npm: '@maudecode/talaria-web@2.0.0' })
@@ -448,7 +448,7 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
       webRoot: n.packageRoot, git: s.run, npm: n.npm, getJson, identity: s.identity, webuiVersion: 'web-v1.0.0',
       agentDir: () => null, channel: () => 'stable', includeAgent: () => false,
       blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
-      scheduleRestart: () => undefined, gatewayRestart: () => Promise.resolve({ status: 'completed' }), llm: (_system, user) => { prompts.push(user); return Promise.resolve('- Notice: Chats open faster') }, log: () => undefined,
+      scheduleRestart: () => undefined, llm: (_system, user) => { prompts.push(user); return Promise.resolve('- Notice: Chats open faster') }, log: () => undefined,
     })
     const webui = updatesCheckView(await svc.check(true, false, 'stable')).webui as Dict
     expect(webui).toMatchObject({ state: 'release_ready', summary_available: true })
@@ -485,7 +485,7 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     const svc = new UpdateService({
       webRoot: n.packageRoot, git: s.run, npm: n.npm, getJson, identity: s.identity, webuiVersion: 'web-v1.0.0', agentDir: () => null, channel: () => 'stable', includeAgent: () => false,
       blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
-      scheduleRestart: () => restarts.push(1), gatewayRestart: () => Promise.resolve({ status: 'completed' }), log: () => undefined,
+      scheduleRestart: () => restarts.push(1), log: () => undefined,
     })
     const installs = (): string[] => n.calls.filter((call) => call[0] === 'install').map((call) => call.at(-1)!)
     const version = (): string => (JSON.parse(readFileSync(join(n.packageRoot, 'package.json'), 'utf8')) as { version: string }).version
@@ -746,7 +746,7 @@ describe('Agent checkout updates', () => {
       webRoot: web(s.client), git: (args, cwd, timeout) => cwd === a.agent ? runGit(args, cwd, timeout) : s.run(args, cwd, timeout), getJson: noReleases, identity: s.identity, webuiVersion: 'test',
       agentDir: () => a.agent, channel: () => 'experimental', agentChannel: () => channel, includeAgent: () => true,
       blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
-      scheduleRestart: () => undefined, gatewayRestart: () => Promise.resolve({ status: 'completed' }), log: () => undefined,
+      scheduleRestart: () => undefined, log: () => undefined,
     })
     const stable = await svc.check()
     expect(stable).toMatchObject({ channel: 'experimental', agent_channel: 'stable', agent: { latest_sha: a.v2, behind: 1 } })
@@ -833,7 +833,7 @@ describe('Agent checkout updates', () => {
     return { agent, origin, v1, v2 }
   }
 
-  it('reports the tag gap, fast-forwards with a stash, and restarts the gateway through the sidecar', async () => {
+  it('reports the tag gap, fast-forwards with a stash, and leaves the gateway restart to the idle wait', async () => {
     const a = agentInstall()
     expect(await checkAgentUpdate(null, runGit)).toEqual({ name: 'agent', behind: null, no_git: true })
     const status = await checkAgentUpdate(a.agent, runGit)
@@ -844,12 +844,12 @@ describe('Agent checkout updates', () => {
     const svc = new UpdateService({
       webRoot: join(tmp(), 'web'), getJson: noReleases, identity: { release: () => DEV, stamped: () => DEV, runningSourceRevision: () => null }, webuiVersion: 'x',
       agentDir: () => a.agent, channel: () => 'stable', includeAgent: () => true, blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
-      scheduleRestart: () => gateway.push('restart'), gatewayRestart: () => { gateway.push('gateway'); return Promise.resolve(gateway.length === 1 ? { status: 'failed', message: 'launchd rotating' } : { status: 'completed' }) }, sleep: () => Promise.resolve(), log: () => undefined,
+      scheduleRestart: () => gateway.push('restart'), log: () => undefined,
     })
     expect(await svc.apply('agent')).toMatchObject({ ok: false, confirmation_required: true })
     const result = await svc.apply('agent', null, () => true, { confirmedRevision: a.v2 })
-    expect(result).toMatchObject({ ok: true, target: 'agent', ref: 'v2.0.0', restart_scheduled: true, gateway_restart: 'completed' })
-    expect(gateway).toEqual(['gateway', 'gateway', 'restart'])
+    expect(result).toMatchObject({ ok: true, target: 'agent', ref: 'v2.0.0', restart_scheduled: true, gateway_restart: 'waiting_for_idle' })
+    expect(gateway).toEqual(['restart'])
     expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(a.v2)
     expect(readFileSync(join(a.agent, 'notes.txt'), 'utf8')).toBe('untracked survives\n')
     expect(readFileSync(join(a.agent, 'README'), 'utf8')).toBe('local note\n') // stash popped back over the update
@@ -866,7 +866,7 @@ describe('Agent checkout updates', () => {
       webRoot: web(s.client), git: (args, cwd, timeout) => cwd === a.agent ? runGit(args, cwd, timeout) : s.run(args, cwd, timeout), getJson: noReleases, identity: s.identity, webuiVersion: 'test',
       agentDir: () => a.agent, channel: () => 'experimental', agentChannel: () => opts.agentChannel ?? 'stable', includeAgent: () => true,
       blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
-      scheduleRestart: () => undefined, gatewayRestart: () => Promise.resolve({ status: 'completed' }), sleep: () => Promise.resolve(), log: () => undefined,
+      scheduleRestart: () => undefined, log: () => undefined,
     })
   }
   const verified = (...revisions: string[]): Dict => ({ schemaVersion: 1, releases: revisions.map((sourceRevision, i) => ({ releaseTag: `v${i + 1}.0.0`, version: `${i + 1}.0.0`, sourceRevision })) })
@@ -930,7 +930,7 @@ describe('Agent checkout updates', () => {
     const svc = new UpdateService({
       webRoot: join(tmp(), 'web'), git: run, getJson: noReleases, ...(opts.getPublicJson ? { getPublicJson: opts.getPublicJson } : {}), identity: { release: () => DEV, stamped: () => DEV, runningSourceRevision: () => null }, webuiVersion: 'x',
       agentDir: () => a.agent, channel: () => 'stable', agentChannel: () => opts.channel ?? 'stable', includeAgent: () => true, blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
-      scheduleRestart: () => undefined, gatewayRestart: () => Promise.resolve({ status: 'completed' }), llm: (system, user) => { prompts.push(user); return opts.llm ? opts.llm(system, user) : Promise.resolve('- Notice: Chats open faster') }, log: () => undefined,
+      scheduleRestart: () => undefined, llm: (system, user) => { prompts.push(user); return opts.llm ? opts.llm(system, user) : Promise.resolve('- Notice: Chats open faster') }, log: () => undefined,
     })
     return { svc, prompts }
   }
@@ -1014,7 +1014,7 @@ describe('Agent checkout updates', () => {
       agentDir: () => agent, channel: () => 'stable', includeAgent: () => true, blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
       ...(agentSync ? { agentSync } : {}),
       stateDir,
-      scheduleRestart: () => events.push('restart'), gatewayRestart: () => { events.push('gateway'); return Promise.resolve({ status: 'completed' }) }, sleep: () => Promise.resolve(), log: () => undefined,
+      scheduleRestart: () => events.push('restart'), log: () => undefined,
     })
   }
   const stashes = (agent: string): string[] => git(agent, 'stash', 'list').split('\n').filter(Boolean)
@@ -1047,7 +1047,7 @@ describe('Agent checkout updates', () => {
     fail = false
     const retried = await resumed.apply('agent', null, () => true, { confirmedRevision: revision })
     expect(retried).toMatchObject({ ok: true, up_to_date: false, restart_scheduled: true })
-    expect(events).toEqual(['sync', 'sync', 'gateway', 'restart'])
+    expect(events).toEqual(['sync', 'sync', 'restart'])
     const completed = await agentService(a.agent, runGit, []).check(true)
     expect(updateTargetView('agent', completed.agent as Dict, false)).toMatchObject({ state: 'up_to_date', can_apply: false })
   })
@@ -1118,9 +1118,17 @@ describe('Agent checkout updates', () => {
     const events: string[] = []
     const resumed = agentService(a.agent, runGit, events)
     expect(await resumed.apply('agent', null, () => true, { confirmedRevision: revision })).toMatchObject({ ok: true, restart_scheduled: true })
-    expect(events).toEqual(['gateway', 'restart'])
+    expect(events).toEqual(['restart'])
     const status = await agentService(a.agent, runGit, []).check(true)
     expect(updateTargetView('agent', status.agent as Dict, false)).toMatchObject({ state: 'up_to_date', can_apply: false })
+  })
+
+  it('TAL-953: an Agent update leaves the gateway restart to the idle wait and still schedules Web\'s restart', async () => {
+    const a = agentInstall()
+    const events: string[] = []
+    const result = await agentService(a.agent, runGit, events).apply('agent', null, () => true, { confirmedRevision: a.v2 })
+    expect(result).toMatchObject({ ok: true, target: 'agent', restart_scheduled: true, gateway_restart: 'waiting_for_idle' })
+    expect(events).toEqual(['restart'])
   })
 
   it('a conflicting local edit leaves a clean checkout, keeps the stash, and restarts onto the update', async () => {
@@ -1132,7 +1140,7 @@ describe('Agent checkout updates', () => {
     const result = await agentService(a.agent, recorded, events).apply('agent', null, () => true, { confirmedRevision: a.v2 })
     expect(result).toMatchObject({ ok: true, target: 'agent', stash_conflict: true, restart_scheduled: true })
     expect(String(result.message)).toContain('stash apply')
-    expect(events).toEqual(['gateway', 'restart'])
+    expect(events).toEqual(['restart'])
     expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(a.v2)
     expect(readFileSync(join(a.agent, 'VERSION'), 'utf8')).toBe('2.0.0\n') // no conflict markers
     expect(git(a.agent, 'status', '--porcelain')).toBe('')
@@ -1271,7 +1279,7 @@ describe('Agent checkout updates', () => {
     const result = await agentService(a.agent, runGit, events).apply('agent', null, () => true, { confirmedRevision: a.v2 })
     expect(result).toMatchObject({ ok: true, restart_scheduled: true })
     expect(result.stash_conflict).toBeUndefined()
-    expect(events).toEqual(['gateway', 'restart'])
+    expect(events).toEqual(['restart'])
     expect(readFileSync(join(a.agent, 'README'), 'utf8')).toBe('local note\n')
     expect(stashes(a.agent)).toEqual([])
     expect(git(a.agent, 'for-each-ref', 'refs/talaria')).toBe('') // the private save ref is gone too
@@ -1320,7 +1328,7 @@ describe('Agent checkout updates', () => {
     const svc = new UpdateService({
       webRoot: join(tmp(), 'web'), getJson: noReleases, identity: { release: () => DEV, stamped: () => DEV, runningSourceRevision: () => null }, webuiVersion: 'x',
       agentDir: () => a.agent, channel: () => 'stable', includeAgent: () => true, blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
-      scheduleRestart: () => undefined, gatewayRestart: () => Promise.resolve({ status: 'completed' }), sleep: () => Promise.resolve(), log: () => undefined,
+      scheduleRestart: () => undefined, log: () => undefined,
     })
     const held = await svc.clearLock('agent')
     expect(held).toMatchObject({ ok: false, lock_held: true, manual_command: `rm -f ${join(a.agent, '.git/index.lock')}`, other_locks: ['refs/heads/master.lock'] })

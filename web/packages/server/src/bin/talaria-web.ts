@@ -61,6 +61,7 @@ async function serve(args: string[]): Promise<number> {
   deps.completions.start()
   deps.hygiene.start()
   deps.updates.startAutoApply()
+  deps.gatewayRestarts.resume()
   log(`  Then open:     ${running.scheme}://localhost:${running.port}`)
   await new Promise<void>(() => undefined)
   return 0

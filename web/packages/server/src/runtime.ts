@@ -62,7 +62,8 @@ import { CronService } from './tools/crons.js'
 import { KanbanService } from './tools/kanban.js'
 import { DashboardPlugins } from './tools/dashboard-plugins.js'
 import { ExtensionService } from './tools/extensions.js'
-import { dashboardStatus } from './tools/health.js'
+import { dashboardStatus, gatewayRestartBlockers } from './tools/health.js'
+import { GatewayRestartQueue } from './tools/gateway-restart.js'
 import { TerminalRegistry } from './tools/terminal.js'
 
 export interface CreateDepsOptions extends LoadConfigOptions {
@@ -651,9 +652,10 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     requestShutdown: () => { setTimeout(() => { process.kill(process.pid, 'SIGINT') }, 300).unref() },
     // Embedded shells are separate process groups that would outlive the worker: terminate and reap them on both exits.
     // A running retention sweep stops before the exit, like on shutdown.
-    requestRestart: () => { void waitUntilRestartSafe(restartBlockers, { log }).then(() => deps.hygiene.stop()).then(() => auth.flushPersistence()).then(() => { deps.terminals.closeAll({ immediate: true }); purgeAgentPycache(); process.exit(RESTART_EXIT_CODE) }) },
+    requestRestart: () => { void waitUntilRestartSafe(restartBlockers, { log }).then(() => deps.gatewayRestarts.quiesce()).then(() => deps.hygiene.stop()).then(() => auth.flushPersistence()).then(() => { deps.terminals.closeAll({ immediate: true }); purgeAgentPycache(); process.exit(RESTART_EXIT_CODE) }) },
     updates: null as unknown as UpdateService,
     updateNotifications,
+    gatewayRestarts: null as unknown as GatewayRestartQueue,
     cspLimiter: new WindowLimiter(60, 100, now),
     clientEventLimiter: new WindowLimiter(60, 30, now),
     ttsLimiter: new WindowLimiter(2, 1, now),
@@ -724,14 +726,20 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     },
     blockers: restartBlockers,
     scheduleRestart: () => { setTimeout(() => { void waitUntilRestartSafe(restartBlockers, { maxWaitMs: Infinity, log }).then(() => { deps.requestRestart() }) }, 2000).unref() },
-    gatewayRestart: async () => {
-      if (!sidecar) throw new Error('Hermes Agent sidecar is unavailable')
-      return sidecar.call('gateway.restart', { profile_home: profileHome(activeProfile()) }, { timeoutMs: 300_000 })
-    },
     llm: async (system, user) => {
       if (!sidecar) return ''
       const result = await sidecar.call('aux.complete', { profile_home: profileHome(activeProfile()), task: 'update_summary', messages: [{ role: 'system', content: system }, { role: 'user', content: user }] })
       return result.text
+    },
+    log,
+  })
+  deps.gatewayRestarts = new GatewayRestartQueue({
+    notifications: updateNotifications,
+    blockers: () => gatewayRestartBlockers(config.hermesHome, profileHome(activeProfile()), now()),
+    updating: () => deps.updates.blocksNewWork(),
+    restart: async () => {
+      if (!sidecar) throw new Error('Hermes Agent sidecar is unavailable')
+      return sidecar.call('gateway.restart', { profile_home: profileHome(activeProfile()) }, { timeoutMs: 300_000 })
     },
     log,
   })

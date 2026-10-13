@@ -268,6 +268,8 @@ export function UpdateNotificationProvider({ children }: { children: ReactNode }
       lost={tracking?.lostAt != null}
       reconnecting={reconnecting}
       checking={notifications.isFetching}
+      actionPending={action.isPending && action.variables?.id === dialogRowId}
+      onAction={(actionId) => { if (dialogRow) action.mutate({ id: dialogRow.id, actionId }) }}
       onCheckAgain={() => { void notifications.refetch() }}
       onClose={() => { if (tracking && !dialogRowId) setTracking({ ...tracking, hidden: true }); else closeDialog(dialogRowId) }}
     />}

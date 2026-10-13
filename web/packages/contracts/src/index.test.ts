@@ -25,9 +25,10 @@ describe('contracts package', () => {
   it('parses the shared update notification fixture', () => {
     const fixture = shared('fixtures/update-notifications.json')
     const parsed = UpdateNotificationsSchema.parse(fixture)
-    expect(parsed.notifications.map((row) => row.kind)).toEqual(['system', 'update'])
+    expect(parsed.notifications.map((row) => row.kind)).toEqual(['system', 'update', 'update'])
     expect(parsed.frontend_build).toMatchObject({ refresh_required: true, notification_id: null })
     expect(parsed.notifications[0]).toMatchObject({ requires_interaction: true, can_dismiss: false, destination: { key: 'settings.system' } })
     expect(parsed.notifications[1]).toMatchObject({ verified_revision: 'a'.repeat(40), verified_version: 'web-v1.2.3' })
+    expect(parsed.notifications[2]).toMatchObject({ target: 'agent', phase: 'waiting_for_idle', can_dismiss: false, actions: [{ id: 'restart_gateway_now', style: 'destructive', acknowledges: false }] })
   })
 })

@@ -4,7 +4,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { atomicWriteSecretJson } from '../fs/atomic.js'
 
 export type UpdateNotificationTarget = 'webui' | 'agent'
-export type UpdateNotificationPhase = 'applying' | 'awaiting_confirmation' | 'restarting' | 'succeeded' | 'blocked' | 'failed' | 'unknown'
+export type UpdateNotificationPhase = 'applying' | 'awaiting_confirmation' | 'waiting_for_idle' | 'restarting' | 'succeeded' | 'blocked' | 'failed' | 'unknown'
 /** `tab` names one open Talaria Web tab; rows stamped with a tab are visible only to that tab. */
 export interface UpdateNotificationScope { owner: string; profile: string; serverOwner?: boolean; tab?: string | null }
 
@@ -68,7 +68,7 @@ export interface CreateUpdateNotificationInput {
   visibility?: 'server' | 'profile'
 }
 
-const PHASES = new Set<UpdateNotificationPhase>(['applying', 'awaiting_confirmation', 'restarting', 'succeeded', 'blocked', 'failed', 'unknown'])
+const PHASES = new Set<UpdateNotificationPhase>(['applying', 'awaiting_confirmation', 'waiting_for_idle', 'restarting', 'succeeded', 'blocked', 'failed', 'unknown'])
 const REVISION = /^[a-f0-9]{40}$/
 const PER_SCOPE_LIMIT = 50
 const GLOBAL_LIMIT = 500
@@ -76,6 +76,9 @@ export const FRONTEND_BUILD = /^[a-f0-9]{64}$/
 export const TAB_ID = /^[A-Za-z0-9_-]{8,64}$/
 export const WEB_REFRESH_KIND = 'web_refresh'
 export const WEB_REFRESH_ACTION = 'reload'
+/** TAL-953: restart the gateway now instead of waiting for its running work to finish. */
+export const GATEWAY_RESTART_NOW = 'restart_gateway_now'
+const GATEWAY_RESTART_NOW_ACTION: UpdateNotificationAction = { id: GATEWAY_RESTART_NOW, label: 'Restart now', style: 'destructive', acknowledges: false }
 /** A closed tab stops checking in; its refresh notice is dropped once unseen this long. An open tab recreates it on its next check. */
 const TAB_TTL_MS = 60 * 60 * 1000
 
@@ -92,11 +95,17 @@ const copy = (row: StoredUpdateNotification): PublicUpdateNotification => ({
   can_dismiss: isDismissible(row),
 })
 
+/** TAL-953: the waiting gateway restart's message, with the running task count once one is known. */
+const gatewayWaitingMessage = (tasks: number): string => tasks > 0
+  ? `Waiting for ${String(tasks)} running gateway task${tasks === 1 ? '' : 's'} to finish before restarting the gateway.`
+  : 'Waiting for running gateway tasks to finish before restarting the gateway.'
+
 const wording = (target: UpdateNotificationTarget, phase: UpdateNotificationPhase): { title: string; message: string } => {
   const name = target === 'webui' ? 'Talaria Web' : 'Hermes Agent'
   const messages: Record<UpdateNotificationPhase, string> = {
     applying: `Installing the selected ${name} update.`,
     awaiting_confirmation: 'This Hermes Agent revision needs confirmation before it can be installed.',
+    waiting_for_idle: gatewayWaitingMessage(0),
     restarting: target === 'webui' ? 'The update is installed. Talaria Web is restarting.' : 'The update is installed. Hermes Agent is restarting.',
     succeeded: `${name} was updated successfully.`,
     blocked: 'The update is waiting for active work to finish.',
@@ -229,13 +238,34 @@ export class UpdateNotificationStore {
     row.updated_at = this.now().toISOString()
     if (phaseChanged) row.read_at = null
     row.expected_identity = expectedIdentity?.trim().slice(0, 160) || null
-    row.detail = phase === 'failed' || phase === 'blocked' || phase === 'succeeded' ? safeDetail(detail) : null
+    row.detail = phase === 'failed' || phase === 'blocked' || phase === 'succeeded' || phase === 'waiting_for_idle' ? safeDetail(detail) : null
+    // Only a waiting gateway restart offers an action; entering the wait offers it afresh.
+    if (row.kind === 'update') {
+      row.actions = phase === 'waiting_for_idle' ? [GATEWAY_RESTART_NOW_ACTION] : []
+      row.performed_action_ids = row.performed_action_ids.filter((action) => action !== GATEWAY_RESTART_NOW)
+    }
     if (verifiedIdentity) {
       row.verified_revision = typeof verifiedIdentity.revision === 'string' && REVISION.test(verifiedIdentity.revision) ? verifiedIdentity.revision : null
       row.verified_version = safeText(verifiedIdentity.version, '', 80) || null
     }
     this.save()
     return copy(row)
+  }
+
+  /** TAL-953: update the waiting gateway restart's message as its running task count changes. */
+  gatewayWaiting(id: string, tasks: number): void {
+    const row = this.rows.find((entry) => entry.id === id && entry.kind === 'update' && entry.phase === 'waiting_for_idle')
+    const message = gatewayWaitingMessage(tasks)
+    if (!row || row.message === message) return
+    row.message = message
+    row.updated_at = this.now().toISOString()
+    this.save()
+  }
+
+  /** TAL-953: gateway restarts still waiting for idle, newest first, so a restarted server resumes them. */
+  waitingGatewayRestarts(): { id: string; detail: string | null }[] {
+    return this.rows.filter((row) => row.kind === 'update' && row.phase === 'waiting_for_idle')
+      .sort((a, b) => b.created_at.localeCompare(a.created_at)).map((row) => ({ id: row.id, detail: row.detail }))
   }
 
   list(scope: UpdateNotificationScope): UpdateNotificationList {
@@ -276,7 +306,7 @@ export class UpdateNotificationStore {
   dismiss(scope: UpdateNotificationScope, id: string): 'dismissed' | 'not_found' | 'acknowledgement_required' {
     const row = this.rows.find((entry) => entry.id === id && this.isVisible(entry, scope))
     if (!row) return 'not_found'
-    if (row.requires_acknowledgement && row.acknowledged_at === null) return 'acknowledgement_required'
+    if (!isDismissible(row)) return 'acknowledgement_required'
     if (row.dismissed_at === null) { const stamp = this.now().toISOString(); row.dismissed_at = stamp; row.read_at ??= stamp; this.save() }
     return 'dismissed'
   }
@@ -442,7 +472,9 @@ const safeDestination = (value: unknown): UpdateNotificationDestination | null =
   return key && label ? { key, label } : null
 }
 const isTabNotice = (row: StoredUpdateNotification): boolean => row.tab_id !== null
-const isDismissible = (row: StoredUpdateNotification): boolean => !row.requires_acknowledgement || row.acknowledged_at !== null
-const isProtected = (row: StoredUpdateNotification): boolean => (row.requires_acknowledgement && row.acknowledged_at === null) || (row.kind === 'update' && ['applying', 'awaiting_confirmation', 'restarting'].includes(row.phase))
+/** A waiting gateway restart carries its Restart now action, so it stays until the restart runs. */
+const isWaitingGatewayRestart = (row: StoredUpdateNotification): boolean => row.kind === 'update' && row.phase === 'waiting_for_idle'
+const isDismissible = (row: StoredUpdateNotification): boolean => (!row.requires_acknowledgement || row.acknowledged_at !== null) && !isWaitingGatewayRestart(row)
+const isProtected = (row: StoredUpdateNotification): boolean => (row.requires_acknowledgement && row.acknowledged_at === null) || (row.kind === 'update' && ['applying', 'awaiting_confirmation', 'waiting_for_idle', 'restarting'].includes(row.phase))
 const retentionBucket = (row: StoredUpdateNotification): string => `${row.owner}\u0000${row.visibility === 'server' ? '*' : row.profile}`
 export const updateNotificationScopeId = (scope: UpdateNotificationScope): string => createHash('sha256').update(`${scope.owner}\u0000${scope.profile}\u0000${scope.serverOwner === true ? 'owner' : 'member'}`).digest('hex').slice(0, 24)

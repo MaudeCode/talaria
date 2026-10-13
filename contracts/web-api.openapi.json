@@ -52227,6 +52227,10 @@
                     },
                     "stash_conflict": {
                       "type": "boolean"
+                    },
+                    "gateway_restart": {
+                      "type": "string",
+                      "description": "TAL-953: `waiting_for_idle` when an Agent update left the gateway restart to wait for the gateway's running work; the update notification reports its outcome."
                     }
                   },
                   "additionalProperties": {}
@@ -52351,6 +52355,10 @@
                     },
                     "stash_conflict": {
                       "type": "boolean"
+                    },
+                    "gateway_restart": {
+                      "type": "string",
+                      "description": "TAL-953: `waiting_for_idle` when an Agent update left the gateway restart to wait for the gateway's running work; the update notification reports its outcome."
                     }
                   },
                   "additionalProperties": {}
@@ -52475,6 +52483,10 @@
                     },
                     "stash_conflict": {
                       "type": "boolean"
+                    },
+                    "gateway_restart": {
+                      "type": "string",
+                      "description": "TAL-953: `waiting_for_idle` when an Agent update left the gateway restart to wait for the gateway's running work; the update notification reports its outcome."
                     }
                   },
                   "additionalProperties": {}
@@ -52743,6 +52755,7 @@
                                 "enum": [
                                   "applying",
                                   "awaiting_confirmation",
+                                  "waiting_for_idle",
                                   "restarting",
                                   "succeeded",
                                   "blocked",
@@ -52991,6 +53004,7 @@
                                   "enum": [
                                     "applying",
                                     "awaiting_confirmation",
+                                    "waiting_for_idle",
                                     "restarting",
                                     "succeeded",
                                     "blocked",
@@ -53327,6 +53341,7 @@
                           "enum": [
                             "applying",
                             "awaiting_confirmation",
+                            "waiting_for_idle",
                             "restarting",
                             "succeeded",
                             "blocked",
@@ -53733,6 +53748,7 @@
                                 "enum": [
                                   "applying",
                                   "awaiting_confirmation",
+                                  "waiting_for_idle",
                                   "restarting",
                                   "succeeded",
                                   "blocked",
@@ -53981,6 +53997,7 @@
                                   "enum": [
                                     "applying",
                                     "awaiting_confirmation",
+                                    "waiting_for_idle",
                                     "restarting",
                                     "succeeded",
                                     "blocked",
@@ -54313,6 +54330,7 @@
                           "enum": [
                             "applying",
                             "awaiting_confirmation",
+                            "waiting_for_idle",
                             "restarting",
                             "succeeded",
                             "blocked",
@@ -54618,6 +54636,7 @@
                           "enum": [
                             "applying",
                             "awaiting_confirmation",
+                            "waiting_for_idle",
                             "restarting",
                             "succeeded",
                             "blocked",

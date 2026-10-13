@@ -1170,12 +1170,9 @@ export interface UpdateServiceDeps {
   blockers: () => RestartBlockers
   /** Re-exec the server once active work drains (`restartWhenSafe`). */
   scheduleRestart: () => void
-  /** Sidecar `gateway.restart` for the active profile. */
-  gatewayRestart: () => Promise<Dict>
   /** Optional update-summary generator (sidecar `aux.complete`); null keeps the deterministic fallback. */
   llm?: ((system: string, user: string) => Promise<string>) | null
   now?: () => number
-  sleep?: (ms: number) => Promise<void>
   log: (line: string) => void
 }
 
@@ -1193,12 +1190,10 @@ export class UpdateService {
   private readonly summaries = new Map<string, Dict>()
   private readonly git: GitRun
   private readonly now: () => number
-  private readonly sleep: (ms: number) => Promise<void>
 
   constructor(private readonly deps: UpdateServiceDeps) {
     this.git = deps.git ?? runGit
     this.now = deps.now ?? (() => Date.now() / 1000)
-    this.sleep = deps.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)))
   }
 
   private agentChannel(): Channel { return this.deps.agentChannel?.() ?? DEFAULT_CHANNEL }
@@ -1388,26 +1383,9 @@ export class UpdateService {
     const synced = await syncAgentDependencies(path, str(result.verified_revision), this.deps.agentSync, this.deps.stateDir, this.git)
     if (synced && !synced.ok) return { ...result, ok: false, up_to_date: false, message: `Agent source updated, but dependency sync failed: ${synced.out}` }
     if (!synced && result.up_to_date) return result
-    const [ok, gateway] = await this.restartGateway()
-    if (!ok) return { ok: false, message: gateway.message ? `agent updated, but gateway restart did not complete: ${str(gateway.message)}. Run \`hermes gateway restart\` manually.` : 'agent updated, but gateway restart did not complete. Run `hermes gateway restart` manually.', target: 'agent', gateway_restart: gateway.status }
+    // TAL-953: the gateway restarts once its own work drains (`GatewayRestartQueue`); Web's restart does not wait for it.
     this.deps.scheduleRestart()
-    return { ...result, ...(synced ? { up_to_date: false } : {}), restart_scheduled: true, gateway_restart: gateway.status }
-  }
-
-  /** Python `_ensure_gateway_restart_for_agent_update`: retry once after a transient supervisor handoff failure. */
-  private async restartGateway(): Promise<[boolean, Dict]> {
-    const attempt = async (): Promise<Dict> => { try { return await this.deps.gatewayRestart() } catch (error) { return { status: 'failed', message: (error as Error).message } } }
-    const first = await attempt()
-    const status = str(first.status)
-    if (status === 'completed' || status === 'in_progress') return [true, first]
-    if (status !== 'failed') return [false, first]
-    await this.sleep(1000)
-    const retry = await attempt()
-    const retryStatus = str(retry.status)
-    const annotated = { ...retry, retry_attempted: true, initial_failure: first.message }
-    if (retryStatus === 'completed' || retryStatus === 'in_progress') return [true, annotated]
-    if (retryStatus !== 'failed') return [false, annotated]
-    return [false, { ...annotated, message: `${str(first.message) || 'Restart failed'}; recovery retry did not complete: ${str(retry.message) || 'retry did not complete'}` }]
+    return { ...result, ...(synced ? { up_to_date: false } : {}), restart_scheduled: true, gateway_restart: 'waiting_for_idle' }
   }
 
   /** Python `apply_force_update`: Web keeps its clean-only policy; the Agent resets hard. */
@@ -1586,15 +1564,15 @@ export function updatesCheckView(status: Dict): Dict {
 }
 
 /** Python `_wait_until_restart_safe`: poll until no chat work is active, bounded so a stuck run cannot jam the update forever. */
-export async function waitUntilRestartSafe(blockers: () => RestartBlockers, opts: { pollMs?: number; maxWaitMs?: number; sleep?: (ms: number) => Promise<void>; now?: () => number; log?: (line: string) => void } = {}): Promise<RestartBlockers & { wait_timed_out?: boolean }> {
+export async function waitUntilRestartSafe(blockers: () => RestartBlockers | Promise<RestartBlockers>, opts: { pollMs?: number; maxWaitMs?: number; sleep?: (ms: number) => Promise<void>; now?: () => number; log?: (line: string) => void } = {}): Promise<RestartBlockers & { wait_timed_out?: boolean }> {
   const now = opts.now ?? (() => Date.now())
   const sleep = opts.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)))
   const deadline = now() + (opts.maxWaitMs ?? RESTART_MAX_WAIT_S * 1000)
-  let snapshot = blockers()
+  let snapshot = await blockers()
   while (snapshot.restart_blocked) {
     if (now() >= deadline) { opts.log?.(`[updates] restart-safety wait exceeded ${String((opts.maxWaitMs ?? RESTART_MAX_WAIT_S * 1000) / 1000)}s with work still in flight; proceeding with restart`); return { ...snapshot, wait_timed_out: true } }
     await sleep(Math.max(100, opts.pollMs ?? 2000))
-    snapshot = blockers()
+    snapshot = await blockers()
   }
   return snapshot
 }

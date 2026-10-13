@@ -6,6 +6,7 @@ import { cpus, loadavg, freemem, totalmem } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import type { GatewayMode, GatewayStatus } from '@maudecode/talaria-web-contracts'
 import type { Config, Dict } from '../config/agent-config.js'
+import type { RestartBlockers } from './updates.js'
 import { dict } from '../config/agent-config.js'
 import { HttpFailure } from '../sessions/service.js'
 import { str } from '../util.js'
@@ -196,6 +197,42 @@ export async function processStartTime(pid: number): Promise<number | null> {
   })
 }
 
+/** The local gateway's liveness from its pid record and runtime status (root-level files first, then the profile's). */
+async function localGatewayHealth(hermesHome: string, profileHome: string, now: number): Promise<Dict> {
+  const rootPid = join(hermesHome, 'gateway.pid')
+  const pidPath = existsSync(rootPid) ? rootPid : existsSync(join(profileHome, 'gateway.pid')) ? join(profileHome, 'gateway.pid') : rootPid
+  const statusPath = join(dirname(pidPath), 'gateway_state.json')
+  const runtimeStatus = readJsonFile(statusPath)
+  const safe = runtimeDetailSubset(runtimeStatus)
+  const checked = checkedAt()
+  let runningPid: number | null = null
+  try {
+    const { pid, startTime } = gatewayPid(readFileSync(pidPath, 'utf8'))
+    // Agent `_live_pid_from_record`: a start time known on both sides that disagrees means the pid was reused.
+    const reused = async (): Promise<boolean> => { if (startTime === null) return false; const current = await processStartTime(pid); return current !== null && Math.abs(current - startTime) > START_TIME_TOLERANCE }
+    if (Number.isInteger(pid) && pid > 0 && pidAlive(pid) && !(await reused())) runningPid = pid
+  } catch { runningPid = null }
+  if (runningPid !== null) return { alive: true, checked_at: checked, details: { state: 'alive', ...safe } }
+  if (runtimeStatusIsFresh(runtimeStatus, now)) return { alive: true, checked_at: checked, details: { state: 'alive', reason: 'cross_container_freshness', ...safe } }
+  const stoppedAge = ageSeconds(runtimeStatus, 'stopped', now)
+  if (stoppedAge !== null && stoppedAge > GATEWAY_FRESHNESS_THRESHOLD_S) return { alive: null, checked_at: checked, details: { state: 'unknown', reason: 'gateway_stale_stopped_state', ...safe } }
+  const runningAge = ageSeconds(runtimeStatus, 'running', now)
+  if (runningAge !== null && runningAge > GATEWAY_FRESHNESS_THRESHOLD_S) return { alive: null, checked_at: checked, details: { state: 'unknown', reason: 'gateway_stale_running_state', ...safe } }
+  if (runtimeStatus) return { alive: false, checked_at: checked, details: { state: 'down', reason: 'gateway_not_running', ...safe } }
+  return { alive: null, checked_at: checked, details: { state: 'unknown', reason: 'gateway_not_configured' } }
+}
+
+/**
+ * TAL-953: the local gateway's in-flight work (messaging turns, cron jobs, API runs), which the Agent persists as
+ * `active_agents` at every turn boundary. Only a gateway `agentHealth` judges alive can block; a missing, stopped,
+ * or stale one has nothing to drain.
+ */
+export async function gatewayRestartBlockers(hermesHome: string, profileHome: string, now: number): Promise<RestartBlockers> {
+  const health = await localGatewayHealth(hermesHome, profileHome, now)
+  const agents = health.alive === true ? Number(dict(health.details).active_agents ?? 0) : 0
+  return { active_streams: 0, active_runs: agents, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: agents > 0 }
+}
+
 /** Python `build_agent_health_payload` + `gateway_chat_config_status`: remote probe (5 s single-flight cache) else local pid/state files. */
 export async function agentHealth(deps: AgentHealthDeps): Promise<Dict> {
   const { env } = deps
@@ -213,28 +250,7 @@ export async function agentHealth(deps: AgentHealthDeps): Promise<Dict> {
     }
     return { ...(await entry.inflight!), gateway_chat: gatewayChat }
   }
-  const rootPid = join(deps.hermesHome, 'gateway.pid')
-  const pidPath = existsSync(rootPid) ? rootPid : existsSync(join(deps.profileHome(), 'gateway.pid')) ? join(deps.profileHome(), 'gateway.pid') : rootPid
-  const statusPath = join(dirname(pidPath), 'gateway_state.json')
-  const runtimeStatus = readJsonFile(statusPath)
-  const safe = runtimeDetailSubset(runtimeStatus)
-  const checked = checkedAt()
-  let runningPid: number | null = null
-  try {
-    const { pid, startTime } = gatewayPid(readFileSync(pidPath, 'utf8'))
-    // Agent `_live_pid_from_record`: a start time known on both sides that disagrees means the pid was reused.
-    const reused = async (): Promise<boolean> => { if (startTime === null) return false; const current = await processStartTime(pid); return current !== null && Math.abs(current - startTime) > START_TIME_TOLERANCE }
-    if (Number.isInteger(pid) && pid > 0 && pidAlive(pid) && !(await reused())) runningPid = pid
-  } catch { runningPid = null }
-  const now = deps.now()
-  if (runningPid !== null) return { alive: true, checked_at: checked, details: { state: 'alive', ...safe }, gateway_chat: gatewayChat }
-  if (runtimeStatusIsFresh(runtimeStatus, now)) return { alive: true, checked_at: checked, details: { state: 'alive', reason: 'cross_container_freshness', ...safe }, gateway_chat: gatewayChat }
-  const stoppedAge = ageSeconds(runtimeStatus, 'stopped', now)
-  if (stoppedAge !== null && stoppedAge > GATEWAY_FRESHNESS_THRESHOLD_S) return { alive: null, checked_at: checked, details: { state: 'unknown', reason: 'gateway_stale_stopped_state', ...safe }, gateway_chat: gatewayChat }
-  const runningAge = ageSeconds(runtimeStatus, 'running', now)
-  if (runningAge !== null && runningAge > GATEWAY_FRESHNESS_THRESHOLD_S) return { alive: null, checked_at: checked, details: { state: 'unknown', reason: 'gateway_stale_running_state', ...safe }, gateway_chat: gatewayChat }
-  if (runtimeStatus) return { alive: false, checked_at: checked, details: { state: 'down', reason: 'gateway_not_running', ...safe }, gateway_chat: gatewayChat }
-  return { alive: null, checked_at: checked, details: { state: 'unknown', reason: 'gateway_not_configured' }, gateway_chat: gatewayChat }
+  return { ...(await localGatewayHealth(deps.hermesHome, deps.profileHome(), deps.now())), gateway_chat: gatewayChat }
 }
 
 const PLATFORM_LABELS: Record<string, string> = { telegram: 'Telegram', discord: 'Discord', slack: 'Slack', email: 'Email', web: 'Web', api: 'API' }

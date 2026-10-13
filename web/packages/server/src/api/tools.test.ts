@@ -724,16 +724,38 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     }
   })
 
-  it('keeps an Agent stash conflict\'s recovery instructions on the succeeded notification', async () => {
+  it('TAL-953: an Agent update waits for the busy gateway, reuses the wait, and Restart now ends it with the stash note kept', async () => {
     const originalApply = s.deps.updates.apply.bind(s.deps.updates)
     const message = 'agent updated to v2.0.0. Your local modifications could not be re-applied cleanly and were set aside in the git stash.'
-    s.deps.updates.apply = () => Promise.resolve({ ok: true, target: 'agent', stash_conflict: true, message })
+    s.deps.updates.apply = () => Promise.resolve({ ok: true, target: 'agent', stash_conflict: true, message, restart_scheduled: true, gateway_restart: 'waiting_for_idle' })
+    let restarts = 0
+    sidecar.respond('gateway.restart', () => { restarts += 1; return { status: 'completed', message: 'ok' } })
+    writeFileSync(join(s.state, 'gateway.pid'), JSON.stringify({ pid: process.pid }))
+    writeFileSync(join(s.state, 'gateway_state.json'), JSON.stringify({ gateway_state: 'running', active_agents: 2, updated_at: new Date().toISOString() }))
+    const row = async (id: unknown) => ((await json(await s.get('/api/update-notifications'))).notifications as Json[]).find((entry) => entry.id === id)
+    const until = async (check: () => Promise<boolean>) => { for (let i = 0; i < 100 && !(await check()); i += 1) await new Promise((resolve) => setTimeout(resolve, 20)) }
     try {
-      const result = await json(await post(s, '/api/updates/apply', { target: 'agent' }))
-      const listed = await json(await s.get('/api/update-notifications'))
-      expect((listed.notifications as Json[]).find((row) => row.id === result.notification_id)).toMatchObject({ phase: 'succeeded', detail: message })
+      const result = await json(await post(s, '/api/updates/apply', { target: 'agent', tab_id: 'tab-gateway' }))
+      expect(result).toMatchObject({ ok: true, gateway_restart: 'waiting_for_idle' })
+      await until(async () => (await row(result.notification_id))?.message !== 'Waiting for running gateway tasks to finish before restarting the gateway.')
+      expect(await row(result.notification_id)).toMatchObject({
+        phase: 'waiting_for_idle', detail: message, can_dismiss: false,
+        message: 'Waiting for 2 running gateway tasks to finish before restarting the gateway.',
+        actions: [{ id: 'restart_gateway_now', label: 'Restart now', style: 'destructive', acknowledges: false }],
+      })
+      expect((await post(s, `/api/update-notifications/${String(result.notification_id)}/dismiss`, { dismiss: true })).status).toBe(409)
+      const again = await json(await post(s, '/api/updates/apply', { target: 'agent', tab_id: 'tab-gateway' }))
+      expect(again.notification_id).toBe(result.notification_id)
+      expect((await json(await s.get('/api/update-notifications?tab_id=tab-gateway'))).tab_update).toMatchObject({ id: result.notification_id })
+      expect(restarts).toBe(0)
+      expect((await post(s, `/api/update-notifications/${String(result.notification_id)}/actions/restart_gateway_now`, { perform: true })).status).toBe(200)
+      await until(async () => (await row(result.notification_id))?.phase === 'succeeded')
+      expect(await row(result.notification_id)).toMatchObject({ phase: 'succeeded', detail: message, actions: [] })
+      expect(restarts).toBe(1)
     } finally {
       s.deps.updates.apply = originalApply
+      rmSync(join(s.state, 'gateway.pid'), { force: true })
+      rmSync(join(s.state, 'gateway_state.json'), { force: true })
     }
   })
 
