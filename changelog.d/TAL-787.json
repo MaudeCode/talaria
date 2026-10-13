@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Provider plugins running in isolated hosts now show their names, setup status, and models.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
