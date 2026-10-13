@@ -103,7 +103,7 @@ describe('public projections strip internal replay fields', () => {
 
   it('alias-named keys inside message content survive while session tool_calls are scrubbed', () => {
     const out = redactSessionData({ session_id: 'x', messages: [message], tool_calls: [{ name: 't', api_content: 'gone', _state_db_row_id: 1 }] }, false)
-    expect(((out.messages as Json[])[0]!.content as Json).api_content).toBe('nested stays')
+    expect((out.messages as Json[])[0]!.content).toBe(JSON.stringify(message.content))
     expect((out.tool_calls as Json[])[0]).not.toHaveProperty('api_content')
   })
 

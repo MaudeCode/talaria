@@ -100,3 +100,14 @@ the Agent writes it. The decode rules and the sentinel handling for `NaN` /
 `Infinity` floats are covered by the state-db tests; writes (session start,
 usage, titles, deletion) go through the sidecar so the storage format stays
 Agent-owned.
+
+Content decoding removes exactly one JSON wrapper and accepts any parsed JSON
+value, including a literal string beginning with the reserved prefix. Malformed
+JSON keeps its raw text. Child goal extraction uses the Agent's decoder when
+available and the same rules locally for older Agents.
+The public message projection converts decoded objects, numbers, and booleans
+to JSON text before redaction, preserving credential-key context and the existing
+client message contract.
+If an integer anywhere in the payload exceeds JavaScript's safe range, the
+server preserves the payload as JSON text instead of rounding it. Ordinary
+multimodal arrays continue to decode as parts.

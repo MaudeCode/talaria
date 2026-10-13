@@ -2032,7 +2032,9 @@ function publicMessageProjection(message: unknown, enabled: boolean, activeTurnT
   for (const [key, value] of Object.entries(scrubbed as Record<string, unknown>)) {
     if (PUBLIC_MESSAGE_INTERNAL_FIELDS.has(key)) continue
     const userParts = key === 'content' && Array.isArray(value) && (scrubbed as Record<string, unknown>).role === 'user'
-    item[key] = userParts ? value.map((part) => redactUserContentPart(part, enabled)) : redactValue(value, enabled)
+    // Preserve the string/parts/null contract and redact JSON credential fields with their key context intact.
+    const publicValue = key === 'content' && value != null && typeof value !== 'string' && !Array.isArray(value) ? JSON.stringify(value) : value
+    item[key] = userParts ? value.map((part) => redactUserContentPart(part, enabled)) : redactValue(publicValue, enabled)
   }
   if (isActive) item._active_turn_user = true
   // Server-owned: a `_collapsible` the stored row carries never survives the projection's own decision.

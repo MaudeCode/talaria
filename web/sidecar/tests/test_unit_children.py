@@ -2,6 +2,13 @@
 
 from __future__ import annotations
 
+import json
+import sys
+from types import SimpleNamespace
+from unittest.mock import Mock
+
+import pytest
+
 from talaria_sidecar.methods.process import unit_children
 
 UNIT = {"delegation_id": "call-1-2", "goals": ["Write tests", "Run tests"], "dispatched_at": 100.0, "completed_at": None}
@@ -50,3 +57,29 @@ def test_an_image_tasks_stored_first_message_still_reads_as_its_goal() -> None:
     assert _goal_text('\x00json:[{"type": "text", "text": "Describe it"}, {"type": "image_url", "image_url": {"url": "data:image/png;base64,AA"}}]') == "Describe it"
     assert _goal_text("Plain goal") == "Plain goal"
     assert _goal_text(None) == ""
+
+
+@pytest.mark.parametrize("agent", ["absent", "legacy", "decoder"])
+@pytest.mark.parametrize("stored, expected", [
+    ("\x00json:" + json.dumps("\x00json:x"), "\x00json:x"),
+    ("\x00json:" + json.dumps("\x00json:[1,2]"), "\x00json:[1,2]"),
+    ('\x00json:[{"type":"text","text":"Describe it"}]', "Describe it"),
+    ("\x00json:broken", "\x00json:broken"),
+    ('\x00json:{"text":"not a goal"}', ""),
+    ("\x00json:null", ""),
+])
+def test_stored_goal_decodes_once(monkeypatch, agent, stored, expected) -> None:
+    from talaria_sidecar.methods.process import _goal_text
+
+    def decode(content):
+        try:
+            return json.loads(content[len("\x00json:"):])
+        except ValueError:
+            return content
+
+    decoder = Mock(side_effect=decode)
+    session_db = SimpleNamespace(_decode_content=decoder) if agent == "decoder" else SimpleNamespace()
+    monkeypatch.setitem(sys.modules, "hermes_state", None if agent == "absent" else SimpleNamespace(SessionDB=session_db))
+    assert _goal_text(stored) == expected
+    if agent == "decoder":
+        decoder.assert_called_once_with(stored)
