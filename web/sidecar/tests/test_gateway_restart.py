@@ -32,6 +32,7 @@ class _Ctx:
 @pytest.fixture(autouse=True)
 def _agent_names_profiles(tmp_path, monkeypatch) -> None:
     """In-process tests run without the Agent: stand in its profile helpers for a root at ``tmp_path/.hermes``."""
+    _agent_profiles(monkeypatch, tmp_path / ".hermes")
 
 
 def _script(tmp_path, body: str) -> str:
