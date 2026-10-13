@@ -2,13 +2,21 @@ import SwiftUI
 import TalariaKit
 
 struct ComposerToolsetsSheet: View {
-    let loadCatalog: () async throws -> ToolsetsCatalog
+    let loadCatalog: () async throws -> ToolsetsCatalog?
     let onSave: ([String]?) async -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var catalog: ToolsetsCatalog?
     @State private var draft: [String]?
     @State private var loadFailed = false
+    @State private var legacyEditor = false
+    @State private var legacyInput: String
+
+    init(toolsets: SessionToolsets = SessionToolsets(names: nil), loadCatalog: @escaping () async throws -> ToolsetsCatalog?, onSave: @escaping ([String]?) async -> Void) {
+        self.loadCatalog = loadCatalog
+        self.onSave = onSave
+        _legacyInput = State(initialValue: toolsets.names?.joined(separator: ", ") ?? "")
+    }
 
     var body: some View {
         NavigationStack {
@@ -35,8 +43,18 @@ struct ComposerToolsetsSheet: View {
                             .accessibilityIdentifier("toolset-\(item.name)")
                         }
                     }
+                } else if legacyEditor {
                     Section {
-                        Button("Use profile defaults") { save(nil) }
+                        TextField("tool1, tool2, …", text: $legacyInput)
+                            .font(.body.monospaced())
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .submitLabel(.done)
+                            .onSubmit { save(SessionToolsets.names(fromInput: legacyInput)) }
+                            .accessibilityLabel("Session toolsets")
+                            .accessibilityIdentifier("legacy-toolsets")
+                    } footer: {
+                        Text("Comma-separated toolset names; empty restores the profile default.")
                     }
                 } else if loadFailed {
                     Section {
@@ -45,6 +63,11 @@ struct ComposerToolsetsSheet: View {
                     }
                 } else {
                     ProgressView("Loading toolsets…")
+                }
+                if catalog != nil || legacyEditor {
+                    Section {
+                        Button("Use profile defaults") { save(nil) }
+                    }
                 }
             }
             .navigationTitle("Session toolsets")
@@ -55,10 +78,13 @@ struct ComposerToolsetsSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        guard let catalog else { return }
-                        save(draft ?? (catalog.usingDefaults == true ? nil : catalog.selectedToolsets))
+                        if legacyEditor {
+                            save(SessionToolsets.names(fromInput: legacyInput))
+                        } else if let catalog {
+                            save(draft ?? (catalog.usingDefaults == true ? nil : catalog.selectedToolsets))
+                        }
                     }
-                    .disabled(catalog == nil || (draft ?? catalog?.selectedToolsets ?? []).isEmpty)
+                    .disabled(!legacyEditor && (catalog == nil || (draft ?? catalog?.selectedToolsets ?? []).isEmpty))
                 }
             }
             .task { await load() }
@@ -67,8 +93,11 @@ struct ComposerToolsetsSheet: View {
 
     private func load() async {
         loadFailed = false
-        do { catalog = try await loadCatalog() }
-        catch { loadFailed = true }
+        legacyEditor = false
+        do {
+            catalog = try await loadCatalog()
+            legacyEditor = catalog == nil
+        } catch { loadFailed = true }
     }
 
     private func save(_ names: [String]?) {

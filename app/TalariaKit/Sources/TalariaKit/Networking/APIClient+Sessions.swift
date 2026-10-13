@@ -228,8 +228,14 @@ extension APIClient {
         )
     }
 
-    public func fetchToolsetsCatalog(sessionID: String, toolsets: [String]?) async throws -> ToolsetsCatalog {
-        try await send(endpoint: .toolsetsCatalog, method: "POST", body: SessionToolsetsRequest(sessionId: sessionID, toolsets: toolsets))
+    /// Nil means an older Web server lacks the catalog endpoint. Other failures remain errors.
+    public func fetchToolsetsCatalog(sessionID: String, toolsets: [String]?) async throws -> ToolsetsCatalog? {
+        do {
+            let catalog: ToolsetsCatalog = try await send(endpoint: .toolsetsCatalog, method: "POST", body: SessionToolsetsRequest(sessionId: sessionID, toolsets: toolsets))
+            return catalog
+        } catch APIError.http(let statusCode, let body) where statusCode == 404 && !APIError.isVanishedSession(statusCode: statusCode, body: body) {
+            return nil
+        }
     }
 
     /// Sets the session's toolset override; nil restores the profile's defaults (TAL-631).

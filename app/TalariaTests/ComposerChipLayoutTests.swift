@@ -51,7 +51,37 @@ final class ComposerChipLayoutTests: XCTestCase {
 }
 
 @MainActor
-final class ComposerToolsetsHostedTests: XCTestCase {
+final class ComposerToolsetsHostedTests: APIClientTestCase {
+    func testOlderServerKeepsTheToolsetEditorAndProfileDefaultAction() async throws {
+        let client = makeClient { request in
+            apiTestJSONResponse(#"{"error":"not found"}"#, statusCode: 404, for: request)
+        }
+        var restored = false
+        let window = try hostWindow(ComposerToolsetsSheet(
+            loadCatalog: { try await client.fetchToolsetsCatalog(sessionID: "session-abc", toolsets: nil) },
+            onSave: { names in XCTAssertNil(names); restored = true }
+        ))
+        let editor = await awaitElement(in: window) { HostedAccessibility.identifier(of: $0) == "legacy-toolsets" }
+        XCTAssertNotNil(editor, "An older server must retain editable session toolsets")
+        let defaults = try await requireElement(in: window, label: "Use profile defaults")
+        HostedAccessibility.activate(defaults)
+        await drainMainActor()
+        XCTAssertTrue(restored)
+    }
+
+    func testLegacyPickerPreservesSavedNames() async throws {
+        var saved: [String]?
+        let window = try hostWindow(ComposerToolsetsSheet(
+            toolsets: SessionToolsets(names: ["file"]), loadCatalog: { nil },
+            onSave: { saved = $0 }
+        ))
+        let editor = await awaitElement(in: window) { HostedAccessibility.identifier(of: $0) == "legacy-toolsets" }
+        XCTAssertEqual(try XCTUnwrap(editor).accessibilityValue, "file")
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Save"))
+        await drainMainActor()
+        XCTAssertEqual(saved, ["file"])
+    }
+
     func testToolsetPicker() async throws {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase

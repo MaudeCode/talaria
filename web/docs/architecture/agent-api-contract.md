@@ -137,7 +137,9 @@ Older Agents without these helpers retain the legacy list and lookup shapes.
 visibility checking. The `toolsets` body is the current draft or null for profile defaults. Clients
 render `available`, `selected`, `unavailable_reason`, `selected_toolsets`, and `using_defaults`.
 Unknown saved names remain visible as unavailable; an empty checklist cannot implicitly restore
-broader defaults. Restoring defaults is an explicit action.
+broader defaults. Restoring defaults is an explicit action. The native app retains its previous
+free-text editor only when an older Web server returns endpoint-not-found for the catalog.
+Session-not-found, authentication, transport, server, and decoding failures retain the error state.
 
 Both chat and manual compression forward the profile's parsed `agent.disabled_toolsets` to
 `AIAgent`. The cached chat Agent identity includes this policy so changing it replaces the Agent

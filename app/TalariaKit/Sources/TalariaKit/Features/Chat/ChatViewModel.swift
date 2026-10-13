@@ -4766,7 +4766,7 @@ public final class ChatViewModel {
         await pendingActionCoordinator.disableApprovalBypassForCurrentSession()
     }
 
-    public func loadToolsetsCatalog() async throws -> ToolsetsCatalog {
+    public func loadToolsetsCatalog() async throws -> ToolsetsCatalog? {
         guard let sessionID else { throw URLError(.badURL) }
         return try await client.fetchToolsetsCatalog(sessionID: sessionID, toolsets: sessionToolsets?.names)
     }

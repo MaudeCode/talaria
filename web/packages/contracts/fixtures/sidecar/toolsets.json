@@ -45,9 +45,9 @@
           {
             "name": "catalog",
             "description": "Desktop catalog plugin/skill install requests through the approval card (GUI sessions only)",
-            "available": true,
+            "available": false,
             "selected": false,
-            "unavailable_reason": null
+            "unavailable_reason": "unavailable"
           },
           {
             "name": "clarify",
@@ -367,9 +367,9 @@
           {
             "name": "setup",
             "description": "Onboarding-only surface for the setup profile: question and picker cards",
-            "available": true,
+            "available": false,
             "selected": false,
-            "unavailable_reason": null
+            "unavailable_reason": "unavailable"
           },
           {
             "name": "skills",
@@ -388,9 +388,9 @@
           {
             "name": "start_chat",
             "description": "Start a new visible desktop chat that runs a task in a chosen profile",
-            "available": true,
+            "available": false,
             "selected": false,
-            "unavailable_reason": null
+            "unavailable_reason": "unavailable"
           },
           {
             "name": "terminal",
