@@ -4,9 +4,10 @@ This is the comprehensive Docker reference. For a 5-minute quickstart, see the [
 
 Talaria's multi-container files use the tested Agent image digest from
 [`sidecar/agent_dependency.json`](../sidecar/agent_dependency.json), shared by the gateway
-and dashboard. Keep that file alongside the Compose files when copying a setup.
-Updating an existing source volume still requires the source-volume procedure
-below; changing an image does not replace files already stored in a named volume.
+and dashboard. When copying a multi-container setup, also include
+`docker-compose.agent-source.yml`, `docker_agent_entrypoint.bash`, and the pin file
+at its relative path. Agent startup refreshes the shared source volume from the
+image before WebUI starts; user state stays in the separate `hermes-home` volume.
 
 Published images carry the same release metadata as `/health` in the
 `dev.talaria.provenance` label. The build rejects a label that differs from its
@@ -410,25 +411,34 @@ minor needs an image with that interpreter installed under `/opt/uv/python`.
 
 ## Upgrading the agent container
 
-The `hermes-agent-src` named volume is initialised from the agent image's `/opt/hermes` on first `up`. Docker reuses the volume verbatim on every subsequent `up` — **even after `docker pull` of a newer agent image**. The cached volume content masks the new image's source tree, so pulling a newer agent image does not by itself give you the new agent code, dependencies, or entrypoint.
+The Agent runs from the image's `/opt/hermes`. Its shared startup wrapper copies
+that tree into `hermes-agent-src` when the image revision differs from the volume's
+completion marker, including upgrades from volumes created by older Compose files.
+It reads `install-stamp.json`, or the embedded OCI revision in `.hermes_build_sha`
+on older supported images. The marker is written only after the copy succeeds;
+an interrupted copy is retried, and an unchanged revision reuses the existing copy.
+WebUI waits for source readiness and mounts the result read-only.
 
-To upgrade the agent image cleanly, drop the source volume before recreating:
+Stop the stack before upgrading so an existing WebUI cannot read the cache during
+replacement. Pull and recreate it with the updated Compose files and Agent pin:
 
 ```bash
 # Two-container setup
 docker compose -f docker-compose.two-container.yml down
-docker volume rm <project>_hermes-agent-src
 docker compose -f docker-compose.two-container.yml pull
 docker compose -f docker-compose.two-container.yml up -d
 
 # Three-container setup
 docker compose -f docker-compose.three-container.yml down
-docker volume rm <project>_hermes-agent-src
 docker compose -f docker-compose.three-container.yml pull
 docker compose -f docker-compose.three-container.yml up -d
 ```
 
-Replace `<project>` with your Compose project name (the parent directory by default; check with `docker volume ls`). The `hermes-home` volume (config, sessions, state) is left untouched — only `hermes-agent-src` (the agent's source) is recreated; the staged copy and venv under `/app` are rebuilt on the next container recreation.
+Keep the same Compose project name to reuse the existing volumes. Do not pass
+`--volumes` to `down`. The source cache refreshes automatically; `hermes-home`
+retains config, sessions, and state. Local edits inside the source cache are
+discarded on a revision change. WebUI rebuilds its staged copy and virtual
+environment under `/app` when its container is recreated.
 
 > The single-container setup (`docker-compose.yml`) does not use `hermes-agent-src` and is not affected by this upgrade pattern — pulling a newer WebUI image and `docker compose up -d --force-recreate` is sufficient.
 

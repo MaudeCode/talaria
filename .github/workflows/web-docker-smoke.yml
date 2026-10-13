@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        variant: [single, two-container, three-container, auto-uid, explicit-uid]
+        variant: [single, two-container, three-container, auto-uid, explicit-uid, agent-upgrade]
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/docker-plugins

@@ -1,0 +1,16 @@
+# Shared startup contract for the two- and three-container Agent services.
+services:
+  hermes-agent:
+    extends:
+      file: sidecar/agent_dependency.json
+      service: hermes-agent
+    entrypoint: ["/bin/bash", "/usr/local/lib/talaria/docker_agent_entrypoint.bash"]
+    volumes:
+      - hermes-agent-src:/var/lib/talaria/hermes-agent-src
+      - ./docker_agent_entrypoint.bash:/usr/local/lib/talaria/docker_agent_entrypoint.bash:ro
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/talaria-agent-source-ready"]
+      interval: 2s
+      timeout: 2s
+      start_period: 5m
+      retries: 3
