@@ -677,7 +677,12 @@ async function agentTarget(path: string, git: GitRun, channel: Channel): Promise
   }
 }
 
-export interface AgentUpdatePolicy { supportedRevision: string; supportedVersion: string; confirmedRevision?: string }
+export interface AgentUpdatePolicy {
+  supportedRevision: string
+  supportedVersion: string
+  confirmedRevision?: string
+  beforeMutation?: (path: string, revision: string) => Promise<void>
+}
 export interface AgentUpdateOptions { agentChannel?: Channel | undefined; confirmedRevision?: string | undefined }
 function agentWarning(info: Dict, policy: AgentUpdatePolicy): Dict {
   return { candidate_revision: info.latest_sha, supported_revision: policy.supportedRevision, supported_version: policy.supportedVersion,
@@ -711,6 +716,15 @@ export async function checkAgentUpdate(path: string | null, git: GitRun, channel
   catch (error) { return { name: 'agent', channel, behind: null, error: (error as Error).message } }
 }
 
+/** Both update paths establish durable repair intent after confirmation and before touching source. */
+async function prepareAgentMutation(path: string, info: Dict, policy?: AgentUpdatePolicy): Promise<Dict | null> {
+  const warning = confirmAgent(info, policy)
+  if (warning) return warning
+  try { await policy?.beforeMutation?.(path, str(info.latest_sha)) }
+  catch (error) { return { ok: false, target: 'agent', message: `Agent update could not prepare dependency sync: ${sanitizeGitDiagnostic((error as Error).message)}` } }
+  return null
+}
+
 /** Fetch, confirm the immutable Agent target, stash, fast-forward, and restore the stash. */
 export async function applyAgentUpdate(path: string | null, git: GitRun, channel: Channel = DEFAULT_CHANNEL, policy?: AgentUpdatePolicy): Promise<Dict> {
   if (!path || !existsSync(join(path, '.git'))) return { ok: false, message: 'Not a git repository' }
@@ -727,7 +741,7 @@ export async function applyAgentUpdate(path: string | null, git: GitRun, channel
     return { ok: true, up_to_date: true, target: 'agent', message: 'Agent is up to date.', ...verified }
   }
   if (info.manual_update || info.error) return { ...info, ok: false, message: info.message ?? info.error }
-  const warning = confirmAgent(info, policy)
+  const warning = await prepareAgentMutation(path, info, policy)
   if (warning) return warning
   const ref = str(info.branch)
   const revision = str(info.latest_sha)
@@ -840,7 +854,7 @@ export async function forceAgentUpdate(path: string | null, git: GitRun, log: (l
   if ((await headContainsRef(path, revision, git)) && !(await canFastForwardTo(path, revision, git))) {
     return { ok: false, message: `agent is already ahead of the ${channel} channel (${ref}); refusing to rewind the checkout. Switching to a slower channel keeps your current version until that channel catches up.`, target: 'agent', channel, refused_rewind: true }
   }
-  const warning = confirmAgent(info, policy)
+  const warning = await prepareAgentMutation(path, info, policy)
   if (warning) return warning
   await git(['checkout', '.'], path)
   const cleaned = await git(['clean', '-fd'], path)
@@ -1009,22 +1023,39 @@ function agentSyncMarker(path: string | null, stateDir: string | undefined): str
   return path && stateDir ? join(stateDir, 'agent-dependency-sync', createHash('sha256').update(resolve(path)).digest('hex')) : null
 }
 
-/** Older Agents have no PM sync entry point. Newer ones must finish it before restart. */
-async function syncAgentDependencies(path: string | null, sync: UpdateServiceDeps['agentSync'], stateDir: string | undefined): Promise<GitOutcome | null> {
-  if (!path || !existsSync(join(path, 'hermes_cli', 'venv_sync.py'))) return null
+async function agentHasDependencySync(path: string, revision: string, git: GitRun): Promise<boolean> {
+  if (!SHA.test(revision)) throw new Error('Agent revision is unverified.')
+  const module = await git(['ls-tree', '--name-only', revision, '--', 'hermes_cli/venv_sync.py'], path)
+  if (!module.ok) throw new Error('Could not inspect the target Agent dependency-sync entry point.')
+  return module.out !== ''
+}
+
+function recordPendingAgentSync(path: string, stateDir: string | undefined): void {
   const marker = agentSyncMarker(path, stateDir)
-  if (!marker) return { ok: false, out: 'Web state directory is unavailable; cannot record pending dependency sync.' }
+  if (!marker) throw new Error('Web state directory is unavailable; cannot record pending dependency sync.')
+  if (existsSync(marker)) return
+  mkdirSync(dirname(marker), { recursive: true })
+  atomicWriteText(marker, 'pending\n')
+}
+
+/** Older Agents have no PM sync entry point. Newer ones must finish it before restart. */
+async function syncAgentDependencies(path: string | null, revision: string, sync: UpdateServiceDeps['agentSync'], stateDir: string | undefined, git: GitRun): Promise<GitOutcome | null> {
+  const marker = agentSyncMarker(path, stateDir)
   try {
-    mkdirSync(dirname(marker), { recursive: true })
-    atomicWriteText(marker, 'pending\n')
-  } catch (error) { return { ok: false, out: `Could not record pending dependency sync: ${sanitizeGitDiagnostic((error as Error).message)}` } }
+    if (!path) throw new Error('Agent checkout is unavailable.')
+    if (!await agentHasDependencySync(path, revision, git)) {
+      if (marker) rmSync(marker, { force: true })
+      return null
+    }
+    recordPendingAgentSync(path, stateDir)
+  } catch (error) { return { ok: false, out: sanitizeGitDiagnostic((error as Error).message) } }
   let result: GitOutcome
   try {
     if (!sync) throw new Error('Agent dependency-sync RPC is unavailable.')
     const response = await sync(path)
-    result = { ok: response.ok, out: sanitizeGitDiagnostic(response.detail) }
+    result = { ok: response.ok && !response.skipped, out: sanitizeGitDiagnostic(response.skipped ? 'The installed Agent is missing its required dependency-sync entry point.' : response.detail) }
   } catch (error) { return { ok: false, out: sanitizeGitDiagnostic((error as Error).message) } }
-  if (result.ok) {
+  if (result.ok && marker) {
     try { rmSync(marker, { force: true }) } catch (error) { return { ok: false, out: `Could not clear pending dependency sync: ${sanitizeGitDiagnostic((error as Error).message)}` } }
   }
   return result
@@ -1098,7 +1129,12 @@ export class UpdateService {
   private agentChannel(): Channel { return this.deps.agentChannel?.() ?? DEFAULT_CHANNEL }
   private agentPolicy(confirmedRevision?: string): AgentUpdatePolicy {
     const supported = dict(this.deps.identity.release().compatibleAgent)
-    return { supportedRevision: str(supported.sourceRevision), supportedVersion: str(supported.version), ...(confirmedRevision ? { confirmedRevision } : {}) }
+    return {
+      supportedRevision: str(supported.sourceRevision), supportedVersion: str(supported.version), ...(confirmedRevision ? { confirmedRevision } : {}),
+      beforeMutation: async (path, revision) => {
+        if (await agentHasDependencySync(path, revision, this.git)) recordPendingAgentSync(path, this.deps.stateDir)
+      },
+    }
   }
 
   /** Python `cached_update_status`: no network, no git mutations. */
@@ -1135,7 +1171,7 @@ export class UpdateService {
         const agentDir = this.deps.agentDir()
         const agent = includeAgent ? this.keepLastGood('agent', agentChannel, await checkAgentUpdate(agentDir, this.git, agentChannel)) : ignoredAgent()
         const marker = agentSyncMarker(agentDir, this.deps.stateDir)
-        if (includeAgent && marker && existsSync(marker) && agentDir && existsSync(join(agentDir, 'hermes_cli', 'venv_sync.py'))) {
+        if (includeAgent && marker && existsSync(marker)) {
           Object.assign(agent, { metadata_repair: true, message: 'Agent dependency sync is incomplete. Apply the update again to finish it.' })
         }
         if (agent.latest_sha) Object.assign(agent, agentWarning(agent, this.agentPolicy()))
@@ -1269,7 +1305,7 @@ export class UpdateService {
   private async finishAgent(result: Dict, path: string | null): Promise<Dict> {
     this.cache.checked_at = 0
     // A failed sync leaves Git advanced: an explicit retry still owes the sync and restart.
-    const synced = await syncAgentDependencies(path, this.deps.agentSync, this.deps.stateDir)
+    const synced = await syncAgentDependencies(path, str(result.verified_revision), this.deps.agentSync, this.deps.stateDir, this.git)
     if (synced && !synced.ok) return { ...result, ok: false, up_to_date: false, message: `Agent source updated, but dependency sync failed: ${synced.out}` }
     if (!synced && result.up_to_date) return result
     const [ok, gateway] = await this.restartGateway()

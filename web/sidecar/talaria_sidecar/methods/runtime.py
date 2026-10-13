@@ -7,6 +7,8 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
+import time
 from pathlib import Path
 
 from .. import SIDECAR_RPC_VERSION
@@ -30,23 +32,42 @@ def register(registry) -> None:
         env = _frozen_launch_env()
         env.update(HERMES_HOME=str(runtime.hermes_home), HERMES_DISABLE_LAZY_INSTALLS="1",
                    PYTHONPATH=str(root) + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else ""))
-        try:
-            result = subprocess.run(
-                [sys.executable, "-m", "hermes_cli.venv_sync", "--project-root", str(root), "--json"],
-                cwd=root, env=env, capture_output=True, text=True, timeout=300,
-            )
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            return {"ok": False, "skipped": False, "detail": str(exc)}
-        if result.returncode != 0:
-            return {"ok": False, "skipped": False, "detail": (result.stderr or result.stdout or "Agent dependency sync failed.")[-4000:]}
-        try:
-            response = json.loads(result.stdout)
-            if not isinstance(response, dict):
-                raise ValueError("not an object")
-        except ValueError:
-            return {"ok": False, "skipped": False, "detail": "Agent dependency sync returned an invalid result."}
-        return {"ok": response.get("ok") is True, "skipped": False,
-                "detail": str(response.get("detail") or "")[-4000:]}
+        # The supervisor's stdin is a lifetime lease: closing it also covers a killed sidecar.
+        with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
+            try:
+                proc = subprocess.Popen(
+                    [sys.executable, str(Path(__file__).parents[1] / "dependency_sync.py"), str(root)],
+                    cwd=root, env=env, stdin=subprocess.PIPE, stdout=stdout, stderr=stderr,
+                )
+            except OSError as exc:
+                return {"ok": False, "skipped": False, "detail": str(exc)}
+            deadline = time.monotonic() + 300
+            try:
+                while proc.poll() is None:
+                    ctx.check_cancelled()
+                    if time.monotonic() >= deadline:
+                        return {"ok": False, "skipped": False, "detail": "Agent dependency sync timed out."}
+                    ctx.cancel_event.wait(0.05)
+            finally:
+                proc.stdin.close()
+                proc.wait()  # The supervisor terminates and reaps its writer before releasing the lock.
+            stdout.seek(0)
+            output = stdout.read(4 * 1024 * 1024 + 1)
+            stderr.seek(0, os.SEEK_END)
+            stderr.seek(max(0, stderr.tell() - 4000))
+            diagnostic = stderr.read().decode("utf-8", errors="replace")
+            if proc.returncode != 0:
+                return {"ok": False, "skipped": False, "detail": diagnostic or output[-4000:].decode("utf-8", errors="replace") or "Agent dependency sync failed."}
+            try:
+                if len(output) > 4 * 1024 * 1024:
+                    raise ValueError("sync output exceeds limit")
+                response = json.loads(output)
+                if not isinstance(response, dict):
+                    raise ValueError("not an object")
+            except ValueError:
+                return {"ok": False, "skipped": False, "detail": "Agent dependency sync returned an invalid result."}
+            return {"ok": response.get("ok") is True, "skipped": False,
+                    "detail": str(response.get("detail") or "")[-4000:]}
 
     @registry.method("runtime.handshake", requires_agent=False)
     def handshake(ctx: CallContext, params: dict) -> dict:

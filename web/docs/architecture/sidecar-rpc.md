@@ -20,6 +20,11 @@ in a subprocess on that sidecar's interpreter and launch environment. It remains
 available when Agent imports fail or the loaded revision is stale, since those
 are the states an explicit update must repair. The server owns the durable
 pending-sync marker and restart ordering; it never launches Agent sync itself.
+The sync supervisor holds an OS lock per launch home and checkout until its
+writer exits. Its stdin pipe belongs to the sidecar: cancellation, shutdown, or
+the sidecar being killed closes that pipe, so the supervisor stops the
+writer's process tree and reaps the writer before releasing the lock. A concurrent repair fails
+without starting another writer.
 
 ## Ownership
 
