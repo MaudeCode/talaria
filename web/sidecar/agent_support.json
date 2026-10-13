@@ -2,13 +2,6 @@
   "schemaVersion": 1,
   "releases": [
     {
-      "releaseTag": "v2026.9.21",
-      "version": "0.21.4",
-      "sourceRevision": "d337b736aa1e8ebecfab043842d13e4a2d2f48a3",
-      "image": "docker.io/nousresearch/hermes-agent@sha256:6bece0644e29a347e5ae17db43c36938c86f171c6f5e0cef18aa2075d331f3a3",
-      "validatedBy": "TAL-349"
-    },
-    {
       "releaseTag": "v2026.9.24",
       "version": "0.21.5",
       "sourceRevision": "f97608f178d1ffeca59860195ab7da295f7c8e5f",
@@ -21,6 +14,13 @@
       "sourceRevision": "818c13be1dc4fd28987e1e881a9408224afd4535",
       "image": "docker.io/nousresearch/hermes-agent@sha256:9774f4f39a9bb8c2f68ce728ed5e99ddbad282163be56764afacf88ed952b784",
       "validatedBy": "TAL-755"
+    },
+    {
+      "releaseTag": "v0.21.7",
+      "version": "0.21.7",
+      "sourceRevision": "71d34bad1045610252eda02ee79549436896e784",
+      "image": "docker.io/nousresearch/hermes-agent@sha256:444b42594e7f467425872fc35e077a227d377f0fe0726bc818706d62175fad8b",
+      "validatedBy": "TAL-938"
     }
   ]
 }
