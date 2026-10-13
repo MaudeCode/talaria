@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "An archived Kanban board no longer opens from a stale tab or link, and it can no longer be archived a second time.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

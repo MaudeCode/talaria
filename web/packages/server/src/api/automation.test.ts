@@ -478,9 +478,9 @@ describe('crons, kanban, extensions, terminal', () => {
     sidecar.respond('kanban.stats', () => ({ by_status: { done: 2, blocked: 1, triage: 3, zeta: 1 }, by_assignee: {} }))
     expect(await json(await s.get('/api/kanban/stats'))).toMatchObject({ total: 7, status_counts: [{ status: 'triage', count: 3 }, { status: 'blocked', count: 1 }, { status: 'done', count: 2 }, { status: 'zeta', count: 1 }] })
 
-    // Every board says whether it can be removed; the default board cannot.
-    sidecar.respond('kanban.boards', () => ({ boards: [{ slug: 'default', name: 'Default', is_current: true, counts: {}, total: 0 }, { slug: 'ops', name: 'Ops', is_current: false, counts: {}, total: 0 }], current: 'default', read_only: false }))
-    expect(((await json(await s.get('/api/kanban/boards'))).boards as Json[]).map((b) => [b.slug, b.removable])).toEqual([['default', false], ['ops', true]])
+    // Every board says whether it can be removed; the default board and an archived one (TAL-795) cannot.
+    sidecar.respond('kanban.boards', () => ({ boards: [{ slug: 'default', name: 'Default', is_current: true, counts: {}, total: 0 }, { slug: 'ops', name: 'Ops', is_current: false, counts: {}, total: 0 }, { slug: 'old', name: 'Old', archived: true, is_current: false, counts: {}, total: 0 }], current: 'default', read_only: false }))
+    expect(((await json(await s.get('/api/kanban/boards?include_archived=1'))).boards as Json[]).map((b) => [b.slug, b.removable])).toEqual([['default', false], ['ops', true], ['old', false]])
 
     // A board created with only a name gets its slug from the server.
     sidecar.respond('kanban.create_board', (params) => ({ board: { slug: String((params.board_spec as Json).slug) }, current: 'x', read_only: false }))
