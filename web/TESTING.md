@@ -60,3 +60,8 @@ run Playwright against the built assets and the Node server started by `e2e/serv
 - Agent-backed flows that need a provider (real chat, TTS, STT, quotas): run against isolated state
   (`HERMES_HOME=/tmp/talaria-home HERMES_WEBUI_STATE_DIR=/tmp/talaria-state talaria-web --foreground`).
 - Docker: `python3 scripts/check-docker.py single` needs a Docker daemon.
+  The two- and three-container variants also import the staged Agent and send a
+  Web API chat through the sidecar to a loopback stub provider. Use
+  `python3 scripts/check-docker.py two-container --agent-release v2026.9.24`
+  to check an older release from `sidecar/agent_support.json`. The Python selector's
+  isolated unit checks run with `python3 scripts/lib/test_agent_python.py` from `web/`.
