@@ -734,9 +734,21 @@ export const SystemHealthSchema = z.looseObject({
 export const UpdateStateSchema = z.enum(['up_to_date', 'release_ready', 'commits_behind', 'local_changes', 'finish', 'manual', 'check_failed', 'off', 'unknown'])
 export type UpdateState = z.infer<typeof UpdateStateSchema>
 const AgentSupportSchema = z.enum(['supported', 'unchecked'])
+export const UpdateVersionSchema = z.object({
+  version: z.string().describe('The release as shown: the Agent tag or the Web release tag.'),
+  ref: z.string().describe('What `updates.apply`/`updates.force` accept back as `version`: the Agent tag or the Web semver.'),
+  sha: z.string().optional().describe('Agent only: the commit the tag peels to.'),
+  release_url: z.string().nullable(),
+  latest: z.boolean().describe('The channel\'s newest release, the one an update without `version` installs.'),
+  folded: z.boolean().describe('Shown behind the folded "more versions" node: every entry except the newest.'),
+  support: AgentSupportSchema.optional().describe('Agent only: this release\'s classification against the verified Agent window.'),
+  support_label: z.string().optional().describe('Agent only: `support` worded to fit one phone line.'),
+}).describe('TAL-946: one installable Stable release newer than the installed one.')
+export type UpdateVersion = z.infer<typeof UpdateVersionSchema>
 export const UpdateTargetSchema = z.looseObject({ name: z.string().optional(), channel: z.enum(['stable', 'experimental']).optional(),
   unsupported: z.boolean().optional().describe('Deprecated (TAL-350): `support === \'unchecked\'`, kept for older clients.'),
   support: AgentSupportSchema.optional().describe('Agent target only (TAL-350): `supported` when the target revision is exactly a release in the verified Agent window, else `unchecked`; an `unchecked` apply requires `confirmed_agent_revision`.'),
+  support_label: z.string().optional().describe('Agent target only (TAL-946): `support` worded to fit one phone line.'),
   current_support: AgentSupportSchema.optional().describe('Agent target only: the same classification for the installed Agent revision.'),
   supported_revision: z.string().optional(), supported_version: z.string().optional(), candidate_revision: z.string().optional(), behind: z.number().nullable().optional(), current_sha: z.string().nullable().optional(), latest_sha: z.string().nullable().optional(), compare_url: z.string().optional(), repo_url: z.string().optional(), error: z.string().optional(), ok: z.boolean().optional(), manual_update: z.boolean().optional(), no_git: z.boolean().optional(), install_kind: z.literal('npm').optional(), npm: z.string().optional(), channel_switch: z.boolean().optional(), dirty: z.boolean().optional(), metadata_repair: z.boolean().optional(), release_url: z.string().optional(), ignored: z.boolean().optional(), stale_check: z.boolean().optional(), current_version: z.string().optional(),
   state: UpdateStateSchema.describe('TAL-559: the status clients word; `off` when checks are disabled or Agent updates are ignored.'),
@@ -745,6 +757,8 @@ export const UpdateTargetSchema = z.looseObject({ name: z.string().optional(), c
   manual_link: z.boolean().describe('Show the manual-install (releases) link.'),
   target_version: z.string().nullable().describe('The version the update path leads to, when one is shown.'),
   summary_available: z.boolean().describe('TAL-759: offer "Summarize with AI" for this target (`release_ready` or `commits_behind`).'),
+  versions: z.array(UpdateVersionSchema).describe('TAL-946: every installable Stable release newer than the installed one, newest first; empty unless `release_ready` can apply.'),
+  folded_count: z.number().int().nonnegative().describe('How many `versions` are `folded`.'),
 })
 export const UpdatesCheckSchema = z.looseObject({ disabled: z.boolean().optional(), cached: z.boolean().optional(), channel: z.string().optional(), agent_channel: z.enum(['stable', 'experimental']).optional(), checked_at: z.number().optional(), include_agent: z.boolean().optional(), webui: UpdateTargetSchema.nullable().optional(), agent: UpdateTargetSchema.nullable().optional() })
 export const UpdatesSummarySchema = z.object({

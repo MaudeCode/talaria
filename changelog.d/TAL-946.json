@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "System settings lists every newer Stable Talaria Web and Hermes Agent release, so you can install one between yours and the newest; each Agent release shows whether it is supported.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

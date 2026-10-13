@@ -2302,9 +2302,25 @@
 	"system_local_changes_named": "Local changes block {name} updates",
 	"system_finish_named": "Finish applying this {name} release",
 	"system_manual_named": "{name} is updated manually",
-	"system_release_ready": "{name} {version} is available",
+	"system_release_ready": "{name} update available",
 	"system_installed_unverified": "The installed release could not be verified.",
 	"system_summarize_with_ai": "Summarize with AI",
+	"system_install": "Install",
+	"system_install_version": "Install {version}",
+	"system_more_versions": [
+		{
+			"declarations": [
+				"input n"
+			],
+			"selectors": [
+				"n"
+			],
+			"match": {
+				"n=1": "1 more version",
+				"n=*": "{n} more versions"
+			}
+		}
+	],
 	"system_summary_title": "What's new in {name}",
 	"system_whats_new_loading": "Summarizing what's new…",
 	"system_whats_new_failed": "Couldn't summarize what's new.",

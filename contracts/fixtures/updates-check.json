@@ -1,0 +1,106 @@
+{
+  "cached": true,
+  "checked_at": 1791900000,
+  "channel": "stable",
+  "agent_channel": "stable",
+  "include_agent": true,
+  "webui": {
+    "name": "webui",
+    "channel": "stable",
+    "repo_url": "https://github.com/MaudeCode/talaria",
+    "current_version": "web-v1.16.0",
+    "behind": 3,
+    "no_git": true,
+    "latest_version": "web-v1.19.0",
+    "latest_sha": "cccccccccccccccccccccccccccccccccccccccc",
+    "branch": "web-v1.19.0",
+    "release_based": true,
+    "release_url": "https://github.com/MaudeCode/talaria/releases/tag/release-set-cccccccccccccccccccccccccccccccccccccccc",
+    "image": "ghcr.io/maudecode/talaria-web@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "current_sha": "ffffffffffffffffffffffffffffffffffffffff",
+    "install_kind": "npm",
+    "npm": "@maudecode/talaria-web@1.19.0",
+    "manual_update": false,
+    "message": "Stable npm update 1.19.0 is available.",
+    "versions": [
+      {
+        "version": "web-v1.19.0",
+        "ref": "1.19.0",
+        "release_url": "https://github.com/MaudeCode/talaria/releases/tag/release-set-cccccccccccccccccccccccccccccccccccccccc",
+        "latest": true,
+        "folded": false
+      },
+      {
+        "version": "web-v1.18.0",
+        "ref": "1.18.0",
+        "release_url": "https://github.com/MaudeCode/talaria/releases/tag/release-set-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "latest": false,
+        "folded": true
+      },
+      {
+        "version": "web-v1.17.0",
+        "ref": "1.17.0",
+        "release_url": "https://github.com/MaudeCode/talaria/releases/tag/release-set-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "latest": false,
+        "folded": true
+      }
+    ],
+    "state": "release_ready",
+    "can_apply": true,
+    "folded_count": 2,
+    "installed_unverified": false,
+    "manual_link": false,
+    "target_version": "web-v1.19.0",
+    "summary_available": true
+  },
+  "agent": {
+    "name": "agent",
+    "channel": "stable",
+    "branch": "v0.21.7",
+    "current_sha": "f97608f178d1ffeca59860195ab7da295f7c8e5f",
+    "latest_sha": "7777777777777777777777777777777777777777",
+    "current_version": "v2026.9.24",
+    "latest_version": "v0.21.7",
+    "behind": 42,
+    "release_based": true,
+    "repo_url": "https://github.com/NousResearch/hermes-agent",
+    "compare_url": "https://github.com/NousResearch/hermes-agent/compare/f97608f178d1ffeca59860195ab7da295f7c8e5f...7777777777777777777777777777777777777777",
+    "dirty": false,
+    "candidate_revision": "7777777777777777777777777777777777777777",
+    "supported_revision": "818c13be1dc4fd28987e1e881a9408224afd4535",
+    "supported_version": "0.21.6",
+    "support": "unchecked",
+    "support_label": "Not tested with this Talaria",
+    "current_support": "supported",
+    "unsupported": true,
+    "versions": [
+      {
+        "version": "v0.21.7",
+        "ref": "v0.21.7",
+        "sha": "7777777777777777777777777777777777777777",
+        "release_url": "https://github.com/NousResearch/hermes-agent/releases/tag/v0.21.7",
+        "support": "unchecked",
+        "support_label": "Not tested with this Talaria",
+        "latest": true,
+        "folded": false
+      },
+      {
+        "version": "v0.21.6",
+        "ref": "v0.21.6",
+        "sha": "818c13be1dc4fd28987e1e881a9408224afd4535",
+        "release_url": "https://github.com/NousResearch/hermes-agent/releases/tag/v0.21.6",
+        "support": "supported",
+        "support_label": "Supported",
+        "latest": false,
+        "folded": true
+      }
+    ],
+    "state": "release_ready",
+    "can_apply": true,
+    "folded_count": 1,
+    "installed_unverified": false,
+    "manual_link": false,
+    "target_version": "v0.21.7",
+    "summary_available": true
+  }
+}

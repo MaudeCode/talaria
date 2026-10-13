@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -31,7 +33,7 @@ import { UpdatesCheckSchema, type UpdateTargetSchema } from '../../contracts'
 import type { z } from 'zod'
 
 /** A server-decided update target (TAL-559): the raw check fields plus the server's state and apply availability. */
-const target = (state: z.infer<typeof UpdateTargetSchema>['state'], fields: Record<string, unknown> = {}) => ({ can_apply: false, installed_unverified: false, manual_link: false, target_version: null, summary_available: false, ...fields, state })
+const target = (state: z.infer<typeof UpdateTargetSchema>['state'], fields: Record<string, unknown> = {}) => ({ can_apply: false, installed_unverified: false, manual_link: false, target_version: null, summary_available: false, versions: [], folded_count: 0, ...fields, state })
 const current = target('up_to_date', { behind: 0 })
 const behind = (n: number) => target('commits_behind', { behind: n, can_apply: true, summary_available: true })
 
@@ -51,7 +53,9 @@ describe('SystemSection "Check now"', () => {
   it('does not label a Web release count as commits', async () => {
     vi.mocked(api.fetchUpdatesCheck).mockResolvedValue(UpdatesCheckSchema.parse({ webui: target('release_ready', { behind: 1, release_based: true, current_version: 'web-v1.2.3', latest_version: 'web-v1.3.0', can_apply: true, target_version: 'web-v1.3.0' }), agent: current }))
     renderSystem()
-    expect(await screen.findByText('Talaria Web web-v1.3.0 is available')).toBeInTheDocument()
+    expect(await screen.findByText('Talaria Web update available')).toBeInTheDocument()
+    // The node names the version once; the status line does not repeat it (TAL-946).
+    expect(screen.getAllByText(/web-v1\.3\.0/)).toHaveLength(1)
     expect(screen.queryByText(/1 commits behind/)).not.toBeInTheDocument()
   })
 
@@ -178,7 +182,7 @@ describe('SystemSection "Check now"', () => {
     })
     renderSystem()
     await userEvent.click(await screen.findByRole('button', { name: /^update web$/i }))
-    await waitFor(() => expect(api.applyUpdates).toHaveBeenCalledWith('apply', 'experimental', 'webui'))
+    await waitFor(() => expect(api.applyUpdates).toHaveBeenCalledWith('apply', 'experimental', 'webui', {}))
     await screen.findByText('Talaria Web is up to date')
     await userEvent.click(screen.getByRole('button', { name: /update agent/i }))
     await waitFor(() => expect(api.applyUpdates).toHaveBeenLastCalledWith('apply', undefined, 'agent', { agent_channel: 'stable' }))
@@ -195,7 +199,7 @@ describe('SystemSection "Check now"', () => {
     })
     renderSystem()
     await userEvent.click(await screen.findByRole('button', { name: /finish update/i }))
-    await waitFor(() => expect(api.applyUpdates).toHaveBeenCalledWith('apply', 'experimental', 'webui'))
+    await waitFor(() => expect(api.applyUpdates).toHaveBeenCalledWith('apply', 'experimental', 'webui', {}))
     await screen.findByText('Talaria Web is up to date')
     expect(screen.queryByRole('button', { name: /finish update/i })).not.toBeInTheDocument()
   })
@@ -273,7 +277,7 @@ describe('SystemSection "Check now"', () => {
     await userEvent.click(screen.getByRole('button', { name: /^check web and agent now$/i }))
     await waitFor(() => expect(api.checkUpdatesNow).toHaveBeenCalledWith('experimental', 'stable'))
     await userEvent.click(await screen.findByRole('button', { name: /^update web$/i }))
-    await waitFor(() => expect(api.applyUpdates).toHaveBeenCalledWith('apply', 'experimental', 'webui'))
+    await waitFor(() => expect(api.applyUpdates).toHaveBeenCalledWith('apply', 'experimental', 'webui', {}))
   })
 
   it('persists the opt-in automatic Web update switch', async () => {
@@ -292,7 +296,7 @@ describe('SystemSection "Check now"', () => {
     vi.mocked(api.applyUpdates).mockResolvedValue({ ok: true, restart_scheduled: true })
     renderSystem()
     await userEvent.click(await screen.findByRole('button', { name: /^update web$/i }))
-    await waitFor(() => expect(api.applyUpdates).toHaveBeenCalledWith('apply', 'stable', 'webui'))
+    await waitFor(() => expect(api.applyUpdates).toHaveBeenCalledWith('apply', 'stable', 'webui', {}))
   })
 
   it('keeps Experimental up to date when newer repository commits do not affect Web', async () => {
@@ -327,14 +331,15 @@ describe('SystemSection update paths', () => {
     renderSystem()
     await screen.findByRole('button', { name: /update agent/i })
     expect(screen.queryByText(/commits? behind/i)).not.toBeInTheDocument()
-    expect(screen.getByText('Hermes Agent v2026.10.1 is available')).toBeInTheDocument()
+    expect(screen.getByText('Hermes Agent update available')).toBeInTheDocument()
+    expect(screen.getByText('v2026.10.1')).toBeInTheDocument()
   })
 
   it('says when the installed Stable release cannot be verified', async () => {
     vi.mocked(api.fetchUpdatesCheck).mockResolvedValue(UpdatesCheckSchema.parse({ webui: current, agent: target('release_ready', { behind: 12, release_based: true, current_version: 'abcdef012345', latest_version: 'v2026.10.1', can_apply: true, installed_unverified: true, target_version: 'v2026.10.1' }) }))
     renderSystem()
     const agent = await screen.findByRole('region', { name: 'Hermes Agent' })
-    expect(await within(agent).findByText('Hermes Agent v2026.10.1 is available')).toBeInTheDocument()
+    expect(await within(agent).findByText('Hermes Agent update available')).toBeInTheDocument()
     expect(within(agent).getByText('The installed release could not be verified.')).toBeInTheDocument()
   })
 
@@ -457,5 +462,72 @@ describe('SystemSection update paths', () => {
     renderSystem()
     await userEvent.click(await screen.findByRole('button', { name: 'About Automatically apply Web updates' }))
     expect(await screen.findByText(/Hermes Agent is never updated automatically/)).toBeVisible()
+  })
+})
+
+describe('SystemSection version list (TAL-946)', () => {
+  /** The shared fixture is the server's own view: Web 1.16.0 → 1.19.0 with two releases between, Agent v2026.9.24 → v0.21.7 with v0.21.6 between. */
+  const fixture = () => UpdatesCheckSchema.parse(JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../../contracts/fixtures/updates-check.json'), 'utf8')))
+  beforeEach(() => {
+    settingsState = { bot_name: 'Hermes', check_for_updates: true, update_channel: 'stable', agent_update_channel: 'stable' }
+    vi.mocked(api.applyUpdates).mockReset()
+    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue(fixture())
+  })
+  const path = async (name: string) => within(await screen.findByRole('region', { name }))
+
+  it('folds older releases behind one node and installs the chosen Agent version', async () => {
+    vi.mocked(api.applyUpdates).mockResolvedValue({ ok: true })
+    renderSystem()
+    const agent = await path('Hermes Agent')
+    const more = await agent.findByRole('button', { name: '1 more version' })
+    expect(more).toHaveAttribute('aria-expanded', 'false')
+    expect(agent.queryByText('v0.21.6')).not.toBeInTheDocument()
+    expect(agent.getByText('v0.21.7')).toBeInTheDocument()
+    expect(agent.getByText('Not tested with this Talaria')).toBeInTheDocument()
+    expect(agent.queryByText(/not officially supported/)).not.toBeInTheDocument()
+    await userEvent.click(more)
+    expect(more).toHaveAttribute('aria-expanded', 'true')
+    expect(agent.getByText('v0.21.6')).toBeInTheDocument()
+    expect(agent.getByText('Supported')).toBeInTheDocument()
+    await userEvent.click(agent.getByRole('button', { name: 'Install v0.21.6' }))
+    await waitFor(() => expect(api.applyUpdates).toHaveBeenCalledWith('apply', undefined, 'agent', { agent_channel: 'stable', version: 'v0.21.6' }))
+  })
+
+  it('lists every folded Web release oldest first and installs the chosen one', async () => {
+    vi.mocked(api.applyUpdates).mockResolvedValue({ ok: true })
+    renderSystem()
+    const web = await path('Talaria Web')
+    await userEvent.click(await web.findByRole('button', { name: '2 more versions' }))
+    const installs = web.getAllByRole('button', { name: /^Install / })
+    expect(installs.map((button) => button.getAttribute('aria-label'))).toEqual(['Install web-v1.17.0', 'Install web-v1.18.0'])
+    await userEvent.click(installs[1]!)
+    await waitFor(() => expect(api.applyUpdates).toHaveBeenCalledWith('apply', 'stable', 'webui', { version: '1.18.0' }))
+  })
+
+  it('confirms an unchecked intermediate Agent release and re-sends the same version', async () => {
+    const data = fixture()
+    data.agent!.versions[1] = { ...data.agent!.versions[1]!, support: 'unchecked', support_label: 'Not tested with this Talaria' }
+    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue(data)
+    vi.mocked(api.applyUpdates).mockResolvedValueOnce({ ok: false, confirmation_required: true, candidate_revision: '8'.repeat(40), supported_version: '0.21.5', supported_revision: 'a'.repeat(40), agent_channel: 'stable' }).mockResolvedValueOnce({ ok: true })
+    renderSystem()
+    const agent = await path('Hermes Agent')
+    await userEvent.click(await agent.findByRole('button', { name: '1 more version' }))
+    await userEvent.click(agent.getByRole('button', { name: 'Install v0.21.6' }))
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent('may cause issues')
+    await userEvent.click(screen.getByRole('button', { name: /update anyway/i }))
+    await waitFor(() => expect(api.applyUpdates).toHaveBeenLastCalledWith('apply', undefined, 'agent', { agent_channel: 'stable', confirmed_agent_revision: '8'.repeat(40), version: 'v0.21.6' }))
+  })
+
+  it('puts Update first and Summarize beside it in one row, only on the newest node', async () => {
+    renderSystem()
+    for (const [name, label] of [['Talaria Web', 'Update Web'], ['Hermes Agent', 'Update Agent']] as const) {
+      const region = await path(name)
+      const update = await region.findByRole('button', { name: label })
+      const row = update.parentElement!
+      expect(within(row).getAllByRole('button').map((button) => button.textContent)).toEqual([label, 'Summarize with AI'])
+      expect(getComputedStyle(row).display === 'flex' || row.className.includes('flex')).toBe(true)
+      await userEvent.click(region.getByRole('button', { name: /more version/ }))
+      expect(region.getAllByRole('button', { name: 'Summarize with AI' })).toHaveLength(1)
+    }
   })
 })
