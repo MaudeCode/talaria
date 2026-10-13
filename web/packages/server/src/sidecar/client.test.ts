@@ -173,7 +173,7 @@ describe.skipIf(!agentAvailable)('SidecarClient against the pinned Agent', () =>
     client = new SidecarClient({ python, agentDir, sidecarDir, hermesHome, log: () => undefined, backoffMs: [10] })
     await client.start()
     await client.call('runtime.shutdown', { exit_code: 3 })
-    await expect.poll(() => client.status, { timeout: 5_000 }).toBe('incompatible')
+    await expect.poll(() => client?.status, { timeout: 5_000 }).toBe('incompatible')
     await expect(client.call('rpc.methods', {})).rejects.toBeInstanceOf(SidecarError)
   })
 })
