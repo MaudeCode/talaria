@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The three-container Docker setup starts its dashboard with a username and password, which current Hermes Agent releases require.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
