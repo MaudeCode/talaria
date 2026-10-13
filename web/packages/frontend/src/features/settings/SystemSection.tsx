@@ -129,7 +129,8 @@ export function SystemSection() {
               <option value="experimental">{m.settings_update_channel_experimental()}</option>
             </Select>}
             action={canManage && agentUpdate?.can_apply ? <Button variant="primary" onClick={() => applyAgent.mutate({})} disabled={applyAgent.isPending}>{applyAgent.isPending ? m.update_updating() : m.system_apply_agent_update()}</Button> : null}
-            warning={agentUpdate?.can_apply && agentUpdate.unsupported === true ? m.system_agent_unsupported_warning() : null}
+            warning={agentUpdate?.can_apply && agentUpdate.support === 'unchecked' ? m.system_agent_unsupported_warning() : null}
+            installedNote={agentUpdate?.current_support === 'unchecked' ? m.system_agent_installed_unchecked() : null}
             summary={agentUpdate?.summary_available ? <UpdateSummary target="agent" name={AGENT} info={agentUpdate} /> : null}>
             <FieldRow label={m.settings_label_ignore_agent_updates()} hint={m.system_agent_manual_hint()} htmlFor="settingsIgnoreAgentUpdates" inline><Switch id="settingsIgnoreAgentUpdates" checked={bool('ignore_agent_updates')} onCheckedChange={(checked) => save.mutate({ ignore_agent_updates: checked }, { onError: fail, onSettled: () => { void qc.invalidateQueries({ queryKey: keys.updates.check }) } })} /></FieldRow>
           </UpdatePath>
@@ -270,8 +271,8 @@ function PathNode({ tone, children }: { tone: Tone | 'installed'; children: Reac
 }
 
 /** A component's update path: installed version, then where its channel leads, with its own controls underneath. */
-function UpdatePath({ id, title, installed, status, channel, action, warning, manualLink, summary, children }: {
-  id: string; title: string; installed: string; status: PathStatus; channel: ReactNode; action: ReactNode; warning?: string | null; manualLink?: unknown; summary?: ReactNode; children: ReactNode
+function UpdatePath({ id, title, installed, installedNote, status, channel, action, warning, manualLink, summary, children }: {
+  id: string; title: string; installed: string; installedNote?: string | null; status: PathStatus; channel: ReactNode; action: ReactNode; warning?: string | null; manualLink?: unknown; summary?: ReactNode; children: ReactNode
 }) {
   const next = status.tone !== 'ok'
   return (
@@ -284,6 +285,7 @@ function UpdatePath({ id, title, installed, status, channel, action, warning, ma
         <PathNode tone={next ? 'installed' : 'ok'}>
           <div className="text-[11px] text-muted">{m.system_path_installed()}</div>
           <div className="font-mono text-sm text-text break-all">{installed}</div>
+          {installedNote ? <p className="mt-1 text-xs text-warning">{installedNote}</p> : null}
           {!next ? <p role="status" className="mt-1 text-xs text-muted">{status.text}</p> : null}
         </PathNode>
         {next ? (

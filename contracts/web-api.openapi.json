@@ -51015,7 +51015,24 @@
                               "type": "string"
                             },
                             "unsupported": {
-                              "type": "boolean"
+                              "type": "boolean",
+                              "description": "Deprecated (TAL-350): `support === 'unchecked'`, kept for older clients."
+                            },
+                            "support": {
+                              "enum": [
+                                "supported",
+                                "unchecked"
+                              ],
+                              "type": "string",
+                              "description": "Agent target only (TAL-350): `supported` when the target revision is exactly a release in the verified Agent window, else `unchecked`; an `unchecked` apply requires `confirmed_agent_revision`."
+                            },
+                            "current_support": {
+                              "enum": [
+                                "supported",
+                                "unchecked"
+                              ],
+                              "type": "string",
+                              "description": "Agent target only: the same classification for the installed Agent revision."
                             },
                             "supported_revision": {
                               "type": "string"
@@ -51175,7 +51192,24 @@
                               "type": "string"
                             },
                             "unsupported": {
-                              "type": "boolean"
+                              "type": "boolean",
+                              "description": "Deprecated (TAL-350): `support === 'unchecked'`, kept for older clients."
+                            },
+                            "support": {
+                              "enum": [
+                                "supported",
+                                "unchecked"
+                              ],
+                              "type": "string",
+                              "description": "Agent target only (TAL-350): `supported` when the target revision is exactly a release in the verified Agent window, else `unchecked`; an `unchecked` apply requires `confirmed_agent_revision`."
+                            },
+                            "current_support": {
+                              "enum": [
+                                "supported",
+                                "unchecked"
+                              ],
+                              "type": "string",
+                              "description": "Agent target only: the same classification for the installed Agent revision."
                             },
                             "supported_revision": {
                               "type": "string"
@@ -51408,7 +51442,24 @@
                               "type": "string"
                             },
                             "unsupported": {
-                              "type": "boolean"
+                              "type": "boolean",
+                              "description": "Deprecated (TAL-350): `support === 'unchecked'`, kept for older clients."
+                            },
+                            "support": {
+                              "enum": [
+                                "supported",
+                                "unchecked"
+                              ],
+                              "type": "string",
+                              "description": "Agent target only (TAL-350): `supported` when the target revision is exactly a release in the verified Agent window, else `unchecked`; an `unchecked` apply requires `confirmed_agent_revision`."
+                            },
+                            "current_support": {
+                              "enum": [
+                                "supported",
+                                "unchecked"
+                              ],
+                              "type": "string",
+                              "description": "Agent target only: the same classification for the installed Agent revision."
                             },
                             "supported_revision": {
                               "type": "string"
@@ -51568,7 +51619,24 @@
                               "type": "string"
                             },
                             "unsupported": {
-                              "type": "boolean"
+                              "type": "boolean",
+                              "description": "Deprecated (TAL-350): `support === 'unchecked'`, kept for older clients."
+                            },
+                            "support": {
+                              "enum": [
+                                "supported",
+                                "unchecked"
+                              ],
+                              "type": "string",
+                              "description": "Agent target only (TAL-350): `supported` when the target revision is exactly a release in the verified Agent window, else `unchecked`; an `unchecked` apply requires `confirmed_agent_revision`."
+                            },
+                            "current_support": {
+                              "enum": [
+                                "supported",
+                                "unchecked"
+                              ],
+                              "type": "string",
+                              "description": "Agent target only: the same classification for the installed Agent revision."
                             },
                             "supported_revision": {
                               "type": "string"

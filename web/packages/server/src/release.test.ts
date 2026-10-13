@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { compatibleAgent, developmentInfo, loadReleaseInfo, validateReleaseInfo } from './release.js'
+import { compatibleAgent, developmentInfo, loadReleaseInfo, supportedAgents, validateReleaseInfo } from './release.js'
 import { WEB_ROOT } from './test/harness.js'
 import { readFileSync } from 'node:fs'
 
@@ -24,6 +24,13 @@ describe('release info', () => {
     expect(info.compatibleAgent.sourceRevision).toMatch(/^[a-f0-9]{40}$/)
     expect(info.compatibleAgent.image).toContain('hermes')
     expect(info.contracts.appWeb).toEqual([1])
+  })
+
+  it('reads the verified Agent window, which holds the pin', () => {
+    const window = supportedAgents(WEB_ROOT)
+    expect(window.length).toBeGreaterThan(0)
+    expect(window.map((agent) => agent.sourceRevision)).toContain(compatibleAgent(WEB_ROOT).sourceRevision)
+    expect(supportedAgents(join(WEB_ROOT, 'missing'))).toEqual([])
   })
 
   it('validates a stamp the way api/release_info.py does', () => {
