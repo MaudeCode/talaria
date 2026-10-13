@@ -102,6 +102,43 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     expect(existsSync(join(outside, 'victim-skill', 'SKILL.md'))).toBe(true)
   })
 
+  it('toggles a duplicate by its resolved load name, not a directory alias', async () => {
+    sidecar.respond('skills.find', () => ({ found: true, skill_dir: null, skill_md: null, load_name: 'a/one', declared_name: 'dup-demo' }))
+    configs.set(s.state, { ...configs.get(s.state), skills: { disabled: ['unrelated'], platform_disabled: { webui: [] } } })
+    writeFileSync(join(s.state, 'config.yaml'), '# duplicate fixture\n')
+    const response = await post(s, '/api/skills/toggle', { name: 'one', enabled: false })
+    expect(response.status).toBe(200)
+    expect(await json(response)).toEqual({ ok: true, name: 'a/one', enabled: false })
+    expect(configs.get(s.state)?.skills).toEqual({ disabled: ['unrelated', 'a/one'], platform_disabled: { webui: ['a/one'] } })
+  })
+
+  it('enables one copy of a legacy bare-name disable without enabling its sibling', async () => {
+    sidecar.respond('skills.find', () => ({ found: true, skill_dir: null, skill_md: null, load_name: 'a/one', declared_name: 'dup-demo', sibling_load_names: ['a/one', 'b/two'] }))
+    configs.set(s.state, { ...configs.get(s.state), skills: { disabled: ['unrelated', 'dup-demo'], platform_disabled: { webui: ['dup-demo'], telegram: ['dup-demo'] } } })
+    writeFileSync(join(s.state, 'config.yaml'), '# legacy duplicate disable\n')
+    const response = await post(s, '/api/skills/toggle', { name: 'a/one', enabled: true })
+    expect(response.status).toBe(200)
+    expect(configs.get(s.state)?.skills).toEqual({ disabled: ['unrelated', 'b/two'], platform_disabled: { webui: ['b/two'], telegram: ['dup-demo'] } })
+  })
+
+  it('saves and deletes an exact local duplicate path without touching its sibling', async () => {
+    for (const name of ['a/One', 'b/Two']) {
+      mkdirSync(join(s.state, 'skills', name), { recursive: true })
+      writeFileSync(join(s.state, 'skills', name, 'SKILL.md'), `---\nname: dup-demo\n---\n${name}`)
+    }
+    let response = await post(s, '/api/skills/save', { name: 'a/One', content: 'updated first copy' })
+    expect(response.status).toBe(200)
+    expect(readFileSync(join(s.state, 'skills/a/One/SKILL.md'), 'utf8')).toBe('updated first copy')
+    response = await post(s, '/api/skills/delete', { name: 'a/One' })
+    expect(response.status).toBe(200)
+    expect(existsSync(join(s.state, 'skills/a/One'))).toBe(false)
+    expect(readFileSync(join(s.state, 'skills/b/Two/SKILL.md'), 'utf8')).toContain('b/Two')
+    for (const name of ['/tmp/escape', 'a/../../escape']) {
+      expect((await post(s, '/api/skills/save', { name, content: 'bad' })).status).toBe(400)
+      expect((await post(s, '/api/skills/delete', { name })).status).toBe(400)
+    }
+  })
+
   it('reads and writes memory files, honours config flags, and reports project context', async () => {
     const ws = join(s.state, 'workspace')
     mkdirSync(ws, { recursive: true })

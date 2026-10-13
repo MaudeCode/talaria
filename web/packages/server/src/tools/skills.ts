@@ -23,7 +23,7 @@ export class SkillsService {
     return join(profileHome, 'skills')
   }
 
-  async list(profileHome: string, category: string | null): Promise<{ name: string; description: string; category: string | null; disabled: boolean }[]> {
+  async list(profileHome: string, category: string | null) {
     const result = await this.sidecar().call('skills.list', { profile_home: profileHome, category })
     return result.skills
   }
@@ -75,8 +75,7 @@ export class SkillsService {
   }
 
   save(profileHome: string, nameRaw: string, content: string, categoryRaw: string): { ok: true; name: string; path: string } {
-    const name = nameRaw.trim().toLowerCase().replaceAll(' ', '-')
-    if (!name || name.includes('/') || name.includes('..')) throw new HttpFailure(400, 'Invalid skill name')
+    const name = localSkillName(nameRaw)
     const category = categoryRaw.trim()
     if (category && (category.includes('/') || category.includes('..'))) throw new HttpFailure(400, 'Invalid category')
     mkdirSync(SkillsService.skillsDir(profileHome), { recursive: true })
@@ -100,10 +99,9 @@ export class SkillsService {
   }
 
   delete(profileHome: string, nameRaw: string): { ok: true; name: string } {
-    const name = nameRaw.trim().toLowerCase().replaceAll(' ', '-')
-    if (!name || name.includes('/') || name.includes('..')) throw new HttpFailure(400, 'Invalid skill name')
+    const name = localSkillName(nameRaw)
     const skillsDir = SkillsService.skillsDir(profileHome)
-    const match = walkSkillFiles(skillsDir).find((p) => relative(join(p, '..', '..'), join(p, '..')) === name)
+    const match = walkSkillFiles(skillsDir).find((p) => relative(name.includes('/') ? skillsDir : join(p, '..', '..'), join(p, '..')) === name)
     if (!match) throw new HttpFailure(404, 'Skill not found')
     // Delete through the anchored walk from the skills root so a symlinked root or category cannot redirect the removal.
     try { rmtreeAnchored(skillsDir, join(match, '..')) } catch { throw new HttpFailure(404, 'Skill not found') }
@@ -113,17 +111,33 @@ export class SkillsService {
   async toggle(profileHome: string, name: string, enabled: boolean): Promise<{ ok: true; name: string; enabled: boolean }> {
     const found = await this.sidecar().call('skills.find', { profile_home: profileHome, name })
     if (!found.found) throw new HttpFailure(404, `Skill '${name}' not found`)
+    name = found.load_name ?? name
+    const toggle = (raw: unknown): string[] => {
+      let names = normalizeNames(raw)
+      // Expand an older group-wide disable before enabling only the selected copy.
+      if (enabled && found.declared_name !== name && found.declared_name && names.includes(found.declared_name)) {
+        if (!found.sibling_load_names) throw new HttpFailure(409, 'Skill catalog changed; reload skills before enabling this copy')
+        names = [...new Set([...names.filter((n) => n !== found.declared_name), ...found.sibling_load_names])]
+      }
+      return toggleName(names, name, enabled)
+    }
     // Python `_active_profile_config_path`: skill toggles follow the profile's own config.yaml, never HERMES_CONFIG_PATH —
     // the sidecar reads the disabled set from the same file.
     await this.deps.config.update(profileHome, (c) => {
       const skills = dict(c.skills)
-      skills.disabled = toggleName(skills.disabled, name, enabled)
+      skills.disabled = toggle(skills.disabled)
       const platform = skills.platform_disabled
-      if (isDict(platform) && 'webui' in platform) platform.webui = toggleName(platform.webui, name, enabled)
+      if (isDict(platform) && 'webui' in platform) platform.webui = toggle(platform.webui)
       c.skills = skills
     }, { profileFile: true })
     return { ok: true, name, enabled }
   }
+}
+
+function localSkillName(raw: string): string {
+  const name = raw.includes('/') ? raw.trim() : raw.trim().toLowerCase().replaceAll(' ', '-')
+  if (name.includes('..') || name.includes('\\') || name.split('/').some((part) => !part || part === '.')) throw new HttpFailure(400, 'Invalid skill name')
+  return name
 }
 
 function normalizeNames(raw: unknown): string[] {

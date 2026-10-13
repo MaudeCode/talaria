@@ -138,7 +138,11 @@ export const PROFILES_METHODS = {
 } as const
 
 // ── skills ─────────────────────────────────────────────────────────────
-export const SkillRowSchema = z.object({ name: z.string(), description: z.string(), category: z.string().nullable(), disabled: z.boolean() })
+export const SkillCatalogIdentitySchema = z.object({
+  load_name: z.string().optional(), declared_name: z.string().optional(),
+  status: z.enum(['unique', 'ambiguous', 'shadowed']).optional(), tier: z.number().int().optional(),
+})
+export const SkillRowSchema = SkillCatalogIdentitySchema.extend({ name: z.string(), description: z.string(), category: z.string().nullable(), disabled: z.boolean() })
 export const SkillViewSchema = z.union([
   z.object({ success: z.literal(true), name: z.string(), description: z.string(), tags: z.array(z.string()), related_skills: z.array(z.string()), content: z.string(), path: z.string(), skill_dir: z.string().nullable(), linked_files: z.record(z.string(), z.array(z.string())) }),
   z.object({ success: z.literal(false), error: z.string(), available_skills: z.array(z.string()).optional(), available_skills_truncated: z.boolean().optional(), total_skills: z.number().int().optional(), hint: z.string().optional() }),
@@ -146,7 +150,7 @@ export const SkillViewSchema = z.union([
 export const SKILLS_METHODS = {
   'skills.list': { params: ProfileHomeParams.extend({ category: z.string().nullable().optional() }), result: z.object({ success: z.boolean().optional(), skills: z.array(SkillRowSchema), categories: z.array(z.string()), count: z.number().int(), message: z.string().optional() }) },
   'skills.view': { params: ProfileHomeParams.extend({ name: z.string().min(1) }), result: SkillViewSchema },
-  'skills.find': { params: ProfileHomeParams.extend({ name: z.string().min(1) }), result: z.object({ found: z.boolean(), skill_dir: z.string().nullable(), skill_md: z.string().nullable() }) },
+  'skills.find': { params: ProfileHomeParams.extend({ name: z.string().min(1) }), result: z.object({ found: z.boolean(), skill_dir: z.string().nullable(), skill_md: z.string().nullable(), load_name: z.string().optional(), declared_name: z.string().optional(), sibling_load_names: z.array(z.string()).optional() }) },
 } as const
 
 // ── mcp ────────────────────────────────────────────────────────────────

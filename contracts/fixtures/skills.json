@@ -1,0 +1,24 @@
+{
+  "skills": [
+    {
+      "name": "a/one",
+      "load_name": "a/one",
+      "declared_name": "dup-demo",
+      "status": "ambiguous",
+      "tier": 1,
+      "description": "First copy",
+      "category": "a",
+      "disabled": false
+    },
+    {
+      "name": "b/two",
+      "load_name": "b/two",
+      "declared_name": "dup-demo",
+      "status": "ambiguous",
+      "tier": 1,
+      "description": "Second copy",
+      "category": "b",
+      "disabled": false
+    }
+  ]
+}

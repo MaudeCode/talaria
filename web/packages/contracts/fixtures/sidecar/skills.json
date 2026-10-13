@@ -411,6 +411,41 @@
         ],
         "count": 4
       }
+    },
+    {
+      "params": {
+        "profile_home": "<profile>"
+      },
+      "result": {
+        "success": true,
+        "skills": [
+          {
+            "name": "a/one",
+            "load_name": "a/one",
+            "declared_name": "dup-demo",
+            "status": "ambiguous",
+            "tier": 1,
+            "description": "First copy",
+            "category": "a",
+            "disabled": false
+          },
+          {
+            "name": "b/two",
+            "load_name": "b/two",
+            "declared_name": "dup-demo",
+            "status": "ambiguous",
+            "tier": 1,
+            "description": "Second copy",
+            "category": "b",
+            "disabled": false
+          }
+        ],
+        "categories": [
+          "a",
+          "b"
+        ],
+        "count": 2
+      }
     }
   ],
   "skills.find": [
@@ -423,6 +458,23 @@
         "found": true,
         "skill_dir": "<profile>/skills/apple/apple-notes",
         "skill_md": "<profile>/skills/apple/apple-notes/SKILL.md"
+      }
+    },
+    {
+      "params": {
+        "profile_home": "<profile>",
+        "name": "a/one"
+      },
+      "result": {
+        "found": true,
+        "skill_dir": "<profile>/skills/a/one",
+        "skill_md": "<profile>/skills/a/one/SKILL.md",
+        "load_name": "a/one",
+        "declared_name": "dup-demo",
+        "sibling_load_names": [
+          "a/one",
+          "b/two"
+        ]
       }
     }
   ],
@@ -484,6 +536,23 @@
         "available_skills_truncated": true,
         "total_skills": 58,
         "hint": "Showing 20 of 58 skills. Use skills_list to see all available skills"
+      }
+    },
+    {
+      "params": {
+        "profile_home": "<profile>",
+        "name": "b/two"
+      },
+      "result": {
+        "success": true,
+        "name": "dup-demo",
+        "description": "Second copy",
+        "tags": [],
+        "related_skills": [],
+        "content": "---\nname: dup-demo\ndescription: Second copy\n---\nSecond copy\n",
+        "path": "two/SKILL.md",
+        "skill_dir": "<profile>/skills/b/two",
+        "linked_files": {}
       }
     }
   ]

@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Skills with duplicate names appear separately and can be enabled or disabled individually.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

@@ -47240,6 +47240,25 @@
                       "items": {
                         "type": "object",
                         "properties": {
+                          "load_name": {
+                            "type": "string"
+                          },
+                          "declared_name": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "enum": [
+                              "unique",
+                              "ambiguous",
+                              "shadowed"
+                            ],
+                            "type": "string"
+                          },
+                          "tier": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
                           "name": {
                             "type": "string"
                           },

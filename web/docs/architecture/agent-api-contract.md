@@ -111,3 +111,17 @@ client message contract.
 If an integer anywhere in the payload exceeds JavaScript's safe range, the
 server preserves the payload as JSON text instead of rounding it. Ordinary
 multimodal arrays continue to decode as parts.
+
+## Skill catalog identities
+
+On Agents with the resolved skill catalog, `skills.list` uses the Agent's search
+roots and precedence. Each loadable row's `name` and `load_name` are the same
+canonical identifier; `declared_name`, `status`, and `tier` retain the catalog
+metadata. Same-tier duplicates use exact relative paths, and shadowed or
+unloadable rows are omitted. Disabled rows remain visible for management.
+`skills.view` and `skills.find` use the Agent's lookup and reject ambiguous bare
+names. Inspection reads the file without executing skill preprocessing.
+Toggles persist the resolved identifier; enabling one copy expands an older
+bare-name disable into the other copies' identifiers, including hidden copies.
+Global and Web platform disables both contribute to the displayed state.
+Older Agents without these helpers retain the legacy list and lookup shapes.

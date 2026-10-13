@@ -6,7 +6,7 @@
  */
 import { z } from 'zod'
 import { SpeedTierSchema } from './speed.js'
-import { CanonicalBotChatSchema, GatewayModeSchema } from './sidecar/namespaces.js'
+import { CanonicalBotChatSchema, GatewayModeSchema, SkillCatalogIdentitySchema } from './sidecar/namespaces.js'
 
 export { SpeedTierSchema } from './speed.js'
 
@@ -657,7 +657,7 @@ export const GitInfoSchema = z.looseObject({ git: GitBadgeSchema.nullable().opti
 
 // ── tools ────────────────────────────────────────────────────────────────
 
-export const SkillSchema = z.looseObject({ name: z.string(), description: NullableString.optional(), category: NullableString.optional(), disabled: z.boolean().optional() })
+export const SkillSchema = z.looseObject({ ...SkillCatalogIdentitySchema.shape, name: z.string(), description: NullableString.optional(), category: NullableString.optional(), disabled: z.boolean().optional() })
 export const SkillsSchema = z.looseObject({ skills: z.array(SkillSchema), categories: z.array(Json).optional() })
 /**
  * `linked_files` groups the skill directory's files by folder (`references`, `templates`, ...); open one with `?file=`.
