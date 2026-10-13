@@ -49,6 +49,7 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
   afterAll(() => s.close())
 
   it('lists skills from the Agent, reads usage counters, and saves/toggles/deletes local skills', async () => {
+    sidecar.respond('skills.find', () => ({ found: false, skill_dir: null, skill_md: null }))
     sidecar.respond('skills.list', (params) => ({ success: true, skills: [{ name: 'alpha', description: 'A', category: params.category ?? null, disabled: false }, { name: 'beta', description: 'B', category: null, disabled: true }], categories: [], count: 2 }))
     let res = await s.get('/api/skills?category=tools')
     expect(res.status).toBe(200)
@@ -69,7 +70,7 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     expect(walkSkillFiles(join(s.state, 'skills'))).toEqual([join(s.state, 'skills', 'custom', 'my-skill', 'SKILL.md')])
     res = await post(s, '/api/skills/save', { name: '../escape', content: 'x' })
     expect(res.status).toBe(400)
-    sidecar.respond('skills.find', (params) => ({ found: params.name === 'my-skill', skill_dir: params.name === 'my-skill' ? join(s.state, 'skills', 'custom', 'my-skill') : null, skill_md: null }))
+    sidecar.respond('skills.find', (params) => ({ found: params.name === 'my-skill', skill_dir: params.name === 'my-skill' ? join(s.state, 'skills', 'custom', 'my-skill') : null, skill_md: params.name === 'my-skill' ? join(s.state, 'skills/custom/my-skill/SKILL.md') : null }))
     res = await post(s, '/api/skills/toggle', { name: 'my-skill', enabled: false })
     expect(await json(res)).toEqual({ ok: true, name: 'my-skill', enabled: false })
     expect((configs.get(s.state)?.skills as Json).disabled).toEqual(['my-skill'])
@@ -122,6 +123,7 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
   })
 
   it('saves and deletes an exact local duplicate path without touching its sibling', async () => {
+    sidecar.respond('skills.find', ({ name }) => ({ found: existsSync(join(s.state, 'skills', name, 'SKILL.md')), skill_dir: join(s.state, 'skills', name), skill_md: join(s.state, 'skills', name, 'SKILL.md') }))
     for (const name of ['a/One', 'b/Two']) {
       mkdirSync(join(s.state, 'skills', name), { recursive: true })
       writeFileSync(join(s.state, 'skills', name, 'SKILL.md'), `---\nname: dup-demo\n---\n${name}`)
@@ -137,6 +139,20 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
       expect((await post(s, '/api/skills/save', { name, content: 'bad' })).status).toBe(400)
       expect((await post(s, '/api/skills/delete', { name })).status).toBe(400)
     }
+  })
+
+  it('refuses to edit a selected project skill through a shadowed local copy', async () => {
+    const project = join(s.state, 'project/.agents/skills/shared/SKILL.md')
+    const local = join(s.state, 'skills/shared/SKILL.md')
+    mkdirSync(join(project, '..'), { recursive: true })
+    mkdirSync(join(local, '..'), { recursive: true })
+    writeFileSync(project, 'project content')
+    writeFileSync(local, 'shadowed local content')
+    sidecar.respond('skills.find', () => ({ found: true, skill_dir: join(project, '..'), skill_md: project }))
+    expect((await post(s, '/api/skills/save', { name: 'shared', content: 'incorrect edit' })).status).toBe(403)
+    expect((await post(s, '/api/skills/delete', { name: 'shared' })).status).toBe(403)
+    expect(readFileSync(project, 'utf8')).toBe('project content')
+    expect(readFileSync(local, 'utf8')).toBe('shadowed local content')
   })
 
   it('reads and writes memory files, honours config flags, and reports project context', async () => {

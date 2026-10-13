@@ -144,7 +144,7 @@ export const SkillCatalogIdentitySchema = z.object({
 })
 export const SkillRowSchema = SkillCatalogIdentitySchema.extend({ name: z.string(), description: z.string(), category: z.string().nullable(), disabled: z.boolean() })
 export const SkillViewSchema = z.union([
-  z.object({ success: z.literal(true), name: z.string(), description: z.string(), tags: z.array(z.string()), related_skills: z.array(z.string()), content: z.string(), path: z.string(), skill_dir: z.string().nullable(), linked_files: z.record(z.string(), z.array(z.string())) }),
+  z.object({ success: z.literal(true), name: z.string(), description: z.string(), tags: z.array(z.string()), related_skills: z.array(z.string()), content: z.string(), path: z.string(), skill_dir: z.string().nullable(), linked_files: z.record(z.string(), z.array(z.string())), editable: z.boolean().optional() }),
   z.object({ success: z.literal(false), error: z.string(), available_skills: z.array(z.string()).optional(), available_skills_truncated: z.boolean().optional(), total_skills: z.number().int().optional(), hint: z.string().optional() }),
 ])
 export const SKILLS_METHODS = {

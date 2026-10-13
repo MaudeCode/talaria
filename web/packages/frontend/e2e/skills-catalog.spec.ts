@@ -39,3 +39,17 @@ test('resolved duplicate skills render separately and send the selected identity
   await page.getByRole('button', { name: /b\/two/ }).click()
   await expect(page.getByLabel('Skill content')).toHaveValue('Second copy')
 })
+
+test('project skill content is read-only while its catalog row remains visible', async ({ page }, testInfo) => {
+  await page.route('**/api/skills', (route) => route.fulfill({ json: { skills: [{ name: 'project-skill', description: 'Trusted project instructions', category: null, disabled: false, tier: 0 }] } }))
+  await page.route('**/api/skills/usage', (route) => route.fulfill({ json: { usage: {} } }))
+  await page.route('**/api/skills/content?**', (route) => route.fulfill({ json: { success: true, name: 'project-skill', content: 'Project-owned instructions', editable: false, linked_files: {} } }))
+  await page.goto('/skills')
+  await settle(page)
+  await page.getByRole('button', { name: /project-skill/ }).click()
+  await expect(page.getByLabel('Skill content')).toHaveValue('Project-owned instructions')
+  await page.screenshot({ path: testInfo.outputPath('project-detail.png') })
+  await expect(page.getByLabel('Skill content')).toHaveAttribute('readonly', '')
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Delete', exact: true })).toHaveCount(0)
+})

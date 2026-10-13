@@ -124,4 +124,8 @@ names. Inspection reads the file without executing skill preprocessing.
 Toggles persist the resolved identifier; enabling one copy expands an older
 bare-name disable into the other copies' identifiers, including hidden copies.
 Global and Web platform disables both contribute to the displayed state.
+Skill content carries an `editable` capability: project, external, plugin, and
+legacy flat-file skills are read-only. Save and Delete resolve the selected
+local file through the same lookup and retain anchored filesystem protections;
+they never mutate a shadowed local copy in place of a project skill.
 Older Agents without these helpers retain the legacy list and lookup shapes.

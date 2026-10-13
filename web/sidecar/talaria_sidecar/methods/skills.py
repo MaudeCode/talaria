@@ -253,7 +253,10 @@ def view_skill(profile_home: Path, name: str) -> dict:
     except InvalidParams as exc:
         return {"success": False, "error": str(exc)}
     if skill_md:
-        return view_from_file(skill_dir, skill_md)
+        result = view_from_file(skill_dir, skill_md)
+        if result.get("success"):
+            result["editable"] = skill_md.name == "SKILL.md" and _within(skills_dir, skill_md)
+        return result
     if ":" in str(name or ""):
         try:
             from agent.skill_utils import is_valid_namespace, parse_qualified_name
@@ -266,7 +269,10 @@ def view_skill(profile_home: Path, name: str) -> dict:
                 pm = get_plugin_manager()
                 if pm.find_plugin_skill(name) is not None or pm.list_plugin_skills(namespace):
                     raw = skill_view(name)
-                    return json.loads(raw) if isinstance(raw, str) else raw
+                    result = json.loads(raw) if isinstance(raw, str) else raw
+                    if result.get("success"):
+                        result["editable"] = False
+                    return result
         except Exception:  # noqa: BLE001
             pass
     names = [s["name"] for s in list_skills(profile_home).get("skills", [])]

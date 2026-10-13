@@ -47409,6 +47409,9 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "editable": {
+                      "type": "boolean"
+                    },
                     "name": {
                       "type": "string"
                     },

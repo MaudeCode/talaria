@@ -74,13 +74,28 @@ export class SkillsService {
     } finally { closeSync(fd) }
   }
 
-  save(profileHome: string, nameRaw: string, content: string, categoryRaw: string): { ok: true; name: string; path: string } {
+  private async localSkillFile(profileHome: string, name: string): Promise<string | null> {
+    const found = await this.sidecar().call('skills.find', { profile_home: profileHome, name })
+    if (!found.found) return null
+    if (!found.skill_md || !found.skill_dir) throw new HttpFailure(400, 'This skill is read-only')
+    const file = resolve(found.skill_md)
+    const local = SkillsService.skillsDir(profileHome)
+    const resolvedRoot = resolvePathLikePython(local)
+    const root = [resolve(local), resolvedRoot].find((candidate) => file.startsWith(candidate + sep))
+    if (!root) throw new HttpFailure(403, 'Only local skills can be edited')
+    if (file !== join(resolve(found.skill_dir), 'SKILL.md')) throw new HttpFailure(400, 'This skill is read-only')
+    // Normalize the home alias only; keep nested symlinks for the anchored operation to reject.
+    return join(resolvedRoot, relative(root, file))
+  }
+
+  async save(profileHome: string, nameRaw: string, content: string, categoryRaw: string): Promise<{ ok: true; name: string; path: string }> {
     const name = localSkillName(nameRaw)
     const category = categoryRaw.trim()
     if (category && (category.includes('/') || category.includes('..'))) throw new HttpFailure(400, 'Invalid category')
+    const selected = await this.localSkillFile(profileHome, nameRaw.trim())
     mkdirSync(SkillsService.skillsDir(profileHome), { recursive: true })
     const skillsDir = resolvePathLikePython(SkillsService.skillsDir(profileHome))
-    const skillDir = resolve(category ? join(skillsDir, category, name) : join(skillsDir, name))
+    const skillDir = selected ? join(selected, '..') : resolve(category ? join(skillsDir, category, name) : join(skillsDir, name))
     if (!skillDir.startsWith(skillsDir + sep)) throw new HttpFailure(400, 'Invalid skill path')
     const file = join(skillDir, 'SKILL.md')
     // Anchored creation: a symlinked skill or category directory (or SKILL.md) is refused instead of written through.
@@ -98,10 +113,10 @@ export class SkillsService {
     return { ok: true, name, path: file }
   }
 
-  delete(profileHome: string, nameRaw: string): { ok: true; name: string } {
-    const name = localSkillName(nameRaw)
-    const skillsDir = SkillsService.skillsDir(profileHome)
-    const match = walkSkillFiles(skillsDir).find((p) => relative(name.includes('/') ? skillsDir : join(p, '..', '..'), join(p, '..')) === name)
+  async delete(profileHome: string, nameRaw: string): Promise<{ ok: true; name: string }> {
+    localSkillName(nameRaw)
+    const skillsDir = resolvePathLikePython(SkillsService.skillsDir(profileHome))
+    const match = await this.localSkillFile(profileHome, nameRaw.trim())
     if (!match) throw new HttpFailure(404, 'Skill not found')
     // Delete through the anchored walk from the skills root so a symlinked root or category cannot redirect the removal.
     try { rmtreeAnchored(skillsDir, join(match, '..')) } catch { throw new HttpFailure(404, 'Skill not found') }

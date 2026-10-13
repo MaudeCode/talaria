@@ -2363,6 +2363,9 @@
                 "type": "string"
               }
             }
+          },
+          "editable": {
+            "type": "boolean"
           }
         },
         "required": [

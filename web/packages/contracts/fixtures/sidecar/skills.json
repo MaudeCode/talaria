@@ -554,6 +554,24 @@
         "skill_dir": "<profile>/skills/b/two",
         "linked_files": {}
       }
+    },
+    {
+      "params": {
+        "profile_home": "<profile>",
+        "name": "shared"
+      },
+      "result": {
+        "success": true,
+        "name": "shared",
+        "description": "Project copy",
+        "tags": [],
+        "related_skills": [],
+        "content": "---\nname: shared\ndescription: Project copy\n---\nProject copy\n",
+        "path": "shared/SKILL.md",
+        "skill_dir": "/private<profile>/project/.agents/skills/shared",
+        "linked_files": {},
+        "editable": false
+      }
     }
   ]
 }

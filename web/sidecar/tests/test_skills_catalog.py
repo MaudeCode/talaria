@@ -50,6 +50,23 @@ with scoped_home(home):
     assert len(rows) == 1 and rows[0]["name"] == "dup-demo", rows
     assert rows[0]["status"] == "unique" and rows[0]["description"] == "first copy", rows
     assert "first copy" in view_skill(home, "dup-demo")["content"]
+    assert view_skill(home, "dup-demo")["editable"] is True
+
+    project = home / "project"
+    (project / ".git").mkdir(parents=True)
+    skill(project / ".agents/skills", "project-copy", "project copy")
+    (home / "config.yaml").write_text(f"skills:\n  trusted_project_dirs: [{project}]\n")
+    from agent.runtime_cwd import set_session_cwd, reset_session_cwd
+    token = set_session_cwd(str(project))
+    try:
+        skills_tool.clear_skills_cache()
+        rows = list_skills(home)["skills"]
+        assert len(rows) == 1 and rows[0]["tier"] == skill_utils.TIER_PROJECT, rows
+        detail = view_skill(home, "dup-demo")
+        assert "project copy" in detail["content"]
+        assert detail["editable"] is False, detail
+    finally:
+        reset_session_cwd(token)
 print("catalog-ok")
 '''
     result = subprocess.run(

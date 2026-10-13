@@ -92,12 +92,12 @@ function SkillDetail({ name, onBack }: { name: string; onBack: () => void }) {
           {content.data.path && <div className="font-mono text-[11px] text-muted">{content.data.path}</div>}
           <label className="flex flex-col gap-1 text-sm">
             <span>{m.skill_content_label()}</span>
-            <textarea value={text} onChange={(e) => setDraft(e.target.value)} rows={24} spellCheck={false} placeholder={m.skill_content_placeholder()} className="w-full rounded-md border border-border bg-code-bg p-3 font-mono text-[12.5px] text-pre-text" />
+            <textarea value={text} readOnly={content.data.editable === false} onChange={(e) => setDraft(e.target.value)} rows={24} spellCheck={false} placeholder={m.skill_content_placeholder()} className="w-full rounded-md border border-border bg-code-bg p-3 font-mono text-[12.5px] text-pre-text" />
           </label>
-          <div className="flex gap-2">
+          {content.data.editable !== false && <div className="flex gap-2">
             <Button variant="primary" disabled={draft === null || save.isPending} onClick={() => { if (draft !== null) save.mutate(draft) }}>{m.save()}</Button>
             <Button variant="ghost" className="text-error" onClick={() => setConfirm(true)}>{m.delete()}</Button>
-          </div>
+          </div>}
           {linked.length > 0 && (
             <section className="flex flex-col gap-2">
               <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted">{m.linked_files()}</h3>
