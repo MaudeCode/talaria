@@ -5,7 +5,6 @@ import { describe, expect, it } from 'vitest'
 import { bootTestServer } from '../test/harness.js'
 import { hydrateAnchorActivityScenes } from './anchor.js'
 import { messageIdentity, messageText, mergeDisplayMessagesAfterAgentResult, sanitizeMessagesForApi } from './merge.js'
-import { renderSessionHtml, renderSessionMarkdown } from './export.js'
 import { stateDbSessionMessages } from './state-db.js'
 import type { Message } from './session.js'
 
@@ -45,7 +44,10 @@ describe('recalled memory display (TAL-888)', () => {
       expect(liveUser.content).toEqual(savedUser.content)
       expect(messageText(savedUser.content)).toBe(typed)
       expect((savedUser.content as unknown[])[1]).toEqual(image)
-      for (const exported of [renderSessionMarkdown(reloaded), renderSessionHtml(reloaded)]) {
+      for (const format of ['html', 'markdown', 'json']) {
+        const download = await s.get(`/api/session/export?session_id=${session.session_id}&format=${format}`)
+        expect(download.status).toBe(200)
+        const exported = await download.text()
         expect(exported).toContain(typed)
         expect(exported).not.toContain('prefers metric')
         expect(exported).not.toContain('memory-context')

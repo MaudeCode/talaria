@@ -534,8 +534,8 @@ function sceneLookup(messages: unknown[], records: Record<string, unknown>) {
  * turn without one gets a built scene. The running turn (`activeTurnId`) gets none, because the live stream replays and
  * renders it, unless `runningScene` says its run has no journal to replay (TAL-374): its persisted rows then ship as an
  * open `running` scene that the live rows continue.
- * Every path that ships messages comes through here. User rows lose recalled-memory fences, and assistant rows
- * leave in their one display shape, after each scene is built from the stored rows.
+ * Before display excerpts are derived, user rows lose recalled-memory fences and assistant rows leave in their
+ * one display shape, after each scene is built from the stored rows.
  */
 export function hydrateAnchorActivityScenes(messages: unknown[], records: Record<string, unknown>, opts: { activeTurnId?: string | null; runningScene?: boolean; clipToolResults?: boolean } = {}): unknown[] {
   if (!messages.length) return messages
