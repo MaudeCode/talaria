@@ -163,6 +163,13 @@ close) ends its memory session with its transcript and releases its LLM clients
 under its profile, once no turn still holds it. Shutdown stops running turns
 and waits up to 4 s for those releases.
 
+Agent v0.21.6 clarify callbacks receive a normalized question list. The sidecar
+emits it in the existing batch frame, and the server returns a validated keyed
+answer envelope. The callback returns `answers` and `outcome` to the Agent:
+`submitted`, `cancelled`, or `timed_out`. Cancellation and timeout contain no
+fabricated answer. The two older supported Agent releases retain their legacy
+callback and result shapes until the support window drops them.
+
 Each turn agent holds a reference to its profile's `state.db` from the Agent's
 shared-handle registry (released with the agent), keyed by the Web session id,
 so the Agent writes each turn's rows there like any other surface. A new agent

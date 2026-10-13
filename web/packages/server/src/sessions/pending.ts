@@ -61,23 +61,39 @@ function clarifySteps(data: Record<string, unknown>): ClarifyStep[] {
 }
 
 /**
- * The reply string the parked Agent callback expects for keyed step answers: the batch envelope
- * (`clarify_tool._run_batch`) or the single answer (a JSON array for multi-select). Null when an answer
- * is missing, empty, keyed to an unknown step, or a list for a single-select step.
+ * The reply string the parked Agent callback expects: the batch envelope or the legacy single
+ * answer (a JSON array for multi-select). Raw client replies to batch frames use the same validator.
+ * Null when an answer is missing, empty, keyed to an unknown step, or a list for a single-select step.
  */
-export function clarifyReply(entry: Record<string, unknown>, answers: ClarifyAnswers): string | null {
+export function clarifyReply(entry: Record<string, unknown>, reply: string | ClarifyAnswers): string | null {
   const steps = entry.steps as ClarifyStep[]
+  let answers: Record<string, unknown>
+  if (typeof reply === 'string') {
+    // Older Agent single-question callbacks still expect the original raw reply.
+    if (!entry.questions) return reply
+    let parsed: unknown
+    try { parsed = JSON.parse(reply) } catch { parsed = undefined }
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && 'answers' in parsed) {
+      if (!parsed.answers || typeof parsed.answers !== 'object' || Array.isArray(parsed.answers)) return null
+      answers = parsed.answers as Record<string, unknown>
+    } else {
+      const only = steps[0]
+      if (steps.length !== 1 || !only) return null
+      answers = { [only.qid]: Array.isArray(parsed) ? parsed : reply }
+    }
+  } else answers = reply
   if (Object.keys(answers).some((qid) => !steps.some((step) => step.qid === qid))) return null
   const cleaned: ClarifyAnswers = {}
   for (const step of steps) {
     const raw = answers[step.qid]
     if (Array.isArray(raw)) {
-      if (!step.multi_select) return null
+      if (!step.multi_select || !raw.every((v: unknown): v is string => typeof v === 'string')) return null
       const list = raw.map((v) => v.trim()).filter(Boolean)
       if (!list.length) return null
       cleaned[step.qid] = list
     } else {
-      const text = str(raw).trim()
+      if (typeof raw !== 'string') return null
+      const text = raw.trim()
       if (!text) return null
       cleaned[step.qid] = step.multi_select ? [text] : text
     }

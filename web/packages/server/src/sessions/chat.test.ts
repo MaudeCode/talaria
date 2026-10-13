@@ -1657,6 +1657,31 @@ describe('chat turns through the sidecar', () => {
     expect((await post(s, '/api/goal', { session_id: sid, args: '[SILENT]' })).status).toBe(200)
   })
 
+  it.each([
+    { name: 'single', questions: [{ qid: 'q0', question: 'Which env?', choices: ['dev', 'prod'] }], response: ' dev ', answers: { q0: 'dev' } },
+    { name: 'multi-select', questions: [{ qid: 'q0', question: 'Which envs?', choices: ['dev', 'prod'], multi_select: true }], response: '["dev", "prod"]', answers: { q0: ['dev', 'prod'] } },
+    { name: 'batch', questions: [{ qid: 'q0', question: 'Env?' }, { qid: 'q1', question: 'Task?' }], response: '{"answers":{"q0":"dev","q1":"test"}}', answers: { q0: 'dev', q1: 'test' } },
+  ])('validates and keys a legacy $name response for the one-shape Agent callback (TAL-775)', async ({ questions, response, answers }) => {
+    const sid = await newSession(s)
+    const entry = s.deps.pending.submitClarify(sid, { clarify_id: 'one-shape', questions })
+    const relayed: string[] = []
+    sidecar.respond('clarify.respond', (params) => { relayed.push(params.response); return { ok: true, clarify_id: 'one-shape' } })
+    const res = await post(s, '/api/clarify/respond', { session_id: sid, clarify_id: entry.clarify_id, response })
+    expect(res.status).toBe(200)
+    expect(relayed).toEqual([JSON.stringify({ answers })])
+    expect(s.deps.pending.clarifyPending(sid).pending).toBeNull()
+  })
+
+  it.each(['raw batch answer', '{"answers":{"q0":"dev"}}', '{"answers":{"q0":"dev","q1":42}}', '{"answers":null}', '{"answers":{"q0":"dev","q1":"test","q9":"extra"}}'])('retains a one-shape prompt when a legacy reply is invalid: %s', async (response) => {
+    const sid = await newSession(s)
+    s.deps.pending.submitClarify(sid, { clarify_id: 'invalid-reply', questions: [{ qid: 'q0', question: 'Env?' }, { qid: 'q1', question: 'Task?' }] })
+    let relayed = false
+    sidecar.respond('clarify.respond', () => { relayed = true; return { ok: true } })
+    expect((await post(s, '/api/clarify/respond', { session_id: sid, clarify_id: 'invalid-reply', response })).status).toBe(400)
+    expect(relayed).toBe(false)
+    expect(s.deps.pending.clarifyPending(sid).pending?.clarify_id).toBe('invalid-reply')
+  })
+
   it('exposes a questions-only clarify batch as ordered steps and relays keyed answers as the Agent envelope (TAL-362)', async () => {
     const sid = await newSession(s)
     const relayed: string[] = []

@@ -40,7 +40,6 @@ _PROFILE_RELEASE_TIMEOUT = 60.0
 _TOOL_RESULT_SNIPPET_MAX = 4000
 # Predecessor ``_TOOL_ARG_CONTENT_KEYS`` (#4928): card content / diff-reconstruction inputs keep the long cap.
 _TOOL_ARG_CONTENT_KEYS = frozenset({"command", "cmd", "script", "code", "patch", "diff", "old_string", "new_string", "content", "path", "file_path"})
-_CLARIFY_FALLBACK = "The user did not provide a response within the time limit. Use your best judgement to make the choice and proceed."
 
 
 class _Run:
@@ -1021,7 +1020,11 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
                 else:
                     emit("status", {"kind": "terminal_error", "message": text})
 
-        def clarify_callback(question, choices, multi_select=False, questions=None):
+        def clarify_callback(question, choices=None, multi_select=False, questions=None):
+            # TAL-351: remove the legacy signature path when v0.21.6 is the oldest supported Agent.
+            structured = isinstance(question, list)
+            if structured:
+                questions, question = question, ""
             choices_list = [str(c) for c in (choices or [])]
             # Predecessor `_clarify_timeout_seconds`: the Agent's own resolver over this profile's config
             # (``clarify.timeout`` else ``agent.clarify_timeout`` else 3600); ``<= 0`` waits until answered or cancelled.
@@ -1052,7 +1055,18 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             with run.lock:
                 run.clarify_entries.pop(entry.clarify_id, None)
             emit("clarify_resolved", {"clarify_id": entry.clarify_id, "session_id": session_id})
-            return entry.result or _CLARIFY_FALLBACK
+            if entry.result is not None:
+                if structured:
+                    return {"answers": json.loads(entry.result)["answers"], "outcome": "submitted"}
+                return entry.result
+            cancelled = run.cancel.is_set() or run.finished.is_set()
+            if structured:
+                return {"answers": {}, "outcome": "cancelled" if cancelled else "timed_out",
+                        "notice": "The user cancelled the clarification." if cancelled else "The clarification timed out."}
+            # Older tools have no outcome field. A batch understands timed_out; a single needs an empty answer.
+            if questions:
+                return json.dumps({"answers": {}, "timed_out": not cancelled})
+            return ""
 
         # Approval bridge: the Agent parks dangerous commands in its gateway queue and calls back here.
         try:

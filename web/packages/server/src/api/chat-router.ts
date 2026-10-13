@@ -244,7 +244,7 @@ export const chatRouter = os.router({
     respond: os.clarify.respond.handler(({ input, context: { ctx } }) => run(async () => {
       const sid = str(input.session_id)
       if (!sid) throw new HttpError(400, 'session_id is required')
-      // Keyed step answers are shaped by the server; a raw `response` is relayed as-is for older clients.
+      // Both keyed answers and older clients' raw replies are shaped against the pending prompt.
       const reply = input.answers ?? str(input.response ?? input.answer ?? input.choice).trim()
       if (!reply) throw new HttpError(400, 'response is required')
       const result = await ctx.deps.turns.respondClarify(sid, str(input.clarify_id), reply)

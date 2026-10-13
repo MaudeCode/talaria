@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Clarification questions appear again with the latest supported Agent, and answers reach the conversation.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
