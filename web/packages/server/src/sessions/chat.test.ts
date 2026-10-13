@@ -2904,6 +2904,78 @@ describe('model-facing history (Python `_sanitize_messages_for_api`)', () => {
     expect((history[2]?.tool_calls as { id: string }[]).map((t) => t.id)).toEqual(['t1'])
   })
 
+  it('turn history keeps the reasoning carriers the Agent replays on assistant rows; other projections strip them (TAL-927)', () => {
+    const issued = { reasoning_details: [{ type: 'reasoning.encrypted', data: 'sig' }], codex_reasoning_items: [{ type: 'reasoning', encrypted_content: 'enc' }], codex_message_items: [{ type: 'message', id: 'msg_1' }] }
+    const carriers = { reasoning: 'r', finish_reason: 'stop', ...issued }
+    const rows = [{ role: 'user', content: 'hi', timestamp: 10, ...carriers }, { role: 'assistant', content: 'yo', reasoning_content: 'rc', timestamp: 11, ...carriers }]
+    const [user, assistant] = sanitizeMessagesForApi(rows, { preserveApiContent: true, issuedReasoningSince: 11 })
+    expect(assistant).toEqual({ role: 'assistant', content: 'yo', reasoning_content: 'rc', timestamp: 11, ...carriers })
+    expect(user).toEqual({ role: 'user', content: 'hi', timestamp: 10 })
+    // Provider-issued carriers from before the turn provider took over, or of unknown provenance, stay home.
+    for (const since of [12, null]) expect(sanitizeMessagesForApi(rows, { preserveApiContent: true, issuedReasoningSince: since })[1]).toEqual({ role: 'assistant', content: 'yo', reasoning_content: 'rc', timestamp: 11, reasoning: 'r', finish_reason: 'stop' })
+    expect(sanitizeMessagesForApi(rows)).toEqual([{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'yo', reasoning_content: 'rc' }])
+  })
+})
+
+describe('reasoning replay across turns (TAL-927)', () => {
+  let s: TestServer
+  let sidecar: FakeSidecar
+  beforeAll(async () => {
+    sidecar = new FakeSidecar()
+    s = await bootTestServer({ sidecar })
+  })
+  afterAll(() => s.close())
+
+  it("the next turn's history carries the reasoning carriers the Agent persisted in state.db, until the provider changes", async () => {
+    const sid = await newSession(s)
+    const details = [{ type: 'reasoning.encrypted', data: 'opaque-signature' }]
+    const items = [{ type: 'reasoning', id: 'rs_1', encrypted_content: 'enc-blob' }]
+    const now = (): number => Date.now() / 1000
+    const { DatabaseSync } = await import('node:sqlite')
+    const db = new DatabaseSync(join(s.state, 'state.db'))
+    db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL, title TEXT, model TEXT, parent_session_id TEXT, ended_at REAL, end_reason TEXT, model_config TEXT, user_id TEXT, chat_id TEXT); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL, tool_calls TEXT, tool_call_id TEXT, tool_name TEXT, reasoning TEXT, reasoning_content TEXT, reasoning_details TEXT, codex_reasoning_items TEXT, codex_message_items TEXT)')
+    db.prepare('INSERT INTO sessions (id, source, started_at) VALUES (?, ?, ?)').run(sid, 'webui', now())
+    db.close()
+    const histories: Json[][] = []
+    sidecar.respond('chat.start', (params) => {
+      histories.push(params.conversation_history)
+      const user = { role: 'user', content: str(params.user_message), timestamp: now() }
+      const assistant = { role: 'assistant', content: `answer ${String(histories.length)}`, timestamp: now() }
+      // The Agent persists its turn, reasoning carriers included, before it returns.
+      const agentDb = new DatabaseSync(join(s.state, 'state.db'))
+      agentDb.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, user.role, user.content, user.timestamp)
+      agentDb.prepare('INSERT INTO messages (session_id, role, content, timestamp, reasoning, reasoning_details, codex_reasoning_items) VALUES (?, ?, ?, ?, ?, ?, ?)').run(sid, assistant.role, assistant.content, assistant.timestamp, 'thought', JSON.stringify(details), JSON.stringify(items))
+      agentDb.close()
+      return completed([...params.conversation_history, user, { ...assistant, reasoning: 'thought', reasoning_details: details, codex_reasoning_items: items }])
+    })
+    const turn = async (message: string): Promise<void> => {
+      const start = await json(await post(s, '/api/chat/start', { session_id: sid, message }))
+      await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    }
+    await turn('first')
+    // A CLI turn lands only in state.db.
+    const cliDetails = [{ type: 'reasoning.encrypted', data: 'cli-signature' }]
+    const cliDb = new DatabaseSync(join(s.state, 'state.db'))
+    cliDb.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, 'user', 'from the CLI', now())
+    cliDb.prepare('INSERT INTO messages (session_id, role, content, timestamp, reasoning_details, codex_message_items) VALUES (?, ?, ?, ?, ?, ?)').run(sid, 'assistant', 'CLI answer', now(), JSON.stringify(cliDetails), JSON.stringify([{ type: 'message', id: 'msg_cli' }]))
+    cliDb.close()
+    await turn('second')
+    expect(histories[1]?.map((m) => m.content)).toEqual(['first', 'answer 1', 'from the CLI', 'CLI answer'])
+    expect(histories[1]?.[1]).toMatchObject({ role: 'assistant', reasoning: 'thought', reasoning_details: details, codex_reasoning_items: items })
+    expect(histories[1]?.[3]).toMatchObject({ role: 'assistant', reasoning_details: cliDetails, codex_message_items: [{ type: 'message', id: 'msg_cli' }] })
+    // The earlier turns ran on another provider: what it issued never reaches this one (hermes-agent#122831).
+    const session = s.deps.sessionStore.get(sid)
+    session.reasoning_replay_provider = 'openrouter'
+    s.deps.sessionStore.save(session)
+    await turn('third')
+    const switched = histories[2]?.filter((m) => m.role === 'assistant') ?? []
+    expect(switched.map((m) => m.content)).toEqual(['answer 1', 'CLI answer', 'answer 2'])
+    expect(switched.every((m) => !('reasoning_details' in m) && !('codex_reasoning_items' in m) && !('codex_message_items' in m))).toBe(true)
+    expect(switched[0]).toMatchObject({ reasoning: 'thought' })
+    await turn('fourth')
+    expect(histories[3]?.at(-1)).toMatchObject({ content: 'answer 3', reasoning_details: details, codex_reasoning_items: items })
+    expect(histories[3]?.filter((m) => 'reasoning_details' in m).map((m) => m.content)).toEqual(['answer 3'])
+  })
 })
 
 describe('live tool outcomes (TAL-313)', () => {

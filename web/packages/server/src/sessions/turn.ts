@@ -377,6 +377,12 @@ export class TurnRunner {
     s.pending_attachments = attachments
     s.pending_started_at = this.deps.now()
     s.pending_user_source = source
+    // TAL-927: reasoning one provider issued can fail on another (hermes-agent#122831), so a provider switch moves the
+    // boundary its carriers replay from.
+    if (s.reasoning_replay_provider !== str(opts.modelProvider)) {
+      s.reasoning_replay_provider = str(opts.modelProvider)
+      s.reasoning_replay_from = s.pending_started_at
+    }
     if (['', 'Untitled', 'New Chat'].includes(str(s.title).trim())) {
       const provisional = titleFrom([{ role: 'user', content: opts.msg }], s.title || 'Untitled')
       if (provisional && !['', 'Untitled', 'New Chat'].includes(provisional.trim())) s.title = provisional
@@ -470,7 +476,7 @@ export class TurnRunner {
     const previousContext = structuredClone(deps.service().modelContext(s, startRead.rows)).filter((m) => m._turn_id !== streamId)
     // Python `_sanitize_messages_for_agent`: the model never sees display-only rows or a replayed cancelled prompt, and
     // the Agent gets back the exact bytes it sent (TAL-541).
-    const apiHistory = sanitizeMessagesForApi(previousContext, { preserveApiContent: true })
+    const apiHistory = sanitizeMessagesForApi(previousContext, { preserveApiContent: true, issuedReasoningSince: s.reasoning_replay_from })
     // Before the first await: a Stop can land at any point after admission.
     this.stopContexts.set(streamId, { previousContext, historyLength: apiHistory.length, prompt: msgText, msgText, checkpointed: false, stateDbStartId: startRead.ok ? stateDbSeenId(startRead.rows) ?? 0 : null })
     const activeTurnToken = buildActiveTurnToken(streamId, s.pending_started_at)
