@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Talaria Web no longer crashes and drops the reply in progress when a tool returns text with unusual spacing after a command name, such as Windows line endings.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

@@ -992,7 +992,10 @@ const REDIRECT_RE = /[0-9]*(?:&>>?|<<<|<<-?|<>|>>|>&|<&|>\||[<>])/y
  */
 function commandWords(text: string, from: number, enclosing: string, list: boolean): { spans: [number, number][]; end: number } {
   const spans: [number, number][] = []
-  const [gap, close, stop] = list ? [/[ \t,<>]/, /[\n;&|()\]}]/, /[\s;&|()<>,\]}]/] : [/[ \t]/, /[\n;&|()]/, /[\s;&|()<>]/]
+  const [gap, close] = list ? [/[ \t,<>]/, /[\n;&|()\]}]/] : [/[ \t]/, /[\n;&|()]/]
+  // A word ends only where the scan can step on (a gap, a redirection) or the command ends, so it always advances. Other
+  // whitespace (`\r`, a no-break space) is part of the word, as the shell reads it, so a secret holding one is masked whole.
+  const stop = new RegExp(`${gap.source}|${close.source}|[<>]`)
   let i = from
   let redirect = false
   for (;;) {
