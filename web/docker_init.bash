@@ -459,10 +459,11 @@ else
     #
     # Agents since v0.21.6 keep their runtime store (browsers, toolchains and a root-only install lock) inside
     # tools/, beside the Python package; tools/facts.json names every store entry. Like `.playwright/` before it,
-    # the store is not source and is never staged.
+    # the store is not source and is never staged. Since v0.21.7 it also records the venv's extras selection, a
+    # package with no store entry.
     _store=()
     if [ -f "$_agent_src/tools/facts.json" ]; then
-      _entries="$(python3 -c 'import json, sys; print("\n".join(p["entry"] for p in json.load(open(sys.argv[1]))["packages"].values()))' \
+      _entries="$(python3 -c 'import json, sys; print("\n".join(p["entry"] for p in json.load(open(sys.argv[1]))["packages"].values() if "entry" in p))' \
         "$_agent_src/tools/facts.json")" || error_exit "Failed to read the Agent runtime store index"
       while IFS= read -r _entry; do if [ -n "$_entry" ]; then _store+=("tools/$_entry"); fi; done <<< "$_entries"
       _store+=("tools/facts.json" "tools/.install.lock")
