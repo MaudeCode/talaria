@@ -102,3 +102,6 @@ available and the same rules locally for older Agents.
 The public message projection converts decoded objects, numbers, and booleans
 to JSON text before redaction, preserving credential-key context and the existing
 client message contract.
+If an integer anywhere in the payload exceeds JavaScript's safe range, the
+server preserves the payload as JSON text instead of rounding it. Ordinary
+multimodal arrays continue to decode as parts.

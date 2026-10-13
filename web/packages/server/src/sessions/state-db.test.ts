@@ -75,17 +75,17 @@ describe('state.db projection', () => {
       db.prepare('DELETE FROM sessions WHERE id = ?').run('encoded-content')
     })
     insertSession(db, { id: 'encoded-content', source: 'cli', started_at: 100, title: 'Encoded content' })
-    const contents = [{ text: 'hello', password: 'synthetic-secret' }, 42, false]
+    const contents = ['{"text":"hello","password":"synthetic-secret"}', '42', 'false', '9007199254740993', '{"id":9007199254740993}']
     for (const [i, content] of contents.entries()) {
       db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)')
-        .run('encoded-content', 'user', '\0json:' + JSON.stringify(content), 101 + i)
+        .run('encoded-content', 'user', '\0json:' + content, 101 + i)
     }
     const response = await s.get('/api/session?session_id=encoded-content')
     const payload = await json(response)
     expect(response.status, JSON.stringify(payload)).toBe(200)
     const session = SessionSchema.parse(payload.session)
     expect(session.messages?.map((m) => m.content)).toEqual([
-      '{"text":"hello","password":"***"}', '42', 'false',
+      '{"text":"hello","password":"***"}', '42', 'false', '9007199254740993', '{"id":9007199254740993}',
     ])
   })
 

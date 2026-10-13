@@ -603,7 +603,14 @@ function decodeStateDbContent(value: unknown): unknown {
   const text = Buffer.isBuffer(value) ? value.toString('utf8') : value
   if (typeof text !== 'string' || !text.startsWith(STATE_DB_CONTENT_JSON_PREFIX)) return text
   try {
-    return JSON.parse(text.slice(STATE_DB_CONTENT_JSON_PREFIX.length)) as unknown
+    const payload = text.slice(STATE_DB_CONTENT_JSON_PREFIX.length)
+    let unsafeInteger = false
+    const decoded: unknown = JSON.parse(payload, (_key: string, value: unknown, context?: { source?: string }) => {
+      if (typeof value === 'number' && !Number.isSafeInteger(value) && /^-?\d+$/.test(context?.source ?? '')) unsafeInteger = true
+      return value
+    })
+    // Python keeps arbitrary-precision integers. Retain the JSON text rather than silently rounding any of them.
+    return unsafeInteger ? payload : decoded
   } catch {
     return text
   }
