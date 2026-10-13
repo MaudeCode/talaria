@@ -19,11 +19,11 @@ import { SessionBusy, SessionNotFound, statSignature, type SessionStore } from '
 import { UNSETTLED_TODO_KEY, attachTodoState } from './todo.js'
 import { isClaudeCodeSessionId, type ClaudeCodeSessionSource } from './claude-code.js'
 import { auditSessionRecovery, repairSafeSessionRecovery, type RecoveryDeps } from './recovery.js'
-import { agentSessionRowsExisting, agentSessionRowsExistingAsync, CONVERSATION_ROUND_THRESHOLD, countConversationRounds, stateDbCompressionLineage, stateDbTailToolContent, stateDbLineageReport, stateDbSessionMessages, stateDbSessionRead, stateDbSessionRow, stateDbSessionSources, stateDbSessionSourcesAsync, stateDbTimestampSeconds, stateDbReadCursor, type StateDbCursor, type StateDbRead } from './state-db.js'
+import { agentSessionRowsExisting, agentSessionRowsExistingAsync, CONVERSATION_ROUND_THRESHOLD, countConversationRounds, stateDbCompressionLineage, stateDbTailToolContent, stateDbLineageReport, stateDbSessionMessages, stateDbSessionRead, stateDbSessionRow, stateDbSessionSources, stateDbSessionSourcesAsync, stateDbTimestampSeconds, type StateDbRead } from './state-db.js'
 import { completionIncomplete, fallbackHandoffSummary, HANDOFF_SYSTEM_PROMPT, handoffMarker, handoffPayload, handoffTranscript, messageHandoffPayload, sameHandoff } from './handoff.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, compressionReference, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { SidecarError, type SidecarLike } from '../sidecar/client.js'
-import { agentSteerText, attachedFilesPrompt, attachmentObjects, checkpointTurnStart, dedupeContext, isContextCompressionMarker, journalOutputRows, looksLikeCurrentUserTurn, stoppedTurnContext, mergeSessionMessagesAppendOnly, messageIdentity, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, stateDbMessageIdentity, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, type ToolResultView } from './merge.js'
+import { agentSteerText, attachedFilesPrompt, attachmentObjects, checkpointTurnStart, dedupeContext, isContextCompressionMarker, journalOutputRows, looksLikeCurrentUserTurn, stoppedTurnContext, mergeSessionMessagesAppendOnly, messageIdentity, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, type ToolResultView } from './merge.js'
 import { withBackgroundUpdates } from './background-updates.js'
 import { sourceKind } from './source-kind.js'
 import { withBackgroundLinks, type Receipt } from './background-tasks.js'
@@ -382,8 +382,8 @@ export class SessionService {
       return
     }
     // A successful read with no rows yet is a baseline: every row the session gets later is new.
-    s.state_db_seen_id = stateDbReadCursor(read).id
-    s.state_db_seen_boundary = stateDbMarkKey(s, read.rows, s.state_db_seen_id, read.generation)
+    s.state_db_seen_id = stateDbSeenId(read.rows) ?? (read.idCapable ? 0 : null)
+    s.state_db_seen_boundary = stateDbMarkKey(s, read.rows, s.state_db_seen_id)
     s.state_db_seen_stamp = s.updated_at
   }
 
@@ -395,31 +395,29 @@ export class SessionService {
    * `startId` (the highest id the turn read when it started) are its own unreported work: covered, never shown. Rows the
    * turn started from but the transcript lacks (a CLI continuation read into its context) are kept before the turn.
    */
-  settleStateDb(s: Session, turn: { turnId: string; previousContext: Message[]; agentRows?: Message[] | null; startId?: number | null; start?: StateDbCursor; read?: StateDbRead }): void {
+  settleStateDb(s: Session, turn: { turnId: string; previousContext: Message[]; agentRows?: Message[] | null; startId?: number | null; read?: StateDbRead }): void {
     const read = turn.read ?? this.stateDbRead(s)
-    const changedIdentity = turn.start !== undefined && turn.start.generation !== stateDbReadCursor(read).generation
-    const startId = changedIdentity ? null : turn.start?.id ?? turn.startId ?? null
-    const startedWith = new Set(turn.previousContext.map(stateDbMessageIdentity).filter((id) => id !== null))
-    const earlier = mergeSessionMessagesAppendOnly(s.messages, read.rows.filter((m) => typeof m._state_db_row_id === 'number' && startedWith.has(stateDbMessageIdentity(m)!)), { stateDbSeenId: -1 }).slice(s.messages.length)
+    const startedWith = new Set(turn.previousContext.flatMap((m) => (typeof m._state_db_row_id === 'number' ? [m._state_db_row_id] : [])))
+    const earlier = mergeSessionMessagesAppendOnly(s.messages, read.rows.filter((m) => typeof m._state_db_row_id === 'number' && startedWith.has(m._state_db_row_id)), { stateDbSeenId: -1 }).slice(s.messages.length)
     const added = new Map<string, number>()
     for (const m of withoutRows(turn.agentRows ?? [], turn.previousContext)) added.set(settledIdentity(m), (added.get(settledIdentity(m)) ?? 0) + 1)
-    const ownWorkAfter = turn.agentRows?.length ? null : startId
+    const ownWorkAfter = turn.agentRows?.length ? null : turn.startId ?? null
     // Without a current marker, the turn's own starting read is the baseline: rows committed after it are judged here.
-    const seenId = currentStateDbSeenId(s, read.rows) ?? startId ?? (changedIdentity ? 0 : null)
+    const seenId = currentStateDbSeenId(s, read.rows) ?? turn.startId ?? null
     const shown = read.rows.length ? mergeSessionMessagesAppendOnly(s.messages, read.rows, { truncationWatermark: s.truncation_watermark, compressedWatermark: s.truncation_watermark_compressed, stateDbSeenId: seenId }) : s.messages
     const fresh = new Set(shown.slice(s.messages.length))
     // The turn's own rows the merge already matched to their local copies use up their share before any shown row can.
     if (seenId !== null) {
       for (const m of read.rows) {
         const id = m._state_db_row_id
-        if (typeof id !== 'number' || id <= seenId || startedWith.has(stateDbMessageIdentity(m)!) || fresh.has(m)) continue
+        if (typeof id !== 'number' || id <= seenId || startedWith.has(id) || fresh.has(m)) continue
         const left = added.get(settledIdentity(m)) ?? 0
         if (left > 0) added.set(settledIdentity(m), left - 1)
       }
     }
     const missed = [...fresh].filter((m) => {
       const id = m._state_db_row_id
-      if (typeof id === 'number' && startedWith.has(stateDbMessageIdentity(m)!)) return false
+      if (typeof id === 'number' && startedWith.has(id)) return false
       const key = settledIdentity(m)
       const left = added.get(key) ?? 0
       if (left > 0) { added.set(key, left - 1); return false }
@@ -868,7 +866,7 @@ export class SessionService {
       target.messages.push(...output)
       if (!answered) target.messages.push({ role: 'assistant', content: '**Interrupted:** The reply was interrupted before it could be saved.', timestamp: Math.trunc(this.deps.now()), _error: true, _turn_id: turnId })
       // Settled like a turn: the Agent's own rows are covered by the recovered turn; without them, every row past the run's start is.
-      this.settleStateDb(target, { turnId, previousContext, agentRows: ownRows, start: { id: stateDbSeenId(before) ?? (read.idCapable ? 0 : null), generation: stateDbReadCursor(read).generation }, read })
+      this.settleStateDb(target, { turnId, previousContext, agentRows: ownRows, startId: stateDbSeenId(before) ?? (read.idCapable ? 0 : null), read })
     }
     target.active_stream_id = null
     target.pending_user_message = null
@@ -2066,9 +2064,9 @@ function withoutRows(rows: Message[], base: Message[]): Message[] {
  * moves them without the marker) and the role, timestamp, and database file identity of the row the marker names (a
  * recreated state.db, whose ids start over, has no such row).
  */
-function stateDbMarkKey(s: Session, stateRows: Message[], seenId: number | null, generation: string | null | undefined = str(stateRows[0]?._state_db_generation) || null): string {
+function stateDbMarkKey(s: Session, stateRows: Message[], seenId: number | null): string {
   const anchor = seenId === null ? undefined : stateRows.find((m) => m._state_db_row_id === seenId)
-  return JSON.stringify([s.truncation_watermark ?? null, s.truncation_boundary ?? null, s.intentional_shrink_generation ?? null, s.clear_generation ?? null, generation?.endsWith(':message-versions-v1') ? ['versions', generation] : anchor ? [anchor.role ?? null, anchor.timestamp ?? null, anchor._state_db_generation ?? null] : null])
+  return JSON.stringify([s.truncation_watermark ?? null, s.truncation_boundary ?? null, s.intentional_shrink_generation ?? null, s.clear_generation ?? null, anchor ? [anchor.role ?? null, anchor.timestamp ?? null, anchor._state_db_generation ?? null] : null])
 }
 
 /**
@@ -2077,19 +2075,7 @@ function stateDbMarkKey(s: Session, stateRows: Message[], seenId: number | null,
  */
 function currentStateDbSeenId(s: Session, stateRows: Message[]): number | null {
   const seenId = s.state_db_seen_id
-  if (seenId === null || s.state_db_seen_stamp !== s.updated_at) return null
-  const current = stateDbMarkKey(s, stateRows, seenId)
-  if (s.state_db_seen_boundary === current) return seenId
-  // A contract upgrade changes the cursor space. Keep the same boundary but compare new arrivals
-  // from zero; payload matching still covers local rows, while an old-timestamp edit cannot disappear.
-  if (str(stateRows[0]?._state_db_generation).endsWith(':message-versions-v1')) {
-    try {
-      const prior: unknown = JSON.parse(s.state_db_seen_boundary ?? 'null')
-      const next = JSON.parse(current) as unknown[]
-      if (Array.isArray(prior) && JSON.stringify(prior.slice(0, 4)) === JSON.stringify(next.slice(0, 4))) return 0
-    } catch { /* A malformed/stale marker grants no identity coverage. */ }
-  }
-  return null
+  return seenId !== null && s.state_db_seen_stamp === s.updated_at && s.state_db_seen_boundary === stateDbMarkKey(s, stateRows, seenId) ? seenId : null
 }
 
 function truncationWatermarkFor(messages: unknown[]): number {

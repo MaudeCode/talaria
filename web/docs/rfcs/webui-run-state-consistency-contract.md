@@ -50,24 +50,21 @@ The server owns every layer except the client's live timeline:
 The frontend's stream reducer (`packages/frontend/src/stream/reducer.ts`) is a
 projection of SSE frames that converges on the server's settled fields.
 
-The server's read-only `state.db` projection consumes the Agent's durable
-`message_version_uid` and `message_versions` ledger when all live rows have
-provenance. Within the validated session chain, a `(message_uid, version_uid)`
-pair maps to its earliest ledger arrival cursor. Explicit compaction copies keep
-that identity; authored edits get a new one even if an edit is compacted before
-Talaria first reads it. The ledger survives physical message replacement.
+The server's read-only `state.db` projection recognizes the released Agent's
+exact in-flight request restatement. It compares the replay body with preceding
+generations of the same `message_uid` within the selected session chain. Only an
+unchanged timestamp copy or the known replay transformation inherits identity.
+A payload change starts a new identity at its existing physical row ID, even
+when both generations have already become compacted. Unknown transformations
+stay distinct; UID equality alone never proves a copy.
 
-Rows and the high-water cursor are read in one SQLite snapshot. Version cursors
-use a separate database generation namespace from physical row IDs; merge and
-turn settlement compare identities only within that namespace. A versioned
-seen marker names the durable ledger generation, not a mutable physical row.
-
-The upstream contract is tracked in TAL-944. This does not reconstruct old
-provenance: pre-contract or incompletely backfilled stores retain the legacy
-timestamp-twin behavior. A logical UID alone never authorizes suppression of a
-replay, because it cannot distinguish an unobserved edit. The complete guarantee
-requires an Agent release carrying the contract; the currently pinned v0.21.6
-release does not carry it.
+The reader streams those histories once and reads the live rows and archive in
+one SQLite snapshot. Its internal `_state_db_authored_change` marker prevents
+the append-only merge's text fallback from hiding a known new occurrence behind
+an older identical local row. That marker is stripped from public messages.
+Tool results retain their existing tool-call/timestamp compaction rule; tables
+without UIDs retain the legacy timestamp rule. This requires no Agent changes,
+new database fields, release pins or server-side database writes.
 
 ## State layers
 

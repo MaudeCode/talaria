@@ -869,19 +869,20 @@ export function mergeSessionMessagesAppendOnly(sidecar: Message[], state: Messag
   const seenId = opts.stateDbSeenId
   if (typeof seenId === 'number' && Number.isFinite(seenId) && state.some((m) => stateDbRowId(m) !== null)) {
     // Each local row stands for at most one new state.db row: a persisted copy by its id, any other by its key.
-    const localIds = new Set(sidecar.map(stateDbMessageIdentity))
+    const localIds = new Set(sidecar.map(stateDbRowId))
     const localKeys = new Map<string, number>()
-    const generations = new Set(state.map((m) => m._state_db_generation ?? null))
-    for (const m of sidecar) if (stateDbRowId(m) === null || !generations.has(m._state_db_generation ?? null)) localKeys.set(key(m), (localKeys.get(key(m)) ?? 0) + 1)
+    for (const m of sidecar) if (stateDbRowId(m) === null) localKeys.set(key(m), (localKeys.get(key(m)) ?? 0) + 1)
     const merged = [...sidecar]
     for (const m of state) {
       const id = stateDbRowId(m)
-      if (id !== null && localIds.has(stateDbMessageIdentity(m))) continue
+      if (id !== null && localIds.has(id)) continue
       // In state.db order, so a covered row matches its own local copy before a newer duplicate can.
       const left = localKeys.get(key(m)) ?? 0
-      if (left > 0) { localKeys.set(key(m), left - 1); if (id !== null) localIds.add(stateDbMessageIdentity(m)); continue }
+      // An archive-proven edit is a new occurrence even when an older local row has identical text.
+      // Covered edits still consume their local match before later ordinary copies are considered.
+      if (left > 0 && (m._state_db_authored_change !== true || id === null || id <= seenId)) { localKeys.set(key(m), left - 1); if (id !== null) localIds.add(id); continue }
       if (id === null || id <= seenId) continue
-      localIds.add(stateDbMessageIdentity(m))
+      localIds.add(id)
       merged.push(m)
     }
     return merged
@@ -913,12 +914,6 @@ export function mergeSessionMessagesAppendOnly(sidecar: Message[], state: Messag
 function stateDbRowId(m: Message): number | null {
   const id = m._state_db_row_id
   return typeof id === 'number' && Number.isFinite(id) ? id : null
-}
-
-/** Numeric row/cursor IDs are meaningful only within their database and identity scheme. */
-export function stateDbMessageIdentity(m: Message): string | null {
-  const id = stateDbRowId(m)
-  return id === null ? null : JSON.stringify([m._state_db_generation ?? null, id])
 }
 
 /** TAL-493: the `state_db_seen_id` after reading `rows`: their highest id, or null when they carry none. */

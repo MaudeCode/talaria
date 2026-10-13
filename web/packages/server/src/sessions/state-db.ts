@@ -639,18 +639,73 @@ function stateDbGeneration(dbPath: string): string | null {
   try { const st = statSync(dbPath); return `${String(st.ino)}:${String(st.birthtimeMs)}` } catch { return null }
 }
 
-export interface StateDbRead { rows: Dict[]; idCapable: boolean; ok: boolean; seenId?: number | null; generation?: string | null }
+// Agent v0.21.6's exact in-flight request wrapper. Unknown rewrites are not copy evidence.
+const INFLIGHT_REPLAY_HEADER = '[STILL IN PROGRESS — this is the active request, restated after the compaction boundary because it was not finished yet. Continue it; do not start over.]'
 
-export interface StateDbCursor { id: number | null; generation: string | null }
-
-/** One snapshot's durable high-water mark, including versions whose physical rows have disappeared. */
-export function stateDbReadCursor(read: StateDbRead): StateDbCursor {
-  const id = !read.ok ? null : read.seenId ?? read.rows.reduce<number | null>((max, row) => {
-    const id = row._state_db_row_id
-    return typeof id === 'number' && Number.isFinite(id) ? Math.max(max ?? 0, id) : max
-  }, read.idCapable ? 0 : null)
-  return { id, generation: read.generation ?? (typeof read.rows[0]?._state_db_generation === 'string' ? read.rows[0]._state_db_generation : null) }
+/** The payload comparison ignores only the Agent's documented replay wrapper and dropped api_content. */
+function replayPayload(row: Dict): { copyKey: string; replayKey: string; replay: boolean } {
+  const message = projectStateDbMessage(row, false)
+  delete message.timestamp
+  const copyKey = JSON.stringify(message)
+  let content = message.content
+  let replay = false
+  if (row.role === 'user') {
+    if (typeof content === 'string') {
+      replay = content.startsWith(`${INFLIGHT_REPLAY_HEADER}\n`)
+      content = (replay ? content.slice(INFLIGHT_REPLAY_HEADER.length + 1) : content).trim()
+    } else if (Array.isArray(content)) {
+      // Multimodal replays prepend a text block and retain all original parts, including media.
+      const parts: unknown[] = content
+      let start = 0
+      while (start < parts.length) {
+        const first = parts[start]
+        if (!first || typeof first !== 'object' || Array.isArray(first)) break
+        const part = first as Dict
+        if (part.type !== 'text' || part.text !== `${INFLIGHT_REPLAY_HEADER}\n` || Object.keys(part).some((k) => k !== 'type' && k !== 'text')) break
+        start += 1
+      }
+      replay = start > 0
+      content = parts.slice(start)
+    }
+  }
+  message.content = content
+  delete message.api_content // _reappend_inflight_user_task drops this stale model-facing sidecar.
+  return { copyKey, replayKey: JSON.stringify(message), replay }
 }
+
+/**
+ * Compare adjacent generations, never all rows of one UID with its oldest archive. The archive retains
+ * authored payload changes even after active/compacted flags change. Only unchanged timestamp copies or
+ * exact request restatements inherit identity; edits (including A -> B -> A) start at their own row ID.
+ */
+function replayIdentities(db: DatabaseSync, chain: string[], rows: Dict[], available: Set<string>): Map<number, { id: number; changed: boolean }> {
+  const identities = new Map<number, { id: number; changed: boolean }>()
+  // Tool-result text can be pruned without changing its tool-call identity; retain the existing rule.
+  const uids = [...new Set(rows.filter((row) => row.role !== 'tool').map((row) => row.message_uid).filter((uid): uid is string => typeof uid === 'string' && uid.length > 0))]
+  if (!uids.length) return identities
+  const liveIds = new Set(rows.map((row) => row.id))
+  type Previous = ReturnType<typeof replayPayload> & { identity: number; changed: boolean; timestamp: unknown; active: unknown; compacted: unknown }
+  const previous = new Map<string, Previous>()
+  const columns = ['id', 'message_uid', 'active', 'compacted', 'role', 'content', 'timestamp', ...OPTIONAL_MESSAGE_COLUMNS.filter((c) => available.has(c))]
+  // One ordered scan of the selected sessions, filtering against a materialized UID set. Stream the rows;
+  // memory holds only the preceding payload per live UID, not the accumulated archive. NULL/nonstandard
+  // active flags take exactly the same path and do not depend on the Agent's partial active=1 UID index.
+  const history = db.prepare(`SELECT ${columns.join(', ')} FROM messages WHERE session_id IN (${chain.map(() => '?').join(', ')}) AND message_uid IN (SELECT value FROM json_each(?)) ORDER BY id`)
+  for (const row of history.iterate(...chain, JSON.stringify(uids)) as Iterable<Dict>) {
+    const uid = row.message_uid as string
+    const payload = replayPayload(row)
+    const prior = previous.get(uid)
+    const copy = payload.copyKey === prior?.copyKey && row.timestamp === prior.timestamp
+    const restatement = prior && payload.replay && payload.replayKey === prior.replayKey && (prior.active !== 0 || prior.compacted === 1)
+    const identity = prior && (copy || restatement) ? prior.identity : Number(row.id)
+    const changed = prior ? (copy || restatement ? prior.changed : true) : false
+    if (prior && row.role !== 'tool' && liveIds.has(row.id)) identities.set(Number(row.id), { id: identity, changed })
+    previous.set(uid, { ...payload, identity, changed, timestamp: row.timestamp, active: row.active, compacted: row.compacted })
+  }
+  return identities
+}
+
+export interface StateDbRead { rows: Dict[]; idCapable: boolean; ok: boolean }
 
 export function stateDbSessionMessages(dbPath: string, sid: string, opts: { stitch?: boolean } = {}): Dict[] {
   return stateDbSessionRead(dbPath, sid, opts).rows
@@ -667,13 +722,11 @@ export function stateDbSessionRead(dbPath: string, sid: string, opts: { stitch?:
   let db: DatabaseSync
   try { db = openStateDbReadonly(dbPath) } catch { return none }
   try {
-    db.exec('BEGIN') // Rows and their durable arrival cursor belong to one read snapshot.
+    db.exec('BEGIN') // The live rows and their archived predecessors must describe one snapshot.
     const available = tableColumns(db, 'messages')
     if (!['role', 'content', 'timestamp'].every((c) => available.has(c))) return { ...none, ok: available.size > 0 }
     const hasId = available.has('id')
-    const versioned = hasId && available.has('message_uid') && available.has('message_version_uid')
-      && ['id', 'session_id', 'message_uid', 'version_uid'].every((c) => tableColumns(db, 'message_versions').has(c))
-    const selected = [...(versioned ? ['message_uid', 'message_version_uid'] : []), ...(hasId ? ['id'] : []), ...(available.has('active') ? ['active'] : []), 'role', 'content', 'timestamp', ...OPTIONAL_MESSAGE_COLUMNS.filter((c) => available.has(c))]
+    const selected = [...(hasId ? ['id'] : []), ...(available.has('message_uid') ? ['message_uid'] : []), 'role', 'content', 'timestamp', ...OPTIONAL_MESSAGE_COLUMNS.filter((c) => available.has(c))]
     // TAL-529: an explicit lineage (the session and its compression continuations) replaces the parent walk.
     const chain = opts.lineage?.length ? [...opts.lineage] : [id]
     if (!opts.lineage?.length && (opts.stitch ?? true)) {
@@ -697,60 +750,40 @@ export function stateDbSessionRead(dbPath: string, sid: string, opts: { stitch?:
     const order = hasId ? 'id' : 'timestamp'
     const rows = db.prepare(`SELECT ${selected.join(', ')}, session_id FROM messages WHERE session_id IN (${chain.map(() => '?').join(', ')})${activeClause} ORDER BY ${order} ASC`).all(...chain) as Dict[]
     const projected = rows.map((row) => projectStateDbMessage(row, hasId))
-    // A version ledger survives both compaction flags changing and physical row replacement.
-    // Never infer copy provenance from message_uid alone: an unobserved edit can already be compacted.
-    let seenId: number | undefined
-    let versionsComplete = versioned
-    if (versioned) {
-      const placeholders = chain.map(() => '?').join(', ')
-      const lookup = db.prepare(`SELECT MIN(id) AS id FROM message_versions WHERE session_id IN (${placeholders}) AND message_uid = ? AND version_uid = ?`)
-      const cursors = new Map<string, number>()
-      for (const [i, row] of rows.entries()) {
-        if (typeof row.message_uid !== 'string' || typeof row.message_version_uid !== 'string' || !row.message_version_uid) { versionsComplete = false; break }
-        const key = JSON.stringify([row.message_uid, row.message_version_uid])
-        let cursor = cursors.get(key)
-        if (cursor === undefined) {
-          const result = lookup.get(...chain, row.message_uid, row.message_version_uid) as Dict | undefined
-          if (typeof result?.id !== 'number') { versionsComplete = false; break }
-          cursor = result.id
-          cursors.set(key, cursor)
-        }
-        projected[i]!._state_db_row_id = cursor
-      }
-      if (versionsComplete) {
-        // Per-session MAX uses (session_id, id); do not scan the complete archived ledger.
-        const high = db.prepare('SELECT MAX(id) AS id FROM message_versions WHERE session_id = ?')
-        seenId = Math.max(0, ...chain.map((session) => Number((high.get(session) as Dict).id ?? 0)))
-      } else {
-        // A bounded legacy backfill may not have reached every row yet. Keep one identity space per read.
-        for (const [i, row] of rows.entries()) projected[i]!._state_db_row_id = row.id
-      }
-    }
     // TAL-709: an in-place compaction archives the live rows and re-inserts each as a copy that keeps its role and timestamp
     // (content may be pruned). A copy takes the id of the oldest archived row it copies, so the merge sees a row it has
     // already read instead of a new one. Only a compaction archive (`compacted = 1`) vouches for a changed copy: a rewound
     // row (`compacted = 0`, also the compaction's carried tail) counts only for the same tool call or the same content, so
     // an edit that kept its timestamp stays new.
-    if (!versionsComplete && hasId && available.has('active')) {
+    if (hasId && available.has('active')) {
       // One indexed lookup per live row ((session_id, active, timestamp)): the archive is never loaded, however many
       // compactions it holds.
-      const timestampTwin = (a: string, m: string): string => {
-        const sameCall = available.has('tool_call_id') ? ` AND COALESCE(${a}.tool_call_id, '') = COALESCE(${m}.tool_call_id, '')` : ''
-        const vouched = [available.has('compacted') ? `${a}.compacted = 1` : '', available.has('tool_call_id') ? `${m}.tool_call_id IS NOT NULL` : '', `${a}.content = ${m}.content`].filter(Boolean).join(' OR ')
-        return `${a}.role = ${m}.role AND ${a}.timestamp = ${m}.timestamp${sameCall} AND (${vouched})`
-      }
-      const twins = db.prepare(`SELECT m.id AS id, MIN(a.id) AS twin FROM messages m JOIN messages a ON a.session_id = m.session_id AND a.active = 0 AND a.id < m.id AND ${timestampTwin('a', 'm')} WHERE m.session_id IN (${chain.map(() => '?').join(', ')}) AND (m.active IS NULL OR m.active != 0) GROUP BY m.id`).all(...chain) as Dict[]
+      const sameCall = available.has('tool_call_id') ? " AND COALESCE(a.tool_call_id, '') = COALESCE(m.tool_call_id, '')" : ''
+      const vouched = [available.has('compacted') ? 'a.compacted = 1' : '', available.has('tool_call_id') ? 'm.tool_call_id IS NOT NULL' : '', 'a.content = m.content'].filter(Boolean).join(' OR ')
+      const twins = db.prepare(`SELECT m.id AS id, MIN(a.id) AS twin FROM messages m JOIN messages a ON a.session_id = m.session_id AND a.active = 0 AND a.role = m.role AND a.timestamp = m.timestamp AND a.id < m.id${sameCall} WHERE m.session_id IN (${chain.map(() => '?').join(', ')}) AND (m.active IS NULL OR m.active != 0) AND (${vouched}) GROUP BY m.id`).all(...chain) as Dict[]
       const twinOf = new Map(twins.map((row) => [row.id, row.twin]))
       for (const [i, row] of rows.entries()) {
         const twin = twinOf.get(row.id)
         if (typeof twin === 'number') projected[i]!._state_db_row_id = twin
       }
     }
-    // Version cursors and physical row IDs must never share a numeric identity namespace.
-    const fileGeneration = stateDbGeneration(dbPath)
-    const generation = versionsComplete ? `${fileGeneration ?? 'unknown'}:message-versions-v1` : fileGeneration
-    if (hasId) for (const m of projected) m._state_db_generation = generation
-    return { rows: projected, idCapable: hasId, ok: true, generation, ...(seenId === undefined ? {} : { seenId }) }
+    if (hasId && ['message_uid', 'active', 'compacted'].every((c) => available.has(c))) {
+      const identities = replayIdentities(db, chain, rows, available)
+      for (const [i, row] of rows.entries()) {
+        const identity = identities.get(Number(row.id))
+        // A known changed generation overrides even a coincidental legacy timestamp twin.
+        if (identity !== undefined) {
+          projected[i]!._state_db_row_id = identity.id
+          if (identity.changed) projected[i]!._state_db_authored_change = true
+        }
+      }
+    }
+    // TAL-493: the database file's identity, so a marker taken in a replaced state.db is never applied to its successor.
+    if (hasId) {
+      const generation = stateDbGeneration(dbPath)
+      for (const m of projected) m._state_db_generation = generation
+    }
+    return { rows: projected, idCapable: hasId, ok: true }
   } catch {
     return none
   } finally {
