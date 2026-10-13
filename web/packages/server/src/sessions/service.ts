@@ -57,17 +57,21 @@ export async function ensureAgentRuntimeCurrent(sidecar: SidecarLike | null): Pr
   }
 }
 
+/** The health probe is also the browser's server-reachability probe (30 s), so the readiness check answers well inside it. */
+const CHAT_READINESS_CHECK_TIMEOUT_MS = 5_000
+
 /**
  * TAL-951: whether a chat turn would be admitted now. The sidecar status gives the verdict, and a ready sidecar also
- * runs turn admission's live loaded-revision check, since the Agent checkout can change after the handshake.
+ * runs turn admission's live loaded-revision check, since the Agent checkout can change after the handshake. A check
+ * that cannot answer fails closed as `sidecar_unavailable`.
  */
 export async function currentChatReadiness(sidecar: SidecarLike | null): Promise<ChatReadiness> {
   const readiness = chatReadiness(sidecar)
-  if (!readiness.available) return readiness
+  if (!sidecar || !readiness.available) return readiness
   try {
-    await ensureAgentRuntimeCurrent(sidecar)
-  } catch {
-    return { available: false, condition: 'agent_runtime_stale' }
+    await sidecar.call('runtime.ensure_current', {}, { timeoutMs: CHAT_READINESS_CHECK_TIMEOUT_MS })
+  } catch (error) {
+    return { available: false, condition: error instanceof SidecarError && error.condition === 'agent_runtime_stale' ? 'agent_runtime_stale' : 'sidecar_unavailable' }
   }
   return readiness
 }

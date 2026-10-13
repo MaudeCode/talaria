@@ -870,6 +870,11 @@ describe('agent health chat readiness', () => {
       sidecar.describe = handshake
       sidecar.respond('runtime.ensure_current', () => { throw new SidecarError('Hermes Agent was updated', { condition: 'agent_runtime_stale' }) })
       expect(await chat(), 'ready, checkout changed').toEqual({ available: false, condition: 'agent_runtime_stale' })
+      // A ready sidecar that cannot answer the check is not verified ready, and the wait stays well inside the browser's probe timeout.
+      let checkTimeout: number | undefined
+      sidecar.respond('runtime.ensure_current', (_params, _emit, opts) => { checkTimeout = opts.timeoutMs; throw new SidecarError('sidecar call runtime.ensure_current timed out', { condition: 'sidecar_timeout' }) })
+      expect(await chat(), 'ready, check timed out').toEqual({ available: false, condition: 'sidecar_unavailable' })
+      expect(checkTimeout).toBeLessThanOrEqual(5_000)
       current = null
       expect(await chat()).toEqual({ available: false, condition: 'sidecar_unavailable' })
     } finally {
