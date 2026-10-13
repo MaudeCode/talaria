@@ -1,12 +1,13 @@
 /** Memory panel files and saved prompts (Python `_handle_memory_read`, `_handle_memory_write`, saved prompts helpers). */
 import { closeSync, constants as fsConstants, existsSync, fstatSync, ftruncateSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { dict, isDict, type Config, type Dict } from '../config/agent-config.js'
 import { HttpFailure } from '../sessions/service.js'
 import { redactString } from '../redact.js'
 import { atomicWriteText } from '../fs/atomic.js'
+import { restoreMasks } from './memory-masks.js'
 import { str } from '../util.js'
 
 const HERMES_NAMES = ['.hermes.md', 'HERMES.md']
@@ -109,7 +110,37 @@ export function readMemory(profileHome: string, config: Config, workspace: strin
   }
 }
 
-export function writeMemory(profileHome: string, config: Config, section: string, content: string): { ok: true; section: string; path: string } {
+/** What a memory save needs beyond the file: the Agent's reading of a MEMORY.md / USER.md body. */
+export interface MemoryWriteDeps {
+  check: (target: 'memory' | 'user', content: string) => Promise<{ count: number; limit: number }>
+}
+
+/** The regular file at `target` without following a link; '' when it does not exist yet. */
+function readCurrent(target: string): string {
+  let fd: number
+  try {
+    fd = openSync(target, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0))
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    if (code === 'ENOENT') return ''
+    if (code === 'ELOOP') throw new HttpFailure(400, 'Cannot write to a symlinked memory file')
+    if (code === 'EACCES' || code === 'EPERM') throw new HttpFailure(403, `${basename(target)} is not readable: ${target}. Run chmod 644 on the file or fix ownership on the shared volume.`)
+    throw error
+  }
+  try {
+    if (!fstatSync(fd).isFile()) throw new HttpFailure(400, 'Cannot write to a non-regular memory file')
+    return readFileSync(fd, 'utf8')
+  } finally {
+    closeSync(fd)
+  }
+}
+
+/**
+ * TAL-886: the page shows each file through `redactString`, so the masks it submits are restored to the secrets they hide,
+ * and a MEMORY.md / USER.md body over the Agent store's char limit is refused (the Agent's memory tool cannot add,
+ * replace or remove anything in such a file). A refusal leaves the file untouched; SOUL.md stays free-form.
+ */
+export async function writeMemory(profileHome: string, config: Config, section: string, submitted: string, deps: MemoryWriteDeps): Promise<{ ok: true; section: string; path: string }> {
   const mem = dict(config.memory)
   if (section === 'memory' && !(mem.memory_enabled === undefined || truthy(mem.memory_enabled))) throw new HttpFailure(403, 'Memory is disabled by configuration (memory_enabled: false)')
   if (section === 'user' && !(mem.user_profile_enabled === undefined || truthy(mem.user_profile_enabled))) throw new HttpFailure(403, 'User profile is disabled by configuration (user_profile_enabled: false)')
@@ -121,6 +152,15 @@ export function writeMemory(profileHome: string, config: Config, section: string
   else if (section === 'soul') target = join(profileHome, 'SOUL.md')
   else throw new HttpFailure(400, 'section must be "memory", "user", or "soul"')
   try { if (lstatSync(target).isSymbolicLink()) throw new HttpFailure(400, 'Cannot write to a symlinked memory file') } catch (error) { if (error instanceof HttpFailure) throw error }
+  const current = readCurrent(target)
+  // Masks are rebuilt as redaction shows them even when it is off now: the page may have loaded while it was on.
+  const content = restoreMasks(current, redactString(current), submitted)
+  if (section !== 'soul') {
+    const { count, limit } = await deps.check(section, content)
+    if (count > limit) {
+      throw new HttpFailure(422, `${basename(target)} would hold ${count.toLocaleString('en-US')} characters, over its ${limit.toLocaleString('en-US')}-character limit. Shorten or remove entries, then save.`, { code: 'memory_char_limit', char_limit: { count, limit } })
+    }
+  }
   try {
     // `O_NOFOLLOW` on the open itself: a link swapped in after the check above is refused, not followed.
     const fd = openSync(target, fsConstants.O_WRONLY | fsConstants.O_CREAT | (fsConstants.O_NOFOLLOW ?? 0), 0o644)

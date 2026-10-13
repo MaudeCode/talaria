@@ -74,6 +74,7 @@
           "mcp.registry_tools",
           "mcp.reload",
           "mcp.status",
+          "memory.check",
           "models.capabilities",
           "models.context_length",
           "models.estimate_tokens",

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { z } from 'zod'
-import { SIDECAR_RPC_VERSION, SkillsSchema, UpdateNotificationsSchema } from './index.js'
+import { MemoryWriteRefusalSchema, SIDECAR_RPC_VERSION, SkillsSchema, UpdateNotificationsSchema } from './index.js'
 
 const shared = (path: string): unknown => JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../contracts', path), 'utf8'))
 
@@ -11,6 +11,10 @@ describe('contracts package', () => {
     const parsed = SkillsSchema.parse(shared('fixtures/skills.json'))
     expect(parsed.skills.map((row) => row.name)).toEqual(['a/one', 'b/two'])
     expect(parsed.skills.every((row) => row.load_name === row.name && row.status === 'ambiguous' && row.tier === 1)).toBe(true)
+  })
+  it('parses the shared memory save refusals (TAL-886)', () => {
+    const fixture = shared('fixtures/memory-write-refusals.json') as Record<string, unknown>
+    expect(Object.values(fixture).map((body) => MemoryWriteRefusalSchema.parse(body).code)).toEqual(['memory_char_limit', 'memory_mask_ambiguous', 'memory_mask_edited'])
   })
   it('exports an integer sidecar RPC version', () => {
     expect(Number.isInteger(SIDECAR_RPC_VERSION)).toBe(true)

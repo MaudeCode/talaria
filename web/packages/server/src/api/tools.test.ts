@@ -18,6 +18,8 @@ import { UpdateService, type UpdateServiceDeps } from '../tools/updates.js'
 type Json = Record<string, unknown>
 const post = (s: TestServer, path: string, body: unknown, method = 'POST'): Promise<Response> => s.get(path, { method, body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
 const json = async (res: Response): Promise<Json> => (await res.json()) as Json
+/** TAL-886: the shared refusal bodies the native and Web clients render. */
+const refusals = JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/memory-write-refusals.json'), 'utf8')) as Record<'char_limit' | 'mask_ambiguous' | 'mask_edited', Json>
 
 describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics', () => {
   let s: TestServer
@@ -197,6 +199,72 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     expect((await json(res)).memory_path).toBe('')
     configs.set(s.state, { ...configs.get(s.state), memory: {} })
     writeFileSync(join(s.state, 'config.yaml'), '# bump2\n')
+  })
+
+  it('keeps the secrets the memory page masked when it saves (TAL-886)', async () => {
+    sidecar.respond('memory.check', (params) => ({ count: params.content.length, limit: 2200 }))
+    mkdirSync(join(s.state, 'memories'), { recursive: true })
+    const file = join(s.state, 'memories', 'MEMORY.md')
+    const original = 'Deploy box: ssh deploy@10.0.0.5, token ghp_AbCDEFGHIJKLMNOP6789\n§\nOpenAI key sk-proj-ABCDEFGHIJKLMNOPabcd for evals\n§\npassword: hunter2\n§\npassword: other99'
+    writeFileSync(file, original)
+    const shown = String((await json(await s.get('/api/memory'))).memory)
+    expect(shown).toBe('Deploy box: ssh deploy@10.0.0.5, token ghp_Ab...6789\n§\nOpenAI key sk-pro...abcd for evals\n§\npassword: ***\n§\npassword: ***')
+    expect((await post(s, '/api/memory/write', { section: 'memory', content: shown })).status).toBe(200)
+    expect(readFileSync(file, 'utf8')).toBe(original)
+    // An edited line saves; each unchanged mask, the two identical `***` included, keeps its own secret.
+    expect((await post(s, '/api/memory/write', { section: 'memory', content: shown.replace('Deploy box', 'Build box') })).status).toBe(200)
+    expect(readFileSync(file, 'utf8')).toBe(original.replace('Deploy box', 'Build box'))
+    // A moved entry carries its secret along.
+    const moved = 'OpenAI key sk-pro...abcd for evals\n§\nBuild box: ssh deploy@10.0.0.5, token ghp_Ab...6789\n§\npassword: ***\n§\npassword: ***'
+    expect((await post(s, '/api/memory/write', { section: 'memory', content: moved })).status).toBe(200)
+    const reordered = 'OpenAI key sk-proj-ABCDEFGHIJKLMNOPabcd for evals\n§\nBuild box: ssh deploy@10.0.0.5, token ghp_AbCDEFGHIJKLMNOP6789\n§\npassword: hunter2\n§\npassword: other99'
+    expect(readFileSync(file, 'utf8')).toBe(reordered)
+    // A copied mask that stands for two different secrets is refused, and the file is untouched.
+    const res = await post(s, '/api/memory/write', { section: 'memory', content: `${moved}\n§\nbackup password: ***` })
+    expect(res.status).toBe(422)
+    expect(await json(res)).toEqual(refusals.mask_ambiguous)
+    expect(readFileSync(file, 'utf8')).toBe(reordered)
+    // An edit inside a mask is refused rather than written over the secret.
+    const edited = await post(s, '/api/memory/write', { section: 'memory', content: moved.replace('ghp_Ab...6789', 'ghp_Ab...6789.') })
+    expect(edited.status).toBe(422)
+    expect(await json(edited)).toEqual(refusals.mask_edited)
+    expect(readFileSync(file, 'utf8')).toBe(reordered)
+    // A file the server cannot read back is refused rather than overwritten blind.
+    chmodSync(file, 0o200)
+    const unreadable = await post(s, '/api/memory/write', { section: 'memory', content: 'x' })
+    chmodSync(file, 0o644)
+    expect(unreadable.status).toBe(403)
+    expect(String((await json(unreadable)).error)).toContain('MEMORY.md is not readable')
+    expect(readFileSync(file, 'utf8')).toBe(reordered)
+    // Redaction switched off between the page load and the save still restores the masks the page showed (fails closed).
+    s.deps.settings.save({ api_redact_enabled: false })
+    try {
+      expect((await post(s, '/api/memory/write', { section: 'memory', content: moved })).status).toBe(200)
+    } finally {
+      s.deps.settings.save({ api_redact_enabled: true })
+    }
+    expect(readFileSync(file, 'utf8')).toBe(reordered)
+    // SOUL.md keeps its secrets too.
+    writeFileSync(join(s.state, 'SOUL.md'), 'Sign with sk-proj-ABCDEFGHIJKLMNOPabcd')
+    const soul = String((await json(await s.get('/api/memory'))).soul)
+    expect((await post(s, '/api/memory/write', { section: 'soul', content: `${soul}\nBe brief.` })).status).toBe(200)
+    expect(readFileSync(join(s.state, 'SOUL.md'), 'utf8')).toBe('Sign with sk-proj-ABCDEFGHIJKLMNOPabcd\nBe brief.')
+  })
+
+  it('refuses a memory save over the Agent store char limit and leaves the file untouched (TAL-886)', async () => {
+    const checks: Json[] = []
+    sidecar.respond('memory.check', (params) => { checks.push(params); return { count: params.content.length, limit: 2200 } })
+    mkdirSync(join(s.state, 'memories'), { recursive: true })
+    const file = join(s.state, 'memories', 'MEMORY.md')
+    writeFileSync(file, 'User prefers tabs')
+    const res = await post(s, '/api/memory/write', { section: 'memory', content: `User prefers tabs\n§\n${'x'.repeat(2415)}` })
+    expect(res.status).toBe(422)
+    expect(await json(res)).toEqual(refusals.char_limit)
+    expect(readFileSync(file, 'utf8')).toBe('User prefers tabs')
+    expect(checks).toEqual([{ profile_home: s.state, target: 'memory', content: `User prefers tabs\n§\n${'x'.repeat(2415)}` }])
+    // SOUL.md stays free-form.
+    expect((await post(s, '/api/memory/write', { section: 'soul', content: 'y'.repeat(5000) })).status).toBe(200)
+    expect(checks).toHaveLength(1)
   })
 
   it('saved prompts round-trip with limits', async () => {

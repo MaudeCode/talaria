@@ -315,7 +315,10 @@ export const toolsRouter = os.router({
     write: os.memory.write.handler(({ input, context: { ctx } }) => run(async () => {
       const section = input.section ?? input.target
       if (section === undefined || input.content === undefined) throw new HttpError(400, 'Missing required field(s): section, content')
-      return writeMemory(home(ctx), await ctx.deps.agentConfig.read(home(ctx)), str(section), str(input.content))
+      const profileHome = home(ctx)
+      return writeMemory(profileHome, await ctx.deps.agentConfig.read(profileHome), str(section), str(input.content), {
+        check: (target, content) => runningSidecar(ctx).call('memory.check', { profile_home: profileHome, target, content }),
+      })
     })),
   },
   prompts: {
