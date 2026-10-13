@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Talaria Web reports an incompatible Agent at startup, instead of failing every chat, when HERMES_WEBUI_PYTHON points at an interpreter that cannot load the Agent's updated packages, and it warns when that setting overrides the Agent's own environment.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

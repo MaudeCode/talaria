@@ -47,12 +47,17 @@ fails those routes closed. Common causes:
 1. **No Agent checkout in a discovered location.** Discovery tries `HERMES_WEBUI_AGENT_DIR`,
    `$HERMES_HOME/hermes-agent`, a sibling `hermes-agent` checkout, `~/hermes-agent`, `/opt/hermes`,
    `/usr/local/lib/hermes-agent`, and the `hermes` launcher on `PATH`.
-2. **Checkout without a venv.** The sidecar runs on `<agent>/venv` or `<agent>/.venv`; `HERMES_WEBUI_PYTHON`
+2. **Checkout without a venv.** The sidecar runs on the package-manager (PM) environment recorded under
+   `$HERMES_HOME/installs/`, else on `<agent>/venv` or `<agent>/.venv`; `HERMES_WEBUI_PYTHON`
    overrides the interpreter.
 3. **`HERMES_WEBUI_AGENT_DIR` pointing at the wrong directory.** The override beats discovery.
 4. **Agent revision drift.** The handshake compares the loaded Agent with `sidecar/agent_dependency.json`;
    `agent_incompatible` means the checkout is not the tested revision, `agent_runtime_stale` means the
    checkout changed while the server was running.
+5. **Stale `HERMES_WEBUI_PYTHON` pin.** An Agent update can move its dependencies to a new PM environment on a
+   newer Python. A pin to the old venv then reports `agent_incompatible` with `interpreter Python X.Y cannot
+   load Agent packages built for Python X.Z`, and the server log warns that the pin overrides the PM
+   interpreter. Unset `HERMES_WEBUI_PYTHON`.
 
 ### Step 1 — read what the launcher resolved
 
@@ -67,8 +72,14 @@ locations that were probed.
 
 ```bash
 export HERMES_WEBUI_AGENT_DIR=/absolute/path/to/hermes-agent
-export HERMES_WEBUI_PYTHON=/absolute/path/to/hermes-agent/venv/bin/python
 talaria-web ctl restart
+```
+
+Leave `HERMES_WEBUI_PYTHON` unset for an Agent installed by its package manager; discovery follows the current
+PM environment across Agent updates. Set it only for a checkout without a PM environment:
+
+```bash
+export HERMES_WEBUI_PYTHON=/absolute/path/to/hermes-agent/venv/bin/python
 ```
 
 ### Step 3 — verify the sidecar can import the Agent

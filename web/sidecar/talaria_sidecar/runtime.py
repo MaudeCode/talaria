@@ -13,9 +13,11 @@ import importlib
 import json
 import math
 import os
+import re
 import stat
 import subprocess
 import sys
+import sysconfig
 import threading
 import time
 from pathlib import Path
@@ -217,6 +219,45 @@ def installed_agent_version() -> str | None:
     return get_version_info().base_version
 
 
+def _python_abi(major: int | str, minor: int | str, free_threaded: bool) -> str:
+    """``3.14`` or ``3.14t``: regular and free-threaded builds of one version load different native extensions."""
+    return f"{major}.{minor}{'t' if free_threaded else ''}"
+
+
+def _site_packages_python(entry: str) -> tuple[str, Path] | None:
+    """The Python ABI a ``sys.path`` site-packages directory was built for, and that venv's interpreter."""
+    path = Path(entry)
+    if path.name != "site-packages" or not path.is_dir():
+        return None
+    match = re.fullmatch(r"python(\d+)\.(\d+)(t?)", path.parent.name)
+    if match and path.parent.parent.name in {"lib", "lib64"}:
+        return _python_abi(match[1], match[2], bool(match[3])), path.parent.parent.parent / "bin" / "python"
+    if path.parent.name.lower() == "lib":
+        venv = path.parent.parent
+        try:
+            config = (venv / "pyvenv.cfg").read_text(encoding="utf-8")
+        except OSError:
+            return None
+        found = re.search(r"^\s*version(?:_info)?\s*=\s*(\d+)\.(\d+)", config, re.MULTILINE)
+        if found:
+            free_threaded = re.search(r"^\s*executable\s*=.*python\d+\.\d+t(?:\.exe)?\s*$", config, re.MULTILINE | re.IGNORECASE)
+            return _python_abi(found[1], found[2], bool(free_threaded)), venv / "Scripts" / "python.exe"
+    return None
+
+
+def _check_site_packages_python() -> None:
+    """Compiled Agent dependencies load lazily on the first chat; fail the handshake when ``sys.path`` holds
+    site-packages built for another Python (a stale ``HERMES_WEBUI_PYTHON`` after a PM environment update)."""
+    running = _python_abi(sys.version_info[0], sys.version_info[1], bool(sysconfig.get_config_var("Py_GIL_DISABLED")))
+    for entry in sys.path:
+        built = _site_packages_python(entry)
+        if built is not None and built[0] != running:
+            raise ImportError(
+                f"interpreter Python {running} cannot load Agent packages built for Python {built[0]} ({entry}); "
+                f"unset HERMES_WEBUI_PYTHON or point it at {built[1]}"
+            )
+
+
 class AgentRuntime:
     """Loads the Agent once and guards against a changed checkout."""
 
@@ -250,6 +291,7 @@ class AgentRuntime:
                 # first imports. Take it here, under the launch profile and before any profile-scoped method runs, so
                 # a named profile's plugin loaded later never enters that process-wide snapshot.
                 importlib.import_module("hermes_cli.auth")
+                _check_site_packages_python()
             except Exception as exc:  # noqa: BLE001 - reported as a handshake condition
                 self.import_error = f"{type(exc).__name__}: {exc}"
                 raise AgentIncompatible(f"Hermes Agent could not be imported: {self.import_error}", import_error=self.import_error)
