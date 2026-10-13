@@ -4766,6 +4766,11 @@ public final class ChatViewModel {
         await pendingActionCoordinator.disableApprovalBypassForCurrentSession()
     }
 
+    public func loadToolsetsCatalog() async throws -> ToolsetsCatalog? {
+        guard let sessionID else { throw URLError(.badURL) }
+        return try await client.fetchToolsetsCatalog(sessionID: sessionID, toolsets: sessionToolsets?.names)
+    }
+
     /// Sets the session's toolsets, nil for the profile's defaults; the control then shows what the
     /// server saved. The strip's controls stay disabled until it answers, so saves never overlap. A
     /// failure keeps the old value and reports in the composer (TAL-631).

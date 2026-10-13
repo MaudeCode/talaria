@@ -77,6 +77,11 @@ public enum APIError: LocalizedError {
         return Self.serverErrorPayload(from: body)?.code
     }
 
+    static func isVanishedSession(statusCode: Int, body: String?) -> Bool {
+        guard statusCode == 404 else { return false }
+        return serverErrorMessage(from: body)?.localizedCaseInsensitiveContains("Session not found") == true
+    }
+
     public var serverMessage: String? {
         guard case .http(_, let body) = self else { return nil }
         return Self.serverErrorMessage(from: body)
@@ -194,11 +199,6 @@ private extension APIError {
         default:
             return String(localized: "Could not reach the server. Check the URL, network connection, and tunnel status.")
         }
-    }
-
-    static func isVanishedSession(statusCode: Int, body: String?) -> Bool {
-        guard statusCode == 404 else { return false }
-        return serverErrorMessage(from: body)?.localizedCaseInsensitiveContains("Session not found") == true
     }
 
     static func serverErrorMessage(from body: String?) -> String? {

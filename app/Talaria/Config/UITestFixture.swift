@@ -679,6 +679,16 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             return json(["pending_count": 0])
         case "/api/update-notifications":
             return json(["scope_id": "ui-fixture-scope", "notifications": [], "unread_count": 0, "clearable_count": 0, "can_clear": false])
+        case "/api/toolsets":
+            let override = requestJSON(request)["toolsets"] as? [String]
+            let selected = override ?? ["file"]
+            return json([
+                "toolsets": [
+                    ["name": "file", "description": "Read and write files", "available": true, "selected": selected.contains("file"), "unavailable_reason": NSNull()],
+                    ["name": "todo", "description": "Task lists", "available": false, "selected": selected.contains("todo"), "unavailable_reason": "disabled"]
+                ],
+                "selected_toolsets": selected, "using_defaults": override == nil
+            ])
         case "/api/session/toolsets":
             // Like the server: trimmed, blanks dropped, nothing left is the profile's defaults.
             let names = (requestJSON(request)["toolsets"] as? [String] ?? [])

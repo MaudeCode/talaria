@@ -430,6 +430,7 @@ struct ChatView: View {
             sessionStart: sessionStart,
             onRetrySessionStart: retrySessionStart,
             sessionToolsets: viewModel.sessionToolsets,
+            onLoadToolsets: { try await viewModel.loadToolsetsCatalog() },
             onSaveToolsets: { names in
                 await viewModel.saveSessionToolsets(names)
             }

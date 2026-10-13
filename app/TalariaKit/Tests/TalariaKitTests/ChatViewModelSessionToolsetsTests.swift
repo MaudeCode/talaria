@@ -3,6 +3,53 @@ import XCTest
 
 /// The strip's toolsets control shows and sets the session's server-side toolset override (TAL-631).
 final class ChatViewModelSessionToolsetsTests: APIClientTestCase {
+    func testCatalog404PreservesLegacyEditing() async throws {
+        let client = makeClient { request in
+            apiTestJSONResponse(#"{"error":"not found"}"#, statusCode: 404, for: request)
+        }
+        do {
+            let catalog = try await client.fetchToolsetsCatalog(sessionID: "session-abc", toolsets: ["file"])
+            XCTAssertNil(catalog, "An unsupported catalog must select the legacy editor")
+        } catch {
+            XCTFail("An unsupported catalog must select the legacy editor, not fail: \(error)")
+        }
+    }
+
+    func testCatalogAuthServerAndSessionFailuresNeverSelectLegacyEditing() async throws {
+        for status in [401, 403, 404, 500, 503] {
+            let client = makeClient { request in
+                apiTestJSONResponse(#"{"error":"Session not found"}"#, statusCode: status, for: request)
+            }
+            do {
+                _ = try await client.fetchToolsetsCatalog(sessionID: "session-abc", toolsets: nil)
+                XCTFail("HTTP \(status) must stay an error")
+            } catch { /* Expected: only a missing endpoint permits compatibility editing. */ }
+        }
+    }
+
+    func testMalformedCatalogNeverSelectsLegacyEditing() async throws {
+        let client = makeClient { request in apiTestJSONResponse("null", for: request) }
+        do {
+            _ = try await client.fetchToolsetsCatalog(sessionID: "session-abc", toolsets: nil)
+            XCTFail("Malformed success responses must stay an error")
+        } catch { /* Expected decoding failure, not unsupported endpoint. */ }
+    }
+
+    func testCatalogRequestPreservesProfileDefaults() async throws {
+        let client = makeClient { request in
+            XCTAssertEqual(request.url?.path, "/api/toolsets")
+            XCTAssertEqual(request.httpMethod, "POST")
+            let body = try apiTestJSONBody(from: request)
+            XCTAssertEqual(body["session_id"] as? String, "session-abc")
+            XCTAssertTrue(body["toolsets"] is NSNull)
+            return apiTestJSONResponse(#"{"toolsets":[{"name":"todo","available":false,"selected":false,"unavailable_reason":"disabled"}],"selected_toolsets":["file"],"using_defaults":true}"#, for: request)
+        }
+        let response = try await client.fetchToolsetsCatalog(sessionID: "session-abc", toolsets: nil)
+        let catalog = try XCTUnwrap(response)
+        XCTAssertEqual(catalog.toolsets.first?.available, false)
+        XCTAssertEqual(catalog.selectedToolsets, ["file"])
+    }
+
     @MainActor
     func testToolsetsShowTheServerValueAndSavesRoundTripIncludingProfileDefaults() async throws {
         var savedBodies: [[String: Any]] = []

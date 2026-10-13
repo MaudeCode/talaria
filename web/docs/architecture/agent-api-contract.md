@@ -129,3 +129,20 @@ legacy flat-file skills are read-only. Save and Delete resolve the selected
 local file through the same lookup and retain anchored filesystem protections;
 they never mutate a shadowed local copy in place of a project skill.
 Older Agents without these helpers retain the legacy list and lookup shapes.
+
+## Toolset policy
+
+`toolsets.catalog` discovers the scoped profile's plugins and MCP servers before resolving its
+Agent toolsets, availability, and draft selection. Chat and catalog requests share MCP discovery,
+including retirement of pre-multiplex launch connections.
+`POST /api/toolsets` exposes that read-only catalog for Web and App with optional `session_id`
+visibility checking. The `toolsets` body is the current draft or null for profile defaults. Clients
+render `available`, `selected`, `unavailable_reason`, `selected_toolsets`, and `using_defaults`.
+Unknown saved names remain visible as unavailable; an empty checklist cannot implicitly restore
+broader defaults. Restoring defaults is an explicit action. The native app retains its previous
+free-text editor only when an older Web server returns endpoint-not-found for the catalog.
+Session-not-found, authentication, transport, server, and decoding failures retain the error state.
+
+Both chat and manual compression forward the profile's parsed `agent.disabled_toolsets` to
+`AIAgent`. The cached chat Agent identity includes this policy so changing it replaces the Agent
+on the next turn. The Agent's filter also scopes deferred tool search and calls.

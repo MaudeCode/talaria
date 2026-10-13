@@ -269,6 +269,9 @@ async function wikiLocation(ctx: RequestContext): Promise<WikiLocation> {
 }
 
 export const toolsRouter = os.router({
+  toolsetsCatalog: os.toolsetsCatalog.handler(({ input, context: { ctx } }) => run(() =>
+    runningSidecar(ctx).call('toolsets.catalog', { profile_home: home(ctx), enabled_toolsets: input.toolsets }),
+  )),
   skills: {
     list: os.skills.list.handler(({ input, context: { ctx } }) => run(async () => ({ skills: await ctx.deps.skills.list(home(ctx), str(input.category).trim() || null) }))),
     usage: os.skills.usage.handler(({ context: { ctx } }) => run(() => ctx.deps.skills.usage(home(ctx)) as Promise<never>)),

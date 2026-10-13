@@ -116,6 +116,7 @@ struct MessageComposerView: View {
     var onRetrySessionStart: () -> Void = {}
     /// The session's toolset override (TAL-631); nil, before a session reports it, hides the control.
     var sessionToolsets: SessionToolsets? = nil
+    var onLoadToolsets: () async throws -> ToolsetsCatalog? = { throw URLError(.unsupportedURL) }
     var onSaveToolsets: ([String]?) async -> Void = { _ in }
 
     private var isAnsweringClarification: Bool { clarificationPrompt != nil }
@@ -432,11 +433,11 @@ struct MessageComposerView: View {
             .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showsToolsetsSheet, onDismiss: restoreFocusAfterPresentationIfNeeded) {
-            ComposerToolsetsSheet(toolsets: sessionToolsets ?? SessionToolsets(names: nil)) { names in
+            ComposerToolsetsSheet(toolsets: sessionToolsets ?? SessionToolsets(names: nil), loadCatalog: onLoadToolsets) { names in
                 showsToolsetsSheet = false
                 await onSaveToolsets(names)
             }
-            .presentationDetents([.medium])
+            .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
         // The pickers hang off the composer root, not the `+` button: opening one expands the

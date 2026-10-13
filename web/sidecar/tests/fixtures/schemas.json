@@ -2477,6 +2477,69 @@
     ],
     "additionalProperties": false
   },
+  "toolsets.catalog": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "toolsets": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "available": {
+              "type": "boolean"
+            },
+            "selected": {
+              "type": "boolean"
+            },
+            "unavailable_reason": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "disabled",
+                    "unavailable"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "name",
+            "description",
+            "available",
+            "selected",
+            "unavailable_reason"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "selected_toolsets": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "using_defaults": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "toolsets",
+      "selected_toolsets",
+      "using_defaults"
+    ],
+    "additionalProperties": false
+  },
   "mcp.status": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

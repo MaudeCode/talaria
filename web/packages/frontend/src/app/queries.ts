@@ -73,3 +73,7 @@ export function useSwitchProfile() {
     },
   })
 }
+
+export function useToolsetsCatalogQuery(value: string[] | null, sessionId?: string) {
+  return useQuery({ queryKey: keys.toolsets(sessionId, value), queryFn: () => api.fetchToolsetsCatalog(value, sessionId), gcTime: 0, retry: false })
+}

@@ -8,6 +8,18 @@ const Ok = z.object({ ok: z.boolean() })
 const Json = z.unknown()
 const Loose = z.record(z.string(), z.unknown())
 
+/** Profile-scoped toolset choices; clients render policy and selection without deriving them. */
+export const ToolsetsCatalogSchema = z.object({
+  toolsets: z.array(z.object({
+    name: z.string(), description: z.string(), available: z.boolean(), selected: z.boolean(),
+    unavailable_reason: z.enum(['disabled', 'unavailable']).nullable(),
+  })),
+  selected_toolsets: z.array(z.string()), using_defaults: z.boolean(),
+})
+export const TOOLSETS_METHODS = {
+  'toolsets.catalog': { params: ProfileHomeParams.extend({ enabled_toolsets: z.array(z.string()).nullable() }), result: ToolsetsCatalogSchema },
+} as const
+
 // ── goals ──────────────────────────────────────────────────────────────
 export const GoalStateSchema = z.object({
   goal: z.string(), status: z.string(), turns_used: z.number().int(), max_turns: z.number().int(),

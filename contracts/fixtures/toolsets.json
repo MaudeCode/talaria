@@ -1,0 +1,22 @@
+{
+  "toolsets": [
+    {
+      "name": "file",
+      "description": "Read and write files",
+      "available": true,
+      "selected": true,
+      "unavailable_reason": null
+    },
+    {
+      "name": "todo",
+      "description": "Task lists",
+      "available": false,
+      "selected": false,
+      "unavailable_reason": "disabled"
+    }
+  ],
+  "selected_toolsets": [
+    "file"
+  ],
+  "using_defaults": true
+}

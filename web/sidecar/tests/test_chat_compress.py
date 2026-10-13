@@ -96,6 +96,7 @@ def agent_env(monkeypatch):
     monkeypatch.setattr(chat, "_PENDING_COMPRESSIONS", {})
     monkeypatch.setattr(chat, "_resolve_runtime", lambda provider, model: {"model": "m", "provider": provider or "p", "api_key": "k", "base_url": "https://example.invalid/v1", "api_mode": "chat_completions"})
     monkeypatch.setattr(chat, "_agent_class", lambda: ThrowawayAgent)
+    monkeypatch.setattr(chat, "disabled_toolsets", lambda: [])
     monkeypatch.setattr(chat, "_profile_toolsets", lambda: ["file", "web"])
     monkeypatch.setattr(chat, "_checkpoint_required", lambda: False)
     monkeypatch.setattr(chat, "scoped_home", lambda home: contextlib.nullcontext(home))

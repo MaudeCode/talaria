@@ -88,6 +88,7 @@ final class ContractReadinessTests: APIClientTestCase {
                 path: "/api/session/yolo",
                 query: ["session_id": "session-123"]
             ),
+            .init(name: "toolset catalog", endpoint: .toolsetsCatalog, path: "/api/toolsets"),
             .init(name: "session toolsets", endpoint: .sessionToolsets, path: "/api/session/toolsets"),
             .init(name: "projects", endpoint: .projects, path: "/api/projects"),
             .init(name: "create project", endpoint: .createProject, path: "/api/projects/create"),
@@ -401,6 +402,17 @@ private struct EndpointContract {
 }
 
 final class SharedContractTests: XCTestCase {
+    func testToolsetCatalogDecodesServerPolicy() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let catalog = try decoder.decode(ToolsetsCatalog.self, from: fixture("toolsets"))
+        XCTAssertEqual(catalog.selectedToolsets, ["file"])
+        XCTAssertEqual(catalog.toolsets[1].available, false)
+        XCTAssertEqual(catalog.toolsets[1].unavailableReason, "disabled")
+        let future = try decoder.decode(ToolsetsCatalog.self, from: Data(#"{"toolsets":[{"name":"unknown","future":true}],"selected_toolsets":[],"future":{}}"#.utf8))
+        XCTAssertNil(future.toolsets[0].available, "An unknown/missing availability cannot enable a choice")
+    }
+
     func testAppAdvertisesCanonicalContractVersions() throws {
         // app/TalariaKit/Tests/TalariaKitTests/<file> -> repository root
         let root = URL(fileURLWithPath: #filePath)

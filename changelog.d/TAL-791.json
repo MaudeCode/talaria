@@ -1,0 +1,21 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Session tool choices can no longer re-enable tools disabled by the operator.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    },
+    {
+      "category": "Added",
+      "summary": "Choose session toolsets from a list that shows which tools are unavailable.",
+      "highlight": false,
+      "components": [
+        "web",
+        "app"
+      ]
+    }
+  ]
+}

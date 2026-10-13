@@ -2,8 +2,7 @@ import { useMemo, useState } from 'react'
 import { Popover } from '@base-ui/react/popover'
 import { ChevronDown, Cpu, Brain, Wrench, FolderOpen, GitBranch } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
-import { useModelsQuery, useWorkspacesQuery } from '../../app/queries'
-import { HelpTip } from '../../ui/Field'
+import { useModelsQuery, useWorkspacesQuery, useToolsetsCatalogQuery } from '../../app/queries'
 import { Menu, MenuGroup, MenuGroupLabel, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator } from '../../ui/Menu'
 import { cn } from '../../ui/cn'
 import { catalogEntryById } from '../../lib/modelEntry'
@@ -79,17 +78,34 @@ export function ReasoningChip({ value, levels, onChange, row }: { value: string 
   )
 }
 
-export function ToolsetsChip({ value, onChange, row }: { value: string[] | null; onChange: (toolsets: string[] | null) => void; row?: boolean | undefined }) {
-  const [draft, setDraft] = useState((value ?? []).join(', '))
+export function ToolsetsChip({ value, onChange, row, sessionId }: { value: string[] | null; onChange: (toolsets: string[] | null) => void; row?: boolean | undefined; sessionId?: string | undefined }) {
+  const [open, setOpen] = useState(false)
   return (
-    <Menu label={m.composer_control_toolsets()} side="top" className="min-w-72" trigger={<Chip icon={<Wrench size={13} aria-hidden="true" />} label={value?.length ? value.join(', ') : m.toolsets_global()} title={m.composer_control_toolsets()} row={row} size="xs" className="composer-toolsets-chip" />}>
-      <form className="flex flex-col gap-2 p-2" onSubmit={(e) => { e.preventDefault(); const list = draft.split(',').map((s) => s.trim()).filter(Boolean); onChange(list.length ? list : null) }}>
-        <div className="flex items-center text-xs font-medium text-text">{m.composer_control_toolsets()}<HelpTip label={m.field_help_about({ label: m.composer_control_toolsets() })} className="shrink-0">{m.toolsets_hint()}</HelpTip></div>
-        <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={m.session_toolsets_placeholder()} aria-label={m.composer_control_toolsets()} className="h-8 w-full rounded-md border border-border bg-input px-2 font-mono text-xs text-text" onKeyDown={(e) => e.stopPropagation()} />
-        <button type="submit" className="self-end rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-fg">{m.save()}</button>
-      </form>
+    <Menu open={open} onOpenChange={setOpen} label={m.composer_control_toolsets()} side="top" className="min-w-72" trigger={<Chip icon={<Wrench size={13} aria-hidden="true" />} label={value?.length ? value.join(', ') : m.toolsets_global()} title={m.composer_control_toolsets()} row={row} size="xs" className="composer-toolsets-chip" />}>
+      {open && <ToolsetsPicker value={value} sessionId={sessionId} onChange={(names) => { onChange(names); setOpen(false) }} />}
     </Menu>
   )
+}
+
+function ToolsetsPicker({ value, sessionId, onChange }: { value: string[] | null; sessionId?: string | undefined; onChange: (names: string[] | null) => void }) {
+  const query = useToolsetsCatalogQuery(value, sessionId)
+  const [draft, setDraft] = useState<string[] | null>(null)
+  if (query.isPending) return <div role="status" className="p-3">{m.loading()}</div>
+  if (query.isError) return <div className="p-3"><p role="alert">{m.toolsets_load_error()}</p><button type="button" onClick={() => { void query.refetch() }}>{m.retry()}</button></div>
+  const selected = draft ?? query.data.selected_toolsets
+  return <form className="flex flex-col gap-2 p-2" onSubmit={(event) => { event.preventDefault(); onChange(draft === null && query.data.using_defaults ? null : selected) }}>
+    <div className="max-h-64 overflow-y-auto">
+      {query.data.toolsets.map((item) => <label key={item.name} title={item.description} className="flex min-h-11 items-center gap-2 text-sm">
+        <input type="checkbox" disabled={!item.available} checked={draft === null ? item.selected : draft.includes(item.name)} onChange={(event) => setDraft(event.target.checked ? [...selected, item.name] : selected.filter((name) => name !== item.name))} />
+        <span>{item.name}</span>
+        {!item.available && <span className="ml-auto text-xs text-muted">{item.unavailable_reason === 'disabled' ? m.toolsets_disabled() : m.toolsets_unavailable()}</span>}
+      </label>)}
+    </div>
+    <div className="flex items-center justify-between gap-3 border-t border-border pt-2">
+      <button type="button" onClick={() => onChange(null)} className="min-h-11 text-xs text-muted">{m.toolsets_defaults()}</button>
+      <button type="submit" disabled={selected.length === 0} className="min-h-11 min-w-11 rounded-md bg-accent px-3 py-1.5 text-sm text-accent-fg disabled:opacity-50">{m.save()}</button>
+    </div>
+  </form>
 }
 
 /** `name` is the session's `workspace_name`; without a session the chip shows the chosen registry entry's name (TAL-303). */

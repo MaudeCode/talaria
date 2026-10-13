@@ -152,6 +152,11 @@ for the default model and its endpoint. Fast and Ultrafast may cost more. The
 setting applies only to turns on that default model; unsupported routes show no
 speed control.
 
+The composer's session toolsets control lists the profile's toolsets and marks unavailable choices.
+Use **Use profile defaults** to remove the session override. An operator's `agent.disabled_toolsets`
+always applies, including to saved overrides, cached chat Agents, and manual compression. Catalog
+availability is read from the server; a failed catalog load leaves selection disabled.
+
 ### Remote access
 
 Bind to loopback and use an SSH tunnel or Tailscale, or set `HERMES_WEBUI_HOST=0.0.0.0` with
