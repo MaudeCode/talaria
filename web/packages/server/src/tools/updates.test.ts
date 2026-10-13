@@ -746,7 +746,7 @@ describe('Agent checkout updates', () => {
     expect(readFileSync(join(a.agent, 'README'), 'utf8')).toBe('preserve local edit\n')
   })
 
-  function agentInstall(): { agent: string; origin: string; v1: string; v2: string } {
+  function agentInstall(withSync = false): { agent: string; origin: string; v1: string; v2: string } {
     const root = tmp()
     const origin = join(root, 'origin')
     git(root, 'init', '-b', 'master', origin)
@@ -759,6 +759,11 @@ describe('Agent checkout updates', () => {
     const agent = join(root, 'agent')
     git(root, 'clone', origin, agent)
     writeFileSync(join(origin, 'VERSION'), '2.0.0\n')
+    if (withSync) {
+      mkdirSync(join(origin, 'hermes_cli'))
+      writeFileSync(join(origin, 'hermes_cli/venv_sync.py'), '# dependency sync entry point\n')
+      git(origin, 'add', 'hermes_cli')
+    }
     git(origin, 'commit', '-am', 'agent v2')
     git(origin, 'tag', 'v2.0.0')
     const v2 = git(origin, 'rev-parse', 'HEAD')
@@ -874,14 +879,120 @@ describe('Agent checkout updates', () => {
     expect(calls).toBe(2)
   })
 
-  function agentService(agent: string, git: GitRun, events: string[]): UpdateService {
+  function agentService(agent: string, git: GitRun, events: string[], agentSync?: UpdateServiceDeps['agentSync'], stateDir = join(agent, '../web-state')): UpdateService {
     return new UpdateService({
       webRoot: join(tmp(), 'web'), git, getJson: noReleases, identity: { release: () => DEV, stamped: () => DEV, runningSourceRevision: () => null }, webuiVersion: 'x',
       agentDir: () => agent, channel: () => 'stable', includeAgent: () => true, blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
+      ...(agentSync ? { agentSync } : {}),
+      stateDir,
       scheduleRestart: () => events.push('restart'), gatewayRestart: () => { events.push('gateway'); return Promise.resolve({ status: 'completed' }) }, sleep: () => Promise.resolve(), log: () => undefined,
     })
   }
   const stashes = (agent: string): string[] => git(agent, 'stash', 'list').split('\n').filter(Boolean)
+
+  it.each([['apply', 'failure'], ['force', 'failure'], ['apply', 'unavailable'], ['apply', 'skipped']] as const)('Agent dependency sync runs after %s and handles %s failure before either restart', async (action, failure) => {
+    const a = agentInstall(true)
+    const revision = a.v2
+    let fail = true
+    const events: string[] = []
+    const sync: NonNullable<UpdateServiceDeps['agentSync']> = (agentDir) => {
+      expect(agentDir).toBe(a.agent)
+      expect(git(agentDir, 'rev-parse', 'HEAD')).toBe(revision)
+      events.push('sync')
+      if (fail && failure === 'unavailable') return Promise.reject(new Error('sidecar unavailable'))
+      return Promise.resolve({ ok: !fail || failure === 'skipped', skipped: fail && failure === 'skipped', detail: fail ? 'synthetic sync failure' : '' })
+    }
+    const svc = agentService(a.agent, runGit, events, sync)
+    const attempt = () => action === 'apply' ? svc.apply('agent', null, () => true, { confirmedRevision: revision }) : svc.force('agent', null, { confirmedRevision: revision })
+    const failed = await attempt()
+    expect(failed.ok).toBe(false)
+    expect(String(failed.message)).toContain('dependency sync')
+    expect(events).toEqual(['sync'])
+    const check = await svc.check(true)
+    expect(updateTargetView('agent', check.agent as Dict, false)).toMatchObject({ behind: 0, state: 'finish', can_apply: true })
+    // Settings refetches after failure; a new server must retain that repair action too.
+    const resumed = agentService(a.agent, runGit, events, sync)
+    const afterRestart = await resumed.check(true)
+    expect(updateTargetView('agent', afterRestart.agent as Dict, false)).toMatchObject({ state: 'finish', can_apply: true })
+    // Git already advanced: retry must still repair dependencies before declaring success.
+    fail = false
+    const retried = await resumed.apply('agent', null, () => true, { confirmedRevision: revision })
+    expect(retried).toMatchObject({ ok: true, up_to_date: false, restart_scheduled: true })
+    expect(events).toEqual(['sync', 'sync', 'gateway', 'restart'])
+    const completed = await agentService(a.agent, runGit, []).check(true)
+    expect(updateTargetView('agent', completed.agent as Dict, false)).toMatchObject({ state: 'up_to_date', can_apply: false })
+  })
+
+  it.each(['apply', 'force'] as const)('Agent sync intent must be durable before %s changes source', async (action) => {
+    const a = agentInstall(true)
+    const state = join(a.agent, '../web-state')
+    writeFileSync(state, 'not a writable directory')
+    const events: string[] = []
+    const svc = agentService(a.agent, runGit, events)
+    const result = action === 'apply' ? await svc.apply('agent', null, () => true, { confirmedRevision: a.v2 }) : await svc.force('agent', null, { confirmedRevision: a.v2 })
+    expect(result.ok).toBe(false)
+    expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(a.v1)
+    expect(events).toEqual([])
+  })
+
+  it.each(['apply', 'force'] as const)('Agent sync intent survives interruption immediately after %s advances HEAD', async (action) => {
+    const a = agentInstall(true)
+    const interrupted: GitRun = async (args, cwd, timeout) => {
+      const result = await runGit(args, cwd, timeout)
+      if (result.ok && (args[0] === 'merge' || args[0] === 'reset')) throw new Error('synthetic interruption after HEAD advanced')
+      return result
+    }
+    const svc = agentService(a.agent, interrupted, [])
+    const attempt = action === 'apply' ? svc.apply('agent', null, () => true, { confirmedRevision: a.v2 }) : svc.force('agent', null, { confirmedRevision: a.v2 })
+    await expect(attempt).rejects.toThrow('synthetic interruption')
+    expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(a.v2)
+    const restarted = await agentService(a.agent, runGit, []).check(true)
+    expect(updateTargetView('agent', restarted.agent as Dict, false)).toMatchObject({ behind: 0, state: 'finish', can_apply: true })
+  })
+
+  it.each([false, true])('refuses sync intent inside the Agent checkout before force-clean (symlink=%s)', async (symlink) => {
+    const a = agentInstall(true)
+    const state = join(a.agent, 'web-state')
+    mkdirSync(state)
+    writeFileSync(join(state, 'settings.json'), '{}')
+    const alias = join(a.agent, '../state-alias')
+    if (symlink) symlinkSync(state, alias, 'dir')
+    const svc = agentService(a.agent, runGit, [], () => Promise.resolve({ ok: false, skipped: false, detail: 'sync failed' }), symlink ? alias : state)
+    const result = await svc.force('agent', null, { confirmedRevision: a.v2 })
+    expect(result.ok).toBe(false)
+    expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(a.v1)
+    expect(readFileSync(join(state, 'settings.json'), 'utf8')).toBe('{}')
+  })
+
+  it('keeps an already-current modern Agent without pending sync a no-op', async () => {
+    const a = agentInstall(true)
+    const events: string[] = []
+    const svc = agentService(a.agent, runGit, events, () => { events.push('sync'); return Promise.resolve({ ok: true, skipped: false, detail: '' }) })
+    expect((await svc.check(true)).agent).toMatchObject({ behind: 1 })
+    // Another updater advances source after Settings cached the available update.
+    git(a.agent, 'merge', '--ff-only', a.v2)
+    expect(await svc.apply('agent')).toMatchObject({ ok: true, up_to_date: true })
+    expect(events).toEqual([])
+    expect(existsSync(join(a.agent, '../web-state/agent-dependency-sync'))).toBe(false)
+    const refreshed = await svc.check()
+    expect(updateTargetView('agent', refreshed.agent as Dict, false)).toMatchObject({ state: 'up_to_date', can_apply: false })
+  })
+
+  it('clears pending Agent sync only after confirming a legacy target', async () => {
+    const a = agentInstall(true)
+    const failed = agentService(a.agent, runGit, [], () => Promise.resolve({ ok: false, skipped: false, detail: 'sync failed' }))
+    expect((await failed.apply('agent', null, () => true, { confirmedRevision: a.v2 })).ok).toBe(false)
+    git(a.origin, 'rm', 'hermes_cli/venv_sync.py')
+    git(a.origin, 'commit', '-m', 'release without dependency sync')
+    git(a.origin, 'tag', 'v3.0.0')
+    const revision = git(a.origin, 'rev-parse', 'HEAD')
+    const events: string[] = []
+    const resumed = agentService(a.agent, runGit, events)
+    expect(await resumed.apply('agent', null, () => true, { confirmedRevision: revision })).toMatchObject({ ok: true, restart_scheduled: true })
+    expect(events).toEqual(['gateway', 'restart'])
+    const status = await agentService(a.agent, runGit, []).check(true)
+    expect(updateTargetView('agent', status.agent as Dict, false)).toMatchObject({ state: 'up_to_date', can_apply: false })
+  })
 
   it('a conflicting local edit leaves a clean checkout, keeps the stash, and restarts onto the update', async () => {
     const a = agentInstall()

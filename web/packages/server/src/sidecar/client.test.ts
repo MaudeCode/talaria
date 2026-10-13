@@ -131,6 +131,10 @@ describe('FakeSidecar', () => {
     expect(sidecarSpawnEnv(opts)).not.toHaveProperty('OPENAI_API_KEY')
   })
 
+  it('disables Agent lazy installs even when the configured environment enables them', () => {
+    expect(sidecarSpawnEnv({ env: { HERMES_DISABLE_LAZY_INSTALLS: '0' }, hermesHome: '/h', agentDir: '/a', sidecarDir: '/s' }).HERMES_DISABLE_LAZY_INSTALLS).toBe('1')
+  })
+
   it('fails closed when not ready', async () => {
     const fake = new FakeSidecar({ status: 'restarting' })
     await expect(fake.call('rpc.methods', {})).rejects.toMatchObject({ condition: 'sidecar_unavailable' })
@@ -169,8 +173,7 @@ describe.skipIf(!agentAvailable)('SidecarClient against the pinned Agent', () =>
     client = new SidecarClient({ python, agentDir, sidecarDir, hermesHome, log: () => undefined, backoffMs: [10] })
     await client.start()
     await client.call('runtime.shutdown', { exit_code: 3 })
-    await new Promise((r) => setTimeout(r, 300))
-    expect(client.status).toBe('incompatible')
+    await expect.poll(() => client?.status, { timeout: 5_000 }).toBe('incompatible')
     await expect(client.call('rpc.methods', {})).rejects.toBeInstanceOf(SidecarError)
   })
 })

@@ -121,6 +121,9 @@ class RpcServer:
     def request_shutdown(self, exit_code: int = 0) -> None:
         self.exit_code = exit_code
         self._closed.set()
+        with self._active_lock:
+            for ctx in self._active.values():
+                ctx.cancel_event.set()
 
     # ── dispatch ──────────────────────────────────────────────────────────
     def _register(self, request: dict) -> CallContext | None:

@@ -9,6 +9,7 @@ import { delimiter, join, resolve } from 'node:path'
 import { request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
 import { discoverAgentDirForLaunch, discoverAgentPython, which } from '../sidecar/discover.js'
+import { AGENT_IMPORT_ENV } from '../sidecar/env.js'
 export { agentDirFromHermesCli, discoverAgentDirForLaunch } from '../sidecar/discover.js'
 
 export const SUPERVISOR_ENV_VARS = ['INVOCATION_ID', 'JOURNAL_STREAM', 'NOTIFY_SOCKET', 'XPC_SERVICE_NAME', 'SUPERVISOR_ENABLED'] as const
@@ -23,7 +24,7 @@ export function isWsl(env: Record<string, string | undefined>, release = ''): bo
 /** Python `_python_can_run_webui_and_agent`: the sidecar preflight. */
 export function sidecarPreflight(python: string, agentDir: string, env: Record<string, string | undefined>): { ok: boolean; detail: string } {
   const pythonPath = env.PYTHONPATH ? `${agentDir}${delimiter}${env.PYTHONPATH}` : agentDir
-  const result = spawnSync(python, ['-c', 'from run_agent import AIAgent\ntry:\n    import hermes_yaml\nexcept Exception:\n    import yaml\n'], { env: { ...env, PYTHONPATH: pythonPath }, encoding: 'utf8', timeout: 60_000 })
+  const result = spawnSync(python, ['-c', 'from run_agent import AIAgent\ntry:\n    import hermes_yaml\nexcept Exception:\n    import yaml\n'], { env: { ...env, ...AGENT_IMPORT_ENV, PYTHONPATH: pythonPath }, encoding: 'utf8', timeout: 60_000 })
   if (result.error) return { ok: false, detail: result.error.message }
   return { ok: result.status === 0, detail: (result.stderr || '').trim().split('\n').slice(-1)[0] ?? '' }
 }

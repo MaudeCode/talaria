@@ -113,6 +113,7 @@
           "runtime.handshake",
           "runtime.shutdown",
           "runtime.status",
+          "runtime.sync_dependencies",
           "skills.find",
           "skills.list",
           "skills.view",

@@ -2,10 +2,10 @@
   "runtime.handshake": [
     {
       "params": {
-        "rpc_version": 18
+        "rpc_version": 19
       },
       "result": {
-        "rpc_version": 18,
+        "rpc_version": 19,
         "python": "<python>",
         "python_version": "3.14.7",
         "agent_dir": "<agent>",
@@ -25,7 +25,7 @@
     {
       "params": {},
       "result": {
-        "rpc_version": 18,
+        "rpc_version": 19,
         "python": "<python>",
         "python_version": "3.14.7",
         "agent_dir": "<agent>",
@@ -62,6 +62,28 @@
       },
       "result": {
         "ok": true
+      }
+    }
+  ],
+  "runtime.sync_dependencies": [
+    {
+      "params": {
+        "agent_dir": "<agent>"
+      },
+      "result": {
+        "ok": true,
+        "skipped": true,
+        "detail": ""
+      }
+    },
+    {
+      "params": {
+        "agent_dir": "<agent>"
+      },
+      "result": {
+        "ok": false,
+        "skipped": false,
+        "detail": "synthetic sync failure"
       }
     }
   ]

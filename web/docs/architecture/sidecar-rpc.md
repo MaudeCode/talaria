@@ -6,6 +6,26 @@ Agent Python modules runs in one Web-owned sidecar process,
 `PYTHONPATH=<agent dir>`. The sidecar is stdlib-only Python; it has no pip
 dependencies of its own and installs nothing.
 
+The server sets `HERMES_DISABLE_LAZY_INSTALLS=1` for the sidecar and launcher
+preflight. The sidecar also sets it at package import for direct Python entry
+points. Importing Agent modules cannot adopt a checkout, sync dependencies, or
+re-exec through the Agent's lazy-install path, which would lose the RPC file
+descriptor and the sidecar's `PYTHONPATH`. Explicit Agent updates own dependency
+sync before restarting either process. Live `runtime.env` edits preserve the
+opt-out as well.
+
+RPC v19 adds `runtime.sync_dependencies`. It validates the requested checkout
+against the sidecar's configured Agent directory and runs `hermes_cli.venv_sync`
+in a subprocess on that sidecar's interpreter and launch environment. It remains
+available when Agent imports fail or the loaded revision is stale, since those
+are the states an explicit update must repair. The server owns the durable
+pending-sync marker and restart ordering; it never launches Agent sync itself.
+The sync supervisor holds an OS lock per launch home and checkout until its
+writer exits. Its stdin pipe belongs to the sidecar: cancellation, shutdown, or
+the sidecar being killed closes that pipe, so the supervisor stops the
+writer's process tree and reaps the writer before releasing the lock. A concurrent repair fails
+without starting another writer.
+
 ## Ownership
 
 | Concern | Owner |

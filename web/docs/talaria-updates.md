@@ -73,6 +73,21 @@ The tested pin remains Talaria's official support reference. A different Agent
 revision warns but can attempt operations; missing capabilities and unsafe
 credential isolation still fail at use. Automatic updates still apply only to Web.
 
+After changing Agent source, both Update and Force Update run the Agent's
+`hermes_cli.venv_sync` command through the versioned sidecar RPC when that release
+supplies it, using the sidecar's interpreter and launch Hermes home. Dependency
+sync must succeed before the gateway
+or Web restart. A sync failure reports a failed update; retrying still runs sync
+even if Git already reached the target. Web records pending sync in its state
+directory before changing source, so an unwritable state directory stops the
+update before Git advances. For these updates, the state directory must be outside the Agent checkout,
+so Force Update cannot remove it while cleaning source. Settings keeps the Agent
+update action available after a failed sync
+or server restart until sync succeeds. Older releases without that command keep
+their existing update behavior. Chat and launcher imports never trigger lazy
+dependency installation.
+An already-current Agent update without pending sync remains a no-op.
+
 **Update Agent** keeps tracked local edits in the Agent checkout. It saves them
 with `git stash create` under a private `refs/talaria/autostash/<sha>` ref, never
 the shared stash list, and reverts exactly that patch before fast-forwarding.

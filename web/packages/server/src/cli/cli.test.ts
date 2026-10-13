@@ -110,6 +110,16 @@ describe('serve argument precedence', () => {
 })
 
 describe('launcher', () => {
+  it('preflight disables Agent lazy installs before importing run_agent', () => {
+    const dir = scratch()
+    try {
+      writeFileSync(join(dir, 'run_agent.py'), 'import os\nassert os.environ.get("HERMES_DISABLE_LAZY_INSTALLS") == "1", "lazy installs enabled"\nclass AIAgent: pass\n')
+      writeFileSync(join(dir, 'hermes_yaml.py'), '')
+      const result = sidecarPreflight('python3', dir, { PATH: process.env.PATH, HOME: dir, HERMES_HOME: dir, HERMES_DISABLE_LAZY_INSTALLS: '0' })
+      expect(result, result.detail).toEqual({ ok: true, detail: '' })
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
   it.each([
     { name: 'hermes_yaml without PyYAML', hermesYaml: '', yaml: null, agent: true, ok: true, detail: '' },
     { name: 'legacy PyYAML without hermes_yaml', hermesYaml: null, yaml: '', agent: true, ok: true, detail: '' },

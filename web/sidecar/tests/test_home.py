@@ -162,7 +162,7 @@ def test_agent_0_21_3_mirrors_the_launch_profile_policy(tmp_path, monkeypatch, s
     monkeypatch.setenv("FRESH_KEY", "restored-after-the-test")
     registry.methods["runtime.env"](None, {"unset": ["OPENAI_API_KEY"], "set": {"FRESH_KEY": "sk-fresh"}})
     with home_module.scoped_home(root):
-        assert scope_calls[-2:] == [("scope", {"FRESH_KEY": "sk-fresh", "ROOT_FILE": "root"}), ("terminal", root, {})]
+        assert scope_calls[-2:] == [("scope", {"FRESH_KEY": "sk-fresh", "ROOT_FILE": "root", "HERMES_DISABLE_LAZY_INSTALLS": "1"}), ("terminal", root, {})]
 
     # A partial implementation is not permission to leak the launch profile's credentials.
     monkeypatch.delattr(scope, "set_multiplex_active")
