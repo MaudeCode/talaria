@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import base64
 import logging
-import os
 import tempfile
 from pathlib import Path
 
@@ -16,82 +15,25 @@ log = logging.getLogger("talaria_sidecar.stt")
 
 
 def capability() -> tuple[bool, str]:
+    """The provider the Agent's own resolver would transcribe with, so the client never disagrees with ``stt.transcribe``.
+
+    ``_get_provider`` passes an unknown explicit name through, so availability takes the Agent's
+    ``check_voice_requirements`` bar: a built-in, a ``stt.providers.<name>`` command, or an available plugin."""
     try:
-        import tools.transcription_tools as stt
-    except ImportError:
-        return False, "none"
-    try:
-        load_cfg = getattr(stt, "_load_stt_config", None)
-        stt_config = load_cfg() if callable(load_cfg) else {}
-        cfg = stt_config if isinstance(stt_config, dict) else {}
-        is_enabled = getattr(stt, "is_stt_enabled", None)
-        if callable(is_enabled) and not is_enabled(stt_config):
+        from tools.transcription_tools import (
+            BUILTIN_STT_PROVIDERS, _get_provider, _load_stt_config, _resolve_command_stt_provider_config)
+        from tools.voice_mode import _check_plugin_stt_provider
+
+        stt_config = _load_stt_config()
+        provider = str(_get_provider(stt_config) or "none")
+        if provider == "none":
             return False, "none"
-        has_flags = any(hasattr(stt, n) for n in ("_HAS_FASTER_WHISPER", "_HAS_OPENAI", "_HAS_MISTRAL"))
-        get_provider = getattr(stt, "_get_provider", None)
-        if callable(get_provider) and not has_flags:
-            provider = str(get_provider(stt_config) or "none")
-            return provider not in ("", "none"), provider or "none"
-
-        def env(name):
-            getter = getattr(stt, "get_env_value", None)
-            try:
-                if callable(getter):
-                    return str(getter(name) or "").strip()
-            except Exception:  # noqa: BLE001
-                return ""
-            return os.getenv(name, "").strip()
-
-        def helper(name) -> bool:
-            fn = getattr(stt, name, None)
-            try:
-                return bool(fn()) if callable(fn) else False
-            except Exception:  # noqa: BLE001
-                return False
-
-        def local_command_available() -> bool:
-            return helper("_has_local_command") and helper("_find_ffmpeg_binary")
-
-        def command_provider_available(provider) -> bool:
-            resolver = getattr(stt, "_resolve_command_stt_provider_config", None)
-            try:
-                return callable(resolver) and resolver(provider, cfg) is not None
-            except Exception:  # noqa: BLE001
-                return False
-
-        def resolve(provider):
-            if provider == "local":
-                return "local" if getattr(stt, "_HAS_FASTER_WHISPER", False) else "local_command" if local_command_available() else "none"
-            if provider == "local_command":
-                return "local_command" if local_command_available() else "local" if getattr(stt, "_HAS_FASTER_WHISPER", False) else "none"
-            if provider == "groq":
-                return "groq" if getattr(stt, "_HAS_OPENAI", False) and env("GROQ_API_KEY") else "none"
-            if provider == "openai":
-                return "openai" if getattr(stt, "_HAS_OPENAI", False) and helper("_has_openai_audio_backend") else "none"
-            if provider == "mistral":
-                return "mistral" if getattr(stt, "_HAS_MISTRAL", False) and env("MISTRAL_API_KEY") else "none"
-            if provider == "xai":
-                try:
-                    from tools.xai_http import resolve_xai_http_credentials
-
-                    return "xai" if resolve_xai_http_credentials().get("api_key") else "none"
-                except Exception:  # noqa: BLE001
-                    return "none"
-            if provider == "elevenlabs":
-                return "elevenlabs" if env("ELEVENLABS_API_KEY") else "none"
-            return provider if command_provider_available(provider) else "none"
-
-        if "provider" in cfg:
-            configured = str(cfg.get("provider") or "local")
-            provider = resolve(configured)
-            return provider != "none", provider if provider != "none" else configured
-        for candidate in ("local", "local_command", "groq", "openai", "mistral", "xai", "elevenlabs"):
-            provider = resolve(candidate)
-            if provider != "none":
-                return True, provider
+        available = (provider in BUILTIN_STT_PROVIDERS
+                     or _resolve_command_stt_provider_config(provider, stt_config) is not None
+                     or _check_plugin_stt_provider(provider))
+    except Exception:  # noqa: BLE001 - an Agent without STT, or a broken STT config
         return False, "none"
-    except Exception:  # noqa: BLE001
-        return False, "none"
+    return bool(available), provider
 
 
 def transcribe(audio_b64: str, suffix: str) -> str:

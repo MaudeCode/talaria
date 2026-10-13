@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Talaria Web shows voice input whenever the Hermes Agent can transcribe speech, including with a local transcription command or DeepInfra, and names the speech-to-text provider the Agent actually uses.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
