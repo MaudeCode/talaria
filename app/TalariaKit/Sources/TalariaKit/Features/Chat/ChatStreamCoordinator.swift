@@ -56,6 +56,7 @@ public protocol ChatStreamCoordinatorDelegate: AnyObject {
     func streamCoordinatorDidCompleteCurrentResponse(needsTranscriptRefresh: Bool, outcome: ResponseCompletionOutcome)
     func streamCoordinatorDidFinishStream()
     func streamCoordinatorDidReceiveErrorMessage(_ message: String)
+    func streamCoordinatorSetWarningMessage(_ message: String?)
     func streamCoordinatorDidReceiveRecoveryError(_ error: Error)
     func streamCoordinatorDidConfirmRecovery()
 
@@ -106,6 +107,7 @@ public final class ChatStreamCoordinator {
     public private(set) var activeStreamID: String? {
         didSet {
             guard activeStreamID != oldValue else { return }
+            if activeStreamID != nil { delegate?.streamCoordinatorSetWarningMessage(nil) }
             activeRunStartedAt = activeStreamID == nil ? nil : now()
         }
     }
@@ -196,6 +198,7 @@ public final class ChatStreamCoordinator {
     }
 
     public func prepareForNewResponse() {
+        delegate?.streamCoordinatorSetWarningMessage(nil)
         hasCompletedCurrentResponse = false
         hasFinishedCurrentRun = false
         isConnectionSuspended = false
@@ -797,6 +800,8 @@ public final class ChatStreamCoordinator {
                 }
             }
             finishStream()
+        case .warning(let message):
+            delegate?.streamCoordinatorSetWarningMessage(message)
         case .transportError(let message):
             handleTransportError(message)
         case .heartbeat:

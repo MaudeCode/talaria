@@ -73,6 +73,7 @@ public final class ChatViewModel {
     public var activeRunStartedAt: Date? { streamCoordinator.activeRunStartedAt }
     public var liveTokensPerSecond: Double? { streamCoordinator.liveTokensPerSecond }
     public private(set) var errorMessage: String?
+    public private(set) var streamWarningMessage: String?
     public private(set) var sendErrorMessage: String? {
         didSet {
             // Every other writer takes ownership of the banner, so stream recovery
@@ -4799,6 +4800,7 @@ public final class ChatViewModel {
     }
 
     private func startBtwStream(streamID: String, question: String) {
+        streamCoordinatorSetWarningMessage(nil)
         activeBtwStreamID = streamID
         activeBtwQuestion = question
         activeBtwAnswer = ""
@@ -4811,6 +4813,8 @@ public final class ChatViewModel {
 
     private func handleBtwStreamEvent(_ event: SSEEvent) {
         switch event {
+        case .warning(let message):
+            streamCoordinatorSetWarningMessage(message)
         case .token(let text):
             activeBtwAnswer += text
             updateActiveBtwMessage(isLoading: true)
@@ -5903,6 +5907,10 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
 
     public func streamCoordinatorDidReceiveErrorMessage(_ message: String) {
         sendErrorMessage = message
+    }
+
+    public func streamCoordinatorSetWarningMessage(_ message: String?) {
+        streamWarningMessage = message
     }
 
     public func streamCoordinatorDidReceiveRecoveryError(_ error: Error) {

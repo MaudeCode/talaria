@@ -32,6 +32,7 @@ struct MessageComposerView: View {
     let isSessionReadOnly: Bool
     let isChromeCompact: Bool
     let errorMessage: String?
+    var warningMessage: String? = nil
     let configurationErrorMessage: String?
     let contextWindowSnapshot: ContextWindowSnapshot?
     let gitViewModel: GitWorkspaceAvailabilityViewModel
@@ -1051,6 +1052,8 @@ struct MessageComposerView: View {
             return (errorMessage, true, false)
         } else if let configurationErrorMessage {
             return (configurationErrorMessage, true, false)
+        } else if let warningMessage {
+            return (warningMessage, false, false)
         } else if isUpdatingConfiguration {
             return (String(localized: "Updating composer settings..."), false, false)
         }

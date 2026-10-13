@@ -138,6 +138,8 @@ public enum SSEEvent: Equatable {
     /// The settled session an error or cancel frame carries, delivered just before that terminal event.
     case settledSession(SessionDetail)
     case cancelled
+    /// A provider diagnostic that does not end the response or the SSE connection.
+    case warning(String)
     /// A terminal error frame: its message and the server's turn outcome (`terminal_state`).
     case error(String, terminalState: String? = nil)
     case transportError(String)
@@ -454,6 +456,10 @@ struct SSEEventDecoder {
             return .streamEnd
         case "cancel":
             return .cancelled
+        case "warning":
+            guard let payload = decodePayload(WarningPayload.self, eventType: eventType, from: eventData, decoder: decoder),
+                  let message = payload.message else { return .ignored }
+            return .warning(message)
         case "error", "apperror":
             // "apperror" is one of the four socket-closing frames (stream_end, cancel,
             // error, apperror). The docs describe its payload as {error, type, session,
@@ -599,6 +605,10 @@ private struct ErrorPayload: Decodable {
         case message
         case terminalState = "terminal_state"
     }
+}
+
+private struct WarningPayload: Decodable {
+    let message: String?
 }
 
 public struct DoneStreamEvent: Equatable {

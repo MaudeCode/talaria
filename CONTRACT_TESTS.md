@@ -89,6 +89,12 @@ selected Web.
 | Session status and mutation response decoding | `TalariaKit/Tests/TalariaKitTests/APIClientSessionListTests.swift`, `TalariaKit/Tests/TalariaKitTests/APIClientSessionMutationTests.swift` |
 | Chat SSE parsing, heartbeats, redirects, and reconnect status | `TalariaKit/Tests/TalariaKitTests/SSEClientTests.swift`, `TalariaKit/Tests/TalariaKitTests/StreamReconnectContractTests.swift` |
 
+Chat `warning` events display the server's `message` in the App composer without
+ending the response. The latest warning remains during same-stream reconnects
+and clears for a new response. Decoder and coordinator tests cover this boundary;
+`StreamHostedTests.testProviderWarningsRemainVisibleWhileTheTurnContinues`
+checks the real chat screen with retry and closing-diagnosis frames.
+
 The plural provider quota endpoint is covered by the Swift contract tests
 against the local Web implementation.
 
