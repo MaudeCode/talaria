@@ -32,6 +32,7 @@ jobs:
           VARIANT: ${{ matrix.variant }}
         run: |
           set -euo pipefail
+          python3 web/scripts/lib/test_agent_python.py
           # Every variant builds the same image, so they share one layer cache scope; the cache needs a container builder.
           docker buildx create --driver docker-container --use --bootstrap >/dev/null
           export TALARIA_DOCKER_CACHE="type=gha,scope=web-smoke"

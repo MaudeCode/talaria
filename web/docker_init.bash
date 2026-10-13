@@ -490,7 +490,9 @@ else
     fi
     chmod -R u+w "$_stage_src" \
       || error_exit "Failed to make staged hermes-agent source writable (rsync/cp preserved :ro mount perms)"
-    ( cd "$_stage_src" && uv venv venv --python "$(command -v python3)" ) \
+    _agent_python="$(python3 /apptoo/scripts/lib/agent_python.py "$_stage_src")" \
+      || error_exit "Failed to determine the Agent's Python version"
+    ( cd "$_stage_src" && uv venv venv --python "$_agent_python" --no-python-downloads ) \
       || error_exit "Failed to create the Agent virtual environment"
     uv pip install --python "$_stage_src/venv/bin/python" -e "$_stage_src[all]" --trusted-host pypi.org --trusted-host files.pythonhosted.org \
       || error_exit "Failed to install hermes-agent's requirements"

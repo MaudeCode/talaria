@@ -30,7 +30,12 @@ def main():
     variants = ("single", "two-container", "three-container", "auto-uid", "explicit-uid")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("variants", nargs="*", choices=variants)
-    selected = parser.parse_args().variants or variants
+    releases = json.loads((ROOT / "web/sidecar/agent_support.json").read_text())["releases"]
+    parser.add_argument("--agent-release", choices=[release["releaseTag"] for release in releases],
+                        help="Test a supported older Agent image with the current Web image")
+    args = parser.parse_args()
+    selected = args.variants or variants
+    agent_image = next((release["image"] for release in releases if release["releaseTag"] == args.agent_release), None)
     image = "talaria-monorepo-smoke:" + uuid.uuid4().hex[:12]
     try:
         build(image)
@@ -38,13 +43,13 @@ def main():
                         "test ! -e /apptoo/.venv && test ! -e /apptoo/.codex-tmp && test ! -e /apptoo/packages/frontend/node_modules && test -f /apptoo/packages/server/dist/bin/talaria-web.js"], check=True)
         # Variants own their project, container names, state and ephemeral ports, so they run concurrently.
         with ThreadPoolExecutor(max_workers=len(selected)) as pool:
-            for future in [pool.submit(smoke, variant, image) for variant in selected]:
+            for future in [pool.submit(smoke, variant, image, agent_image) for variant in selected]:
                 future.result()
     finally:
         subprocess.run(["docker", "image", "rm", image], check=False)
 
 
-def smoke(variant, image):
+def smoke(variant, image, agent_image=None):
     with tempfile.TemporaryDirectory(prefix="talaria-docker-") as temporary:
         state = Path(temporary)
         (state / "home").mkdir()
@@ -78,12 +83,16 @@ def smoke(variant, image):
             ], env=env))
         config.pop("name", None)
         for service_name, service in config["services"].items():
+            if agent_image and service_name in ("hermes-agent", "hermes-dashboard"):
+                service["image"] = agent_image
             service["container_name"] = f"{project}-{service_name}"
             service["restart"] = "no"
             for port in service.get("ports", []):
                 port.update(published="0", host_ip="127.0.0.1")
         web = config["services"]["hermes-webui"]
         web["image"] = image
+        web.setdefault("environment", {}).update(TIRITH_ENABLED="0", HERMES_STATE_DB_GUARD_BYPASS="1")
+        web.setdefault("healthcheck", {})["start_period"] = "600s"
         web.pop("build", None)
         for kind in ("volumes", "networks"):
             for resource in config.get(kind, {}).values():
@@ -92,10 +101,19 @@ def smoke(variant, image):
         configured.write_text(json.dumps(config))
         compose = ["docker", "compose", "--env-file", os.devnull, "-p", project, "-f", str(configured)]
         try:
-            subprocess.run([*compose, "up", "-d", "--wait", "--wait-timeout", "180"], env=env, check=True)
+            # A cold Agent install downloads its full dependency set before Web can become healthy.
+            subprocess.run([*compose, "up", "-d", "--wait", "--wait-timeout", "600"], env=env, check=True)
             address = subprocess.check_output([*compose, "port", "hermes-webui", "8787"], env=env, text=True).strip()
             with urllib.request.urlopen(f"http://{address}/health", timeout=10) as response:
                 assert json.load(response)["status"] == "ok"
+            if variant in ("two-container", "three-container"):
+                subprocess.run([*compose, "exec", "-T", "--user", "hermeswebui", "hermes-webui",
+                                "/app/hermes-agent-src/venv/bin/python", "-c",
+                                "from run_agent import AIAgent"], env=env, check=True, timeout=60)
+                subprocess.run([*compose, "exec", "-T", "--user", "hermeswebui", "hermes-webui",
+                                "/app/hermes-agent-src/venv/bin/python", "-"],
+                               input=(ROOT / "web/scripts/lib/docker_chat_smoke.py").read_text(),
+                               text=True, env=env, check=True, timeout=180)
             if variant.endswith("-uid"):
                 actual = subprocess.check_output([*compose, "exec", "-T", "hermes-webui", "id", "-u", "hermeswebui"], env=env, text=True).strip()
                 assert actual == ("1001" if variant == "auto-uid" else "1024"), actual

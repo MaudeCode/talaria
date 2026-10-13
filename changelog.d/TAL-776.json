@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Fresh Docker installations can start chats with the current Hermes Agent release.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

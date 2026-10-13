@@ -127,6 +127,13 @@ USER root
 # uv is already on PATH.
 RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
 
+# Root installs the pinned Agent's Python where the unprivileged entrypoint can find it.
+ENV UV_PYTHON_INSTALL_DIR=/opt/uv/python
+COPY scripts/lib/agent_python.py /tmp/agent_python.py
+COPY sidecar/agent_dependency.json /tmp/agent_dependency.json
+RUN python3 /tmp/agent_python.py --install-pinned /tmp/agent_dependency.json \
+    && rm /tmp/agent_python.py /tmp/agent_dependency.json
+
 # The workspace built natively above: sources, contracts/server dist and production node_modules only.
 COPY --from=node-build --chown=root:root /apptoo /apptoo
 COPY --from=frontend-build --chown=root:root /apptoo/static/dist /apptoo/static/dist

@@ -400,6 +400,14 @@ The two- and three-container setups use **named Docker volumes** (not bind mount
 
 The WebUI container doesn't ship with the agent — at startup it stages the source from the shared volume into `/app/hermes-agent-src`, builds the venv its Python sidecar runs on (`uv venv` + `uv pip install -e .[all]`), and reuses it on later restarts. The WebUI mount is read-only; the agent container is the only writer.
 
+The image preinstalls the Python minor selected by the pinned Agent's `pm/lock.json`
+at build time. Startup reads the same field from the staged source and creates its
+venv without downloading Python. If the lock has no Python pin, the selector uses
+the minor below the exclusive `requires-python` ceiling. Older Agent sources without
+`pm/lock.json` keep the image's system Python. Dependency installation still needs
+package downloads on a fresh start. A custom source mount requiring another Python
+minor needs an image with that interpreter installed under `/opt/uv/python`.
+
 ## Upgrading the agent container
 
 The `hermes-agent-src` named volume is initialised from the agent image's `/opt/hermes` on first `up`. Docker reuses the volume verbatim on every subsequent `up` — **even after `docker pull` of a newer agent image**. The cached volume content masks the new image's source tree, so pulling a newer agent image does not by itself give you the new agent code, dependencies, or entrypoint.
