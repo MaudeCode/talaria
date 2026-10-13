@@ -6,6 +6,8 @@ from __future__ import annotations
 import pathlib
 import subprocess
 
+import pytest
+
 from conftest import AGENT_DIR, AGENT_PYTHON, SidecarProcess, isolated_env, requires_agent
 
 pytestmark = requires_agent
@@ -29,14 +31,19 @@ def _agent_neutralizes_repo_filters(home: pathlib.Path) -> bool:
     return subprocess.run([AGENT_PYTHON, "-c", probe], env=isolated_env(home, PYTHONPATH=str(AGENT_DIR)), capture_output=True, timeout=60).returncode == 0
 
 
-def test_a_repository_filter_program_never_runs(handshaken: SidecarProcess, hermes_home: pathlib.Path) -> None:
+@pytest.mark.parametrize("source", ["repo config", "include on the new branch"])
+def test_a_repository_filter_program_never_runs(handshaken: SidecarProcess, hermes_home: pathlib.Path, source: str) -> None:
     repo = _repo(hermes_home.parent / "filtered")
     (repo / ".gitattributes").write_text("* filter=evil\n")
     _git("add", ".", cwd=repo)
     _git("commit", "--quiet", "-m", "init", cwd=repo)
     marker = hermes_home.parent / "marker"
+    # An onbranch include stays inert in the source checkout and applies only once the hermes/ branch is checked out.
+    target = hermes_home.parent / "evil.cfg" if source != "repo config" else None
+    if target:
+        _git("config", "includeIf.onbranch:hermes/**.path", str(target), cwd=repo)
     for kind in ("smudge", "clean"):
-        _git("config", f"filter.evil.{kind}", f"sh -c 'echo {kind} >> {marker}; cat'", cwd=repo)
+        _git("config", *(["--file", str(target)] if target else []), f"filter.evil.{kind}", f"sh -c 'echo {kind} >> {marker}; cat'", cwd=repo)
 
     message, _ = handshaken.call("worktree.create", {"profile_home": str(hermes_home), "repo_root": str(repo)})
 
