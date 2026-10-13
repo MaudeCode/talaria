@@ -6,6 +6,7 @@
 import { buildActiveTurnToken, completedToolIndex } from '../redact.js'
 import { RunJournal, type JournalEvent } from './journal.js'
 import { str } from '../util.js'
+import { stateDbMessageKey, stateDbMessageFingerprint } from './state-db-identity.js'
 import { stripAttachedFilesMarker, stripWorkspacePrefix, type Message } from './session.js'
 
 export { WORKSPACE_PREFIX_RE, stripWorkspacePrefix } from './session.js'
@@ -885,7 +886,7 @@ export function mergeSessionMessagesAppendOnly(sidecar: Message[], state: Messag
   const hasWatermark = opts.truncationWatermark !== null && opts.truncationWatermark !== undefined && Number.isFinite(watermark)
   if (!state.length) return sidecar
   const ts = (m: Message): number | null => { const n = Number(m.timestamp); return Number.isFinite(n) ? n : null }
-  const key = (m: Message): string => `${String(m.role)}\0${String(ts(m) ?? '')}\0${typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? null)}`
+  const key = stateDbMessageKey
   const seenId = opts.stateDbSeenId
   if (typeof seenId === 'number' && Number.isFinite(seenId) && state.some((m) => stateDbRowId(m) !== null)) {
     // Each local row stands for at most one new state.db row: a persisted copy by its id, any other by its key.
@@ -898,12 +899,30 @@ export function mergeSessionMessagesAppendOnly(sidecar: Message[], state: Messag
       if (id !== null && localIds.has(id)) continue
       // In state.db order, so a covered row matches its own local copy before a newer duplicate can.
       const left = localKeys.get(key(m)) ?? 0
-      if (left > 0) { localKeys.set(key(m), left - 1); continue }
+      // An archive-proven edit is a new occurrence even when an older local row has identical text.
+      // Covered edits still consume their local match before later ordinary copies are considered.
+      if (left > 0 && (m._state_db_authored_change !== true || id === null || id <= seenId)) { localKeys.set(key(m), left - 1); if (id !== null) localIds.add(id); continue }
       if (id === null || id <= seenId) continue
+      localIds.add(id)
       merged.push(m)
     }
     return merged
   }
+  // Legacy sidecars may have no seen marker or row IDs. A verified copy can still match its archived
+  // source's exact role/timestamp/content key. This only removes represented copies; the timestamp
+  // and truncate/compress gates below continue to decide which remaining rows may be appended.
+  const represented = new Set<string>()
+  const remember = (message: Message): void => {
+    represented.add(stateDbMessageFingerprint(message))
+    if (typeof message._state_db_source_key === 'string') represented.add(message._state_db_source_key)
+  }
+  for (const message of sidecar) remember(message)
+  state = state.filter((message) => {
+    const sourceKey = message._state_db_source_key
+    if (typeof sourceKey === 'string' && represented.has(sourceKey)) return false
+    remember(message)
+    return true
+  })
   if (!sidecar.length) {
     if (!hasWatermark) { const seen = new Set<string>(); return state.filter((m) => { const k = key(m); if (seen.has(k)) return false; seen.add(k); return true }) }
     if (watermark === 0) return []

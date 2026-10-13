@@ -54,6 +54,25 @@ The server owns every layer except the client's live timeline:
 The frontend's stream reducer (`packages/frontend/src/stream/reducer.ts`) is a
 projection of SSE frames that converges on the server's settled fields.
 
+The server's read-only `state.db` projection recognizes the released Agent's
+exact in-flight request restatement. It compares the replay body with preceding
+generations of the same `message_uid` within the selected session chain. Only an
+unchanged timestamp copy or the known replay transformation inherits identity.
+A payload change starts a new identity at its existing physical row ID, even
+when both generations have already become compacted. Unknown transformations
+stay distinct; UID equality alone never proves a copy.
+
+The reader streams those histories once and reads the live rows and archive in
+one SQLite snapshot. Its internal `_state_db_authored_change` marker prevents
+the append-only merge's text fallback from hiding a known new occurrence behind
+an older identical local row. A fixed-width fingerprint of a verified copy's
+archived source also lets older sidecars match replays without a seen marker. The remaining rows still pass
+through the existing timestamp, clear, truncation and compression gates. Both
+internal markers are stripped from public messages.
+Tool results retain their existing tool-call/timestamp compaction rule; tables
+without UIDs retain the legacy timestamp rule. This requires no Agent changes,
+new database fields, release pins or server-side database writes.
+
 ## State layers
 
 | Layer | Purpose | Source-of-truth expectation | Must not do |

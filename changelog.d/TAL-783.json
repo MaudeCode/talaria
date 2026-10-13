@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Chats no longer repeat an unchanged request after automatic context compression, while edited requests remain visible.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

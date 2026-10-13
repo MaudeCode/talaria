@@ -9,6 +9,7 @@ import { existsSync, openSync, readSync, closeSync, statSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { Worker } from 'node:worker_threads'
 import { str } from '../util.js'
+import { stateDbMessageFingerprint } from './state-db-identity.js'
 import { MESSAGING_SOURCES } from './source-kind.js'
 import { looksLikeDefaultCliTitle, normalizeSourceName } from './titles.js'
 
@@ -645,6 +646,73 @@ function stateDbGeneration(dbPath: string): string | null {
   try { const st = statSync(dbPath); return `${String(st.ino)}:${String(st.birthtimeMs)}` } catch { return null }
 }
 
+// Agent v0.21.6's exact in-flight request wrapper. Unknown rewrites are not copy evidence.
+const INFLIGHT_REPLAY_HEADER = '[STILL IN PROGRESS — this is the active request, restated after the compaction boundary because it was not finished yet. Continue it; do not start over.]'
+
+/** The payload comparison ignores only the Agent's documented replay wrapper and dropped api_content. */
+function replayPayload(row: Dict): { copyKey: string; replayKey: string; replay: boolean } {
+  const message = projectStateDbMessage(row, false)
+  delete message.timestamp
+  const copyKey = JSON.stringify(message)
+  let content = message.content
+  let replay = false
+  if (row.role === 'user') {
+    if (typeof content === 'string') {
+      replay = content.startsWith(`${INFLIGHT_REPLAY_HEADER}\n`)
+      content = (replay ? content.slice(INFLIGHT_REPLAY_HEADER.length + 1) : content).trim()
+    } else if (Array.isArray(content)) {
+      // Multimodal replays prepend a text block and retain all original parts, including media.
+      const parts: unknown[] = content
+      let start = 0
+      while (start < parts.length) {
+        const first = parts[start]
+        if (!first || typeof first !== 'object' || Array.isArray(first)) break
+        const part = first as Dict
+        if (part.type !== 'text' || part.text !== `${INFLIGHT_REPLAY_HEADER}\n` || Object.keys(part).some((k) => k !== 'type' && k !== 'text')) break
+        start += 1
+      }
+      replay = start > 0
+      content = parts.slice(start)
+    }
+  }
+  message.content = content
+  delete message.api_content // _reappend_inflight_user_task drops this stale model-facing sidecar.
+  return { copyKey, replayKey: JSON.stringify(message), replay }
+}
+
+/**
+ * Compare adjacent generations, never all rows of one UID with its oldest archive. The archive retains
+ * authored payload changes even after active/compacted flags change. Only unchanged timestamp copies or
+ * exact request restatements inherit identity; edits (including A -> B -> A) start at their own row ID.
+ */
+function replayIdentities(db: DatabaseSync, chain: string[], rows: Dict[], available: Set<string>): Map<number, { id: number; changed: boolean; sourceKey: string }> {
+  const identities = new Map<number, { id: number; changed: boolean; sourceKey: string }>()
+  // Tool-result text can be pruned without changing its tool-call identity; retain the existing rule.
+  const uids = [...new Set(rows.filter((row) => row.role !== 'tool').map((row) => row.message_uid).filter((uid): uid is string => typeof uid === 'string' && uid.length > 0))]
+  if (!uids.length) return identities
+  const liveIds = new Set(rows.map((row) => row.id))
+  type Previous = ReturnType<typeof replayPayload> & { identity: number; changed: boolean; sourceKey: string; timestamp: unknown; active: unknown; compacted: unknown }
+  const previous = new Map<string, Previous>()
+  const columns = ['id', 'message_uid', 'active', 'compacted', 'role', 'content', 'timestamp', ...OPTIONAL_MESSAGE_COLUMNS.filter((c) => available.has(c))]
+  // One ordered scan of the selected sessions, filtering against a materialized UID set. Stream the rows;
+  // memory holds only the preceding payload per live UID, not the accumulated archive. NULL/nonstandard
+  // active flags take exactly the same path and do not depend on the Agent's partial active=1 UID index.
+  const history = db.prepare(`SELECT ${columns.join(', ')} FROM messages WHERE session_id IN (${chain.map(() => '?').join(', ')}) AND message_uid IN (SELECT value FROM json_each(?)) ORDER BY id`)
+  for (const row of history.iterate(...chain, JSON.stringify(uids)) as Iterable<Dict>) {
+    const uid = row.message_uid as string
+    const payload = replayPayload(row)
+    const prior = previous.get(uid)
+    const copy = payload.copyKey === prior?.copyKey && row.timestamp === prior.timestamp
+    const restatement = prior && payload.replay && payload.replayKey === prior.replayKey && (prior.active !== 0 || prior.compacted === 1)
+    const identity = prior && (copy || restatement) ? prior.identity : Number(row.id)
+    const changed = prior ? (copy || restatement ? prior.changed : true) : false
+    const sourceKey = prior && (copy || restatement) ? prior.sourceKey : stateDbMessageFingerprint(projectStateDbMessage(row, false))
+    if (prior && row.role !== 'tool' && liveIds.has(row.id)) identities.set(Number(row.id), { id: identity, changed, sourceKey })
+    previous.set(uid, { ...payload, identity, changed, sourceKey, timestamp: row.timestamp, active: row.active, compacted: row.compacted })
+  }
+  return identities
+}
+
 export interface StateDbRead { rows: Dict[]; idCapable: boolean; ok: boolean }
 
 export function stateDbSessionMessages(dbPath: string, sid: string, opts: { stitch?: boolean } = {}): Dict[] {
@@ -662,10 +730,11 @@ export function stateDbSessionRead(dbPath: string, sid: string, opts: { stitch?:
   let db: DatabaseSync
   try { db = openStateDbReadonly(dbPath) } catch { return none }
   try {
+    db.exec('BEGIN') // The live rows and their archived predecessors must describe one snapshot.
     const available = tableColumns(db, 'messages')
     if (!['role', 'content', 'timestamp'].every((c) => available.has(c))) return { ...none, ok: available.size > 0 }
     const hasId = available.has('id')
-    const selected = [...(hasId ? ['id'] : []), 'role', 'content', 'timestamp', ...OPTIONAL_MESSAGE_COLUMNS.filter((c) => available.has(c))]
+    const selected = [...(hasId ? ['id'] : []), ...(available.has('message_uid') ? ['message_uid'] : []), 'role', 'content', 'timestamp', ...OPTIONAL_MESSAGE_COLUMNS.filter((c) => available.has(c))]
     // TAL-529: an explicit lineage (the session and its compression continuations) replaces the parent walk.
     const chain = opts.lineage?.length ? [...opts.lineage] : [id]
     if (!opts.lineage?.length && (opts.stitch ?? true)) {
@@ -704,6 +773,18 @@ export function stateDbSessionRead(dbPath: string, sid: string, opts: { stitch?:
       for (const [i, row] of rows.entries()) {
         const twin = twinOf.get(row.id)
         if (typeof twin === 'number') projected[i]!._state_db_row_id = twin
+      }
+    }
+    if (hasId && ['message_uid', 'active', 'compacted'].every((c) => available.has(c))) {
+      const identities = replayIdentities(db, chain, rows, available)
+      for (const [i, row] of rows.entries()) {
+        const identity = identities.get(Number(row.id))
+        // A known changed generation overrides even a coincidental legacy timestamp twin.
+        if (identity !== undefined) {
+          projected[i]!._state_db_row_id = identity.id
+          if (identity.id !== row.id) projected[i]!._state_db_source_key = identity.sourceKey
+          if (identity.changed) projected[i]!._state_db_authored_change = true
+        }
       }
     }
     // TAL-493: the database file's identity, so a marker taken in a replaced state.db is never applied to its successor.
