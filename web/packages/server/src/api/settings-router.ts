@@ -49,7 +49,8 @@ const auxiliaryState = async (ctx: RequestContext): Promise<Dict> => {
   const config = await ctx.deps.agentConfig.read(home(ctx))
   const main = modelSection(config)
   const model = str(main.default ?? main.name).trim()
-  const [tiers = []] = model ? await ctx.deps.agentConfig.speedTiers(home(ctx), config, [{ model, provider: str(main.provider) }]) : []
+  // Speed availability must not prevent reading or editing the independent auxiliary slots.
+  const [tiers = []] = model ? await ctx.deps.agentConfig.speedTiers(home(ctx), config, [{ model, provider: str(main.provider) }]).catch(() => []) : []
   return stampAuxiliarySelections(auxiliaryModels(config, tiers), await ctx.deps.catalog.models(home(ctx)))
 }
 const CLEAR_PERSONALITY = new Set(['none', 'default', 'clear'])

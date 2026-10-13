@@ -1468,13 +1468,18 @@ describe('Agent speed tiers (TAL-788)', () => {
     expect((proxy.models as Json[]).every((m) => Array.isArray(m.supported_speed_tiers) && m.supported_speed_tiers.length === 0)).toBe(true)
   })
 
-  it('keeps config intact if tier resolution fails while saving a CLI tier', async () => {
+  it('keeps auxiliary reads available and config intact when tier resolution fails', async () => {
     const responder = fake.responderFor('models.speed_tiers')
     saved.set(server.state, { model: { default: 'gpt-6-astra', provider: 'openai-codex', service_tier: 'ultrafast' } })
     server.deps.agentConfig.invalidate()
     const before = structuredClone(saved.get(server.state))
     fake.respond('models.speed_tiers', () => { throw new Error('resolver unavailable') })
     try {
+      const read = await server.get('/api/model/auxiliary')
+      expect(read.status).toBe(200)
+      const auxiliary = await json(read)
+      expect(auxiliary.main).toMatchObject({ model: 'gpt-6-astra', supported_speed_tiers: [] })
+      expect(auxiliary.tasks).toHaveLength(11)
       const res = await post(server, '/api/model/set', { scope: 'main', model: 'gpt-6-astra', provider: 'openai-codex' })
       expect(res.status).toBe(503)
       expect(saved.get(server.state)).toEqual(before)
