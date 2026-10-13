@@ -50,16 +50,24 @@ The server owns every layer except the client's live timeline:
 The frontend's stream reducer (`packages/frontend/src/stream/reducer.ts`) is a
 projection of SSE frames that converges on the server's settled fields.
 
-The server's read-only `state.db` projection maps compaction replays to the
-oldest compacted row with the same `message_uid` in the selected session chain.
-This preserves transcript identity when a replay gets a new timestamp. Without
-a UID match, the legacy timestamp twin rule still applies. A non-compacted
-ancestor cuts off earlier donors only when its successor fails that timestamp
-twin rule. Unchanged carried copies retain their identity; edited rewinds stay
-new even when they reuse an ancestor's UID or timestamp.
-Active predecessors also participate in that history. A later active version
-with changed content or metadata keeps its own identity; unchanged active
-copies can still share the earlier compaction identity.
+The server's read-only `state.db` projection consumes the Agent's durable
+`message_version_uid` and `message_versions` ledger when all live rows have
+provenance. Within the validated session chain, a `(message_uid, version_uid)`
+pair maps to its earliest ledger arrival cursor. Explicit compaction copies keep
+that identity; authored edits get a new one even if an edit is compacted before
+Talaria first reads it. The ledger survives physical message replacement.
+
+Rows and the high-water cursor are read in one SQLite snapshot. Version cursors
+use a separate database generation namespace from physical row IDs; merge and
+turn settlement compare identities only within that namespace. A versioned
+seen marker names the durable ledger generation, not a mutable physical row.
+
+The upstream contract is tracked in TAL-944. This does not reconstruct old
+provenance: pre-contract or incompletely backfilled stores retain the legacy
+timestamp-twin behavior. A logical UID alone never authorizes suppression of a
+replay, because it cannot distinguish an unobserved edit. The complete guarantee
+requires an Agent release carrying the contract; the currently pinned v0.21.6
+release does not carry it.
 
 ## State layers
 

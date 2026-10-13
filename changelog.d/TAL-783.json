@@ -2,7 +2,7 @@
   "entries": [
     {
       "category": "Fixed",
-      "summary": "Chats no longer repeat your request after automatic context compression.",
+      "summary": "Chats use durable Agent message versions to avoid replay duplicates while preserving edits after context compression, when supported by the Agent.",
       "highlight": false,
       "components": ["web"]
     }

@@ -22,106 +22,18 @@ describe('compaction replay identity (TAL-783)', () => {
   const sid = fixture.sessionId
   const replay = () => stateDbSessionRead(path, sid).rows.find((row) => String(row.content).startsWith('[STILL IN PROGRESS'))!
 
-  it('merges the Agent v0.21.6 mid-turn replay to six rows without a new user bubble', () => {
-    const read = stateDbSessionRead(path, sid)
-    expect(read.ok).toBe(true)
-    const merged = mergeSessionMessagesAppendOnly(fixture.before, read.rows, { stateDbSeenId: 5 })
-    expect(merged).toHaveLength(6)
-    expect(merged.slice(0, 5)).toEqual(fixture.before)
-    expect(merged[5]?.content).toMatch(/^\[CONTEXT COMPACTION/)
-    expect(merged.some((row) => String(row.content).startsWith('[STILL IN PROGRESS'))).toBe(false)
-    expect(mergeSessionMessagesAppendOnly(merged, read.rows, { stateDbSeenId: 5 })).toEqual(merged)
-  })
-
-  it('maps the replay to its original id while preserving the model-facing row', () => {
-    expect(replay()).toMatchObject({ _state_db_row_id: 1, role: 'user' })
-    expect(Number(replay().timestamp)).toBeGreaterThan(2000)
-    expect(replay().content).toContain('Refactor the parser please')
-    expect(replay()).not.toHaveProperty('message_uid')
-  })
-
-  it('prefers the oldest UID match over a coincidental timestamp twin and later generations', () => {
-    db.exec('UPDATE messages SET active = 0, compacted = 1 WHERE id = 9')
-    db.exec("INSERT INTO messages (session_id, role, content, timestamp, active, compacted, message_uid) VALUES ('compaction-replay', 'user', 'later replay', 3000, 1, 0, 'fixture-1')")
-    // A different archived request shares the new timestamp. UID identity must win.
-    db.exec('UPDATE messages SET timestamp = 3000 WHERE id = 3')
-    expect(stateDbSessionRead(path, sid).rows.at(-1)).toMatchObject({ content: 'later replay', _state_db_row_id: 1 })
-  })
-
-  it('matches across the selected continuation chain but never another session', () => {
-    db.exec("INSERT INTO sessions (id, source, started_at) VALUES ('parent', 'webui', 900)")
-    db.exec("UPDATE messages SET session_id = 'parent' WHERE id = 1")
-    expect(replay()._state_db_row_id).toBe(9)
-    const read = stateDbSessionRead(path, sid, { lineage: ['parent', sid] })
-    expect(read.rows.at(-1)?._state_db_row_id).toBe(1)
-  })
-
-  it('keeps a nonzero live flag eligible for UID matching', () => {
-    db.prepare('UPDATE messages SET active = ? WHERE id = 9').run(2)
-    expect(replay()._state_db_row_id).toBe(1)
-  })
-
-  it('does not suppress an edited rewind just because it reuses the UID', () => {
-    db.exec('UPDATE messages SET compacted = 0 WHERE id = 1')
-    db.exec('UPDATE messages SET timestamp = 1000 WHERE id = 9')
+  it('does not claim copy provenance from a logical UID alone on a legacy Agent', () => {
+    // v0.21.6 cannot distinguish a compacted unobserved edit from an unchanged replay.
+    // The version contract is required for UID-based suppression; retain the old timestamp rule here.
     expect(replay()._state_db_row_id).toBe(9)
     expect(mergeSessionMessagesAppendOnly(fixture.before, stateDbSessionRead(path, sid).rows, { stateDbSeenId: 5 })).toHaveLength(7)
-    // An unchanged rewind still follows the existing timestamp/content rule.
+  })
+
+  it('keeps a changed legacy rewind while matching an unchanged timestamp twin', () => {
+    db.exec('UPDATE messages SET compacted = 0 WHERE id = 1; UPDATE messages SET timestamp = 1000 WHERE id = 9')
+    expect(replay()._state_db_row_id).toBe(9)
     db.exec("UPDATE messages SET content = 'Refactor the parser please' WHERE id = 9")
     expect(stateDbSessionRead(path, sid).rows.at(-1)?._state_db_row_id).toBe(1)
-  })
-
-  it.each([1000, 3000])('keeps an edited rewind at timestamp %s after earlier compactions and dedupes its subsequent replay', (timestamp) => {
-    // The original remains compacted, but the immediate predecessor was rewound.
-    db.exec('UPDATE messages SET active = 0, compacted = 0 WHERE id = 9')
-    db.prepare("INSERT INTO messages (session_id, role, content, timestamp, message_uid) VALUES ('compaction-replay', 'user', 'Only fix the parser error', ?, 'fixture-1')").run(timestamp)
-    const read = stateDbSessionRead(path, sid)
-    const merged = mergeSessionMessagesAppendOnly(fixture.before, read.rows, { stateDbSeenId: 9 })
-    expect(merged.at(-1)?.content).toBe('Only fix the parser error')
-    expect(read.rows.at(-1)?._state_db_row_id).toBe(10)
-
-    // A later compaction may dedupe to the edit, but never to its pre-rewind ancestor.
-    db.exec('UPDATE messages SET active = 0, compacted = 1 WHERE id = 10')
-    db.exec("INSERT INTO messages (session_id, role, content, timestamp, message_uid) VALUES ('compaction-replay', 'user', 'Restated parser fix', 4000, 'fixture-1')")
-    const reread = stateDbSessionRead(path, sid)
-    expect(reread.rows.at(-1)?._state_db_row_id).toBe(10)
-    expect(mergeSessionMessagesAppendOnly(merged, reread.rows, { stateDbSeenId: 10 })).toEqual(merged)
-  })
-
-  it('keeps unchanged carried replays attached to their original compaction identity', () => {
-    const before = mergeSessionMessagesAppendOnly(fixture.before, stateDbSessionRead(path, sid).rows, { stateDbSeenId: 5 })
-    for (const id of [9, 10]) {
-      // Compaction carries verbatim rows with the same flags as a rewind.
-      db.prepare('UPDATE messages SET active = 0, compacted = 0 WHERE id = ?').run(id)
-      db.prepare('INSERT INTO messages (session_id, role, content, timestamp, message_uid) SELECT session_id, role, content, timestamp, message_uid FROM messages WHERE id = ?').run(id)
-      const read = stateDbSessionRead(path, sid)
-      expect(read.rows.at(-1)?._state_db_row_id).toBe(1)
-      expect(mergeSessionMessagesAppendOnly(before, read.rows, { stateDbSeenId: 6 })).toEqual(before)
-    }
-  })
-
-  it.each([1000, 2000.0000030000003, 3000])('preserves a later active UID version at timestamp %s', (timestamp) => {
-    // An edited/merged generation can be appended while its predecessor is still active.
-    db.prepare("INSERT INTO messages (session_id, role, content, timestamp, message_uid) VALUES ('compaction-replay', 'user', 'Only fix the parser error', ?, 'fixture-1')").run(timestamp)
-    const read = stateDbSessionRead(path, sid)
-    expect(mergeSessionMessagesAppendOnly(fixture.before, read.rows, { stateDbSeenId: 9 }).at(-1)?.content).toBe('Only fix the parser error')
-    expect(read.rows.at(-2)?._state_db_row_id).toBe(1)
-    expect(read.rows.at(-1)?._state_db_row_id).toBe(10)
-  })
-
-  it('preserves changed tool calls in a later active version with unchanged text', () => {
-    const calls = [{ id: 'call_read', type: 'function', function: { name: 'read_other_file', arguments: '{}' } }]
-    db.prepare('INSERT INTO messages (session_id, role, content, timestamp, message_uid, tool_calls) SELECT session_id, role, content, timestamp, message_uid, ? FROM messages WHERE id = 7').run(JSON.stringify(calls))
-    const read = stateDbSessionRead(path, sid)
-    expect(mergeSessionMessagesAppendOnly(fixture.before, read.rows, { stateDbSeenId: 9 }).at(-1)?.tool_calls).toEqual(calls)
-    expect(read.rows.at(-1)?._state_db_row_id).toBe(10)
-  })
-
-  it('does not split unchanged active copies into new transcript rows', () => {
-    db.exec('INSERT INTO messages (session_id, role, content, timestamp, message_uid) SELECT session_id, role, content, timestamp, message_uid FROM messages WHERE id = 9')
-    const read = stateDbSessionRead(path, sid)
-    expect(read.rows.slice(-2).map((row) => row._state_db_row_id)).toEqual([1, 1])
-    expect(mergeSessionMessagesAppendOnly(fixture.before, read.rows, { stateDbSeenId: 5 })).toHaveLength(6)
   })
 
   it.each(['null', 'backfilled', 'absent'])('retains timestamp twins for %s UIDs', (mode) => {

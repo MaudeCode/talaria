@@ -13,7 +13,7 @@ import type { SidecarLike } from '../sidecar/client.js'
 import { SidecarError } from '../sidecar/client.js'
 import type { SessionStore } from './store.js'
 import type { SessionService } from './service.js'
-import type { StateDbRead } from './state-db.js'
+import { stateDbReadCursor, type StateDbCursor, type StateDbRead } from './state-db.js'
 import { HttpFailure, markSessionTitleGenerated } from './service.js'
 import type { SessionEventBus } from './events.js'
 import { StreamRegistry, SessionChannels, type StreamChannel } from './streams.js'
@@ -31,7 +31,7 @@ import { withSessionWireFlags } from './list.js'
 import { hydrateAnchorActivityScenes, turnTerminalState, withTurnIds } from './anchor.js'
 import { persistentStateChanges, persistentStateSnapshot } from './state-saved.js'
 import { maxIterationsFromConfig, maxTokensFromConfig, processWakeupMaxIterations, reasoningConfigFromConfig, webuiEphemeralSystemPrompt, workspaceSystemMessage } from './turn-context.js'
-import { agentSteerText, assistantReplyAddedAfterCurrentTurn, attachedFilesPrompt, buildPartialMessage, dedupeContext, checkpointTurnStart, extractToolCallsFromMessages, hasNativeImages, injectMaxIterationSummaryFallback, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitDisplayText, stateDbSeenId, joinReasoning, reasoningFieldsText, toolOutcome, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withToolCallOutcomes, withoutMaxIterationSummaryRequest, withNativeImagesRestored, withoutNativeImages, withoutToolImages } from './merge.js'
+import { agentSteerText, assistantReplyAddedAfterCurrentTurn, attachedFilesPrompt, buildPartialMessage, dedupeContext, checkpointTurnStart, extractToolCallsFromMessages, hasNativeImages, injectMaxIterationSummaryFallback, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitDisplayText, joinReasoning, reasoningFieldsText, toolOutcome, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withToolCallOutcomes, withoutMaxIterationSummaryRequest, withNativeImagesRestored, withoutNativeImages, withoutToolImages } from './merge.js'
 import { mayBecomeSilentReply, turnOrigin, withBackgroundUpdates } from './background-updates.js'
 import { countExchanges, fallbackTitleFromExchange, firstExchangeSnippets, isGenericFallbackTitle, latestExchangeSnippets, looksInvalidGeneratedTitle, looksLikeDefaultCliTitle, sanitizeGeneratedTitle, titleLanguageMismatch, titlePrompts } from './titles.js'
 import { WORKSPACE_BUSY_MESSAGE } from '../workspace/git.js'
@@ -299,7 +299,7 @@ export class TurnRunner {
    */
   /** TAL-364: a Stop's in-flight `chat.interrupt` reply (null when it failed), so a worker that settles first can use its checkpoint. */
   private readonly interrupts = new Map<string, Promise<{ pending_steer?: string | undefined; checkpoint?: Record<string, unknown>[] | undefined } | null>>()
-  private readonly stopContexts = new Map<string, { previousContext: Message[]; historyLength: number; prompt: string | Record<string, unknown>[]; msgText: string; checkpointed: boolean; stateDbStartId: number | null }>()
+  private readonly stopContexts = new Map<string, { previousContext: Message[]; historyLength: number; prompt: string | Record<string, unknown>[]; msgText: string; checkpointed: boolean; stateDbStart: StateDbCursor }>()
   /** Each turn's worker, so a stopped background turn can be awaited before the user's turn takes the session. */
   private readonly workers = new Map<string, Promise<void>>()
 
@@ -434,7 +434,7 @@ export class TurnRunner {
     // the Agent gets back the exact bytes it sent (TAL-541).
     const apiHistory = sanitizeMessagesForApi(previousContext, { preserveApiContent: true })
     // Before the first await: a Stop can land at any point after admission.
-    this.stopContexts.set(streamId, { previousContext, historyLength: apiHistory.length, prompt: msgText, msgText, checkpointed: false, stateDbStartId: startRead.ok ? stateDbSeenId(startRead.rows) ?? 0 : null })
+    this.stopContexts.set(streamId, { previousContext, historyLength: apiHistory.length, prompt: msgText, msgText, checkpointed: false, stateDbStart: stateDbReadCursor(startRead) })
     const activeTurnToken = buildActiveTurnToken(streamId, s.pending_started_at)
     const sidecar = deps.sidecar()
     const partialText = this.registry.partialText.get(streamId) ?? []
@@ -800,7 +800,7 @@ export class TurnRunner {
       this.persistConsumedSteers(s, streamId, previousStartedAt(s, activeRun), now)
       // TAL-493: the rows this turn's Agent wrote to state.db are now in the transcript, so the merge must not replay them
       // (all of them, the dropped summary request too).
-      deps.service().settleStateDb(s, { turnId: streamId, previousContext: this.stopContexts.get(streamId)?.previousContext ?? previousContext, agentRows, startId: this.stopContexts.get(streamId)?.stateDbStartId ?? null })
+      this.settleStateDb(s, streamId, agentRows, undefined, previousContext)
       deps.store.save(s)
       deps.pending.clearApprovals(sessionId)
       deps.pending.clearClarifies(sessionId)
@@ -1023,14 +1023,18 @@ export class TurnRunner {
     const read = this.deps.service().stateDbRead(s)
     const context = payload.type === 'compression_exhausted' ? null : this.unsettledContext(streamId, agentRows, read)
     if (context) s.context_messages = context
-    const stop = this.stopContexts.get(streamId)
-    this.deps.service().settleStateDb(s, { turnId: streamId, previousContext: stop?.previousContext ?? [], agentRows, startId: stop?.stateDbStartId ?? null, read })
+    this.settleStateDb(s, streamId, agentRows, read)
     try { this.deps.store.save(s) } catch (error) { this.deps.log(`[webui] WARNING: failed to save error turn for ${s.session_id}: ${(error as Error).message}`) }
     // The kept live counters are the session's usage now, so the insights row follows them (the runtime logs failures).
     void this.deps.syncUsage?.(s, str(s.model) || null)
     this.deps.pending.clearApprovals(s.session_id)
     this.deps.pending.clearClarifies(s.session_id)
     this.deps.events.publish('session_error', { profile: s.profile, sessionId: s.session_id })
+  }
+
+  private settleStateDb(s: Session, streamId: string, agentRows: Message[] | null, read?: StateDbRead, previousContext: Message[] = []): void {
+    const stop = this.stopContexts.get(streamId)
+    this.deps.service().settleStateDb(s, { turnId: streamId, previousContext: stop?.previousContext ?? previousContext, agentRows, ...(stop ? { start: stop.stateDbStart } : {}), ...(read ? { read } : {}) })
   }
 
   /**
@@ -1040,7 +1044,7 @@ export class TurnRunner {
   private unsettledContext(streamId: string, agentRows: Message[] | null, read: StateDbRead): Message[] | null {
     const stop = this.stopContexts.get(streamId)
     if (!stop) return null
-    const after = stop.stateDbStartId
+    const after = stop.stateDbStart.generation === stateDbReadCursor(read).generation ? stop.stateDbStart.id : null
     const stateRows = after === null ? [] : read.rows.filter((m) => typeof m._state_db_row_id === 'number' && m._state_db_row_id > after)
     return this.deps.service().unsettledTurnContext({ ...stop, streamedText: (this.registry.partialText.get(streamId) ?? []).join(''), agentRows, stateRows })
   }
@@ -1111,7 +1115,7 @@ export class TurnRunner {
     if (quiet && current.active_stream_id === null) {
       // TAL-493: rows its worker committed while unwinding are covered by what it reports; others are kept.
       if (checkpoint) {
-        this.deps.service().settleStateDb(current, { turnId: streamId, previousContext: this.stopContexts.get(streamId)?.previousContext ?? [], agentRows: checkpoint as Message[], startId: this.stopContexts.get(streamId)?.stateDbStartId ?? null })
+        this.settleStateDb(current, streamId, checkpoint as Message[])
         try { this.deps.store.save(current) } catch { return false }
       }
       return true
@@ -1134,7 +1138,7 @@ export class TurnRunner {
         const read = this.deps.service().stateDbRead(current)
         const late = canonical && !stop.checkpointed ? settle(read) : null
         if (late) current.context_messages = dedupeContext(late)
-        this.deps.service().settleStateDb(current, { turnId: streamId, previousContext: stop?.previousContext ?? [], agentRows: checkpoint as Message[], startId: stop?.stateDbStartId ?? null, read })
+        this.settleStateDb(current, streamId, checkpoint as Message[], read)
         try { this.deps.store.save(current) } catch { return false }
       }
       return true
@@ -1155,7 +1159,7 @@ export class TurnRunner {
     }
     this.keepLiveState(current, streamId)
     this.persistConsumedSteers(current, streamId, startedAt, this.deps.now())
-    this.deps.service().settleStateDb(current, { turnId: streamId, previousContext: stop?.previousContext ?? [], agentRows: checkpoint as Message[] | null, startId: stop?.stateDbStartId ?? null, read })
+    this.settleStateDb(current, streamId, checkpoint as Message[] | null, read)
     try { this.deps.store.save(current) } catch { return false }
     void this.deps.syncUsage?.(current, str(current.model) || null)
     this.deps.pending.clearApprovals(current.session_id)
