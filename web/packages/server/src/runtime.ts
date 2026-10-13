@@ -634,7 +634,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     skills: new SkillsService({ sidecar: () => sidecar, config: agentConfig, log }),
     mcp: new McpService({ sidecar: () => sidecar, config: agentConfig, health: mcpHealth }),
     completions,
-    hygiene: new HygieneTicker({ env, stateDir: config.stateDir, port: () => config.port, journal, activeJournalPaths: () => turns.activeJournalPaths(), now, log, sweeps: [() => { completions.sweep() }] }),
+    hygiene: new HygieneTicker({ env, stateDir: config.stateDir, port: () => config.port, journal, activeJournalPaths: () => turns.activeJournalPaths(), now, log, sweeps: [() => { completions.sweep() }, () => { turns.sweep() }] }),
     mcpHealth,
     nowSeconds: now,
     // Python `_webui_runtime_payload`: the four owner sections with their `available` flags.

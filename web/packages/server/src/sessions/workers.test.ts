@@ -1365,6 +1365,18 @@ describe('a Stop holds automatic turns until the next user message (TAL-899)', (
     expect(s.deps.sessionStore.get(sid).active_stream_id).toBeNull()
   })
 
+  it('a deleted session leaves no hold behind once the hygiene sweep runs', async () => {
+    const sid = await newSid()
+    stoppableThenAnswer()
+    await stop(await startAndStop(sid))
+    expect(s.deps.turns.automaticTurnsHeld(sid)).toBe(true)
+    s.deps.turns.sweep()
+    expect(s.deps.turns.automaticTurnsHeld(sid), 'a live session keeps its hold').toBe(true)
+    expect((await post(s, '/api/session/delete', { session_id: sid })).status).toBe(200)
+    s.deps.turns.sweep()
+    expect(s.deps.turns.automaticTurnsHeld(sid)).toBe(false)
+  })
+
   it('a background turn that yields to the user does not hold automatic turns', async () => {
     const sid = await newSid()
     starts.length = 0

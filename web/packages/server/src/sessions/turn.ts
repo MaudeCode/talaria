@@ -6,7 +6,7 @@
  * `api/streaming.py::_run_agent_streaming`, `cancel_stream`).
  */
 import { randomUUID } from 'node:crypto'
-import { closeSync, fstatSync, readFileSync, rmSync } from 'node:fs'
+import { closeSync, existsSync, fstatSync, readFileSync, rmSync } from 'node:fs'
 import { openAnchoredFd } from '../workspace/fs.js'
 import { isWithin, resolvePathLikePython } from '../workspace/paths.js'
 import type { SidecarLike } from '../sidecar/client.js'
@@ -316,6 +316,11 @@ export class TurnRunner {
   /** TAL-899: whether a Stop holds the session's automatic turns (session `automatic_turns_held`). */
   automaticTurnsHeld(sessionId: string): boolean {
     return this.stopHeld.has(sessionId)
+  }
+
+  /** Hygiene sweep: a deleted session's hold goes with it (TAL-899). */
+  sweep(): void {
+    for (const sid of this.stopHeld) if (!existsSync(this.deps.store.pathFor(sid))) this.stopHeld.delete(sid)
   }
 
   /**
@@ -1400,9 +1405,10 @@ export class TurnRunner {
    * `steer_withdrawn` (stopped) this Stop emitted, for the cancel response (TAL-426).
    */
   async cancel(streamId: string): Promise<{ cancelled: boolean; withdrawn: SteerWithdrawn[] }> {
-    // TAL-899: the user's Stop holds automatic turns, even one that lands after `done`.
+    // TAL-899: the user's Stop holds automatic turns, even one that lands after `done`, unless a newer turn already
+    // took the session: a late or retried Stop for a turn the user followed holds nothing.
     const owner = this.registry.ownerSessionId(streamId) ?? this.registry.activeRuns.get(streamId)?.session_id
-    if (owner) this.stopHeld.add(owner)
+    if (owner && this.registry.writebackOwners.get(owner) === streamId) this.stopHeld.add(owner)
     return this.stop(streamId)
   }
 
