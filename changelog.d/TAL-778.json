@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Talaria Web starts correctly with Hermes Agent 0.21.6 while retaining support for older Agent installations.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

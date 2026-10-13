@@ -23,7 +23,7 @@ export function isWsl(env: Record<string, string | undefined>, release = ''): bo
 /** Python `_python_can_run_webui_and_agent`: the sidecar preflight. */
 export function sidecarPreflight(python: string, agentDir: string, env: Record<string, string | undefined>): { ok: boolean; detail: string } {
   const pythonPath = env.PYTHONPATH ? `${agentDir}${delimiter}${env.PYTHONPATH}` : agentDir
-  const result = spawnSync(python, ['-c', 'import yaml\nfrom run_agent import AIAgent\n'], { env: { ...env, PYTHONPATH: pythonPath }, encoding: 'utf8', timeout: 60_000 })
+  const result = spawnSync(python, ['-c', 'from run_agent import AIAgent\ntry:\n    import hermes_yaml\nexcept Exception:\n    import yaml\n'], { env: { ...env, PYTHONPATH: pythonPath }, encoding: 'utf8', timeout: 60_000 })
   if (result.error) return { ok: false, detail: result.error.message }
   return { ok: result.status === 0, detail: (result.stderr || '').trim().split('\n').slice(-1)[0] ?? '' }
 }
