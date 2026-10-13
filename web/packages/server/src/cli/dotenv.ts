@@ -6,8 +6,9 @@
  * credentials referenced as `${VAR}` in config.yaml), limited to
  * `homeEnvKeyAllowed`. `HERMES_WEBUI_NO_DOTENV=1` skips both.
  */
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { existsSync, readFileSync } from 'node:fs'
+import { resolveHermesHome } from '../config.js'
 
 const READONLY = new Set(['UID', 'GID', 'EUID', 'EGID', 'PPID'])
 const KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/
@@ -117,7 +118,7 @@ export function loadLauncherDotenv(opts: DotenvOptions): string[] {
  */
 export function loadStartupEnv(opts: { env: Record<string, string | undefined>; webRoot: string; home: string; log?: (line: string) => void }): { hermesHome: string } {
   loadLauncherDotenv({ env: opts.env, repoEnvFile: join(opts.webRoot, '.env'), hermesEnvFile: null, ...(opts.log ? { log: opts.log } : {}) })
-  const hermesHome = resolve((opts.env.HERMES_HOME ?? '').trim().replace(/^~(?=$|\/)/, opts.home) || join(opts.home, '.hermes'))
+  const hermesHome = resolveHermesHome(opts.env, opts.home)
   const fromHome = loadLauncherDotenv({ env: opts.env, repoEnvFile: null, hermesEnvFile: join(hermesHome, '.env'), ...(opts.log ? { log: opts.log } : {}) })
   // Values that came from the default profile's own `.env` are that profile's credentials, not process-wide ones. The
   // supervisor worker inherits both the values and this marker, so a second load must keep what the first recorded.
