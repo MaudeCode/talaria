@@ -2246,6 +2246,25 @@
         "items": {
           "type": "object",
           "properties": {
+            "load_name": {
+              "type": "string"
+            },
+            "declared_name": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "unique",
+                "ambiguous",
+                "shadowed"
+              ]
+            },
+            "tier": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
             "name": {
               "type": "string"
             },
@@ -2344,6 +2363,9 @@
                 "type": "string"
               }
             }
+          },
+          "editable": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -2413,6 +2435,18 @@
           "string",
           "null"
         ]
+      },
+      "load_name": {
+        "type": "string"
+      },
+      "declared_name": {
+        "type": "string"
+      },
+      "sibling_load_names": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
       }
     },
     "required": [

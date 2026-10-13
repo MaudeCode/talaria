@@ -54,6 +54,25 @@ def _category(skill_md: Path, dirs: list[Path], local: Path) -> str | None:
 
 
 def list_skills(profile_home: Path, category: str | None = None) -> dict:
+    try:
+        from agent.skill_utils import get_disabled_skill_names, is_disabled_entry
+        from tools.skills_tool import _skill_catalog, _sort_skills
+    except ImportError:
+        return _legacy_list_skills(profile_home, category)
+    disabled = get_disabled_skill_names("webui")
+    # Keep disabled rows manageable, but never advertise shadowed or unloadable copies.
+    out = [{"name": entry["load_name"], "load_name": entry["load_name"],
+            "declared_name": entry["name"], "status": entry["status"], "tier": entry["tier"],
+            "description": entry.get("description") or "", "category": entry.get("category"),
+            "disabled": is_disabled_entry(entry, disabled)}
+           for entry in _skill_catalog(skip_disabled=True) if entry["load_name"]]
+    if category:
+        out = [s for s in out if s.get("category") == category]
+    out = _sort_skills(out)
+    return {"success": True, "skills": out, "categories": sorted({s["category"] for s in out if s.get("category")}), "count": len(out)}
+
+
+def _legacy_list_skills(profile_home: Path, category: str | None = None) -> dict:
     skills_dir = profile_home / "skills"
     try:
         from agent.skill_utils import iter_skill_index_files
@@ -99,6 +118,27 @@ def list_skills(profile_home: Path, category: str | None = None) -> dict:
 
 
 def find_skill(name: str, dirs: list[Path]) -> tuple[Path | None, Path | None]:
+    try:
+        from agent.skill_utils import resolve_skill_catalog  # noqa: F401 - capability gate for the matching lookup API
+        from tools.skills_tool import _locate_skill, _skill_lookup_path_error, _skill_search_dirs
+    except ImportError:
+        return _legacy_find_skill(name, dirs)
+    if error := _skill_lookup_path_error(name):
+        raise InvalidParams(error)
+    local_name = name.replace(":", "/", 1) if ":" in name else None
+    if local_name and (error := _skill_lookup_path_error(local_name)):
+        raise InvalidParams(error)
+    roots, _ = _skill_search_dirs()
+    error, skill_dir, skill_md = _locate_skill(name, local_name, roots)
+    if error:
+        result = json.loads(error)
+        if result.get("matches"):
+            raise InvalidParams(result["error"])
+        return None, None
+    return skill_dir, skill_md
+
+
+def _legacy_find_skill(name: str, dirs: list[Path]) -> tuple[Path | None, Path | None]:
     from agent.skill_utils import iter_skill_index_files
     from tools.skills_tool import _EXCLUDED_SKILL_DIRS, _parse_frontmatter
 
@@ -208,9 +248,15 @@ def view_from_file(skill_dir: Path | None, skill_md: Path) -> dict:
 def view_skill(profile_home: Path, name: str) -> dict:
     skills_dir = profile_home / "skills"
     dirs = search_dirs(skills_dir)
-    skill_dir, skill_md = find_skill(name, dirs)
+    try:
+        skill_dir, skill_md = find_skill(name, dirs)
+    except InvalidParams as exc:
+        return {"success": False, "error": str(exc)}
     if skill_md:
-        return view_from_file(skill_dir, skill_md)
+        result = view_from_file(skill_dir, skill_md)
+        if result.get("success"):
+            result["editable"] = skill_md.name == "SKILL.md" and _within(skills_dir, skill_md)
+        return result
     if ":" in str(name or ""):
         try:
             from agent.skill_utils import is_valid_namespace, parse_qualified_name
@@ -223,7 +269,10 @@ def view_skill(profile_home: Path, name: str) -> dict:
                 pm = get_plugin_manager()
                 if pm.find_plugin_skill(name) is not None or pm.list_plugin_skills(namespace):
                     raw = skill_view(name)
-                    return json.loads(raw) if isinstance(raw, str) else raw
+                    result = json.loads(raw) if isinstance(raw, str) else raw
+                    if result.get("success"):
+                        result["editable"] = False
+                    return result
         except Exception:  # noqa: BLE001
             pass
     names = [s["name"] for s in list_skills(profile_home).get("skills", [])]
@@ -259,4 +308,18 @@ def register(registry) -> None:
             raise InvalidParams("name is required")
         with scoped_home(home):
             skill_dir, skill_md = find_skill(name, search_dirs(home / "skills"))
-        return {"found": skill_md is not None, "skill_dir": str(skill_dir) if skill_dir else None, "skill_md": str(skill_md) if skill_md else None}
+            identity = {}
+            if skill_md:
+                try:
+                    from tools.skills_tool import _skill_catalog
+                except ImportError:
+                    pass
+                else:
+                    catalog = _skill_catalog(skip_disabled=True, include_hidden=True)
+                    entry = next((e for e in catalog if e["path"] == skill_md), None)
+                    if entry is not None:
+                        if not entry["load_name"]:
+                            raise InvalidParams("Skill has no unambiguous catalog identity")
+                        identity = {"load_name": entry["load_name"], "declared_name": entry["name"],
+                                    "sibling_load_names": [e["load_name"] for e in catalog if e["name"] == entry["name"] and e["load_name"]]}
+        return {"found": skill_md is not None, "skill_dir": str(skill_dir) if skill_dir else None, "skill_md": str(skill_md) if skill_md else None, **identity}

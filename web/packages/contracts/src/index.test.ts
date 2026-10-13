@@ -2,11 +2,16 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { z } from 'zod'
-import { SIDECAR_RPC_VERSION, UpdateNotificationsSchema } from './index.js'
+import { SIDECAR_RPC_VERSION, SkillsSchema, UpdateNotificationsSchema } from './index.js'
 
 const shared = (path: string): unknown => JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../contracts', path), 'utf8'))
 
 describe('contracts package', () => {
+  it('preserves resolved duplicate skill identities in the shared fixture', () => {
+    const parsed = SkillsSchema.parse(shared('fixtures/skills.json'))
+    expect(parsed.skills.map((row) => row.name)).toEqual(['a/one', 'b/two'])
+    expect(parsed.skills.every((row) => row.load_name === row.name && row.status === 'ambiguous' && row.tier === 1)).toBe(true)
+  })
   it('exports an integer sidecar RPC version', () => {
     expect(Number.isInteger(SIDECAR_RPC_VERSION)).toBe(true)
     expect(SIDECAR_RPC_VERSION).toBeGreaterThan(0)

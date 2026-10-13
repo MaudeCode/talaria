@@ -2,6 +2,20 @@ import XCTest
 @testable import TalariaKit
 
 final class APIClientSkillEndpointTests: APIClientTestCase {
+    func testResolvedDuplicateSkillFixtureKeepsSeparateIdentities() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let response = try decoder.decode(
+            SkillsResponse.self,
+            from: Data(contentsOf: root.appendingPathComponent("contracts/fixtures/skills.json"))
+        )
+        XCTAssertEqual(response.skills?.map(\.id), ["a/one", "b/two"])
+        XCTAssertEqual(response.skills?.map(\.disabled), [false, false])
+    }
+
     func testSkillsBuildsExpectedPathAndDecodesResponse() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/skills")
