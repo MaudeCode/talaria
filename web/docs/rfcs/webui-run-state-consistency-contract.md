@@ -57,6 +57,9 @@ a UID match, the legacy timestamp twin rule still applies. A non-compacted
 ancestor cuts off earlier donors only when its successor fails that timestamp
 twin rule. Unchanged carried copies retain their identity; edited rewinds stay
 new even when they reuse an ancestor's UID or timestamp.
+Active predecessors also participate in that history. A later active version
+with changed content or metadata keeps its own identity; unchanged active
+copies can still share the earlier compaction identity.
 
 ## State layers
 

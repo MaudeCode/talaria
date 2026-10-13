@@ -100,6 +100,30 @@ describe('compaction replay identity (TAL-783)', () => {
     }
   })
 
+  it.each([1000, 2000.0000030000003, 3000])('preserves a later active UID version at timestamp %s', (timestamp) => {
+    // An edited/merged generation can be appended while its predecessor is still active.
+    db.prepare("INSERT INTO messages (session_id, role, content, timestamp, message_uid) VALUES ('compaction-replay', 'user', 'Only fix the parser error', ?, 'fixture-1')").run(timestamp)
+    const read = stateDbSessionRead(path, sid)
+    expect(mergeSessionMessagesAppendOnly(fixture.before, read.rows, { stateDbSeenId: 9 }).at(-1)?.content).toBe('Only fix the parser error')
+    expect(read.rows.at(-2)?._state_db_row_id).toBe(1)
+    expect(read.rows.at(-1)?._state_db_row_id).toBe(10)
+  })
+
+  it('preserves changed tool calls in a later active version with unchanged text', () => {
+    const calls = [{ id: 'call_read', type: 'function', function: { name: 'read_other_file', arguments: '{}' } }]
+    db.prepare('INSERT INTO messages (session_id, role, content, timestamp, message_uid, tool_calls) SELECT session_id, role, content, timestamp, message_uid, ? FROM messages WHERE id = 7').run(JSON.stringify(calls))
+    const read = stateDbSessionRead(path, sid)
+    expect(mergeSessionMessagesAppendOnly(fixture.before, read.rows, { stateDbSeenId: 9 }).at(-1)?.tool_calls).toEqual(calls)
+    expect(read.rows.at(-1)?._state_db_row_id).toBe(10)
+  })
+
+  it('does not split unchanged active copies into new transcript rows', () => {
+    db.exec('INSERT INTO messages (session_id, role, content, timestamp, message_uid) SELECT session_id, role, content, timestamp, message_uid FROM messages WHERE id = 9')
+    const read = stateDbSessionRead(path, sid)
+    expect(read.rows.slice(-2).map((row) => row._state_db_row_id)).toEqual([1, 1])
+    expect(mergeSessionMessagesAppendOnly(fixture.before, read.rows, { stateDbSeenId: 5 })).toHaveLength(6)
+  })
+
   it.each(['null', 'backfilled', 'absent'])('retains timestamp twins for %s UIDs', (mode) => {
     db.exec('UPDATE messages SET timestamp = 1000 WHERE id = 9')
     if (mode === 'null') db.exec('UPDATE messages SET message_uid = NULL')
