@@ -31,3 +31,7 @@ export const OkResultSchema = z.object({ ok: z.literal(true) })
 export const RpcCancelParamsSchema = z.object({ id: z.number().int() })
 export const RpcCancelResultSchema = z.object({ cancelled: z.boolean(), reason: z.string().optional() })
 export const RpcMethodsResultSchema = z.object({ methods: z.array(z.string()) })
+
+/** Explicit update repair, bound to the sidecar's configured checkout, without importing updated Agent code. */
+export const RuntimeSyncDependenciesParamsSchema = z.object({ agent_dir: z.string().min(1) })
+export const RuntimeSyncDependenciesResultSchema = z.object({ ok: z.boolean(), skipped: z.boolean(), detail: z.string() })

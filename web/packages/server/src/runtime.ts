@@ -709,7 +709,10 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
       return deps.version
     },
     agentDir: () => sidecar?.describe?.agent_dir ?? null,
-    agentEnv: () => ({ ...env, HERMES_HOME: config.hermesHome }),
+    agentSync: async (agentDir) => {
+      if (!sidecar) throw new Error('Hermes Agent sidecar is unavailable')
+      return sidecar.call('runtime.sync_dependencies', { agent_dir: agentDir }, { timeoutMs: 330_000 })
+    },
     channel: () => normalizeChannel(settings.load().update_channel),
     agentChannel: () => normalizeChannel(settings.load().agent_update_channel),
     includeAgent: () => !pyBool(settings.load().ignore_agent_updates),

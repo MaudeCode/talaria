@@ -11,7 +11,15 @@ preflight. The sidecar also sets it at package import for direct Python entry
 points. Importing Agent modules cannot adopt a checkout, sync dependencies, or
 re-exec through the Agent's lazy-install path, which would lose the RPC file
 descriptor and the sidecar's `PYTHONPATH`. Explicit Agent updates own dependency
-sync before restarting either process.
+sync before restarting either process. Live `runtime.env` edits preserve the
+opt-out as well.
+
+RPC v19 adds `runtime.sync_dependencies`. It validates the requested checkout
+against the sidecar's configured Agent directory and runs `hermes_cli.venv_sync`
+in a subprocess on that sidecar's interpreter and launch environment. It remains
+available when Agent imports fail or the loaded revision is stale, since those
+are the states an explicit update must repair. The server owns the durable
+pending-sync marker and restart ordering; it never launches Agent sync itself.
 
 ## Ownership
 

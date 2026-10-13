@@ -2,17 +2,51 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
+import subprocess
+import sys
+from pathlib import Path
 
 from .. import SIDECAR_RPC_VERSION
 from ..errors import InvalidParams, RpcError
-from ..home import edit_launch_env
+from ..home import edit_launch_env, _frozen_launch_env
 from ..rpc import CallContext
 
 
 def register(registry) -> None:
     runtime = registry.runtime
+
+    @registry.method("runtime.sync_dependencies", requires_agent=False)
+    def sync_dependencies(ctx: CallContext, params: dict) -> dict:
+        # Source has already advanced; loading it or checking the old revision would prevent repair.
+        expected = params.get("agent_dir")
+        root = runtime.agent_dir
+        if not isinstance(expected, str) or not expected or root is None or Path(expected).resolve() != root.resolve():
+            raise InvalidParams("agent_dir must match the sidecar's configured Agent checkout")
+        if not (root / "hermes_cli" / "venv_sync.py").is_file():
+            return {"ok": True, "skipped": True, "detail": ""}
+        env = _frozen_launch_env()
+        env.update(HERMES_HOME=str(runtime.hermes_home), HERMES_DISABLE_LAZY_INSTALLS="1",
+                   PYTHONPATH=str(root) + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else ""))
+        try:
+            result = subprocess.run(
+                [sys.executable, "-m", "hermes_cli.venv_sync", "--project-root", str(root), "--json"],
+                cwd=root, env=env, capture_output=True, text=True, timeout=300,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return {"ok": False, "skipped": False, "detail": str(exc)}
+        if result.returncode != 0:
+            return {"ok": False, "skipped": False, "detail": (result.stderr or result.stdout or "Agent dependency sync failed.")[-4000:]}
+        try:
+            response = json.loads(result.stdout)
+            if not isinstance(response, dict):
+                raise ValueError("not an object")
+        except ValueError:
+            return {"ok": False, "skipped": False, "detail": "Agent dependency sync returned an invalid result."}
+        return {"ok": response.get("ok") is True, "skipped": False,
+                "detail": str(response.get("detail") or "")[-4000:]}
 
     @registry.method("runtime.handshake", requires_agent=False)
     def handshake(ctx: CallContext, params: dict) -> dict:
@@ -50,6 +84,7 @@ def register(registry) -> None:
             raise InvalidParams("set must map variable names to strings")
         if not isinstance(to_unset, list) or not all(isinstance(k, str) and names.match(k) for k in to_unset):
             raise InvalidParams("unset must list variable names")
+        to_set = {**to_set, "HERMES_DISABLE_LAZY_INSTALLS": "1"}
         for name in to_unset:
             os.environ.pop(name, None)
         for name, value in to_set.items():

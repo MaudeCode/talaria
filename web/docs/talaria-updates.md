@@ -74,8 +74,9 @@ revision warns but can attempt operations; missing capabilities and unsafe
 credential isolation still fail at use. Automatic updates still apply only to Web.
 
 After changing Agent source, both Update and Force Update run the Agent's
-`hermes_cli.venv_sync` command when that release supplies it, using the configured
-Agent interpreter and Hermes home. Dependency sync must succeed before the gateway
+`hermes_cli.venv_sync` command through the versioned sidecar RPC when that release
+supplies it, using the sidecar's interpreter and launch Hermes home. Dependency
+sync must succeed before the gateway
 or Web restart. A sync failure reports a failed update; retrying still runs sync
 even if Git already reached the target. Web records pending sync in its state
 directory, so Settings keeps the Agent update action available after a failed sync

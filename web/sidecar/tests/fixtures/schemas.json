@@ -248,6 +248,27 @@
     ],
     "additionalProperties": false
   },
+  "runtime.sync_dependencies": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "ok": {
+        "type": "boolean"
+      },
+      "skipped": {
+        "type": "boolean"
+      },
+      "detail": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok",
+      "skipped",
+      "detail"
+    ],
+    "additionalProperties": false
+  },
   "goals.get": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

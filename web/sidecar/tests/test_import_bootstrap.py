@@ -9,7 +9,8 @@ from conftest import AGENT_DIR, AGENT_PYTHON, isolated_env, requires_agent
 
 
 @requires_agent
-def test_chat_import_does_not_adopt_sync_or_exec_a_blessed_checkout(tmp_path):
+@pytest.mark.parametrize("reload_env", [False, True])
+def test_chat_import_does_not_adopt_sync_or_exec_a_blessed_checkout(tmp_path, reload_env):
     if not (AGENT_DIR / "hermes_cli/venv_sync.py").exists():
         pytest.skip("Agent release predates lazy dependency sync")
     home = tmp_path / "home"
@@ -32,11 +33,16 @@ _launchers.resolve_store_python = lambda *a: Path(sys.executable)
 pm.environments.activate_dependencies = lambda *a: None
 os.execv = lambda *a: calls.append("exec")
 from talaria_sidecar.methods.chat import _agent_class
+if sys.argv[2] == 'reload':
+    from talaria_sidecar.methods import build_methods
+    from talaria_sidecar.runtime import AgentRuntime
+    methods = build_methods(AgentRuntime(Path(os.environ['HERMES_HOME']), Path(sys.argv[1])))
+    methods['runtime.env'](None, {'set': {'HERMES_DISABLE_LAZY_INSTALLS': '0'}})
 cls = _agent_class()
 print(json.dumps({"class": cls.__name__, "calls": calls, "stamp": (Path(sys.argv[1]) / "install-stamp.json").exists()}))
 '''
     result = subprocess.run(
-        [AGENT_PYTHON, "-c", probe, str(checkout)],
+        [AGENT_PYTHON, "-c", probe, str(checkout), "reload" if reload_env else "initial"],
         env=isolated_env(hermes, home=home, HERMES_DISABLE_LAZY_INSTALLS="0"),
         cwd=checkout, capture_output=True, text=True, timeout=60,
     )

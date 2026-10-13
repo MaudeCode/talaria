@@ -10,6 +10,7 @@
  * stash/pull or force reset, then the gateway restarts through the sidecar.
  * Nothing here deletes git locks; `clearLock` only inventories them.
  */
+import type { SidecarResult } from '@maudecode/talaria-web-contracts'
 import { readCapped } from '../http/capped.js'
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
@@ -20,8 +21,6 @@ import type { Dict } from '../config/agent-config.js'
 import { dict } from '../config/agent-config.js'
 import { validateReleaseInfo } from '../release.js'
 import { str } from '../util.js'
-import { discoverAgentPython } from '../sidecar/discover.js'
-import { AGENT_IMPORT_ENV } from '../sidecar/env.js'
 import { atomicWriteText } from '../fs/atomic.js'
 
 export const REPOSITORY = 'MaudeCode/talaria'
@@ -1011,7 +1010,7 @@ function agentSyncMarker(path: string | null, stateDir: string | undefined): str
 }
 
 /** Older Agents have no PM sync entry point. Newer ones must finish it before restart. */
-async function syncAgentDependencies(path: string | null, env: Record<string, string | undefined>, stateDir: string | undefined): Promise<GitOutcome | null> {
+async function syncAgentDependencies(path: string | null, sync: UpdateServiceDeps['agentSync'], stateDir: string | undefined): Promise<GitOutcome | null> {
   if (!path || !existsSync(join(path, 'hermes_cli', 'venv_sync.py'))) return null
   const marker = agentSyncMarker(path, stateDir)
   if (!marker) return { ok: false, out: 'Web state directory is unavailable; cannot record pending dependency sync.' }
@@ -1019,20 +1018,12 @@ async function syncAgentDependencies(path: string | null, env: Record<string, st
     mkdirSync(dirname(marker), { recursive: true })
     atomicWriteText(marker, 'pending\n')
   } catch (error) { return { ok: false, out: `Could not record pending dependency sync: ${sanitizeGitDiagnostic((error as Error).message)}` } }
-  const python = discoverAgentPython(env, path)
-  if (!python) return { ok: false, out: 'Agent Python interpreter was not found.' }
-  const result = await new Promise<GitOutcome>((done) => {
-    execFile(python, ['-m', 'hermes_cli.venv_sync', '--project-root', path, '--json'], {
-      cwd: path, env: { ...env, ...AGENT_IMPORT_ENV, PYTHONPATH: env.PYTHONPATH ? `${path}${delimiter}${env.PYTHONPATH}` : path },
-      encoding: 'utf8', timeout: 300_000, maxBuffer: 4 * 1024 * 1024,
-    }, (error, stdout, stderr) => {
-      if (error) { done({ ok: false, out: sanitizeGitDiagnostic(stderr || stdout || error.message) }); return }
-      try {
-        const result = dict(JSON.parse(stdout))
-        done({ ok: result.ok === true, out: sanitizeGitDiagnostic(str(result.detail) || 'Agent dependency sync did not report success.') })
-      } catch { done({ ok: false, out: 'Agent dependency sync returned an invalid result.' }) }
-    })
-  })
+  let result: GitOutcome
+  try {
+    if (!sync) throw new Error('Agent dependency-sync RPC is unavailable.')
+    const response = await sync(path)
+    result = { ok: response.ok, out: sanitizeGitDiagnostic(response.detail) }
+  } catch (error) { return { ok: false, out: sanitizeGitDiagnostic((error as Error).message) } }
   if (result.ok) {
     try { rmSync(marker, { force: true }) } catch (error) { return { ok: false, out: `Could not clear pending dependency sync: ${sanitizeGitDiagnostic((error as Error).message)}` } }
   }
@@ -1059,8 +1050,8 @@ export interface UpdateServiceDeps {
   /** Re-derive the installed Web version after a check (tags can arrive after startup); returns the current label. */
   refreshWebuiVersion?: () => string
   agentDir: () => string | null
-  /** The same configured environment used to discover and spawn the sidecar. */
-  agentEnv?: () => Record<string, string | undefined>
+  /** Repair dependencies through the sidecar even while its imported Agent is stale. */
+  agentSync?: (agentDir: string) => Promise<SidecarResult<'runtime.sync_dependencies'>>
   channel: () => Channel
   agentChannel?: () => Channel
   includeAgent: () => boolean
@@ -1278,7 +1269,7 @@ export class UpdateService {
   private async finishAgent(result: Dict, path: string | null): Promise<Dict> {
     this.cache.checked_at = 0
     // A failed sync leaves Git advanced: an explicit retry still owes the sync and restart.
-    const synced = await syncAgentDependencies(path, this.deps.agentEnv?.() ?? process.env, this.deps.stateDir)
+    const synced = await syncAgentDependencies(path, this.deps.agentSync, this.deps.stateDir)
     if (synced && !synced.ok) return { ...result, ok: false, up_to_date: false, message: `Agent source updated, but dependency sync failed: ${synced.out}` }
     if (!synced && result.up_to_date) return result
     const [ok, gateway] = await this.restartGateway()
