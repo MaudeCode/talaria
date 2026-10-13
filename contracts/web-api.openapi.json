@@ -50045,7 +50045,7 @@
     "/api/gateway/start": {
       "post": {
         "operationId": "gateway.start",
-        "summary": "Run `hermes gateway start` for the active profile (operator only). 409 while another gateway action runs, 500 on failure, 504 after 60 seconds.",
+        "summary": "Run `hermes gateway start` for the active profile (operator only). A named profile the Agent refuses its own gateway starts the host gateway from the root profile, then retries. 409 while another gateway action runs, 500 with the Agent's first error line on failure, 504 after 60 seconds.",
         "tags": [
           "tools"
         ],
@@ -50205,7 +50205,7 @@
     "/api/gateway/stop": {
       "post": {
         "operationId": "gateway.stop",
-        "summary": "Run `hermes gateway stop` for the active profile (operator only). 409 while another gateway action runs, 500 on failure, 504 after 60 seconds.",
+        "summary": "Run `hermes gateway stop` for the active profile (operator only). 409 while another gateway action runs, 500 with the Agent's first error line on failure, 504 after 60 seconds.",
         "tags": [
           "tools"
         ],
@@ -50365,7 +50365,7 @@
     "/api/gateway/restart": {
       "post": {
         "operationId": "gateway.restart",
-        "summary": "Run `hermes gateway restart` for the active profile (operator only). 409 while another gateway action runs, 500 on failure, 504 after 60 seconds.",
+        "summary": "Run `hermes gateway restart` for the active profile (operator only). A named profile the Agent refuses its own gateway starts the host gateway from the root profile, then retries. 409 while another gateway action runs, 500 with the Agent's first error line on failure, 504 after 60 seconds.",
         "tags": [
           "tools"
         ],

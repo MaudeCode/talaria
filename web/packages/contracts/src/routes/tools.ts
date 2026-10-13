@@ -66,9 +66,9 @@ export const toolsContract = {
   },
   gateway: {
     status: oc.route({ method: 'GET', path: '/api/gateway/status', tags }).output(GatewayStatusSchema),
-    start: oc.route({ method: 'POST', path: '/api/gateway/start', tags, summary: 'Run `hermes gateway start` for the active profile (operator only). 409 while another gateway action runs, 500 on failure, 504 after 60 seconds.' }).input(Loose.optional()).output(GatewayActionSchema),
-    stop: oc.route({ method: 'POST', path: '/api/gateway/stop', tags, summary: 'Run `hermes gateway stop` for the active profile (operator only). 409 while another gateway action runs, 500 on failure, 504 after 60 seconds.' }).input(Loose.optional()).output(GatewayActionSchema),
-    restart: oc.route({ method: 'POST', path: '/api/gateway/restart', tags, summary: 'Run `hermes gateway restart` for the active profile (operator only). 409 while another gateway action runs, 500 on failure, 504 after 60 seconds.' }).input(Loose.optional()).output(GatewayActionSchema),
+    start: oc.route({ method: 'POST', path: '/api/gateway/start', tags, summary: 'Run `hermes gateway start` for the active profile (operator only). A named profile the Agent refuses its own gateway starts the host gateway from the root profile, then retries. 409 while another gateway action runs, 500 with the Agent\'s first error line on failure, 504 after 60 seconds.' }).input(Loose.optional()).output(GatewayActionSchema),
+    stop: oc.route({ method: 'POST', path: '/api/gateway/stop', tags, summary: 'Run `hermes gateway stop` for the active profile (operator only). 409 while another gateway action runs, 500 with the Agent\'s first error line on failure, 504 after 60 seconds.' }).input(Loose.optional()).output(GatewayActionSchema),
+    restart: oc.route({ method: 'POST', path: '/api/gateway/restart', tags, summary: 'Run `hermes gateway restart` for the active profile (operator only). A named profile the Agent refuses its own gateway starts the host gateway from the root profile, then retries. 409 while another gateway action runs, 500 with the Agent\'s first error line on failure, 504 after 60 seconds.' }).input(Loose.optional()).output(GatewayActionSchema),
   },
   mcp: {
     servers: oc.route({ method: 'GET', path: '/api/mcp/servers', tags }).output(McpServersSchema),

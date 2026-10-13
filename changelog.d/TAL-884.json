@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Starting the gateway for a named profile on Hermes Agent v0.21.6 now starts the one host gateway that serves every profile instead of failing with exit code 78. When the Agent still refuses, the error shows its reason.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

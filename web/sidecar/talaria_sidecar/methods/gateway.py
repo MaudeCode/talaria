@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -14,13 +15,17 @@ from pathlib import Path
 from ..errors import InvalidParams
 from ..home import profile_home_param
 from ..rpc import CallContext
-from .profiles import gateway_mode
+from .profiles import _bounded, gateway_mode
 
 log = logging.getLogger("talaria_sidecar.gateway")
 # One lifecycle action at a time across every action: overlapping `hermes gateway` subprocesses race each other.
 _ACTION_LOCK = threading.Lock()
 ACTIONS = ("start", "stop", "restart")
 _DONE = {"start": "started", "stop": "stopped", "restart": "restarted"}
+# EX_CONFIG: Agent v0.21.6 refuses a named profile's own start/restart with it, since the host gateway serves every profile.
+_REFUSED = 78
+_SERVED_WAIT_SECONDS = 15.0
+_ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
 
 def _hermes_command() -> str:
@@ -43,66 +48,119 @@ def _drain(stream, sink: list[str]) -> None:
             pass
 
 
+def _reason(stdout: str, stderr: str) -> str | None:
+    """The Agent's first error line: its first ``✗`` line, else the first line it wrote; one bounded printable line without colour codes."""
+    def lines(text: str) -> list[str]:
+        return [line.strip() for line in _ANSI.sub("", text).splitlines() if line.strip()]
+
+    first = next((line for line in lines(f"{stdout}\n{stderr}") if line.startswith("✗")), None) or next(iter(lines(stderr or stdout)), "")
+    return _bounded(first.lstrip("✗ "), 300) or None
+
+
+def _host_root(home: Path) -> Path | None:
+    """The Hermes root of a ``<root>/profiles/<name>`` home, as the Agent's ``profile_name_for_home`` reads a named profile."""
+    return home.parent.parent if home.parent.name == "profiles" and not home.name.startswith(".") and home.name != "default" else None
+
+
+def _host_serves(home: Path) -> bool:
+    """True once the host gateway serves the named profile at ``home`` (TAL-805 ``served``); the host may still be coming up."""
+    deadline = time.monotonic() + _SERVED_WAIT_SECONDS
+    while True:
+        try:
+            if gateway_mode(home, home.name, False) == "served":
+                return True
+        except Exception:  # noqa: BLE001
+            log.debug("gateway mode probe failed for %s", home, exc_info=True)
+            return False
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.5)
+
+
 def control(action: str, home: Path, cli_profile: str | None, ctx: CallContext, *, quick_timeout: float, background_wait: float) -> dict:
     if action not in ACTIONS:
         raise InvalidParams("unsupported gateway action")
     if not _ACTION_LOCK.acquire(blocking=False):
         return {"status": "busy", "message": "Another gateway action is already in progress. Please wait a moment and try again."}
     try:
-        env = dict(os.environ)
-        env["HERMES_HOME"] = str(home)
-        env.pop("HERMES_EXEC_ASK", None)  # the sidecar's own approval posture, not the gateway's
-        cmd = [_hermes_command()]
-        if cli_profile:
-            cmd.extend(["--profile", cli_profile])
-        cmd.extend(["gateway", action])
-        log.info("Running gateway %s via %s (HERMES_HOME=%s)", action, " ".join(cmd), home)
-        try:
-            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
-        except FileNotFoundError:
-            return {"status": "failed", "message": "Hermes CLI not found"}
-        # Drain both pipes from the start: a chatty restart must never block on a full pipe and be mistaken for a hang.
-        out: list[str] = []
-        err: list[str] = []
-        drainers = [threading.Thread(target=_drain, args=(proc.stdout, out), daemon=True), threading.Thread(target=_drain, args=(proc.stderr, err), daemon=True)]
-        for t in drainers:
-            t.start()
+        def run(action: str, home: Path, cli_profile: str | None) -> dict:
+            return _run(action, home, cli_profile, ctx, quick_timeout=quick_timeout, background_wait=background_wait)
 
-        def collected() -> tuple[str, str]:
-            for t in drainers:
-                t.join(timeout=5)
-            return "".join(out).strip(), "".join(err).strip()
-
-        def outcome() -> dict:
-            stdout, stderr = collected()
-            if proc.returncode == 0:
-                return {"status": "completed", "message": f"Gateway service {_DONE[action]} successfully", "detail": stdout or stderr}
-            return {"status": "failed", "message": f"{action.capitalize()} failed: {stderr or stdout}", "detail": stdout or stderr, "returncode": proc.returncode}
-
-        ctx.emit("progress", {"phase": "started"})
-        deadline = time.monotonic() + quick_timeout
-        while proc.poll() is None and time.monotonic() < deadline:
-            time.sleep(0.1)
-        if proc.poll() is not None:
-            return outcome()
-        ctx.emit("progress", {"phase": "draining"})
-        deadline = time.monotonic() + background_wait
-        while proc.poll() is None and time.monotonic() < deadline:
-            if ctx.cancelled:
-                break
-            time.sleep(0.5)
-        if proc.poll() is None:
-            proc.terminate()
-            try:
-                proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.wait(timeout=5)
-            collected()
-            return {"status": "failed", "message": f"Gateway {action} process timed out after {background_wait:.0f}s and was terminated", "timed_out": True}
-        return outcome()
+        result = run(action, home, cli_profile)
+        root = _host_root(home)
+        # TAL-884: Agent v0.21.6 gives a named profile no gateway of its own. Start the host gateway from the root profile
+        # (`--profile default`, so a sticky active profile cannot retarget it), then rerun the profile's action, which
+        # serves or unparks it there. Never `--force`: that grows the per-profile fleet member the Agent refuses.
+        if action == "stop" or root is None or result.get("returncode") != _REFUSED:
+            return result
+        log.info("Gateway %s refused for %s; starting the host gateway from %s", action, home, root)
+        host = run("start", root, "default")
+        if host["status"] != "completed":
+            return host
+        result = run(action, home, cli_profile)
+        if result.get("returncode") == _REFUSED and _host_serves(home):
+            return {"status": "completed", "message": f"Gateway service {_DONE[action]} successfully", "detail": result.get("detail", "")}
+        return result
     finally:
         _ACTION_LOCK.release()
+
+
+def _run(action: str, home: Path, cli_profile: str | None, ctx: CallContext, *, quick_timeout: float, background_wait: float) -> dict:
+    """One ``hermes gateway <action>`` subprocess in ``home``; the caller holds ``_ACTION_LOCK``."""
+    env = dict(os.environ)
+    env["HERMES_HOME"] = str(home)
+    env.pop("HERMES_EXEC_ASK", None)  # the sidecar's own approval posture, not the gateway's
+    cmd = [_hermes_command()]
+    if cli_profile:
+        cmd.extend(["--profile", cli_profile])
+    cmd.extend(["gateway", action])
+    log.info("Running gateway %s via %s (HERMES_HOME=%s)", action, " ".join(cmd), home)
+    try:
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+    except FileNotFoundError:
+        return {"status": "failed", "message": "Hermes CLI not found"}
+    # Drain both pipes from the start: a chatty restart must never block on a full pipe and be mistaken for a hang.
+    out: list[str] = []
+    err: list[str] = []
+    drainers = [threading.Thread(target=_drain, args=(proc.stdout, out), daemon=True), threading.Thread(target=_drain, args=(proc.stderr, err), daemon=True)]
+    for t in drainers:
+        t.start()
+
+    def collected() -> tuple[str, str]:
+        for t in drainers:
+            t.join(timeout=5)
+        return "".join(out).strip(), "".join(err).strip()
+
+    def outcome() -> dict:
+        stdout, stderr = collected()
+        if proc.returncode == 0:
+            return {"status": "completed", "message": f"Gateway service {_DONE[action]} successfully", "detail": stdout or stderr}
+        failed = {"status": "failed", "message": f"{action.capitalize()} failed: {stderr or stdout}", "detail": stdout or stderr, "returncode": proc.returncode}
+        reason = _reason(stdout, stderr)
+        return {**failed, "reason": reason} if reason else failed
+
+    ctx.emit("progress", {"phase": "started"})
+    deadline = time.monotonic() + quick_timeout
+    while proc.poll() is None and time.monotonic() < deadline:
+        time.sleep(0.1)
+    if proc.poll() is not None:
+        return outcome()
+    ctx.emit("progress", {"phase": "draining"})
+    deadline = time.monotonic() + background_wait
+    while proc.poll() is None and time.monotonic() < deadline:
+        if ctx.cancelled:
+            break
+        time.sleep(0.5)
+    if proc.poll() is None:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=5)
+        collected()
+        return {"status": "failed", "message": f"Gateway {action} process timed out after {background_wait:.0f}s and was terminated", "timed_out": True}
+    return outcome()
 
 
 def register(registry) -> None:

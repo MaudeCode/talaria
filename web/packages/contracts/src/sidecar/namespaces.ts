@@ -435,8 +435,12 @@ export const CHAT_METHODS = {
   'clarify.respond': { params: z.object({ stream_id: z.string().optional(), session_id: z.string().optional(), clarify_id: z.string().optional(), response: z.string().min(1) }), result: z.object({ ok: z.boolean(), clarify_id: z.string().optional() }) },
 } as const
 const GatewayActionParams = ProfileHomeParams.extend({ cli_profile: z.string().nullable().optional(), quick_timeout_seconds: z.number().optional(), background_wait_seconds: z.number().optional() })
-/** A lifecycle run of `hermes gateway <action>`. `busy` means another action holds the lock; `timed_out` marks a child killed after `background_wait_seconds`. `detail` is CLI output, never shown to a browser. */
-const GatewayActionResult = z.object({ status: z.enum(['completed', 'failed', 'busy']), message: z.string(), detail: z.string().optional(), returncode: z.number().int().optional(), timed_out: z.boolean().optional() })
+/**
+ * A lifecycle run of `hermes gateway <action>`. `busy` means another action holds the lock; `timed_out` marks a child killed after
+ * `background_wait_seconds`. `detail` is CLI output, never shown to a browser; `reason` is the Agent's first error line of a
+ * failed run (TAL-884), the one line the server shows.
+ */
+const GatewayActionResult = z.object({ status: z.enum(['completed', 'failed', 'busy']), message: z.string(), detail: z.string().optional(), returncode: z.number().int().optional(), reason: z.string().optional(), timed_out: z.boolean().optional() })
 const GatewayActionStream = z.discriminatedUnion('event', [z.object({ event: z.literal('progress'), data: z.object({ phase: z.enum(['started', 'draining']) }) })])
 export const GATEWAY_ACTIONS = ['start', 'stop', 'restart'] as const
 export const GATEWAY_METHODS = {
