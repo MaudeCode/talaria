@@ -42,6 +42,7 @@ export class FakeSidecar implements SidecarLike {
     const handshake = this.fixtures.get('runtime.handshake')?.[0]
     if (handshake) this.describe = SIDECAR_METHODS['runtime.handshake'].result.parse(handshake.result)
     // Every settled turn asks the goal judge (TAL-396); a fresh fake has no goal, so it answers as the sidecar does then.
+    this.respond('models.speed_tiers', (params) => ({ tiers: params.routes.map(() => []) }))
     this.respond('goals.evaluate', () => ({ status: null, should_continue: false, continuation_prompt: null, verdict: 'inactive', reason: 'no active goal', message: '' }))
   }
 

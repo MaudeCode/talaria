@@ -421,6 +421,16 @@ def capabilities(provider: str, model: str) -> dict | None:
 
 
 def register(reg) -> None:
+    @reg.method("models.speed_tiers")
+    def speed_tiers(ctx: CallContext, params: dict) -> dict:
+        from ..speed import supported_speed_tiers
+
+        routes = params.get("routes")
+        if not isinstance(routes, list) or any(not isinstance(route, dict) or not route.get("model") for route in routes):
+            raise InvalidParams("routes must contain model routes")
+        with scoped_home(profile_home_param(params)):
+            return {"tiers": [supported_speed_tiers(str(route["model"]), str(route.get("provider") or ""), str(route.get("base_url") or "")) for route in routes]}
+
     @reg.method("providers.registry")
     def registry_(ctx: CallContext, params: dict) -> dict:
         with scoped_home(profile_home_param(params)):

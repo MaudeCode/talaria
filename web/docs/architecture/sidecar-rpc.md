@@ -129,7 +129,7 @@ under Hermes Agent's context-local home override (`talaria_sidecar/home.py`).
 | `cron` | `list`, `get`, `create`, `update`, `delete`, `pause`, `resume`, `run`, `status`, `history`, `run_detail`, `output`, `delivery_options` | `run`: `started` |
 | `providers` | `registry`, `auth_status`, `model_ids`, `resolve_runtime`, `credential_pool` | |
 | `oauth` | `start`, `poll`, `cancel` | |
-| `models` | `context_length`, `estimate_tokens`, `capabilities`, `reasoning_efforts` | |
+| `models` | `context_length`, `estimate_tokens`, `capabilities`, `reasoning_efforts`, `speed_tiers` | |
 | `aux` | `complete`, `resolve` | `complete`: `token` |
 | `text` | `image_mode`, `portal_tags` | |
 | `process` | `drain`, `recover`, `requeue`, `mark_consumed`, `consumed`, `format_notification`, `list` | |
@@ -281,3 +281,12 @@ excludes the edited/source job and marks ineligible selected references
 `selectable: false` so the client can offer removal without offering them again.
 The Web form renders these explicit choices and does not filter its global job
 list to infer eligibility. This is a server projection, with no new sidecar RPC.
+
+`models.speed_tiers` batches model/provider/base-URL routes through the Agent's
+`resolve_fast_mode_overrides`. Its tier rows carry the tier identity and the
+`service_tier` value to persist. Anthropic Fast saves `priority` but sends
+`speed: fast`; Ultrafast is offered only when the resolver supports that exact
+tier. Agents with the older resolver signature offer Fast only. Without a
+resolver, the legacy GPT-5/o-series gate applies only on first-party OpenAI
+routes. Failed lookups offer no paid tiers and block writes that would otherwise
+erase a saved tier. Chat uses the same helper against its resolved runtime URL.

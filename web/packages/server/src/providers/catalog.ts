@@ -23,10 +23,10 @@ import {
 } from './tables.js'
 import {
   activeProviderFromConfig, canonicaliseProviderId, configuredModelIds, configuredModelOptions, customProviderEntries, customProviderSlug, dict, effectiveDefaultModel, isDict,
-  isOpenAiFamilyProvider, mainModelSupportsServiceTier, modelSection, parseProviderQualifiedModel, providerIdentity, resolveProviderAlias, type AgentConfig, type Config, type Dict,
+  modelSection, parseProviderQualifiedModel, providerIdentity, resolveProviderAlias, type AgentConfig, type Config, type Dict, type SpeedTier,
 } from '../config/agent-config.js'
 
-export interface ModelEntry { id: string; label: string; supports_fast_tier?: boolean; provider_id?: string; bare_id?: string }
+export interface ModelEntry { id: string; label: string; supports_fast_tier?: boolean; supported_speed_tiers?: SpeedTier[]; provider_id?: string; bare_id?: string }
 type PluginProvider = SidecarResult<'plugins.providers'>['providers'][number]
 export interface ModelGroup { provider: string; provider_id: string; models: ModelEntry[]; extra_models?: ModelEntry[] }
 
@@ -946,7 +946,6 @@ export class ProviderCatalog {
     for (const [k, v] of Object.entries(providersCfg)) if (isDict(v) && (v.api_key || v.key_env || v.base_url)) { const c = canonicaliseProviderId(k); if (c) withKeys.add(c) }
     const rank = (g: ModelGroup): number => (g.provider_id === active ? 0 : g.provider_id.startsWith('custom:') ? 1 : withKeys.has(g.provider_id) ? 2 : 3)
     kept.sort((a, b) => rank(a) - rank(b) || (a.provider_id < b.provider_id ? -1 : a.provider_id > b.provider_id ? 1 : 0))
-    for (const g of kept) if (isOpenAiFamilyProvider(g.provider_id)) for (const m of g.models) if (/^(@[^:]+:)?(openai\/)?(gpt-5|o[0-9])/.test(m.id)) m.supports_fast_tier = true
     const aliases: Record<string, string> = {}
     const rawAliases = model.aliases
     if (isDict(rawAliases)) for (const [k, v] of Object.entries(rawAliases)) if (k && v) aliases[k.trim()] = str(v).trim()
@@ -961,7 +960,8 @@ export class ProviderCatalog {
   }
 
   /** Stamps the default's entry id and keeps the catalog for `modelOptionFor`. */
-  private remember(profileHome: string, meta: { source: string; unconfirmed: ReadonlySet<string> }, catalog: ModelsCatalog): ModelsCatalog {
+  private async remember(profileHome: string, meta: { source: string; unconfirmed: ReadonlySet<string> }, catalog: ModelsCatalog): Promise<ModelsCatalog> {
+    await this.stampSpeedTiers(profileHome, catalog.groups.flatMap((g) => [...g.models, ...(g.extra_models ?? [])]))
     catalog.default_option_id = catalogOptionId(catalog, catalog.default_bare_id ?? null, catalog.default_provider_id ?? null)
     this.lastModels.set(profileHome, catalog)
     this.lastModelsMeta.set(profileHome, { ...meta, at: this.deps.now() })
@@ -1011,12 +1011,21 @@ export class ProviderCatalog {
       ids = fromConfig.length ? [...new Set(fromConfig)] : (PROVIDER_MODELS[provider] ?? []).map((m) => m.id)
       source = fromConfig.length ? 'config' : 'static'
     }
-    // Python: the dropdown-enrichment surface keeps the picker's visibility budget (15 rows past 25) and annotates
-    // OpenAI-family rows with `supports_fast_tier`; the answer carries `count`.
     if (provider !== 'nous' && ids.length > MODEL_PICKER_OVERFLOW_THRESHOLD) ids = ids.slice(0, MODEL_PICKER_VISIBLE_TARGET)
-    const annotateFastTier = isOpenAiFamilyProvider(provider)
-    const models = stampModelEntries(ids.filter(Boolean).map((id) => ({ id, label: labelForModel(id, []), ...(annotateFastTier ? { supports_fast_tier: mainModelSupportsServiceTier(id, provider) } : {}) })), provider)
+    const models = stampModelEntries(ids.filter(Boolean).map((id) => ({ id, label: labelForModel(id, []) })), provider)
+    await this.stampSpeedTiers(profileHome, models)
     return { provider, source, models, count: models.length }
+  }
+
+  private async stampSpeedTiers(profileHome: string, entries: ModelEntry[]): Promise<void> {
+    if (!entries.length) return
+    const config = await this.deps.config.read(profileHome)
+    // An unavailable Agent offers no paid tier; writes still require a successful lookup.
+    const tiers = await this.deps.config.speedTiers(profileHome, config, entries.map((e) => ({ model: e.bare_id ?? e.id, provider: e.provider_id ?? '' }))).catch(() => [])
+    entries.forEach((entry, i) => {
+      entry.supported_speed_tiers = tiers[i] ?? []
+      entry.supports_fast_tier = entry.supported_speed_tiers.some((t) => t.service_tier === 'priority')
+    })
   }
 
   /**

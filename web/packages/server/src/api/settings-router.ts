@@ -13,7 +13,7 @@ import { HttpFailure } from '../sessions/service.js'
 import { SidecarError } from '../sidecar/client.js'
 import type { SidecarParams, SidecarResult } from '@maudecode/talaria-web-contracts'
 import { SessionNotFound } from '../sessions/store.js'
-import { auxiliaryModels, canonicaliseProviderId, ConfigUnavailable, maxTokensStatus, personalityPrompt, personalityRows, reasoningStatus, setAuxiliaryModel, setDefaultModel, setMaxTokens, validReasoningEffort, type Dict } from '../config/agent-config.js'
+import { auxiliaryModels, modelSection, canonicaliseProviderId, ConfigUnavailable, maxTokensStatus, personalityPrompt, personalityRows, reasoningStatus, setAuxiliaryModel, setDefaultModel, setMaxTokens, validReasoningEffort, type Dict } from '../config/agent-config.js'
 import { ProfileError, validateProfileName } from '../profiles/profiles.js'
 import { OnboardingError } from '../onboarding.js'
 import { writeEnvFile } from '../providers/env-file.js'
@@ -45,7 +45,14 @@ async function run<T>(fn: () => Promise<T> | T): Promise<never> {
 
 const home = (ctx: RequestContext): string => ctx.deps.profileHome(activeProfileName(ctx))
 /** The active profile's auxiliary slots, stamped against the same catalog `/api/models` answers. */
-const auxiliaryState = async (ctx: RequestContext): Promise<Dict> => stampAuxiliarySelections(auxiliaryModels(await ctx.deps.agentConfig.read(home(ctx))), await ctx.deps.catalog.models(home(ctx)))
+const auxiliaryState = async (ctx: RequestContext): Promise<Dict> => {
+  const config = await ctx.deps.agentConfig.read(home(ctx))
+  const main = modelSection(config)
+  const model = str(main.default ?? main.name).trim()
+  // Speed availability must not prevent reading or editing the independent auxiliary slots.
+  const [tiers = []] = model ? await ctx.deps.agentConfig.speedTiers(home(ctx), config, [{ model, provider: str(main.provider) }]).catch(() => []) : []
+  return stampAuxiliarySelections(auxiliaryModels(config, tiers), await ctx.deps.catalog.models(home(ctx)))
+}
 const CLEAR_PERSONALITY = new Set(['none', 'default', 'clear'])
 const truthy = (v: string | undefined): boolean => ['1', 'true', 'yes', 'on'].includes((v ?? '').trim().toLowerCase())
 

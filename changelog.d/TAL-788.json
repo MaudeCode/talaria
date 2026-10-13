@@ -1,0 +1,8 @@
+{
+  "entries": [{
+    "category": "Fixed",
+    "summary": "Choose Fast or Ultrafast for supported models without losing speed settings saved in the CLI.",
+    "highlight": false,
+    "components": ["web"]
+  }]
+}

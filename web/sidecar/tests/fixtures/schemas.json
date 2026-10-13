@@ -3239,6 +3239,50 @@
     ],
     "additionalProperties": false
   },
+  "models.speed_tiers": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "tiers": {
+        "type": "array",
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "enum": [
+                  "standard",
+                  "priority",
+                  "ultrafast",
+                  "fast"
+                ]
+              },
+              "service_tier": {
+                "type": "string",
+                "enum": [
+                  "default",
+                  "priority",
+                  "ultrafast"
+                ],
+                "description": "Value to save; Anthropic Fast is persisted as priority and sent as speed: fast."
+              }
+            },
+            "required": [
+              "id",
+              "service_tier"
+            ],
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    "required": [
+      "tiers"
+    ],
+    "additionalProperties": false
+  },
   "models.context_length": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

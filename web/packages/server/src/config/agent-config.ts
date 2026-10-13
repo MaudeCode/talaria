@@ -9,10 +9,12 @@
 import { statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve as resolvePath } from 'node:path'
+import type { SidecarResult } from '@maudecode/talaria-web-contracts'
 import type { SidecarLike } from '../sidecar/client.js'
 import { PORTAL_PROVIDERS, PROVIDER_ALIASES, PROVIDER_DISPLAY, PROVIDER_MODELS, VALID_REASONING_EFFORTS, AUXILIARY_TASK_CATALOG, AUX_TASK_SLOTS, RETIRED_AUX_TASK_SLOTS } from '../providers/tables.js'
 import { str } from '../util.js'
 
+export type SpeedTier = SidecarResult<'models.speed_tiers'>['tiers'][number][number]
 export type Config = Record<string, unknown>
 export type Dict = Record<string, unknown>
 
@@ -95,7 +97,7 @@ export class AgentConfig {
     const prev = this.locks.get(file) ?? Promise.resolve()
     const run = prev.catch(() => undefined).then(async () => {
       const config = await this.read(profileHome, opts)
-      if (mutate(config) === false) return config
+      if (await mutate(config) === false) return config
       const sidecar = this.deps.sidecar()
       if (!sidecar) throw new ConfigUnavailable('Hermes Agent sidecar is not running; config.yaml cannot be written')
       await sidecar.call('config.set', { profile_home: profileHome, config_path: file, config })
@@ -104,6 +106,20 @@ export class AgentConfig {
     })
     this.locks.set(file, run)
     return run
+  }
+
+  /** The Agent owns speed eligibility. A failed lookup must not erase a saved tier. */
+  async speedTiers(profileHome: string, config: Config, models: { model: string; provider: string }[]): Promise<SpeedTier[][]> {
+    const sidecar = this.deps.sidecar()
+    if (!sidecar) throw new ConfigUnavailable('Hermes Agent sidecar is not running; speed tiers are unavailable')
+    try {
+      const routes = models.map(({ model, provider }) => ({ model, provider: resolveProviderAlias(provider), base_url: modelBaseUrl(config, provider) }))
+      const result = await sidecar.call('models.speed_tiers', { profile_home: profileHome, routes })
+      if (result.tiers.length !== routes.length) throw new Error('incomplete speed tier response')
+      return result.tiers
+    } catch (error) {
+      throw new ConfigUnavailable(`Speed tiers are unavailable: ${String(error)}`)
+    }
   }
 
   invalidate(profileHome?: string): void {
@@ -403,8 +419,8 @@ export function applyAdvancedModelOptions(target: Dict, advanced: unknown): void
   if ('service_tier' in advanced) {
     const tier = str(advanced.service_tier).trim().toLowerCase()
     if (!tier || tier === 'default') Reflect.deleteProperty(target, 'service_tier')
-    else if (tier === 'priority') target.service_tier = 'priority'
-    else throw new Error('service_tier must be one of: default, priority')
+    else if (tier === 'priority' || tier === 'ultrafast') target.service_tier = tier
+    else throw new Error('service_tier must be one of: default, priority, ultrafast')
   }
   if (advanced.api_key_clear) Reflect.deleteProperty(target, 'api_key')
   const apiKey = str(advanced.api_key).trim()
@@ -422,16 +438,17 @@ export function publicAdvancedModelOptions(modelCfg: Dict): Dict {
   }
 }
 
-export function isOpenAiFamilyProvider(provider: unknown): boolean {
-  const resolved = resolveProviderAlias(provider)
-  return resolved === 'openai' || resolved === 'openai-api' || resolved === 'openai-codex'
-}
-
-/** Python `_main_model_supports_service_tier`: OpenAI-family GPT-5-class models take `priority`. */
-export function mainModelSupportsServiceTier(model: unknown, provider: unknown): boolean {
-  if (!isOpenAiFamilyProvider(provider)) return false
-  const id = str(model).trim().toLowerCase().replace(/^openai\//, '')
-  return id.startsWith('gpt-5') || /^o[0-9]/.test(id)
+/** Effective configured endpoint, shared by speed display and validation after model selection. */
+export function modelBaseUrl(config: Config, provider: string): string {
+  const pid = canonicaliseProviderId(provider)
+  const model = modelSection(config)
+  if (canonicaliseProviderId(model.provider) === pid && str(model.base_url).trim()) return str(model.base_url).trim()
+  const providers = dict(config.providers)
+  const key = Object.keys(providers).find((k) => canonicaliseProviderId(k) === pid)
+  const base = str(dict(key ? providers[key] : null).base_url).trim()
+  if (base) return base
+  const custom = customProviderEntries(config).find((cp) => customProviderSlug(cp.name) === pid)
+  return str(custom?.base_url).trim()
 }
 
 function auxTaskPayload(key: string, entry: unknown, label: string, description: string): Dict {
@@ -451,19 +468,19 @@ function auxTaskPayload(key: string, entry: unknown, label: string, description:
   }
 }
 
-export function auxiliaryModels(config: Config): { tasks: Dict[]; main: Dict } {
+export function auxiliaryModels(config: Config, tiers: SpeedTier[]): { tasks: Dict[]; main: Dict } {
   const modelCfg = modelSection(config)
   const aux = dict(config.auxiliary)
   const mainProvider = str(modelCfg.provider).trim()
   const mainModel = str(modelCfg.default ?? modelCfg.name).trim()
-  const supportsFast = mainModelSupportsServiceTier(mainModel, mainProvider)
   return {
     tasks: AUXILIARY_TASK_CATALOG.map((slot) => auxTaskPayload(slot.key, aux[slot.key], slot.label, slot.description)),
     main: {
       provider: mainProvider,
       model: mainModel,
-      supports_fast_tier: supportsFast,
-      service_tier: supportsFast && str(modelCfg.service_tier).trim().toLowerCase() === 'priority' ? 'priority' : '',
+      supports_fast_tier: tiers.some((t) => t.service_tier === 'priority'),
+      supported_speed_tiers: tiers,
+      service_tier: tiers.find((t) => t.service_tier === str(modelCfg.service_tier).trim().toLowerCase())?.service_tier ?? 'default',
       ...publicAdvancedModelOptions(modelCfg),
     },
   }
@@ -528,7 +545,7 @@ export async function setDefaultModel(store: AgentConfig, home: string, modelId:
   if (!selected) throw new Error('model is required')
   let persistedModel = selected
   let persistedProvider = ''
-  await store.update(home, (config) => {
+  await store.update(home, async (config) => {
     const modelCfg = modelSection(config)
     const previousProvider = str(modelCfg.provider).trim()
     const requested = str(providerRaw).trim()
@@ -589,8 +606,14 @@ export async function setDefaultModel(store: AgentConfig, home: string, modelId:
       else Reflect.deleteProperty(modelCfg, 'base_url')
     }
     applyAdvancedModelOptions(modelCfg, advanced)
-    if (!mainModelSupportsServiceTier(persistedModel, persistedProvider)) Reflect.deleteProperty(modelCfg, 'service_tier')
     config.model = modelCfg
+    if (modelCfg.service_tier) {
+      const [tiers] = await store.speedTiers(home, config, [{ model: persistedModel, provider: persistedProvider }])
+      if (!tiers!.some((t) => t.service_tier === modelCfg.service_tier)) {
+        if (dict(advanced).service_tier) throw new Error('service_tier is not supported for this model and route')
+        Reflect.deleteProperty(modelCfg, 'service_tier')
+      }
+    }
   })
   return { ok: true, model: persistedModel, provider: persistedProvider || null }
 }

@@ -5,7 +5,10 @@
  * that must survive a round trip (documented passthrough).
  */
 import { z } from 'zod'
+import { SpeedTierSchema } from './speed.js'
 import { CanonicalBotChatSchema } from './sidecar/namespaces.js'
+
+export { SpeedTierSchema } from './speed.js'
 
 const Json = z.unknown()
 export const NullableString = z.string().nullable()
@@ -519,7 +522,7 @@ export const ProfileSwitchSchema = ProfilesSchema.extend({ is_default: z.boolean
 export const ReasoningStatusSchema = z.looseObject({ show_reasoning: z.boolean().optional(), reasoning_effort: z.string().nullable().optional(), supported_efforts: z.array(z.string()).optional(), supports_reasoning_effort: z.boolean().optional(), supports_thinking_toggle: z.boolean().optional() })
 export type ReasoningStatus = z.infer<typeof ReasoningStatusSchema>
 /** TAL-301: `provider_id`/`bare_id` are the server's split of `id`; clients match a stored `(model, provider)` against them and send `id` back. */
-export const ModelEntrySchema = z.looseObject({ id: z.string(), label: z.string().optional(), provider: z.string().optional(), provider_id: z.string().optional(), bare_id: z.string().optional(), supports_fast_tier: z.boolean().optional() })
+export const ModelEntrySchema = z.looseObject({ id: z.string(), label: z.string().optional(), provider: z.string().optional(), provider_id: z.string().optional(), bare_id: z.string().optional(), supports_fast_tier: z.boolean().optional(), supported_speed_tiers: z.array(SpeedTierSchema).optional() })
 export const ModelGroupSchema = z.looseObject({ provider: z.string(), provider_id: z.string().optional(), models: z.array(ModelEntrySchema), extra_models: z.array(ModelEntrySchema).optional() })
 export const ModelsSchema = z.looseObject({ active_provider: NullableString.optional(), default_model: z.string().optional(), default_provider_id: NullableString.optional(), default_bare_id: z.string().optional(), default_option_id: NullableString.optional(), groups: z.array(ModelGroupSchema), aliases: z.record(z.string(), Json).optional(), configured_model_badges: z.record(z.string(), Json).optional() })
 export type Models = z.infer<typeof ModelsSchema>
@@ -622,7 +625,7 @@ export const AuxiliaryTaskSchema = z.looseObject({
   /** False only for a pinned model the current catalog does not list; it stays visible and editable. */
   in_catalog: z.boolean(),
 })
-export const AuxiliaryModelsSchema = z.looseObject({ main: z.looseObject({ model: z.string().optional(), provider: z.string().optional(), base_url: z.string().optional(), api_key_set: z.boolean().optional() }), tasks: z.array(AuxiliaryTaskSchema) })
+export const AuxiliaryModelsSchema = z.looseObject({ main: z.looseObject({ model: z.string().optional(), provider: z.string().optional(), base_url: z.string().optional(), api_key_set: z.boolean().optional(), service_tier: z.enum(['', 'default', 'priority', 'ultrafast']).optional().describe('Empty string is the Standard value returned by older servers.'), supported_speed_tiers: z.array(SpeedTierSchema).optional() }), tasks: z.array(AuxiliaryTaskSchema) })
 export const MaxTokensSchema = z.looseObject({ max_tokens: NullableNumber, max_tokens_effective: NullableNumber, max_tokens_fallback: NullableNumber })
 
 // ── workspaces, files, git ───────────────────────────────────────────────

@@ -90,6 +90,7 @@ SCENARIOS: list[tuple[str, dict]] = [
     ("providers.auth_status", {"profile_home": "{home}", "provider": "anthropic"}),
     ("providers.model_ids", {"profile_home": "{home}", "provider": "anthropic"}),
     ("providers.credential_pool", {"profile_home": "{home}", "provider": "anthropic"}),
+    ("models.speed_tiers", {"profile_home": "{home}", "routes": [{"model": "gpt-6-astra", "provider": "openai-codex", "base_url": "https://chatgpt.com/backend-api/codex"}]}),
     ("models.context_length", {"profile_home": "{home}", "model": "claude-sonnet-4-5", "provider": "anthropic"}),
     ("models.estimate_tokens", {"messages": [{"role": "user", "content": "hello world"}]}),
     ("models.capabilities", {"profile_home": "{home}", "provider": "anthropic", "model": "claude-sonnet-4-5"}),

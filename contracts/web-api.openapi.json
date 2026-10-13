@@ -43337,6 +43337,36 @@
                                 },
                                 "supports_fast_tier": {
                                   "type": "boolean"
+                                },
+                                "supported_speed_tiers": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "enum": [
+                                          "standard",
+                                          "priority",
+                                          "ultrafast",
+                                          "fast"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "service_tier": {
+                                        "enum": [
+                                          "default",
+                                          "priority",
+                                          "ultrafast"
+                                        ],
+                                        "type": "string",
+                                        "description": "Value to save; Anthropic Fast is persisted as priority and sent as speed: fast."
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "service_tier"
+                                    ]
+                                  }
                                 }
                               },
                               "required": [
@@ -43367,6 +43397,36 @@
                                 },
                                 "supports_fast_tier": {
                                   "type": "boolean"
+                                },
+                                "supported_speed_tiers": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "enum": [
+                                          "standard",
+                                          "priority",
+                                          "ultrafast",
+                                          "fast"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "service_tier": {
+                                        "enum": [
+                                          "default",
+                                          "priority",
+                                          "ultrafast"
+                                        ],
+                                        "type": "string",
+                                        "description": "Value to save; Anthropic Fast is persisted as priority and sent as speed: fast."
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "service_tier"
+                                    ]
+                                  }
                                 }
                               },
                               "required": [
@@ -43559,6 +43619,36 @@
                                     },
                                     "supports_fast_tier": {
                                       "type": "boolean"
+                                    },
+                                    "supported_speed_tiers": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "id": {
+                                            "enum": [
+                                              "standard",
+                                              "priority",
+                                              "ultrafast",
+                                              "fast"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "service_tier": {
+                                            "enum": [
+                                              "default",
+                                              "priority",
+                                              "ultrafast"
+                                            ],
+                                            "type": "string",
+                                            "description": "Value to save; Anthropic Fast is persisted as priority and sent as speed: fast."
+                                          }
+                                        },
+                                        "required": [
+                                          "id",
+                                          "service_tier"
+                                        ]
+                                      }
                                     }
                                   },
                                   "required": [
@@ -43589,6 +43679,36 @@
                                     },
                                     "supports_fast_tier": {
                                       "type": "boolean"
+                                    },
+                                    "supported_speed_tiers": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "id": {
+                                            "enum": [
+                                              "standard",
+                                              "priority",
+                                              "ultrafast",
+                                              "fast"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "service_tier": {
+                                            "enum": [
+                                              "default",
+                                              "priority",
+                                              "ultrafast"
+                                            ],
+                                            "type": "string",
+                                            "description": "Value to save; Anthropic Fast is persisted as priority and sent as speed: fast."
+                                          }
+                                        },
+                                        "required": [
+                                          "id",
+                                          "service_tier"
+                                        ]
+                                      }
                                     }
                                   },
                                   "required": [
@@ -43666,6 +43786,46 @@
                         },
                         "api_key_set": {
                           "type": "boolean"
+                        },
+                        "service_tier": {
+                          "enum": [
+                            "",
+                            "default",
+                            "priority",
+                            "ultrafast"
+                          ],
+                          "type": "string",
+                          "description": "Empty string is the Standard value returned by older servers."
+                        },
+                        "supported_speed_tiers": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "enum": [
+                                  "standard",
+                                  "priority",
+                                  "ultrafast",
+                                  "fast"
+                                ],
+                                "type": "string"
+                              },
+                              "service_tier": {
+                                "enum": [
+                                  "default",
+                                  "priority",
+                                  "ultrafast"
+                                ],
+                                "type": "string",
+                                "description": "Value to save; Anthropic Fast is persisted as priority and sent as speed: fast."
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "service_tier"
+                            ]
+                          }
                         }
                       },
                       "additionalProperties": {}
@@ -43854,6 +44014,46 @@
                             },
                             "api_key_set": {
                               "type": "boolean"
+                            },
+                            "service_tier": {
+                              "enum": [
+                                "",
+                                "default",
+                                "priority",
+                                "ultrafast"
+                              ],
+                              "type": "string",
+                              "description": "Empty string is the Standard value returned by older servers."
+                            },
+                            "supported_speed_tiers": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "enum": [
+                                      "standard",
+                                      "priority",
+                                      "ultrafast",
+                                      "fast"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "service_tier": {
+                                    "enum": [
+                                      "default",
+                                      "priority",
+                                      "ultrafast"
+                                    ],
+                                    "type": "string",
+                                    "description": "Value to save; Anthropic Fast is persisted as priority and sent as speed: fast."
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "service_tier"
+                                ]
+                              }
                             }
                           },
                           "additionalProperties": {}
@@ -44135,6 +44335,36 @@
                                 },
                                 "supports_fast_tier": {
                                   "type": "boolean"
+                                },
+                                "supported_speed_tiers": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "enum": [
+                                          "standard",
+                                          "priority",
+                                          "ultrafast",
+                                          "fast"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "service_tier": {
+                                        "enum": [
+                                          "default",
+                                          "priority",
+                                          "ultrafast"
+                                        ],
+                                        "type": "string",
+                                        "description": "Value to save; Anthropic Fast is persisted as priority and sent as speed: fast."
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "service_tier"
+                                    ]
+                                  }
                                 }
                               },
                               "required": [
@@ -45983,6 +46213,36 @@
                                     },
                                     "supports_fast_tier": {
                                       "type": "boolean"
+                                    },
+                                    "supported_speed_tiers": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "id": {
+                                            "enum": [
+                                              "standard",
+                                              "priority",
+                                              "ultrafast",
+                                              "fast"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "service_tier": {
+                                            "enum": [
+                                              "default",
+                                              "priority",
+                                              "ultrafast"
+                                            ],
+                                            "type": "string",
+                                            "description": "Value to save; Anthropic Fast is persisted as priority and sent as speed: fast."
+                                          }
+                                        },
+                                        "required": [
+                                          "id",
+                                          "service_tier"
+                                        ]
+                                      }
                                     }
                                   },
                                   "required": [
@@ -46013,6 +46273,36 @@
                                     },
                                     "supports_fast_tier": {
                                       "type": "boolean"
+                                    },
+                                    "supported_speed_tiers": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "id": {
+                                            "enum": [
+                                              "standard",
+                                              "priority",
+                                              "ultrafast",
+                                              "fast"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "service_tier": {
+                                            "enum": [
+                                              "default",
+                                              "priority",
+                                              "ultrafast"
+                                            ],
+                                            "type": "string",
+                                            "description": "Value to save; Anthropic Fast is persisted as priority and sent as speed: fast."
+                                          }
+                                        },
+                                        "required": [
+                                          "id",
+                                          "service_tier"
+                                        ]
+                                      }
                                     }
                                   },
                                   "required": [
@@ -46431,6 +46721,36 @@
                                     },
                                     "supports_fast_tier": {
                                       "type": "boolean"
+                                    },
+                                    "supported_speed_tiers": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "id": {
+                                            "enum": [
+                                              "standard",
+                                              "priority",
+                                              "ultrafast",
+                                              "fast"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "service_tier": {
+                                            "enum": [
+                                              "default",
+                                              "priority",
+                                              "ultrafast"
+                                            ],
+                                            "type": "string",
+                                            "description": "Value to save; Anthropic Fast is persisted as priority and sent as speed: fast."
+                                          }
+                                        },
+                                        "required": [
+                                          "id",
+                                          "service_tier"
+                                        ]
+                                      }
                                     }
                                   },
                                   "required": [
@@ -46461,6 +46781,36 @@
                                     },
                                     "supports_fast_tier": {
                                       "type": "boolean"
+                                    },
+                                    "supported_speed_tiers": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "id": {
+                                            "enum": [
+                                              "standard",
+                                              "priority",
+                                              "ultrafast",
+                                              "fast"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "service_tier": {
+                                            "enum": [
+                                              "default",
+                                              "priority",
+                                              "ultrafast"
+                                            ],
+                                            "type": "string",
+                                            "description": "Value to save; Anthropic Fast is persisted as priority and sent as speed: fast."
+                                          }
+                                        },
+                                        "required": [
+                                          "id",
+                                          "service_tier"
+                                        ]
+                                      }
                                     }
                                   },
                                   "required": [

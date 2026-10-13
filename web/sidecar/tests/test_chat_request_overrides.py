@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import pytest
 
 from conftest import AGENT_DIR, AGENT_PYTHON, isolated_env, requires_agent
 
@@ -70,3 +71,24 @@ def test_main_model_turns_carry_service_tier_and_extra_body(tmp_path) -> None:
     # The main model gets its tier (the unchanged second turn reuses the cached agent), another model gets none, and
     # an ``extra_body`` edit builds a new agent carrying both.
     assert seen == [{"service_tier": "priority"}, None, {"service_tier": "priority", "extra_body": {"reasoning": {"summary": "auto"}}}], seen
+
+
+@requires_agent
+@pytest.mark.skipif(AGENT_DIR is None or "def model_supports_ultrafast" not in (AGENT_DIR / "hermes_cli/models.py").read_text(), reason="GPT-6 and Ultrafast require Agent v0.21.6")
+@pytest.mark.parametrize("model,provider,tier,base_url,expected", [
+    ("gpt-6-astra", "openai-codex", "ultrafast", "https://chatgpt.com/backend-api/codex", {"service_tier": "ultrafast"}),
+    ("gpt-6-sol", "openai-codex", "priority", "https://chatgpt.com/backend-api/codex", {"service_tier": "priority"}),
+    ("claude-opus-4-8", "anthropic", "priority", "https://api.anthropic.com", {"speed": "fast"}),
+    ("gpt-6-sol", "openai", "priority", "https://proxy.example/v1", None),
+    ("gpt-6-sol", "openai-codex", "ultrafast", "https://chatgpt.com/backend-api/codex", None),
+])
+def test_turn_speed_uses_agent_route_resolver(tmp_path, model, provider, tier, base_url, expected):
+    root = tmp_path / ".hermes"
+    root.mkdir()
+    (root / "config.yaml").write_text(f"model:\n  default: {model}\n  provider: {provider}\n  service_tier: {tier}\n  base_url: {base_url}\n")
+    probe = PROBE[:PROBE.index('turn(0, "main")')]
+    probe += f'\nchat._resolve_runtime = lambda provider, model: {{"model": model, "provider": provider, "base_url": {base_url!r}}}\n'
+    probe += f'turn(0, "main", model={model!r}, provider={provider!r})\nprint(json.dumps(seen))\n'
+    run = subprocess.run([AGENT_PYTHON, "-c", probe, str(AGENT_DIR)], env=isolated_env(root), capture_output=True, text=True, timeout=120)
+    assert run.returncode == 0, run.stderr[-4000:]
+    assert json.loads(run.stdout.strip().splitlines()[-1]) == [expected]

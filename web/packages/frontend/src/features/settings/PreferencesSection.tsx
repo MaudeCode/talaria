@@ -2,7 +2,7 @@ import { m } from '../../paraglide/messages.js'
 import { Switch, FieldRow, TextInput } from '../../ui/Field'
 import { Select } from '../../ui/Select'
 import { useSettingField } from './useSettingField'
-import { useModelsQuery, useSetDefaultModel } from '../../app/queries'
+import { useModelsQuery, useSetDefaultModel, useAuxiliaryModelsQuery } from '../../app/queries'
 import { showToast } from '../toast/toast'
 import { LoadingState, ErrorState } from '../../ui/States'
 import { NAV_ITEMS, FIXED_TABS } from '../../shell/nav'
@@ -26,6 +26,9 @@ export function PreferencesSection() {
   const { settings, str, set, bool, num } = useSettingField()
   const models = useModelsQuery()
   const setDefault = useSetDefaultModel()
+  const auxiliary = useAuxiliaryModelsQuery()
+  const main = auxiliary.data?.main
+  const mainModel = main?.model
   const [botName, setBotName] = useState<string | null>(null)
   const [trustedHosts, setTrustedHosts] = useState<string | null>(null)
   // Link safety applies to every user of the server; only an owner may change it.
@@ -37,7 +40,7 @@ export function PreferencesSection() {
   return (
     <div className="flex flex-col divide-y divide-border-subtle" data-section="preferences">
       <FieldRow label={m.settings_label_model()} hint={m.settings_default_model_hint()} htmlFor="settingsModel" inline>
-        <Select id="settingsModel" value={defaultEntry?.id ?? str('default_model')} onValueChange={(v) => { setDefault.mutate({ model: v, provider: catalogEntryById(models.data, v)?.provider_id ?? null }, { onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error') }) }}>
+        <Select id="settingsModel" disabled={setDefault.isPending} value={defaultEntry?.id ?? str('default_model')} onValueChange={(v) => { setDefault.mutate({ model: v, provider: catalogEntryById(models.data, v)?.provider_id ?? null }, { onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error') }) }}>
           {(models.data?.groups ?? []).map((g) => (
             <optgroup key={g.provider} label={g.provider}>
               {g.models.map((mm) => <option key={mm.id} value={mm.id}>{mm.label ?? mm.id}</option>)}
@@ -46,6 +49,16 @@ export function PreferencesSection() {
           {!defaultListed && str('default_model') && <option value={defaultEntry?.id ?? str('default_model')}>{defaultEntry?.label ?? str('default_model')}</option>}
         </Select>
       </FieldRow>
+      {auxiliary.isError && <ErrorState error={auxiliary.error} onRetry={() => { void auxiliary.refetch() }} />}
+      {!!mainModel && !!main?.supported_speed_tiers?.length && (
+        <FieldRow label={m.settings_model_speed()} hint={m.settings_model_speed_hint()} htmlFor="settingsModelSpeed" inline>
+          <Select id="settingsModelSpeed" value={main.service_tier} disabled={setDefault.isPending || auxiliary.isFetching} onValueChange={(service_tier) => {
+            setDefault.mutate({ model: mainModel, provider: main.provider ?? null, advanced: { service_tier } }, { onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error') })
+          }}>
+            {main.supported_speed_tiers.map((tier) => <option key={tier.id} value={tier.service_tier}>{tier.id === 'standard' ? m.settings_model_speed_standard() : tier.id === 'ultrafast' ? m.settings_model_speed_ultrafast() : m.settings_model_speed_fast()}</option>)}
+          </Select>
+        </FieldRow>
+      )}
       <AuxiliaryModelsSetting />
       <FieldRow label={m.settings_label_send_key()} htmlFor="settingsSendKey" inline>
         <Select id="settingsSendKey" value={str('send_key', 'enter')} onValueChange={(v) => set({ send_key: v })}>
