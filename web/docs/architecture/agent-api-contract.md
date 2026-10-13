@@ -31,6 +31,12 @@ credential isolation failures. A checkout changed after import returns
 `503 agent_runtime_stale` for Agent operations until restart. `config.get` and
 `config.set` remain available after an Agent import failure if the RPC handshake
 and YAML parser work, so operator auth and repair do not depend on Agent imports.
+Config saves use the Agent's comment-preserving full-state replacement writer when available,
+including deliberate key removals. The sidecar stages the resolved file's document and checks
+the original symlink again before replacing its target, retaining the target's permissions.
+Older Agents and failed Agent imports use the YAML parser with line folding disabled so paths
+and prompts containing backslashes survive a save unchanged. Writer failures propagate without
+falling back to a rewrite that would discard comments.
 `/health` exposes the same `compatibleAgent`
 identity in its `release` block (`tag, version, sourceRevision, releaseSet,
 contracts, compatibleAgent`); it names the tested dependency, not whichever Agent

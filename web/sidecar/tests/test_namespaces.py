@@ -184,18 +184,19 @@ def test_config_rpcs_use_the_server_resolved_path(handshaken: SidecarProcess, he
 
 
 @requires_agent
-def test_config_set_writes_through_a_symlinked_config(handshaken: SidecarProcess, hermes_home: pathlib.Path, tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize("mode", [0o600, 0o640])
+def test_config_set_writes_through_a_symlinked_config(handshaken: SidecarProcess, hermes_home: pathlib.Path, tmp_path: pathlib.Path, mode: int) -> None:
     """An operator-managed ``config.yaml`` symlink keeps pointing at its referent; the referent gets the bytes."""
     home = str(hermes_home)
     managed = tmp_path / "managed.yaml"
     managed.write_text("model:\n  provider: anthropic\n", encoding="utf-8")
-    managed.chmod(0o600)
+    managed.chmod(mode)
     link = hermes_home / "config.yaml"
     link.symlink_to(managed)
     handshaken.result("config.set", {"profile_home": home, "config_path": str(link), "config": {"model": {"provider": "anthropic"}, "max_tokens": 9}})
     assert link.is_symlink() and os.readlink(link) == str(managed)
     assert "max_tokens: 9" in managed.read_text(encoding="utf-8")
-    assert managed.stat().st_mode & 0o777 == 0o600
+    assert managed.stat().st_mode & 0o777 == mode
     assert handshaken.result("config.get", {"profile_home": home, "config_path": str(link)})["config"]["max_tokens"] == 9
 
 
