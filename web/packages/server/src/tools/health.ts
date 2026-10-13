@@ -1,5 +1,6 @@
 /** Health, gateway status, logs, dashboard probe and link settings, and diagnostics (Python `api/agent_health.py`, `api/system_health.py`, `api/dashboard_probe.py`, `_handle_logs`). */
 import { readCapped } from '../http/capped.js'
+import { execFile } from 'node:child_process'
 import { constants, existsSync, fstatSync, openSync, readSync, readFileSync, closeSync, statSync, statfsSync } from 'node:fs'
 import { cpus, loadavg, freemem, totalmem } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -169,12 +170,30 @@ async function runRemoteProbe(base: string, env: Record<string, string | undefin
   return { alive: false, checked_at: checkedAt(), details }
 }
 
-/** Agent `gateway.pid`: a JSON record `{"pid": …}`, or a legacy bare integer. */
-const gatewayPid = (text: string): number => {
+/** Agent `gateway.pid`: a JSON record `{"pid": …, "start_time": …}`, or a legacy bare integer. */
+const gatewayPid = (text: string): { pid: number; startTime: number | null } => {
   let value: unknown
-  try { value = JSON.parse(text) } catch { return Number.parseInt(text.trim(), 10) }
-  const pid = typeof value === 'number' ? value : dict(value).pid
-  return typeof pid === 'number' ? pid : Number.NaN
+  try { value = JSON.parse(text) } catch { return { pid: Number.parseInt(text.trim(), 10), startTime: null } }
+  const record = typeof value === 'number' ? { pid: value } : dict(value)
+  return { pid: typeof record.pid === 'number' ? record.pid : Number.NaN, startTime: typeof record.start_time === 'number' ? record.start_time : null }
+}
+
+/** Agent `START_TIME_DRIFT_TOLERANCE` (2 s) plus `ps`'s 1 s resolution, in centiseconds or Linux clock ticks. */
+const START_TIME_TOLERANCE = 300
+
+/** Agent `_get_process_start_time`: Linux `/proc/<pid>/stat` start ticks, else creation time in centiseconds; null when unreadable. */
+export async function processStartTime(pid: number): Promise<number | null> {
+  try {
+    const stat = readFileSync(`/proc/${String(pid)}/stat`, 'utf8')
+    const ticks = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19])
+    return Number.isInteger(ticks) ? ticks : null
+  } catch { /* no /proc: macOS */ }
+  return new Promise((resolve) => {
+    execFile('ps', ['-o', 'lstart=', '-p', String(pid)], { encoding: 'utf8', timeout: 2000, env: { ...process.env, LC_ALL: 'C' } }, (error, stdout) => {
+      const ms = error ? Number.NaN : Date.parse(stdout.trim())
+      resolve(Number.isFinite(ms) ? Math.round(ms / 10) : null)
+    })
+  })
 }
 
 /** Python `build_agent_health_payload` + `gateway_chat_config_status`: remote probe (5 s single-flight cache) else local pid/state files. */
@@ -201,7 +220,12 @@ export async function agentHealth(deps: AgentHealthDeps): Promise<Dict> {
   const safe = runtimeDetailSubset(runtimeStatus)
   const checked = checkedAt()
   let runningPid: number | null = null
-  try { const pid = gatewayPid(readFileSync(pidPath, 'utf8')); if (Number.isInteger(pid) && pid > 0 && pidAlive(pid)) runningPid = pid } catch { runningPid = null }
+  try {
+    const { pid, startTime } = gatewayPid(readFileSync(pidPath, 'utf8'))
+    // Agent `_live_pid_from_record`: a start time known on both sides that disagrees means the pid was reused.
+    const reused = async (): Promise<boolean> => { if (startTime === null) return false; const current = await processStartTime(pid); return current !== null && Math.abs(current - startTime) > START_TIME_TOLERANCE }
+    if (Number.isInteger(pid) && pid > 0 && pidAlive(pid) && !(await reused())) runningPid = pid
+  } catch { runningPid = null }
   const now = deps.now()
   if (runningPid !== null) return { alive: true, checked_at: checked, details: { state: 'alive', ...safe }, gateway_chat: gatewayChat }
   if (runtimeStatusIsFresh(runtimeStatus, now)) return { alive: true, checked_at: checked, details: { state: 'alive', reason: 'cross_container_freshness', ...safe }, gateway_chat: gatewayChat }
