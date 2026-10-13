@@ -94,6 +94,36 @@ def _user_plugin_profiles() -> dict[int, tuple[Any, Path]]:
     return out
 
 
+def _hosted_plugin_profiles(roots: dict[Path, str]) -> dict[Path, list] | None:
+    """Resolve enabled directories through the Agent's host metadata and scoped provider registry."""
+    import providers
+
+    if not hasattr(providers, "_home_layer") or not callable(getattr(providers, "provider_source", None)):
+        return None
+    try:
+        from hermes_cli.plugin_isolation import ISOLATION_HOST, isolation_mode
+    except ImportError:  # per-home registries predate host isolation
+        return None
+
+    if isolation_mode() != ISOLATION_HOST:
+        return None
+    from hermes_cli.plugin_host_profiles import load_hosted_profiles
+    from hermes_constants import get_hermes_home, hermes_home_key
+
+    registered = {p.name: p for p in providers.list_providers() if providers.provider_source(p.name) == "user"}
+    home_key = hermes_home_key(get_hermes_home())
+    found: dict[Path, list] = {}
+    for root in roots:
+        try:
+            # Reuse the Agent's cached extraction; provider ids need not match manifest or directory names.
+            profiles = load_hosted_profiles(root, providers._user_module_name(root, home_key))
+            found[root] = [registered[p.name] for p in profiles if p.name in registered]
+        except Exception:  # noqa: BLE001 - failed extraction keeps the manifest's not_loaded row
+            log.debug("reading hosted provider plugin %s failed", root, exc_info=True)
+            found[root] = []
+    return found
+
+
 def _load_plugin(root: Path) -> None:
     """Load the scoped profile's installed plugin that the process-wide discovery (run under the launch profile) skipped.
 
@@ -123,12 +153,13 @@ def _load_plugin(root: Path) -> None:
 def installed_plugin_profiles() -> list[tuple[str, Any]]:
     """``(manifest name, profile | None)`` for each enabled model-provider plugin installed in the scoped home.
 
-    Bundled providers are built-ins, not plugins. A profile belongs to this home only when the plugin module that
-    registered it lives in one of this home's plugin directories; a plugin the launch discovery skipped is loaded here.
+    Bundled providers are built-ins, not plugins. Hosted profiles come from the Agent's scoped user registry and
+    directory metadata. In-process profiles belong to this home when their module lives in its plugin directories;
+    a plugin the launch discovery skipped is loaded here.
     ``None`` means the plugin could not be loaded: it failed to import, another plugin took its provider id (only on an
     Agent with one process-wide provider registry rather than per-home layers), or another profile's plugin has the same
-    directory name. ponytail: ownership is read from the plugin module's globals, so a plugin that registers an unbound
-    inline profile also reads as not loaded; track registrations in the Agent if one ever does.
+    directory name. shortcut: in-process ownership uses module globals, so an unbound inline profile reads as not
+    loaded; use Agent registration metadata if it becomes available.
     """
     try:
         from hermes_cli.plugins_discovery import _get_disabled_plugins, _get_enabled_plugins, collect_directory_manifests, gate_manifest
@@ -142,6 +173,10 @@ def installed_plugin_profiles() -> list[tuple[str, Any]]:
     }
     if not roots:
         return []
+
+    hosted = _hosted_plugin_profiles(roots)
+    if hosted is not None:
+        return [(name, p) for root, name in roots.items() for p in (hosted[root] or [None])]
 
     def owned() -> dict[Path, list]:
         found: dict[Path, list] = {root: [] for root in roots}

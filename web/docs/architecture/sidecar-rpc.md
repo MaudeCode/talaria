@@ -78,6 +78,12 @@ long-running methods (chat turns, cron runs, auxiliary LLM calls) and a
 single dispatcher thread for everything else. A session has at most one chat
 run at a time.
 
+Provider-plugin listings retain the scoped home's manifest enable/disable gate. With
+`plugins.isolation: host`, the sidecar maps enabled plugin directories through the
+Agent's cached hosted-profile metadata and selects providers from its per-home
+user registry. Provider ids may differ from manifest names. In-process and older
+Agents retain module ownership checks, so another profile's plugins stay hidden.
+
 ## Method namespaces
 
 Every method has a Zod schema for params, result, and stream events in the

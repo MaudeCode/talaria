@@ -35,7 +35,7 @@ def _plugin(root: pathlib.Path, directory: str, manifest_name: str, *, name: str
     (path / "__init__.py").write_text(PROFILE.format(var=name.replace("-", "_"), name=name, display=display, command=command, models=models))
 
 
-def _seed(home: pathlib.Path, cli: pathlib.Path) -> None:
+def _seed(home: pathlib.Path, cli: pathlib.Path, isolation: str) -> None:
     plugins = home / "plugins"
     # `hermes plugins install` layout: flat, one directory per plugin.
     _plugin(plugins, "fake-sub", "fake-sub-provider", name="fake-sub", display="Fake Subscription", command=str(cli), models=("fake-opus", "claude-sonnet-4-6"))
@@ -43,31 +43,36 @@ def _seed(home: pathlib.Path, cli: pathlib.Path) -> None:
     _plugin(plugins / "model-providers", "fake-missing", "fake-missing-provider", name="fake-missing", display="Fake Missing CLI",
             command="talaria-test-cli-that-does-not-exist", models=("fake-missing-1",))
     _plugin(plugins, "fake-off", "fake-off-provider", name="fake-off", display="Fake Disabled", command=str(cli), models=("fake-off-1",))
-    (home / "config.yaml").write_text("plugins:\n  disabled:\n    - fake-off-provider\n")
+    _plugin(plugins, "fake-broken", "fake-broken-provider", name="fake-broken", display="Fake Broken", command=str(cli), models=())
+    (plugins / "fake-broken" / "__init__.py").write_text("raise RuntimeError('synthetic broken plugin')\n")
+    (home / "config.yaml").write_text(f"plugins:\n  isolation: {isolation}\n  disabled:\n    - fake-off-provider\n")
 
 
 @requires_agent
-def test_installed_plugin_providers_report_identity_setup_and_models(tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize("isolation", ["in_process", "host"])
+def test_installed_plugin_providers_report_identity_setup_and_models(tmp_path: pathlib.Path, isolation: str) -> None:
     home = tmp_path / "home" / ".hermes"
     home.mkdir(parents=True)
     cli = tmp_path / "bin" / "fake-sub-cli"
     cli.parent.mkdir()
     cli.write_text("#!/bin/sh\nexit 97\n")  # Listing must never run it.
     cli.chmod(0o755)
-    _seed(home, cli)
+    _seed(home, cli, isolation)
     other = home / "profiles" / "other"
     other.mkdir(parents=True)
+    (other / "config.yaml").write_text(f"plugins:\n  isolation: {isolation}\n")
     # A named profile's own plugin, which the launch-profile discovery never sees, and one that claims the default
     # profile's provider id.
     _plugin(other / "plugins", "fake-other", "fake-other-provider", name="fake-other", display="Fake Other", command=str(cli), models=("other-1",))
-    _plugin(other / "plugins", "fake-sub-copy", "fake-sub-copy-provider", name="fake-sub", display="Hijacked", command=str(cli), models=("hijacked",))
+    _plugin(other / "plugins", "fake-sub", "fake-sub-copy-provider", name="fake-sub", display="Hijacked", command=str(cli), models=("hijacked",))
     sidecar = SidecarProcess(home)
     try:
         result = sidecar.result("plugins.providers", {"profile_home": str(home)})
         assert validate(result, load_schema("plugins.providers")) == []
         rows = {row["name"]: row for row in result["providers"]}
         # Only this profile's enabled plugins: bundled providers are built-ins, the disabled plugin is excluded.
-        assert sorted(rows) == ["fake-missing", "fake-sub"], rows
+        assert sorted(rows) == ["fake-broken-provider", "fake-missing", "fake-sub"], rows
+        assert rows["fake-broken-provider"]["setup"] == "not_loaded"
         assert rows["fake-sub"]["display_name"] == "Fake Subscription"
         assert rows["fake-sub"]["auth_type"] == "external_process"
         assert rows["fake-sub"]["setup"] == "ready"
@@ -101,17 +106,20 @@ def test_installed_plugin_providers_report_identity_setup_and_models(tmp_path: p
 
 
 @requires_agent
+@pytest.mark.parametrize("isolation", ["in_process", "host"])
 @pytest.mark.parametrize("layout", [(), ("model-providers",)], ids=["flat", "model-providers"])
-def test_a_named_profiles_plugin_reads_the_same_whichever_profile_lists_first(tmp_path: pathlib.Path, layout: tuple) -> None:
+def test_a_named_profiles_plugin_reads_the_same_whichever_profile_lists_first(tmp_path: pathlib.Path, layout: tuple, isolation: str) -> None:
     """A fresh sidecar whose first plugin listing is a named profile's reports that plugin as a launch-first one does."""
     home = tmp_path / "home" / ".hermes"
     home.mkdir(parents=True)
+    (home / "config.yaml").write_text(f"plugins:\n  isolation: {isolation}\n")
     cli = tmp_path / "bin" / "fake-cli"
     cli.parent.mkdir()
     cli.write_text("#!/bin/sh\nexit 97\n")  # Listing must never run it.
     cli.chmod(0o755)
     other = home / "profiles" / "other"
     other.mkdir(parents=True)
+    (other / "config.yaml").write_text(f"plugins:\n  isolation: {isolation}\n")
     _plugin(other.joinpath("plugins", *layout), "fake-other", "fake-other-provider", name="fake-other", display="Fake Other", command=str(cli), models=("other-1",))
     seen = []
     for order in ((home, other), (other, home)):
