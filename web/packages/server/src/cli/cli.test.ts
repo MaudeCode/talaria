@@ -230,18 +230,25 @@ describe('ctl', () => {
     expect(parseLaunchBinding([], { HERMES_WEBUI_CTL_PORT_START: '9100' })).toMatchObject({ port: 9100, portExplicit: false })
   })
 
-  it('starts a daemon, reports status, refuses a duplicate, and stops it', async () => {
+  it.each([undefined, '-desktop'])('starts a daemon, reports status, refuses a duplicate, and stops it with suffix %s', async (suffix) => {
     const home = scratch()
     const port = await freePort()
     // A stand-in server that honours the launcher argument protocol and answers /health.
     const script = `const http=require('node:http');const port=Number(process.argv[process.argv.indexOf('--host')+2]);http.createServer((req,res)=>{res.setHeader('content-type','application/json');res.end(JSON.stringify({status:'ok',sessions:1,active_streams:0}))}).listen(port,'127.0.0.1');setInterval(()=>{},1000)`
     const ctx = makeCtx(home, fakeServe(script))
+    if (suffix) {
+      delete ctx.env.HERMES_HOME
+      writeFileSync(join(ctx.webRoot, '.env'), `HERMES_DATA_DIR_SUFFIX=${suffix}\n`)
+    }
     const code = await runCtl(ctx, ['start', String(port)])
     stops.push(async () => { await runCtl(ctx, ['stop']) })
     expect(code).toBe(0)
     expect(ctx.out.some((l) => l.startsWith('[ctl] Started Talaria Web (PID'))).toBe(true)
     expect(ctx.out).toContain(`HERMES_WEBUI_PORT=${String(port)}`)
     const p = ctlPaths(ctx)
+    const expectedHome = join(home, `.hermes${suffix ?? ''}`)
+    expect(p).toMatchObject({ hermesHome: expectedHome, runtimeRoot: expectedHome, pidFile: join(expectedHome, 'webui.pid'), logFile: join(expectedHome, 'webui.log'), stateFile: join(expectedHome, 'webui.ctl.env'), stateDir: join(expectedHome, 'webui') })
+    expect(ctx.env.HERMES_WEBUI_STATE_DIR).toBe(join(expectedHome, 'webui'))
     expect(existsSync(p.pidFile)).toBe(true)
     const state = readState(p)
     expect(state).toMatchObject({ REPO_ROOT: ctx.webRoot, HOST: '127.0.0.1', PORT: String(port), LOG_FILE: p.logFile, STATE_DIR: p.stateDir })

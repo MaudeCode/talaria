@@ -13,6 +13,7 @@ import { createServer, connect as netConnect } from 'node:net'
 import { request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
 import { loadLauncherDotenv, loadStartupEnv } from './dotenv.js'
+import { resolveHermesHome } from '../config.js'
 import { str } from '../util.js'
 
 export interface CtlContext {
@@ -51,7 +52,7 @@ function cksum(text: string): string {
 /** Python `ctl.sh` preamble: file locations, with worktree isolation when this checkout is a git worktree. */
 export function ctlPaths(ctx: CtlContext): CtlPaths {
   const env = ctx.env
-  const hermesHome = resolve((env.HERMES_HOME ?? '').trim() || join(ctx.home, '.hermes'))
+  const hermesHome = resolveHermesHome(env, ctx.home)
   const isolate = (env.HERMES_WEBUI_CTL_ISOLATE_WORKTREE ?? 'auto').trim()
   let worktreeMode = isolate === '1'
   if (isolate !== '1' && isolate !== '0') {
