@@ -242,6 +242,12 @@ describe('command-specific short credential flags', () => {
     expect(redactText(`['redis-cli', '-a', 123456, 'ping']`, true)).toBe(`['redis-cli', '-a', ***, 'ping']`)
   })
 
+  it('reads whitespace other than a space or tab as a word gap', () => {
+    for (const text of ['docker ', 'docker\r', 'mysql\v', 'docker\f', `['docker' ]`, '…docker mod to auto press the ...']) expect(redactText(text, true)).toBe(text)
+    expect(redactText('docker login -p hunter2\r\n', true)).toBe('docker login -p ***\r\n')
+    expect(redactText('mysql -phunter2', true)).toBe('mysql -p***')
+  })
+
   it('reads the command a wrapper runs and only the login subcommand', () => {
     expect(redactText('sudo -u mysql docker login -p hunter2', true)).toBe('sudo -u mysql docker login -p ***')
     expect(publicToolFrame({ name: 'terminal', args: { command: ['sudo', '-u', 'mysql', 'docker', 'login', '-p', 'hunter2'] } }, true).args).toEqual({ command: ['sudo', '-u', 'mysql', 'docker', 'login', '-p', '***'] })

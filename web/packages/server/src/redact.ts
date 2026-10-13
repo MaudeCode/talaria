@@ -992,7 +992,8 @@ const REDIRECT_RE = /[0-9]*(?:&>>?|<<<|<<-?|<>|>>|>&|<&|>\||[<>])/y
  */
 function commandWords(text: string, from: number, enclosing: string, list: boolean): { spans: [number, number][]; end: number } {
   const spans: [number, number][] = []
-  const [gap, close, stop] = list ? [/[ \t,<>]/, /[\n;&|()\]}]/, /[\s;&|()<>,\]}]/] : [/[ \t]/, /[\n;&|()]/, /[\s;&|()<>]/]
+  // Every whitespace that ends a word but not the command is a gap, or the scan would stop on it forever (`docker\r`).
+  const [gap, close, stop] = list ? [/[^\S\n]|[,<>]/, /[\n;&|()\]}]/, /[\s;&|()<>,\]}]/] : [/[^\S\n]/, /[\n;&|()]/, /[\s;&|()<>]/]
   let i = from
   let redirect = false
   for (;;) {

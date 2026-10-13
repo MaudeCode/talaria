@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Talaria Web no longer runs out of memory and restarts when a tool result names a command such as docker or mysql followed by a carriage return or a non-breaking space.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
