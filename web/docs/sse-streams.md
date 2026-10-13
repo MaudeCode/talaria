@@ -47,7 +47,10 @@ A clarify head carries server-owned `steps` (`qid`, `question`, `choices`,
 `multi_select`), in order; a single-question prompt is one `q0` step. Clients
 answer with `POST /api/clarify/respond` and `answers` keyed by `qid` (a list for
 a multi-select step); the server shapes the reply the Agent expects. A raw
-`response` string is still relayed unchanged.
+`response` string is also accepted: the server maps a single answer, multi-select
+JSON array, or batch `{"answers": {...}}` envelope to the pending steps and
+validates every answer before relaying it. Legacy Agent single-question frames
+retain their raw reply format.
 
 ## Merged sidebar stream
 

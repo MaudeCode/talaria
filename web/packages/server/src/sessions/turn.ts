@@ -1862,7 +1862,7 @@ export class TurnRunner {
   async respondClarify(sessionId: string, clarifyId: string, reply: string | ClarifyAnswers): Promise<{ ok: boolean; response?: string; stale?: boolean; invalid?: boolean; error?: string }> {
     const entry = this.deps.pending.peekClarify(sessionId, clarifyId)
     if (!entry) return { ok: false, stale: true }
-    const response = typeof reply === 'string' ? reply : clarifyReply(entry, reply)
+    const response = clarifyReply(entry, reply)
     if (response === null) return { ok: false, invalid: true }
     // A test-hook prompt has no parked Agent waiter: it is answered here.
     if (entry._injected === true) {
