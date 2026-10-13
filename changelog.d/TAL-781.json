@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Settings saves preserve config comments on newer Agents and keep paths and prompts with backslashes intact.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

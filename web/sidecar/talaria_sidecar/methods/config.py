@@ -74,7 +74,11 @@ def write_config(path: Path, config: dict) -> dict:
         raise InvalidParams("config must be an object")
     target = _write_target(path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    text = yaml_parser().safe_dump(config, sort_keys=False, allow_unicode=True)
+    try:
+        replace = getattr(importlib.import_module("hermes_cli.config"), "atomic_config_replace", None)
+    except Exception:  # noqa: BLE001
+        # Operator config must remain writable even when Agent imports are broken.
+        replace = None
     mode = None
     try:
         mode = target.stat().st_mode & 0o777
@@ -83,9 +87,20 @@ def write_config(path: Path, config: dict) -> dict:
     fd, tmp = tempfile.mkstemp(dir=str(target.parent), prefix=".config_", suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(text)
+            if replace is not None:
+                # Stage the original document so the Agent retains comments; check the real link before committing.
+                try:
+                    handle.write(target.read_text(encoding="utf-8"))
+                except FileNotFoundError:
+                    pass
+            else:
+                parser = yaml_parser()
+                handle.write(parser.safe_dump(config, sort_keys=False, allow_unicode=True,
+                                              width=getattr(parser, "ROUNDTRIP_YAML_WIDTH", 2**31 - 1)))
             handle.flush()
             os.fsync(handle.fileno())
+        if replace is not None:
+            replace(Path(tmp), config)
         if mode is not None:
             os.chmod(tmp, mode)
         # A link retargeted while the temp file was being written would otherwise send the write to the wrong file.
