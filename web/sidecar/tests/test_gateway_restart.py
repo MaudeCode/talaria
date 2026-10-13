@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 import textwrap
+import time
 from pathlib import Path
 
 import pytest
@@ -233,3 +234,26 @@ def test_a_refused_stop_or_root_profile_action_is_not_retried(tmp_path, monkeypa
     monkeypatch.setattr(gateway.subprocess, "Popen", lambda cmd, **kw: spawned.append(cmd) or real(cmd, **kw))
     result = gateway.control(action, tmp_path / home, None, _Ctx(), quick_timeout=2.0, background_wait=5.0)
     assert result["returncode"] == 78 and result["reason"] == "refused" and len(spawned) == 1, result
+
+
+def test_the_host_fallback_shares_one_deadline_across_every_step(tmp_path, monkeypatch) -> None:
+    named = tmp_path / ".hermes" / "profiles" / "work"
+    named.mkdir(parents=True)
+    marker = tmp_path / "refused"
+    script = _script(tmp_path, f"""
+        import os, sys, time
+        if sys.argv[1:3] == ["--profile", "default"]:
+            time.sleep(1.5)
+            sys.exit(0)
+        if not os.path.exists({str(marker)!r}):
+            open({str(marker)!r}, "w").close()
+            print("✗ Profile 'work' does not get a gateway of its own.")
+            sys.exit(78)
+        time.sleep(30)
+    """)
+    monkeypatch.setattr(gateway, "_hermes_command", lambda: sys.executable)
+    monkeypatch.setattr(gateway.subprocess, "Popen", _popen_with_script(script))
+    started = time.monotonic()
+    result = gateway.control("start", named, None, _Ctx(), quick_timeout=0.1, background_wait=2.0)
+    assert result.get("timed_out") is True, result
+    assert time.monotonic() - started < 3.0

@@ -62,9 +62,9 @@ def _host_root(home: Path) -> Path | None:
     return home.parent.parent if home.parent.name == "profiles" and not home.name.startswith(".") and home.name != "default" else None
 
 
-def _host_serves(home: Path) -> bool:
+def _host_serves(home: Path, budget_deadline: float) -> bool:
     """True once the host gateway serves the named profile at ``home`` (TAL-805 ``served``); the host may still be coming up."""
-    deadline = time.monotonic() + _SERVED_WAIT_SECONDS
+    deadline = min(time.monotonic() + _SERVED_WAIT_SECONDS, budget_deadline)
     while True:
         try:
             if gateway_mode(home, home.name, False) == "served":
@@ -83,8 +83,15 @@ def control(action: str, home: Path, cli_profile: str | None, ctx: CallContext, 
     if not _ACTION_LOCK.acquire(blocking=False):
         return {"status": "busy", "message": "Another gateway action is already in progress. Please wait a moment and try again."}
     try:
+        # One budget for the whole action, host fallback included: each step gets only what is left of it.
+        deadline = time.monotonic() + quick_timeout + background_wait
+
         def run(action: str, home: Path, cli_profile: str | None) -> dict:
-            return _run(action, home, cli_profile, ctx, quick_timeout=quick_timeout, background_wait=background_wait)
+            left = deadline - time.monotonic()
+            if left <= 0:
+                return {"status": "failed", "message": f"Gateway {action} ran out of time before it could start", "timed_out": True}
+            quick = min(quick_timeout, left)
+            return _run(action, home, cli_profile, ctx, quick_timeout=quick, background_wait=left - quick)
 
         result = run(action, home, cli_profile)
         root = _host_root(home)
@@ -98,7 +105,7 @@ def control(action: str, home: Path, cli_profile: str | None, ctx: CallContext, 
         if host["status"] != "completed":
             return host
         result = run(action, home, cli_profile)
-        if result.get("returncode") == _REFUSED and _host_serves(home):
+        if result.get("returncode") == _REFUSED and _host_serves(home, deadline):
             return {"status": "completed", "message": f"Gateway service {_DONE[action]} successfully", "detail": result.get("detail", "")}
         return result
     finally:
