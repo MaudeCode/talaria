@@ -243,9 +243,9 @@ describe('command-specific short credential flags', () => {
   })
 
   it('reads whitespace other than a space or tab as a word gap', () => {
-    for (const text of ['docker ', 'docker\r', 'mysql\v', 'docker\f', `['docker' ]`, '…docker mod to auto press the ...']) expect(redactText(text, true)).toBe(text)
+    for (const text of ['docker\u00a0', 'docker\r', 'mysql\v', 'docker\f', `['docker'\u00a0]`, 'A simple docker mod to auto press the\u00a0...']) expect(redactText(text, true)).toBe(text)
     expect(redactText('docker login -p hunter2\r\n', true)).toBe('docker login -p ***\r\n')
-    expect(redactText('mysql -phunter2', true)).toBe('mysql -p***')
+    expect(redactText('mysql\u00a0-phunter2', true)).toBe('mysql\u00a0-p***')
   })
 
   it('reads the command a wrapper runs and only the login subcommand', () => {

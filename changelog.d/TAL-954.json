@@ -2,7 +2,7 @@
   "entries": [
     {
       "category": "Fixed",
-      "summary": "Talaria Web no longer runs out of memory and restarts when a tool result names a command such as docker or mysql followed by a carriage return or a non-breaking space.",
+      "summary": "Talaria Web no longer crashes and drops the reply in progress when a tool returns text with unusual spacing after a command name, such as Windows line endings.",
       "highlight": false,
       "components": ["web"]
     }
