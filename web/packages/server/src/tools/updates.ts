@@ -189,7 +189,7 @@ export interface PublishedRelease extends WebRelease {
   releasesBehind: number
   /** The published notes of the releases `releasesBehind` counts, oldest first; only this release's when `installed` was not passed. */
   notes: ReleaseNote[]
-  /** TAL-946: the counted releases whose release set is fully valid, newest first; this one first. */
+  /** TAL-946: the counted releases whose release set is fully valid, in publication order from this one. */
   versions: WebRelease[]
 }
 
@@ -300,7 +300,7 @@ export async function publishedWebRelease(channel: Channel, getJson: GetJson, no
     return {
       ...latest,
       releasesBehind: versions.size,
-      versions: [...versions.values()].filter((v): v is WebRelease => v !== null).sort((a, b) => compareVersions(b.version, a.version)),
+      versions: [...versions.values()].filter((v): v is WebRelease => v !== null),
       notes: published.flatMap((item) => {
         const itemTag = str(item.tag_name)
         const body = str(item.body).replace(PUBLICATION_MARKER, '').trim()
