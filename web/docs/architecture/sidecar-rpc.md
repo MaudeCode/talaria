@@ -78,7 +78,8 @@ application errors in `-32000..-32099`, one per error condition
 5. On sidecar exit the server restarts it with exponential backoff (1 s, 2 s,
    4 s, capped at 30 s). Each spawn re-resolves the interpreter, so a replaced PM
    generation is picked up without a Web-worker restart. An unavailable selection
-   stays unavailable and retries discovery on the same backoff schedule.
+   stays unavailable and retries discovery on the same backoff schedule, including
+   initial startup when a checkout exists but its interpreter is not yet available.
    Every in-flight request fails with
    `sidecar_unavailable`. Session-scoped agent caches are lost.
 6. The drift guard runs inside the sidecar on every chat turn: if the Agent

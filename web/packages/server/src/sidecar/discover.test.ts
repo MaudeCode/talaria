@@ -172,7 +172,7 @@ describe('Agent discovery', () => {
     expect(selected).toEqual(explicit ? [override, override] : [f.python, nextPython])
   })
 
-  it('a recycled sidecar spawns the current PM interpreter after the old generation is removed', async () => {
+  it('sidecar discovery recovers an unavailable initial selection and replaced PM generations', async () => {
     const f = pmInstall()
     writeFileSync(join(f.agent, 'run_agent.py'), '')
     const fixture = resolve(import.meta.dirname, '../../../contracts/fixtures/sidecar/runtime.json')
@@ -187,10 +187,15 @@ describe('Agent discovery', () => {
     const webRoot = join(f.home, 'web')
     mkdirSync(join(webRoot, 'sidecar'), { recursive: true })
     const logs: string[] = []
+    f.record(join(f.install, 'environments', 'initially-unavailable', 'venv'))
     const client = launchSidecar({ env: { ...f.env, HERMES_WEBUI_AGENT_DIR: f.agent }, hermesHome: f.hermesHome, home: f.home, webRoot, log: (line) => { logs.push(line) } })
+    expect(client).not.toBeNull()
     if (!client) throw new Error('synthetic PM installation was not discovered')
     try {
-      expect((await client.start()).python).toBe(f.python)
+      await expect(client.start()).rejects.toMatchObject({ condition: 'sidecar_unavailable' })
+      expect(client.status).toBe('restarting')
+      f.record(f.generation)
+      await expect.poll(() => client.describe?.python, { timeout: 5000 }).toBe(f.python)
       f.record(next)
       rmSync(f.generation, { recursive: true })
       client.recycle('synthetic PM generation replacement')
