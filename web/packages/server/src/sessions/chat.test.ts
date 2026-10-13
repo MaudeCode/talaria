@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { CANCEL_UNWIND_CEILING_S } from './streams.js'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
@@ -1004,6 +1004,52 @@ describe('chat turns through the sidecar', () => {
     expect(prompts[1]).toBe('second')
     await vi.waitFor(() => { expect(s.deps.sessionStore.get(sid).active_stream_id).toBeNull() })
     expect(prompts).toHaveLength(2)
+  })
+
+  it.each([true, false])('admits a leftover steer after workspace deletion (TAL-729, fallback available: %s)', async (recoverable) => {
+    const sid = await newSession(s)
+    const session = s.deps.sessionStore.get(sid)
+    const fallback = session.workspace
+    const worktree = join(fallback, 'steer-worktree')
+    mkdirSync(worktree, { recursive: true })
+    session.workspace = worktree
+    s.deps.sessionStore.save(session)
+    const starts: Json[] = []
+    let release = (): void => undefined
+    sidecar.respond('chat.steer', () => ({ accepted: true, fallback: null }))
+    sidecar.respond('chat.start', (params, emit) => {
+      starts.push(params)
+      const result = completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'done' }])
+      if (starts.length > 1) return result
+      return new Promise((resolve) => {
+        release = () => { resolve({ ...result, pending_steer: 'follow up' }) }
+        emit({ event: 'token', data: { text: 'working' } })
+      })
+    })
+    try {
+      const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'task' }))
+      const stream = str(start.stream_id)
+      await s.sse(`/api/chat/stream?stream_id=${stream}`, (f) => f.event === 'token')
+      expect(starts[0]?.workspace).toBe(worktree)
+      expect(await json(await post(s, '/api/chat/steer', { session_id: sid, text: 'follow up' }))).toMatchObject({ accepted: true })
+      rmSync(recoverable ? worktree : fallback, { recursive: true })
+      release()
+      await s.deps.turns.finished(stream)
+      if (recoverable) {
+        await vi.waitFor(() => { expect(starts).toHaveLength(2) })
+        await s.deps.turns.finished(str(starts[1]?.stream_id))
+        expect(starts[1]).toMatchObject({ user_message: 'follow up', workspace: fallback })
+        expect(s.deps.sessionStore.get(sid).workspace).toBe(fallback)
+      } else {
+        expect(starts).toHaveLength(1)
+        expect(s.logs.some((line) => line.includes(`steer follow-up for ${sid} not started (400)`))).toBe(true)
+        expect(s.deps.sessionStore.get(sid).active_stream_id).toBeNull()
+      }
+      expect(s.logs.some((line) => line.includes(`ERROR turn ${stream} crashed`))).toBe(false)
+    } finally {
+      release()
+      mkdirSync(fallback, { recursive: true })
+    }
   })
 
   it('a message sent during a background turn starts its own turn; the background turn stops without a trace (TAL-460)', async () => {

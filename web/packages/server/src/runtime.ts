@@ -548,9 +548,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     // TAL-542: its model repair reads the cached catalog only (Python `prefer_cached_catalog`), never waiting on a build.
     try {
       await ensureAgentRuntimeCurrent(sidecar)
-      const workspace = sessions.turnWorkspace(session)
-      const [model, modelProvider] = sessions.turnModel(session)
-      return turns.start(session, { msg: prompt, attachments: [], workspace, model, modelProvider, source: 'process_wakeup' })
+      return turns.startServerTurn(session, { msg: prompt, source: 'process_wakeup' })
     } catch (error) {
       if (error instanceof HttpFailure) return { _status: error.status, error: error.message, retryable: error.extra.retryable === true }
       throw error
