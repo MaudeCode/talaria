@@ -6,8 +6,10 @@ from concurrent.futures import ThreadPoolExecutor
 import json
 import os
 from pathlib import Path
+import secrets
 import subprocess
 import tempfile
+import urllib.error
 import urllib.request
 import uuid
 
@@ -138,6 +140,27 @@ def upgrade_smoke(releases):
                 subprocess.run([*compose, "down", "--volumes", "--remove-orphans"], env=env, check=True)
 
 
+def check_dashboard(compose, env):
+    """The dashboard answers only after login: /api/auth/me is 401 without a session and 200 with one."""
+    address = subprocess.check_output([*compose, "port", "hermes-dashboard", "9119"], env=env, text=True).strip()
+    me = f"http://{address}/api/auth/me"
+    try:
+        urllib.request.urlopen(me, timeout=10).close()
+    except urllib.error.HTTPError as error:
+        assert error.code == 401, error.code
+    else:
+        raise AssertionError("the dashboard answered /api/auth/me without a login")
+    login = urllib.request.Request(
+        f"http://{address}/auth/password-login", method="POST", headers={"Content-Type": "application/json"},
+        data=json.dumps({"provider": "basic", "username": env["HERMES_DASHBOARD_BASIC_AUTH_USERNAME"],
+                         "password": env["HERMES_DASHBOARD_BASIC_AUTH_PASSWORD"]}).encode())
+    with urllib.request.urlopen(login, timeout=10) as response:
+        assert json.load(response)["ok"] is True
+        cookie = "; ".join(header.split(";", 1)[0] for header in response.headers.get_all("Set-Cookie"))
+    with urllib.request.urlopen(urllib.request.Request(me, headers={"Cookie": cookie}), timeout=10) as response:
+        assert response.status == 200, response.status
+
+
 def smoke(variant, image, agent_image=None):
     with tempfile.TemporaryDirectory(prefix="talaria-docker-") as temporary:
         state = Path(temporary)
@@ -146,6 +169,9 @@ def smoke(variant, image, agent_image=None):
         env = {"PATH": os.environ["PATH"], "HOME": str(Path.home()),
                "HERMES_HOME": str(state / "home"), "HERMES_WORKSPACE": str(state / "workspace"),
                "UID": "1000", "GID": "1000"}
+        if variant == "three-container":
+            # The Agent refuses to start a dashboard listening on 0.0.0.0 without a login.
+            env.update(HERMES_DASHBOARD_BASIC_AUTH_USERNAME="smoke", HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=secrets.token_urlsafe(24))
         project = "talaria-smoke-" + uuid.uuid4().hex[:12]
         if variant.endswith("-uid"):
             data = state / "data"
@@ -203,6 +229,8 @@ def smoke(variant, image, agent_image=None):
                                 "/app/hermes-agent-src/venv/bin/python", "-"],
                                input=(ROOT / "web/scripts/lib/docker_chat_smoke.py").read_text(),
                                text=True, env=env, check=True, timeout=180)
+            if variant == "three-container":
+                check_dashboard(compose, env)
             if variant.endswith("-uid"):
                 actual = subprocess.check_output([*compose, "exec", "-T", "hermes-webui", "id", "-u", "hermeswebui"], env=env, text=True).strip()
                 assert actual == ("1001" if variant == "auto-uid" else "1024"), actual
