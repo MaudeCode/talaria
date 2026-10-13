@@ -40,6 +40,8 @@ class FakeTools:
         self.stamp = None  # an unlabelled image's build stamp
         self.attempt_digest = None  # the rc.N-<tag> Docker tag's digest
         self.remote_tags = {}  # Agent Git tag -> peeled commit
+        self.missing_tags = set()  # Docker tags whose pull fails with pull_error
+        self.pull_error = 'failed to resolve reference "{ref}": {ref}: not found'  # Docker's answer for a missing tag
         self.fetched = None
         for name, replacement in (("run", self.run), ("check_output", self.check_output)):
             patcher = patch.object(checker.subprocess, name, side_effect=replacement)
@@ -64,6 +66,13 @@ class FakeTools:
                     Path(part.split("=", 1)[1]).write_text(f'<testsuites><testsuite tests="40" failures="{failures}" errors="0" skipped="1"/></testsuites>')
             if failures:
                 raise subprocess.CalledProcessError(1, command)
+        if command[:2] == ["docker", "pull"] and command[2].rsplit(":", 1)[-1] in self.missing_tags:
+            stderr = f"Error response from daemon: {self.pull_error.format(ref=command[2])}\n"
+            if kwargs.get("check"):
+                raise subprocess.CalledProcessError(1, command, stderr=stderr)
+            return subprocess.CompletedProcess(command, 1, stderr=stderr)
+        if command[:2] == ["docker", "pull"]:
+            return subprocess.CompletedProcess(command, 0, stderr="")
         if command[:3] == ["git", "-C", str(self.root)]:
             return subprocess.CompletedProcess(command, 0, stdout="e" * 40 + "\n")
         return subprocess.CompletedProcess(command, 0)
@@ -232,15 +241,33 @@ class CheckerTests(unittest.TestCase):
                                 ({"stamp": {**self.tools.stamp, "commit": "f" * 40}}, "source label"),
                                 ({"stamp": {**self.tools.stamp, "dirty": True}}, "clean CI build"),
                                 ({"stamp": {**self.tools.stamp, "source": "local"}}, "clean CI build")):
-            with self.subTest(change):
-                saved = {name: getattr(self.tools, name) for name in change}
-                for name, value in change.items():
-                    setattr(self.tools, name, value)
+            with self.subTest(change), patch.multiple(self.tools, **change):
                 with self.assertRaisesRegex(RuntimeError, message):
                     self.receipt("--release", "v2026.9.24")
                 self.assertFalse(self.last["imageVerified"])
-                for name, value in saved.items():
-                    setattr(self.tools, name, value)
+
+    def test_release_without_a_plain_docker_tag_is_verified_by_its_release_attempt(self):
+        sha = RELEASES[2]["sourceRevision"]
+        self.tools.stamp = {"commit": sha, "branch": "rc.15-v2026.9.24", "dirty": False, "source": "ci"}
+        self.tools.remote_tags["rc.15-v2026.9.24"] = sha
+        self.tools.missing_tags = {"v2026.9.24"}
+        self.assertTrue(self.receipt("--release", "v2026.9.24")["imageVerified"])
+        self.assertIn(["docker", "pull", "docker.io/nousresearch/hermes-agent:rc.15-v2026.9.24"], self.tools.commands)
+        for change in ({"missing_tags": {"v2026.9.24", "rc.15-v2026.9.24"}},
+                       {"attempt_digest": "sha256:" + "e" * 64},
+                       {"remote_tags": {}}):
+            with self.subTest(change), patch.multiple(self.tools, **change):
+                with self.assertRaisesRegex(RuntimeError, "tag image does not match"):
+                    self.receipt("--release", "v2026.9.24")
+                self.assertFalse(self.last["imageVerified"])
+        with patch.multiple(self.tools, pull_error="manifest for {ref} not found: manifest unknown: manifest unknown"):
+            self.assertTrue(self.receipt("--release", "v2026.9.24")["imageVerified"])  # the classic image store
+        for error in ("toomanyrequests: rate limit exceeded",
+                      'error getting credentials - err: exec: "docker-credential-gone": executable file not found in $PATH'):
+            with self.subTest(error), patch.multiple(self.tools, pull_error=error):
+                with self.assertRaises(subprocess.CalledProcessError):  # only a missing tag is skipped
+                    self.receipt("--release", "v2026.9.24")
+                self.assertFalse(self.last["imageVerified"])
 
     def test_failed_candidate_reports_counts_and_leaves_the_record_intact(self):
         record = (self.root / "web/sidecar/agent_support.json").read_bytes()
