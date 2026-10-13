@@ -13,7 +13,9 @@ def check(target: str, content: str) -> dict:
 
     mem = (load_config() or {}).get("memory") or {}
     store = MemoryStore(**{key: int(mem[key]) for key in ("memory_char_limit", "user_char_limit") if mem.get(key) is not None})
-    return {"count": len(ENTRY_DELIMITER.join(MemoryStore._parse_entries(content))), "limit": store._char_limit(target)}
+    # The store keeps each entry once (first occurrence wins), as its load and write paths do.
+    entries = list(dict.fromkeys(MemoryStore._parse_entries(content)))
+    return {"count": len(ENTRY_DELIMITER.join(entries)), "limit": store._char_limit(target)}
 
 
 def register(registry) -> None:
