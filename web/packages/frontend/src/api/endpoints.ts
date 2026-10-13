@@ -252,10 +252,10 @@ export const fetchUpdatesCheck = () => orpc().updates.check(undefined, { signal:
 export const fetchUpdatesSummary = (target: 'webui' | 'agent') => orpc().updates.summary({ target }, { signal: timeout(60_000) })
 /** Manual "Check now": only POST `{force:true}` runs a real update check; an explicit `channel` wins over the persisted setting. */
 export const checkUpdatesNow = (channel?: string, agentChannel?: 'stable' | 'experimental') => orpc().updates.checkNow({ force: true, ...(channel ? { channel } : {}), ...(agentChannel ? { agent_channel: agentChannel } : {}) }, { signal: timeout(120_000) })
-export const applyUpdates = (action: 'apply' | 'force' | 'clear_lock', channel?: string, target: 'webui' | 'agent' = 'webui', agentOptions: { agent_channel?: 'stable' | 'experimental'; confirmed_agent_revision?: string } = {}) => {
+export const applyUpdates = (action: 'apply' | 'force' | 'clear_lock', channel?: string, target: 'webui' | 'agent' = 'webui', options: { agent_channel?: 'stable' | 'experimental'; confirmed_agent_revision?: string; version?: string } = {}) => {
   const u = orpc().updates
   // The tab id lets this tab's Updating dialog follow the operation the server starts.
-  const body = { target, ...(channel ? { channel } : {}), ...agentOptions, tab_id: tabId }
+  const body = { target, ...(channel ? { channel } : {}), ...options, tab_id: tabId }
   const opts = { signal: timeout(300_000) }
   return action === 'apply' ? u.apply(body, opts) : action === 'force' ? u.force(body, opts) : u.clearLock(body, opts)
 }
