@@ -78,5 +78,17 @@ def test_an_agent_without_the_multiplexer_helpers_reports_own_or_stopped(monkeyp
     assert gateway_mode(tmp_path, "x", False) == "own"
     _agent(monkeypatch, _check_gateway_running=lambda home: False)
     assert gateway_mode(tmp_path, "x", False) == "stopped"
-    _agent(monkeypatch, _check_gateway_running=lambda home: 1 / 0, profile_is_parked=lambda home: 1 / 0)
+    _agent(monkeypatch, _served_by_running_multiplexer=lambda name: True, _check_gateway_running=lambda home: True)
+    assert gateway_mode(tmp_path, "x", False) == "served"
+    _agent(monkeypatch, _check_gateway_running=lambda home: 1 / 0, profile_is_standalone=lambda home: 1 / 0)
     assert gateway_mode(tmp_path, "x", False) == "stopped"
+
+
+def test_a_failing_parked_probe_fails_closed(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """Whether the profile is parked is unknown, so it is never reported served or running."""
+    from talaria_sidecar.methods.profiles import gateway_mode
+
+    _agent(monkeypatch, profile_is_parked=lambda home: 1 / 0, _served_by_running_multiplexer=lambda name: True, _check_gateway_running=lambda home: True)
+    assert gateway_mode(tmp_path, "x", False) == "stopped"
+    # The root profile is never parked, so its own gateway still counts.
+    assert gateway_mode(tmp_path, "default", True) == "own"
