@@ -125,3 +125,71 @@ def test_config_reads_survive_agent_import_failure(tmp_path, hermes_home) -> Non
         assert message["error"]["data"]["condition"] == "config_invalid"
     finally:
         proc.close()
+
+
+def _load_with_site_packages(tmp_path, monkeypatch, site_packages):
+    import sys
+    import types
+
+    from talaria_sidecar.runtime import AgentRuntime
+
+    site_packages.mkdir(parents=True)
+    monkeypatch.syspath_prepend(str(site_packages))
+    monkeypatch.setitem(sys.modules, "run_agent", types.SimpleNamespace(AIAgent=object))
+    monkeypatch.setitem(sys.modules, "hermes_cli", types.ModuleType("hermes_cli"))
+    monkeypatch.setitem(sys.modules, "hermes_cli.auth", types.ModuleType("hermes_cli.auth"))
+    runtime = AgentRuntime(tmp_path / "home", None)
+    runtime.load()
+    return runtime
+
+
+def test_load_rejects_agent_packages_built_for_another_python(tmp_path, monkeypatch) -> None:
+    import sys
+
+    from talaria_sidecar.runtime import AgentIncompatible, AgentRuntime
+
+    other = f"{sys.version_info[0]}.{sys.version_info[1] + 1}"
+    venv = tmp_path / "environments" / "generation" / "venv"
+    site_packages = venv / "lib" / f"python{other}" / "site-packages"
+    try:
+        _load_with_site_packages(tmp_path, monkeypatch, site_packages)
+    except AgentIncompatible as error:
+        message = str(error)
+    else:
+        raise AssertionError("load() accepted Agent packages built for another Python")
+    running = f"{sys.version_info[0]}.{sys.version_info[1]}"
+    assert f"interpreter Python {running} cannot load Agent packages built for Python {other} ({site_packages})" in message
+    assert "unset HERMES_WEBUI_PYTHON" in message and str(venv / "bin" / "python") in message
+    runtime = AgentRuntime(tmp_path / "home", None)
+    try:
+        runtime.load()
+    except AgentIncompatible:
+        pass
+    described = runtime.describe()
+    assert described["compatible"] is False
+    assert f"built for Python {other}" in described["import_error"]
+
+
+def test_load_rejects_a_windows_venv_for_another_python(tmp_path, monkeypatch) -> None:
+    import sys
+
+    from talaria_sidecar.runtime import AgentIncompatible
+
+    venv = tmp_path / "venv"
+    venv.mkdir()
+    (venv / "pyvenv.cfg").write_text(f"home = C:\\Python\nversion = {sys.version_info[0]}.{sys.version_info[1] + 1}.0\n")
+    try:
+        _load_with_site_packages(tmp_path, monkeypatch, venv / "Lib" / "site-packages")
+    except AgentIncompatible as error:
+        assert "python.exe" in str(error)
+    else:
+        raise AssertionError("load() accepted a Windows venv built for another Python")
+
+
+def test_load_accepts_agent_packages_for_the_running_python(tmp_path, monkeypatch) -> None:
+    import sys
+
+    running = f"{sys.version_info[0]}.{sys.version_info[1]}"
+    runtime = _load_with_site_packages(tmp_path, monkeypatch, tmp_path / "venv" / "lib" / f"python{running}" / "site-packages")
+    assert runtime.loaded is True
+    assert runtime.describe()["compatible"] is True

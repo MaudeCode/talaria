@@ -13,6 +13,7 @@ import importlib
 import json
 import math
 import os
+import re
 import stat
 import subprocess
 import sys
@@ -217,6 +218,39 @@ def installed_agent_version() -> str | None:
     return get_version_info().base_version
 
 
+def _site_packages_python(entry: str) -> tuple[tuple[int, int], Path] | None:
+    """The Python version a ``sys.path`` site-packages directory was built for, and that venv's interpreter."""
+    path = Path(entry)
+    if path.name != "site-packages" or not path.is_dir():
+        return None
+    match = re.fullmatch(r"python(\d+)\.(\d+)t?", path.parent.name)
+    if match and path.parent.parent.name in {"lib", "lib64"}:
+        return (int(match[1]), int(match[2])), path.parent.parent.parent / "bin" / "python"
+    if path.parent.name.lower() == "lib":
+        venv = path.parent.parent
+        try:
+            config = (venv / "pyvenv.cfg").read_text(encoding="utf-8")
+        except OSError:
+            return None
+        found = re.search(r"^\s*version(?:_info)?\s*=\s*(\d+)\.(\d+)", config, re.MULTILINE)
+        if found:
+            return (int(found[1]), int(found[2])), venv / "Scripts" / "python.exe"
+    return None
+
+
+def _check_site_packages_python() -> None:
+    """Compiled Agent dependencies load lazily on the first chat; fail the handshake when ``sys.path`` holds
+    site-packages built for another Python (a stale ``HERMES_WEBUI_PYTHON`` after a PM environment update)."""
+    running = sys.version_info[:2]
+    for entry in sys.path:
+        built = _site_packages_python(entry)
+        if built is not None and built[0] != running:
+            raise ImportError(
+                f"interpreter Python {running[0]}.{running[1]} cannot load Agent packages built for Python "
+                f"{built[0][0]}.{built[0][1]} ({entry}); unset HERMES_WEBUI_PYTHON or point it at {built[1]}"
+            )
+
+
 class AgentRuntime:
     """Loads the Agent once and guards against a changed checkout."""
 
@@ -250,6 +284,7 @@ class AgentRuntime:
                 # first imports. Take it here, under the launch profile and before any profile-scoped method runs, so
                 # a named profile's plugin loaded later never enters that process-wide snapshot.
                 importlib.import_module("hermes_cli.auth")
+                _check_site_packages_python()
             except Exception as exc:  # noqa: BLE001 - reported as a handshake condition
                 self.import_error = f"{type(exc).__name__}: {exc}"
                 raise AgentIncompatible(f"Hermes Agent could not be imported: {self.import_error}", import_error=self.import_error)

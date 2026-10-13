@@ -79,7 +79,10 @@ application errors in `-32000..-32099`, one per error condition
    `<agent>/venv` or `<agent>/.venv` when no PM selection exists. Named profiles
    share their root's records. A PM selection must resolve inside that install's
    `environments/` and contain `pyvenv.cfg` and a Python interpreter; a broken
-   selection is rejected without falling back to older dependencies.
+   selection is rejected without falling back to older dependencies. An explicit
+   `HERMES_WEBUI_PYTHON` that differs from the PM selection still wins, with one
+   launch warning; the handshake reports `agent_incompatible` when `sys.path`
+   holds site-packages built for another Python version.
    Bootstrap preserves user-supplied interpreter overrides but does not export
    auto-discovered paths as overrides, so restarted workers read the current PM selection.
 2. Server spawns the sidecar and sends `runtime.handshake` with

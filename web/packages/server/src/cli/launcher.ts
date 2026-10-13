@@ -156,7 +156,7 @@ export async function runBootstrap(ctx: LaunchContext, args: BootstrapArgs, serv
   const python = discoverAgentPython(env, agentDir, ctx.hermesHome)
   if (agentDir && python) {
     const preflight = sidecarPreflight(python, agentDir, env)
-    if (!preflight.ok) throw new Error(`Python environment at ${python} cannot import Hermes Agent (${preflight.detail || 'preflight failed'}). Set HERMES_WEBUI_PYTHON to the Agent venv interpreter.`)
+    if (!preflight.ok) throw new Error(`Python environment at ${python} cannot import Hermes Agent (${preflight.detail || 'preflight failed'}). For an Agent installed by its package manager, unset HERMES_WEBUI_PYTHON; otherwise set it to the Agent venv interpreter.`)
   } else if (scriptedSidecar) log('[bootstrap] Using the sidecar command from HERMES_WEBUI_SIDECAR_COMMAND; no Hermes Agent checkout required')
   else log('[bootstrap] [warn] Hermes Agent venv not found; chat stays unavailable until HERMES_WEBUI_AGENT_DIR points at an installed Agent')
   const stateDir = resolve((env.HERMES_WEBUI_STATE_DIR ?? '').trim().replace(/^~(?=$|\/)/, ctx.home) || join(ctx.hermesHome, 'webui'))

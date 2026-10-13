@@ -131,11 +131,23 @@ function recordedPython(root: string, agentDir: string): string | null | undefin
   } catch { return null }
 }
 
-export function discoverAgentPython(env: Record<string, string | undefined>, agentDir: string | null, hermesHome?: string): string | null {
+/** A venv's `bin/python` is a symlink to its base interpreter, so only its directory is canonicalised. */
+function sameInterpreter(a: string, b: string): boolean {
+  const canonical = (path: string) => { try { return join(realpathSync(dirname(path)), basename(path)) } catch { return resolve(path) } }
+  return canonical(a) === canonical(b)
+}
+
+/** `warn` reports an explicit `HERMES_WEBUI_PYTHON` that overrides a different PM-recorded interpreter; the override still wins. */
+export function discoverAgentPython(env: Record<string, string | undefined>, agentDir: string | null, hermesHome?: string, warn?: (line: string) => void): string | null {
   const explicit = (env.HERMES_WEBUI_PYTHON ?? '').trim()
-  if (explicit) return explicit
+  const recorded = agentDir ? recordedPython(dependencyRoot(env, hermesHome), agentDir) : undefined
+  if (explicit) {
+    if (warn && typeof recorded === 'string' && !sameInterpreter(explicit, recorded)) {
+      warn(`[sidecar] [warn] HERMES_WEBUI_PYTHON=${explicit} overrides the Agent's package-manager interpreter ${recorded}; unset HERMES_WEBUI_PYTHON unless this install has no package-manager environment`)
+    }
+    return explicit
+  }
   if (!agentDir) return null
-  const recorded = recordedPython(dependencyRoot(env, hermesHome), agentDir)
   if (recorded !== undefined) return recorded
   for (const venv of ['venv', '.venv']) {
     for (const bin of [join(agentDir, venv, 'bin', 'python'), join(agentDir, venv, 'Scripts', 'python.exe')]) if (existsSync(bin)) return bin
@@ -178,7 +190,7 @@ export function launchSidecar(opts: LaunchOptions): SidecarClient | null {
     opts.log(`[sidecar] Hermes Agent not found (looked in ${agentCandidates(opts).join(', ')}); set HERMES_WEBUI_AGENT_DIR to enable chat`)
     return null
   }
-  const client = new SidecarClient({ python: () => discoverAgentPython(opts.env, agentDir, opts.hermesHome), agentDir, sidecarDir: join(opts.webRoot, 'sidecar'), hermesHome: opts.hermesHome, env: () => stringEnv(opts.env), log: opts.log })
+  const client = new SidecarClient({ python: () => discoverAgentPython(opts.env, agentDir, opts.hermesHome, opts.log), agentDir, sidecarDir: join(opts.webRoot, 'sidecar'), hermesHome: opts.hermesHome, env: () => stringEnv(opts.env), log: opts.log })
   opts.log(`[sidecar] starting for agent ${agentDir}`)
   return client
 }

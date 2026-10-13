@@ -77,6 +77,21 @@ describe('Agent discovery', () => {
     expect(discoverAgentPython({ ...f.env, HERMES_WEBUI_PYTHON: '/chosen/python' }, f.agent)).toBe('/chosen/python')
   })
 
+  it('warns once when HERMES_WEBUI_PYTHON overrides a different PM interpreter and still honours it', () => {
+    const f = pmInstall()
+    const warnings: string[] = []
+    const warn = (line: string) => { warnings.push(line) }
+    expect(discoverAgentPython({ ...f.env, HERMES_WEBUI_PYTHON: '/chosen/python' }, f.agent, undefined, warn)).toBe('/chosen/python')
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toContain('/chosen/python')
+    expect(warnings[0]).toContain(f.python)
+    warnings.length = 0
+    expect(discoverAgentPython({ ...f.env, HERMES_WEBUI_PYTHON: f.python }, f.agent, undefined, warn)).toBe(f.python)
+    rmSync(join(f.install, 'facts.json'))
+    expect(discoverAgentPython({ ...f.env, HERMES_WEBUI_PYTHON: '/chosen/python' }, f.agent, undefined, warn)).toBe('/chosen/python')
+    expect(warnings).toEqual([])
+  })
+
   it.each(['outside', 'prefix-sibling', 'symlink', 'missing-config', 'missing-python', 'malformed', 'wrong-type'])(
     'rejects a %s PM selection without falling back to stale dependencies', (kind) => {
       const f = pmInstall()
