@@ -158,14 +158,17 @@ def verify_image(identity, sha):
         raise RuntimeError("Agent image source label or build stamp does not match its tested source")
     # Upstream publishes each release attempt as rc.N-<tag>, and its v0.21.6 Docker tag kept an earlier attempt's
     # image, while v0.21.7 has no plain Docker tag at all. The attempt that built this image counts when its Git
-    # tag is the release commit; a tag missing from the registry is no match.
+    # tag is the release commit; a tag missing from the registry is no match, any other pull failure is fatal.
     tags = [release_tag]
     if attempt and re.fullmatch(rf"rc\.[0-9]+-{re.escape(release_tag)}", attempt) and remote_tag_commit(attempt) == sha:
         tags.append(attempt)
     for tag in tags:
         tagged = f"docker.io/nousresearch/hermes-agent:{tag}"
-        pulled = subprocess.run(["docker", "pull", tagged]).returncode == 0
-        if pulled and any(ref.endswith("@" + image.rsplit("@", 1)[1])
+        pull = subprocess.run(["docker", "pull", tagged], stderr=subprocess.PIPE, text=True)
+        sys.stderr.write(pull.stderr)
+        if pull.returncode and "not found" not in pull.stderr:
+            raise subprocess.CalledProcessError(pull.returncode, pull.args, stderr=pull.stderr)
+        if pull.returncode == 0 and any(ref.endswith("@" + image.rsplit("@", 1)[1])
                           for ref in json.loads(subprocess.check_output(["docker", "image", "inspect", tagged]))[0].get("RepoDigests", [])):
             break
     else:
