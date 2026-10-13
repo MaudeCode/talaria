@@ -156,7 +156,7 @@ test('opening a session paints every frame at its end', async ({ page }) => {
 
 test('the top tab reports a Talaria server it cannot reach, the stopped overlay takes over, and both clear when it answers again', async ({ page, errors }) => {
   let down = false
-  await page.route('**/api/health/agent', (route) => (down ? route.abort('connectionrefused') : route.fulfill({ json: { alive: true } })))
+  await page.route('**/api/health/agent', (route) => (down ? route.abort('connectionrefused') : route.fulfill({ json: { alive: true, chat: { available: true, condition: null } } })))
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'reach', title: 'Reach', messages: transcript('reach', 2) } } }))
   await page.goto('/session/reach')
   await expect(page.locator('#msg')).toBeVisible()

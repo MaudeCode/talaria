@@ -13,7 +13,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import {
   RPC_ERROR_CODES, RpcIncomingSchema, SIDECAR_METHODS, SIDECAR_RPC_VERSION,
-  type RpcErrorObject, type RuntimeDescribe, type SidecarMethodName, type SidecarParams, type SidecarResult,
+  type ChatReadiness, type RpcErrorObject, type RuntimeDescribe, type SidecarMethodName, type SidecarParams, type SidecarResult,
 } from '@maudecode/talaria-web-contracts'
 
 import { AGENT_IMPORT_ENV } from './env.js'
@@ -82,6 +82,13 @@ interface Pending {
   reject: (error: Error) => void
   onStream?: ((frame: StreamFrame) => void) | undefined
   timer?: ReturnType<typeof setTimeout> | undefined
+}
+
+/** Whether Agent operations (chat turns) can run on `sidecar`, and the failure condition when they cannot. */
+export function chatReadiness(sidecar: Pick<SidecarLike, 'status' | 'describe'> | null): ChatReadiness {
+  if (sidecar?.status === 'ready') return { available: true, condition: null }
+  if (sidecar?.status === 'incompatible') return { available: false, condition: sidecar.describe?.stale ? 'agent_runtime_stale' : 'agent_incompatible' }
+  return { available: false, condition: 'sidecar_unavailable' }
 }
 
 const DEFAULT_BACKOFF = [1_000, 2_000, 4_000, 8_000, 16_000, 30_000]
@@ -237,8 +244,8 @@ export class SidecarClient implements SidecarLike {
   /** Agent operations require readiness; config access needs only a valid, live RPC handshake. */
   call<M extends SidecarMethodName>(method: M, params: SidecarParams<M>, opts: CallOptions = {}): Promise<SidecarResult<M>> {
     const configAccess = (method === 'config.get' || method === 'config.set') && this.status === 'incompatible' && this.describe?.rpc_version === SIDECAR_RPC_VERSION
-    if (this.status !== 'ready' && !configAccess && !method.startsWith('runtime.') && method !== 'rpc.methods') {
-      const condition = this.status === 'incompatible' ? (this.describe?.stale ? 'agent_runtime_stale' : 'agent_incompatible') : 'sidecar_unavailable'
+    const { condition } = chatReadiness(this)
+    if (condition !== null && !configAccess && !method.startsWith('runtime.') && method !== 'rpc.methods') {
       return Promise.reject(new SidecarError(`sidecar not ready (${this.status})`, { condition }))
     }
     return this.rawCall(method, params, opts)

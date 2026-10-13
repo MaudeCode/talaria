@@ -11,7 +11,7 @@ import { HttpFailure } from '../sessions/service.js'
 import { SessionNotFound } from '../sessions/store.js'
 import { insightsSessionRows } from '../sessions/state-db.js'
 import { ConfigUnavailable, type Config, type Dict } from '../config/agent-config.js'
-import { SidecarError } from '../sidecar/client.js'
+import { chatReadiness, SidecarError } from '../sidecar/client.js'
 import { createPrompt, deletePrompt, externalNotesEnabled, loadPrompts, readMemory, writeMemory } from '../tools/memory.js'
 import { JoplinError, joplinNote, joplinSearch, notesSources, type JoplinDeps } from '../tools/mcp.js'
 import { resolveWikiLocation, wikiPages, type WikiLocation } from '../tools/wiki.js'
@@ -386,7 +386,7 @@ export const toolsRouter = os.router({
   })),
   logs: os.logs.handler(({ input, context: { ctx } }) => run(() => readLogTail(home(ctx), input.file, input.tail) as never)),
   ops: {
-    agent: os.ops.agent.handler(({ context: { ctx } }) => run(() => health(ctx))),
+    agent: os.ops.agent.handler(({ context: { ctx } }) => run(async () => ({ ...(await health(ctx)), chat: chatReadiness(ctx.deps.sidecar()) }))),
     system: os.ops.system.handler(({ context: { ctx } }) => run(() => systemHealth(ctx.deps.config.homeDir, ctx.deps.runtimeDiagnostics()) as never)),
     restart: os.ops.restart.handler(({ context: { ctx } }) => run(async () => {
       const sidecar = ctx.deps.sidecar()

@@ -838,6 +838,40 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
   })
 })
 
+describe('agent health chat readiness', () => {
+  it('ships chat availability from the sidecar status, independent of the gateway', async () => {
+    const sidecar = new FakeSidecar()
+    let current: FakeSidecar | null = sidecar
+    const s = await bootTestServer({ sidecar, deps: (deps) => { deps.sidecar = () => current } })
+    try {
+      const chat = async (): Promise<Json> => {
+        const body = await json(await s.get('/api/health/agent'))
+        // TAL-951: no gateway runs here, and chat readiness never reads it.
+        expect(body.alive).toBeNull()
+        return body.chat as Json
+      }
+      const handshake = sidecar.describe!
+      const cases: [FakeSidecar['status'], boolean, Json][] = [
+        ['ready', false, { available: true, condition: null }],
+        ['starting', false, { available: false, condition: 'sidecar_unavailable' }],
+        ['restarting', false, { available: false, condition: 'sidecar_unavailable' }],
+        ['stopped', false, { available: false, condition: 'sidecar_unavailable' }],
+        ['incompatible', false, { available: false, condition: 'agent_incompatible' }],
+        ['incompatible', true, { available: false, condition: 'agent_runtime_stale' }],
+      ]
+      for (const [status, stale, expected] of cases) {
+        sidecar.status = status
+        sidecar.describe = { ...handshake, stale }
+        expect(await chat(), `${status}${stale ? ' (stale)' : ''}`).toEqual(expected)
+      }
+      current = null
+      expect(await chat()).toEqual({ available: false, condition: 'sidecar_unavailable' })
+    } finally {
+      await s.close()
+    }
+  })
+})
+
 describe('transcribe upload limit', () => {
   it('rejects a transcribe upload above HERMES_WEBUI_MAX_UPLOAD_MB with 413', async () => {
     const s = await bootTestServer({ sidecar: new FakeSidecar(), env: { HERMES_WEBUI_MAX_UPLOAD_MB: '1' } })

@@ -79,7 +79,8 @@ HERMES_WEBUI_AGENT_DIR=/absolute/path/to/hermes-agent sidecar/scripts/test.sh te
 ```
 
 The runtime tests spawn the sidecar exactly as the server does and report the import error verbatim.
-`/api/health/agent` and `/health` also carry the sidecar status once the server is up.
+Once the server is up, `/health` carries the sidecar status and `/api/health/agent` reports chat readiness in `chat`
+(`available` and the failing `condition`).
 
 ### When it's a Web bug
 
