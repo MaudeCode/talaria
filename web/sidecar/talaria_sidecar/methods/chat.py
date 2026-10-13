@@ -592,7 +592,7 @@ def _profile_fallback_chain() -> list[dict] | None:
     return get_fallback_chain(load_config() or {}) or None
 
 
-def _main_model_request_overrides(model: str, provider) -> dict | None:
+def _main_model_request_overrides(model: str, provider, base_url: str = "") -> dict | None:
     """Predecessor ``_main_model_request_overrides``: the profile's ``model.service_tier`` and ``model.extra_body``
     (written by ``/api/model/set``) apply only to turns on that configured main model. Runs under ``scoped_home``."""
     from hermes_cli.config import load_config
@@ -605,11 +605,13 @@ def _main_model_request_overrides(model: str, provider) -> dict | None:
     if not main_model or main_model != model.strip():
         return None
     # An unset or ``auto`` main provider resolves at runtime, so the model id alone identifies the main model.
-    if main_provider not in ("", "auto") and main_provider != str(provider or "").strip().lower():
+    from hermes_cli.models import normalize_provider
+
+    if main_provider not in ("", "auto") and normalize_provider(main_provider) != normalize_provider(str(provider or "").strip().lower()):
         return None
-    overrides: dict = {}
-    if str(model_cfg.get("service_tier") or "").strip().lower() == "priority":
-        overrides["service_tier"] = "priority"
+    from ..speed import fast_overrides
+
+    overrides = fast_overrides(model, str(provider or ""), base_url, str(model_cfg.get("service_tier") or "").strip().lower()) or {}
     extra_body = model_cfg.get("extra_body")
     if isinstance(extra_body, dict) and extra_body:
         overrides["extra_body"] = extra_body
@@ -1113,7 +1115,7 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
         fallback_chain = _profile_fallback_chain()
         if fallback_chain and _supported(AIAgent, "fallback_model"):
             kwargs["fallback_model"] = fallback_chain
-        request_overrides = _main_model_request_overrides(resolved_model, resolved_provider)
+        request_overrides = _main_model_request_overrides(resolved_model, resolved_provider, str(runtime.get("base_url") or ""))
         if request_overrides and _supported(AIAgent, "request_overrides"):
             kwargs["request_overrides"] = request_overrides
         # TAL-913: the profile's ``checkpoints`` section, as the Agent's own CLI and gateway turns read it.

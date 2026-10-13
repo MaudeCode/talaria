@@ -22,7 +22,7 @@ export function useSaveSettings() {
 /** Default model lives in config.yaml; on success the settings and models queries are refetched so every reader agrees. */
 export function useSetDefaultModel() {
   const qc = useQueryClient()
-  return useMutation({ mutationFn: ({ model, provider }: { model: string; provider?: string | null }) => api.setDefaultModel(model, provider), onSuccess: () => { void qc.invalidateQueries({ queryKey: keys.settings }); void qc.invalidateQueries({ queryKey: keys.models }) } })
+  return useMutation({ mutationFn: ({ model, provider, advanced }: { model: string; provider?: string | null; advanced?: { service_tier: string } }) => api.setDefaultModel(model, provider, advanced), onSuccess: async () => { await Promise.all([qc.invalidateQueries({ queryKey: keys.settings }), qc.invalidateQueries({ queryKey: keys.models }), qc.invalidateQueries({ queryKey: keys.auxiliaryModels })]) } })
 }
 
 export function useAuxiliaryModelsQuery(enabled = true) {

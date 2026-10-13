@@ -146,6 +146,11 @@ directly, exactly as the Agent CLI does. Chat never routes through the gateway A
 backend was dropped with TAL-245). To use an external OpenAI-compatible endpoint as a model, add it in
 **Settings → Providers**.
 
+Settings → Preferences → **Speed** lists the tiers the installed Agent supports
+for the default model and its endpoint. Fast and Ultrafast may cost more. The
+setting applies only to turns on that default model; unsupported routes show no
+speed control.
+
 ### Remote access
 
 Bind to loopback and use an SSH tunnel or Tailscale, or set `HERMES_WEBUI_HOST=0.0.0.0` with

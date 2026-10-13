@@ -59,5 +59,88 @@
         "capabilities": null
       }
     }
+  ],
+  "models.speed_tiers": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "routes": [
+          {
+            "model": "gpt-6-astra",
+            "provider": "openai-codex",
+            "base_url": "https://chatgpt.com/backend-api/codex"
+          },
+          {
+            "model": "gpt-6-sol",
+            "provider": "openai-codex",
+            "base_url": "https://chatgpt.com/backend-api/codex"
+          },
+          {
+            "model": "gpt-6.1-sol",
+            "provider": "openai-api",
+            "base_url": "https://api.openai.com/v1"
+          },
+          {
+            "model": "claude-opus-4-8",
+            "provider": "anthropic",
+            "base_url": "https://api.anthropic.com"
+          },
+          {
+            "model": "gpt-6-astra",
+            "provider": "openai",
+            "base_url": "https://proxy.example/v1"
+          }
+        ]
+      },
+      "result": {
+        "tiers": [
+          [
+            {
+              "id": "standard",
+              "service_tier": "default"
+            },
+            {
+              "id": "priority",
+              "service_tier": "priority"
+            },
+            {
+              "id": "ultrafast",
+              "service_tier": "ultrafast"
+            }
+          ],
+          [
+            {
+              "id": "standard",
+              "service_tier": "default"
+            },
+            {
+              "id": "priority",
+              "service_tier": "priority"
+            }
+          ],
+          [
+            {
+              "id": "standard",
+              "service_tier": "default"
+            },
+            {
+              "id": "priority",
+              "service_tier": "priority"
+            }
+          ],
+          [
+            {
+              "id": "standard",
+              "service_tier": "default"
+            },
+            {
+              "id": "fast",
+              "service_tier": "priority"
+            }
+          ],
+          []
+        ]
+      }
+    }
   ]
 }

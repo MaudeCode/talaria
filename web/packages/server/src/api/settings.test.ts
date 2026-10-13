@@ -11,7 +11,7 @@ import { AccountUsageSnapshotSchema, ProviderQuotaSchema, type SidecarResult } f
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { loadEnvFile, writeEnvFile } from '../providers/env-file.js'
 import { applyProviderPrefix, deduplicateModelIds, formatOllamaLabel, labelForModel, uniqueQuotaSources } from '../providers/catalog.js'
-import { coerceReasoningEffort, parseProviderQualifiedModel, customProviderSlug } from '../config/agent-config.js'
+import { coerceReasoningEffort, parseProviderQualifiedModel, customProviderSlug, type SpeedTier } from '../config/agent-config.js'
 import { splitProviderModel } from '../profiles/profiles.js'
 
 type Json = Record<string, unknown>
@@ -1405,4 +1405,80 @@ describe('settings save response keeps the derived fields a load returns', () =>
       for (const key of DERIVED) expect(saved[key], key).toEqual(loaded[key])
     } finally { await s.close() }
   })
+})
+
+describe('Agent speed tiers (TAL-788)', () => {
+  let server: TestServer
+  let fake: FakeSidecar
+  let saved: Map<string, Json>
+  beforeAll(async () => {
+    fake = new FakeSidecar()
+    server = await bootTestServer({ sidecar: fake })
+    saved = fakeConfigStore(fake)
+    writeFileSync(join(server.state, 'config.yaml'), '# synthetic speed config\n')
+    fake.respond('models.speed_tiers', (params) => ({ tiers: params.routes.map((route): SpeedTier[] => route.base_url?.includes('proxy.example') ? [] : [
+      { id: 'standard', service_tier: 'default' },
+      { id: route.provider === 'anthropic' ? 'fast' : 'priority', service_tier: 'priority' },
+      ...(route.model === 'gpt-6-astra' ? [{ id: 'ultrafast', service_tier: 'ultrafast' } as const] : []),
+    ]) }))
+  })
+  afterAll(() => server.close())
+
+  it('preserves a CLI-set Fast tier when saving GPT-6 Sol', async () => {
+    saved.set(server.state, { model: { default: 'gpt-6-sol', provider: 'openai-codex', service_tier: 'priority' } })
+    server.deps.agentConfig.invalidate()
+    const response = await post(server, '/api/model/set', { scope: 'main', model: 'gpt-6-sol', provider: 'openai-codex' })
+    expect(response.status).toBe(200)
+    expect(saved.get(server.state)?.model).toMatchObject({ service_tier: 'priority' })
+  })
+
+  it('round-trips Ultrafast and rejects unsupported writes without changing config', async () => {
+    const selection = { scope: 'main', model: 'gpt-6-astra', provider: 'openai-codex' }
+    expect((await post(server, '/api/model/set', { ...selection, advanced: { service_tier: 'ultrafast' } })).status).toBe(200)
+    expect((await json(await server.get('/api/model/auxiliary'))).main).toMatchObject({ service_tier: 'ultrafast', supported_speed_tiers: [
+      { id: 'standard', service_tier: 'default' }, { id: 'priority', service_tier: 'priority' }, { id: 'ultrafast', service_tier: 'ultrafast' },
+    ] })
+    const before = structuredClone(saved.get(server.state))
+    for (const path of ['/api/model/set', '/api/default-model']) {
+      expect((await post(server, path, { ...selection, advanced: { service_tier: 'ultrafast', base_url: 'https://proxy.example/v1' } })).status).toBe(400)
+      expect(saved.get(server.state)).toEqual(before)
+    }
+    expect((await post(server, '/api/default-model', { ...selection, advanced: { service_tier: 'default' } })).status).toBe(200)
+    expect(saved.get(server.state)?.model).not.toHaveProperty('service_tier')
+  })
+  it('stamps catalog, overflow, and live entries with the resolved route tiers', async () => {
+    const ids = ['gpt-6-astra', ...Array.from({ length: 29 }, (_, i) => `gpt-6-sol-${String(i)}`)]
+    fake.respond('providers.model_ids', (params) => ({ provider: params.provider, model_ids: params.provider === 'openai' ? ids : [] }))
+    saved.set(server.state, { model: { default: 'gpt-6-astra', provider: 'openai' }, providers: { openai: { api_key: 'synthetic-key' } } })
+    server.deps.agentConfig.invalidate()
+    server.deps.catalog.invalidate()
+    const catalog = await server.deps.catalog.models(server.state)
+    const group = catalog.groups.find((g) => g.provider_id === 'openai')!
+    expect(group.extra_models?.length).toBeGreaterThan(0)
+    for (const entry of [...group.models, ...group.extra_models!]) {
+      expect(entry.supported_speed_tiers).toContainEqual({ id: 'priority', service_tier: 'priority' })
+    }
+    expect(group.models.find((e) => e.bare_id === 'gpt-6-astra')?.supported_speed_tiers).toContainEqual({ id: 'ultrafast', service_tier: 'ultrafast' })
+    const live = await server.deps.catalog.liveModels(server.state, 'openai')
+    expect((live.models as Json[])[0]?.supported_speed_tiers).toContainEqual({ id: 'ultrafast', service_tier: 'ultrafast' })
+    saved.set(server.state, { model: { default: 'gpt-6-astra', provider: 'openai' }, providers: { openai: { api_key: 'synthetic-key', base_url: 'https://proxy.example/v1' } } })
+    server.deps.agentConfig.invalidate()
+    server.deps.catalog.invalidate()
+    const proxy = await server.deps.catalog.liveModels(server.state, 'openai')
+    expect((proxy.models as Json[]).every((m) => Array.isArray(m.supported_speed_tiers) && m.supported_speed_tiers.length === 0)).toBe(true)
+  })
+
+  it('keeps config intact if tier resolution fails while saving a CLI tier', async () => {
+    const responder = fake.responderFor('models.speed_tiers')
+    saved.set(server.state, { model: { default: 'gpt-6-astra', provider: 'openai-codex', service_tier: 'ultrafast' } })
+    server.deps.agentConfig.invalidate()
+    const before = structuredClone(saved.get(server.state))
+    fake.respond('models.speed_tiers', () => { throw new Error('resolver unavailable') })
+    try {
+      const res = await post(server, '/api/model/set', { scope: 'main', model: 'gpt-6-astra', provider: 'openai-codex' })
+      expect(res.status).toBe(503)
+      expect(saved.get(server.state)).toEqual(before)
+    } finally { fake.respond('models.speed_tiers', responder) }
+  })
+
 })

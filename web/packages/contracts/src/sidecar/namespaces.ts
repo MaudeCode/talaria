@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { SpeedTierSchema } from '../speed.js'
 
 /** Shared param shapes. */
 export const ProfileHomeParams = z.object({ profile_home: z.string().min(1) })
@@ -184,6 +185,7 @@ export const PROVIDERS_METHODS = {
   'providers.model_ids': { params: ProfileHomeParams.extend({ provider: z.string().min(1), force_refresh: z.boolean().optional() }), result: z.object({ provider: z.string(), model_ids: z.array(z.string()) }) },
   'providers.resolve_runtime': { params: ProfileHomeParams.extend({ requested: z.string().nullable().optional(), api_key: z.string().nullable().optional(), base_url: z.string().nullable().optional(), target_model: z.string().nullable().optional() }), result: z.object({ runtime: Loose }) },
   'providers.credential_pool': { params: ProfileHomeParams.extend({ provider: z.string().min(1) }), result: z.object({ available: z.boolean(), strategy: z.string(), entries: z.array(Loose) }) },
+  'models.speed_tiers': { params: ProfileHomeParams.extend({ routes: z.array(z.object({ model: z.string().min(1), provider: z.string(), base_url: z.string().optional() })) }), result: z.object({ tiers: z.array(z.array(SpeedTierSchema)) }) },
   'models.context_length': { params: ProfileHomeParams.extend({ model: z.string().min(1), base_url: z.string().optional(), api_key: z.string().optional(), provider: z.string().optional(), config_context_length: z.number().int().nullable().optional() }), result: z.object({ model: z.string(), context_length: z.number().int().nullable() }) },
   'models.estimate_tokens': { params: z.object({ messages: z.array(Loose) }), result: z.object({ tokens: z.number().int() }) },
   'models.capabilities': { params: ProfileHomeParams.extend({ provider: z.string(), model: z.string() }), result: z.object({ capabilities: Loose.nullable() }) },

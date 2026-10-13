@@ -14,7 +14,7 @@ vi.mock('../../api/endpoints', () => ({
 }))
 vi.mock('../toast/toast', () => ({ showToast: vi.fn() }))
 import { PreferencesSection } from './PreferencesSection'
-import { saveSettings } from '../../api/endpoints'
+import { saveSettings, fetchAuxiliaryModels, setDefaultModel } from '../../api/endpoints'
 import { BootstrapContext } from '../../app/bootstrap'
 import { DEFAULT_BOOTSTRAP } from '../../contracts/adapters/memory'
 
@@ -51,4 +51,18 @@ describe('PreferencesSection', () => {
     expect(await screen.findByRole('switch', { name: 'Confirm before opening external links' })).toHaveAttribute('aria-disabled', 'true')
     expect(screen.getByLabelText('Trusted link hosts')).toBeDisabled()
   })
+})
+
+it('renders and saves only the server-provided speed tiers (TAL-788)', async () => {
+  vi.mocked(fetchAuxiliaryModels).mockResolvedValue({ main: { model: 'gpt-6-astra', provider: 'openai-codex', service_tier: 'priority', supported_speed_tiers: [
+    { id: 'standard', service_tier: 'default' }, { id: 'priority', service_tier: 'priority' }, { id: 'ultrafast', service_tier: 'ultrafast' },
+  ] }, tasks: [] })
+  vi.mocked(setDefaultModel).mockResolvedValue({ ok: true, model: 'gpt-6-astra', provider: 'openai-codex' })
+  renderSection()
+  const speed = await screen.findByRole('combobox', { name: 'Speed' })
+  expect(speed).toHaveTextContent('Fast')
+  await userEvent.click(speed)
+  expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual(['Standard', 'Fast', 'Ultrafast'])
+  await userEvent.click(screen.getByRole('option', { name: 'Ultrafast' }))
+  expect(setDefaultModel).toHaveBeenCalledWith('gpt-6-astra', 'openai-codex', { service_tier: 'ultrafast' })
 })
