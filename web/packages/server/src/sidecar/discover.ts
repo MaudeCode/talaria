@@ -179,7 +179,7 @@ export function launchSidecar(opts: LaunchOptions): SidecarClient | null {
     opts.log(`[sidecar] Hermes Agent not found (looked in ${agentCandidates(opts).join(', ')}); set HERMES_WEBUI_AGENT_DIR to enable chat`)
     return null
   }
-  const client = new SidecarClient({ python, agentDir, sidecarDir: join(opts.webRoot, 'sidecar'), hermesHome: opts.hermesHome, env: () => stringEnv(opts.env), log: opts.log })
+  const client = new SidecarClient({ python: () => discoverAgentPython(opts.env, agentDir, opts.hermesHome), agentDir, sidecarDir: join(opts.webRoot, 'sidecar'), hermesHome: opts.hermesHome, env: () => stringEnv(opts.env), log: opts.log })
   opts.log(`[sidecar] starting on ${python} (agent ${agentDir})`)
   return client
 }

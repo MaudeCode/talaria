@@ -76,7 +76,10 @@ application errors in `-32000..-32099`, one per error condition
    so SSO and authorized config repair remain available. A protocol mismatch still blocks all methods.
    A stale loaded runtime blocks Agent methods with `agent_runtime_stale`.
 5. On sidecar exit the server restarts it with exponential backoff (1 s, 2 s,
-   4 s, capped at 30 s). Every in-flight request fails with
+   4 s, capped at 30 s). Each spawn re-resolves the interpreter, so a replaced PM
+   generation is picked up without a Web-worker restart. An unavailable selection
+   stays unavailable and retries discovery on the same backoff schedule.
+   Every in-flight request fails with
    `sidecar_unavailable`. Session-scoped agent caches are lost.
 6. The drift guard runs inside the sidecar on every chat turn: if the Agent
    checkout revision or update markers changed since import, the call fails

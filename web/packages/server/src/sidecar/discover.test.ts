@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto'
 import { chmodSync, mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { agentCandidates, discoverAgentDir, discoverAgentDirForLaunch, discoverAgentPython } from './discover.js'
+import { agentCandidates, discoverAgentDir, discoverAgentDirForLaunch, discoverAgentPython, launchSidecar } from './discover.js'
 import { runBootstrap } from '../cli/launcher.js'
 
 const scratches: string[] = []
@@ -170,6 +170,41 @@ describe('Agent discovery', () => {
     })
     expect(code).toBe(0)
     expect(selected).toEqual(explicit ? [override, override] : [f.python, nextPython])
+  })
+
+  it('a recycled sidecar spawns the current PM interpreter after the old generation is removed', async () => {
+    const f = pmInstall()
+    writeFileSync(join(f.agent, 'run_agent.py'), '')
+    const fixture = resolve(import.meta.dirname, '../../../contracts/fixtures/sidecar/runtime.json')
+    const script = `#!${process.execPath}\nconst fs=require('node:fs');const value=JSON.parse(fs.readFileSync(${JSON.stringify(fixture)},'utf8'))['runtime.handshake'][0].result;require('node:readline').createInterface({input:process.stdin}).on('line',line=>{const req=JSON.parse(line);process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:req.id,result:{...value,python:process.argv[1]}})+'\\n')})\n`
+    writeFileSync(f.python, script)
+    chmodSync(f.python, 0o755)
+    const next = join(f.install, 'environments', 'generation-two', 'venv')
+    mkdirSync(join(next, 'bin'), { recursive: true })
+    writeFileSync(join(next, 'pyvenv.cfg'), '')
+    const nextPython = join(next, 'bin', 'python')
+    writeFileSync(nextPython, script, { mode: 0o755 })
+    const webRoot = join(f.home, 'web')
+    mkdirSync(join(webRoot, 'sidecar'), { recursive: true })
+    const logs: string[] = []
+    const client = launchSidecar({ env: { ...f.env, HERMES_WEBUI_AGENT_DIR: f.agent }, hermesHome: f.hermesHome, home: f.home, webRoot, log: (line) => { logs.push(line) } })
+    if (!client) throw new Error('synthetic PM installation was not discovered')
+    try {
+      expect((await client.start()).python).toBe(f.python)
+      f.record(next)
+      rmSync(f.generation, { recursive: true })
+      client.recycle('synthetic PM generation replacement')
+      // Stop on either observable outcome; a spawn failure must not pass as a slow handshake.
+      await expect.poll(() => client.status === 'ready' || logs.some((line) => line.includes('spawn error')), { timeout: 5000 }).toBe(true)
+      expect(client.describe?.python).toBe(nextPython)
+      f.record(join(f.install, 'environments', 'not-installed', 'venv'))
+      client.recycle('synthetic unavailable PM selection')
+      await expect.poll(() => logs.some((line) => line.includes('Agent interpreter unavailable')), { timeout: 5000 }).toBe(true)
+      expect(client.status).toBe('restarting')
+      expect(client.describe).toBeNull()
+      f.record(next)
+      await expect.poll(() => client.describe?.python, { timeout: 5000 }).toBe(nextPython)
+    } finally { await client.close() }
   })
 })
 
