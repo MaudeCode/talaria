@@ -110,9 +110,8 @@ export function readMemory(profileHome: string, config: Config, workspace: strin
   }
 }
 
-/** What a memory save needs beyond the file: the page's redaction setting and the Agent's reading of a MEMORY.md / USER.md body. */
+/** What a memory save needs beyond the file: the Agent's reading of a MEMORY.md / USER.md body. */
 export interface MemoryWriteDeps {
-  redact: boolean
   check: (target: 'memory' | 'user', content: string) => Promise<{ count: number; limit: number }>
 }
 
@@ -154,7 +153,8 @@ export async function writeMemory(profileHome: string, config: Config, section: 
   else throw new HttpFailure(400, 'section must be "memory", "user", or "soul"')
   try { if (lstatSync(target).isSymbolicLink()) throw new HttpFailure(400, 'Cannot write to a symlinked memory file') } catch (error) { if (error instanceof HttpFailure) throw error }
   const current = readCurrent(target)
-  const content = restoreMasks(current, redactString(current, deps.redact), submitted)
+  // Masks are rebuilt as redaction shows them even when it is off now: the page may have loaded while it was on.
+  const content = restoreMasks(current, redactString(current), submitted)
   if (section !== 'soul') {
     const { count, limit } = await deps.check(section, content)
     if (count > limit) {

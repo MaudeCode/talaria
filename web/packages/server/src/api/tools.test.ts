@@ -236,6 +236,14 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     expect(unreadable.status).toBe(403)
     expect(String((await json(unreadable)).error)).toContain('MEMORY.md is not readable')
     expect(readFileSync(file, 'utf8')).toBe(reordered)
+    // Redaction switched off between the page load and the save still restores the masks the page showed (fails closed).
+    s.deps.settings.save({ api_redact_enabled: false })
+    try {
+      expect((await post(s, '/api/memory/write', { section: 'memory', content: moved })).status).toBe(200)
+    } finally {
+      s.deps.settings.save({ api_redact_enabled: true })
+    }
+    expect(readFileSync(file, 'utf8')).toBe(reordered)
     // SOUL.md keeps its secrets too.
     writeFileSync(join(s.state, 'SOUL.md'), 'Sign with sk-proj-ABCDEFGHIJKLMNOPabcd')
     const soul = String((await json(await s.get('/api/memory'))).soul)

@@ -46,6 +46,14 @@ describe('restoreMasks (TAL-886)', () => {
     expect(refusal('OPENAI_API_KEY=hunter2secretvalue', (shown) => shown.replace('OPENAI_API_KEY', 'OPENAI_KEY'))).toMatchObject({ status: 422, extra: { code: 'memory_mask_edited', mask: '***' } })
   })
 
+  it('refuses a mask edited in place, but takes a new value typed over it', () => {
+    const refusal = (original: string, edit: (shown: string) => string): unknown => { try { save(original, edit) } catch (error) { return error } return null }
+    expect(refusal('password: hunter2', (shown) => shown.replace('***', '**'))).toMatchObject({ status: 422, extra: { code: 'memory_mask_edited', mask: '***' } })
+    expect(refusal('token ghp_AbCDEFGHIJKLMNOP6789', (shown) => shown.replace('6789', '6788'))).toMatchObject({ status: 422, extra: { code: 'memory_mask_edited', mask: 'ghp_Ab...6789' } })
+    expect(save('password: hunter2', (shown) => shown.replace('***', 'correct-horse'))).toBe('password: correct-horse')
+    expect(save('token ghp_AbCDEFGHIJKLMNOP6789', (shown) => shown.replace('ghp_Ab...6789', 'ghp_ZyXWVUTSRQPONMLK0000'))).toBe('token ghp_ZyXWVUTSRQPONMLK0000')
+  })
+
   it('never swaps the secrets of two entries that show the same mask', () => {
     const original = 'a: password: hunter2\n§\nb: password: other99'
     let refusal: unknown

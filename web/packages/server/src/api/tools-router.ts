@@ -316,7 +316,6 @@ export const toolsRouter = os.router({
       if (section === undefined || input.content === undefined) throw new HttpError(400, 'Missing required field(s): section, content')
       const profileHome = home(ctx)
       return writeMemory(profileHome, await ctx.deps.agentConfig.read(profileHome), str(section), str(input.content), {
-        redact: ctx.deps.sessions.deps.redactEnabled(),
         check: (target, content) => runningSidecar(ctx).call('memory.check', { profile_home: profileHome, target, content }),
       })
     })),

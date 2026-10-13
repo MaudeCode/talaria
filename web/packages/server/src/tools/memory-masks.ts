@@ -74,6 +74,33 @@ function diffTokens(a: string[], b: string[]): Op[] {
 
 const escapeRe = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
+interface Hunk { original: string; mask: string; first: number; last: number }
+
+/** What marks a mask inside other text: the redactor's `***` or private-key marker, else its `abcdef...wxyz` preview. */
+const markerOf = (mask: string): string =>
+  ['[REDACTED PRIVATE KEY]', '***'].find((m) => mask.includes(m)) ?? /\S{6}\.\.\.\S{4}/.exec(mask)?.[0] ?? mask.trim()
+
+/** Whether `a` is within `limit` single-character edits of `b`. */
+function within(a: string, b: string, limit: number): boolean {
+  if (Math.abs(a.length - b.length) > limit) return false
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j)
+  for (let i = 1; i <= a.length; i += 1) {
+    const row = [i]
+    for (let j = 1; j <= b.length; j += 1) row[j] = Math.min(prev[j]! + 1, row[j - 1]! + 1, prev[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1))
+    prev = row
+  }
+  return prev[b.length]! <= limit
+}
+
+/** A typed token that reads as an edit of `mask` (or its marker) rather than a new value: a few characters off, or bare asterisks. */
+function nearMask(token: string, mask: string): boolean {
+  const marker = markerOf(mask)
+  if (marker === '***' && /^\*+$/.test(token)) return true
+  return [marker, mask.trim()].some((text) => within(token, text, Math.max(1, text.length >> 2)))
+}
+
+const edited = (found: string): HttpFailure => new HttpFailure(422, `"${found}" hides a value the memory page does not show, and this save edits the text around it. Put it back as it was, or type the value.`, { code: 'memory_mask_edited', mask: found })
+
 /**
  * `submitted` with every mask `redactString` put into `shown` restored to the `original` text it hides. A save of an
  * unchanged page is `original` itself.
@@ -100,7 +127,7 @@ export function restoreMasks(original: string, shown: string, submitted: string)
     runs.splice(at, 2, [runs[at]![0], runs[at + 1]![1]])
     n = at
   }
-  const hunks: { original: string; mask: string; first: number; last: number }[] = []
+  const hunks: Hunk[] = []
   const hunkOf = new Int32Array(b.length).fill(-1)
   for (const [start, end] of runs) {
     const hunk = { original: '', mask: '', first: -1, last: -1 }
@@ -137,11 +164,7 @@ export function restoreMasks(original: string, shown: string, submitted: string)
     for (let j = from; j <= to; j += 1) if (keptAt[j] !== start + j - from) return false
     return true
   })
-  // What marks a mask inside other text: the redactor's `***` or private-key marker, else its `abcdef...wxyz` preview.
-  const markers = new Set(hunks.flatMap((hunk) => {
-    const marker = ['[REDACTED PRIVATE KEY]', '***'].find((m) => hunk.mask.includes(m)) ?? /\S{6}\.\.\.\S{4}/.exec(hunk.mask)?.[0] ?? hunk.mask.trim()
-    return marker ? [marker] : []
-  }))
+  const markers = new Set(hunks.map((hunk) => markerOf(hunk.mask)).filter(Boolean))
   const byLength = (x: string, y: string): number => y.length - x.length
   const alternatives = (list: Iterable<string>): string => [...list].sort(byLength).map(escapeRe).join('|')
   const maskRe = meanings.size ? new RegExp(`(?<!\\S)(${alternatives(meanings.keys())})(?!\\S)|${alternatives(markers)}`, 'g') : null
@@ -150,20 +173,30 @@ export function restoreMasks(original: string, shown: string, submitted: string)
     const values = whole === undefined ? [] : [...meanings.get(whole)!]
     if (values.length === 1) return values[0]!
     if (values.length > 1) throw new HttpFailure(422, `The memory page shows "${found}" for more than one hidden value, so the save cannot tell which one it means. Put it back where it was, or type the value.`, { code: 'memory_mask_ambiguous', mask: found })
-    throw new HttpFailure(422, `"${found}" hides a value the memory page does not show, and this save edits the text around it. Put it back as it was, or type the value.`, { code: 'memory_mask_edited', mask: found })
+    throw edited(found)
   }) : text)
+  // A mask the save replaced with text like it (`**` for `***`) was edited, not replaced by a new value: refuse it.
+  let removed: Hunk[] = []
+  let typed: string[] = []
+  const settle = (): void => {
+    for (const hunk of removed) if (typed.some((token) => nearMask(token, hunk.mask))) throw edited(markerOf(hunk.mask))
+    removed = []
+    typed = []
+  }
   let out = ''
   let loose = ''
   const flush = (): void => { out += restoreLoose(loose); loose = '' }
   for (const [kind, j, k] of pageToSave) {
-    if (kind === '-') continue
-    if (kind === '+') { loose += c[k]!; continue }
+    if (kind === '-') { const hunk = hunks[hunkOf[j]!]; if (hunk && !removed.includes(hunk)) removed.push(hunk); continue }
+    if (kind === '+') { loose += c[k]!; if (c[k]!.trim()) typed.push(c[k]!); continue }
+    settle()
     const hunk = hunkOf[j]!
     if (hunk >= 0 && inPlace[hunk]) {
       if (j === hunks[hunk]!.first) { flush(); out += hunks[hunk]!.original }
     } else if (hunk >= 0 || !b[j]!.trim()) loose += b[j]!
     else { flush(); out += b[j]! }
   }
+  settle()
   flush()
   return out
 }
