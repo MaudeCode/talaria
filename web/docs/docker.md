@@ -21,7 +21,7 @@ paths.
 |---|---|---|
 | **Single-container** (recommended) | You just want chat working. The container runs the Agent from your mounted `~/.hermes/hermes-agent` through its sidecar. | `docker-compose.yml` |
 | **Two-container** | You want isolation between gateway (CLI/Telegram/cron) and chat UI. | `docker-compose.two-container.yml` |
-| **Three-container** | Two-container PLUS the dashboard for monitoring. Requires a dashboard login (`HERMES_DASHBOARD_BASIC_AUTH_*` in `.env`). | `docker-compose.three-container.yml` |
+| **Three-container** | Two-container PLUS the dashboard for monitoring. Requires a dashboard login (`HERMES_DASHBOARD_BASIC_AUTH_*` in `.env`, or `dashboard.basic_auth` in `config.yaml`). | `docker-compose.three-container.yml` |
 
 ### Published images and local builds
 

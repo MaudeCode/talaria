@@ -9,6 +9,7 @@ from pathlib import Path
 import secrets
 import subprocess
 import tempfile
+import time
 import urllib.error
 import urllib.request
 import uuid
@@ -141,8 +142,18 @@ def upgrade_smoke(releases):
 
 
 def check_dashboard(compose, env):
-    """The dashboard answers only after login: /api/auth/me is 401 without a session and 200 with one."""
+    """The dashboard answers only after a basic-auth login: /api/auth/me is 401 without a session and names the
+    basic provider with one."""
     address = subprocess.check_output([*compose, "port", "hermes-dashboard", "9119"], env=env, text=True).strip()
+    # The dashboard has no healthcheck, so wait for its public liveness route before probing the gate.
+    for attempt in range(60):
+        try:
+            urllib.request.urlopen(f"http://{address}/api/health", timeout=5).close()
+            break
+        except (urllib.error.URLError, ConnectionError):
+            if attempt == 59:
+                raise
+            time.sleep(1)
     me = f"http://{address}/api/auth/me"
     try:
         urllib.request.urlopen(me, timeout=10).close()
@@ -156,9 +167,10 @@ def check_dashboard(compose, env):
                          "password": env["HERMES_DASHBOARD_BASIC_AUTH_PASSWORD"]}).encode())
     with urllib.request.urlopen(login, timeout=10) as response:
         assert json.load(response)["ok"] is True
-        cookie = "; ".join(header.split(";", 1)[0] for header in response.headers.get_all("Set-Cookie"))
+        cookie = "; ".join(header.split(";", 1)[0] for header in response.headers.get_all("Set-Cookie") or [])
+    assert cookie, "the dashboard login set no session cookie"
     with urllib.request.urlopen(urllib.request.Request(me, headers={"Cookie": cookie}), timeout=10) as response:
-        assert response.status == 200, response.status
+        assert json.load(response)["provider"] == "basic"
 
 
 def smoke(variant, image, agent_image=None):

@@ -1,8 +1,8 @@
 # Three-container Docker Compose: Hermes Agent + Dashboard + Talaria Web
 #
 # QUICK START:
-#   Set HERMES_DASHBOARD_BASIC_AUTH_USERNAME and HERMES_DASHBOARD_BASIC_AUTH_PASSWORD
-#   in .env first: the Agent refuses to start the dashboard without a login.
+#   Set a dashboard login first (HERMES_DASHBOARD_BASIC_AUTH_* in .env, see
+#   .env.docker.example): the Agent refuses to start the dashboard without one.
 #   docker compose -f docker-compose.three-container.yml up -d
 #   Open http://localhost:8787 (chat) and http://localhost:9119 (dashboard)
 #   Remote access (issue #6876): set HERMES_DASHBOARD_BIND to a specific
@@ -110,11 +110,10 @@ services:
       - HERMES_GID=${GID:-1000}
       # Dashboard connects to the gateway for health/session data
       - GATEWAY_HEALTH_URL=http://hermes-agent:8642
-      # Dashboard login. Listening on 0.0.0.0 inside the container engages the
-      # Agent's auth gate, so without a username and password (here or under
-      # dashboard.basic_auth in the shared config.yaml) the dashboard exits at
-      # startup. Set SECRET (32+ random bytes) to keep sessions across restarts.
+      # Dashboard login (see .env.docker.example). Empty values fall back to
+      # dashboard.basic_auth in the shared config.yaml.
       - HERMES_DASHBOARD_BASIC_AUTH_USERNAME=${HERMES_DASHBOARD_BASIC_AUTH_USERNAME:-}
+      - HERMES_DASHBOARD_BASIC_AUTH_PASSWORD_HASH=${HERMES_DASHBOARD_BASIC_AUTH_PASSWORD_HASH:-}
       - HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=${HERMES_DASHBOARD_BASIC_AUTH_PASSWORD:-}
       - HERMES_DASHBOARD_BASIC_AUTH_SECRET=${HERMES_DASHBOARD_BASIC_AUTH_SECRET:-}
     depends_on:
