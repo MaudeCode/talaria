@@ -1,4 +1,5 @@
 import type { Dict } from '../config/agent-config.js'
+import type { SidecarLike } from '../sidecar/client.js'
 import { str } from '../util.js'
 import type { UpdateNotificationStore } from './update-notifications.js'
 import { waitUntilRestartSafe, type RestartBlockers } from './updates.js'
@@ -15,6 +16,12 @@ export interface GatewayRestartQueueDeps {
   sleep?: (ms: number) => Promise<void>
   log: (line: string) => void
 }
+
+/**
+ * TAL-894: sidecar `gateway.restart` for a profile home. The sidecar bounds the wait by the Agent CLI's own restart budget
+ * (30 min by default); a client timeout here would cancel the call, and with it terminate the restart mid-drain.
+ */
+export const restartGateway = (sidecar: SidecarLike, profileHome: string) => sidecar.call('gateway.restart', { profile_home: profileHome }, { timeoutMs: 0 })
 
 const IDLE: RestartBlockers = { active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }
 const HELD: RestartBlockers = { ...IDLE, restart_blocked: true }

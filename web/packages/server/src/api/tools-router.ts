@@ -18,6 +18,7 @@ import { resolveWikiLocation, wikiPages, type WikiLocation } from '../tools/wiki
 import { buildInsights } from '../tools/insights.js'
 import { commandCatalog } from '../tools/commands.js'
 import { agentHealth, applyDashboardConfig, dashboardConfig, dashboardStatus, gatewayStatus, parseDashboardConfig, readLogTail, remoteGatewayBaseUrl, systemHealth } from '../tools/health.js'
+import { restartGateway } from '../tools/gateway-restart.js'
 import { projectOsDashboard } from '../tools/project-os.js'
 import { loadGatewaySessionIdentityMap } from '../sessions/list.js'
 import { gitBadge } from '../workspace/git.js'
@@ -402,7 +403,7 @@ export const toolsRouter = os.router({
     restart: os.ops.restart.handler(({ context: { ctx } }) => run(async () => {
       const sidecar = ctx.deps.sidecar()
       if (!sidecar) throw new HttpError(500, 'Hermes Agent sidecar is not running')
-      const outcome = await sidecar.call('gateway.restart', { profile_home: home(ctx) }, { timeoutMs: 300_000 })
+      const outcome = await restartGateway(sidecar, home(ctx))
       if (outcome.status === 'completed') return { ok: true as const, message: 'Gateway service restarted successfully' }
       if (outcome.status === 'busy') throw new HttpError(429, outcome.message || 'Restart already in progress. Please wait a moment and try again.')
       throw new HttpError(500, outcome.message || 'Internal error running restart')

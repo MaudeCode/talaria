@@ -1,14 +1,20 @@
-"""``gateway.control`` (and its ``gateway.restart`` alias) drives the CLI as a subprocess; driven in-process with a stand-in command."""
+"""``gateway.control`` (and its ``gateway.restart`` alias) drives the CLI as a subprocess; driven with a stand-in command, in-process or from a real sidecar."""
 
 from __future__ import annotations
 
+import json
+import os
+import subprocess
 import sys
 import textwrap
+import threading
 import time
+import types
 from pathlib import Path
 
 import pytest
 
+from conftest import AGENT_DIR, AGENT_PYTHON, SidecarProcess, isolated_env, requires_agent
 from talaria_sidecar.errors import InvalidParams
 from talaria_sidecar.methods import gateway
 
@@ -21,6 +27,12 @@ class _Ctx:
 
     def emit(self, event: str, data: dict) -> None:
         self.events.append((event, data))
+
+
+@pytest.fixture(autouse=True)
+def _agent_names_profiles(tmp_path, monkeypatch) -> None:
+    """In-process tests run without the Agent: stand in its profile helpers for a root at ``tmp_path/.hermes``."""
+    _agent_profiles(monkeypatch, tmp_path / ".hermes")
 
 
 def _script(tmp_path, body: str) -> str:
@@ -169,6 +181,17 @@ def _host_cli(tmp_path, *, serves_after_host: bool = True, root_exit: int = 0) -
     return script, calls, named
 
 
+def _agent_profiles(monkeypatch, root: Path) -> None:
+    """Stand-in Agent profile helpers for ``root``: its homes name themselves, and a named profile's child env pins its home."""
+    constants = types.ModuleType("hermes_constants")
+    constants.profile_name_for_home = lambda home: "default" if Path(home) == root else Path(home).name if Path(home).parent == root / "profiles" else None
+    monkeypatch.setitem(sys.modules, "hermes_constants", constants)
+    monkeypatch.setitem(sys.modules, "hermes_cli", types.ModuleType("hermes_cli"))
+    web = types.ModuleType("hermes_cli.web_server_gateway")
+    web._profile_action_environment = lambda argv: {**os.environ, "HERMES_HOME": str(root if argv[1] == "default" else root / "profiles" / argv[1])}
+    monkeypatch.setitem(sys.modules, "hermes_cli.web_server_gateway", web)
+
+
 def _calls(calls) -> list[str]:
     return calls.read_text().splitlines() if calls.exists() else []
 
@@ -180,7 +203,7 @@ def test_a_refused_named_profile_starts_the_host_gateway_then_reruns_its_action(
     monkeypatch.setattr(gateway.subprocess, "Popen", _popen_with_script(script))
     result = gateway.control(action, named, None, _Ctx(), quick_timeout=2.0, background_wait=5.0)
     assert result["status"] == "completed", result
-    assert _calls(calls) == [f"{named} gateway {action}", f"{named.parent.parent} --profile default gateway start", f"{named} gateway {action}"]
+    assert _calls(calls) == [f"{named} --profile work gateway {action}", f"{named.parent.parent} --profile default gateway start", f"{named} --profile work gateway {action}"]
 
 
 def test_a_refusal_the_host_resolves_reads_as_started_when_the_host_serves_the_profile(tmp_path, monkeypatch) -> None:
@@ -257,3 +280,208 @@ def test_the_host_fallback_shares_one_deadline_across_every_step(tmp_path, monke
     result = gateway.control("start", named, None, _Ctx(), quick_timeout=0.1, background_wait=2.0)
     assert result.get("timed_out") is True, result
     assert time.monotonic() - started < 3.0
+
+
+class _Registry:
+    def __init__(self) -> None:
+        self.methods: dict = {}
+
+    def method(self, name: str, *, requires_agent: bool = True):
+        def wrap(fn):
+            self.methods[name] = fn
+            return fn
+        return wrap
+
+
+def _restart_method():
+    registry = _Registry()
+    gateway.register(registry)
+    return registry.methods["gateway.restart"]
+
+
+def _agent_budget(monkeypatch, budget: float | None) -> list:
+    """The Agent's restart budget reads ``budget`` (raises, as on an Agent without the helper, when None); returns the envs it read."""
+    envs: list = []
+
+    def read(env: dict) -> float:
+        envs.append(env)
+        if budget is None:
+            raise ImportError("_get_restart_exit_wait_budget")
+        return budget
+
+    monkeypatch.setattr(gateway, "_agent_restart_budget", read)
+    return envs
+
+
+def _fast_clock(monkeypatch, scale: float = 100.0) -> None:
+    """The gateway module's clock runs ``scale`` times real time, so a few real seconds read as minutes."""
+    start = time.monotonic()
+    monkeypatch.setattr(gateway, "time", types.SimpleNamespace(monotonic=lambda: start + (time.monotonic() - start) * scale, sleep=time.sleep))
+
+
+@pytest.mark.parametrize(("budget", "status"), [(400.0, "completed"), (float("inf"), "completed"), (None, "failed")])
+def test_a_restart_waits_out_the_agents_own_restart_budget(tmp_path, monkeypatch, budget, status) -> None:
+    # TAL-894: the CLI drains for up to its own budget (default 1885 s). At 100x, the stand-in's 2.8 s is 280 s: past the old
+    # 240 s wait (the fallback when the helper is missing), inside a 400 s budget's 430 s.
+    script = _script(tmp_path, "import time\ntime.sleep(2.8)\nprint('restarted')\n")
+    monkeypatch.setattr(gateway, "_hermes_command", lambda: sys.executable)
+    monkeypatch.setattr(gateway.subprocess, "Popen", _popen_with_script(script))
+    envs = _agent_budget(monkeypatch, budget)
+    _fast_clock(monkeypatch)
+    result = _restart_method()(_Ctx(), {"profile_home": str(tmp_path)})
+    assert result["status"] == status, result
+    if budget is None:
+        assert result["timed_out"] is True and "240s" in result["message"], result
+    assert [env["HERMES_HOME"] for env in envs] == [str(tmp_path)]
+
+
+def test_cancel_still_terminates_a_restart_with_no_deadline(tmp_path, monkeypatch) -> None:
+    script = _script(tmp_path, "import time\ntime.sleep(30)\n")
+    monkeypatch.setattr(gateway, "_hermes_command", lambda: sys.executable)
+    monkeypatch.setattr(gateway.subprocess, "Popen", _popen_with_script(script))
+    _agent_budget(monkeypatch, float("inf"))
+    ctx = _Ctx()
+    threading.Timer(1.0, lambda: setattr(ctx, "cancelled", True)).start()
+    started = time.monotonic()
+    result = _restart_method()(ctx, {"profile_home": str(tmp_path)})
+    assert result["status"] == "failed" and result["timed_out"] is True and "cancelled" in result["message"], result
+    assert time.monotonic() - started < 10
+
+
+def _cli_sidecar(tmp_path, hermes_home, **env: str):
+    """A real sidecar whose ``hermes`` is a stand-in that loads its home's ``.env`` the Agent's way, then logs what it saw."""
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    log = tmp_path / "cli.jsonl"
+    cli = bindir / "hermes"
+    cli.write_text(textwrap.dedent(f"""\
+        #!{AGENT_PYTHON}
+        import json, os, sys
+        sys.path.insert(0, {str(AGENT_DIR)!r})
+        from hermes_cli.env_loader import load_hermes_dotenv
+        load_hermes_dotenv(hermes_home=os.environ["HERMES_HOME"])
+        keys = ("TELEGRAM_BOT_TOKEN", "API_SERVER_PORT", "OPENROUTER_API_KEY", "HERMES_EXEC_ASK")
+        with open({str(log)!r}, "a") as f:
+            f.write(json.dumps({{"argv": sys.argv[1:], "home": os.environ["HERMES_HOME"], **{{k: os.environ.get(k) for k in keys}}}}) + "\\n")
+    """))
+    cli.chmod(0o755)
+    proc = SidecarProcess(hermes_home, env={"PATH": f"{bindir}{os.pathsep}{os.environ.get('PATH', '')}", **env})
+
+    def run(home, action: str, **params) -> dict:
+        start = log.read_text().count("\n") if log.exists() else 0
+        result = proc.result("gateway.control", {"profile_home": str(home), "action": action, **params})
+        assert result["status"] == "completed", result
+        rows = [json.loads(line) for line in log.read_text().splitlines()[start:]]
+        assert len(rows) == 1, rows
+        return rows[0]
+
+    return proc, run
+
+
+def _profile(root, name: str, dotenv: str = ""):
+    home = root / "profiles" / name
+    home.mkdir(parents=True)
+    (home / "config.yaml").write_text("model: {}\n")
+    if dotenv:
+        (home / ".env").write_text(dotenv)
+    return home
+
+
+@requires_agent
+def test_every_action_names_the_requested_profile_not_the_sticky_active_one(tmp_path, hermes_home) -> None:
+    _profile(hermes_home, "work")
+    b = _profile(hermes_home, "b")
+    (hermes_home / "active_profile").write_text("work\n")
+    proc, run = _cli_sidecar(tmp_path, hermes_home)
+    try:
+        assert run(hermes_home, "restart")["argv"] == ["--profile", "default", "gateway", "restart"]
+        assert run(b, "start")["argv"] == ["--profile", "b", "gateway", "start"]
+        assert run(hermes_home, "stop", cli_profile="work")["argv"] == ["--profile", "work", "gateway", "stop"]
+    finally:
+        proc.close()
+
+
+@requires_agent
+def test_a_named_profiles_gateway_loads_its_own_env_never_the_default_profiles(tmp_path, hermes_home) -> None:
+    (hermes_home / ".env").write_text("TELEGRAM_BOT_TOKEN=default-profile-bot-token\nAPI_SERVER_PORT=8642\n")
+    work = _profile(hermes_home, "work", "OPENROUTER_API_KEY=work-key\n")
+    # The sidecar's environment already holds the default profile's .env, as it does once chat imported run_agent.
+    proc, run = _cli_sidecar(tmp_path, hermes_home, TELEGRAM_BOT_TOKEN="default-profile-bot-token", API_SERVER_PORT="8642", HERMES_EXEC_ASK="1")
+    try:
+        seen = run(work, "start")
+        assert seen["home"] == str(work)
+        assert (seen["TELEGRAM_BOT_TOKEN"], seen["API_SERVER_PORT"], seen["OPENROUTER_API_KEY"], seen["HERMES_EXEC_ASK"]) == (None, None, "work-key", None), seen
+        seen = run(hermes_home, "start")
+        assert (seen["TELEGRAM_BOT_TOKEN"], seen["API_SERVER_PORT"], seen["HERMES_EXEC_ASK"]) == ("default-profile-bot-token", "8642", None), seen
+    finally:
+        proc.close()
+
+
+@requires_agent
+def test_the_restart_wait_is_the_installed_agents_own_budget_plus_headroom(hermes_home) -> None:
+    code = f"import sys; sys.path.insert(0, {str(AGENT_DIR)!r}); from pathlib import Path; from talaria_sidecar.methods.gateway import _restart_wait; print(_restart_wait(Path({str(hermes_home)!r})))"
+    out = subprocess.run([AGENT_PYTHON, "-c", code], env=isolated_env(hermes_home), capture_output=True, text=True, timeout=120, check=True).stdout
+    assert float(out.strip().splitlines()[-1]) > gateway._RESTART_FALLBACK_SECONDS + gateway._RESTART_HEADROOM_SECONDS, out
+
+
+@pytest.mark.parametrize("action", gateway.ACTIONS)
+def test_a_named_profile_whose_selector_cannot_be_resolved_is_refused_without_spawning(tmp_path, monkeypatch, action) -> None:
+    named = tmp_path / ".hermes" / "profiles" / "work"
+    named.mkdir(parents=True)
+    spawned: list[list[str]] = []
+    monkeypatch.setitem(sys.modules, "hermes_constants", types.ModuleType("hermes_constants"))  # an Agent without profile_name_for_home
+    monkeypatch.setattr(gateway, "_hermes_command", lambda: sys.executable)
+
+
+    def popen(cmd, **kwargs):
+        spawned.append(cmd)
+        raise FileNotFoundError(cmd[0])
+
+    monkeypatch.setattr(gateway.subprocess, "Popen", popen)
+    result = gateway.control(action, named, None, _Ctx(), quick_timeout=0.1, background_wait=0.1)
+    assert spawned == [], spawned
+    assert result["status"] == "failed" and "work" in result["message"], result
+
+
+def test_a_root_profile_action_is_refused_when_the_agent_cannot_name_profiles(tmp_path, monkeypatch) -> None:
+    root = tmp_path / ".hermes"
+    root.mkdir()
+    (root / "active_profile").write_text("work\n")
+    spawned: list[list[str]] = []
+    monkeypatch.setitem(sys.modules, "hermes_constants", types.ModuleType("hermes_constants"))  # an Agent without profile_name_for_home
+    monkeypatch.setattr(gateway, "_hermes_command", lambda: sys.executable)
+
+    def popen(cmd, **kwargs):
+        spawned.append(cmd)
+        raise FileNotFoundError(cmd[0])
+
+    monkeypatch.setattr(gateway.subprocess, "Popen", popen)
+    result = gateway.control("restart", root, None, _Ctx(), quick_timeout=0.1, background_wait=0.1)
+    assert spawned == [], spawned
+    assert result["status"] == "failed" and "refused" in result["message"], result
+
+
+@requires_agent
+def test_a_named_launch_profile_never_donates_its_env_to_the_default_profiles_gateway(tmp_path, hermes_home) -> None:
+    # An isolated deployment launches the sidecar as profiles/work; its environment then holds work's .env, not the root's.
+    (hermes_home / ".env").write_text("TELEGRAM_BOT_TOKEN=default-profile-bot-token\n")
+    work = _profile(hermes_home, "work", "TELEGRAM_BOT_TOKEN=work-bot-token\nAPI_SERVER_PORT=9000\n")
+    proc, run = _cli_sidecar(tmp_path, work, HOME=str(hermes_home.parent), TELEGRAM_BOT_TOKEN="work-bot-token", API_SERVER_PORT="9000")
+    try:
+        seen = run(hermes_home, "start", cli_profile="default")
+        assert (seen["argv"][:2], seen["home"]) == (["--profile", "default"], str(hermes_home)), seen
+        assert (seen["TELEGRAM_BOT_TOKEN"], seen["API_SERVER_PORT"]) == ("default-profile-bot-token", None), seen
+    finally:
+        proc.close()
+
+
+@requires_agent
+def test_the_restart_wait_follows_the_restarted_profiles_own_env(hermes_home) -> None:
+    # The CLI reads HERMES_RESTART_AFTER_TURN_TIMEOUT from its own environment after its profile's .env loads, not the sidecar's.
+    (hermes_home / ".env").write_text("HERMES_RESTART_AFTER_TURN_TIMEOUT=60\n")
+    work = _profile(hermes_home, "work", "HERMES_RESTART_AFTER_TURN_TIMEOUT=7200\n")
+    code = (f"import sys; sys.path.insert(0, {str(AGENT_DIR)!r}); from pathlib import Path; from talaria_sidecar.methods.gateway import _restart_wait; "
+            f"print(_restart_wait(Path({str(work)!r})), _restart_wait(Path({str(hermes_home)!r})))")
+    out = subprocess.run([AGENT_PYTHON, "-c", code], env=isolated_env(hermes_home, HERMES_RESTART_AFTER_TURN_TIMEOUT="60"), capture_output=True, text=True, timeout=180, check=True).stdout
+    named, root = (float(value) for value in out.strip().splitlines()[-1].split())
+    assert named > 7200 > root, out

@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Starting or restarting a named profile's gateway from Talaria Web no longer hands it the default profile's credentials and ports, so it runs with its own bot tokens and settings.",
+      "highlight": false,
+      "components": ["web"]
+    },
+    {
+      "category": "Fixed",
+      "summary": "Gateway start, stop, and restart in Talaria Web act on the profile you selected even after `hermes profile use` picked another one in a terminal, and a restart waiting for a long-running gateway task is no longer stopped partway.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

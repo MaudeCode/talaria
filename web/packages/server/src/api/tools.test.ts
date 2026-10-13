@@ -487,9 +487,12 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     sidecar.respond('gateway.restart', () => ({ status: 'busy', message: 'Restart already in progress. Please wait a moment and try again.' }))
     let res = await post(s, '/api/health/restart', {})
     expect(res.status).toBe(429)
-    sidecar.respond('gateway.restart', () => ({ status: 'completed', message: 'ok' }))
+    let timeoutMs: number | undefined
+    sidecar.respond('gateway.restart', (_params, _emit, opts) => { timeoutMs = opts.timeoutMs; return { status: 'completed', message: 'ok' } })
     res = await post(s, '/api/health/restart', {})
     expect(await json(res)).toEqual({ ok: true, message: 'Gateway service restarted successfully' })
+    // TAL-894: the sidecar waits out the Agent's own restart budget; a client timeout would cancel, and so kill, the restart first.
+    expect(timeoutMs).toBe(0)
     const original = s.deps.requestShutdown
     let requested = false
     s.deps.requestShutdown = () => { requested = true }

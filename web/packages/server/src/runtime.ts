@@ -63,7 +63,7 @@ import { KanbanService } from './tools/kanban.js'
 import { DashboardPlugins } from './tools/dashboard-plugins.js'
 import { ExtensionService } from './tools/extensions.js'
 import { dashboardStatus, gatewayRestartBlockers } from './tools/health.js'
-import { GatewayRestartQueue } from './tools/gateway-restart.js'
+import { GatewayRestartQueue, restartGateway } from './tools/gateway-restart.js'
 import { TerminalRegistry } from './tools/terminal.js'
 
 export interface CreateDepsOptions extends LoadConfigOptions {
@@ -741,7 +741,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     updating: () => deps.updates.blocksNewWork(),
     restart: async (profile) => {
       if (!sidecar) throw new Error('Hermes Agent sidecar is unavailable')
-      return sidecar.call('gateway.restart', { profile_home: profileHome(profile) }, { timeoutMs: 300_000 })
+      return restartGateway(sidecar, profileHome(profile))
     },
     log,
   })
