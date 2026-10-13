@@ -12,7 +12,7 @@ import textwrap
 
 import pytest
 
-from conftest import SidecarProcess, load_schema, requires_agent, validate
+from conftest import AGENT_DIR, SidecarProcess, load_schema, requires_agent, validate
 
 PROFILE = textwrap.dedent(
     """
@@ -133,3 +133,30 @@ def test_a_named_profiles_plugin_reads_the_same_whichever_profile_lists_first(tm
         finally:
             sidecar.close()
     assert seen[0] == seen[1], seen
+
+
+@requires_agent
+@pytest.mark.skipif(AGENT_DIR is None or not (AGENT_DIR / "hermes_cli/plugin_host_profiles.py").is_file(), reason="Agent has no hosted profiles")
+@pytest.mark.parametrize("disabled,manifestless", [(False, False), (True, False), (False, True)], ids=["both-enabled", "disabled-winner", "manifestless"])
+def test_hosted_plugins_with_a_shared_provider_id_are_not_attributed_by_name(tmp_path: pathlib.Path, disabled: bool, manifestless: bool) -> None:
+    home = tmp_path / "home" / ".hermes"
+    home.mkdir(parents=True)
+    config = "plugins:\n  isolation: host\n"
+    if disabled:
+        config += "  disabled:\n    - z-provider\n"
+    (home / "config.yaml").write_text(config)
+    for directory in ("a", "z"):
+        root = home / "plugins" / "model-providers" if manifestless and directory == "z" else home / "plugins"
+        _plugin(root, directory, f"{directory}-provider", name="shared", display=f"Plugin {directory}",
+                command="talaria-test-cli-that-does-not-exist", models=(f"{directory}-model",))
+        if manifestless and directory == "z":
+            (root / directory / "plugin.yaml").unlink()
+    sidecar = SidecarProcess(home)
+    try:
+        rows = sidecar.result("plugins.providers", {"profile_home": str(home)})["providers"]
+        # No origin metadata distinguishes the winning registration; neither root may borrow its profile by name.
+        expected = ["a-provider"] if disabled or manifestless else ["a-provider", "z-provider"]
+        assert rows == [{"name": name, "display_name": name, "auth_type": "", "setup": "not_loaded"} for name in expected]
+        assert sidecar.result("providers.model_ids", {"profile_home": str(home), "provider": "shared"})["model_ids"] == []
+    finally:
+        sidecar.close()

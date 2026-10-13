@@ -112,15 +112,29 @@ def _hosted_plugin_profiles(roots: dict[Path, str]) -> dict[Path, list] | None:
 
     registered = {p.name: p for p in providers.list_providers() if providers.provider_source(p.name) == "user"}
     home_key = hermes_home_key(get_hermes_home())
-    found: dict[Path, list] = {}
-    for root in roots:
+    # Discovery also loads disabled and manifest-less category plugins. Include them when checking name collisions.
+    directories = set(roots)
+    for parent, flat in ((providers._user_plugins_dir(), False), (providers._installed_plugins_dir(), True)):
+        if parent is not None:
+            directories.update(child.resolve() for child in parent.iterdir()
+                               if child.is_dir() and not child.name.startswith(("_", "."))
+                               and (not flat or (child.name != "model-providers" and providers._declares_model_provider_kind(child))))
+    owners: dict[str, set[Path]] = {}
+    for root in directories:
         try:
             # Reuse the Agent's cached extraction; provider ids need not match manifest or directory names.
             profiles = load_hosted_profiles(root, providers._user_module_name(root, home_key))
-            found[root] = [registered[p.name] for p in profiles if p.name in registered]
+            for profile in profiles:
+                owners.setdefault(profile.name, set()).add(root)
         except Exception:  # noqa: BLE001 - failed extraction keeps the manifest's not_loaded row
             log.debug("reading hosted provider plugin %s failed", root, exc_info=True)
-            found[root] = []
+    found: dict[Path, list] = {root: [] for root in roots}
+    for name, profile in registered.items():
+        origins = owners.get(name, set())
+        if len(origins) == 1:
+            root = next(iter(origins))
+            if root in found:
+                found[root].append(profile)
     return found
 
 
@@ -156,9 +170,9 @@ def installed_plugin_profiles() -> list[tuple[str, Any]]:
     Bundled providers are built-ins, not plugins. Hosted profiles come from the Agent's scoped user registry and
     directory metadata. In-process profiles belong to this home when their module lives in its plugin directories;
     a plugin the launch discovery skipped is loaded here.
-    ``None`` means the plugin could not be loaded: it failed to import, another plugin took its provider id (only on an
-    Agent with one process-wide provider registry rather than per-home layers), or another profile's plugin has the same
-    directory name. shortcut: in-process ownership uses module globals, so an unbound inline profile reads as not
+    ``None`` means the plugin could not be loaded or attributed: it failed to import, its hosted provider id is
+    ambiguous, or a registration/module name collided in an older process-wide registry.
+    shortcut: in-process ownership uses module globals, so an unbound inline profile reads as not
     loaded; use Agent registration metadata if it becomes available.
     """
     try:
@@ -195,12 +209,17 @@ def installed_plugin_profiles() -> list[tuple[str, Any]]:
     return [(name, p) for root, name in roots.items() for p in (found[root] or [None])]
 
 
-def _other_profile_plugin(provider_id: str) -> bool:
-    """Whether ``provider_id`` is a plugin provider that another profile installed (the registry is process-wide)."""
-    from providers import get_provider_profile
+def _unavailable_plugin(provider_id: str) -> bool:
+    """Whether a registered plugin lacks an enabled, unambiguous owner in this home."""
+    import providers
 
-    profile = get_provider_profile(provider_id)
-    if profile is None or id(profile) not in _user_plugin_profiles():
+    profile = providers.get_provider_profile(provider_id)
+    if profile is None:
+        return False
+    if hasattr(providers, "_home_layer") and callable(getattr(providers, "provider_source", None)):
+        if providers.provider_source(profile.name) != "user":
+            return False
+    elif id(profile) not in _user_plugin_profiles():
         return False
     return not any(p is profile for _name, p in installed_plugin_profiles())
 
@@ -270,10 +289,11 @@ def model_ids(provider_id: str, *, force_refresh: bool) -> list[str]:
     except Exception as exc:  # noqa: BLE001
         raise RpcError(f"model catalog unavailable: {exc}", condition="providers_unavailable") from exc
     try:
-        if _other_profile_plugin(provider_id):
+        if _unavailable_plugin(provider_id):
             return []
-    except Exception:  # noqa: BLE001 - no readable provider registry means no plugin to keep apart
+    except Exception:  # noqa: BLE001 - an unverified owner must not expose another plugin's models
         log.debug("plugin ownership check for %r failed", provider_id, exc_info=True)
+        return []
     try:
         ids = provider_model_ids(provider_id, force_refresh=force_refresh)
     except TypeError:

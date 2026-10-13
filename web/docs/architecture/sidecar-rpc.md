@@ -83,6 +83,8 @@ Provider-plugin listings retain the scoped home's manifest enable/disable gate. 
 Agent's cached hosted-profile metadata and selects providers from its per-home
 user registry. Provider ids may differ from manifest names. In-process and older
 Agents retain module ownership checks, so another profile's plugins stay hidden.
+Hosted ids claimed by multiple directories remain `not_loaded`, including collisions
+with disabled or manifest-less plugins. Their model catalogs remain empty.
 
 ## Method namespaces
 
