@@ -77,7 +77,9 @@ After changing Agent source, both Update and Force Update run the Agent's
 `hermes_cli.venv_sync` command when that release supplies it, using the configured
 Agent interpreter and Hermes home. Dependency sync must succeed before the gateway
 or Web restart. A sync failure reports a failed update; retrying still runs sync
-even if Git already reached the target. Older releases without that command keep
+even if Git already reached the target. Web records pending sync in its state
+directory, so Settings keeps the Agent update action available after a failed sync
+or server restart until sync succeeds. Older releases without that command keep
 their existing update behavior. Chat and launcher imports never trigger lazy
 dependency installation.
 

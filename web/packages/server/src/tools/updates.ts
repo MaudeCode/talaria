@@ -22,6 +22,7 @@ import { validateReleaseInfo } from '../release.js'
 import { str } from '../util.js'
 import { discoverAgentPython } from '../sidecar/discover.js'
 import { AGENT_IMPORT_ENV } from '../sidecar/env.js'
+import { atomicWriteText } from '../fs/atomic.js'
 
 export const REPOSITORY = 'MaudeCode/talaria'
 export const REPOSITORY_URL = `https://github.com/${REPOSITORY}`
@@ -1005,12 +1006,22 @@ async function agentReleaseTagsBetween(path: string, latest: string, git: GitRun
 
 // ── service ──────────────────────────────────────────────────────────────────
 
+function agentSyncMarker(path: string | null, stateDir: string | undefined): string | null {
+  return path && stateDir ? join(stateDir, 'agent-dependency-sync', createHash('sha256').update(resolve(path)).digest('hex')) : null
+}
+
 /** Older Agents have no PM sync entry point. Newer ones must finish it before restart. */
-async function syncAgentDependencies(path: string | null, env: Record<string, string | undefined>): Promise<GitOutcome | null> {
+async function syncAgentDependencies(path: string | null, env: Record<string, string | undefined>, stateDir: string | undefined): Promise<GitOutcome | null> {
   if (!path || !existsSync(join(path, 'hermes_cli', 'venv_sync.py'))) return null
+  const marker = agentSyncMarker(path, stateDir)
+  if (!marker) return { ok: false, out: 'Web state directory is unavailable; cannot record pending dependency sync.' }
+  try {
+    mkdirSync(dirname(marker), { recursive: true })
+    atomicWriteText(marker, 'pending\n')
+  } catch (error) { return { ok: false, out: `Could not record pending dependency sync: ${sanitizeGitDiagnostic((error as Error).message)}` } }
   const python = discoverAgentPython(env, path)
   if (!python) return { ok: false, out: 'Agent Python interpreter was not found.' }
-  return new Promise((done) => {
+  const result = await new Promise<GitOutcome>((done) => {
     execFile(python, ['-m', 'hermes_cli.venv_sync', '--project-root', path, '--json'], {
       cwd: path, env: { ...env, ...AGENT_IMPORT_ENV, PYTHONPATH: env.PYTHONPATH ? `${path}${delimiter}${env.PYTHONPATH}` : path },
       encoding: 'utf8', timeout: 300_000, maxBuffer: 4 * 1024 * 1024,
@@ -1022,6 +1033,10 @@ async function syncAgentDependencies(path: string | null, env: Record<string, st
       } catch { done({ ok: false, out: 'Agent dependency sync returned an invalid result.' }) }
     })
   })
+  if (result.ok) {
+    try { rmSync(marker, { force: true }) } catch (error) { return { ok: false, out: `Could not clear pending dependency sync: ${sanitizeGitDiagnostic((error as Error).message)}` } }
+  }
+  return result
 }
 
 export interface RestartBlockers { active_streams: number; active_runs: number; active_terminals?: number; active_cron_jobs?: number; blocking_stream_ids: string[]; blocking_run_ids: string[]; restart_blocked: boolean }
@@ -1126,7 +1141,12 @@ export class UpdateService {
         const webui = this.keepLastGood('webui', channel, await checkWebUpdate(this.deps.webRoot, this.deps.webuiVersion, channel, this.git, this.deps.getJson, this.deps.identity, this.deps.npm ?? runPackageNpm, this.deps.experimental))
         // The check may have fetched release tags the startup `git describe` never saw.
         if (this.deps.refreshWebuiVersion) webui.current_version = this.deps.refreshWebuiVersion()
-        const agent = includeAgent ? this.keepLastGood('agent', agentChannel, await checkAgentUpdate(this.deps.agentDir(), this.git, agentChannel)) : ignoredAgent()
+        const agentDir = this.deps.agentDir()
+        const agent = includeAgent ? this.keepLastGood('agent', agentChannel, await checkAgentUpdate(agentDir, this.git, agentChannel)) : ignoredAgent()
+        const marker = agentSyncMarker(agentDir, this.deps.stateDir)
+        if (includeAgent && marker && existsSync(marker) && agentDir && existsSync(join(agentDir, 'hermes_cli', 'venv_sync.py'))) {
+          Object.assign(agent, { metadata_repair: true, message: 'Agent dependency sync is incomplete. Apply the update again to finish it.' })
+        }
         if (agent.latest_sha) Object.assign(agent, agentWarning(agent, this.agentPolicy()))
         Object.assign(this.cache, { webui, agent, checked_at: this.now(), include_agent: includeAgent, channel, agent_channel: agentChannel })
         return { ...this.cache }
@@ -1258,7 +1278,7 @@ export class UpdateService {
   private async finishAgent(result: Dict, path: string | null): Promise<Dict> {
     this.cache.checked_at = 0
     // A failed sync leaves Git advanced: an explicit retry still owes the sync and restart.
-    const synced = await syncAgentDependencies(path, this.deps.agentEnv?.() ?? process.env)
+    const synced = await syncAgentDependencies(path, this.deps.agentEnv?.() ?? process.env, this.deps.stateDir)
     if (synced && !synced.ok) return { ...result, ok: false, up_to_date: false, message: `Agent source updated, but dependency sync failed: ${synced.out}` }
     if (!synced && result.up_to_date) return result
     const [ok, gateway] = await this.restartGateway()

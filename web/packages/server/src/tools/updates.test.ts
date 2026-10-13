@@ -879,6 +879,7 @@ describe('Agent checkout updates', () => {
       webRoot: join(tmp(), 'web'), git, getJson: noReleases, identity: { release: () => DEV, stamped: () => DEV, runningSourceRevision: () => null }, webuiVersion: 'x',
       agentDir: () => agent, channel: () => 'stable', includeAgent: () => true, blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
       agentEnv: () => ({ PATH: process.env.PATH, HOME: join(agent, '..'), HERMES_HOME: join(agent, '../home'), HERMES_DISABLE_LAZY_INSTALLS: '0' }),
+      stateDir: join(agent, '../web-state'),
       scheduleRestart: () => events.push('restart'), gatewayRestart: () => { events.push('gateway'); return Promise.resolve({ status: 'completed' }) }, sleep: () => Promise.resolve(), log: () => undefined,
     })
   }
@@ -913,11 +914,19 @@ process.exit(failed && '${failure}' === 'exit' ? 1 : 0);
     expect(String(failed.message)).toContain('dependency sync')
     expect(events).toEqual([])
     expect(JSON.parse(readFileSync(marker, 'utf8'))).toEqual({ args: ['-m', 'hermes_cli.venv_sync', '--project-root', a.agent, '--json'], head: revision, home: join(a.agent, '../home'), lazy: '1' })
+    const check = await svc.check(true)
+    expect(updateTargetView('agent', check.agent as Dict, false)).toMatchObject({ behind: 0, state: 'finish', can_apply: true })
+    // Settings refetches after failure; a new server must retain that repair action too.
+    const resumed = agentService(a.agent, runGit, events)
+    const afterRestart = await resumed.check(true)
+    expect(updateTargetView('agent', afterRestart.agent as Dict, false)).toMatchObject({ state: 'finish', can_apply: true })
     // Git already advanced: retry must still repair dependencies before declaring success.
     rmSync(join(a.agent, 'fail-sync'))
-    const retried = await attempt()
+    const retried = await resumed.apply('agent', null, () => true, { confirmedRevision: revision })
     expect(retried).toMatchObject({ ok: true, up_to_date: false, restart_scheduled: true })
     expect(events).toEqual(['gateway', 'restart'])
+    const completed = await agentService(a.agent, runGit, []).check(true)
+    expect(updateTargetView('agent', completed.agent as Dict, false)).toMatchObject({ state: 'up_to_date', can_apply: false })
   })
 
   it('a conflicting local edit leaves a clean checkout, keeps the stash, and restarts onto the update', async () => {
