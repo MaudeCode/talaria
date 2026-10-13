@@ -48,7 +48,7 @@
 services:
   hermes-agent:
     extends:
-      file: sidecar/agent_dependency.json
+      file: docker-compose.agent-source.yml
       service: hermes-agent
     container_name: hermes-agent
     command: gateway run
@@ -60,8 +60,6 @@ services:
     volumes:
       # Persist config, state, sessions, skills, memory across restarts
       - hermes-home:/home/hermes/.hermes
-      # Expose agent source so the WebUI can install dependencies from it
-      - hermes-agent-src:/opt/hermes
     environment:
       - HERMES_HOME=/home/hermes/.hermes
       # Align UID/GID across containers sharing the hermes-home volume.
@@ -96,7 +94,8 @@ services:
     build: .
     container_name: hermes-webui
     depends_on:
-      - hermes-agent
+      hermes-agent:
+        condition: service_healthy
     ports:
       - "127.0.0.1:8787:8787"
     volumes:
@@ -152,17 +151,7 @@ networks:
     driver: bridge
 
 volumes:
-  # IMPORTANT — upgrading the agent image:
-  #   The `hermes-agent-src` volume is initialised from the agent image's
-  #   `/opt/hermes` on first `up`, and Docker reuses the volume verbatim on
-  #   later runs — even after `docker pull` of a newer agent image. After
-  #   upgrading the agent image, run:
-  #
-  #     docker compose down
-  #     docker volume rm <project>_hermes-agent-src
-  #     docker compose pull
-  #     docker compose up -d
-  #
-  #   The full procedure (and why) is documented in docs/docker.md.
+  # Agent startup refreshes this source cache when the image revision changes.
+  # User state stays in hermes-home; no manual source-volume reset is needed.
   hermes-home:
   hermes-agent-src:

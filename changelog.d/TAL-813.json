@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Docker upgrades refresh the shared Agent files automatically while preserving your settings and conversations.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

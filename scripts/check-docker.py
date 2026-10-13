@@ -27,7 +27,7 @@ def build(image):
 
 
 def main():
-    variants = ("single", "two-container", "three-container", "auto-uid", "explicit-uid")
+    variants = ("single", "two-container", "three-container", "auto-uid", "explicit-uid", "agent-upgrade")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("variants", nargs="*", choices=variants)
     releases = json.loads((ROOT / "web/sidecar/agent_support.json").read_text())["releases"]
@@ -35,6 +35,11 @@ def main():
                         help="Test a supported older Agent image with the current Web image")
     args = parser.parse_args()
     selected = args.variants or variants
+    if "agent-upgrade" in selected:
+        upgrade_smoke(releases)
+        selected = [variant for variant in selected if variant != "agent-upgrade"]
+        if not selected:
+            return
     agent_image = next((release["image"] for release in releases if release["releaseTag"] == args.agent_release), None)
     image = "talaria-monorepo-smoke:" + uuid.uuid4().hex[:12]
     try:
@@ -47,6 +52,90 @@ def main():
                 future.result()
     finally:
         subprocess.run(["docker", "image", "rm", image], check=False)
+
+
+def upgrade_smoke(releases):
+    """Upgrade legacy source volumes through the shipped Agent service's entrypoint."""
+    pin = json.loads((ROOT / "web/sidecar/agent_dependency.json").read_text())
+    current_image = pin["services"]["hermes-agent"]["image"]
+    current = pin["x-talaria"]
+    # Cover both the oldest and immediately previous supported image across the two layouts.
+    previous = [release for release in releases if release["sourceRevision"] != current["sourceRevision"]]
+    for variant, old in zip(("two-container", "three-container"), (previous[0], previous[-1])):
+        with tempfile.TemporaryDirectory(prefix="talaria-agent-upgrade-") as temporary:
+            project = "talaria-upgrade-" + uuid.uuid4().hex[:12]
+            env = {"PATH": os.environ["PATH"], "HOME": str(Path.home()),
+                   "HERMES_WORKSPACE": temporary, "UID": "1000", "GID": "1000"}
+            config = json.loads(subprocess.check_output([
+                "docker", "compose", "--env-file", os.devnull, "-f",
+                str(ROOT / "web" / f"docker-compose.{variant}.yml"), "config", "--format", "json",
+            ], env=env))
+            agent = config["services"]["hermes-agent"]
+            config["services"] = {"hermes-agent": agent}
+            config.pop("name", None)
+            agent.pop("container_name", None)
+            agent.pop("ports", None)
+            agent["restart"] = "no"
+            for kind in ("volumes", "networks"):
+                for resource in config.get(kind, {}).values():
+                    resource.pop("name", None)
+            configured = Path(temporary) / "compose.json"
+            compose = ["docker", "compose", "--env-file", os.devnull, "-p", project, "-f", str(configured)]
+
+            def run_agent(image, command, legacy=False):
+                agent["image"] = image
+                original = json.loads(json.dumps(agent))
+                if legacy:
+                    # Reproduce a pre-fix deployment, including Docker's initial volume copy-up.
+                    agent.pop("entrypoint", None)
+                    agent.pop("healthcheck", None)
+                    agent["volumes"] = [mount for mount in agent["volumes"] if mount["type"] == "volume"]
+                    for mount in agent["volumes"]:
+                        if mount["source"] == "hermes-agent-src":
+                            mount["target"] = "/opt/hermes"
+                configured.write_text(json.dumps(config))
+                try:
+                    return subprocess.run([*compose, "run", "--rm", "--no-deps", "-T", "hermes-agent",
+                                           "/bin/sh", "-c", command], env=env, text=True,
+                                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=180)
+                finally:
+                    agent.clear()
+                    agent.update(original)
+
+            def source(command):
+                return subprocess.check_output([
+                    "docker", "run", "--rm", "--entrypoint", "/bin/sh", "-v",
+                    f"{project}_hermes-agent-src:/fixture", current_image, "-c", "set -eu; " + command,
+                ], env=env, text=True, timeout=180).strip()
+
+            try:
+                first = run_agent(old["image"], 'printf preserved > "$HERMES_HOME/upgrade-sentinel"; hermes --version', legacy=True)
+                assert first.returncode == 0 and f"Hermes Agent v{old['version']}" in first.stdout, first.stdout
+                source("touch /fixture/.obsolete-source")
+                probe = 'set -e; hermes --version; python3 --version; test "$(cat "$HERMES_HOME/upgrade-sentinel")" = preserved'
+                upgraded = run_agent(current_image, probe)
+                assert f"Hermes Agent v{current['version']}" in upgraded.stdout, upgraded.stdout
+                assert upgraded.returncode == 0, upgraded.stdout
+                revision = source("cat /fixture/.talaria-source-revision")
+                assert revision == current["sourceRevision"], revision
+                stamp = json.loads(source("cat /fixture/install-stamp.json"))
+                assert stamp["commit"] == current["sourceRevision"], stamp
+                source("test ! -e /fixture/.obsolete-source; touch /fixture/.restart-sentinel")
+                restarted = run_agent(current_image, probe)
+                assert restarted.returncode == 0, restarted.stdout
+                source("test -f /fixture/.restart-sentinel")
+                # A missing completion marker represents an interrupted copy and must be repaired.
+                source("rm /fixture/.talaria-source-revision")
+                repaired = run_agent(current_image, probe)
+                assert repaired.returncode == 0, repaired.stdout
+                source("test ! -e /fixture/.restart-sentinel")
+                assert source("cat /fixture/.talaria-source-revision") == current["sourceRevision"]
+                rolled_back = run_agent(old["image"], probe)
+                assert rolled_back.returncode == 0 and f"Hermes Agent v{old['version']}" in rolled_back.stdout, rolled_back.stdout
+                assert source("cat /fixture/.talaria-source-revision") == old["sourceRevision"]
+                print(f"PASS Docker {variant} upgrade {old['releaseTag']} -> {current['releaseTag']}, restart, interrupted copy, rollback and home preservation", flush=True)
+            finally:
+                subprocess.run([*compose, "down", "--volumes", "--remove-orphans"], env=env, check=True)
 
 
 def smoke(variant, image, agent_image=None):

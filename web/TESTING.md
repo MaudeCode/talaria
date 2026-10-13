@@ -65,3 +65,8 @@ run Playwright against the built assets and the Node server started by `e2e/serv
   `python3 scripts/check-docker.py two-container --agent-release v2026.9.24`
   to check an older release from `sidecar/agent_support.json`. The Python selector's
   isolated unit checks run with `python3 scripts/lib/test_agent_python.py` from `web/`.
+  `python3 ../scripts/check-docker.py agent-upgrade` checks both multi-container
+  layouts on disposable named volumes, upgrading the oldest and previous supported
+  Agent images to the active pin. It verifies the CLI version, Python, unchanged
+  restart reuse, interrupted-copy recovery, rollback, and preserved Hermes home data without
+  building the Web image or contacting a model provider.
