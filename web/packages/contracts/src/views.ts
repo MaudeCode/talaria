@@ -912,7 +912,7 @@ export const KanbanBoardViewSchema = z.looseObject({ columns: z.array(KanbanColu
   /** Present when `lane_by_profile`: the columns split into profile lanes, assignees in name order, unassigned last. */
   lanes: z.array(KanbanLaneSchema).optional() })
 export const KanbanBoardsViewSchema = z.looseObject({ boards: z.array(z.looseObject({ slug: z.string(), name: z.string().nullable().optional(), is_current: z.boolean().optional(), total: z.number().optional(), archived: z.boolean().optional(), color: z.string().optional(), icon: z.string().optional(), description: z.string().optional(),
-  /** Whether the board can be archived or deleted; the default board cannot (TAL-567). */
+  /** Whether the board can be archived or deleted; the default board (TAL-567) and an archived board (TAL-795) cannot. */
   removable: z.boolean() })), current: z.string().optional(), read_only: z.boolean().optional() })
 /** Board-wide task counts (TAL-567): `status_counts` in board-column order, unknown statuses after; `total` excludes archived tasks. */
 export const KanbanStatsViewSchema = z.looseObject({ by_status: z.record(z.string(), z.number()), total: z.number().int(), status_counts: z.array(z.object({ status: z.string(), count: z.number().int() })) })

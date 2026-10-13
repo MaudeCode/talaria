@@ -49,9 +49,16 @@ def _board(params: dict):
         raise InvalidParams(f"invalid board slug: {raw!r}") from exc
     if not normed:
         return None
-    default_slug = getattr(kb, "DEFAULT_BOARD", "default")
-    if normed != default_slug and not kb.board_exists(normed):
-        raise NotFound(f"board {normed!r} does not exist")
+    if normed == getattr(kb, "DEFAULT_BOARD", "default"):
+        return normed
+    return _live_board(kb, normed, normed)
+
+
+def _live_board(kb, normed: str, shown, *, archived_ok: bool = False) -> str:
+    """``normed`` when it names a live board. Agent 0.21.6 leaves an ``archived`` ``board.json`` tombstone at an
+    archived board's slug, so ``board_exists`` alone would let a stale link reach it (TAL-795)."""
+    if not kb.board_exists(normed) or (not archived_ok and kb.read_board_metadata(normed).get("archived")):
+        raise NotFound(f"board {shown!r} does not exist")
     return normed
 
 
@@ -373,15 +380,15 @@ def _board_counts(slug):
             pass
 
 
-def _normalize_existing_slug(slug) -> str:
+def _normalize_existing_slug(slug, *, archived_ok: bool = False) -> str:
     kb = _kb()
     try:
         normed = kb._normalize_board_slug(slug)
     except (ValueError, AttributeError) as exc:
         raise InvalidParams(f"invalid board slug: {slug!r}") from exc
-    if not normed or not kb.board_exists(normed):
+    if not normed:
         raise NotFound(f"board {slug!r} does not exist")
-    return normed
+    return _live_board(kb, normed, slug, archived_ok=archived_ok)
 
 
 def _current_board() -> str:
@@ -761,7 +768,8 @@ def create_board_payload(params: dict) -> dict:
 def update_board_payload(params: dict) -> dict:
     kb = _kb()
     body = params.get("board_spec") or {}
-    normed = _normalize_existing_slug(params.get("slug"))
+    # Metadata edits stay open on an archived board: clearing ``archived`` is how one archived in place comes back.
+    normed = _normalize_existing_slug(params.get("slug"), archived_ok=True)
     kwargs = {}
     if "default_workdir" in body:
         kwargs["default_workdir"] = str(body.get("default_workdir") or "")
