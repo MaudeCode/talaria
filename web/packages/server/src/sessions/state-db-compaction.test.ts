@@ -71,10 +71,10 @@ describe('compaction replay identity (TAL-783)', () => {
     expect(stateDbSessionRead(path, sid).rows.at(-1)?._state_db_row_id).toBe(1)
   })
 
-  it('keeps an edited rewind after earlier compactions and dedupes its subsequent replay', () => {
+  it.each([1000, 3000])('keeps an edited rewind at timestamp %s after earlier compactions and dedupes its subsequent replay', (timestamp) => {
     // The original remains compacted, but the immediate predecessor was rewound.
     db.exec('UPDATE messages SET active = 0, compacted = 0 WHERE id = 9')
-    db.exec("INSERT INTO messages (session_id, role, content, timestamp, message_uid) VALUES ('compaction-replay', 'user', 'Only fix the parser error', 3000, 'fixture-1')")
+    db.prepare("INSERT INTO messages (session_id, role, content, timestamp, message_uid) VALUES ('compaction-replay', 'user', 'Only fix the parser error', ?, 'fixture-1')").run(timestamp)
     const read = stateDbSessionRead(path, sid)
     const merged = mergeSessionMessagesAppendOnly(fixture.before, read.rows, { stateDbSeenId: 9 })
     expect(merged.at(-1)?.content).toBe('Only fix the parser error')
@@ -86,6 +86,18 @@ describe('compaction replay identity (TAL-783)', () => {
     const reread = stateDbSessionRead(path, sid)
     expect(reread.rows.at(-1)?._state_db_row_id).toBe(10)
     expect(mergeSessionMessagesAppendOnly(merged, reread.rows, { stateDbSeenId: 10 })).toEqual(merged)
+  })
+
+  it('keeps unchanged carried replays attached to their original compaction identity', () => {
+    const before = mergeSessionMessagesAppendOnly(fixture.before, stateDbSessionRead(path, sid).rows, { stateDbSeenId: 5 })
+    for (const id of [9, 10]) {
+      // Compaction carries verbatim rows with the same flags as a rewind.
+      db.prepare('UPDATE messages SET active = 0, compacted = 0 WHERE id = ?').run(id)
+      db.prepare('INSERT INTO messages (session_id, role, content, timestamp, message_uid) SELECT session_id, role, content, timestamp, message_uid FROM messages WHERE id = ?').run(id)
+      const read = stateDbSessionRead(path, sid)
+      expect(read.rows.at(-1)?._state_db_row_id).toBe(1)
+      expect(mergeSessionMessagesAppendOnly(before, read.rows, { stateDbSeenId: 6 })).toEqual(before)
+    }
   })
 
   it.each(['null', 'backfilled', 'absent'])('retains timestamp twins for %s UIDs', (mode) => {

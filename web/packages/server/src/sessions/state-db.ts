@@ -691,9 +691,12 @@ export function stateDbSessionRead(dbPath: string, sid: string, opts: { stitch?:
     if (hasId && available.has('active')) {
       // One indexed lookup per live row ((session_id, active, timestamp)): the archive is never loaded, however many
       // compactions it holds.
-      const sameCall = available.has('tool_call_id') ? " AND COALESCE(a.tool_call_id, '') = COALESCE(m.tool_call_id, '')" : ''
-      const vouched = [available.has('compacted') ? 'a.compacted = 1' : '', available.has('tool_call_id') ? 'm.tool_call_id IS NOT NULL' : '', 'a.content = m.content'].filter(Boolean).join(' OR ')
-      const twins = db.prepare(`SELECT m.id AS id, MIN(a.id) AS twin FROM messages m JOIN messages a ON a.session_id = m.session_id AND a.active = 0 AND a.role = m.role AND a.timestamp = m.timestamp AND a.id < m.id${sameCall} WHERE m.session_id IN (${chain.map(() => '?').join(', ')}) AND (m.active IS NULL OR m.active != 0) AND (${vouched}) GROUP BY m.id`).all(...chain) as Dict[]
+      const timestampTwin = (a: string, m: string): string => {
+        const sameCall = available.has('tool_call_id') ? ` AND COALESCE(${a}.tool_call_id, '') = COALESCE(${m}.tool_call_id, '')` : ''
+        const vouched = [available.has('compacted') ? `${a}.compacted = 1` : '', available.has('tool_call_id') ? `${m}.tool_call_id IS NOT NULL` : '', `${a}.content = ${m}.content`].filter(Boolean).join(' OR ')
+        return `${a}.role = ${m}.role AND ${a}.timestamp = ${m}.timestamp${sameCall} AND (${vouched})`
+      }
+      const twins = db.prepare(`SELECT m.id AS id, MIN(a.id) AS twin FROM messages m JOIN messages a ON a.session_id = m.session_id AND a.active = 0 AND a.id < m.id AND ${timestampTwin('a', 'm')} WHERE m.session_id IN (${chain.map(() => '?').join(', ')}) AND (m.active IS NULL OR m.active != 0) GROUP BY m.id`).all(...chain) as Dict[]
       const twinOf = new Map(twins.map((row) => [row.id, row.twin]))
       if (available.has('message_uid') && available.has('compacted')) {
         // TAL-783: replay timestamps change in v31. UID matches win; unmatched/backfilled UIDs keep the timestamp rule.
@@ -702,16 +705,29 @@ export function stateDbSessionRead(dbPath: string, sid: string, opts: { stitch?:
         if (rows.some((row) => row.active !== 1)) liveClauses.push('(m.active IS NULL OR m.active NOT IN (0, 1))')
         const placeholders = chain.map(() => '?').join(', ')
         for (const live of liveClauses) {
-          // A rewind cuts off older compaction donors, even when an edit retains their UID.
-          const uidTwins = db.prepare(`WITH ancestors AS (
-            SELECT m.id, a.id AS ancestor_id, a.compacted,
-              MAX(CASE WHEN a.compacted IS NOT 1 THEN a.id ELSE 0 END) OVER (PARTITION BY m.id) AS rewind_id
-            FROM messages a CROSS JOIN messages m ON m.message_uid = a.message_uid AND a.id < m.id
+          // Legacy live flags cannot use the partial UID index; materialize only those live rows before the join.
+          const legacyLive = live === 'm.active = 1' ? '' : `legacy_live AS MATERIALIZED (
+            SELECT id, session_id, message_uid, active FROM messages m WHERE m.session_id IN (${placeholders}) AND ${live}
+          ),`
+          // A non-compacted ancestor is a rewind only when its successor fails the same timestamp twin rule.
+          const uidTwins = db.prepare(`WITH ${legacyLive} generations AS (
+            SELECT m.id, a.id AS ancestor_id,
+              LEAD(a.id, 1, m.id) OVER (PARTITION BY m.id ORDER BY a.id) AS next_id
+            FROM messages a CROSS JOIN ${legacyLive ? 'legacy_live' : 'messages'} m ON m.message_uid = a.message_uid AND a.id < m.id
             WHERE a.session_id IN (${placeholders}) AND a.active = 0
               AND m.session_id IN (${placeholders}) AND ${live}
-          ) SELECT id, MIN(ancestor_id) AS twin FROM ancestors
-            WHERE compacted = 1 AND ancestor_id > rewind_id GROUP BY id`).all(...chain, ...chain) as Dict[]
-          for (const row of uidTwins) twinOf.set(row.id, row.twin)
+          ), ancestors AS (
+            SELECT g.id, g.ancestor_id, a.compacted,
+              MAX(CASE WHEN a.compacted IS NOT 1 AND (${timestampTwin('a', 'n')}) IS NOT TRUE THEN a.id ELSE 0 END)
+                OVER (PARTITION BY g.id) AS rewind_id
+            FROM generations g JOIN messages a ON a.id = g.ancestor_id JOIN messages n ON n.id = g.next_id
+          ) SELECT id, MIN(CASE WHEN compacted = 1 AND ancestor_id > rewind_id THEN ancestor_id END) AS twin,
+              MAX(rewind_id) AS rewind_id FROM ancestors GROUP BY id`).all(...(legacyLive ? chain : []), ...chain, ...chain) as Dict[]
+          for (const row of uidTwins) {
+            if (typeof row.twin === 'number') twinOf.set(row.id, row.twin)
+            // A coincidental timestamp match must not cross the same known rewind boundary either.
+            else if (Number(twinOf.get(row.id)) <= Number(row.rewind_id)) twinOf.delete(row.id)
+          }
         }
       }
       for (const [i, row] of rows.entries()) {

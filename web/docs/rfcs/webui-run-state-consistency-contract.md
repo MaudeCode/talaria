@@ -53,9 +53,10 @@ projection of SSE frames that converges on the server's settled fields.
 The server's read-only `state.db` projection maps compaction replays to the
 oldest compacted row with the same `message_uid` in the selected session chain.
 This preserves transcript identity when a replay gets a new timestamp. Without
-a UID match, the legacy timestamp twin rule still applies. A rewound generation
-cuts off earlier compaction UID donors, so an edited request remains new even
-when it retains its ancestor's UID.
+a UID match, the legacy timestamp twin rule still applies. A non-compacted
+ancestor cuts off earlier donors only when its successor fails that timestamp
+twin rule. Unchanged carried copies retain their identity; edited rewinds stay
+new even when they reuse an ancestor's UID or timestamp.
 
 ## State layers
 
