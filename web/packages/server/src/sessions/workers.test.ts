@@ -1211,6 +1211,12 @@ describe('agent health', () => {
     expect(await agentHealth(deps)).toMatchObject({ alive: null, details: { reason: 'gateway_stale_stopped_state' } })
     writeFileSync(join(dir, 'gateway_state.json'), JSON.stringify({ gateway_state: 'stopped', updated_at: new Date().toISOString() }))
     expect(await agentHealth(deps)).toMatchObject({ alive: false, details: { state: 'down', reason: 'gateway_not_running' } })
+    // TAL-950: the Agent writes a JSON pid record; a live gateway still starting under a stale `draining` state is alive.
+    writeFileSync(join(dir, 'gateway_state.json'), JSON.stringify({ gateway_state: 'draining', updated_at: old }))
+    writeFileSync(join(dir, 'gateway.pid'), JSON.stringify({ pid: process.pid, kind: 'hermes-gateway', argv: ['hermes', 'gateway'], start_time: 1, hermes_home: dir }))
+    expect(await agentHealth(deps)).toMatchObject({ alive: true, details: { state: 'alive', gateway_state: 'draining' } })
+    writeFileSync(join(dir, 'gateway.pid'), JSON.stringify({ pid: 999999999, kind: 'hermes-gateway' }))
+    expect(await agentHealth(deps)).toMatchObject({ alive: false, details: { state: 'down', reason: 'gateway_not_running' } })
     expect(runtimeStatusIsFresh({ gateway_state: 'running', updated_at: '2026-01-01T00:00:00' }, Date.now() / 1000)).toBe(false)
   })
 })

@@ -169,6 +169,14 @@ async function runRemoteProbe(base: string, env: Record<string, string | undefin
   return { alive: false, checked_at: checkedAt(), details }
 }
 
+/** Agent `gateway.pid`: a JSON record `{"pid": …}`, or a legacy bare integer. */
+const gatewayPid = (text: string): number => {
+  let value: unknown
+  try { value = JSON.parse(text) } catch { return Number.parseInt(text.trim(), 10) }
+  const pid = typeof value === 'number' ? value : dict(value).pid
+  return typeof pid === 'number' ? pid : Number.NaN
+}
+
 /** Python `build_agent_health_payload` + `gateway_chat_config_status`: remote probe (5 s single-flight cache) else local pid/state files. */
 export async function agentHealth(deps: AgentHealthDeps): Promise<Dict> {
   const { env } = deps
@@ -193,7 +201,7 @@ export async function agentHealth(deps: AgentHealthDeps): Promise<Dict> {
   const safe = runtimeDetailSubset(runtimeStatus)
   const checked = checkedAt()
   let runningPid: number | null = null
-  try { const pid = Number.parseInt(readFileSync(pidPath, 'utf8').trim(), 10); if (Number.isInteger(pid) && pid > 0 && pidAlive(pid)) runningPid = pid } catch { runningPid = null }
+  try { const pid = gatewayPid(readFileSync(pidPath, 'utf8')); if (Number.isInteger(pid) && pid > 0 && pidAlive(pid)) runningPid = pid } catch { runningPid = null }
   const now = deps.now()
   if (runningPid !== null) return { alive: true, checked_at: checked, details: { state: 'alive', ...safe }, gateway_chat: gatewayChat }
   if (runtimeStatusIsFresh(runtimeStatus, now)) return { alive: true, checked_at: checked, details: { state: 'alive', reason: 'cross_container_freshness', ...safe }, gateway_chat: gatewayChat }
