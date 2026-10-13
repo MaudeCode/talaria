@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Recalled memories no longer appear as user-written text in image conversations and exports.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

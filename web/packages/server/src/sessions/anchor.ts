@@ -6,7 +6,7 @@
  */
 import { str } from '../util.js'
 import { createHash } from 'node:crypto'
-import { agentSteerText, isReasoningBlock, markerKind, messageText, normalizeAssistantDisplay, reasoningBlockText, reasoningFieldsText, splitDisplayText, stripToolCallXml, decidedResultView, toolResultView, type ToolResultView } from './merge.js'
+import { agentSteerText, isReasoningBlock, markerKind, messageText, normalizeAssistantDisplay, normalizeUserDisplay, reasoningBlockText, reasoningFieldsText, splitDisplayText, stripToolCallXml, decidedResultView, toolResultView, type ToolResultView } from './merge.js'
 import type { Session } from './session.js'
 import { toolMessageForLimitedPayload } from './window.js'
 import { decidedEditDiff, toolArgs, toolEditDiff } from './tool-display.js'
@@ -534,8 +534,8 @@ function sceneLookup(messages: unknown[], records: Record<string, unknown>) {
  * turn without one gets a built scene. The running turn (`activeTurnId`) gets none, because the live stream replays and
  * renders it, unless `runningScene` says its run has no journal to replay (TAL-374): its persisted rows then ship as an
  * open `running` scene that the live rows continue.
- * Every path that ships messages comes through here, so each assistant row also leaves in its one display shape
- * (`normalizeAssistantDisplay`), after its scene is built from the stored row.
+ * Every path that ships messages comes through here. User rows lose recalled-memory fences, and assistant rows
+ * leave in their one display shape, after each scene is built from the stored rows.
  */
 export function hydrateAnchorActivityScenes(messages: unknown[], records: Record<string, unknown>, opts: { activeTurnId?: string | null; runningScene?: boolean; clipToolResults?: boolean } = {}): unknown[] {
   if (!messages.length) return messages
@@ -562,7 +562,7 @@ export function hydrateAnchorActivityScenes(messages: unknown[], records: Record
     }
     out[index] = next
   }
-  return out.map(normalizeAssistantDisplay)
+  return out.map((message) => normalizeUserDisplay(normalizeAssistantDisplay(message)))
 }
 
 /** Persist a settled scene onto a session (the POST body semantics). Returns the placement. */

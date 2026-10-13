@@ -52,10 +52,29 @@ export function messageText(content: unknown): string {
   return str(content)
 }
 
+/** Agent-injected memory is model context, never typed user text. Match the Agent's fence, including an unclosed tail. */
+function withoutMemoryContext(text: string): string {
+  const stripped = text.replace(/<memory-context>[\s\S]*?(?:<\/memory-context>|$)/gi, ' ')
+  return stripped === text ? text : stripped.trim()
+}
+
+/** Display-only user projection shared by transcript hydration and turn identity; model history stays untouched. */
+export function normalizeUserDisplay<T>(message: T): T {
+  if (!isDict(message) || message.role !== 'user') return message
+  const content = message.content
+  if (typeof content === 'string') return { ...message, content: withoutMemoryContext(content) }
+  if (!Array.isArray(content)) return message
+  return { ...message, content: content.flatMap((part: unknown) => {
+    if (!isDict(part) || part.type !== 'text' || typeof part.text !== 'string') return [part]
+    const text = withoutMemoryContext(part.text)
+    return text === part.text ? [part] : text ? [{ ...part, text }] : []
+  }) }
+}
+
 export function messageIdentity(msg: unknown, textLimit = 500): string | null {
   if (!isDict(msg)) return null
   const role = str(msg.role)
-  let text = messageText(msg.content)
+  let text = messageText(normalizeUserDisplay(msg).content)
   if (role === 'user') {
     const typed = userPromptText(text)
     // An attachment-only prompt has no typed text; its whole attached-files line (never truncated) tells one such turn
@@ -133,7 +152,7 @@ const normalizeUserText = (text: string): string => userPromptText(text).split(/
 export function looksLikeCurrentUserTurn(msg: unknown, msgText: string): boolean {
   // A persisted steer is display-only: it is never the prompt that opened a turn.
   if (!isDict(msg) || str(msg.role) !== 'user' || isDict(msg._steer)) return false
-  const candidate = normalizeUserText(messageText(msg.content))
+  const candidate = normalizeUserText(messageText(normalizeUserDisplay(msg).content))
   const target = normalizeUserText(msgText)
   // An attachment-only prompt (TAL-276) has no text: the Agent's row for it carries none either.
   if (!target) return !candidate
