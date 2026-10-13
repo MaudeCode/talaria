@@ -702,10 +702,15 @@ export function stateDbSessionRead(dbPath: string, sid: string, opts: { stitch?:
         if (rows.some((row) => row.active !== 1)) liveClauses.push('(m.active IS NULL OR m.active NOT IN (0, 1))')
         const placeholders = chain.map(() => '?').join(', ')
         for (const live of liveClauses) {
-          const uidTwins = db.prepare(`SELECT m.id AS id, MIN(a.id) AS twin FROM messages a CROSS JOIN messages m
-            ON m.message_uid = a.message_uid AND a.id < m.id
-            WHERE a.session_id IN (${placeholders}) AND a.active = 0 AND a.compacted = 1
-              AND m.session_id IN (${placeholders}) AND ${live} GROUP BY m.id`).all(...chain, ...chain) as Dict[]
+          // A rewind cuts off older compaction donors, even when an edit retains their UID.
+          const uidTwins = db.prepare(`WITH ancestors AS (
+            SELECT m.id, a.id AS ancestor_id, a.compacted,
+              MAX(CASE WHEN a.compacted IS NOT 1 THEN a.id ELSE 0 END) OVER (PARTITION BY m.id) AS rewind_id
+            FROM messages a CROSS JOIN messages m ON m.message_uid = a.message_uid AND a.id < m.id
+            WHERE a.session_id IN (${placeholders}) AND a.active = 0
+              AND m.session_id IN (${placeholders}) AND ${live}
+          ) SELECT id, MIN(ancestor_id) AS twin FROM ancestors
+            WHERE compacted = 1 AND ancestor_id > rewind_id GROUP BY id`).all(...chain, ...chain) as Dict[]
           for (const row of uidTwins) twinOf.set(row.id, row.twin)
         }
       }

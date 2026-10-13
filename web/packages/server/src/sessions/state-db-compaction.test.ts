@@ -71,6 +71,23 @@ describe('compaction replay identity (TAL-783)', () => {
     expect(stateDbSessionRead(path, sid).rows.at(-1)?._state_db_row_id).toBe(1)
   })
 
+  it('keeps an edited rewind after earlier compactions and dedupes its subsequent replay', () => {
+    // The original remains compacted, but the immediate predecessor was rewound.
+    db.exec('UPDATE messages SET active = 0, compacted = 0 WHERE id = 9')
+    db.exec("INSERT INTO messages (session_id, role, content, timestamp, message_uid) VALUES ('compaction-replay', 'user', 'Only fix the parser error', 3000, 'fixture-1')")
+    const read = stateDbSessionRead(path, sid)
+    const merged = mergeSessionMessagesAppendOnly(fixture.before, read.rows, { stateDbSeenId: 9 })
+    expect(merged.at(-1)?.content).toBe('Only fix the parser error')
+    expect(read.rows.at(-1)?._state_db_row_id).toBe(10)
+
+    // A later compaction may dedupe to the edit, but never to its pre-rewind ancestor.
+    db.exec('UPDATE messages SET active = 0, compacted = 1 WHERE id = 10')
+    db.exec("INSERT INTO messages (session_id, role, content, timestamp, message_uid) VALUES ('compaction-replay', 'user', 'Restated parser fix', 4000, 'fixture-1')")
+    const reread = stateDbSessionRead(path, sid)
+    expect(reread.rows.at(-1)?._state_db_row_id).toBe(10)
+    expect(mergeSessionMessagesAppendOnly(merged, reread.rows, { stateDbSeenId: 10 })).toEqual(merged)
+  })
+
   it.each(['null', 'backfilled', 'absent'])('retains timestamp twins for %s UIDs', (mode) => {
     db.exec('UPDATE messages SET timestamp = 1000 WHERE id = 9')
     if (mode === 'null') db.exec('UPDATE messages SET message_uid = NULL')
