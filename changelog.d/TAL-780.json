@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Background agent results return to their chats after a restart, including results from other profiles.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
