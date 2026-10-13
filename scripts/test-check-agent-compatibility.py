@@ -350,8 +350,10 @@ class CheckerTests(unittest.TestCase):
                 self.receipt("--release", "v2026.9.14", "--skip-docker")
                 self.assertEqual(self.provisioned(), [str(self.cache / "v2026.9.14")])
         self.tools.commands.clear()
-        self.receipt("--release", "v2026.9.14", "--skip-docker", "--python", "3.12")
-        self.assertIn(["uv", "sync", "--frozen", "--no-dev", "--extra", "mcp", "--python", "3.12"], self.tools.commands)
+        for _ in range(2):  # an explicit interpreter request may resolve differently each run, so it always provisions
+            self.tools.commands.clear()
+            self.receipt("--release", "v2026.9.14", "--skip-docker", "--python", "3.12")
+            self.assertIn(["uv", "sync", "--frozen", "--no-dev", "--extra", "mcp", "--python", "3.12"], self.tools.commands)
         self.tools.commands.clear()
         self.receipt("--release", "v2026.9.14", "--skip-docker")  # back to the newest Python the lockfile allows
         self.assertIn(["uv", "sync", "--frozen", "--no-dev", "--extra", "mcp", "--python", "3.13"], self.tools.commands)

@@ -254,10 +254,14 @@ def agent_checkout(args, kind, identity, env):
     # A uv-downloaded interpreter must outlive this run's HOME; it sits beside its release and is pruned with it.
     env["UV_PYTHON_INSTALL_DIR"] = str(root / f"{tag}.python")
 
+    # An explicit --python may resolve to another interpreter each run, so only this run's own provisioning counts.
+    provisioned = {}
+
     def current():
         try:
-            expected = {"sourceRevision": identity["sourceRevision"], "python": args.python or lockfile_python(agent), "sync": SYNC}
-            if json.loads(ready.read_text()) != expected:
+            expected = provisioned if args.python else \
+                {"sourceRevision": identity["sourceRevision"], "python": lockfile_python(agent), "sync": SYNC}
+            if not expected or json.loads(ready.read_text()) != expected:
                 return False
         except (OSError, ValueError):
             return False
@@ -273,9 +277,9 @@ def agent_checkout(args, kind, identity, env):
             if not current():
                 ready.unlink(missing_ok=True)
                 shutil.rmtree(agent, ignore_errors=True)
-                python = provision(args, kind, identity, env, agent)
+                provisioned.update(sourceRevision=identity["sourceRevision"], python=provision(args, kind, identity, env, agent), sync=SYNC)
                 temporary = root / f"{tag}.tmp"
-                temporary.write_text(json.dumps({"sourceRevision": identity["sourceRevision"], "python": python, "sync": SYNC}))
+                temporary.write_text(json.dumps(provisioned))
                 temporary.replace(ready)
             fcntl.flock(lock, fcntl.LOCK_SH)
         yield agent
