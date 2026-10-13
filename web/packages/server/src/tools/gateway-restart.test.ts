@@ -16,7 +16,7 @@ const stamp = (offsetS = 0): string => new Date((NOW + offsetS) * 1000).toISOStr
 const flush = async (): Promise<void> => { for (let i = 0; i < 10; i += 1) await new Promise<void>((resolve) => { setImmediate(resolve) }) }
 
 /** A Hermes home with a synthetic gateway, a notification store, and a queue whose polls advance only on `tick()`. */
-function setup(stateDir = mkdtempSync(join(tmpdir(), 'talaria-gateway-restart-')), restart: () => Promise<Dict> = () => Promise.resolve({ status: 'completed' }), updating = { now: false }) {
+function setup(stateDir = mkdtempSync(join(tmpdir(), 'talaria-gateway-restart-')), restart: () => Promise<Dict> = () => Promise.resolve({ status: 'completed' }), updating = { now: false }, probe: () => void = () => undefined) {
   dirs.push(stateDir)
   const home = join(stateDir, 'home')
   const gateway = (state: { pid?: number | null; gateway_state?: string; active_agents?: number; updated_at?: string } = {}): void => {
@@ -27,24 +27,25 @@ function setup(stateDir = mkdtempSync(join(tmpdir(), 'talaria-gateway-restart-')
   }
   const store = new UpdateNotificationStore(stateDir)
   const calls: string[] = []
+  const profiles: string[] = []
   const waiters: (() => void)[] = []
   const queue = new GatewayRestartQueue({
     notifications: store,
-    blockers: () => gatewayRestartBlockers(home, home, NOW),
-    restart: () => { calls.push('gateway.restart'); return restart() },
+    blockers: (profile) => { profiles.push(`probe:${profile}`); const blockers = gatewayRestartBlockers(home, home, NOW); probe(); return blockers },
+    restart: (profile) => { calls.push('gateway.restart'); profiles.push(`restart:${profile}`); return restart() },
     updating: () => updating.now,
     sleep: () => new Promise<void>((resolve) => { waiters.push(resolve) }),
     log: () => undefined,
   })
   const tick = async (): Promise<void> => { await flush(); for (const wake of waiters.splice(0)) wake(); await flush() }
   /** What `applyWithNotification` records for a finished Agent update before handing it to the queue. */
-  const waiting = (detail: string | null = null): string => {
-    const row = store.begin(OWNER, 'agent')
+  const waiting = (detail: string | null = null, profile = 'default'): string => {
+    const row = store.begin({ ...OWNER, profile }, 'agent')
     store.transition(row.id, 'waiting_for_idle', null, undefined, detail)
     return row.id
   }
   const row = (id: string) => store.list(OWNER).notifications.find((entry) => entry.id === id)
-  return { stateDir, home, gateway, store, queue, calls, tick, waiting, row }
+  return { stateDir, home, gateway, store, queue, calls, profiles, tick, waiting, row }
 }
 
 describe('gatewayRestartBlockers', () => {
@@ -69,7 +70,7 @@ describe('GatewayRestartQueue', () => {
     const t = setup()
     t.gateway({ active_agents: 2 })
     const id = t.waiting()
-    expect(t.queue.schedule(id)).toBe(id)
+    expect(t.queue.schedule(id, 'default')).toBe(id)
     await t.tick()
     await t.tick()
     expect(t.calls).toEqual([])
@@ -96,7 +97,7 @@ describe('GatewayRestartQueue', () => {
     const t = setup()
     t.gateway(state)
     const id = t.waiting()
-    t.queue.schedule(id)
+    t.queue.schedule(id, 'default')
     await t.tick()
     expect(t.calls).toEqual(['gateway.restart'])
     expect(t.row(id)?.phase).toBe('succeeded')
@@ -106,7 +107,7 @@ describe('GatewayRestartQueue', () => {
     const t = setup()
     t.gateway({ active_agents: 3 })
     const id = t.waiting()
-    t.queue.schedule(id)
+    t.queue.schedule(id, 'default')
     await t.tick()
     expect(t.calls).toEqual([])
     expect(t.queue.restartNow('another-id')).toBe(false)
@@ -125,7 +126,7 @@ describe('GatewayRestartQueue', () => {
     const t = setup(undefined, undefined, updating)
     t.gateway({ active_agents: 0 })
     const id = t.waiting()
-    t.queue.schedule(id)
+    t.queue.schedule(id, 'default')
     await t.tick()
     t.queue.restartNow(id)
     await t.tick()
@@ -138,13 +139,29 @@ describe('GatewayRestartQueue', () => {
     expect(t.row(id)?.phase).toBe('succeeded')
   })
 
+  it('rechecks the update lock after the blocker probe, so an update that starts mid-probe holds the restart', async () => {
+    const updating = { now: false }
+    let probes = 0
+    const t = setup(undefined, undefined, updating, () => { probes += 1; if (probes === 1) updating.now = true })
+    t.gateway({ active_agents: 0 })
+    const id = t.waiting()
+    t.queue.schedule(id, 'default')
+    await t.tick()
+    await t.tick()
+    expect(t.calls).toEqual([])
+    expect(t.row(id)?.phase).toBe('waiting_for_idle')
+    updating.now = false
+    await t.tick()
+    expect(t.calls).toEqual(['gateway.restart'])
+  })
+
   it('a second update while one waits reuses the waiting record instead of starting a second wait', async () => {
     const t = setup()
     t.gateway({ active_agents: 1 })
     const first = t.waiting()
-    t.queue.schedule(first)
+    t.queue.schedule(first, 'default')
     const second = t.waiting('stash kept')
-    expect(t.queue.schedule(second, 'stash kept')).toBe(first)
+    expect(t.queue.schedule(second, 'default', 'stash kept')).toBe(first)
     expect(t.row(second)).toMatchObject({ phase: 'succeeded', actions: [], detail: expect.stringContaining('stash kept') as string })
     t.gateway({ active_agents: 0 })
     await t.tick()
@@ -156,8 +173,8 @@ describe('GatewayRestartQueue', () => {
   it('a waiting record survives a server restart, and the restarted server resumes it', async () => {
     const before = setup()
     before.gateway({ active_agents: 2 })
-    const id = before.waiting('stash kept')
-    before.queue.schedule(id)
+    const id = before.waiting('stash kept', 'work')
+    before.queue.schedule(id, 'work')
     await before.tick()
     await before.queue.quiesce()
     expect(before.calls).toEqual([])
@@ -171,6 +188,8 @@ describe('GatewayRestartQueue', () => {
     await after.tick()
     await after.tick()
     expect(after.calls).toEqual(['gateway.restart'])
+    // Resumed outside any request, it still probes and restarts the profile the update ran under.
+    expect(new Set(after.profiles)).toEqual(new Set(['probe:work', 'restart:work']))
     expect(before.calls).toEqual([])
     expect(after.row(id)).toMatchObject({ phase: 'succeeded', detail: 'stash kept' })
   })
@@ -180,7 +199,7 @@ describe('GatewayRestartQueue', () => {
     const t = setup(undefined, () => new Promise((resolve) => { finish = () => { resolve({ status: 'completed' }) } }))
     t.gateway({ active_agents: 0 })
     const id = t.waiting()
-    t.queue.schedule(id)
+    t.queue.schedule(id, 'default')
     await flush()
     expect(t.row(id)?.phase).toBe('restarting')
     let quiesced = false
@@ -197,12 +216,12 @@ describe('GatewayRestartQueue', () => {
     const t = setup(undefined, () => Promise.resolve(outcomes.shift() ?? { status: 'failed', message: 'still down' }))
     t.gateway({ active_agents: 0 })
     const ok = t.waiting()
-    t.queue.schedule(ok)
+    t.queue.schedule(ok, 'default')
     await t.tick()
     expect(t.calls).toEqual(['gateway.restart', 'gateway.restart'])
     expect(t.row(ok)?.phase).toBe('succeeded')
     const failed = t.waiting()
-    t.queue.schedule(failed)
+    t.queue.schedule(failed, 'default')
     await t.tick()
     await t.tick()
     expect(t.row(failed)).toMatchObject({ phase: 'failed', detail: expect.stringContaining('Run `hermes gateway restart` manually.') as string })

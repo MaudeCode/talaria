@@ -262,10 +262,10 @@ export class UpdateNotificationStore {
     this.save()
   }
 
-  /** TAL-953: gateway restarts still waiting for idle, newest first, so a restarted server resumes them. */
-  waitingGatewayRestarts(): { id: string; detail: string | null }[] {
+  /** TAL-953: gateway restarts still waiting for idle, newest first, with the profile each update ran under, so a restarted server resumes them. */
+  waitingGatewayRestarts(): { id: string; profile: string; detail: string | null }[] {
     return this.rows.filter((row) => row.kind === 'update' && row.phase === 'waiting_for_idle')
-      .sort((a, b) => b.created_at.localeCompare(a.created_at)).map((row) => ({ id: row.id, detail: row.detail }))
+      .sort((a, b) => b.created_at.localeCompare(a.created_at)).map((row) => ({ id: row.id, profile: row.profile, detail: row.detail }))
   }
 
   list(scope: UpdateNotificationScope): UpdateNotificationList {

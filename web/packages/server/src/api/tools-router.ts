@@ -162,11 +162,12 @@ async function applyWithNotification(
     else if (result.ok !== true) ctx.deps.updateNotifications.transition(notification.id, 'failed', null, verifiedIdentity, result.message || result.error)
     else if (target === 'webui' && result.restart_scheduled === true) {
       ctx.deps.updateNotifications.transition(notification.id, 'restarting', str(result.sourceRevision || result.candidate_revision), verifiedIdentity)
-    } else if (result.gateway_restart === 'waiting_for_idle') {
-      // TAL-953: the gateway restarts once its own work drains; a restart already waiting covers this update too.
+    } else if (result.gateway_restart === 'waiting_for_idle' || (target === 'agent' && ctx.deps.gatewayRestarts.pendingId() !== null)) {
+      // TAL-953: the gateway restarts once its own work drains. A restart already waiting covers this update too, and a
+      // repeated request that found the Agent current follows that wait rather than reporting success before it.
       const detail = result.stash_conflict === true ? str(result.message) : null
       ctx.deps.updateNotifications.transition(notification.id, 'waiting_for_idle', null, verifiedIdentity, detail)
-      const pending = ctx.deps.gatewayRestarts.schedule(notification.id, detail)
+      const pending = ctx.deps.gatewayRestarts.schedule(notification.id, scope.profile, detail)
       if (pending !== notification.id) ctx.deps.updateNotifications.watch(scope, pending)
       return { ...result, notification_id: pending }
     } else {

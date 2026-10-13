@@ -735,11 +735,11 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   })
   deps.gatewayRestarts = new GatewayRestartQueue({
     notifications: updateNotifications,
-    blockers: () => gatewayRestartBlockers(config.hermesHome, profileHome(activeProfile()), now()),
+    blockers: (profile) => gatewayRestartBlockers(config.hermesHome, profileHome(profile), now()),
     updating: () => deps.updates.blocksNewWork(),
-    restart: async () => {
+    restart: async (profile) => {
       if (!sidecar) throw new Error('Hermes Agent sidecar is unavailable')
-      return sidecar.call('gateway.restart', { profile_home: profileHome(activeProfile()) }, { timeoutMs: 300_000 })
+      return sidecar.call('gateway.restart', { profile_home: profileHome(profile) }, { timeoutMs: 300_000 })
     },
     log,
   })

@@ -747,6 +747,11 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
       const again = await json(await post(s, '/api/updates/apply', { target: 'agent', tab_id: 'tab-gateway' }))
       expect(again.notification_id).toBe(result.notification_id)
       expect((await json(await s.get('/api/update-notifications?tab_id=tab-gateway'))).tab_update).toMatchObject({ id: result.notification_id })
+      // A stale tab repeating the update finds the Agent current and follows the wait, not a premature success.
+      s.deps.updates.apply = () => Promise.resolve({ ok: true, target: 'agent', up_to_date: true })
+      const stale = await json(await post(s, '/api/updates/apply', { target: 'agent', tab_id: 'tab-stale' }))
+      expect(stale.notification_id).toBe(result.notification_id)
+      expect((await json(await s.get('/api/update-notifications?tab_id=tab-stale'))).tab_update).toMatchObject({ id: result.notification_id, phase: 'waiting_for_idle' })
       expect(restarts).toBe(0)
       expect((await post(s, `/api/update-notifications/${String(result.notification_id)}/actions/restart_gateway_now`, { perform: true })).status).toBe(200)
       await until(async () => (await row(result.notification_id))?.phase === 'succeeded')
