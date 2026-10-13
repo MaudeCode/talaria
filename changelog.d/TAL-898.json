@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Chat now shows interrupted-connection warnings and the final connection diagnosis.",
+      "highlight": false,
+      "components": ["app", "web"]
+    }
+  ]
+}

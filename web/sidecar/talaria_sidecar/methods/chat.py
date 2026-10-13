@@ -875,7 +875,7 @@ def _is_compression_start(lower: str) -> bool:
 
 
 def _status_events(kind, text: str) -> list[str]:
-    """Events for one Agent status line: the compressing card, a fallback warning, and the turn's terminal error."""
+    """Events for one Agent status line: compression, provider diagnostics, and the turn's terminal error."""
     lower = text.lower()
     events = ["terminal_error"] if "non-retryable error" in lower else []
     if str(kind or "").strip().lower() == "lifecycle":
@@ -884,6 +884,9 @@ def _status_events(kind, text: str) -> list[str]:
         # The Agent's own compression retries ("Compressed N → M messages, retrying...") are not provider fallbacks.
         if "compress" in lower or "context reduced to" in lower:
             return events
+        # Buffered diagnostics change wording across Agent releases; their severity glyph stays stable.
+        if not events and text.startswith(("⚠", "❌")):
+            return ["warning"]
     if "fallback" in lower or "rate limit" in lower or ("retry" in lower and "non-retryable" not in lower):
         events.append("warning")
     return events
