@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Talaria Web now keeps a model's earlier reasoning between turns, so reasoning models that sign or encrypt their thinking continue a chat without losing it or rejecting the next request.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
