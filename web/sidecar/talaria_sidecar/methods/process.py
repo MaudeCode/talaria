@@ -265,11 +265,14 @@ def defer_delivery(evt: dict, claim_id: str) -> bool:
 
 
 def format_notification(evt: dict) -> str:
-    if evt.get("type") == "async_delegation":
+    if evt.get("type") in ("async_delegation", "heartbeat", "watch_match", "watch_disabled", "watch_overflow_tripped", "watch_overflow_released"):
         try:
-            from tools.process_registry import format_process_notification
+            from tools import process_registry
 
-            return format_process_notification(evt) or ""
+            # Older formatters fall through unknown events to an exit notification.
+            if evt.get("type") == "heartbeat" and not callable(getattr(getattr(process_registry, "ProcessRegistry", None), "_emit_heartbeat", None)):
+                return ""
+            return process_registry.format_process_notification(evt) or ""
         except Exception:  # noqa: BLE001
             return ""
     if evt.get("type") != "completion":

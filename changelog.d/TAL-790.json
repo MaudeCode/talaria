@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Background jobs now report progress to the agent without appearing finished or adding heartbeat messages to your chat.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

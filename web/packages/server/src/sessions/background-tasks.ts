@@ -13,6 +13,7 @@ import type { SidecarLike } from '../sidecar/client.js'
 import { str } from '../util.js'
 import { isDict, stripToolCallXml } from './merge.js'
 import { isSafeSessionId } from './session.js'
+import { backgroundEventKind } from './background-events.js'
 
 type Dict = Record<string, unknown>
 type Status = BackgroundTask['status']
@@ -102,10 +103,10 @@ export function processReceipt(row: ProcessRow): Partial<Receipt> & Pick<Receipt
 
 /** The record one drained completion event settles, with the full result text when the Agent does not keep it. */
 export function eventReceipt(evt: Dict, prompt: string, now: number): (Partial<Receipt> & Pick<Receipt, 'task_id' | 'kind'>) | null {
-  const type = str(evt.type ?? 'completion')
+  const kind = backgroundEventKind(evt)
   const id = str(evt.process_id).trim()
   if (!id) return null
-  if (type === 'async_delegation') {
+  if (kind === 'delegation') {
     const goals = Array.isArray(evt.goals) ? evt.goals.map(str) : []
     const results = Array.isArray(evt.results) ? evt.results.filter(isDict) : []
     // A split unit's results index the call's goals; a whole call or a single task is all of them.
@@ -113,9 +114,10 @@ export function eventReceipt(evt: Dict, prompt: string, now: number): (Partial<R
     const childStatuses = results.length ? results.map((r) => str(r.status)) : [str(evt.status)]
     return { ...delegationReceipt({ delegation_id: id, state: str(evt.status) || 'completed', dispatched_at: Number(evt.dispatched_at) || null, completed_at: Number(evt.completed_at) || now, updated_at: now, goals: unitGoals, child_statuses: childStatuses, has_result: true, live_status: null }, now), result: prompt ? bounded(prompt) : null }
   }
-  if (type === 'completion') {
+  if (kind === 'completion') {
     return { ...processReceipt({ process_id: id, command: str(evt.command), started_at: null, exited: true, exited_at: now, exit_code: evt.exit_code === undefined || evt.exit_code === null ? null : Number(evt.exit_code), completion_reason: str(evt.completion_reason) || 'exited', watched: false }), result: prompt ? bounded(prompt) : null }
   }
+  if (kind === 'progress') return { task_id: id, kind: 'process', status: 'running', title: taskTitle(evt.command), started_at: typeof evt.started_at === 'number' ? evt.started_at : null, result: bounded(str(evt.output)) || null }
   // A watch match (or watch notice) on a process that keeps running.
   return { task_id: id, kind: 'process', status: 'attention', title: taskTitle(evt.command), result: prompt ? bounded(prompt) : null }
 }
@@ -136,8 +138,11 @@ export function mergeReceipt(prev: Receipt | undefined, next: Partial<Receipt> &
     // Settled once: later reports may add detail (the full result, counts, child sessions) but never change the outcome.
     return { ...base, result: base.result ?? defined.result ?? null, agent_result: base.agent_result || Boolean(defined.agent_result), agents: base.agents ?? defined.agents ?? null, ...(children.length ? { children } : {}), updated_at: base.updated_at }
   }
-  // A process's matched watch needs attention until it ends; the registry only knows it is still running.
-  if (base.kind === 'process' && base.status === 'attention' && defined.status === 'running') delete defined.status
+  // A running report must preserve both a watch alert and the matched output explaining it until the process ends.
+  if (base.kind === 'process' && base.status === 'attention' && defined.status === 'running') {
+    delete defined.status
+    delete defined.result
+  }
   const merged: Receipt = { ...base, ...defined, task_id: base.task_id, kind: base.kind, ...(children.length ? { children } : {}), updated_at: now }
   if (isTerminal(merged.status)) { merged.completed_at = merged.completed_at ?? now; merged.stream_id = null }
   return merged

@@ -244,6 +244,15 @@ Agents keep their existing import-time replay. Restored events retain their
 session ownership, and delivery still uses the Agent's claim/complete/release
 ledger calls; the server requeues events it cannot route to their owner.
 
+## Process heartbeat progress
+
+Process heartbeat events are progress. The server keeps their receipt running with the latest
+output and wakes the owning session with the Agent's `process.format_notification` text, deferred
+while a turn is active. Each heartbeat has its own delivery identity and consumes no process exit.
+Heartbeat-only prompts persist with `display_kind: hidden`; clients receive `_display: hidden`.
+Meaningful agent replies and batches containing completions remain visible. Heartbeats emit neither
+`bg_task_complete` nor `process_complete`. Agents without heartbeat support return empty formatter text.
+
 ## Versioning
 
 `rpc_version` is an integer in the contracts package

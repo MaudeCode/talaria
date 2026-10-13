@@ -17,6 +17,7 @@ import { str } from '../util.js'
 import { isDict } from './merge.js'
 import { batchUpdate, recordBackgroundUpdate } from './background-updates.js'
 import type { BackgroundActivity } from './background-tasks.js'
+import { backgroundEventKind } from './background-events.js'
 import { HeldWakeups, deliveredPerProcess, heldKey, mergeWakeups, poolRecovery, wakeupPaused, type HeldWakeup } from './wakeup-pause.js'
 
 type Dict = Record<string, unknown>
@@ -68,7 +69,7 @@ export function formatWakeupPrompt(evt: Dict): string | null {
     if (evt.suppressed) body += `\n(${str(evt.suppressed)} earlier matches were suppressed by rate limit)`
     return body + ']'
   }
-  if (type !== 'completion') return null
+  if (backgroundEventKind(evt) !== 'completion') return null
   if (!(sid || cmd || 'exit_code' in evt || evt.output)) return null
   return `[IMPORTANT: Background process ${sid} completed (exit_code=${str(evt.exit_code ?? '?')}).\nCommand: ${cmd}\nOutput:\n${truncate(evt.output, 4000)}]`
 }
@@ -191,7 +192,8 @@ export class CompletionDrain {
   }
 
   private async wakeupPrompt(evt: Dict): Promise<string> {
-    if (evt.type === 'async_delegation') {
+    const kind = backgroundEventKind(evt)
+    if (kind === 'delegation' || kind === 'progress') {
       const sidecar = this.deps.sidecar()
       if (!sidecar) return ''
       try { return (await sidecar.call('process.format_notification', { event: evt })).text.trim() } catch { return '' }
@@ -215,7 +217,7 @@ export class CompletionDrain {
     this.pendingSessions.add(sid)
     const prompt = await this.wakeupPrompt(evt)
     this.deps.background?.recordEvent(sid, evt, prompt)
-    this.emitCoalesced(sid, this.buildPayload(evt, sid, prompt))
+    if (backgroundEventKind(evt) !== 'progress') this.emitCoalesced(sid, this.buildPayload(evt, sid, prompt))
     if (!prompt) return true
     const entry: Deferred = { process_id: deliveryKey(evt, processId), wakeup_prompt: prompt, event: evt }
     if (this.hasActiveTurn(sid)) this.defer(sid, entry)
@@ -459,6 +461,7 @@ export class CompletionDrain {
     this.retryAttempts.delete(sid)
     this.release(sid, batched)
     recordBackgroundUpdate(session, str(resp.stream_id), batchUpdate(deliver.map((e) => ({ event: e.event ?? {}, prompt: e.wakeup_prompt }))))
+    this.saveSession(sid, session)
     await this.settleClaims(home, 'process.complete_delivery', held)
     await this.markConsumed(batched)
     this.deps.log(`[webui] server-side wakeup turn started for session ${sid} (stream_id=${str(resp.stream_id)})`)
