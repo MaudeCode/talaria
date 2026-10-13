@@ -4,6 +4,26 @@ import XCTest
 
 @MainActor
 final class SSEClientTests: XCTestCase {
+    func testWarningIsDeliveredAsANonterminalEvent() {
+        let event = SSEEventDecoder.decode(
+            eventType: "warning",
+            data: #"{"type":"fallback","message":"⚠️ custom stream drop — attempt 1/3 dropped, reconnecting","future_field":true}"#
+        )
+        XCTAssertNotEqual(event, .ignored, "The server's warning must reach the chat presentation")
+        if case .error = event { XCTFail("A warning must not terminate the turn") }
+        if case .transportError = event { XCTFail("A provider warning is not a broken SSE connection") }
+    }
+
+    func testWarningPreservesServerMessageAndToleratesUnknownFields() {
+        XCTAssertEqual(
+            SSEEventDecoder.decode(eventType: "warning", data: #"{"type":{"future":true},"message":"❌ Endpoint unreachable","extra":17}"#),
+            .warning("❌ Endpoint unreachable")
+        )
+        for payload in ["{", "{}", #"{"type":"fallback"}"#, #"{"message":null}"#, #"{"message":17}"#] {
+            XCTAssertEqual(SSEEventDecoder.decode(eventType: "warning", data: payload), .ignored)
+        }
+    }
+
     override func tearDown() {
         DelayedSSEURLProtocol.reset()
         RedirectingMockURLProtocol.reset()

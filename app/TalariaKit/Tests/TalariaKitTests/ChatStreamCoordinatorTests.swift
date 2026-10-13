@@ -5,6 +5,40 @@ import XCTest
 
 final class ChatStreamCoordinatorTests: APIClientTestCase {
     @MainActor
+    func testWarningDoesNotFinishTheTurnAndResetsOnlyForANewResponse() {
+        let streamClient = CoordinatorSpySSEStreamingClient()
+        let delegate = CoordinatorDelegateSpy()
+        let liveActivity = CoordinatorSpyLiveActivityManager()
+        let coordinator = makeCoordinator(streamClient: streamClient, liveActivityManager: liveActivity, delegate: delegate)
+        coordinator.start(streamID: "warning-stream")
+        let warning = SSEEventDecoder.decode(eventType: "warning", data: #"{"message":"⚠️ Reconnecting to the provider"}"#)
+        streamClient.emit(warning)
+        XCTAssertEqual(delegate.warningMessage, "⚠️ Reconnecting to the provider")
+        streamClient.emit(.token("Still answering"))
+        XCTAssertEqual(delegate.tokens, ["Still answering"])
+        XCTAssertEqual(coordinator.activeStreamID, "warning-stream")
+        XCTAssertEqual(delegate.finishCount, 0)
+        XCTAssertTrue(delegate.completedOutcomes.isEmpty)
+        XCTAssertTrue(delegate.errorMessages.isEmpty)
+
+        coordinator.start(streamID: "warning-stream", replayAfterSeq: 2)
+        XCTAssertEqual(delegate.warningMessage, "⚠️ Reconnecting to the provider")
+        streamClient.emit(SSEEventDecoder.decode(eventType: "warning", data: #"{"message":"❌ Endpoint unreachable"}"#))
+        XCTAssertEqual(delegate.warningMessage, "❌ Endpoint unreachable")
+        streamClient.emit(.error("Request failed"))
+        XCTAssertEqual(delegate.finishCount, 1)
+        XCTAssertEqual(delegate.errorMessages, ["Request failed"])
+        streamClient.emit(warning)
+        XCTAssertEqual(delegate.warningMessage, "❌ Endpoint unreachable", "Late warnings must respect the terminal fence")
+
+        coordinator.start(streamID: "next-stream")
+        XCTAssertNil(delegate.warningMessage)
+        streamClient.emit(warning)
+        coordinator.prepareForNewResponse()
+        XCTAssertNil(delegate.warningMessage)
+    }
+
+    @MainActor
     func testStartBuildsReplayURLAndStartsLiveActivity() throws {
         let streamClient = CoordinatorSpySSEStreamingClient()
         let liveActivityManager = CoordinatorSpyLiveActivityManager()
@@ -1722,6 +1756,12 @@ private final class FakeNetworkPath: NetworkPathObserving {
 
 @MainActor
 private final class CoordinatorDelegateSpy: ChatStreamCoordinatorDelegate {
+    private(set) var warningMessage: String?
+
+    func streamCoordinatorSetWarningMessage(_ message: String?) {
+        warningMessage = message
+    }
+
     var streamCoordinatorSessionID: String? = "session-abc"
     var streamCoordinatorDisplayTitle = "Planning"
     var streamCoordinatorHasRunningLiveToolCall = false

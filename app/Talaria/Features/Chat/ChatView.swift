@@ -263,6 +263,7 @@ struct ChatView: View {
             isSessionReadOnly: viewModel.isSessionReadOnly,
             isChromeCompact: isComposerChromeCompact,
             errorMessage: prompt == nil ? viewModel.sendErrorMessage : nil,
+            warningMessage: prompt == nil ? viewModel.streamWarningMessage : nil,
             configurationErrorMessage: prompt == nil ? viewModel.composerConfigurationErrorMessage : nil,
             contextWindowSnapshot: viewModel.contextWindowSnapshot,
             gitViewModel: gitAvailabilityViewModel,
@@ -1448,6 +1449,7 @@ struct ChatView: View {
             || viewModel.isUpdatingComposerConfiguration
             || viewModel.isCancellingStream
             || viewModel.sendErrorMessage != nil
+            || viewModel.streamWarningMessage != nil
             || viewModel.composerConfigurationErrorMessage != nil
             || viewModel.uploadAttachmentErrorMessage != nil
     }

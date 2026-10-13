@@ -8,6 +8,34 @@ import TalariaKit
 /// check's (`app/docs/phone-checks.md`); here the composer's focus says whether it asked for the keyboard.
 @MainActor
 final class StreamHostedTests: XCTestCase {
+    func testProviderWarningsRemainVisibleWhileTheTurnContinues() async throws {
+        let window = try await hostFixtureChat(["--ui-test-chat-controls", "--ui-test-chat-warnings"])
+        _ = try await startControlsRun(in: window)
+        let warning = "⚠️ custom stream drop — attempt 1/3 dropped, reconnecting"
+        let notice = await awaitElement(in: window, where: label(warning))
+        attachWarningScreenshot(window, name: "provider-warning-phone")
+        XCTAssertNotNil(notice, "The server's warning was discarded")
+        XCTAssertNotNil(HostedAccessibility.element(in: window, label: "Stop response"))
+
+        try await sendFromComposer("Keep the fixture concise", in: window)
+        let diagnosis = "❌ Could not open a stream to provider.invalid after 3 attempts; the endpoint looks unreachable — try again in a moment."
+        let finalNotice = await awaitElement(in: window, where: label(diagnosis))
+        attachWarningScreenshot(window, name: "provider-diagnosis-phone")
+        XCTAssertNotNil(finalNotice, "The closing diagnosis was discarded")
+        XCTAssertNil(HostedAccessibility.element(in: window, label: warning))
+        let stop = try await requireElement(in: window, label: "Stop response")
+        HostedAccessibility.activate(stop)
+    }
+
+    private func attachWarningScreenshot(_ window: UIWindow, name: String) {
+        let attachment = XCTAttachment(image: UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        })
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     private func label(_ text: String) -> (NSObject) -> Bool { { $0.accessibilityLabel == text } }
     private func labelContaining(_ text: String) -> (NSObject) -> Bool { { $0.accessibilityLabel?.contains(text) == true } }
     private func labelHasPrefix(_ text: String) -> (NSObject) -> Bool { { $0.accessibilityLabel?.hasPrefix(text) == true } }

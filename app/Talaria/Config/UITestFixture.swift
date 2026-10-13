@@ -1343,10 +1343,16 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             send(events: [("cancel", [:])])
             finish()
         case .controls:
+            if ProcessInfo.processInfo.arguments.contains("--ui-test-chat-warnings") {
+                send(events: [("warning", ["type": "fallback", "message": "⚠️ custom stream drop — attempt 1/3 dropped, reconnecting"])])
+            }
             send(events: [("token", ["text": "Waiting for control input."])])
             wait { $0.acceptedSteerID != nil || $0.wasCancelled }
             guard !isStopped else { return }
             if let steerID = Self.chatState.snapshot().steerID {
+                if ProcessInfo.processInfo.arguments.contains("--ui-test-chat-warnings") {
+                    send(events: [("warning", ["type": "fallback", "message": "❌ Could not open a stream to provider.invalid after 3 attempts; the endpoint looks unreachable — try again in a moment."])])
+                }
                 send(events: [("steer_consumed", [
                     "session_id": Self.sessionID,
                     "stream_id": Self.chatStreamID,

@@ -141,6 +141,11 @@ under Hermes Agent's context-local home override (`talaria_sidecar/home.py`).
 | `checkpoints` | `list`, `diff`, `restore` | |
 | `config` | `get`, `set` | |
 
+Chat lifecycle diagnostics beginning with ⚠ or ❌ emit `warning` frames regardless
+of their wording. Compression notices retain their existing classification, and
+non-retryable errors retain `status` with `kind: terminal_error`; they also warn
+when announcing a fallback. These diagnostic frames do not terminate a turn.
+
 What stays in the server, by design: WebUI files and `config.yaml` / `.env`
 writes, MCP config edits and HTTP/stdio health probes, skill file writes,
 kanban query parsing and the SSE poll loop, cron cross-profile merging and
