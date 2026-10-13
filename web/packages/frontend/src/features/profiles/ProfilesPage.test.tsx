@@ -33,6 +33,27 @@ describe('ProfilesPage', () => {
     expect(screen.getByText(/Project or product folders on disk/)).toBeVisible()
   })
 
+  it('TAL-805: labels each profile by the server gateway mode', async () => {
+    const modes = ['own', 'served', 'parked', 'standalone', 'stopped'] as const
+    vi.mocked(api.fetchProfiles).mockResolvedValueOnce({ profiles: modes.map((mode) => ({ name: mode, gateway_mode: mode, gateway_running: mode === 'own' || mode === 'served' })), active: 'own', single_profile_mode: false })
+    renderPage()
+    const label = async (name: string): Promise<HTMLElement> => (await screen.findByText(name, { selector: 'span.truncate' })).closest('li')!
+    expect(within(await label('own')).getByText('Gateway running')).toBeVisible()
+    expect(within(await label('served')).getByText('Gateway served by host')).toBeVisible()
+    expect(within(await label('parked')).getByText('Gateway parked')).toBeVisible()
+    expect(within(await label('standalone')).getByText('Standalone gateway stopped')).toBeVisible()
+    expect(within(await label('stopped')).getByText('Gateway stopped')).toBeVisible()
+  })
+
+  it('TAL-805: falls back to gateway_running from a server without gateway_mode', async () => {
+    vi.mocked(api.fetchProfiles).mockResolvedValueOnce({ profiles: [{ name: 'up', gateway_running: true }, { name: 'down', gateway_running: false }, { name: 'unknown' }], active: 'up', single_profile_mode: false })
+    renderPage()
+    const row = async (name: string): Promise<HTMLElement> => (await screen.findByText(name, { selector: 'span.truncate' })).closest('li')!
+    expect(within(await row('up')).getByText('Gateway running')).toBeVisible()
+    expect(within(await row('down')).getByText('Gateway stopped')).toBeVisible()
+    expect(within(await row('unknown')).queryByText(/Gateway/)).not.toBeInTheDocument()
+  })
+
   it('TAL-213: shows each bot identity and opens the canonical Bot Chat only where one exists', async () => {
     const assign = vi.fn()
     vi.stubGlobal('location', { href: window.location.href, origin: window.location.origin, assign })

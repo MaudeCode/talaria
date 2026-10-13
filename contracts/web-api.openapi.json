@@ -42744,6 +42744,16 @@
                           "visible": {
                             "type": "boolean"
                           },
+                          "gateway_mode": {
+                            "enum": [
+                              "own",
+                              "served",
+                              "parked",
+                              "standalone",
+                              "stopped"
+                            ],
+                            "type": "string"
+                          },
                           "display_name": {
                             "type": "string"
                           },
@@ -42933,6 +42943,16 @@
                           },
                           "visible": {
                             "type": "boolean"
+                          },
+                          "gateway_mode": {
+                            "enum": [
+                              "own",
+                              "served",
+                              "parked",
+                              "standalone",
+                              "stopped"
+                            ],
+                            "type": "string"
                           },
                           "display_name": {
                             "type": "string"
@@ -43143,6 +43163,16 @@
                         },
                         "visible": {
                           "type": "boolean"
+                        },
+                        "gateway_mode": {
+                          "enum": [
+                            "own",
+                            "served",
+                            "parked",
+                            "standalone",
+                            "stopped"
+                          ],
+                          "type": "string"
                         },
                         "display_name": {
                           "type": "string"
@@ -49741,6 +49771,23 @@
                     "configured": {
                       "type": "boolean"
                     },
+                    "gateway_mode": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "own",
+                            "served",
+                            "parked",
+                            "standalone",
+                            "stopped"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "platforms": {
                       "type": "array",
                       "items": {
@@ -49811,6 +49858,7 @@
                   "required": [
                     "running",
                     "configured",
+                    "gateway_mode",
                     "platforms",
                     "last_active",
                     "session_count",
@@ -49874,6 +49922,23 @@
                         },
                         "configured": {
                           "type": "boolean"
+                        },
+                        "gateway_mode": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "own",
+                                "served",
+                                "parked",
+                                "standalone",
+                                "stopped"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "platforms": {
                           "type": "array",
@@ -49945,6 +50010,7 @@
                       "required": [
                         "running",
                         "configured",
+                        "gateway_mode",
                         "platforms",
                         "last_active",
                         "session_count",
@@ -50017,6 +50083,23 @@
                         "configured": {
                           "type": "boolean"
                         },
+                        "gateway_mode": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "own",
+                                "served",
+                                "parked",
+                                "standalone",
+                                "stopped"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "platforms": {
                           "type": "array",
                           "items": {
@@ -50087,6 +50170,7 @@
                       "required": [
                         "running",
                         "configured",
+                        "gateway_mode",
                         "platforms",
                         "last_active",
                         "session_count",
@@ -50159,6 +50243,23 @@
                         "configured": {
                           "type": "boolean"
                         },
+                        "gateway_mode": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "own",
+                                "served",
+                                "parked",
+                                "standalone",
+                                "stopped"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "platforms": {
                           "type": "array",
                           "items": {
@@ -50229,6 +50330,7 @@
                       "required": [
                         "running",
                         "configured",
+                        "gateway_mode",
                         "platforms",
                         "last_active",
                         "session_count",

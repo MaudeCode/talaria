@@ -2,7 +2,7 @@
 import { implement } from '@orpc/server'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
-import { toolsContract, type GatewayStatus } from '@maudecode/talaria-web-contracts'
+import { toolsContract, type GatewayMode, type GatewayStatus } from '@maudecode/talaria-web-contracts'
 import { HttpError, requireFields, type ApiContext } from './router.js'
 import { requestSessionIdGuard } from './session-visibility.js'
 import type { RequestContext } from '../http/context.js'
@@ -17,7 +17,7 @@ import { JoplinError, joplinNote, joplinSearch, notesSources, type JoplinDeps } 
 import { resolveWikiLocation, wikiPages, type WikiLocation } from '../tools/wiki.js'
 import { buildInsights } from '../tools/insights.js'
 import { commandCatalog } from '../tools/commands.js'
-import { agentHealth, applyDashboardConfig, dashboardConfig, dashboardStatus, gatewayStatus, parseDashboardConfig, readLogTail, systemHealth } from '../tools/health.js'
+import { agentHealth, applyDashboardConfig, dashboardConfig, dashboardStatus, gatewayStatus, parseDashboardConfig, readLogTail, remoteGatewayBaseUrl, systemHealth } from '../tools/health.js'
 import { projectOsDashboard } from '../tools/project-os.js'
 import { loadGatewaySessionIdentityMap } from '../sessions/list.js'
 import { gitBadge } from '../workspace/git.js'
@@ -65,10 +65,32 @@ function commandFailure(error: unknown, notFound: string, message: string): neve
 
 const health = (ctx: RequestContext): Promise<Dict> => agentHealth({ env: ctx.deps.config.env, hermesHome: ctx.deps.config.hermesHome, profileHome: () => home(ctx), fetch: () => ctx.deps.fetch, now: ctx.deps.nowSeconds })
 
+/**
+ * TAL-805: the active profile's gateway mode from sidecar `gateway.mode`; null for a remote gateway. A named profile never
+ * borrows the root's health: when the sidecar cannot answer, it reads `stopped`, while the root profile reads null and keeps
+ * its health. The root profile's gateway in another container (`health` alive from its fresh runtime status) is invisible
+ * to the sidecar's process checks, so it stays `own`.
+ */
+async function gatewayMode(ctx: RequestContext, health: Dict): Promise<GatewayMode | null> {
+  if (remoteGatewayBaseUrl(ctx.deps.config.env) !== null) return null
+  const sidecar = ctx.deps.sidecar()
+  const name = activeProfileName(ctx)
+  const isDefault = ctx.deps.isRootProfile(name)
+  let mode: GatewayMode | null = null
+  try {
+    if (sidecar) mode = (await sidecar.call('gateway.mode', { profile_home: home(ctx), name, is_default: isDefault }, { timeoutMs: 10_000 })).gateway_mode
+  } catch {
+    mode = null
+  }
+  if (mode === null) return isDefault ? null : 'stopped'
+  return mode === 'stopped' && isDefault && health.alive === true ? 'own' : mode
+}
+
 /** Python `_gateway_status_payload` for the active profile. */
 async function currentGatewayStatus(ctx: RequestContext): Promise<GatewayStatus> {
   const sessionsPath = join(home(ctx), 'sessions', 'sessions.json')
-  return gatewayStatus(await health(ctx), loadGatewaySessionIdentityMap(sessionsPath), sessionsPath)
+  const probe = await health(ctx)
+  return gatewayStatus(probe, loadGatewaySessionIdentityMap(sessionsPath), sessionsPath, await gatewayMode(ctx, probe))
 }
 
 const GATEWAY_ACTION_TIMEOUT_S = 60

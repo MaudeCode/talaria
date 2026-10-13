@@ -113,9 +113,18 @@ export const STATE_DB_METHODS = {
 // ── profiles ───────────────────────────────────────────────────────────
 /** TAL-213: the profile's canonical Bot Chat (its session titled exactly "Bot Chat") and that chat's live compression tip. */
 export const CanonicalBotChatSchema = z.object({ session_id: z.string(), tip_session_id: z.string() })
+/**
+ * TAL-805: a profile's gateway under the host multiplexer. `own` runs its own gateway process, `served` is served by the
+ * live host gateway, `parked` was stopped through the host (`hermes -p X gateway stop`) and nothing runs, `standalone` opted out of the host
+ * and is not running, `stopped` is none of these. Only `own` and `served` are running; Agents without the multiplexer
+ * helpers report `own` or `stopped`.
+ */
+export const GatewayModeSchema = z.enum(['own', 'served', 'parked', 'standalone', 'stopped'])
+export type GatewayMode = z.infer<typeof GatewayModeSchema>
 export const ProfileRowSchema = z.object({
   name: z.string(), path: z.string(), is_default: z.boolean(), gateway_running: z.boolean(), model: z.string().nullable(), provider: z.string().nullable(), has_env: z.boolean(),
   visible: z.boolean(), skill_count: z.number().int(), enabled_skills: z.number().int(), total_skills: z.number().int(),
+  gateway_mode: GatewayModeSchema.default('stopped'),
   // Absent reads as no identity and no chat, so hand-built rows (test fakes) need not spell them out.
   display_name: z.string().default(''), description: z.string().default(''), has_avatar: z.boolean().default(false),
   canonical_session: CanonicalBotChatSchema.nullable().default(null),
@@ -417,4 +426,6 @@ export const GATEWAY_ACTIONS = ['start', 'stop', 'restart'] as const
 export const GATEWAY_METHODS = {
   'gateway.control': { params: GatewayActionParams.extend({ action: z.enum(GATEWAY_ACTIONS) }), result: GatewayActionResult, stream: GatewayActionStream },
   'gateway.restart': { params: GatewayActionParams, result: GatewayActionResult, stream: GatewayActionStream },
+  /** TAL-805: the gateway mode of the profile `name` at `profile_home`; the root profile (`is_default`) is the host itself. */
+  'gateway.mode': { params: ProfileHomeParams.extend({ name: z.string().min(1), is_default: z.boolean() }), result: z.object({ gateway_mode: GatewayModeSchema }) },
 } as const

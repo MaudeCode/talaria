@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Profiles and gateway status show whether a profile's gateway is running on its own, served by the host gateway, parked, or standalone, and a stopped profile no longer reads as running while the host gateway is up.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

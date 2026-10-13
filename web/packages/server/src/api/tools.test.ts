@@ -7,6 +7,7 @@ import { bootTestServer, type TestServer } from '../test/harness.js'
 import { sanitizeClientEvent, updateNotificationOwner, WindowLimiter } from './tools-router.js'
 import type { SessionInfo } from '../auth/store.js'
 import { gatewayStatus } from '../tools/health.js'
+import type { GatewayMode } from '@maudecode/talaria-web-contracts'
 import { buildInsights } from '../tools/insights.js'
 import { serverSummary, maskSecrets } from '../tools/mcp.js'
 import { readProjectContext } from '../tools/memory.js'
@@ -444,9 +445,10 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     s.deps.requestShutdown = original
   })
 
-  it('gateway status follows Agent health and the profile gateway sessions (TAL-266)', async () => {
+  it('gateway status follows Agent health and the profile gateway sessions without a gateway mode (TAL-266)', async () => {
+    sidecar.respond('gateway.mode', () => { throw new Error('the sidecar cannot answer') })
     let body = await json(await s.get('/api/gateway/status'))
-    expect(body).toEqual({ running: false, configured: false, platforms: [], last_active: '', session_count: 0, health: { state: 'unknown', reason: 'gateway_not_configured', gateway_state: null } })
+    expect(body).toEqual({ running: false, configured: false, gateway_mode: null, platforms: [], last_active: '', session_count: 0, health: { state: 'unknown', reason: 'gateway_not_configured', gateway_state: null } })
     const sessions = join(s.state, 'sessions', 'sessions.json')
     mkdirSync(join(s.state, 'sessions'), { recursive: true })
     writeFileSync(sessions, JSON.stringify({ a: { session_id: 'sa', origin: { platform: 'telegram' } }, b: { session_id: 'sb', platform: 'Discord' }, c: { session_id: 'sc' } }))
@@ -457,8 +459,39 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
       writeFileSync(join(s.state, 'gateway.pid'), String(process.pid))
       expect(await json(await s.get('/api/gateway/status'))).toMatchObject({ running: true, configured: true, health: { state: 'alive' } })
     } finally {
+      sidecar.respond('gateway.mode', undefined)
       rmSync(join(s.state, 'sessions'), { recursive: true, force: true })
       rmSync(join(s.state, 'gateway.pid'), { force: true })
+    }
+  })
+
+  it('a parked named profile is not running while the host gateway.pid is live, in status and the Stop response (TAL-805)', async () => {
+    const work = join(s.state, 'profiles', 'work')
+    const row = (name: string, path: string): Json => ({ name, path, is_default: name === 'default', gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 })
+    const modes: Json[] = []
+    mkdirSync(work, { recursive: true })
+    writeFileSync(join(s.state, 'gateway.pid'), String(process.pid))
+    sidecar.respond('profiles.list', () => ({ profiles: [row('default', s.state), row('work', work)] as never[] }))
+    sidecar.respond('gateway.mode', (params) => { modes.push(params); return { gateway_mode: params.profile_home === work ? 'parked' : 'own' } })
+    sidecar.respond('gateway.control', () => ({ status: 'completed', message: 'Gateway service stopped successfully' }))
+    try {
+      const cookie = ((await post(s, '/api/profile/switch', { name: 'work' })).headers.get('set-cookie') ?? '').split(';')[0] ?? ''
+      expect(cookie).toMatch(/^hermes_profile=work/)
+      const status = await json(await s.get('/api/gateway/status', { headers: { cookie } }))
+      expect(status).toMatchObject({ running: false, configured: true, gateway_mode: 'parked', last_active: '', health: { state: 'alive' } })
+      const stop = await json(await s.get('/api/gateway/stop', { method: 'POST', body: '{}', headers: { cookie, 'content-type': 'application/json' } }))
+      expect(stop).toMatchObject({ ok: true, action: 'stop', status: { running: false, gateway_mode: 'parked' } })
+      expect(modes.at(-1)).toEqual({ profile_home: work, name: 'work', is_default: false })
+      // An unconfirmed mode never borrows the host's health for a named profile; the root profile keeps its health.
+      sidecar.respond('gateway.mode', () => { throw new Error('the sidecar cannot answer') })
+      expect(await json(await s.get('/api/gateway/status', { headers: { cookie } }))).toMatchObject({ running: false, gateway_mode: 'stopped', health: { state: 'alive' } })
+      expect(await json(await s.get('/api/gateway/status'))).toMatchObject({ running: true, gateway_mode: null })
+      sidecar.respond('gateway.mode', (params) => ({ gateway_mode: params.profile_home === work ? 'parked' : 'own' }))
+      expect(await json(await s.get('/api/gateway/status'))).toMatchObject({ running: true, gateway_mode: 'own' })
+    } finally {
+      for (const method of ['profiles.list', 'gateway.mode', 'gateway.control'] as const) sidecar.respond(method, undefined)
+      rmSync(join(s.state, 'gateway.pid'), { force: true })
+      rmSync(join(s.state, 'profiles'), { recursive: true, force: true })
     }
   })
 
@@ -793,7 +826,7 @@ describe('tools helpers', () => {
     const status = (alive: boolean | null, identity = ids(), details: Json = {}): Json => gatewayStatus({ alive, details }, identity, '/nonexistent/sessions.json')
     const flags = (body: Json): [unknown, unknown] => [body.running, body.configured]
     // alive true: running and configured, whatever the sessions.
-    expect(status(true)).toEqual({ running: true, configured: true, platforms: [], last_active: '', session_count: 0, health: { state: null, reason: null, gateway_state: null } })
+    expect(status(true)).toEqual({ running: true, configured: true, gateway_mode: null, platforms: [], last_active: '', session_count: 0, health: { state: null, reason: null, gateway_state: null } })
     expect(status(true, ids(tg, { raw_source: 'discord', platform: 'discord' })).platforms).toEqual([{ name: 'discord', label: 'Discord' }, { name: 'telegram', label: 'Telegram' }])
     expect(status(true, ids({ raw_source: '', platform: '' }, { raw_source: '', platform: '' }))).toMatchObject({ running: true, platforms: [], session_count: 2 })
     // alive false: configured but down, platforms still listed.
@@ -807,6 +840,13 @@ describe('tools helpers', () => {
     expect(status(null, ids(), { state: 'unknown', reason: 'gateway_stale_running_state', gateway_state: 'running' })).toMatchObject({ running: false, configured: true, health: { state: 'unknown', reason: 'gateway_stale_running_state', gateway_state: 'running' } })
     expect(flags(status(null, ids(), { state: 'unknown', reason: 'cross_container_freshness', gateway_state: 'running' }))).toEqual([false, true])
     expect(flags(status(null, ids(), { state: 'unknown', reason: 'gateway_stale_stopped_state', gateway_state: 'stopped' }))).toEqual([false, false])
+    // TAL-805: a known profile mode decides running over health and sessions; any mode but stopped is configured.
+    const moded = (mode: GatewayMode, alive: boolean | null = true): [unknown, unknown, unknown] => { const body = gatewayStatus({ alive, details: {} }, ids(tg), '/nonexistent/sessions.json', mode); return [body.running, body.configured, body.gateway_mode] }
+    expect(moded('parked')).toEqual([false, true, 'parked'])
+    expect(moded('standalone')).toEqual([false, true, 'standalone'])
+    expect(moded('stopped', null)).toEqual([false, true, 'stopped'])
+    expect(moded('served', false)).toEqual([true, true, 'served'])
+    expect(moded('own', null)).toEqual([true, true, 'own'])
     // Unknown platforms are title-cased; a non-string gateway state is not passed through.
     expect(status(true, ids({ raw_source: 'home_assistant', platform: 'home_assistant' }), { gateway_state: { nested: true } })).toMatchObject({ platforms: [{ name: 'home_assistant', label: 'Home_Assistant' }], health: { gateway_state: null } })
   })

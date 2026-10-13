@@ -3,7 +3,7 @@ import { readCapped } from '../http/capped.js'
 import { constants, existsSync, fstatSync, openSync, readSync, readFileSync, closeSync, statSync, statfsSync } from 'node:fs'
 import { cpus, loadavg, freemem, totalmem } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import type { GatewayStatus } from '@maudecode/talaria-web-contracts'
+import type { GatewayMode, GatewayStatus } from '@maudecode/talaria-web-contracts'
 import type { Config, Dict } from '../config/agent-config.js'
 import { dict } from '../config/agent-config.js'
 import { HttpFailure } from '../sessions/service.js'
@@ -210,17 +210,18 @@ const textOrNull = (v: unknown): string | null => (typeof v === 'string' ? v : n
 const titleCase = (name: string): string => name.replace(/(^|[^a-z])([a-z])/g, (_, before: string, letter: string) => before + letter.toUpperCase())
 
 /**
- * Python `_gateway_status_payload`: `health` (`agentHealth`) decides running and configured; when it is inconclusive
+ * Python `_gateway_status_payload`: a known profile `mode` (TAL-805) decides running, and any mode but `stopped` marks the
+ * gateway configured. Otherwise `health` (`agentHealth`) decides running and configured; when it is inconclusive
  * (`alive` null), stale running metadata or any known gateway session marks the gateway configured, and sessions mean running.
  */
-export function gatewayStatus(health: Dict, identity: ReadonlyMap<string, { raw_source: string; platform: string }>, sessionsPath: string): GatewayStatus {
+export function gatewayStatus(health: Dict, identity: ReadonlyMap<string, { raw_source: string; platform: string }>, sessionsPath: string, mode: GatewayMode | null = null): GatewayStatus {
   const details = dict(health.details)
   const state = textOrNull(details.state)
   const reason = textOrNull(details.reason)
   const gatewayState = textOrNull(details.gateway_state)
   const hasSessions = identity.size > 0
-  const running = health.alive === true || (health.alive !== false && hasSessions)
-  const configured = health.alive === true || health.alive === false || reason === 'gateway_stale_running_state' || gatewayState === 'running' || hasSessions
+  const running = mode !== null ? mode === 'own' || mode === 'served' : health.alive === true || (health.alive !== false && hasSessions)
+  const configured = (mode !== null && mode !== 'stopped') || health.alive === true || health.alive === false || reason === 'gateway_stale_running_state' || gatewayState === 'running' || hasSessions
   const names = new Set<string>()
   for (const meta of identity.values()) {
     const name = (meta.raw_source || meta.platform).trim().toLowerCase()
@@ -229,7 +230,7 @@ export function gatewayStatus(health: Dict, identity: ReadonlyMap<string, { raw_
   const platforms = [...names].map((name) => ({ name, label: PLATFORM_LABELS[name] ?? titleCase(name) })).sort((a, b) => (a.label < b.label ? -1 : a.label > b.label ? 1 : 0))
   let lastActive = ''
   if (running) { try { lastActive = statSync(sessionsPath).mtime.toISOString() } catch { lastActive = '' } }
-  return { running, configured, platforms, last_active: lastActive, session_count: identity.size, health: { state, reason, gateway_state: gatewayState } }
+  return { running, configured, gateway_mode: mode, platforms, last_active: lastActive, session_count: identity.size, health: { state, reason, gateway_state: gatewayState } }
 }
 
 const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1'])

@@ -36,6 +36,8 @@ SCENARIOS: list[tuple[str, dict]] = [
     ("profiles.create", {"base_home": "{home}", "name": "alpha"}),
     ("profiles.runtime_env", {"profile_home": "{profile}", "protected_keys": []}),
     ("profiles.skills_stats", {"profile_home": "{profile}"}),
+    ("gateway.mode", {"profile_home": "{home}", "name": "default", "is_default": True}),
+    ("gateway.mode", {"profile_home": "{profile}", "name": "alpha", "is_default": False}),
     # skills (the seeded profile has bundled skills)
     ("skills.list", {"profile_home": "{profile}"}),
     ("skills.list", {"profile_home": "{profile}", "category": "apple"}),

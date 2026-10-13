@@ -1,0 +1,24 @@
+{
+  "gateway.mode": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "name": "default",
+        "is_default": true
+      },
+      "result": {
+        "gateway_mode": "stopped"
+      }
+    },
+    {
+      "params": {
+        "profile_home": "<profile>",
+        "name": "alpha",
+        "is_default": false
+      },
+      "result": {
+        "gateway_mode": "stopped"
+      }
+    }
+  ]
+}
