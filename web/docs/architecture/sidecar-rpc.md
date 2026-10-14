@@ -176,10 +176,11 @@ kanban query parsing and the SSE poll loop, cron cross-profile merging and
 running-state display, provider catalog composition and caches, dashboard
 plugin manifests, `state.db` read-only projections.
 
-`.env` edits go through `config.env_write`, which runs the Agent's own
-`save_env_value` / `remove_env_value` under the `<.env>.lock` the gateway, CLI
-and plugins take, so a concurrent Agent write never drops a Web-saved key. The
-server still reads `.env` directly.
+`.env` edits go through `config.env_write`, which applies them with the Agent's
+own `.env` line helpers under the `<.env>.lock` its `save_env_value` /
+`remove_env_value` take, so a concurrent Agent write never drops a Web-saved
+key. Unlike those two it never publishes into the sidecar's `os.environ`;
+`runtime.env` alone owns that. The server still reads `.env` directly.
 
 For `cron.create` targeting another profile, the sidecar resolves that execution
 profile's main model before writing to that profile's own cron store. It fills

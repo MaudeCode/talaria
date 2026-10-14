@@ -106,3 +106,27 @@ def test_env_write_reports_a_held_lock(handshaken: SidecarProcess, hermes_home: 
         agent.wait(timeout=30)
     assert message["error"]["data"]["condition"] == "env_locked", message
     assert "LATE_KEY=value" not in env_lines(hermes_home)
+
+
+@requires_agent
+def test_env_write_never_publishes_into_the_process_environment(hermes_home: pathlib.Path) -> None:
+    # A gateway spawned mid-write snapshots os.environ; the key must not appear there at any point of the write.
+    script = """
+import os, sys
+sys.path.insert(0, sys.argv[1])
+from pathlib import Path
+from hermes_cli import config
+from talaria_sidecar.methods.config import env_write
+seen = []
+original = config.invalidate_env_cache
+def observe():
+    seen.append(os.environ.get("ROOT_WRITTEN_KEY"))
+    return original()
+config.invalidate_env_cache = observe
+env_write(Path(os.environ["HERMES_HOME"]), {"ROOT_WRITTEN_KEY": "root-value"})
+assert seen and seen == [None] * len(seen), seen
+assert "ROOT_WRITTEN_KEY" not in os.environ
+assert "ROOT_WRITTEN_KEY=root-value" in (Path(os.environ["HERMES_HOME"]) / ".env").read_text().splitlines()
+"""
+    result = subprocess.run([AGENT_PYTHON, "-c", script, str(AGENT_DIR)], env=isolated_env(hermes_home), capture_output=True, text=True)
+    assert result.returncode == 0, result.stdout + result.stderr

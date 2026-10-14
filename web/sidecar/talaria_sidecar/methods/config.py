@@ -4,12 +4,13 @@ and the Agent's per-model reasoning capability.
 The TypeScript server owns every config.yaml *policy* (which keys mean what);
 the sidecar only parses and serialises YAML with the Agent's own parser so the
 Node side needs no YAML dependency. Writes are atomic and keep the file's mode.
-``.env`` edits go through the Agent's own writer, under the ``<.env>.lock`` the
+``.env`` edits use the Agent's own line helpers under the ``<.env>.lock`` the
 gateway, CLI and plugins also take, so concurrent writers never drop a key.
 """
 
 from __future__ import annotations
 
+import contextlib
 import importlib
 import logging
 import os
@@ -131,11 +132,20 @@ def _env_refusal(agent_config, key: str, action: str) -> str | None:
     return f"Cannot {action} {key}: this Hermes installation manages it" if agent_config._env_write_blocked(key, action) else None
 
 
-def env_write(home: Path, updates) -> dict:
-    """Upsert ``updates`` into ``home``'s ``.env`` (``None`` removes a key) with the Agent's locked writer.
+def _env_lock(agent_config, path: Path):
+    """The Agent's ``<.env>.lock`` (Agent 0.21.6+); older Agents have none to share."""
+    lock = getattr(agent_config, "_env_write_lock", None)
+    return lock(path) if lock is not None else contextlib.nullcontext()
 
+
+def env_write(home: Path, updates) -> dict:
+    """Upsert ``updates`` into ``home``'s ``.env`` (``None`` removes a key) with the Agent's own line helpers, under
+    the lock its ``save_env_value`` / ``remove_env_value`` take, in one atomic replace.
+
+    Unlike those two, nothing is published into ``os.environ``: other threads (a gateway spawn snapshotting the
+    environment) must never see another profile's key, and ``runtime.env`` alone owns this process's environment.
     Values are trimmed and an empty one is skipped; a line break is refused rather than stripped. Every key is
-    checked against the Agent's refusals before the first write, and the file ends 0600.
+    checked against the Agent's refusals before the write, and the file ends 0600.
     """
     if not isinstance(updates, dict) or not all(isinstance(k, str) and _ENV_NAME.match(k) and (v is None or isinstance(v, str)) for k, v in updates.items()):
         raise InvalidParams("updates must map variable names to strings or null")
@@ -155,25 +165,34 @@ def env_write(home: Path, updates) -> dict:
             refusal = _env_refusal(agent_config, key, "remove" if value is None else "set")
             if refusal:
                 raise RpcError(refusal, condition="env_write_refused")
-        path = agent_config.get_env_path()
-        for key, value in changes.items():
-            # The Agent also publishes the edit to this process; ``runtime.env`` alone decides what the sidecar's
-            # environment holds (an explicit server value keeps precedence over the file).
-            previous = os.environ.get(key)
-            try:
-                if value is None:
-                    agent_config.remove_env_value(key)
-                else:
-                    agent_config.save_env_value(key, value)
-            except TimeoutError as exc:
-                raise RpcError(str(exc), condition="env_locked") from exc
-            except ValueError as exc:
-                raise RpcError(str(exc), condition="env_write_refused") from exc
-            finally:
-                if previous is None:
-                    os.environ.pop(key, None)
-                else:
-                    os.environ[key] = previous
+        try:
+            agent_config.ensure_hermes_home()
+            path = agent_config.get_env_path()
+            with _env_lock(agent_config, path):
+                existed = path.exists()
+                lines = agent_config._read_env_lines(path) if existed else []
+                before = list(lines)
+                for key, value in changes.items():
+                    defines = agent_config._env_line_defines_key
+                    if value is None:
+                        lines = [line for line in lines if not defines(line, key)]
+                        continue
+                    agent_config.validate_env_var_name_for_write(key)
+                    entry = f"{key}={agent_config._quote_env_value(agent_config._check_non_ascii_credential(key, value))}\n"
+                    at = next((i for i, line in enumerate(lines) if defines(line, key)), None)
+                    if at is not None:
+                        lines[at] = entry
+                    else:
+                        if lines and not lines[-1].endswith("\n"):
+                            lines[-1] += "\n"
+                        lines.append(entry)
+                if lines != before:
+                    agent_config._write_env_lines(path, lines, preserve_mode=existed)
+        except TimeoutError as exc:
+            raise RpcError(str(exc), condition="env_locked") from exc
+        except ValueError as exc:
+            raise RpcError(str(exc), condition="env_write_refused") from exc
+        agent_config.invalidate_env_cache()
         if path.exists():
             os.chmod(path, 0o600)
     return {"ok": True, "path": str(path)}
