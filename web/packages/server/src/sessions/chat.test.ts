@@ -2778,6 +2778,25 @@ describe('stale cross-provider session models at chat start (TAL-542)', () => {
     return started
   }
 
+  it('names a rate-limited custom provider as the model catalog does (TAL-821)', async () => {
+    const config = { model: { provider: 'custom:acme-gateway', default: 'acme-1' }, custom_providers: [{ name: 'Acme Gateway', base_url: 'http://acme.test/v1', model: 'acme-1' }] }
+    sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config }))
+    s.deps.agentConfig.invalidate()
+    s.deps.catalog.invalidate()
+    expect((await s.get('/api/models')).status).toBe(200)
+    sidecar.respond('chat.start', (_params, emit) => {
+      emit({ event: 'rate_limit_wait', data: { provider: 'custom:acme-gateway', until: 1_800_000_600, until_kind: 'retry' } })
+      return completed([{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'ok' }])
+    })
+    try {
+      const started = await json(await post(s, '/api/chat/start', { session_id: await newSession(s), message: 'hi' }))
+      const frames = await s.sse(`/api/chat/stream?stream_id=${String(started.stream_id)}`, (f) => f.event === 'stream_end')
+      expect(frames.find((f) => f.event === 'rate_limit_wait')?.data).toMatchObject({ wait: { provider: 'custom:acme-gateway', provider_label: 'Acme Gateway' } })
+    } finally {
+      sidecar.respond('chat.start', (params, emit) => { seen = params; emit({ event: 'token', data: { text: 'ok' } }); return completed([{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'ok' }]) })
+    }
+  })
+
   it('moves a poisoned pair to the one provider whose catalog lists the model, and persists it (#5731)', async () => {
     useConfig('kilocode', 'kilo/auto', { ollama: ['llama3.2'], kilocode: ['kilo/auto', 'kilo/minimax/minimax-m3'] })
     const sid = await sessionWith('kilo/minimax/minimax-m3', 'ollama')

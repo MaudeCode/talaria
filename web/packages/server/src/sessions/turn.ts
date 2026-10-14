@@ -94,6 +94,8 @@ export interface TurnRunnerDeps {
   profileConfig?: (profile: string | null) => Promise<Config | null>
   /** TAL-901: the personalities the profile's Agent offers (`AgentConfig.agentPersonalities`); throws when it cannot list them. */
   personalities?: (profile: string | null) => Promise<PersonalityRow[]>
+  /** TAL-821: a provider's name as the profile's model catalog lists it (`ProviderCatalog.providerLabel`). */
+  providerLabel?: (profile: string | null, provider: string) => string
   /** `auto_title_refresh_every`: a generated title follows the latest exchange every N exchanges; 0 turns it off. */
   titleRefreshEvery?: () => number
   env?: Record<string, string | undefined>
@@ -751,7 +753,7 @@ export class TurnRunner {
               if (until === null && !rateLimitWait) return
               rateLimitWait = until !== null
               const provider = str(data.provider) || null
-              put('rate_limit_wait', { session_id: sessionId, wait: until === null ? null : { provider, provider_label: provider && displayName(provider), until, until_kind: data.until_kind === 'reset' ? 'reset' : 'retry' } })
+              put('rate_limit_wait', { session_id: sessionId, wait: until === null ? null : { provider, provider_label: provider && (deps.providerLabel?.(s.profile ?? null, provider) ?? displayName(provider)), until, until_kind: data.until_kind === 'reset' ? 'reset' : 'retry' } })
               return
             }
             case 'status':

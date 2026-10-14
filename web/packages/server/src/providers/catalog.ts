@@ -135,8 +135,7 @@ export function stampAuxiliarySelections(aux: { tasks: Dict[]; main: Dict }, cat
     const key = canonicaliseProviderId(provider)
     const match = provider === 'auto' ? undefined : options.find((o) => o.provider === key && o.bare === model)
     if (match) return { value_label: match.label || match.bare, provider_label: match.group, option_id: match.id }
-    const group = catalog.groups.find((g) => canonicaliseProviderId(g.provider_id) === key)
-    return { value_label: model || null, provider_label: provider === 'auto' ? null : group?.provider ?? displayName(provider), option_id: null }
+    return { value_label: model || null, provider_label: provider === 'auto' ? null : providerLabel(catalog, provider), option_id: null }
   }
   // Auto falls back to the main chat model; name the effective one the catalog resolved (a legacy string `model` or a
   // `HERMES_MODEL`-style override never reaches `aux.main`).
@@ -388,6 +387,12 @@ export function classifyQuotaSource<T extends { status: string; windows: QuotaWi
   }
 }
 
+/** A provider's name as the catalog lists it (a named custom endpoint's configured name, a plugin's display name), else its static display name. */
+export function providerLabel(catalog: ModelsCatalog | undefined, provider: string): string {
+  const key = canonicaliseProviderId(provider)
+  return catalog?.groups.find((g) => canonicaliseProviderId(g.provider_id) === key)?.provider ?? displayName(provider)
+}
+
 export function displayName(pid: string): string {
   return PROVIDER_DISPLAY[pid] ?? pid.split('-').map((w) => (w ? w[0]!.toUpperCase() + w.slice(1) : w)).join(' ')
 }
@@ -543,6 +548,13 @@ export class ProviderCatalog {
     const catalog = this.lastModels.get(profileHome)
     if (!catalog) { void this.warmModelOptions(profileHome); return null }
     return catalogOptionId(catalog, model, provider)
+  }
+
+  /** TAL-821: `providerLabel` against the last catalog built for this home; a cold home starts building one. */
+  providerLabel(profileHome: string, provider: string): string {
+    const catalog = this.lastModels.get(profileHome)
+    if (!catalog) void this.warmModelOptions(profileHome)
+    return providerLabel(catalog, provider)
   }
 
   /**
