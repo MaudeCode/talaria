@@ -240,6 +240,17 @@ export const PendingSteerSchema = z.object({
 export type PendingSteer = z.infer<typeof PendingSteerSchema>
 
 /**
+ * TAL-803: an out-of-band notice the Agent raised for the session (a memory provider that failed to load, credit and
+ * usage warnings), one per `key`. The server keeps it until the Agent clears that key, `expires_at` passes, or a new agent
+ * replaces the one that raised it.
+ */
+export const SessionNoticeSchema = z.object({
+  key: z.string(), level: z.enum(['info', 'warn', 'error', 'success']), text: z.string(),
+  expires_at: NullableNumber.describe('Unix seconds when the server drops it; null when only the Agent clears it.'),
+})
+export type SessionNotice = z.infer<typeof SessionNoticeSchema>
+
+/**
  * TAL-299: the context ring, computed by the server. `context_used_tokens` is the post-compression estimate, else the last
  * prompt (never the cumulative `input_tokens`); `context_window_tokens` is the model's window. The percents are rounded
  * and capped at 100. Each is null when unknown, and clients then show no percentage.
@@ -296,6 +307,7 @@ export const SessionSchema = z.looseObject({
   message_count: z.number().optional(), user_message_count: z.number().optional(), pinned: z.boolean().optional(), archived: z.boolean().optional(), project_id: NullableString.optional(), profile: NullableString.optional(),
   personality: NullableString.optional(), input_tokens: z.number().optional(), output_tokens: z.number().optional(), cache_read_tokens: z.number().optional(), cache_write_tokens: z.number().optional(),
   cache_hit_percent: NullableNumber.optional(), estimated_cost: NullableNumber.optional(), active_stream_id: ActiveStreamIdSchema, is_streaming: IsStreamingSchema, active_turn_origin: ActiveTurnOriginSchema, pending_steers: z.array(PendingSteerSchema).optional().describe('TAL-424: the active stream\'s pending steers, oldest first.'),
+  notices: z.array(SessionNoticeSchema).optional().describe('TAL-803: the Agent\'s active notices for the session, oldest first.'),
   automatic_turns_held: z.boolean().optional().describe('TAL-899: the user pressed Stop, so no automatic turn (background wakeup or goal continuation) starts until their next message.'), has_pending_user_message: z.boolean().optional(),
   pending_user_message: NullableString.optional(), pending_attachments: z.array(AttachmentSchema).optional(), pending_started_at: NullableNumber.optional(), pending_user_source: NullableString.optional(),
   context_length: NullableNumber.optional(), threshold_tokens: NullableNumber.optional(), last_prompt_tokens: NullableNumber.optional(), post_compression_context_tokens_estimate: NullableNumber.optional(), ...ContextUsageFields,

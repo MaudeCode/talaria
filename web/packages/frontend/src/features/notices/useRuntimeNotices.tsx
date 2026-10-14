@@ -5,20 +5,21 @@ import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { isApiError } from '../../contracts/common'
-import type { ChatReadiness } from '@maudecode/talaria-web-contracts'
+import type { ChatReadiness, SessionNotice } from '@maudecode/talaria-web-contracts'
 import type { LiveTurn } from '../../stream/reducer'
 import type { ComposerNotice } from '../composer/ComposerTab'
 
 type AgentHealth = Awaited<ReturnType<typeof api.fetchAgentHealth>>
 
-type Kind = 'thread_error' | 'server_unreachable' | 'offline' | 'agent_unavailable' | 'provider_failure' | 'compressing'
-interface Notice { kind: Kind; tone: 'error' | 'warning' | 'info'; title: string; detail?: string | undefined; /** A short state shown on the right, keeping the row to one line. */ status?: React.ReactNode; action?: { label: string; run: () => void } | undefined; dismissible: boolean }
+type Kind = 'thread_error' | 'server_unreachable' | 'offline' | 'agent_unavailable' | 'provider_failure' | 'agent_notice' | 'compressing'
+interface Notice { id?: string; kind: Kind; tone: 'error' | 'warning' | 'info'; title: string; detail?: string | undefined; /** A short state shown on the right, keeping the row to one line. */ status?: React.ReactNode; action?: { label: string; run: () => void } | undefined; dismissible: boolean }
 const CHAT_CONDITION: Record<NonNullable<ChatReadiness['condition']>, () => string> = {
   sidecar_unavailable: m.notice_agent_sidecar_unavailable,
   agent_incompatible: m.notice_agent_incompatible,
   agent_runtime_stale: m.notice_agent_runtime_stale,
 }
-const PRIORITY: Kind[] = ['thread_error', 'server_unreachable', 'offline', 'agent_unavailable', 'provider_failure', 'compressing']
+const PRIORITY: Kind[] = ['thread_error', 'server_unreachable', 'offline', 'agent_unavailable', 'provider_failure', 'agent_notice', 'compressing']
+const NOTICE_TONE: Record<SessionNotice['level'], Notice['tone']> = { error: 'error', warn: 'warning', info: 'info', success: 'info' }
 
 /** Wait before the next probe of an unreachable server: 1 s after the first failure, doubling to a 30 s cap. */
 export function retryDelay(failures: number): number {
@@ -105,10 +106,10 @@ export function recheckServer(qc: QueryClient): void {
 
 /**
  * Connection and runtime state as composer top-tab entries (legacy HWEB-11, moved into the tab by TAL-429): thread
- * error, unreachable Talaria server, offline, agent unavailable, provider failure, manual compression. A live turn's
- * reconnect is the live row's own label.
+ * error, unreachable Talaria server, offline, agent unavailable, provider failure, the session's Agent notices (TAL-803),
+ * manual compression. A live turn's reconnect is the live row's own label.
  */
-export function useRuntimeNotices({ live, onRetry, compressing }: { live: LiveTurn | null; onRetry?: (() => void) | undefined; compressing: boolean }): { notices: ComposerNotice[]; announcement: Announcement | null } {
+export function useRuntimeNotices({ live, onRetry, compressing, agentNotices = [] }: { live: LiveTurn | null; onRetry?: (() => void) | undefined; compressing: boolean; agentNotices?: SessionNotice[] | undefined }): { notices: ComposerNotice[]; announcement: Announcement | null } {
   const { online, probe, failures, retry } = useServerProbe()
   const [dismissed, setDismissed] = useState<Set<string>>(new Set())
   const health = probe.data?.health
@@ -120,11 +121,12 @@ export function useRuntimeNotices({ live, onRetry, compressing }: { live: LiveTu
   else if (failures === 0 && health && !health.chat && health.alive === false) list.push({ kind: 'agent_unavailable', tone: 'warning', title: m.notice_agent_title(), detail: health.details?.reason ?? health.error, dismissible: true })
   if (live?.warning) list.push({ kind: 'provider_failure', tone: 'warning', title: live.warning, dismissible: true })
   if (live?.status === 'error' && live.error) list.push({ kind: 'thread_error', tone: 'error', title: m.live_error(), detail: live.error.message, action: onRetry ? { label: m.retry(), run: onRetry } : undefined, dismissible: true })
+  for (const n of agentNotices) list.push({ id: `runtime:agent_notice:${n.key}`, kind: 'agent_notice', tone: NOTICE_TONE[n.level], title: n.text, dismissible: true })
   if (compressing) list.push({ kind: 'compressing', tone: 'info', title: m.live_compressing(), dismissible: false })
   const visible = list.filter((n) => !dismissed.has(`${n.kind}:${n.title}`)).sort((a, b) => PRIORITY.indexOf(a.kind) - PRIORITY.indexOf(b.kind))
   const first = visible[0]
   const notices: ComposerNotice[] = visible.map((n) => ({
-    id: `runtime:${n.kind}`,
+    id: n.id ?? `runtime:${n.kind}`,
     tone: n.tone,
     content: (
       <>

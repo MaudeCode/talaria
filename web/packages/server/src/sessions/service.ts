@@ -3,7 +3,7 @@
  * detail payload, list and search, and every mutation with its guards.
  * Runtime concerns owned by other domains arrive through `SessionServiceDeps`.
  */
-import type { ChatReadiness, PendingSteer, RecoveryAudit, RecoveryRepair, SidecarResult } from '@maudecode/talaria-web-contracts'
+import type { ChatReadiness, PendingSteer, RecoveryAudit, SessionNotice, RecoveryRepair, SidecarResult } from '@maudecode/talaria-web-contracts'
 import type { RunJournal } from './journal.js'
 import { str } from '../util.js'
 import { randomUUID } from 'node:crypto'
@@ -115,6 +115,7 @@ export interface SessionServiceDeps {
     pendingSteers?: (streamId: string) => PendingSteer[]
     /** TAL-899: whether a Stop holds the session's automatic turns until the user's next turn. */
     automaticTurnsHeld?: (sid: string) => boolean
+    sessionNotices?: (sid: string) => SessionNotice[]
     /** Drop the session's cached agent; `endSession` (delete/clear) also ends its approval grants and parked approvals. */
     evictAgent: (sid: string, endSession?: boolean) => void
     closeTerminal: (sid: string) => void
@@ -756,6 +757,7 @@ export class SessionService {
     if (loadMessages) raw.can_compress = this.canCompress(s, raw.read_only === true, stateRows)
     raw.pending_steers = raw.active_stream_id ? (this.deps.runtime.pendingSteers?.(str(raw.active_stream_id)) ?? []) : []
     raw.automatic_turns_held = this.deps.runtime.automaticTurnsHeld?.(s.session_id) ?? false
+    raw.notices = this.deps.runtime.sessionNotices?.(s.session_id) ?? []
     return redactSessionData(raw, this.deps.redactEnabled())
   }
 

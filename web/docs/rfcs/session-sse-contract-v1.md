@@ -50,6 +50,7 @@ and the per-session relay. The chat-turn events:
 | `todo_state` | Todo / checklist panel update |
 | `bg_task_complete` | Background process or delegation finished for this session |
 | `server_turn_started` | A server-side turn (wakeup, recovery) started on this session |
+| `notices` | The session's Agent notices changed (TAL-803); `notices` replaces the session's `notices` list |
 
 Tool call identity: the server gives every `tool` / `tool_complete` frame one
 `id`. It is the Agent's tool-call id; when the Agent supplied none, the server

@@ -87,6 +87,13 @@ describe('shared monorepo contracts', () => {
     expect(fixture.pending_steers_session!.events.map((event) => ChatEventSchema.parse(event).event)).toEqual(['steer_pending', 'steer_withdrawn', 'steer_withdrawn'])
   })
 
+  it('accepts the session\'s Agent notices and their stream event (TAL-803)', () => {
+    const fixture = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as Record<string, { events: unknown[] }>
+    const session = SessionSchema.parse(fixture.notices_session)
+    expect(session.notices?.map((notice) => [notice.key, notice.level, notice.expires_at])).toEqual([['startup-warning.1a2b3c4d', 'warn', null], ['credits.usage_band', 'info', 1770000600]])
+    expect(fixture.notices_session!.events.map((event) => ChatEventSchema.parse(event).event)).toEqual(['notices', 'notices'])
+  })
+
   it('carries the server streaming and read-only flags on every session example (TAL-312)', () => {
     const fixture = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as Record<string, unknown>
     expect(SessionSchema.parse(fixture.session)).toMatchObject({ is_streaming: true, active_stream_id: 'contract-run-f', read_only: false })

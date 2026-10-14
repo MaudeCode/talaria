@@ -4467,6 +4467,47 @@
                           },
                           "description": "TAL-424: the active stream's pending steers, oldest first."
                         },
+                        "notices": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "key": {
+                                "type": "string"
+                              },
+                              "level": {
+                                "enum": [
+                                  "info",
+                                  "warn",
+                                  "error",
+                                  "success"
+                                ],
+                                "type": "string"
+                              },
+                              "text": {
+                                "type": "string"
+                              },
+                              "expires_at": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "Unix seconds when the server drops it; null when only the Agent clears it."
+                              }
+                            },
+                            "required": [
+                              "key",
+                              "level",
+                              "text",
+                              "expires_at"
+                            ]
+                          },
+                          "description": "TAL-803: the Agent's active notices for the session, oldest first."
+                        },
                         "automatic_turns_held": {
                           "type": "boolean",
                           "description": "TAL-899: the user pressed Stop, so no automatic turn (background wakeup or goal continuation) starts until their next message."
@@ -6832,6 +6873,47 @@
                           },
                           "description": "TAL-424: the active stream's pending steers, oldest first."
                         },
+                        "notices": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "key": {
+                                "type": "string"
+                              },
+                              "level": {
+                                "enum": [
+                                  "info",
+                                  "warn",
+                                  "error",
+                                  "success"
+                                ],
+                                "type": "string"
+                              },
+                              "text": {
+                                "type": "string"
+                              },
+                              "expires_at": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "Unix seconds when the server drops it; null when only the Agent clears it."
+                              }
+                            },
+                            "required": [
+                              "key",
+                              "level",
+                              "text",
+                              "expires_at"
+                            ]
+                          },
+                          "description": "TAL-803: the Agent's active notices for the session, oldest first."
+                        },
                         "automatic_turns_held": {
                           "type": "boolean",
                           "description": "TAL-899: the user pressed Stop, so no automatic turn (background wakeup or goal continuation) starts until their next message."
@@ -8942,6 +9024,47 @@
                             ]
                           },
                           "description": "TAL-424: the active stream's pending steers, oldest first."
+                        },
+                        "notices": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "key": {
+                                "type": "string"
+                              },
+                              "level": {
+                                "enum": [
+                                  "info",
+                                  "warn",
+                                  "error",
+                                  "success"
+                                ],
+                                "type": "string"
+                              },
+                              "text": {
+                                "type": "string"
+                              },
+                              "expires_at": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "Unix seconds when the server drops it; null when only the Agent clears it."
+                              }
+                            },
+                            "required": [
+                              "key",
+                              "level",
+                              "text",
+                              "expires_at"
+                            ]
+                          },
+                          "description": "TAL-803: the Agent's active notices for the session, oldest first."
                         },
                         "automatic_turns_held": {
                           "type": "boolean",
@@ -12253,6 +12376,47 @@
                           },
                           "description": "TAL-424: the active stream's pending steers, oldest first."
                         },
+                        "notices": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "key": {
+                                "type": "string"
+                              },
+                              "level": {
+                                "enum": [
+                                  "info",
+                                  "warn",
+                                  "error",
+                                  "success"
+                                ],
+                                "type": "string"
+                              },
+                              "text": {
+                                "type": "string"
+                              },
+                              "expires_at": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "Unix seconds when the server drops it; null when only the Agent clears it."
+                              }
+                            },
+                            "required": [
+                              "key",
+                              "level",
+                              "text",
+                              "expires_at"
+                            ]
+                          },
+                          "description": "TAL-803: the Agent's active notices for the session, oldest first."
+                        },
                         "automatic_turns_held": {
                           "type": "boolean",
                           "description": "TAL-899: the user pressed Stop, so no automatic turn (background wakeup or goal continuation) starts until their next message."
@@ -15395,6 +15559,47 @@
                             ]
                           },
                           "description": "TAL-424: the active stream's pending steers, oldest first."
+                        },
+                        "notices": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "key": {
+                                "type": "string"
+                              },
+                              "level": {
+                                "enum": [
+                                  "info",
+                                  "warn",
+                                  "error",
+                                  "success"
+                                ],
+                                "type": "string"
+                              },
+                              "text": {
+                                "type": "string"
+                              },
+                              "expires_at": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "Unix seconds when the server drops it; null when only the Agent clears it."
+                              }
+                            },
+                            "required": [
+                              "key",
+                              "level",
+                              "text",
+                              "expires_at"
+                            ]
+                          },
+                          "description": "TAL-803: the Agent's active notices for the session, oldest first."
                         },
                         "automatic_turns_held": {
                           "type": "boolean",
@@ -19244,6 +19449,47 @@
                           },
                           "description": "TAL-424: the active stream's pending steers, oldest first."
                         },
+                        "notices": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "key": {
+                                "type": "string"
+                              },
+                              "level": {
+                                "enum": [
+                                  "info",
+                                  "warn",
+                                  "error",
+                                  "success"
+                                ],
+                                "type": "string"
+                              },
+                              "text": {
+                                "type": "string"
+                              },
+                              "expires_at": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "Unix seconds when the server drops it; null when only the Agent clears it."
+                              }
+                            },
+                            "required": [
+                              "key",
+                              "level",
+                              "text",
+                              "expires_at"
+                            ]
+                          },
+                          "description": "TAL-803: the Agent's active notices for the session, oldest first."
+                        },
                         "automatic_turns_held": {
                           "type": "boolean",
                           "description": "TAL-899: the user pressed Stop, so no automatic turn (background wakeup or goal continuation) starts until their next message."
@@ -21379,6 +21625,47 @@
                             ]
                           },
                           "description": "TAL-424: the active stream's pending steers, oldest first."
+                        },
+                        "notices": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "key": {
+                                "type": "string"
+                              },
+                              "level": {
+                                "enum": [
+                                  "info",
+                                  "warn",
+                                  "error",
+                                  "success"
+                                ],
+                                "type": "string"
+                              },
+                              "text": {
+                                "type": "string"
+                              },
+                              "expires_at": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "Unix seconds when the server drops it; null when only the Agent clears it."
+                              }
+                            },
+                            "required": [
+                              "key",
+                              "level",
+                              "text",
+                              "expires_at"
+                            ]
+                          },
+                          "description": "TAL-803: the Agent's active notices for the session, oldest first."
                         },
                         "automatic_turns_held": {
                           "type": "boolean",
@@ -23578,6 +23865,47 @@
                           },
                           "description": "TAL-424: the active stream's pending steers, oldest first."
                         },
+                        "notices": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "key": {
+                                "type": "string"
+                              },
+                              "level": {
+                                "enum": [
+                                  "info",
+                                  "warn",
+                                  "error",
+                                  "success"
+                                ],
+                                "type": "string"
+                              },
+                              "text": {
+                                "type": "string"
+                              },
+                              "expires_at": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "Unix seconds when the server drops it; null when only the Agent clears it."
+                              }
+                            },
+                            "required": [
+                              "key",
+                              "level",
+                              "text",
+                              "expires_at"
+                            ]
+                          },
+                          "description": "TAL-803: the Agent's active notices for the session, oldest first."
+                        },
                         "automatic_turns_held": {
                           "type": "boolean",
                           "description": "TAL-899: the user pressed Stop, so no automatic turn (background wakeup or goal continuation) starts until their next message."
@@ -25762,6 +26090,47 @@
                             ]
                           },
                           "description": "TAL-424: the active stream's pending steers, oldest first."
+                        },
+                        "notices": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "key": {
+                                "type": "string"
+                              },
+                              "level": {
+                                "enum": [
+                                  "info",
+                                  "warn",
+                                  "error",
+                                  "success"
+                                ],
+                                "type": "string"
+                              },
+                              "text": {
+                                "type": "string"
+                              },
+                              "expires_at": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "Unix seconds when the server drops it; null when only the Agent clears it."
+                              }
+                            },
+                            "required": [
+                              "key",
+                              "level",
+                              "text",
+                              "expires_at"
+                            ]
+                          },
+                          "description": "TAL-803: the Agent's active notices for the session, oldest first."
                         },
                         "automatic_turns_held": {
                           "type": "boolean",
@@ -35728,6 +36097,47 @@
                           },
                           "description": "TAL-424: the active stream's pending steers, oldest first."
                         },
+                        "notices": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "key": {
+                                "type": "string"
+                              },
+                              "level": {
+                                "enum": [
+                                  "info",
+                                  "warn",
+                                  "error",
+                                  "success"
+                                ],
+                                "type": "string"
+                              },
+                              "text": {
+                                "type": "string"
+                              },
+                              "expires_at": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "Unix seconds when the server drops it; null when only the Agent clears it."
+                              }
+                            },
+                            "required": [
+                              "key",
+                              "level",
+                              "text",
+                              "expires_at"
+                            ]
+                          },
+                          "description": "TAL-803: the Agent's active notices for the session, oldest first."
+                        },
                         "automatic_turns_held": {
                           "type": "boolean",
                           "description": "TAL-899: the user pressed Stop, so no automatic turn (background wakeup or goal continuation) starts until their next message."
@@ -38005,6 +38415,47 @@
                           },
                           "description": "TAL-424: the active stream's pending steers, oldest first."
                         },
+                        "notices": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "key": {
+                                "type": "string"
+                              },
+                              "level": {
+                                "enum": [
+                                  "info",
+                                  "warn",
+                                  "error",
+                                  "success"
+                                ],
+                                "type": "string"
+                              },
+                              "text": {
+                                "type": "string"
+                              },
+                              "expires_at": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "Unix seconds when the server drops it; null when only the Agent clears it."
+                              }
+                            },
+                            "required": [
+                              "key",
+                              "level",
+                              "text",
+                              "expires_at"
+                            ]
+                          },
+                          "description": "TAL-803: the Agent's active notices for the session, oldest first."
+                        },
                         "automatic_turns_held": {
                           "type": "boolean",
                           "description": "TAL-899: the user pressed Stop, so no automatic turn (background wakeup or goal continuation) starts until their next message."
@@ -40176,6 +40627,47 @@
                                 ]
                               },
                               "description": "TAL-424: the active stream's pending steers, oldest first."
+                            },
+                            "notices": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "key": {
+                                    "type": "string"
+                                  },
+                                  "level": {
+                                    "enum": [
+                                      "info",
+                                      "warn",
+                                      "error",
+                                      "success"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "text": {
+                                    "type": "string"
+                                  },
+                                  "expires_at": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "description": "Unix seconds when the server drops it; null when only the Agent clears it."
+                                  }
+                                },
+                                "required": [
+                                  "key",
+                                  "level",
+                                  "text",
+                                  "expires_at"
+                                ]
+                              },
+                              "description": "TAL-803: the Agent's active notices for the session, oldest first."
                             },
                             "automatic_turns_held": {
                               "type": "boolean",

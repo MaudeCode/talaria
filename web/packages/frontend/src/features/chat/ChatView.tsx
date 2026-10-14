@@ -273,7 +273,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     else if (readPersisted('hermes-webui-session-empty') === sessionId) removePersisted('hermes-webui-session-empty')
   }, [sessionId, query.isSuccess, rows.length])
 
-  const runtime = useRuntimeNotices({ live, onRetry: () => { void onRegenerate() }, compressing })
+  const runtime = useRuntimeNotices({ live, onRetry: () => { void onRegenerate() }, compressing, agentNotices: session?.notices })
   const notFound = query.isError && isApiError(query.error) && query.error.status === 404
   const otherProfile = query.isError && isApiError(query.error) && query.error.status === 409
 

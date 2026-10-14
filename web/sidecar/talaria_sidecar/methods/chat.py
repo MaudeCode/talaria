@@ -1036,6 +1036,20 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
                 else:
                     emit("status", {"kind": "terminal_error", "message": text})
 
+        # TAL-803: the Agent's sticky ``AgentNotice``s (a startup warning such as a memory provider that failed to load,
+        # credit and usage bands) and their clears; the server keeps the session's active set.
+        def on_notice(notice):
+            text = str(getattr(notice, "text", "") or "").strip()
+            if not text:
+                return
+            ttl_ms = getattr(notice, "ttl_ms", None)
+            emit("notice", {"id": getattr(notice, "id", None), "key": getattr(notice, "key", None), "level": str(getattr(notice, "level", "") or "info"),
+                            "kind": str(getattr(notice, "kind", "") or "sticky"), "ttl_ms": ttl_ms if isinstance(ttl_ms, int) else None, "text": text})
+
+        def on_notice_clear(key):
+            if key:
+                emit("notice_clear", {"key": str(key)})
+
         def clarify_callback(question, choices=None, multi_select=False, questions=None):
             # TAL-351: remove the legacy signature path when v0.21.6 is the oldest supported Agent.
             structured = isinstance(question, list)
@@ -1111,6 +1125,8 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             ("tool_start_callback", on_tool_start),
             ("tool_complete_callback", on_tool_complete),
             ("status_callback", on_status),
+            ("notice_callback", on_notice),
+            ("notice_clear_callback", on_notice_clear),
             ("api_mode", runtime.get("api_mode")),
             ("acp_command", runtime.get("acp_command")),
             ("acp_args", runtime.get("acp_args")),
@@ -1153,7 +1169,7 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
                     _AGENT_CACHE.move_to_end(session_id)
                     bind(agent)
         if agent is not None:
-            for name in ("stream_delta_callback", "reasoning_callback", "tool_progress_callback", "clarify_callback", "interim_assistant_callback", "tool_start_callback", "tool_complete_callback", "status_callback"):
+            for name in ("stream_delta_callback", "reasoning_callback", "tool_progress_callback", "clarify_callback", "interim_assistant_callback", "tool_start_callback", "tool_complete_callback", "status_callback", "notice_callback", "notice_clear_callback"):
                 if name in kwargs and hasattr(agent, name):
                     setattr(agent, name, kwargs[name])
         else:
@@ -1162,6 +1178,8 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             if session_db is not None:
                 kwargs["session_db"] = session_db
                 kwargs["session_id"] = _execution_session_id(session_db, session_id)
+            # TAL-803: the notices a replaced agent raised are not this one's to clear; it raises its own from here.
+            emit("notices_reset", {})
             try:
                 agent = AIAgent(**kwargs)
             except BaseException:

@@ -70,6 +70,10 @@ function applySideEffects(sessionId: string, event: ChatEvent): void {
       invalidateSession(sessionId)
       break
     }
+    // TAL-803: the session's notice list changed; the cached session shows the new one until its next load.
+    case 'notices':
+      queryClient?.setQueryData<{ session: Session }>(keys.sessions.detail(sessionId), (old) => (old ? { ...old, session: { ...old.session, notices: event.data.notices } } : old))
+      break
     case 'title':
       if (event.data.title && queryClient) void queryClient.invalidateQueries({ queryKey: keys.sessions.all })
       break

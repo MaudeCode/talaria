@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { ClarifyStepSchema, ContextUsageFields, PendingSteerSchema, SteerWithdrawnSchema, ToolDisplayFields, ToolResultViewSchema, TodoStateSchema, TurnTerminalStateSchema } from './views.js'
+import { ClarifyStepSchema, ContextUsageFields, PendingSteerSchema, SessionNoticeSchema, SteerWithdrawnSchema, ToolDisplayFields, ToolResultViewSchema, TodoStateSchema, TurnTerminalStateSchema } from './views.js'
 
 /**
  * Wire events of `GET /api/chat/stream` and the per-session relay
@@ -48,7 +48,7 @@ export const CHAT_EVENT_NAMES = [
   'token', 'reasoning', 'tool', 'tool_complete', 'interim_assistant', 'approval', 'approval_cleared', 'clarify', 'compressing', 'compressed',
   'title', 'title_status', 'warning', 'apperror', 'cancel', 'error', 'done', 'stream_end', 'metering', 'context_status',
   'goal', 'goal_continue', 'steer_consumed', 'steer_pending', 'steer_withdrawn', 'state_saved', 'todo_state', 'bg_task_complete',
-  'server_turn_started', 'hello', 'initial', 'events', 'gateway_status', 'sessions_changed',
+  'server_turn_started', 'notices', 'hello', 'initial', 'events', 'gateway_status', 'sessions_changed',
 ] as const
 export type ChatEventName = (typeof CHAT_EVENT_NAMES)[number]
 
@@ -84,6 +84,8 @@ export const ChatEventSchema = z.discriminatedUnion('event', [
   z.object({ event: z.literal('todo_state'), data: TodoState }),
   z.object({ event: z.literal('bg_task_complete'), data: BgTask }),
   z.object({ event: z.literal('server_turn_started'), data: ServerTurn }),
+  /** TAL-803: the session's notices changed; `notices` replaces the session's `notices`. */
+  z.object({ event: z.literal('notices'), data: z.looseObject({ session_id: z.string().optional(), notices: z.array(SessionNoticeSchema) }) }),
   z.object({ event: z.literal('hello'), data: Loose }),
   z.object({ event: z.literal('initial'), data: Loose }),
   z.object({ event: z.literal('events'), data: Loose }),
