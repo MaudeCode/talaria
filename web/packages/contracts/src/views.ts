@@ -257,6 +257,16 @@ export const SessionNoticeSchema = z.object({
 export type SessionNotice = z.infer<typeof SessionNoticeSchema>
 
 /**
+ * TAL-808: the session's standing `/goal` while it runs, from the Agent's goal state. `parked` is an active goal waiting on
+ * a process or a timer; `reason` is why it is paused or what it waits on. A done, cleared or absent goal is null.
+ */
+export const SessionGoalSchema = z.object({
+  text: z.string(), status: z.enum(['active', 'paused', 'parked']), turns_used: z.number().int().nonnegative(), max_turns: z.number().int().nonnegative(),
+  reason: NullableString, parked_until: NullableNumber.describe('Unix seconds a timed park ends; null otherwise.'),
+})
+export type SessionGoal = z.infer<typeof SessionGoalSchema>
+
+/**
  * TAL-299: the context ring, computed by the server. `context_used_tokens` is the post-compression estimate, else the last
  * prompt (never the cumulative `input_tokens`); `context_window_tokens` is the model's window. The percents are rounded
  * and capped at 100. Each is null when unknown, and clients then show no percentage.
@@ -314,6 +324,7 @@ export const SessionSchema = z.looseObject({
   personality: NullableString.optional(), input_tokens: z.number().optional(), output_tokens: z.number().optional(), cache_read_tokens: z.number().optional(), cache_write_tokens: z.number().optional(),
   cache_hit_percent: NullableNumber.optional(), estimated_cost: NullableNumber.optional(), active_stream_id: ActiveStreamIdSchema, is_streaming: IsStreamingSchema, active_turn_origin: ActiveTurnOriginSchema, pending_steers: z.array(PendingSteerSchema).optional().describe('TAL-424: the active stream\'s pending steers, oldest first.'),
   notices: z.array(SessionNoticeSchema).optional().describe('TAL-803: the Agent\'s active notices for the session, oldest first.'),
+  goal: SessionGoalSchema.nullable().optional().describe('TAL-808: the standing /goal; null when none runs.'),
   automatic_turns_held: z.boolean().optional().describe('TAL-899: the user pressed Stop, so no automatic turn (background wakeup or goal continuation) starts until their next message.'), has_pending_user_message: z.boolean().optional(),
   pending_user_message: NullableString.optional(), pending_attachments: z.array(AttachmentSchema).optional(), pending_started_at: NullableNumber.optional(), pending_user_source: NullableString.optional(),
   context_length: NullableNumber.optional(), threshold_tokens: NullableNumber.optional(), last_prompt_tokens: NullableNumber.optional(), post_compression_context_tokens_estimate: NullableNumber.optional(), ...ContextUsageFields,

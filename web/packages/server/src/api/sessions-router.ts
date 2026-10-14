@@ -167,6 +167,7 @@ export const sessionsRouter = os.router({
     // No visibility guard here: `detail()` answers 409 `session_profile_mismatch` so the frontend can switch to the owning profile.
     get: os.session.get.handler(({ input, context: { ctx } }) => run(async () => {
       await ctx.deps.sessions.deps.warmModelOptions?.()
+      await ctx.deps.turns.loadGoal(input.session_id.trim())
       try {
         return { session: ctx.deps.sessions.detail(input.session_id, input) as { session_id: string; title: string } }
       } catch (error) {

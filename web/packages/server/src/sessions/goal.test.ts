@@ -257,6 +257,77 @@ describe('/goal continuation after a goal turn settles (TAL-396)', () => {
     expect(goalFrames(await untilEnd(str((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'another question' }))).stream_id)))).toEqual([])
   })
 
+  it('ships the standing goal on the session view and as `session_goal`, from set through park, pause and clear (TAL-808)', async () => {
+    const sid = await newSession()
+    type GoalStatus = SidecarResult<'goals.get'>
+    const status = (goal: Json | null, parked: GoalStatus['parked'] = null): GoalStatus => ({ goal: goal as GoalStatus['goal'], active: goal?.status === 'active', parked, message: '' })
+    let current = status(null)
+    sidecar.respond('goals.get', () => current)
+    const detailGoal = async (): Promise<unknown> => ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).goal
+    const shown = (fields: Json): Json => ({ text: GOAL, status: 'active', turns_used: 0, max_turns: 20, reason: null, parked_until: null, ...fields })
+    const goalEvents = (frames: SseFrame[]): unknown[] => frames.filter((f) => f.event === 'session_goal').map((f) => (f.data as Json).goal)
+    sidecar.respond('chat.start', (params) => answer(params, 'progress'))
+    // A goal the Agent already holds shows on the session's first load.
+    current = status(state)
+    expect(await detailGoal()).toEqual(shown({}))
+
+    // Each judgement re-reads it: a counted turn, then a timed park with its reason and deadline.
+    const until = Date.now() / 1000 + 600
+    const decisions = [continueWith('Continue toward the goal.'), { ...inactive, status: 'active', verdict: 'wait', reason: 'CI running', message: '⏳ Goal parked' }]
+    sidecar.respond('goals.evaluate', () => {
+      const decision = decisions.shift()!
+      current = decision.verdict === 'wait' ? status({ ...state, turns_used: 2 }, { reason: 'CI running', until }) : status({ ...state, turns_used: 1 })
+      return decision
+    })
+    const first = await untilEnd(await setGoal(sid))
+    expect(goalEvents(first)).toEqual([shown({ turns_used: 1 })])
+    expect(first.findIndex((f) => f.event === 'session_goal')).toBeLessThan(first.findIndex((f) => f.event === 'goal_continue'))
+    const next = str(goalFrames(first).find(([event]) => event === 'goal_continue')?.[1].stream_id)
+    const parked = shown({ status: 'parked', turns_used: 2, reason: 'CI running', parked_until: until })
+    expect(goalEvents(await untilEnd(next))).toEqual([parked])
+    await idle(sid)
+    expect(await detailGoal()).toEqual(parked)
+
+    // `/goal pause` and `/goal clear` change it before the client reloads the session.
+    const command = async (args: string, after: GoalStatus): Promise<void> => {
+      sidecar.respond('goals.command', () => { current = after; return { ok: true, action: args, message: args, goal: after.goal } })
+      expect((await post(s, '/api/goal', { session_id: sid, args })).status).toBe(200)
+    }
+    await command('pause', status({ ...state, turns_used: 2, status: 'paused', paused_reason: 'user paused' }))
+    expect(await detailGoal()).toEqual(shown({ status: 'paused', turns_used: 2, reason: 'user paused' }))
+    await command('clear', status({ ...state, status: 'cleared' }))
+    expect(await detailGoal()).toBeNull()
+  })
+
+  it('drops a done goal from the session view once the judge says so (TAL-808)', async () => {
+    const sid = await newSession()
+    let current: SidecarResult<'goals.get'> = { goal: state, active: true, parked: null, message: '' }
+    sidecar.respond('goals.get', () => current)
+    sidecar.respond('chat.start', (params) => answer(params, 'shipped'))
+    sidecar.respond('goals.evaluate', () => { current = { goal: { ...state, status: 'done', turns_used: 1 }, active: false, parked: null, message: '' }; return achieved })
+    const frames = await untilEnd(await setGoal(sid))
+    expect(frames.filter((f) => f.event === 'session_goal').map((f) => (f.data as Json).goal)).toEqual([null])
+    await idle(sid)
+    expect(((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).goal).toBeNull()
+  })
+
+  it('re-reads a timed park once its deadline passes and tells idle clients to reload the session (TAL-808)', async () => {
+    const sid = await newSession()
+    const until = Date.now() / 1000 + 0.3
+    // The Agent's `is_waiting` lifts the barrier once its deadline passes.
+    sidecar.respond('goals.get', () => ({ goal: state, active: true, parked: Date.now() / 1000 < until ? { reason: 'CI running', until } : null, message: '' }))
+    const publish = vi.spyOn(s.deps.events, 'publish')
+    try {
+      sidecar.respond('goals.command', () => ({ ok: true, action: 'status', message: 'status', goal: state }))
+      expect((await post(s, '/api/goal', { session_id: sid, args: 'status' })).status).toBe(200)
+      expect(publish).toHaveBeenCalledWith('goal', expect.objectContaining({ sessionId: sid }))
+      publish.mockClear()
+      await vi.waitFor(() => { expect(publish).toHaveBeenCalledWith('goal', expect.objectContaining({ sessionId: sid })) }, { timeout: 4_000 })
+      expect(calls('goals.get').length).toBeGreaterThanOrEqual(2)
+      expect(((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).goal).toMatchObject({ status: 'active', parked_until: null })
+    } finally { publish.mockRestore() }
+  })
+
   it('a resumed or persisted goal continues from the next user message', async () => {
     const sid = await newSession()
     let turn = 0

@@ -332,6 +332,35 @@
       "active": {
         "type": "boolean"
       },
+      "parked": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "until": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "reason",
+              "until"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
       "message": {
         "type": "string"
       },
@@ -346,6 +375,7 @@
     "required": [
       "goal",
       "active",
+      "parked",
       "message"
     ],
     "additionalProperties": false

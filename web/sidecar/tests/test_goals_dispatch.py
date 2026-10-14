@@ -3,8 +3,10 @@ Real sidecar on the supported Agent release; each test owns a disposable home an
 
 from __future__ import annotations
 
+import json
 import os
 import pathlib
+import time
 
 import pytest
 
@@ -101,6 +103,25 @@ def test_wait_parks_the_goal_without_replacing_it(goal):
     assert parked["ok"] and parked["action"] == "wait" and f"pid {os.getpid()}" in parked["message"], parked
     assert parked["goal"]["goal"] == "ship the release notes"
     assert goal("unwait")["ok"]
+
+
+def test_get_reports_the_parked_barrier(goal, hermes_home):
+    """TAL-808: ``goals.get`` names a live wait barrier's reason and, for a timed wait, its deadline."""
+    def get() -> dict:
+        return goal.proc.result("goals.get", {"session_id": "s1", "profile_home": str(hermes_home)})
+
+    goal("ship the release notes")
+    assert get().get("parked") is None
+    goal(f"wait {os.getpid()} build running")
+    assert get().get("parked") == {"reason": "build running", "until": None}
+    goal("unwait")
+    assert get().get("parked") is None
+    snap = json.loads(goal.proc.result("goals.snapshot", {"session_id": "s1", "profile_home": str(hermes_home)})["snapshot"])
+    until = time.time() + 600
+    goal.proc.result("goals.restore", {"session_id": "s1", "profile_home": str(hermes_home), "snapshot": json.dumps({**snap, "waiting_until": until, "waiting_reason": "CI running"})})
+    assert get().get("parked") == {"reason": "CI running", "until": until}
+    goal("pause")
+    assert get().get("parked") is None, "a paused goal is paused, not parked"
 
 
 @pytest.mark.skipif(not BARE_CONTROL_VERBS, reason="this Agent treats a control verb with trailing words as goal text")
