@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "On the Stable channel, Hermes Agent updates offer only a release that is published on GitHub, not a newer version tag whose release is still unpublished.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
