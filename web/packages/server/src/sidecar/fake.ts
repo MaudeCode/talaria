@@ -54,6 +54,8 @@ export class FakeSidecar implements SidecarLike {
       }
       return { ok: true as const, path }
     })
+    // TAL-906: a recorded text gets the Agent's recorded script; any other text is spoken as written.
+    this.respond('text.spoken', (params) => (this.fixtures.get('text.spoken')?.find((entry) => (entry.params as { text?: unknown }).text === params.text)?.result as { spoken_text: string } | undefined) ?? { spoken_text: params.text })
     this.respond('goals.evaluate', () => ({ status: null, should_continue: false, continuation_prompt: null, verdict: 'inactive', reason: 'no active goal', message: '' }))
   }
 

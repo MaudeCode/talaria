@@ -49,14 +49,23 @@ extension ChatViewModelSendTests {
         server: URL = URL(string: "https://example.test")!,
         protocolClasses: [AnyClass] = [MockURLProtocol.self],
         responseCache: ResponseCache? = nil,
+        spokenText: ((String) -> String)? = { $0 },
         handler: @escaping (URLRequest) throws -> (HTTPURLResponse, Data)
     ) throws -> ChatViewModel {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = protocolClasses
+        // Listen asks the server for its read-aloud script first (TAL-906): `spokenText` answers it,
+        // the message as written by default; nil hands that request to `handler` too.
+        let routed: (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+            guard let spokenText, request.url?.path == "/api/speech/prepare" else { return try handler(request) }
+            let text = try apiTestJSONBody(from: request)["text"] as? String ?? ""
+            let body = try JSONSerialization.data(withJSONObject: ["spoken_text": spokenText(text)])
+            return apiTestJSONResponse(String(decoding: body, as: UTF8.self), for: request)
+        }
         // Scope the handler to this view model's session: `MockURLProtocol.requestHandler`
         // is process-global, and a view model's untracked follow-up request (the
         // post-stream title refresh) would otherwise land on the next test's handler.
-        configuration.httpAdditionalHeaders = [MockURLProtocol.scopeHeader: MockURLProtocol.register(handler)]
+        configuration.httpAdditionalHeaders = [MockURLProtocol.scopeHeader: MockURLProtocol.register(routed)]
         let urlSession = URLSession(configuration: configuration)
         let client = APIClient(baseURL: server, session: urlSession)
         let summary: SessionSummary

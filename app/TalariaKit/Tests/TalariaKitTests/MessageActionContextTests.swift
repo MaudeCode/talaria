@@ -23,7 +23,7 @@ final class MessageActionContextTests: XCTestCase {
         XCTAssertNil(context.listenText)
     }
 
-    func testAssistantMessageContextCopiesRawMarkdownText() throws {
+    func testAssistantMessageContextCopiesAndListensToRawMarkdownText() throws {
         let message = ChatMessage(
             role: "assistant",
             content: "## Result\n\nUse `xcodebuild test`.",
@@ -40,30 +40,8 @@ final class MessageActionContextTests: XCTestCase {
         XCTAssertEqual(context.keepCountThroughMessage, 30)
         XCTAssertEqual(context.messageID, "message-29")
         XCTAssertEqual(context.copyText, "## Result\n\nUse `xcodebuild test`.")
-        XCTAssertEqual(context.listenText, "Result\n\nUse xcodebuild test.")
-    }
-
-    func testAssistantListenTextNormalizesCommonMarkdown() throws {
-        let message = ChatMessage(
-            role: "assistant",
-            content: """
-            # Summary
-
-            - Open [Hermes](https://example.test)
-            > Then run `xcodebuild test`.
-            """,
-            timestamp: 1_770_000_002,
-            messageId: "message-30"
-        )
-
-        let context = try XCTUnwrap(
-            MessageActionContext(message: message, visibleIndex: 5, messagesOffset: 25)
-        )
-
-        XCTAssertEqual(
-            context.listenText,
-            "Summary\n\nOpen Hermes\nThen run xcodebuild test."
-        )
+        // TAL-906: the server prepares what is spoken (`speech.prepare`); the App sends the message as written.
+        XCTAssertEqual(context.listenText, "## Result\n\nUse `xcodebuild test`.")
     }
 
     func testMessageContextIgnoresUnsupportedOrEmptyMessages() {

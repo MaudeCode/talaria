@@ -902,7 +902,7 @@ public struct MessageActionContext: Equatable, Identifiable {
         keepCountThroughMessage = fullHistoryIndex + 1
         messageID = message.id
         copyText = content
-        listenText = role == .assistant ? SpeechTextNormalizer.normalizedAssistantText(content) : nil
+        listenText = role == .assistant ? content : nil
     }
 }
 

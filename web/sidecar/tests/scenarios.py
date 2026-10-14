@@ -116,6 +116,9 @@ SCENARIOS: list[tuple[str, dict]] = [
     ("aux.tasks", {"profile_home": "{home}"}),
     ("text.portal_tags", {"profile_home": "{home}"}),
     ("text.image_mode", {"profile_home": "{home}", "provider": "anthropic", "model": "claude-sonnet-4-5"}),
+    # TAL-906: identifiers go silent; prose, dates, emails, and ratios stay as written.
+    ("text.spoken", {"text": "Saved peyton-sample-20260922.wav to /tmp/out/9f2c1e7a-3b4d-4c2e-8f1a-0b9e2d7c6a51.json, see https://example.com/a/b?x=1 and commit 4bf46b7c8."}),
+    ("text.spoken", {"text": "Meet Ana on 2026-10-14 at ana@example.com; the ratio is 3:2, a well-known plan."}),
     ("memory.check", {"profile_home": "{home}", "target": "memory", "content": "User prefers tabs\n§\nDeploy box is 10.0.0.5"}),
     ("memory.check", {"profile_home": "{home}", "target": "user", "content": "x" * 1400}),
     # TAL-784: a save over a USER.md that does not exist yet (the SHA-256 of no bytes).

@@ -58839,6 +58839,54 @@
         }
       }
     },
+    "/api/speech/prepare": {
+      "post": {
+        "operationId": "speech.prepare",
+        "summary": "TAL-906: the read-aloud script for `text` (the Agent's `prepare_spoken_text`): Markdown, reasoning blocks, filenames, paths, UUIDs, hashes, and URLs are dropped, at most 4000 characters. `/api/tts` speaks the same script. The text as written, trimmed, when the Agent cannot prepare it.",
+        "tags": [
+          "tools"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string",
+                    "maxLength": 100000
+                  }
+                },
+                "required": [
+                  "text"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "spoken_text": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "spoken_text"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/client-events/log": {
       "post": {
         "operationId": "clientEvents",

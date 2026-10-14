@@ -27,5 +27,23 @@
         "supports_vision": true
       }
     }
+  ],
+  "text.spoken": [
+    {
+      "params": {
+        "text": "Saved peyton-sample-20260922.wav to /tmp/out/9f2c1e7a-3b4d-4c2e-8f1a-0b9e2d7c6a51.json, see https://example.com/a/b?x=1 and commit 4bf46b7c8."
+      },
+      "result": {
+        "spoken_text": "Saved to, see and commit 4bf46b7c8."
+      }
+    },
+    {
+      "params": {
+        "text": "Meet Ana on 2026-10-14 at ana@example.com; the ratio is 3:2, a well-known plan."
+      },
+      "result": {
+        "spoken_text": "Meet Ana on 2026-10-14 at ana@example.com; the ratio is 3:2, a well-known plan."
+      }
+    }
   ]
 }

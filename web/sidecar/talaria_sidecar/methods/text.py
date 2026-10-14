@@ -1,5 +1,5 @@
 """``text.*``: pure helpers from the Agent that the server must match exactly
-(image input routing, portal tags)."""
+(image input routing, portal tags, spoken text)."""
 
 from __future__ import annotations
 
@@ -65,6 +65,15 @@ def portal_tags() -> dict:
     return out
 
 
+def spoken(text: str) -> dict:
+    """TAL-906: the Agent's read-aloud script for ``text``; the text as written on an Agent without the normalizer."""
+    try:
+        from tools.tts_text_normalize import prepare_spoken_text
+    except Exception:  # noqa: BLE001
+        return {"spoken_text": text}
+    return {"spoken_text": prepare_spoken_text(text)}
+
+
 def register(registry) -> None:
     @registry.method("text.image_mode")
     def image_mode_(ctx: CallContext, params: dict) -> dict:
@@ -80,3 +89,7 @@ def register(registry) -> None:
     def tags(ctx: CallContext, params: dict) -> dict:
         with scoped_home(profile_home_param(params)):
             return portal_tags()
+
+    @registry.method("text.spoken")
+    def spoken_(ctx: CallContext, params: dict) -> dict:
+        return spoken(str(params.get("text") or ""))

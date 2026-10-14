@@ -18,6 +18,7 @@ import { readUploadForm, uploadFile } from './raw-routes.js'
 const CSP_MAX_BODY = 64 * 1024
 const TTS_TIMEOUT_MS = 30_000
 const TTS_MAX_AUDIO_BYTES = 16 * 1024 * 1024
+const SPOKEN_TEXT_TIMEOUT_MS = 10_000
 
 export async function handleTranscribe(ctx: RequestContext): Promise<void> {
   const form = await readUploadForm(ctx)
@@ -84,6 +85,18 @@ function normalizedOpenAiBase(raw: string): string {
   return `${u.protocol}//${u.host}${u.pathname.replace(/\/+$/, '')}`
 }
 
+/** TAL-906: the Agent's read-aloud script for `text`, which every engine and client speaks; the text as written when the sidecar cannot prepare it. */
+export async function spokenText(ctx: RequestContext, text: string): Promise<string> {
+  const sidecar = ctx.deps.sidecar()
+  if (!sidecar) return text
+  try {
+    return (await sidecar.call('text.spoken', { text }, { timeoutMs: SPOKEN_TEXT_TIMEOUT_MS })).spoken_text
+  } catch (error) {
+    ctx.deps.log(`[tts] spoken text unavailable: ${str((error as Error).message)}`)
+    return text
+  }
+}
+
 /** An upstream engine answered, but not with usable audio (Python answers 502 for these; 500 stays for unexpected faults). */
 class UpstreamAudioError extends Error {}
 
@@ -105,13 +118,13 @@ function upstreamFailureStatus(error: unknown): number {
 export async function handleTts(ctx: RequestContext): Promise<void> {
   let body: Record<string, unknown>
   try { body = await ctx.readJsonBody(64 * 1024) } catch { ctx.json({ error: 'invalid request body' }, { status: 400 }); return }
-  const text = str(body.text).trim()
+  const raw = str(body.text).trim()
   const rate = prosody(body.rate, '%')
   const pitch = prosody(body.pitch, 'Hz')
   if (rate === null) { ctx.json({ error: 'invalid rate' }, { status: 400 }); return }
   if (pitch === null) { ctx.json({ error: 'invalid pitch' }, { status: 400 }); return }
-  if (!text) { ctx.json({ error: 'text is required' }, { status: 400 }); return }
-  if (text.length > 5000) { ctx.json({ error: 'text too long (max 5000 characters)' }, { status: 400 }); return }
+  if (!raw) { ctx.json({ error: 'text is required' }, { status: 400 }); return }
+  if (raw.length > 5000) { ctx.json({ error: 'text too long (max 5000 characters)' }, { status: 400 }); return }
   // Python `_client_ip_for_rate_limit`: the peer address, or the forwarded client only behind an opted-in trusted proxy.
   if (ctx.deps.ttsLimiter.limited(rateLimitClientIp(ctx) || 'unknown')) { ctx.json({ error: 'rate limit exceeded — please wait' }, { status: 429 }); return }
   const profile = activeProfileName(ctx)
@@ -130,6 +143,8 @@ export async function handleTts(ctx: RequestContext): Promise<void> {
   // A request that names no engine uses the profile's configured `tts.provider`.
   const engine = (str(body.engine).trim() || str(tts.provider).trim()).toLowerCase()
   if (!engine) { ctx.json({ error: 'No text-to-speech engine is configured', code: 'tts_unconfigured' }, { status: 503 }); return }
+  const text = await spokenText(ctx, raw)
+  if (!text) { ctx.json({ error: 'text has nothing to speak' }, { status: 400 }); return }
   const f = ctx.deps.fetch
   if (engine === 'elevenlabs') {
     const apiKey = (env.ELEVENLABS_API_KEY ?? '').trim()

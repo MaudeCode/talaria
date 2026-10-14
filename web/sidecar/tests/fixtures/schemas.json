@@ -5024,6 +5024,19 @@
     ],
     "additionalProperties": false
   },
+  "text.spoken": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "spoken_text": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "spoken_text"
+    ],
+    "additionalProperties": false
+  },
   "process.drain": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

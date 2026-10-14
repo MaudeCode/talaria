@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { z } from 'zod'
-import { ChatEventSchema, ClarifyPendingEnvelopeSchema, MemoryWriteRefusalSchema, ModelsSchema, SIDECAR_RPC_VERSION, SkillsSchema, TranscribeStreamEndSchema, TranscribeStreamEventSchema, TranscribeStreamStartSchema, UpdateNotificationsSchema } from './index.js'
+import { ChatEventSchema, ClarifyPendingEnvelopeSchema, MemoryWriteRefusalSchema, ModelsSchema, SIDECAR_RPC_VERSION, SkillsSchema, SpeechPrepareSchema, TranscribeStreamEndSchema, TranscribeStreamEventSchema, TranscribeStreamStartSchema, UpdateNotificationsSchema } from './index.js'
 
 const shared = (path: string): unknown => JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../contracts', path), 'utf8'))
 
@@ -42,6 +42,11 @@ describe('contracts package', () => {
     expect(prompts.map((p) => [p?.kind, p?.fields.map((f) => `${f.key}${f.secure ? '*' : ''}`)])).toEqual([
       ['vault_unlock', ['master_password*']], ['vault_save_login', ['identifier', 'password*']], ['vault_code', ['code']],
     ])
+  })
+  it('parses the shared speech.prepare exchange, which is the Agent answer recorded for its text (TAL-906)', () => {
+    const fixture = shared('fixtures/speech-prepare.json') as { request: { text: string }; response: unknown }
+    const recorded = (JSON.parse(readFileSync(resolve(import.meta.dirname, '../fixtures/sidecar/text.json'), 'utf8')) as Record<string, { params: { text: string }; result: unknown }[]>)['text.spoken']
+    expect(SpeechPrepareSchema.parse(fixture.response)).toEqual(recorded?.find((entry) => entry.params.text === fixture.request.text)?.result)
   })
   it('exports an integer sidecar RPC version', () => {
     expect(Number.isInteger(SIDECAR_RPC_VERSION)).toBe(true)

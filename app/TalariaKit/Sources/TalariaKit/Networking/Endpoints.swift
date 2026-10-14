@@ -160,6 +160,7 @@ public enum Endpoint {
     case upload
     case transcribe
     case tts
+    case speechPrepare
 
     var path: String {
         switch self {
@@ -464,6 +465,8 @@ public enum Endpoint {
             return "/api/transcribe"
         case .tts:
             return "/api/tts"
+        case .speechPrepare:
+            return "/api/speech/prepare"
         }
     }
 

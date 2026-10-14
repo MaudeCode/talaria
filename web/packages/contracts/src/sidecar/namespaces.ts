@@ -363,6 +363,8 @@ export const AUX_METHODS = {
 export const TEXT_METHODS = {
   'text.image_mode': { params: ProfileHomeParams.extend({ provider: z.string(), model: z.string(), cfg: Loose.nullable().optional(), requested_provider: z.string().optional() }), result: z.object({ mode: z.enum(['native', 'text']), reason: z.string(), supports_vision: z.boolean().nullable() }) },
   'text.portal_tags': { params: ProfileHomeParams, result: z.object({ client_tag: z.string().nullable(), conversation_tag: z.string().nullable(), tags: z.union([z.array(z.string()), Loose]) }) },
+  /** TAL-906: the Agent's read-aloud script (`prepare_spoken_text`); `text` as written on an Agent without it. */
+  'text.spoken': { params: z.object({ text: z.string() }), result: z.object({ spoken_text: z.string() }) },
 } as const
 /**
  * TAL-886: the Agent's `MemoryStore` reading of a MEMORY.md / USER.md body: its char count and the profile's limit for that store.

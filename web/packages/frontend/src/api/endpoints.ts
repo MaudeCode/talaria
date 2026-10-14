@@ -131,6 +131,8 @@ export const uploadFile = (session_id: SessionId, file: File) => {
 }
 // TAL-802: live dictation is offered when the server reports `streaming`; a recording is the fallback.
 export const fetchTranscribeCapability = () => orpc().transcribeCapability()
+// TAL-906: what read-aloud speaks for a message, prepared by the server.
+export const prepareSpeech = (text: string) => orpc().speech.prepare({ text })
 export const transcribeRecording = (audio: Blob, filename: string) => {
   const form = new FormData()
   form.set('file', audio, filename)
