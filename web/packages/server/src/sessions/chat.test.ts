@@ -2578,9 +2578,9 @@ describe('stale cross-provider session models at chat start (TAL-542)', () => {
   })
   afterAll(() => s.close())
 
-  /** The profile's config.yaml: its provider and default model, and each configured provider's model list. */
+  /** The profile's config.yaml: its provider, holding a key, and default model, and each configured provider's model list. */
   const useConfig = (provider: string, defaultModel: string, providers: Record<string, string[]> = {}): void => {
-    const config = { model: { provider, default: defaultModel }, providers: Object.fromEntries(Object.entries(providers).map(([pid, models]) => [pid, { base_url: `http://${pid}.test/v1`, models }])) }
+    const config = { model: { provider, default: defaultModel, api_key: 'sk-test-key-123456' }, providers: Object.fromEntries(Object.entries(providers).map(([pid, models]) => [pid, { base_url: `http://${pid}.test/v1`, models }])) }
     sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config }))
     s.deps.agentConfig.invalidate()
     s.deps.catalog.invalidate()
@@ -2652,7 +2652,7 @@ describe('stale cross-provider session models at chat start (TAL-542)', () => {
     useConfig('anthropic', 'claude-sonnet-4')
     await start({ session_id: await sessionWith('claude-sonnet-4', 'anthropic') })
     // Edited outside Web: nothing invalidates the catalog, only the file changes.
-    const config = { model: { provider: 'openai-codex', default: 'gpt-5.5' } }
+    const config = { model: { provider: 'openai-codex', default: 'gpt-5.5', api_key: 'sk-test-key-123456' } }
     sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config }))
     writeFileSync(join(s.state, 'config.yaml'), '# edited outside Web\n')
     const started = await start({ session_id: await sessionWith('gemini-3.1-pro-preview', null) })
@@ -2763,7 +2763,7 @@ describe('stale cross-provider session models at chat start (TAL-542)', () => {
     await s.deps.catalog.warmSessionModelRepair(s.state)
     sidecar.respond('goals.snapshot', () => ({ goal: null, snapshot: null }))
     sidecar.respond('goals.command', async (params) => {
-      config = { model: { provider: 'openai-codex', default: 'gpt-5.5' } }
+      config = { model: { provider: 'openai-codex', default: 'gpt-5.5', api_key: 'sk-test-key-123456' } }
       writeFileSync(join(s.state, 'config.yaml'), '# moved to codex during the goal command\n')
       // Workspace resolution reads the new file too; only the catalog is left behind.
       await s.deps.agentConfig.read(s.state)

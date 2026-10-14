@@ -266,48 +266,54 @@ def plugin_providers() -> list[dict]:
     return rows
 
 
-def _plugin_catalog(provider_id: str) -> list[str]:
+def _plugin_catalog(provider_id: str) -> tuple[list[str], bool]:
     """Discovery for an installed plugin the Agent's catalog has no fetcher for: the profile's own listing, then its fallback.
 
     API-key plugins already get both from ``provider_model_ids`` with their key, so only keyless auth types list here.
+    Like the Agent, the fallback list is a placeholder only when a listing was tried and declined.
     """
     for _name, profile in installed_plugin_profiles():
         if profile is None or str(profile.name).strip().lower() != provider_id.strip().lower():
             continue
+        lists = bool(profile.supports_model_listing) and profile.auth_type != "api_key"
         try:
-            live = profile.fetch_models(timeout=8.0) if profile.supports_model_listing and profile.auth_type != "api_key" else None
+            live = profile.fetch_models(timeout=8.0) if lists else None
         except Exception:  # noqa: BLE001 - a broken plugin answers with its fallback catalog
             log.debug("fetch_models(%r) failed", provider_id, exc_info=True)
             live = None
-        return [str(m) for m in (live or profile.fallback_models or ()) if m]
-    return []
+        return [str(m) for m in (live or profile.fallback_models or ()) if m], lists and not live
+    return [], False
 
 
-def model_ids(provider_id: str, *, force_refresh: bool) -> list[str]:
+def model_ids(provider_id: str, *, force_refresh: bool) -> tuple[list[str], bool]:
+    """The Agent's catalog for a provider, and whether it is the curated placeholder for an unreachable one (TAL-799)."""
     try:
-        from hermes_cli.models import provider_model_ids
+        from hermes_cli import models
     except Exception as exc:  # noqa: BLE001
         raise RpcError(f"model catalog unavailable: {exc}", condition="providers_unavailable") from exc
     try:
         if _unavailable_plugin(provider_id):
-            return []
+            return [], False
     except Exception:  # noqa: BLE001 - an unverified owner must not expose another plugin's models
         log.debug("plugin ownership check for %r failed", provider_id, exc_info=True)
-        return []
+        return [], False
     try:
-        ids = provider_model_ids(provider_id, force_refresh=force_refresh)
+        ids = models.provider_model_ids(provider_id, force_refresh=force_refresh)
     except TypeError:
-        ids = provider_model_ids(provider_id)
+        ids = models.provider_model_ids(provider_id)
     except Exception:  # noqa: BLE001
         log.debug("provider_model_ids(%r) failed", provider_id, exc_info=True)
         ids = []
+    # Agents before the marker never flag a fallback.
+    curated = getattr(models, "CuratedFallbackModels", None)
+    fallback = isinstance(curated, type) and isinstance(ids, curated)
     ids = [str(m) for m in (ids or []) if m]
     if ids:
-        return ids
+        return ids, fallback
     try:
         return _plugin_catalog(provider_id)
     except RpcError:
-        return []
+        return [], False
 
 
 def resolve_runtime(*, requested: str | None, api_key: str | None, base_url: str | None, target_model: str | None) -> dict:
@@ -447,7 +453,8 @@ def register(reg) -> None:
         if not provider:
             raise InvalidParams("provider is required")
         with scoped_home(profile_home_param(params)):
-            return {"provider": provider, "model_ids": model_ids(provider, force_refresh=bool(params.get("force_refresh", False)))}
+            ids, fallback = model_ids(provider, force_refresh=bool(params.get("force_refresh", False)))
+            return {"provider": provider, "model_ids": ids, "fallback": fallback}
 
     @reg.method("providers.resolve_runtime")
     def runtime(ctx: CallContext, params: dict) -> dict:

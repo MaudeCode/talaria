@@ -116,7 +116,7 @@ describe('/goal continuation after a goal turn settles (TAL-396)', () => {
     const sid = await newSession()
     sidecar.respond('chat.start', (params) => ({ ...answer(params, 'progress'), model: params.model ?? 'test-model', provider: params.model_provider ?? 'test' }))
     if (kind === 'stale') {
-      const config = { model: { provider: 'openai-codex', default: 'gpt-5.5' } }
+      const config = { model: { provider: 'openai-codex', default: 'gpt-5.5', api_key: 'sk-test-key-123456' } }
       sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config }))
       sidecar.respond('providers.auth_status', (p) => ({ status: { logged_in: false, provider: p.provider ?? '' } }))
       sidecar.respond('plugins.providers', () => ({ providers: [] }))

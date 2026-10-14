@@ -183,6 +183,8 @@ const MODEL_PICKER_OVERFLOW_THRESHOLD = 25
 const MODEL_PICKER_VISIBLE_TARGET = 15
 const ACCOUNT_USAGE_CACHE_TTL_S = 45
 const LIVE_TTL_S = 86_400
+/** TAL-799: the Agent's `_PROVIDER_MODELS_FALLBACK_TTL`; its placeholder for an unreachable catalog is re-probed soon. */
+const FALLBACK_TTL_S = 60
 const PROVIDERS_TTL_S = 30
 /** The sidecar reads a balance endpoint with a 15 s timeout of its own. */
 const BALANCE_TIMEOUT_MS = 20_000
@@ -491,8 +493,8 @@ interface KeyProbe { hasKey: boolean; keySource: string; authError: string | nul
 export class ProviderCatalog {
   /** Failed live lookups by home, provider, and the `sourceFingerprint` they ran under (TAL-542). */
   private readonly liveFailed = new Set<string>()
-  /** `source`: the `sourceFingerprint` the ids were fetched under; another one makes them stale (TAL-542). */
-  private readonly liveIds = new Map<string, { at: number; ids: string[]; source: string }>()
+  /** `source`: the `sourceFingerprint` the ids were fetched under; another one makes them stale (TAL-542). `ttl`: seconds they stay fresh. */
+  private readonly liveIds = new Map<string, { at: number; ids: string[]; source: string; ttl: number }>()
   private readonly liveInflight = new Map<string, Promise<string[]>>()
   /** `pooled`: the fill's `poolProviders` answer, null when unknown (TAL-638). */
   private readonly providersCache = new Map<string, { at: number; key: string; payload: { providers: Dict[]; active_provider: string | null }; pooled: string[] | null }>()
@@ -677,7 +679,7 @@ export class ProviderCatalog {
     const key = `${profileHome}\0${pid}`
     const source = this.sourceFingerprint(profileHome)
     const hit = this.liveIds.get(key)
-    if (hit?.source === source && !opts.force && this.deps.now() - hit.at < LIVE_TTL_S) return hit.ids
+    if (hit?.source === source && !opts.force && this.deps.now() - hit.at < hit.ttl) return hit.ids
     // A lookup started under another source answers for the old endpoint or credential; this one starts its own.
     const flightKey = `${key}\0${source}`
     const inflight = this.liveInflight.get(flightKey)
@@ -686,11 +688,22 @@ export class ProviderCatalog {
     // No sidecar is a failed lookup for this source: the ids it keeps showing never confirm a stale-model repair (TAL-542).
     if (!sidecar) { this.liveFailed.add(flightKey); return hit?.ids ?? [] }
     const run = sidecar.call('providers.model_ids', { profile_home: profileHome, provider: pid, ...(opts.force ? { force_refresh: true } : {}) }, { timeoutMs: 30_000 })
-      .then((r) => { this.liveIds.set(key, { at: this.deps.now(), ids: r.model_ids, source }); this.liveFailed.delete(flightKey); return r.model_ids })
+      .then((r) => {
+        this.liveIds.set(key, { at: this.deps.now(), ids: r.model_ids, source, ttl: r.fallback ? FALLBACK_TTL_S : LIVE_TTL_S })
+        // TAL-799: the Agent's curated placeholder for an unreachable catalog is a failed lookup that still lists models.
+        if (r.fallback) this.liveFailed.add(flightKey)
+        else this.liveFailed.delete(flightKey)
+        return r.model_ids
+      })
       .catch((error: unknown) => { this.deps.log(`[catalog] live model ids for ${pid} failed: ${str((error as Error).message)}`); this.liveFailed.add(flightKey); return hit?.ids ?? [] })
       .finally(() => { this.liveInflight.delete(flightKey) })
     this.liveInflight.set(flightKey, run)
     return run
+  }
+
+  /** Whether the last live lookup for this provider under `source` failed or answered with the Agent's placeholder list. */
+  private liveLookupFailed(profileHome: string, pid: string, source = this.sourceFingerprint(profileHome)): boolean {
+    return this.liveFailed.has(`${profileHome}\0${pid}\0${source}`)
   }
 
   /**
@@ -909,13 +922,16 @@ export class ProviderCatalog {
       const providerCfg = dict(providersCfg[rawKeyFor.get(pid) ?? pid])
       let raw: ModelEntry[] = []
       if ('models' in providerCfg && providerCfg.models_discovered !== true) raw = configuredModelOptions(providerCfg.models)
-      if (!raw.length && (this.providerHasKey(pid, config, envValues, profileHome) || selfHostedEndpoint(pid, config) || signedIn.has(pid))) {
+      if (!raw.length) {
+        // TAL-799: a provider without credentials lists the Agent's curated catalog too; the static tables only cover a missing sidecar.
+        const keyed = this.providerHasKey(pid, config, envValues, profileHome) || selfHostedEndpoint(pid, config) || signedIn.has(pid)
         const live = await this.liveModelIds(profileHome, pid)
-        // TAL-542: a failed lookup leaves this group's list unconfirmed, so the stale-model repair never trusts it.
-        if (this.liveFailed.has(`${profileHome}\0${pid}\0${source}`)) unconfirmed.add(pid)
+        const failed = this.liveLookupFailed(profileHome, pid, source)
+        // TAL-542: a failed lookup, or a curated list no account confirmed, leaves this group unconfirmed, so the stale-model repair never trusts it.
+        if (failed || !keyed) unconfirmed.add(pid)
         if (live.length) raw = live.map((id) => ({ id, label: pid === 'nous' ? `${formatOllamaLabel(id.includes('/') ? id.slice(id.indexOf('/') + 1) : id)} (via Nous)` : labelForModel(id, []) }))
         // Python (#1567): an authenticated Nous account with an empty live catalog shows no group; only a failed lookup falls back to the curated list.
-        else if (pid === 'nous' && !this.liveFailed.has(`${profileHome}\0${pid}\0${source}`)) continue
+        else if (keyed && pid === 'nous' && !failed) continue
       }
       if (!raw.length) raw = pid === 'openrouter' ? FALLBACK_MODELS.map((m) => ({ id: m.id, label: m.label })) : [...(PROVIDER_MODELS[pid] ?? [])]
       for (const id of configuredIds.get(pid) ?? []) if (!raw.some((m) => m.id === id)) raw.push({ id, label: labelForModel(id, groups) })
@@ -999,7 +1015,7 @@ export class ProviderCatalog {
     if (!provider) return { error: 'no_provider', models: [] }
     provider = resolveProviderAlias(provider)
     let ids = await this.liveModelIds(profileHome, provider)
-    let source = 'live'
+    let source = this.liveLookupFailed(profileHome, provider) ? 'fallback' : 'live'
     if (!ids.length) {
       const fromConfig: string[] = []
       if (provider === 'custom' || provider.startsWith('custom:')) {

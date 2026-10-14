@@ -3334,11 +3334,16 @@
         "items": {
           "type": "string"
         }
+      },
+      "fallback": {
+        "default": false,
+        "type": "boolean"
       }
     },
     "required": [
       "provider",
-      "model_ids"
+      "model_ids",
+      "fallback"
     ],
     "additionalProperties": false
   },
