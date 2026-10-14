@@ -2134,13 +2134,13 @@ describe('chat turns through the sidecar', () => {
     try {
       const res = await post(s, '/api/session/delete', { session_id: guarded })
       expect(res.status).toBe(409)
-      expect(await json(res)).toEqual({ error: 'Another Agent process is running or compressing this session; try again once it finishes', refused: 'active_turn' })
+      expect(await json(res)).toEqual({ error: 'In use by another Agent process. Try again later.', refused: 'active_turn' })
       expect(existsSync(file(guarded))).toBe(true)
       expect((await s.get(`/api/session?session_id=${guarded}`)).status).toBe(200)
 
       const bulk = await json(await post(s, '/api/sessions/bulk', { action: 'delete', session_ids: [guarded, free] }))
       expect(bulk.results).toEqual([
-        { session_id: guarded, ok: false, status: 409, error: 'Another Agent process is running or compressing this session; try again once it finishes', refused: 'active_turn' },
+        { session_id: guarded, ok: false, status: 409, error: 'In use by another Agent process. Try again later.', refused: 'active_turn' },
         { session_id: free, ok: true, state_db_cleanup_failed: false },
       ])
       expect([existsSync(file(guarded)), existsSync(file(free))]).toEqual([true, false])

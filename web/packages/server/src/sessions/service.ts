@@ -1763,7 +1763,7 @@ export class SessionService {
     for (const id of lineage.reverse()) {
       let result: SidecarResult<'state_db.delete_cli_session'>
       try { result = await this.deps.runtime.deleteCliSession(profile, id) } catch { failed = true; continue }
-      if (result.refused) throw new HttpFailure(409, 'Another Agent process is running or compressing this session; try again once it finishes', { refused: result.refused })
+      if (result.refused) throw new HttpFailure(409, 'In use by another Agent process. Try again later.', { refused: result.refused })
       if (!result.ok) failed = true
     }
     return failed
