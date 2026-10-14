@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Signing in to Nous Portal works again on Hermes Agent v0.22.0, and a free-tier profile is pointed to `hermes auth upgrade`.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

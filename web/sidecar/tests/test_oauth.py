@@ -235,3 +235,58 @@ def test_an_unknown_provider_and_a_failed_start_are_errors(provider, tmp_path):
     with pytest.raises(RpcError, match="invalid sign-in link"):
         oauth.start(tmp_path, "openai-codex", providers={"openai-codex": (hostile, None, None)})
     assert oauth._FLOWS == {}
+
+
+# ── TAL-985: the real Nous begin step against stub Agent modules of either release shape ──
+
+
+def stub_agent(monkeypatch, *, guest: bool, shape: str) -> list[tuple]:
+    """Installs ``hermes_cli.anon_auth`` shaped like v0.22.0 (``guest_allowed``, ``UPGRADE_HINT``) or v0.21.x
+    (``guest_enabled`` only) and a ``hermes_cli.auth`` whose device-code request is recorded instead of sent."""
+    import sys
+    import types
+
+    anon_auth = types.ModuleType("hermes_cli.anon_auth")
+    anon_auth.has_guest = lambda: guest
+    if shape == "0.22":
+        anon_auth.guest_allowed = lambda: True
+        anon_auth.UPGRADE_HINT = "Run `hermes auth upgrade` to sign in with a Nous account, or /login inside a chat."
+    else:
+        anon_auth.guest_enabled = lambda: True
+    requests: list[tuple] = []
+
+    def request_device_code(client, portal, client_id, scope):
+        requests.append((portal, client_id, scope))
+        return {"user_code": "NOUS-1234", "verification_uri_complete": "https://portal.example.test/device?code=NOUS-1234", "expires_in": 900, "interval": 5, "device_code": "synthetic-device"}
+
+    auth = types.ModuleType("hermes_cli.auth")
+    auth.PROVIDER_REGISTRY = {"nous": types.SimpleNamespace(portal_base_url="https://portal.example.test/", client_id="synthetic-client", scope="inference")}
+    auth._request_device_code = request_device_code
+    package = types.ModuleType("hermes_cli")
+    package.anon_auth, package.auth = anon_auth, auth
+    monkeypatch.setitem(sys.modules, "hermes_cli", package)
+    monkeypatch.setitem(sys.modules, "hermes_cli.anon_auth", anon_auth)
+    monkeypatch.setitem(sys.modules, "hermes_cli.auth", auth)
+    monkeypatch.setattr(oauth, "_client", lambda timeout: contextlib.nullcontext(object()))
+    monkeypatch.delenv("HERMES_PORTAL_BASE_URL", raising=False)
+    monkeypatch.delenv("NOUS_PORTAL_BASE_URL", raising=False)
+    return requests
+
+
+@pytest.mark.parametrize("shape", ["0.22", "0.21"])
+def test_nous_without_a_guest_requests_a_device_code(monkeypatch, shape):
+    requests = stub_agent(monkeypatch, guest=False, shape=shape)
+    display, state = oauth._nous_begin()
+    assert requests == [("https://portal.example.test", "synthetic-client", "inference")]
+    assert display == {"user_code": "NOUS-1234", "verification_url": "https://portal.example.test/device?code=NOUS-1234", "expires_in": 900, "interval": 5}
+    assert state["device_code"] == "synthetic-device"
+
+
+@pytest.mark.parametrize(("shape", "hint"), [("0.22", "Run `hermes auth upgrade` to sign in with a Nous account, or /login inside a chat."), ("0.21", "`hermes auth upgrade`")])
+def test_nous_over_a_guest_is_refused_with_the_upgrade_hint(monkeypatch, shape, hint):
+    requests = stub_agent(monkeypatch, guest=True, shape=shape)
+    with pytest.raises(RpcError) as refused:
+        oauth._nous_begin()
+    assert refused.value.data["condition"] == "oauth_unsupported"
+    assert hint in str(refused.value)
+    assert requests == []
