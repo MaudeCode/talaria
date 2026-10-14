@@ -896,6 +896,32 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     }
   })
 
+  it('TAL-819: each profile row counts the skill and memory writes staged for approval', async () => {
+    const pending = join(s.state, 'pending')
+    mkdirSync(join(pending, 'skills'), { recursive: true })
+    mkdirSync(join(pending, 'memory'), { recursive: true })
+    writeFileSync(join(pending, 'skills', 'aaaa1111.json'), '{}')
+    writeFileSync(join(pending, 'memory', 'bbbb2222.json'), '{}')
+    writeFileSync(join(pending, 'memory', 'bbbb2222.json.tmp'), '{}')
+    const restore = sidecar.responderFor('profiles.list')
+    sidecar.respond('profiles.list', () => ({ profiles: [
+      { name: 'default', path: s.state, is_default: true, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 },
+      { name: 'scout', path: join(s.state, 'profiles', 'scout'), is_default: false, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 },
+    ] }))
+    s.deps.profiles.invalidate()
+    try {
+      let rows = (await json(await s.get('/api/profiles'))).profiles as Json[]
+      expect(rows.map((p) => [p.name, p.pending_writes])).toEqual([['default', 2], ['scout', 0]])
+      rmSync(pending, { recursive: true, force: true })
+      rows = (await json(await s.get('/api/profiles'))).profiles as Json[]
+      expect(rows.map((p) => [p.name, p.pending_writes])).toEqual([['default', 0], ['scout', 0]])
+    } finally {
+      rmSync(pending, { recursive: true, force: true })
+      sidecar.respond('profiles.list', restore)
+      s.deps.profiles.invalidate()
+    }
+  })
+
   it('profiles list/active/switch/create/delete go through the sidecar and set the profile cookie', async () => {
     let res = await s.get('/api/profiles')
     expect(res.status).toBe(200)

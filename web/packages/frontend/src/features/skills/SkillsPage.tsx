@@ -12,6 +12,7 @@ import { ConfirmDialog } from '../../ui/Dialog'
 import { EmptyState, ErrorState, LoadingState, formatBytes } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { cn } from '../../ui/cn'
+import { PendingWritesPanel } from '../pending-writes/PendingWritesPanel'
 
 export function SkillsPage() {
   const qc = useQueryClient()
@@ -47,6 +48,7 @@ export function SkillsPage() {
         </>
       }
     >
+      <PendingWritesPanel kind="skills" />
       {skills.isPending && <LoadingState />}
       {skills.isError && <ErrorState error={skills.error} onRetry={() => { void skills.refetch() }} />}
       {skills.isSuccess && filtered.length === 0 && <EmptyState>{m.skills_no_skills()}</EmptyState>}

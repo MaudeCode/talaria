@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ApiError } from '../../contracts/common'
 
-vi.mock('../../api/endpoints', () => ({ fetchMemory: vi.fn(), writeMemory: vi.fn() }))
+vi.mock('../../api/endpoints', () => ({ fetchMemory: vi.fn(), writeMemory: vi.fn(), fetchPendingWrites: vi.fn(() => Promise.resolve({ kind: 'memory', visible: false, enabled: false, items: [] })) }))
 vi.mock('../../shell/AppShell', () => ({ HubPage: ({ toolbar, children }: { toolbar: React.ReactNode; children: React.ReactNode }) => <div>{toolbar}{children}</div> }))
 import * as api from '../../api/endpoints'
 import { MemoryPage } from './MemoryPage'

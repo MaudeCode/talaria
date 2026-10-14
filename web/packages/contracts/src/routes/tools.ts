@@ -1,7 +1,7 @@
 import { oc } from '@orpc/contract'
 import { z } from 'zod'
 import { SkillsSchema, SkillContentSchema, SkillsUsageSchema, MemorySchema, PromptSchema, PromptsSchema, CommandsSchema, LogsSchema, InsightsSchema, AgentHealthSchema, SystemHealthSchema, McpServerSchema, McpServersSchema, McpToolsSchema, PluginsSchema, UpdatesCheckSchema, UpdatesSummarySchema, UpdateApplySchema, UpdateNotificationsSchema, UpdateNotificationSchema, TabIdSchema, FrontendBuildIdSchema, NotesSourcesSchema, NotesSearchSchema, NoteItemSchema, WikiStatusSchema, WikiBrowseSchema, WikiPageSchema, DashboardStatusSchema, DashboardConfigSchema, GatewayStatusSchema, GatewayActionSchema, ProjectOsDashboardSchema, TranscribeCapabilitySchema, PluginSettingViewSchema } from '../views.js'
-import { ToolsetsCatalogSchema, CommandBundleInvocationSchema, CommandBundleSchema } from '../sidecar/namespaces.js'
+import { ToolsetsCatalogSchema, CommandBundleInvocationSchema, CommandBundleSchema, PendingWriteSchema, PendingWriteRefSchema } from '../sidecar/namespaces.js'
 
 /** Skills, memory, prompts, commands, notes, insights, logs, health, MCP, plugins, updates, and diagnostics. */
 
@@ -36,6 +36,12 @@ const openApiSchema = (schema: z.ZodType): Record<string, unknown> => {
   return json
 }
 
+/** TAL-819: a kind's staged writes and whether the page shows its review panel. */
+export const PendingWritesSchema = z.object({ kind: z.enum(['skills', 'memory']), visible: z.boolean(), enabled: z.boolean(), items: z.array(PendingWriteSchema) })
+export type PendingWrites = z.infer<typeof PendingWritesSchema>
+const PendingWritesReviewInput = z.object({ kind: z.enum(['skills', 'memory']), writes: z.array(PendingWriteRefSchema).min(1) })
+const PendingWritesReviewSchema = z.object({ results: z.array(z.object({ id: z.string(), done: z.boolean(), message: z.string() })) })
+
 export const toolsContract = {
   toolsetsCatalog: oc.route({ method: 'POST', path: '/api/toolsets', tags, summary: 'Read the current profile catalog with a draft selection. Null uses profile defaults.' }).input(z.object({ session_id: z.string().optional(), toolsets: z.array(z.string()).nullable() })).output(ToolsetsCatalogSchema),
   skills: {
@@ -49,6 +55,14 @@ export const toolsContract = {
   memory: {
     get: oc.route({ method: 'GET', path: '/api/memory', tags }).input(z.object({ session_id: z.string().optional(), workspace: z.string().optional() })).output(MemorySchema),
     write: oc.route({ method: 'POST', path: '/api/memory/write', tags, summary: '`section` names the file (memory, user, soul); the legacy `target` alias is accepted. `revision` is the section\'s `*_revision` the edit started from; 409 refuses the save when the file changed since. Masks the page showed are restored to the values they hide; 422 refuses an ambiguous or edited mask, or a MEMORY.md / USER.md body over the Agent store limit.', spec: (op) => ({ ...op, responses: { ...op.responses, 409: { description: 'The file changed since `revision`; the file is untouched.', content: { 'application/json': { schema: openApiSchema(MemoryWriteConflictSchema) } } }, 422: { description: 'Refused; the file is untouched.', content: { 'application/json': { schema: openApiSchema(MemoryWriteRejectionSchema) } } } } }) }).input(z.object({ section: z.string().optional(), target: z.string().optional(), content: z.string().optional(), revision: z.string() })).output(z.object({ ok: z.literal(true), section: z.string(), path: z.string() })),
+  },
+  pendingWrites: {
+    list: oc.route({ method: 'GET', path: '/api/pending-writes', tags, summary: 'TAL-819: the active profile\'s skill or memory writes the Agent staged for approval, oldest first, each with the diff approving it applies. `visible` is whether the page shows its review panel (any write pending); `enabled` is the profile\'s `<kind>.write_approval` gate. `summary` and `diff` are redacted like the memory page (`api_redact_enabled`); `revision` is the hash of the raw diff. An Agent without the review handlers, or no running Agent, lists none.' })
+      .input(z.object({ kind: z.enum(['skills', 'memory']) })).output(PendingWritesSchema),
+    approve: oc.route({ method: 'POST', path: '/api/pending-writes/approve', tags, summary: 'TAL-819: apply each staged write through the Agent\'s `/skills` or `/memory approve`. Each write carries the `revision` the user reviewed; a write whose diff changed since is refused unapplied. `done` is false when the write was not applied (its record stays pending); `message` is the Agent\'s text either way, redacted.' })
+      .input(PendingWritesReviewInput).output(PendingWritesReviewSchema),
+    reject: oc.route({ method: 'POST', path: '/api/pending-writes/reject', tags, summary: 'TAL-819: discard each staged write through the Agent\'s `/skills` or `/memory reject`.' })
+      .input(PendingWritesReviewInput).output(PendingWritesReviewSchema),
   },
   prompts: {
     list: oc.route({ method: 'GET', path: '/api/prompts', tags }).output(PromptsSchema),

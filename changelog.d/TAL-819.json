@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "With a profile's skills.write_approval or memory.write_approval on, the skill and memory writes the Agent staged appear on the Skills and Memory pages with their diffs, to approve or reject.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

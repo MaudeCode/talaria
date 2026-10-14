@@ -1,0 +1,98 @@
+{
+  "write_approval.pending": [
+    {
+      "params": {
+        "profile_home": "<home>/profiles/review",
+        "kind": "skills"
+      },
+      "result": {
+        "supported": true,
+        "enabled": true,
+        "items": [
+          {
+            "id": "b2a74d84",
+            "kind": "skills",
+            "target": "demo-skill",
+            "op": "create",
+            "summary": "create 'demo-skill' — Staged by the test (68 chars)",
+            "origin": "foreground",
+            "created_at": 1791972733.871302,
+            "diff": "---\nname: demo-skill\ndescription: Staged by the test\n---\n\nStep one.\n",
+            "approvable": true,
+            "revision": "36397cc95df7e8df6f0cc93d2eba1f12ca010122449080622a601ed895ee2cf0"
+          }
+        ]
+      }
+    },
+    {
+      "params": {
+        "profile_home": "<home>/profiles/review",
+        "kind": "skills"
+      },
+      "result": {
+        "supported": true,
+        "enabled": true,
+        "items": [
+          {
+            "id": "11f7ba0d",
+            "kind": "skills",
+            "target": "demo-skill",
+            "op": "create",
+            "summary": "create 'demo-skill' — Staged by the test (68 chars)",
+            "origin": "foreground",
+            "created_at": 1791972734.460205,
+            "diff": "---\nname: demo-skill\ndescription: Staged by the test\n---\n\nStep one.\n",
+            "approvable": true,
+            "revision": "36397cc95df7e8df6f0cc93d2eba1f12ca010122449080622a601ed895ee2cf0"
+          }
+        ]
+      }
+    }
+  ],
+  "write_approval.approve": [
+    {
+      "params": {
+        "profile_home": "<home>/profiles/review",
+        "kind": "skills",
+        "writes": [
+          {
+            "id": "b2a74d84",
+            "revision": "36397cc95df7e8df6f0cc93d2eba1f12ca010122449080622a601ed895ee2cf0"
+          }
+        ]
+      },
+      "result": {
+        "results": [
+          {
+            "id": "b2a74d84",
+            "done": true,
+            "message": "Approved 1 skills write(s)."
+          }
+        ]
+      }
+    }
+  ],
+  "write_approval.reject": [
+    {
+      "params": {
+        "profile_home": "<home>/profiles/review",
+        "kind": "skills",
+        "writes": [
+          {
+            "id": "11f7ba0d",
+            "revision": "36397cc95df7e8df6f0cc93d2eba1f12ca010122449080622a601ed895ee2cf0"
+          }
+        ]
+      },
+      "result": {
+        "results": [
+          {
+            "id": "11f7ba0d",
+            "done": true,
+            "message": "Rejected pending skills write '11f7ba0d'."
+          }
+        ]
+      }
+    }
+  ]
+}
