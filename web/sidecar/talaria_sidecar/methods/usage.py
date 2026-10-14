@@ -289,7 +289,7 @@ def _anthropic_usage(token: str):
 @functools.cache
 def _reads_read_only(fetch) -> bool:
     """Agent v0.21.6+: ``fetch_account_usage(read_only=, identity_id=)`` reads one pool account without refreshing or
-    rotating its credential, and every fetcher honours the explicit key."""
+    rotating its credential, and every fetcher honours the explicit key. TAL-351 drops the check with the mirror."""
     try:
         return {"read_only", "identity_id"} <= inspect.signature(fetch).parameters.keys()
     except (TypeError, ValueError):
@@ -313,7 +313,7 @@ def account(provider: str, *, base_url: str | None, api_key: str | None, credent
         raise RpcError(f"account usage unavailable: {exc}", condition="usage_unavailable") from exc
     try:
         if entry is not None and _reads_read_only(fetch_account_usage):
-            # A display read never repairs the account: a Codex 401 is reported, not answered with a credential refresh.
+            # A display read never repairs the account: a rejected key reads as unavailable, never as a credential refresh.
             from agent.account_usage_cache import _identity_id_for
 
             snapshot = fetch_account_usage(provider, base_url=base_url, api_key=api_key, read_only=True, identity_id=_identity_id_for(provider, entry))
