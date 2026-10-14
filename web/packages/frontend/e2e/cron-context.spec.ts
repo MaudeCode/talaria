@@ -44,3 +44,19 @@ test('a stuck job shows the server hint and a run shows the server-extracted rep
   await output.screenshot({ path: testInfo.outputPath('cron-run.png') })
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
 })
+
+test('an unwritable store shows one banner and a recovered job keeps its last failure (TAL-810)', async ({ page }, testInfo) => {
+  const job = { id: 'digest', name: 'Morning digest', prompt: 'Synthetic task', schedule: '0 9 * * *', schedule_display: '0 9 * * *', schedule_input: '0 9 * * *', enabled: true, state: 'scheduled', last_status: 'ok', last_run_at: '2026-10-12T09:00:00Z', next_run_at: '2026-10-13T09:00:00Z', derived_state: 'active', needs_attention: false, resumable: false, attention_hint: null, last_failure: { at: 1_791_450_000, detail: 'Provider timed out after 600s' }, toast_notifications: true, read_only: false }
+  const store = { profile: 'default', store: '/srv/hermes/cron', error: 'EROFS: Read-only file system', fix: 'free disk space, remount it read-write, or fix permissions on /srv/hermes/cron', since: 1_791_400_000 }
+  await page.route('**/api/crons', (route) => route.fulfill({ json: { jobs: [job], active_profile: 'default', all_profiles: false, other_profile_count: 0, unwritable_stores: [store] } }))
+  await page.route('**/api/crons/status', (route) => route.fulfill({ json: { running: {} } }))
+  await page.route('**/api/crons/history?*', (route) => route.fulfill({ json: { runs: [], total: 0, offset: 0 } }))
+  await page.goto('/tasks?job=digest')
+  const banner = page.getByTestId('cron-detail').getByRole('alert')
+  await expect(banner).toHaveCount(1)
+  await expect(banner).toContainText("Scheduled tasks can't run")
+  await expect(banner).toContainText(store.fix)
+  await expect(page.getByTestId('cron-detail')).toContainText('Provider timed out after 600s')
+  await page.screenshot({ path: testInfo.outputPath('cron-store-banner.png') })
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+})

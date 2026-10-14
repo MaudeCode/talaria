@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import type { CronJob } from '../../contracts'
+import type { CronJob, CronStoreHealth } from '../../contracts'
 
 vi.mock(import('../../api/endpoints'), async (importOriginal) => ({
   ...(await importOriginal()),
@@ -22,7 +22,7 @@ const full: CronJob = {
   schedule: { kind: 'cron', expr: '0 9 * * *', display: '0 9 * * *' }, schedule_display: '0 9 * * *', schedule_input: '0 9 * * *', attention_hint: null, repeat: { times: null, completed: 4 },
   enabled: true, state: 'scheduled', next_run_at: '2026-09-18T09:00:00+02:00', last_run_at: '2026-09-17T09:00:00+02:00', last_status: 'ok',
   last_error: null, last_delivery_error: null, deliver: 'telegram', workdir: '/srv/digest', reasoning_effort: 'high', profile: 'work', toast_notifications: false,
-  derived_state: 'active', needs_attention: false, resumable: false,
+  derived_state: 'active', needs_attention: false, resumable: false, last_failure: null,
 }
 const feed: CronJob = { ...full, id: 'feed0000feed', name: 'Feed', context_from: [], continuity: false, monitor: '', skills: [], reasoning_effort: null, model: null, provider: null, model_option_id: null, workdir: null }
 const attention: CronJob = { ...feed, id: 'a77e0000a77e', name: 'Stuck', enabled: false, state: 'completed', next_run_at: null, last_error: "No module named 'croniter'", last_delivery_error: 'telegram: 401', derived_state: 'needs_attention', needs_attention: true, resumable: true, attention_hint: 'croniter_missing' }
@@ -37,8 +37,8 @@ function Workbench() {
 }
 
 let qc: QueryClient
-function renderPage(jobs: CronJob[]) {
-  vi.mocked(api.fetchCrons).mockResolvedValue({ jobs, active_profile: 'work', all_profiles: false, other_profile_count: 0 })
+function renderPage(jobs: CronJob[], unwritable_stores: CronStoreHealth[] = []) {
+  vi.mocked(api.fetchCrons).mockResolvedValue({ jobs, active_profile: 'work', all_profiles: false, other_profile_count: 0, unwritable_stores })
   qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(<QueryClientProvider client={qc}><Workbench /></QueryClientProvider>)
 }
@@ -203,7 +203,7 @@ describe('TasksPage', () => {
     await openJob('Digest')
     await waitFor(() => expect(api.fetchCronHistory).toHaveBeenCalledTimes(1))
     // The next list poll (every 30s in the app) carries the new last_run_at; the status map never saw this run.
-    vi.mocked(api.fetchCrons).mockResolvedValue({ jobs: [{ ...full, last_run_at: '2026-09-18T09:00:00+02:00' }, feed], active_profile: 'work', all_profiles: false, other_profile_count: 0 })
+    vi.mocked(api.fetchCrons).mockResolvedValue({ jobs: [{ ...full, last_run_at: '2026-09-18T09:00:00+02:00' }, feed], active_profile: 'work', all_profiles: false, other_profile_count: 0, unwritable_stores: [] })
     await qc.refetchQueries({ queryKey: keys.crons.list(false) })
     await waitFor(() => expect(api.fetchCronHistory).toHaveBeenCalledTimes(2))
   })
@@ -296,6 +296,24 @@ describe('TasksPage', () => {
     const copied = JSON.parse(writeText.mock.calls[0]![0]) as Record<string, unknown>
     expect(copied).toMatchObject({ id: 'a77e0000a77e', state: 'completed', enabled: false, last_error: "No module named 'croniter'", last_delivery_error: 'telegram: 401', schedule_display: '0 9 * * *' })
     expect(copied).not.toHaveProperty('prompt')
+  })
+
+  it('shows one banner for an unwritable store and a job\'s last failure after a later success (TAL-810)', async () => {
+    const recovered: CronJob = { ...feed, last_status: 'ok', last_failure: { at: 1_789_500_000, detail: 'provider timeout' } }
+    const store: CronStoreHealth = { profile: 'work', store: '/srv/hermes/cron', error: 'EROFS: Read-only file system', fix: 'free disk space, remount it read-write, or fix permissions on /srv/hermes/cron', since: 1_789_400_000 }
+    renderPage([recovered], [store])
+    const banner = await within(screen.getByTestId('main')).findByRole('alert')
+    expect(banner).toHaveTextContent(/scheduled tasks can.t run/i)
+    expect(banner).toHaveTextContent(store.error)
+    expect(banner).toHaveTextContent(store.fix)
+    const detail = await selectJob('Feed')
+    expect(detail.getAllByRole('alert')).toHaveLength(1)
+    expect(detail.getByText('Last failure')).toBeVisible()
+    expect(detail.getByText('provider timeout')).toBeVisible()
+    cleanup()
+    renderPage([feed])
+    await within(screen.getByTestId('sidebar')).findByRole('button', { name: /Feed/ })
+    expect(within(screen.getByTestId('main')).queryByRole('alert')).toBeNull()
   })
 
   it('shows the croniter hint only when the server names it (TAL-599)', async () => {

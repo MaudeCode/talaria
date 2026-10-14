@@ -17,6 +17,7 @@ import queue
 import re
 import threading
 import time
+from datetime import datetime
 from pathlib import Path
 
 from ..errors import InvalidParams, RpcError
@@ -142,6 +143,43 @@ def job_for_api(job: dict) -> dict:
     payload["monitor"] = payload.get("monitor_url") or payload.get("monitor_script") or ""
     payload["continuity"] = any(str(ref).strip().lower() == "self" for ref in (payload.get("context_from") or []))
     return payload
+
+
+# ── store health and foreign runs (TAL-810) ─────────────────────────────
+
+def _store_health(cron_dir: Path) -> dict | None:
+    """The Agent's cross-process write probe: ``None`` when the store accepts writes or the Agent predates it."""
+    try:
+        from cron.store_health import probe_report
+    except ImportError:
+        return None
+    return probe_report(cron_dir)
+
+
+def _live_executions(home: Path, job_ids: list[str]) -> dict[str, dict]:
+    """Jobs whose latest attempt is claimed or running under a live owner: the gateway scheduler or another process.
+
+    The executions ledger lives under ``get_hermes_home()``, not the cron store override, so it is read in the
+    profile's scope. A store without a ledger never ran anything, and is not created by this read."""
+    try:
+        from cron.executions import live_inflight_execution
+    except ImportError:
+        return {}
+    if not job_ids or not (Path(home).expanduser() / "cron" / "executions.db").is_file():
+        return {}
+    try:
+        with scoped_home(home):
+            return {job_id: record for job_id in job_ids if job_id and (record := live_inflight_execution(job_id))}
+    except Exception:  # noqa: BLE001 - an unreadable ledger cannot prove a run; the list still loads
+        log.warning("Cron executions ledger unreadable in %s", home, exc_info=True)
+        return {}
+
+
+def _elapsed(record: dict) -> float:
+    try:
+        return round(max(0.0, time.time() - datetime.fromisoformat(str(record.get("claimed_at"))).timestamp()), 1)
+    except ValueError:
+        return 0.0
 
 
 # ── output files ──────────────────────────────────────────────────────────
@@ -384,10 +422,18 @@ def run_tracked(job: dict, store_home: Path, execution_home: Path | None, ctx: C
 def register(registry) -> None:
     @registry.method("cron.list")
     def list_(ctx: CallContext, params: dict) -> dict:
-        """Jobs of one store, shaped for the API; the server merges profiles."""
+        """Jobs of one store, shaped for the API; the server merges profiles. ``probe_store`` adds the store's write health."""
         jobs = _jobs()
-        with _store(profile_home_param(params)):
-            return {"jobs": [job_for_api(job) for job in jobs.list_jobs(include_disabled=True)]}
+        home = profile_home_param(params)
+        with _store(home):
+            listed = [job_for_api(job) for job in jobs.list_jobs(include_disabled=True)]
+            result: dict = {"jobs": listed}
+            if params.get("probe_store"):
+                result["store_health"] = _store_health(jobs.get_cron_output_dir().parent)
+        live = _live_executions(home, [str(job.get("id") or "") for job in listed])
+        for job in listed:
+            job["running_elsewhere"] = str(job.get("id") or "") in live
+        return result
 
     @registry.method("cron.get")
     def get(ctx: CallContext, params: dict) -> dict:
@@ -509,6 +555,9 @@ def register(registry) -> None:
             job = _jobs().get_job(job_id)
         if not job:
             raise RpcError("Job not found", condition="not_found")
+        foreign = _live_executions(store_home, [job_id]).get(job_id)
+        if foreign is not None:
+            return {"job_id": job_id, "status": "already_running", "elapsed": _elapsed(foreign)}
         with _RUNNING_LOCK:
             started = _RUNNING.get(job_id)
             if started is not None:

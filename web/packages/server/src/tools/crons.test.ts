@@ -68,7 +68,7 @@ describe('cron job payloads carry the derived fields', () => {
     sidecar.respond('cron.pause', () => { Object.assign(jobs[0]!, { enabled: false, state: 'paused', next_run_at: null, last_status: 'error' }); return { job: jobs[0] as never } })
     sidecar.respond('cron.run_detail', (params) => ({ job_id: recurring.id, filename: params.filename, content: runFiles[params.filename] ?? '', snippet: '', usage: {} }) as never)
     sidecar.respond('cron.resume', () => { Object.assign(jobs[0]!, { enabled: true, state: 'scheduled', next_run_at: '2026-09-19T09:00:00+02:00' }); return { job: jobs[0] as never } })
-    return { service: new CronService(deps), home, runningJobs, jobs }
+    return { service: new CronService(deps), home, runningJobs, jobs, sidecar }
   }
   const runFiles: Record<string, string> = {
     'agent.md': '# Cron run: Digest\n\n**Model:** m\n\n## Response\n\n# Title\n\n| a |\n',
@@ -101,6 +101,22 @@ describe('cron job payloads carry the derived fields', () => {
     expect(listed.ordered).toBe(true)
     const ids = listed.jobs as Dict[]
     expect(ids.map((job) => job.id)).toEqual(['e00000000001', 'f00000000001', recurring.id, 'g00000000001', 'b00000000001', 'd00000000001', 'c00000000001'])
+  })
+
+  it('reads a job another process runs as running, keeps its last failure after a success, and reports unwritable stores (TAL-810)', async () => {
+    const { service, jobs, sidecar } = setup()
+    const health = { store: '/synthetic/talaria-home/cron', error: 'EROFS: Read-only file system', since: '2026-10-11T12:00:00+00:00', fix: 'free disk space, remount it read-write, or fix permissions on /synthetic/talaria-home/cron' }
+    let probed = false
+    sidecar.respond('cron.list', (params) => { probed ||= params.probe_store === true; return { jobs: jobs as never[], store_health: params.probe_store ? health : undefined } })
+    Object.assign(jobs[0]!, { running_elsewhere: true, last_status: 'ok', last_failure: { at: '2026-10-10T08:00:00+00:00', detail: 'provider timeout' } })
+    const listed = await service.list('default', false)
+    expect(probed).toBe(true)
+    expect(listed.unwritable_stores).toEqual([{ profile: 'default', store: health.store, error: health.error, fix: health.fix, since: Date.UTC(2026, 9, 11, 12) / 1000 }])
+    expect(listed.jobs).toMatchObject([{ running: true, derived_state: 'active', last_failure: { at: Date.UTC(2026, 9, 10, 8) / 1000, detail: 'provider timeout' } }])
+    expect((listed.jobs as Dict[])[0]).not.toHaveProperty('running_elsewhere')
+    Object.assign(jobs[0]!, { running_elsewhere: false, last_failure: null })
+    sidecar.respond('cron.list', () => ({ jobs: jobs as never[], store_health: null }))
+    expect(await service.list('default', false)).toMatchObject({ unwritable_stores: [], jobs: [{ running: false, last_failure: null }] })
   })
 
   it('lists running from the manual-run map and returns pause/resume rows through the same shaping', async () => {

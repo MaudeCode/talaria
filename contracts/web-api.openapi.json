@@ -56524,12 +56524,42 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "last_failure": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "at": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "detail": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "at",
+                                  "detail"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           }
                         },
                         "required": [
                           "schedule_display",
                           "schedule_input",
-                          "attention_hint"
+                          "attention_hint",
+                          "last_failure"
                         ],
                         "additionalProperties": {}
                       }
@@ -56548,10 +56578,48 @@
                     },
                     "cron_unavailable": {
                       "type": "boolean"
+                    },
+                    "unwritable_stores": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "profile": {
+                            "type": "string"
+                          },
+                          "store": {
+                            "type": "string"
+                          },
+                          "error": {
+                            "type": "string"
+                          },
+                          "fix": {
+                            "type": "string"
+                          },
+                          "since": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "profile",
+                          "store",
+                          "error",
+                          "fix",
+                          "since"
+                        ]
+                      }
                     }
                   },
                   "required": [
-                    "jobs"
+                    "jobs",
+                    "unwritable_stores"
                   ],
                   "additionalProperties": {}
                 }
@@ -57260,12 +57328,42 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "last_failure": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "at": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "detail": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "at",
+                                "detail"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
                         "schedule_display",
                         "schedule_input",
-                        "attention_hint"
+                        "attention_hint",
+                        "last_failure"
                       ],
                       "additionalProperties": {}
                     },
@@ -57875,12 +57973,42 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "last_failure": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "at": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "detail": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "at",
+                                "detail"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
                         "schedule_display",
                         "schedule_input",
-                        "attention_hint"
+                        "attention_hint",
+                        "last_failure"
                       ],
                       "additionalProperties": {}
                     },
@@ -58294,12 +58422,42 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "last_failure": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "at": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "detail": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "at",
+                                "detail"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
                         "schedule_display",
                         "schedule_input",
-                        "attention_hint"
+                        "attention_hint",
+                        "last_failure"
                       ],
                       "additionalProperties": {}
                     },
@@ -58714,12 +58872,42 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "last_failure": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "at": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "detail": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "at",
+                                "detail"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
                         "schedule_display",
                         "schedule_input",
-                        "attention_hint"
+                        "attention_hint",
+                        "last_failure"
                       ],
                       "additionalProperties": {}
                     },
@@ -59144,12 +59332,42 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "last_failure": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "at": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "detail": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "at",
+                                "detail"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
                         "schedule_display",
                         "schedule_input",
-                        "attention_hint"
+                        "attention_hint",
+                        "last_failure"
                       ],
                       "additionalProperties": {}
                     },
@@ -59564,12 +59782,42 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "last_failure": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "at": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "detail": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "at",
+                                "detail"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
                         "schedule_display",
                         "schedule_input",
-                        "attention_hint"
+                        "attention_hint",
+                        "last_failure"
                       ],
                       "additionalProperties": {}
                     },

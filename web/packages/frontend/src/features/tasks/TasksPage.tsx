@@ -10,7 +10,7 @@ import { Copy, Pause, Play, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
-import type { CronJob } from '../../contracts'
+import type { CronJob, CronStoreHealth } from '../../contracts'
 import { AppShell, HubPage } from '../../shell/AppShell'
 import { PanelHead, PanelHeadButton } from '../../shell/Sidebar'
 import { closeMobileSidebar, openMobileSidebar, useIsDesktop, useMediaQuery } from '../../shell/useShellState'
@@ -73,6 +73,7 @@ export function useTasksWorkbench(selectedId: string | null, onSelect: (id: stri
     onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error'),
   })
   const jobs = useMemo(() => crons.data?.jobs ?? [], [crons.data])
+  const unwritable = crons.data?.unwritable_stores ?? []
   const running = useMemo(() => runningIds(status.data), [status.data])
   // A run that just finished has written its output file and updated last_run/last_status:
   // the mutation's invalidation fired when /run started, so refetch again when the running set shrinks.
@@ -127,13 +128,14 @@ export function useTasksWorkbench(selectedId: string | null, onSelect: (id: stri
   } else if (crons.isError) {
     main = <HubPage title={m.tab_tasks()}><ErrorState error={crons.error} onRetry={() => { void crons.refetch() }} /></HubPage>
   } else if (!selected) {
-    main = <TasksEmpty missing={!!selectedId} unavailable={!!crons.data.cron_unavailable} onNew={() => startEditor('create', null)} />
+    main = <TasksEmpty missing={!!selectedId} unavailable={!!crons.data.cron_unavailable} unwritable={unwritable} onNew={() => startEditor('create', null)} />
   } else {
     main = (
       <TaskDetail
         job={selected}
         jobs={jobs}
         state={cronState(selected, running.has(jobId(selected)))}
+        unwritable={unwritable}
         onAction={(act) => run(act, selected)}
         onEdit={() => startEditor('edit', selected)}
         onDuplicate={() => startEditor('duplicate', selected)}
@@ -221,10 +223,29 @@ function TaskListPanel({ jobs, pending, error, otherProfileCount, allProfiles, r
 
 // ── Main view ────────────────────────────────────────────────────────────────
 
-function TasksEmpty({ missing, unavailable, onNew }: { missing: boolean; unavailable: boolean; onNew: () => void }) {
+/** TAL-810: stores whose writes fail; their schedulers skip every run until the store is writable again. */
+function UnwritableStores({ stores, className }: { stores: CronStoreHealth[]; className?: string }) {
+  if (!stores.length) return null
+  return (
+    <section className={cn('rounded-lg border border-warning px-4 py-3', className)} role="alert">
+      <div className="text-sm font-medium text-warning">{m.cron_store_unwritable_title()}</div>
+      {stores.map((store) => (
+        <div key={store.store} className="mt-2 text-[13px] text-text">
+          {stores.length > 1 && <div className="text-muted">{store.profile}</div>}
+          <div className="font-mono text-[12px] text-error">{store.error}</div>
+          <div className="mt-1">{store.fix}</div>
+          {store.since !== null && <div className="mt-1 text-muted">{m.cron_store_last_saved({ when: formatDate(store.since) })}</div>}
+        </div>
+      ))}
+    </section>
+  )
+}
+
+function TasksEmpty({ missing, unavailable, unwritable, onNew }: { missing: boolean; unavailable: boolean; unwritable: CronStoreHealth[]; onNew: () => void }) {
   const isDesktop = useIsDesktop()
   return (
     <HubPage title={m.tab_tasks()}>
+      <UnwritableStores stores={unwritable} className="mb-3" />
       {unavailable && <div className="mb-3 rounded-lg border border-warning px-3 py-2 text-sm text-warning" role="status">{m.cron_gateway_unavailable()}</div>}
       <EmptyState>
         <div>{missing ? m.cron_task_not_found() : m.cron_select_task()}</div>
@@ -248,8 +269,8 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 
 const DL = 'grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1.5 text-[13px]'
 
-function TaskDetail({ job, jobs, state, onAction, onEdit, onDuplicate, onDelete }: {
-  job: CronJob; jobs: CronJob[]; state: CronState; onAction: (action: CronAction) => void; onEdit: () => void; onDuplicate: () => void; onDelete: () => void
+function TaskDetail({ job, jobs, state, unwritable, onAction, onEdit, onDuplicate, onDelete }: {
+  job: CronJob; jobs: CronJob[]; state: CronState; unwritable: CronStoreHealth[]; onAction: (action: CronAction) => void; onEdit: () => void; onDuplicate: () => void; onDelete: () => void
 }) {
   const id = jobId(job)
   const readOnly = !!job.read_only
@@ -280,6 +301,7 @@ function TaskDetail({ job, jobs, state, onAction, onEdit, onDuplicate, onDelete 
   return (
     <HubPage title={job.name || m.untitled()} toolbar={toolbar} id="taskDetail">
       <div className="mx-auto flex max-w-3xl flex-col gap-6" data-testid="cron-detail" data-state={state}>
+        <UnwritableStores stores={unwritable} />
         {!readOnly && attention && (
           <section className="rounded-lg border border-warning px-4 py-3" role="alert">
             <div className="text-sm font-medium text-warning">{m.cron_status_needs_attention()}</div>
@@ -309,6 +331,7 @@ function TaskDetail({ job, jobs, state, onAction, onEdit, onDuplicate, onDelete 
               <Row label={m.cron_schedule_preset_label()}><code>{job.schedule_display}</code></Row>
               <Row label={m.cron_next()}>{nextRun ? formatDate(nextRun) : m.not_available()}</Row>
               <Row label={m.cron_last()}>{lastRun ? formatDate(lastRun) : m.never()}</Row>
+              {job.last_failure && <Row label={m.cron_last_failure_label()}>{job.last_failure.at !== null && <span className="text-muted">{formatDate(job.last_failure.at)} · </span>}<span className="font-mono text-[12px] text-error">{job.last_failure.detail}</span></Row>}
               <Row label={m.cron_deliver_label()}>{job.deliver || 'local'}</Row>
               <Row label={m.cron_profile_label()}>{profileLabel}{readOnly && ownerProfile && <span className="text-muted"> · {m.cron_owner_profile_label()}: {ownerProfile}</span>}</Row>
             </dl>

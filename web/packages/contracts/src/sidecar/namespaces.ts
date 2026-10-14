@@ -202,12 +202,14 @@ export const STT_METHODS = {
 } as const
 
 // ── cron ───────────────────────────────────────────────────────────────
-export const CronJobSchema = z.object({ id: z.string(), name: z.string().nullable().optional(), profile: z.string().nullable(), toast_notifications: z.boolean(), monitor: z.string(), continuity: z.boolean() }).catchall(Json)
+/** `running_elsewhere` (TAL-810): the job's latest attempt is claimed or running under a live owner, such as the gateway scheduler. */
+export const CronJobSchema = z.object({ id: z.string(), name: z.string().nullable().optional(), profile: z.string().nullable(), toast_notifications: z.boolean(), monitor: z.string(), continuity: z.boolean(), running_elsewhere: z.boolean().optional() }).catchall(Json)
 const CronJob = ProfileHomeParams.extend({ job_id: z.string().min(1) })
 const JobEnvelope = z.object({ job: CronJobSchema })
 export const CronUsageSchema = z.object({ model: z.string().optional(), provider: z.string().optional(), estimated_cost_usd: z.number().optional(), duration_seconds: z.number().optional(), input_tokens: z.number().int().nullable().optional(), output_tokens: z.number().int().nullable().optional(), total_tokens: z.number().int().nullable().optional() })
 export const CRON_METHODS = {
-  'cron.list': { params: ProfileHomeParams, result: z.object({ jobs: z.array(CronJobSchema) }) },
+  /** `probe_store` adds the store's write probe (TAL-810): null when writes land or the Agent predates the probe. */
+  'cron.list': { params: ProfileHomeParams.extend({ probe_store: z.boolean().optional() }), result: z.object({ jobs: z.array(CronJobSchema), store_health: z.object({ store: z.string(), error: z.string(), since: z.string(), fix: z.string() }).nullable().optional() }) },
   'cron.get': { params: CronJob, result: z.object({ job: CronJobSchema.nullable() }) },
   'cron.create': { params: ProfileHomeParams.extend({ job: Loose, execution_home: z.string().nullable().optional() }), result: JobEnvelope },
   'cron.update': { params: CronJob.extend({ updates: Loose }), result: JobEnvelope },

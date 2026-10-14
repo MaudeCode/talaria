@@ -3,7 +3,8 @@
     "active_profile": "default",
     "all_profiles": false,
     "jobs": [],
-    "other_profile_count": 0
+    "other_profile_count": 0,
+    "unwritable_stores": []
   },
   "method": "GET",
   "path": "/api/crons",

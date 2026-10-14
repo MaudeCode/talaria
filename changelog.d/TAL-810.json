@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "The Tasks page warns when scheduled tasks can't run because their store can't be saved, shows each task's last failure even after a later success, and marks a task the gateway scheduler is running as running.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

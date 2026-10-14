@@ -1,6 +1,6 @@
 /** Cron jobs across profiles through the sidecar `cron.*` namespace (Python `api/routes.py` cron section). */
 import { join } from 'node:path'
-import type { CronRecentCompletion, CronContextSources, CronDerivedState } from '@maudecode/talaria-web-contracts'
+import type { CronRecentCompletion, CronContextSources, CronDerivedState, CronJob, CronStoreHealth } from '@maudecode/talaria-web-contracts'
 import type { SidecarLike } from '../sidecar/client.js'
 import { parseProviderQualifiedModel, type Dict } from '../config/agent-config.js'
 import { HttpFailure } from '../sessions/service.js'
@@ -52,9 +52,19 @@ export function jobForApi(job: Dict, running = false): Dict {
   payload.resumable = payload.needs_attention || state === 'paused' || state === 'off'
   // TAL-599: a stuck job whose error names croniter gets the "restart the Gateway with cron support" hint.
   payload.attention_hint = payload.needs_attention && /croniter/i.test(str(job.last_error)) ? 'croniter_missing' : null
-  payload.running = running || job.running === true
+  // TAL-810: a run the gateway scheduler (or any other live process) owns reads as running too.
+  payload.running = running || job.running === true || job.running_elsewhere === true
+  delete payload.running_elsewhere
+  payload.last_failure = lastFailure(job.last_failure)
   Object.assign(payload, scheduleText(job))
   return payload
+}
+
+/** TAL-810: the Agent's sticky `{at, detail}` stamp of the latest failed run, which survives later successes. */
+function lastFailure(value: unknown): CronJob['last_failure'] {
+  if (!value || typeof value !== 'object') return null
+  const failure = value as Dict
+  return { at: completedAtSeconds(failure.at), detail: str(failure.detail).trim() || 'run failed' }
 }
 
 /** TAL-601: the canonical list order every client renders: running first, then soonest next run (none last), then name. */
@@ -233,8 +243,11 @@ export class CronService {
     throw new HttpFailure(403, 'Unknown cron profile home')
   }
 
-  /** The physical store owns execution. Additive owner_profile metadata lets the creator manage a new job there. */
-  private async storedJobs(active: string): Promise<StoredJob[]> {
+  /**
+   * The physical store owns execution. Additive owner_profile metadata lets the creator manage a new job there.
+   * Passing `unwritable` probes each listed store's writes (TAL-810) and collects the ones that fail.
+   */
+  private async storedJobs(active: string, unwritable?: CronStoreHealth[]): Promise<StoredJob[]> {
     // ponytail: scan visible stores per request; add an index only if profile/job counts make this expensive.
     const rows: StoredJob[] = []
     const seen = new Set<string>()
@@ -245,8 +258,12 @@ export class CronService {
       if (seen.has(home)) continue
       seen.add(home)
       let jobs: Dict[]
-      try { jobs = (await this.sidecar().call('cron.list', { profile_home: home })).jobs }
-      catch (error) { if (local) throw error; continue }
+      try {
+        const listed = await this.sidecar().call('cron.list', unwritable ? { profile_home: home, probe_store: true } : { profile_home: home })
+        jobs = listed.jobs
+        const health = listed.store_health
+        if (unwritable && health) unwritable.push({ profile, store: health.store, error: health.error, fix: health.fix, since: completedAtSeconds(health.since) })
+      } catch (error) { if (local) throw error; continue }
       for (const job of jobs) {
         const creator = str(job.owner_profile).trim()
         rows.push({ home, profile, job, managed: local || Boolean(creator && this.deps.profilesMatch(creator, active)) })
@@ -321,10 +338,11 @@ export class CronService {
     const activeJobs: Dict[] = []
     const otherJobs: Dict[] = []
     const pickerHome = this.deps.profileHome(active)
-    try { for (const row of await this.storedJobs(active)) (row.managed ? activeJobs : otherJobs).push(await this.view(row, pickerHome)) }
-    catch (error) { if (error instanceof SidecarError && error.condition === 'cron_unavailable') return { jobs: [], cron_unavailable: true }; throw error }
+    const unwritable: CronStoreHealth[] = []
+    try { for (const row of await this.storedJobs(active, unwritable)) (row.managed ? activeJobs : otherJobs).push(await this.view(row, pickerHome)) }
+    catch (error) { if (error instanceof SidecarError && error.condition === 'cron_unavailable') return { jobs: [], cron_unavailable: true, unwritable_stores: [] }; throw error }
     const all = allProfiles && !this.deps.isolatedProfileMode()
-    return { jobs: (all ? [...activeJobs, ...otherJobs] : activeJobs).sort(compareListedJobs), ordered: true, all_profiles: all, active_profile: active, other_profile_count: all ? 0 : otherJobs.length }
+    return { jobs: (all ? [...activeJobs, ...otherJobs] : activeJobs).sort(compareListedJobs), ordered: true, all_profiles: all, active_profile: active, other_profile_count: all ? 0 : otherJobs.length, unwritable_stores: unwritable }
   }
 
   /**
