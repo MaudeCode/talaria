@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A background command run by a subagent no longer starts an extra turn in the parent chat when it finishes. Set delegation.surface_child_process_notifications to true in the profile's config to see these notices again.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

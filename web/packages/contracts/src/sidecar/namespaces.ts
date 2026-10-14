@@ -285,7 +285,7 @@ export const MEMORY_METHODS = {
   'memory.check': { params: ProfileHomeParams.extend({ target: z.enum(['memory', 'user']), content: z.string() }), result: z.object({ count: z.number().int(), limit: z.number().int() }) },
   'memory.write': { params: ProfileHomeParams.extend({ section: z.enum(['memory', 'user', 'soul']), base: z.string(), content: z.string() }), result: z.object({ written: z.boolean() }) },
 } as const
-export const ProcessEventSchema = z.object({ process_id: z.string(), consumed: z.boolean(), type: z.string().optional(), session_key: z.string().optional(), origin_ui_session_id: z.string().optional() }).catchall(Json)
+export const ProcessEventSchema = z.object({ process_id: z.string(), consumed: z.boolean(), type: z.string().optional(), session_key: z.string().optional(), origin_ui_session_id: z.string().optional(), child_process: z.boolean().optional() }).catchall(Json)
 export const PROCESS_METHODS = {
   'process.drain': { params: ProfileHomeParams.extend({ max_events: z.number().int().positive().optional() }), result: z.object({ events: z.array(ProcessEventSchema) }) },
   /** TAL-533: re-adopt the base home's and every named profile's checkpointed background processes in a fresh sidecar. */

@@ -28,11 +28,23 @@ def _registry():
     return process_registry
 
 
+def _is_child_process(row: dict) -> bool:
+    """TAL-933: a subagent's own process notice, which the server surfaces only when the owning profile opts in."""
+    try:
+        from tools.process_registry_notifications import is_child_process_notification
+    except Exception:  # noqa: BLE001 - before Agent 0.21.7, the same rule inline
+        if row.get("type") in ("async_delegation", "async_delegation_work_closeout"):
+            return False
+        return str(row.get("owner_task_id") or row.get("task_id") or "").startswith("sa-")
+    return bool(is_child_process_notification(row))
+
+
 def _event_row(evt: dict) -> dict:
     registry = _registry()
     row = {str(k): v for k, v in evt.items()} if isinstance(evt, dict) else {}
     process_id = str(row.get("delegation_id") or row.get("session_id") or row.get("task_id") or "") if row.get("type") == "async_delegation" else str(row.get("session_id") or "")
     row["process_id"] = process_id
+    row["child_process"] = _is_child_process(row)
     if registry is not None and process_id and (not row.get("session_key") or not row.get("origin_ui_session_id")):
         try:
             proc = registry.get(process_id)
@@ -173,7 +185,7 @@ def requeue(events: list[dict]) -> int:
     count = 0
     for evt in events:
         try:
-            completion_queue.put_nowait({k: v for k, v in evt.items() if k not in ("process_id", "consumed")})
+            completion_queue.put_nowait({k: v for k, v in evt.items() if k not in ("process_id", "consumed", "child_process")})
             count += 1
         except Exception:  # noqa: BLE001
             log.debug("Failed to requeue process completion", exc_info=True)

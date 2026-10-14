@@ -293,6 +293,14 @@ Agents keep their existing import-time replay. Restored events retain their
 session ownership, and delivery still uses the Agent's claim/complete/release
 ledger calls; the server requeues events it cannot route to their owner.
 
+A subagent's own process notices (TAL-933) reach the parent session only when
+the session's profile sets `delegation.surface_child_process_notifications:
+true`, as in the Agent's CLI, gateway and TUI. `process.drain` marks each such
+event `child_process` with the Agent's `is_child_process_notification` (the same
+rule inline on Agents before 0.21.7); the server reads the owning profile's
+config and otherwise consumes the event without a wakeup. Async delegation
+results are never child notices.
+
 ## Process heartbeat progress
 
 Process heartbeat events are progress. The server keeps their receipt running with the latest
