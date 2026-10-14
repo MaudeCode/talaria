@@ -59,6 +59,11 @@ export function reasoningConfigFromConfig(config: Config, provider: string | nul
   return (VALID_REASONING_EFFORTS as readonly string[]).includes(effort) ? { enabled: true, effort } : null
 }
 
+/** The config-decided `AIAgent` budgets a turn builds its agent with; `/refine` builds the same agent (TAL-902). */
+export function agentBuildParams(config: Config, source: string, provider: string | null, env: Record<string, string | undefined>): { max_iterations: number | null; max_tokens: number | null; reasoning_config: { enabled: boolean; effort?: string } | null } {
+  return { max_iterations: processWakeupMaxIterations(maxIterationsFromConfig(config), source, env), max_tokens: maxTokensFromConfig(config), reasoning_config: reasoningConfigFromConfig(config, provider) }
+}
+
 /** A context value on one line: one with a line break or other control character is JSON-quoted, so it cannot add prompt lines. */
 function contextValue(value: string): string {
   return /[\p{Cc}\u2028\u2029]/u.test(value) ? JSON.stringify(value).replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029') : value

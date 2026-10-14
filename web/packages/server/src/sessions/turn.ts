@@ -33,7 +33,7 @@ import { SessionGoals } from './goals.js'
 import { withSessionWireFlags } from './list.js'
 import { hydrateAnchorActivityScenes, turnTerminalState, withTurnIds } from './anchor.js'
 import { persistentStateChanges, persistentStateSnapshot } from './state-saved.js'
-import { maxIterationsFromConfig, maxTokensFromConfig, processWakeupMaxIterations, reasoningConfigFromConfig, webuiEphemeralSystemPrompt, workspaceSystemMessage } from './turn-context.js'
+import { agentBuildParams, webuiEphemeralSystemPrompt, workspaceSystemMessage } from './turn-context.js'
 import { agentSteerText, assistantReplyAddedAfterCurrentTurn, attachedFilesPrompt, buildPartialMessage, dedupeContext, checkpointTurnStart, extractToolCallsFromMessages, hasNativeImages, injectMaxIterationSummaryFallback, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitDisplayText, stateDbSeenId, joinReasoning, reasoningFieldsText, toolOutcome, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withToolCallOutcomes, withoutMaxIterationSummaryRequest, withNativeImagesRestored, withoutNativeImages, withoutToolImages } from './merge.js'
 import { mayBecomeSilentReply, turnOrigin, withBackgroundUpdates } from './background-updates.js'
 import { countExchanges, fallbackTitleFromExchange, firstExchangeSnippets, isGenericFallbackTitle, latestExchangeSnippets, looksInvalidGeneratedTitle, looksLikeDefaultCliTitle, sanitizeGeneratedTitle, titleLanguageMismatch, titlePrompts } from './titles.js'
@@ -635,9 +635,7 @@ export class TurnRunner {
       const turnContext = {
         system_message: workspaceSystemMessage(str(s.created_workspace) || str(s.workspace)),
         ephemeral_system_prompt: webuiEphemeralSystemPrompt({ config: cfg, personalityPrompt: findPersonality(personalities, personality)?.prompt ?? null, sessionId, profile: s.profile ?? null, workspace: opts.workspace, hermesHome: deps.profileHome(s.profile), homeDisplay: deps.homeDisplay?.() ?? '~/.hermes', background: turnOrigin(opts.source) === 'background' }),
-        max_iterations: processWakeupMaxIterations(maxIterationsFromConfig(cfg), opts.source ?? 'webui', deps.env ?? {}),
-        max_tokens: maxTokensFromConfig(cfg),
-        reasoning_config: reasoningConfigFromConfig(cfg, opts.modelProvider ?? s.model_provider ?? null),
+        ...agentBuildParams(cfg, opts.source ?? 'webui', opts.modelProvider ?? s.model_provider ?? null, deps.env ?? {}),
       }
       // Python `_public_prefill_context_status`: the session-recall prefill hook was dropped with TAL-245, so the
       // context frame always reports the not-configured shape.
@@ -1395,6 +1393,28 @@ export class TurnRunner {
       return { title, status: idx === 0 ? 'llm_aux' : 'llm_aux_retry', rawPreview: '' }
     }
     return { title: '', status, rawPreview: '' }
+  }
+
+  /**
+   * TAL-902: `/refine [focus]` starts the Agent's memory/skill review of the chat's model context on its agent
+   * (`chat.refine`, the agent a turn would build); no turn starts. Without a chat, while a turn runs, or before anything
+   * was said it answers with the Agent's wording instead.
+   */
+  async refine(s: Session | null, focus: string): Promise<string> {
+    if (!s) return 'Nothing to refine yet — send a message first.'
+    if (s.active_stream_id) return 'Agent is running — wait for the turn to finish, then /refine.'
+    const messages = sanitizeMessagesForApi(this.deps.service().modelContext(s), { preserveApiContent: true, issuedReasoningSince: s.reasoning_replay_from })
+    if (!messages.length) return 'Nothing to refine yet — the conversation is empty.'
+    // Like a turn: no agent is built in a profile whose home is going away.
+    if (this.deps.profileDeleting?.(s.profile ?? null)) throw new HttpFailure(409, `Profile '${str(s.profile)}' is being deleted.`)
+    const sidecar = this.deps.sidecar()
+    if (!sidecar) throw new SidecarError('The Agent sidecar is not running; /refine is unavailable until it starts.', { condition: 'sidecar_unavailable' })
+    const [model, provider] = this.deps.service().turnModel(s)
+    const cfg = (await this.deps.profileConfig?.(s.profile ?? null)) ?? {}
+    return (await sidecar.call('chat.refine', {
+      profile_home: this.deps.profileHome(s.profile), session_id: s.session_id, messages, focus, model: model ?? '', model_provider: provider,
+      enabled_toolsets: this.deps.toolsetsFor(s), ...agentBuildParams(cfg, 'webui', provider, this.deps.env ?? {}),
+    }, { timeoutMs: 120_000 })).output
   }
 
   /**

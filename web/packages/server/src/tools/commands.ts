@@ -41,6 +41,9 @@ export const CLIENT_COMMANDS: readonly Command[] = [
   client('use', 'Use a skill', { args_hint: '<skill>', ...webOnly('Use `/skills [query]` to search skills.') }),
 ]
 
+/** Agent commands `POST /api/commands/exec` runs on the chat's session itself rather than through the sidecar's `commands.exec` (TAL-902). */
+export const SESSION_EXEC_COMMANDS: ReadonlySet<string> = new Set(['refine'])
+
 /** What a client shows for an Agent prompt built-in this Agent cannot expand (TAL-817); the turn path refuses it with the same text. */
 export const unsupportedPromptMessage = (name: string): string => `/${name} is not available in Talaria yet.`
 
@@ -58,7 +61,7 @@ export function commandCatalog(agent: readonly AgentCommand[]): Command[] {
     const aliases = c.aliases.filter((a) => !claimed.has(a))
     for (const a of aliases) claimed.add(a)
     const unsupported = c.cli_only ? `/${c.name} runs only in the Hermes CLI.` : c.prompt === 'unsupported' ? unsupportedPromptMessage(c.name) : null
-    return [{ ...c, aliases, handler: c.prompt === 'expand' ? 'prompt' : 'agent', clients: unsupported === null ? ALL : [], ...(unsupported === null ? {} : { unsupported_message: unsupported }) }]
+    return [{ ...c, aliases, exec: c.exec || SESSION_EXEC_COMMANDS.has(c.name), handler: c.prompt === 'expand' ? 'prompt' : 'agent', clients: unsupported === null ? ALL : [], ...(unsupported === null ? {} : { unsupported_message: unsupported }) }]
   })
   return [...CLIENT_COMMANDS, ...rows]
 }

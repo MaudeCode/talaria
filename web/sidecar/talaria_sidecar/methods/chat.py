@@ -86,7 +86,7 @@ _AGENT_CACHE_LOCK = threading.Lock()
 # Running release thread -> the profile home it runs under.
 _RELEASES: dict[threading.Thread, Any] = {}
 _RELEASES_LOCK = threading.Lock()
-# Agents inside ``chat.commit_memory`` (guarded by ``_AGENT_CACHE_LOCK``): like a turn, a commit defers their release.
+# Agents inside ``chat.commit_memory`` or ``chat.refine`` (guarded by ``_AGENT_CACHE_LOCK``): like a turn, each defers their release.
 _COMMITTING: list = []
 # Set (under ``_RUNS_LOCK``) when shutdown drains: no turn is admitted after the drain's snapshot of ``_RUNS``.
 _DRAINING = threading.Event()
@@ -699,6 +699,67 @@ def _agent_signature(model: str, provider, runtime: dict, toolsets, home: str, k
         "fallback_model": hashlib.sha256(json.dumps(kwargs.get("fallback_model"), sort_keys=True, default=str).encode("utf-8")).hexdigest()[:16],
     }
     return json.dumps(bundle, sort_keys=True, default=str)
+
+
+def _agent_kwargs(AIAgent, params: dict, session_id: str, model: str, provider, runtime: dict, toolsets) -> dict:
+    """The ``AIAgent`` arguments of a session's agent apart from a turn's callbacks: the resolved runtime, the session's
+    toolsets and budgets, and the profile's fallback chain, request overrides and checkpoints. Everything
+    ``_agent_signature`` reads is here, so an agent ``/refine`` builds (TAL-902) is the one the next turn reuses. Runs under
+    the call's ``scoped_home``."""
+    kwargs: dict = dict(
+        model=model,
+        provider=provider,
+        base_url=runtime.get("base_url"),
+        api_key=runtime.get("api_key"),
+        platform="webui",
+        quiet_mode=True,
+        enabled_toolsets=toolsets,
+        disabled_toolsets=disabled_toolsets(),
+        session_id=session_id,
+    )
+    for name, value in (
+        ("api_mode", runtime.get("api_mode")),
+        ("acp_command", runtime.get("acp_command")),
+        ("acp_args", runtime.get("acp_args")),
+        ("credential_pool", runtime.get("credential_pool")),
+        ("gateway_session_key", session_id),
+    ):
+        if _supported(AIAgent, name) and value is not None:
+            kwargs[name] = value
+    if isinstance(params.get("max_iterations"), int) and params["max_iterations"] > 0 and _supported(AIAgent, "max_iterations"):
+        kwargs["max_iterations"] = params["max_iterations"]
+    if isinstance(params.get("max_tokens"), int) and params["max_tokens"] > 0 and _supported(AIAgent, "max_tokens"):
+        kwargs["max_tokens"] = params["max_tokens"]
+    # Predecessor: `agent.reasoning_effort` (already coerced for the model) → AIAgent ``reasoning_config``.
+    reasoning_config = params.get("reasoning_config")
+    if isinstance(reasoning_config, dict) and _supported(AIAgent, "reasoning_config"):
+        kwargs["reasoning_config"] = reasoning_config
+    fallback_chain = _profile_fallback_chain()
+    if fallback_chain and _supported(AIAgent, "fallback_model"):
+        kwargs["fallback_model"] = fallback_chain
+    request_overrides = _request_overrides(model, provider, runtime)
+    if request_overrides and _supported(AIAgent, "request_overrides"):
+        kwargs["request_overrides"] = request_overrides
+    # TAL-913: the profile's ``checkpoints`` section, as the Agent's own CLI and gateway turns read it.
+    for name, value in checkpoint_kwargs().items():
+        if _supported(AIAgent, name):
+            kwargs[name] = value
+    return kwargs
+
+
+def _build_agent(AIAgent, kwargs: dict, home, session_id: str, state_db: bool = True):
+    """A new session agent on the profile's ``state.db`` (unless ``state_db`` is false), which it releases with it."""
+    session_db = _acquire_session_db(home) if state_db and _supported(AIAgent, "session_db") else None
+    if session_db is not None:
+        kwargs["session_db"] = session_db
+        kwargs["session_id"] = _execution_session_id(session_db, session_id)
+    try:
+        agent = AIAgent(**kwargs)
+    except BaseException:
+        _release_session_db(session_db)
+        raise
+    agent._talaria_session_db = session_db  # released with the agent (``_release_agent``)
+    return agent
 
 
 def _evict_idle_agents_locked() -> None:
@@ -1317,21 +1378,8 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             register_gateway_notify = unregister_gateway_notify = None
         approval_cb = _approval_notifier(session_id, emit) if register_gateway_notify is not None else None
 
-        kwargs: dict = dict(
-            model=resolved_model,
-            provider=resolved_provider,
-            base_url=runtime.get("base_url"),
-            api_key=runtime.get("api_key"),
-            platform="webui",
-            quiet_mode=True,
-            enabled_toolsets=toolsets,
-            disabled_toolsets=disabled_toolsets(),
-            session_id=session_id,
-            stream_delta_callback=on_token,
-            reasoning_callback=on_reasoning,
-            tool_progress_callback=on_tool,
-            clarify_callback=clarify_callback,
-        )
+        kwargs = _agent_kwargs(AIAgent, params, session_id, resolved_model, resolved_provider, runtime, toolsets)
+        kwargs.update(stream_delta_callback=on_token, reasoning_callback=on_reasoning, tool_progress_callback=on_tool, clarify_callback=clarify_callback)
         for name, value in (
             ("interim_assistant_callback", on_interim),
             ("tool_start_callback", on_tool_start),
@@ -1341,31 +1389,8 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             ("notice_callback", on_notice),
             ("notice_clear_callback", on_notice_clear),
             ("connection_callback", on_connection if connect_card else None),
-            ("api_mode", runtime.get("api_mode")),
-            ("acp_command", runtime.get("acp_command")),
-            ("acp_args", runtime.get("acp_args")),
-            ("credential_pool", runtime.get("credential_pool")),
-            ("gateway_session_key", session_id),
         ):
             if _supported(AIAgent, name) and value is not None:
-                kwargs[name] = value
-        if isinstance(params.get("max_iterations"), int) and params["max_iterations"] > 0 and _supported(AIAgent, "max_iterations"):
-            kwargs["max_iterations"] = params["max_iterations"]
-        if isinstance(params.get("max_tokens"), int) and params["max_tokens"] > 0 and _supported(AIAgent, "max_tokens"):
-            kwargs["max_tokens"] = params["max_tokens"]
-        # Predecessor: `agent.reasoning_effort` (already coerced for the model) → AIAgent ``reasoning_config``.
-        reasoning_config = params.get("reasoning_config")
-        if isinstance(reasoning_config, dict) and _supported(AIAgent, "reasoning_config"):
-            kwargs["reasoning_config"] = reasoning_config
-        fallback_chain = _profile_fallback_chain()
-        if fallback_chain and _supported(AIAgent, "fallback_model"):
-            kwargs["fallback_model"] = fallback_chain
-        request_overrides = _request_overrides(resolved_model, resolved_provider, runtime)
-        if request_overrides and _supported(AIAgent, "request_overrides"):
-            kwargs["request_overrides"] = request_overrides
-        # TAL-913: the profile's ``checkpoints`` section, as the Agent's own CLI and gateway turns read it.
-        for name, value in checkpoint_kwargs().items():
-            if _supported(AIAgent, name):
                 kwargs[name] = value
         signature = _agent_signature(resolved_model, resolved_provider, runtime, toolsets, str(params.get("profile_home")), kwargs)
         agent = None
@@ -1392,19 +1417,10 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             if hasattr(agent, "connection_callback"):
                 agent.connection_callback = on_connection if connect_card else None
         else:
-            # A ``/btw`` side question's throwaway session stays out of state.db.
-            session_db = _acquire_session_db(home) if not params.get("ephemeral") and _supported(AIAgent, "session_db") else None
-            if session_db is not None:
-                kwargs["session_db"] = session_db
-                kwargs["session_id"] = _execution_session_id(session_db, session_id)
             # TAL-803: the notices a replaced agent raised lapse with it (``lapses_with_agent``); this one raises its own.
             emit("notices_reset", {})
-            try:
-                agent = AIAgent(**kwargs)
-            except BaseException:
-                _release_session_db(session_db)
-                raise
-            agent._talaria_session_db = session_db  # released with the agent (``_release_agent``)
+            # A ``/btw`` side question's throwaway session stays out of state.db.
+            agent = _build_agent(AIAgent, kwargs, home, session_id, state_db=not params.get("ephemeral"))
             with _AGENT_CACHE_LOCK:
                 bind(agent)
                 if not run.session_ended:
@@ -1674,6 +1690,88 @@ def compress(ctx: CallContext, params: dict) -> dict:
             _release_compression(agent, committed=False)
 
 
+_REFINE_BUSY = "Agent is running — wait for the turn to finish, then /refine."
+
+
+def _session_running_locked(session_id: str) -> bool:
+    """Whether a turn for ``session_id`` has not returned yet, or no turn can start (caller holds ``_RUNS_LOCK``)."""
+    run = _RUNS.get(_RUNS_BY_SESSION.get(session_id) or "")
+    return _DRAINING.is_set() or (run is not None and not run.finished.is_set())
+
+
+def _refine_agent(params: dict, session_id: str, home):
+    """The session's cached agent, else one built the way its turn builds it and cached for that turn, held in
+    ``_COMMITTING`` until the caller lets go; None when a turn started meanwhile. Runs under the call's ``scoped_home``."""
+    with _AGENT_CACHE_LOCK:
+        cached = _AGENT_CACHE.get(session_id)
+        if cached is not None:
+            _COMMITTING.append(cached[0])
+            return cached[0]
+    model = str(params.get("model") or "").strip()
+    provider = str(params.get("model_provider") or "").strip() or None
+    toolsets = _turn_toolsets(params.get("enabled_toolsets"))
+    # Like a turn: the profile's MCP servers connect before the agent snapshots its tools, which its next turn keeps.
+    try:
+        from .commands import discover_profile_mcp_tools
+
+        discover_profile_mcp_tools()
+    except Exception:  # noqa: BLE001
+        log.warning("MCP discovery failed", exc_info=True)
+    runtime = _resolve_runtime(provider, model)
+    resolved_model = model or str(runtime.get("model") or "")
+    resolved_provider = provider or runtime.get("provider")
+    AIAgent = _agent_class()
+    kwargs = _agent_kwargs(AIAgent, params, session_id, resolved_model, resolved_provider, runtime, toolsets)
+    signature = _agent_signature(resolved_model, resolved_provider, runtime, toolsets, str(params.get("profile_home")), kwargs)
+    built = _build_agent(AIAgent, kwargs, home, session_id)
+    with _AGENT_CACHE_LOCK:
+        with _RUNS_LOCK:
+            running = _session_running_locked(session_id)
+        cached = _AGENT_CACHE.get(session_id)
+        agent = None if running else cached[0] if cached else built
+        if agent is not None:
+            _COMMITTING.append(agent)
+        if agent is built:
+            _AGENT_CACHE[session_id] = (built, signature, home)
+            _evict_idle_agents_locked()
+        else:
+            _release_agents_locked([(built, None, home)])
+    return agent
+
+
+def refine(params: dict) -> str:
+    """TAL-902: ``/refine [focus]`` like the Agent's live-session handler (``_format_live_refine_output``): the memory/skill
+    review fork of ``messages`` (the server's model context for the session) on the session's agent, never while its turn
+    runs. The fork carries this call's ``scoped_home``, so its memory and skill writes land in the session's profile."""
+    session_id = str(params.get("session_id") or "").strip()
+    messages = params.get("messages")
+    if not session_id or not isinstance(messages, list):
+        raise InvalidParams("session_id and messages are required")
+    focus = str(params.get("focus") or "").strip()
+    with _RUNS_LOCK:
+        if _session_running_locked(session_id):
+            return _REFINE_BUSY
+    if not messages:
+        return "Nothing to refine yet — the conversation is empty."
+    home = profile_home_param(params)
+    agent = _refine_agent(params, session_id, home)
+    if agent is None:
+        return _REFINE_BUSY
+    try:
+        agent._spawn_background_review(messages_snapshot=list(messages), review_memory=True,
+                                       review_skills="skill_manage" in (getattr(agent, "valid_tool_names", None) or set()),
+                                       focus=focus or None, explicit=True)
+    except Exception as exc:  # noqa: BLE001 - the Agent's own wording for a fork that could not start
+        log.warning("/refine failed to start for session %s", session_id, exc_info=True)
+        return f"/refine failed to start: {exc}"
+    finally:
+        with _AGENT_CACHE_LOCK:
+            _COMMITTING.remove(agent)
+            _release_if_dropped_locked(agent, home)
+    tail = f" (focus: {focus})" if focus else ""
+    return f"⚗ Reviewing this conversation in the background{tail} — any memory/skill updates will be reported when done."
+
+
 def _run_for(params: dict) -> _Run | None:
     stream_id = str(params.get("stream_id") or "").strip()
     session_id = str(params.get("session_id") or "").strip()
@@ -1701,6 +1799,11 @@ def register(registry) -> None:
     def compress_(ctx: CallContext, params: dict) -> dict:
         with scoped_home(profile_home_param(params)):
             return compress(ctx, params)
+
+    @registry.method("chat.refine")
+    def refine_(ctx: CallContext, params: dict) -> dict:
+        with scoped_home(profile_home_param(params)):
+            return {"output": refine(params)}
 
     @registry.method("chat.compress_finalize", requires_agent=False)
     def compress_finalize_(ctx: CallContext, params: dict) -> dict:

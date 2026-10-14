@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "/refine in Web chat reviews the conversation in the background and saves lessons to memory and skills, instead of sending the command to the model.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
