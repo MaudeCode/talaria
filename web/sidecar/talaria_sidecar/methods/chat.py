@@ -56,6 +56,8 @@ class _Run:
         self.lock = threading.Lock()
         # The Agent's transcript list from before this turn: a Stop while the Agent still holds it has no checkpoint.
         self.prior_messages = None
+        # TAL-897: the session was cleared mid-turn (set under ``_RUNS_LOCK``); the review this turn forks is cancelled.
+        self.session_ended = False
 
 
 class _ClarifyEntry:
@@ -757,6 +759,9 @@ def _join(threads, deadline: float) -> None:
         thread.join(max(0.0, deadline - time.monotonic()))
 
 
+_SESSION_ENDED = "session deleted or cleared"
+
+
 def _cancel_background_reviews(agents, message: str) -> list[threading.Thread]:
     """TAL-897: stop each agent's post-turn memory/skill review fork, which no turn interrupt or release reaches, so a
     deleted session or a stopping sidecar no longer pays for it. Returns the cancels running side by side for the
@@ -814,16 +819,17 @@ def drain_agents(timeout: float = _AGENT_RELEASE_TIMEOUT) -> None:
 
 
 def release_profile_agents(home) -> None:
-    """Profile deletion: release the profile's cached agents and wait for every release running under its home. Fails
-    rather than let the home go while a memory flush still runs under it."""
+    """Profile deletion: release the profile's cached agents, cancel their background reviews, and wait for both and
+    every release running under its home. Fails rather than let the home go while a memory flush still runs under it."""
     target = os.path.realpath(home)
     with _AGENT_CACHE_LOCK:
         entries = [_AGENT_CACHE.pop(sid) for sid, entry in list(_AGENT_CACHE.items()) if os.path.realpath(entry[2]) == target]
         _release_agents_locked(entries)
+    cancels = _cancel_background_reviews([entry[0] for entry in entries], "profile deleted")
     with _RELEASES_LOCK:
         threads = [thread for thread, owner in _RELEASES.items() if os.path.realpath(owner) == target]
-    _join(threads, time.monotonic() + _PROFILE_RELEASE_TIMEOUT)
-    if any(thread.is_alive() for thread in threads):
+    _join(cancels + threads, time.monotonic() + _PROFILE_RELEASE_TIMEOUT)
+    if any(thread.is_alive() for thread in cancels + threads):
         raise RpcError("The profile is still saving memory from its chats. Retry in a moment.")
     if any(thread.failed for thread in threads):
         raise RpcError("Memory from the profile's chats could not be saved; see the sidecar log. Retry to delete the profile anyway.")
@@ -1381,6 +1387,8 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
                     _RUNS_BY_SESSION.pop(session_id, None)
             # An agent evicted or replaced while this turn held it is released now that the turn is over.
             _release_if_dropped_locked(run.agent, home)
+        if run.session_ended:
+            _join(_cancel_background_reviews([run.agent], _SESSION_ENDED), time.monotonic() + _AGENT_RELEASE_TIMEOUT)
 
 
 def _checkpoint_required() -> bool:
@@ -1612,12 +1620,14 @@ def register(registry) -> None:
         with _AGENT_CACHE_LOCK:
             with _RUNS_LOCK:
                 run = _RUNS.get(_RUNS_BY_SESSION.get(session_id) or "")
+                if end_session and run is not None:
+                    run.session_ended = True
             if not end_session and run is not None and not run.finished.is_set():
                 return {"evicted": False}
             entry = _AGENT_CACHE.pop(session_id, None)
             _release_agents_locked([entry] if entry else [])
         if end_session:
-            cancels = _cancel_background_reviews([entry and entry[0], run and run.agent], "session deleted or cleared")
+            cancels = _cancel_background_reviews([entry and entry[0], run and run.agent], _SESSION_ENDED)
             _join(cancels, time.monotonic() + _AGENT_RELEASE_TIMEOUT)
             try:
                 from tools.approval import clear_session
