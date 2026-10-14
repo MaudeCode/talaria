@@ -12,7 +12,7 @@ import { HttpFailure } from '../sessions/service.js'
 import { SidecarError } from '../sidecar/client.js'
 import type { SidecarParams, SidecarResult } from '@maudecode/talaria-web-contracts'
 import { SessionNotFound } from '../sessions/store.js'
-import { auxiliaryModels, dict, modelSection, canonicaliseProviderId, ConfigUnavailable, maxTokensStatus, personalityPrompt, personalityRows, reasoningStatus, setAuxiliaryModel, setDefaultModel, setMaxTokens, validReasoningEffort, type Dict } from '../config/agent-config.js'
+import { auxiliaryModels, dict, modelSection, canonicaliseProviderId, ConfigUnavailable, maxTokensStatus, findPersonality, reasoningStatus, setAuxiliaryModel, setDefaultModel, setMaxTokens, validReasoningEffort, type Dict } from '../config/agent-config.js'
 import { ProfileError, validateProfileName } from '../profiles/profiles.js'
 import { OnboardingError } from '../onboarding.js'
 import { EnvWriteError } from '../providers/env-file.js'
@@ -391,7 +391,7 @@ export const settingsRouter = os.router({
     })),
   },
   personalities: {
-    list: os.personalities.list.handler(({ context: { ctx } }) => run(async () => ({ personalities: personalityRows(await ctx.deps.agentConfig.read(home(ctx))) }))),
+    list: os.personalities.list.handler(({ context: { ctx } }) => run(async () => ({ personalities: (await ctx.deps.agentConfig.personalities(home(ctx))).map(({ name, description }) => ({ name, description })) }))),
     set: os.personalities.set.handler(({ input, context: { ctx } }) => run(async () => {
       const sid = str(input.session_id).trim()
       if (!sid) throw new HttpError(400, 'Missing required field: session_id')
@@ -400,11 +400,11 @@ export const settingsRouter = os.router({
       if (!ctx.deps.sessions.sessionIdVisible(sid)) throw new HttpError(404, 'Session not found')
       let prompt = ''
       if (name) {
-        const resolved = personalityPrompt(await ctx.deps.agentConfig.read(home(ctx)), name)
+        const found = findPersonality(await ctx.deps.agentConfig.personalities(home(ctx)), name)
         // TAL-612: `none`, `default`, and `clear` clear it unless a personality has that name.
-        if (resolved !== null) prompt = resolved
+        if (found) [name, prompt] = [found.name, found.prompt]
         else if (CLEAR_PERSONALITY.has(name.toLowerCase())) name = ''
-        else throw new HttpError(404, `Personality "${name}" not found in config.yaml`)
+        else throw new HttpError(404, `Personality "${name}" not found`)
       }
       const personality = await ctx.deps.sessions.setPersonality(sid, name || null)
       return { ok: true as const, personality, prompt }

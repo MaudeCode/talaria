@@ -135,6 +135,22 @@ export class AgentConfig {
     return listed ? { slots: listed.tasks, reserved: listed.reserved } : { slots: AUXILIARY_TASK_CATALOG.map((slot) => ({ ...slot, inherit_from: null, reasoning_effort: null, effective: null })), reserved: null }
   }
 
+  /** TAL-901: the personalities the profile's Agent offers for its config; throws when the Agent cannot list them. */
+  async agentPersonalities(profileHome: string): Promise<PersonalityRow[]> {
+    const sidecar = this.deps.sidecar()
+    if (!sidecar) throw new ConfigUnavailable('Hermes Agent sidecar is not running; personalities are unavailable')
+    return (await sidecar.call('personalities.list', { config: await this.read(profileHome) })).personalities
+  }
+
+  /** The Agent's personalities to list and select from; the config's own block only while the sidecar cannot list them. */
+  async personalities(profileHome: string): Promise<PersonalityRow[]> {
+    try {
+      return await this.agentPersonalities(profileHome)
+    } catch {
+      return configPersonalities(await this.read(profileHome))
+    }
+  }
+
   invalidate(profileHome?: string): void {
     if (profileHome) this.cache.delete(this.path(profileHome))
     else this.cache.clear()
@@ -368,29 +384,28 @@ export function validReasoningEffort(effort: string): boolean {
 
 // ── personalities ─────────────────────────────────────────────────────
 
-export function personalityRows(config: Config): { name: string; description: string }[] {
+export type PersonalityRow = SidecarResult<'personalities.list'>['personalities'][number]
+
+/** The pre-TAL-901 reading of `agent.personalities` alone, kept only for when the sidecar cannot list the Agent's. */
+export function configPersonalities(config: Config): PersonalityRow[] {
   const raw = dict(config.agent).personalities
   if (!isDict(raw)) return []
   return Object.entries(raw).map(([name, value]) => {
-    let desc = ''
-    if (isDict(value)) desc = str(value.description)
-    else if (typeof value === 'string') desc = value.slice(0, 80) + (value.length > 80 ? '...' : '')
-    return { name, description: desc }
+    if (isDict(value)) {
+      const parts = [str(value.system_prompt) || str(value.prompt)]
+      if (value.tone) parts.push(`Tone: ${str(value.tone)}`)
+      if (value.style) parts.push(`Style: ${str(value.style)}`)
+      return { name, description: str(value.description), prompt: parts.filter(Boolean).join('\n') }
+    }
+    const text = str(value)
+    return { name, description: text.slice(0, 80) + (text.length > 80 ? '...' : ''), prompt: text }
   })
 }
 
-/** Python `/api/personality/set` prompt resolution; null when the personality is unknown. */
-export function personalityPrompt(config: Config, name: string): string | null {
-  const raw = dict(config.agent).personalities
-  if (!isDict(raw) || !(name in raw)) return null
-  const value = raw[name]
-  if (isDict(value)) {
-    const parts = [str(value.system_prompt) || str(value.prompt)]
-    if (value.tone) parts.push(`Tone: ${str(value.tone)}`)
-    if (value.style) parts.push(`Style: ${str(value.style)}`)
-    return parts.filter(Boolean).join('\n')
-  }
-  return str(value)
+/** The personality `name` selects, compared case-folded as the Agent does; undefined when there is none. */
+export function findPersonality(rows: PersonalityRow[], name: string): PersonalityRow | undefined {
+  const key = name.trim().toLowerCase()
+  return key ? rows.find((row) => row.name.toLowerCase() === key) : undefined
 }
 
 // ── advanced model options / auxiliary slots ──────────────────────────

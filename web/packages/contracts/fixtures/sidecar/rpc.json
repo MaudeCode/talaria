@@ -87,6 +87,7 @@
           "oauth.cancel",
           "oauth.poll",
           "oauth.start",
+          "personalities.list",
           "plugins.list",
           "plugins.providers",
           "process.background_list",

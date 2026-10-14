@@ -176,7 +176,27 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     }
   })
 
-  it('personalities list from config.yaml and personality/set resolves the prompt onto the session', async () => {
+  it('TAL-901: personalities are the Agent catalog: built-ins and the top-level block, by case-folded name', async () => {
+    const saved = configs.get(s.state) ?? {}
+    // The recorded `personalities.list` fixture is the pinned Agent's answer for this block.
+    configs.set(s.state, { ...saved, personalities: { Reviewer: 'You review code tersely.' } })
+    s.deps.agentConfig.invalidate()
+    try {
+      const rows = (await json(await s.get('/api/personalities'))).personalities as Json[]
+      expect(rows).toHaveLength(15)
+      expect(rows).toContainEqual({ name: 'reviewer', description: 'You review code tersely.' })
+      expect(sidecar.calls.findLast((c) => c.method === 'personalities.list')?.params).toEqual({ config: configs.get(s.state) })
+      const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+      expect(await json(await post(s, '/api/personality/set', { session_id: sid, name: 'Reviewer' }))).toEqual({ ok: true, personality: 'reviewer', prompt: 'You review code tersely.' })
+      expect(await json(await post(s, '/api/personality/set', { session_id: sid, name: 'concise' }))).toEqual({ ok: true, personality: 'concise', prompt: 'You are a concise assistant. Keep responses brief and to the point.' })
+    } finally {
+      configs.set(s.state, saved)
+      s.deps.agentConfig.invalidate()
+    }
+  })
+
+  it('without an Agent listing, personalities come from config.yaml and personality/set resolves the prompt onto the session', async () => {
+    sidecar.respond('personalities.list', () => { throw new SidecarError('Agent unavailable', { condition: 'sidecar_unavailable' }) })
     let res = await s.get('/api/personalities')
     expect(await json(res)).toEqual({ personalities: [{ name: 'pirate', description: 'Talk like a pirate' }, { name: 'calm', description: 'Calm helper' }] })
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
@@ -195,6 +215,7 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     }
     res = await post(s, '/api/personality/set', { session_id: 'nope', name: 'calm' })
     expect(res.status).toBe(404)
+    sidecar.respond('personalities.list', undefined)
   })
 
   it('GET /api/models composes the catalog: active provider first, live ids for keyed providers, prefixes for others', async () => {

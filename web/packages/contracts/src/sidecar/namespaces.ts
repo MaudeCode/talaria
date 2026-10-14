@@ -363,6 +363,11 @@ export const CONFIG_METHODS = {
   /** TAL-797: `.env` edits through the Agent's locked writer; `null` removes a key, an empty value is skipped; line breaks, spaces, quotes, `#` and non-ASCII are refused. */
   'config.env_write': { params: ProfileHomeParams.extend({ updates: z.record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/), z.string().nullable()) }), result: z.object({ ok: z.literal(true), path: z.string() }) },
   'models.reasoning_efforts': { params: ProfileHomeParams.extend({ model: z.string(), provider: z.string() }), result: z.object({ efforts: z.array(z.string()), supports_reasoning: z.boolean().nullable() }) },
+  /**
+   * TAL-901: the Agent's personalities for `config` (its built-ins, then the top-level `personalities:` block, then
+   * `agent.personalities`), by case-folded name in the Agent's order; `prompt` is the rendered overlay text.
+   */
+  'personalities.list': { params: z.object({ config: Loose }), result: z.object({ personalities: z.array(z.object({ name: z.string().min(1), description: z.string(), prompt: z.string() })) }) },
 } as const
 export const WORKTREE_METHODS = {
   'worktree.create': { params: ProfileHomeParams.extend({ repo_root: z.string().min(1) }), result: z.object({ path: z.string(), branch: z.string(), repo_root: z.string(), base: z.string().nullable() }) },
