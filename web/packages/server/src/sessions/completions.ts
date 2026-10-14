@@ -14,7 +14,7 @@ import type { SessionChannels, StreamRegistry } from './streams.js'
 import { SessionNotFound, type SessionStore } from './store.js'
 import type { Session } from './session.js'
 import { str } from '../util.js'
-import { parseDotenv } from '../cli/dotenv.js'
+import { expandDotenv, parseDotenv } from '../cli/dotenv.js'
 import { isDict } from './merge.js'
 import { batchUpdate, recordBackgroundUpdate } from './background-updates.js'
 import type { BackgroundActivity } from './background-tasks.js'
@@ -228,7 +228,7 @@ export class CompletionDrain {
    */
   private async notificationsOff(home: string): Promise<boolean | null> {
     let mode: unknown
-    try { mode = parseDotenv(readFileSync(join(home, '.env'), 'utf8')).HERMES_BACKGROUND_NOTIFICATIONS?.trim() } catch (error) {
+    try { mode = expandDotenv(parseDotenv(readFileSync(join(home, '.env'), 'utf8')), this.deps.env ?? {}).HERMES_BACKGROUND_NOTIFICATIONS?.trim() } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') return null
     }
     mode ||= this.deps.env?.HERMES_BACKGROUND_NOTIFICATIONS?.trim()
@@ -497,7 +497,7 @@ export class CompletionDrain {
       if (off) {
         this.release(sid, muted)
         batched = batched.filter((e) => !muted.includes(e))
-        if (!batched.length) return false
+        if (!batched.length) { this.retryAttempts.delete(sid); return false }
       }
     }
     if (await this.holdWhilePaused(sid, session, home, batched)) return false

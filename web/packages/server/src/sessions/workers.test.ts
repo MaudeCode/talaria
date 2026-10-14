@@ -448,7 +448,7 @@ describe('process notifications follow the owning profile (TAL-933, TAL-907)', (
   afterAll(() => s.close())
 
   /** A session on profile `b` while `a` is active; only the owning profile's config counts. An `Error` config is unreadable. */
-  const setup = async (configs: Record<string, Json | Error>, opts: { env?: Record<string, string>; root?: string; profile?: string | null } = {}): Promise<{ sid: string; drain: CompletionDrain; starts: string[]; consumed: string[]; requeued: Json[]; notified: string[]; recorded: string[] }> => {
+  const setup = async (configs: Record<string, Json | Error>, opts: { env?: Record<string, string>; root?: string; profile?: string | null; fail?: () => boolean } = {}): Promise<{ sid: string; drain: CompletionDrain; starts: string[]; consumed: string[]; requeued: Json[]; notified: string[]; recorded: string[]; logs: string[] }> => {
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
     const session = s.deps.sessionStore.get(sid)
     session.profile = opts.profile === undefined ? 'b' : opts.profile
@@ -459,6 +459,7 @@ describe('process notifications follow the owning profile (TAL-933, TAL-907)', (
     const requeued: Json[] = []
     const notified: string[] = []
     const recorded: string[] = []
+    const logs: string[] = []
     sidecar.respond('process.mark_consumed', (params) => { consumed.push(str(params.process_id)); return { ok: true } })
     sidecar.respond('process.requeue', (params) => { requeued.push(...(params.events as Json[])); return { requeued: params.events.length } })
     const channels = { emit: (_sid: string, name: string, payload: Json) => { if (name === 'bg_task_complete') notified.push(str(payload.task_id)); return 1 } } as unknown as SessionChannels
@@ -466,9 +467,9 @@ describe('process notifications follow the owning profile (TAL-933, TAL-907)', (
       sidecar: () => sidecar, baseHome: opts.root ?? '/homes', profileHome: (profile) => `${opts.root ?? '/homes'}/${profile ?? 'default'}`, activeProfile: () => 'a', store: s.deps.sessionStore, channels, registry: s.deps.registry,
       readConfig: (home: string) => { const config = configs[home]; return config instanceof Error ? Promise.reject(config) : Promise.resolve(config ?? {}) }, env: opts.env ?? {},
       background: { recordEvent: (_sid, evt) => { recorded.push(str(evt.process_id)) } },
-      startTurn: (_session, prompt) => { starts.push(prompt); return { stream_id: 'run' } }, now: () => Date.now() / 1000, log: () => undefined,
+      startTurn: (_session, prompt) => { if (opts.fail?.()) return { _status: 500, error: 'down' }; starts.push(prompt); return { stream_id: 'run' } }, now: () => Date.now() / 1000, log: (line) => { logs.push(line) },
     })
-    return { sid, drain, starts, consumed, requeued, notified, recorded }
+    return { sid, drain, starts, consumed, requeued, notified, recorded, logs }
   }
   const optIn = { delegation: { surface_child_process_notifications: true } }
   type Drained = SidecarResult<'process.drain'>['events'][number]
@@ -554,11 +555,14 @@ describe('process notifications follow the owning profile (TAL-933, TAL-907)', (
     const root = mkdtempSync(join(tmpdir(), 'tal907-'))
     try {
       mkdirSync(join(root, 'b'))
-      writeFileSync(join(root, 'b', '.env'), 'HERMES_BACKGROUND_NOTIFICATIONS=off\n')
-      const { sid, drain, starts } = await setup({ [`${root}/b`]: notifications('all') }, { root, env: { HERMES_BACKGROUND_NOTIFICATIONS: 'all' } })
-      expect(await drain.processOne(exit(sid, 'proc_profile_env', false))).toBe(true)
-      expect(starts).toEqual([])
-      drain.stop()
+      // The Agent's dotenv load expands references against the file's earlier values, then the environment.
+      for (const dotenv of ['HERMES_BACKGROUND_NOTIFICATIONS=off', 'MODE=off\nHERMES_BACKGROUND_NOTIFICATIONS=${MODE}', 'HERMES_BACKGROUND_NOTIFICATIONS="${UNSET:-off}"', 'HERMES_BACKGROUND_NOTIFICATIONS=${SHELL_MODE}']) {
+        writeFileSync(join(root, 'b', '.env'), `${dotenv}\n`)
+        const { sid, drain, starts } = await setup({ [`${root}/b`]: notifications('all') }, { root, env: { HERMES_BACKGROUND_NOTIFICATIONS: 'all', SHELL_MODE: 'off' } })
+        expect(await drain.processOne(exit(sid, 'proc_profile_env', false))).toBe(true)
+        expect(starts, dotenv).toEqual([])
+        drain.stop()
+      }
     } finally { rmSync(root, { recursive: true, force: true }) }
   })
 
@@ -581,6 +585,22 @@ describe('process notifications follow the owning profile (TAL-933, TAL-907)', (
     expect(await drain.drainDeferred(sid)).toBe(0)
     expect(starts).toEqual([])
     expect(drain.deferredCount(sid)).toBe(0)
+    drain.stop()
+  })
+
+  it('a muted wakeup resets the retry budget a failing provider spent', async () => {
+    const configs: Record<string, Json> = { '/homes/b': notifications('all') }
+    let failing = true
+    const { sid, drain, logs } = await setup(configs, { fail: () => failing })
+    for (let i = 0; i < 6; i += 1) await drain.processOne(exit(sid, `proc_fail_${String(i)}`, false))
+    expect(logs.filter((l) => l.includes('retry budget exhausted'))).toHaveLength(1)
+    configs['/homes/b'] = notifications('off')
+    await drain.processOne(exit(sid, 'proc_muted', false))
+    configs['/homes/b'] = notifications('all')
+    await drain.processOne(exit(sid, 'proc_after', false))
+    // A fresh failure after notifications came back gets its timed retry again.
+    expect(logs.filter((l) => l.includes('retry budget exhausted'))).toHaveLength(1)
+    failing = false
     drain.stop()
   })
 
