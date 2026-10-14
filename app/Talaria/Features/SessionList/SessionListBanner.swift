@@ -21,7 +21,6 @@ struct SessionListBanner: View {
                 if let detail {
                     Text(verbatim: detail)
                         .font(.footnote)
-                        .foregroundStyle(.secondary)
                         .lineLimit(3)
                 }
             }
@@ -52,7 +51,7 @@ struct AgentStorageBanner: View {
         case .ok: nil
         case .corrupt: "Agent session storage is damaged"
         case .unavailable: "Agent sessions could not be read"
-        case .outdated: "Upgrade hermes-agent to list Agent sessions"
+        case .outdated: "Upgrade hermes-agent to list sessions"
         }
     }
 }

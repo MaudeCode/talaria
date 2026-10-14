@@ -130,7 +130,7 @@ final class SessionListHostedTests: XCTestCase {
         let notices: [(AgentStorage.State, String)] = [
             (.corrupt, "Agent session storage is damaged"),
             (.unavailable, "Agent sessions could not be read"),
-            (.outdated, "Upgrade hermes-agent to list Agent sessions"),
+            (.outdated, "Upgrade hermes-agent to list sessions"),
         ]
         for (state, title) in notices {
             let window = try hostWindow(AgentStorageBanner(storage: AgentStorage(state: state, reason: "Synthetic reason")))

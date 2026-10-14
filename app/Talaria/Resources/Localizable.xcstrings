@@ -137747,108 +137747,108 @@
         }
       }
     },
-    "Upgrade hermes-agent to list Agent sessions" : {
+    "Upgrade hermes-agent to list sessions" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "حدّث hermes-agent لعرض جلسات الوكيل"
+            "value" : "حدّث hermes-agent لعرض الجلسات"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "hermes-agent aktualisieren, um Agent-Sitzungen anzuzeigen"
+            "value" : "hermes-agent aktualisieren, um Sitzungen anzuzeigen"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Actualiza hermes-agent para ver las sesiones del agente"
+            "value" : "Actualiza hermes-agent para ver las sesiones"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Mettez à jour hermes-agent pour lister les sessions de l’agent"
+            "value" : "Mettez à jour hermes-agent pour lister les sessions"
           }
         },
         "he" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "שדרגו את hermes-agent כדי להציג את סשני הסוכן"
+            "value" : "שדרגו את hermes-agent כדי להציג סשנים"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Aggiorna hermes-agent per elencare le sessioni dell’agente"
+            "value" : "Aggiorna hermes-agent per elencare le sessioni"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "エージェントのセッションを表示するには hermes-agent をアップグレードしてください"
+            "value" : "セッションを表示するには hermes-agent をアップグレードしてください"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "에이전트 세션을 보려면 hermes-agent를 업그레이드하세요"
+            "value" : "세션을 보려면 hermes-agent를 업그레이드하세요"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Werk hermes-agent bij om agentsessies te tonen"
+            "value" : "Werk hermes-agent bij om sessies te tonen"
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Zaktualizuj hermes-agent, aby wyświetlić sesje agenta"
+            "value" : "Zaktualizuj hermes-agent, aby wyświetlić sesje"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Atualize o hermes-agent para listar as sessões do agente"
+            "value" : "Atualize o hermes-agent para listar as sessões"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Обновите hermes-agent, чтобы видеть сеансы агента"
+            "value" : "Обновите hermes-agent, чтобы видеть сеансы"
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Ajan oturumlarını listelemek için hermes-agent’ı yükseltin"
+            "value" : "Oturumları listelemek için hermes-agent’ı yükseltin"
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "ایجنٹ کے سیشن دیکھنے کے لیے hermes-agent اپ گریڈ کریں"
+            "value" : "سیشن دیکھنے کے لیے hermes-agent اپ گریڈ کریں"
           }
         },
         "zh-HK" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "升級 hermes-agent 以列出代理的工作階段"
+            "value" : "升級 hermes-agent 以列出工作階段"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "升级 hermes-agent 以列出代理的会话"
+            "value" : "升级 hermes-agent 以列出会话"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "升級 hermes-agent 以列出代理的工作階段"
+            "value" : "升級 hermes-agent 以列出工作階段"
           }
         }
       }
