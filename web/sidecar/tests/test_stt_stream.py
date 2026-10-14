@@ -42,7 +42,9 @@ class _Session(TranscriptionStreamSession):
         _log("finalize")
         if EVENTS.with_name("slow").exists():
             time.sleep(30)
-        return {"success": True, "transcript": f" final {self.received} bytes ", "provider": "fake-live"}
+        reply = EVENTS.with_name("reply.txt")
+        transcript = reply.read_text() if reply.exists() else f" final {self.received} bytes "
+        return {"success": True, "transcript": transcript, "provider": "fake-live"}
 
 
 class FakeLive(TranscriptionProvider):
@@ -139,12 +141,28 @@ def test_stream_relays_partials_then_returns_the_sessions_final(hermes_home):
         assert inbox.frame(stream, "partial")["data"] == {"text": "heard 3200 bytes"}
         ended = sidecar.request("stt.stream_audio", {"stream_id": stream_id, "end": True})
         assert inbox.response(ended)["result"] == {"ok": True}
-        assert inbox.response(stream)["result"] == {"transcript": "final 3200 bytes", "provider": "fake-live"}
+        assert inbox.response(stream)["result"] == {"transcript": "final 3200 bytes", "filtered": False, "provider": "fake-live"}
         assert inbox.events(stream) == ["ready", "partial", "result"]
         assert _events(log) == ["open", "finalize"]
         # The id is released with the call.
         message, _ = sidecar.call("stt.stream_audio", {"stream_id": stream_id, "audio_b64": _pcm(10)})
         assert message["error"]["data"]["condition"] == "stt_stream_closed"
+    finally:
+        sidecar.close()
+
+
+@requires_agent
+def test_stream_final_drops_a_silence_hallucination(hermes_home):
+    """TAL-917: the live final goes through the same Whisper filter as ``stt.transcribe``."""
+    log = _seed(hermes_home, streaming=True)
+    log.with_name("reply.txt").write_text("Thank you.")
+    sidecar = SidecarProcess(hermes_home)
+    try:
+        inbox = Inbox(sidecar)
+        stream = sidecar.request("stt.stream", {"profile_home": str(hermes_home), "sample_rate": 16000})
+        stream_id = inbox.frame(stream, "ready")["data"]["stream_id"]
+        assert inbox.response(sidecar.request("stt.stream_audio", {"stream_id": stream_id, "end": True}))["result"] == {"ok": True}
+        assert inbox.response(stream)["result"] == {"transcript": "", "filtered": True, "provider": "fake-live"}
     finally:
         sidecar.close()
 

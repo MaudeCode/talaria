@@ -19,6 +19,7 @@
       },
       "result": {
         "transcript": "final 3200 bytes",
+        "filtered": false,
         "provider": "fake-live"
       },
       "stream": [

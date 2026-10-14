@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Dictating a silent recording no longer puts \"Thank you.\" or \"you\" into the message.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

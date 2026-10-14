@@ -108,7 +108,7 @@ export const RAW_ROUTES: readonly RawRoute[] = [
   {
     method: 'POST', path: '/api/transcribe', summary: 'Speech-to-text through the Agent (multipart `file`).', tags: ['tools'],
     requestBody: { contentType: 'multipart/form-data', description: 'Field `file` (audio).' },
-    responses: { 200: { description: '`{ok, transcript}`.', contentType: 'application/json' }, 400: { description: 'No file or transcription failed.', contentType: 'application/json' }, 503: { description: 'Speech-to-text unavailable.', contentType: 'application/json' } },
+    responses: { 200: { description: '`{ok, transcript, filtered}`; `filtered` when a phrase Whisper invents on silent audio was emptied.', contentType: 'application/json' }, 400: { description: 'No file or transcription failed.', contentType: 'application/json' }, 503: { description: 'Speech-to-text unavailable.', contentType: 'application/json' } },
   },
   {
     method: 'POST', path: '/api/tts', summary: 'Text-to-speech proxy (`engine`: openai or elevenlabs); answers `audio/mpeg`.', tags: ['tools'],

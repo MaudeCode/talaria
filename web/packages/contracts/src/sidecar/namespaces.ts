@@ -264,7 +264,7 @@ export const CONNECTORS_METHODS = {
 export const STT_METHODS = {
   /** `streaming` (TAL-802): `stt.streaming` is on and the provider has a live wire with credentials, so `stt.stream` would open. */
   'stt.capability': { params: ProfileHomeParams, result: z.object({ available: z.boolean(), provider: z.string(), streaming: z.boolean() }) },
-  'stt.transcribe': { params: ProfileHomeParams.extend({ audio_b64: z.string().min(1), suffix: z.string().optional() }), result: z.object({ transcript: z.string() }) },
+  'stt.transcribe': { params: ProfileHomeParams.extend({ audio_b64: z.string().min(1), suffix: z.string().optional() }), result: z.object({ transcript: z.string(), filtered: z.boolean() }) },
   /**
    * TAL-802: one live dictation. Opens the profile's streaming session for s16le mono PCM at `sample_rate` (the sidecar
    * resamples), emits `ready` with the `stream_id` that `stt.stream_audio` feeds, then `partial` text as the provider
@@ -272,7 +272,7 @@ export const STT_METHODS = {
    */
   'stt.stream': {
     params: ProfileHomeParams.extend({ sample_rate: z.number().int().min(8000).max(48000) }),
-    result: z.object({ transcript: z.string(), provider: z.string() }),
+    result: z.object({ transcript: z.string(), filtered: z.boolean(), provider: z.string() }),
     stream: z.discriminatedUnion('event', [
       z.object({ event: z.literal('ready'), data: z.object({ stream_id: z.string() }) }),
       z.object({ event: z.literal('partial'), data: z.object({ text: z.string() }) }),

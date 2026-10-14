@@ -1244,12 +1244,12 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
   })
 
   it('transcribe proxies multipart audio to the sidecar; tts proxies openai and rate limits', async () => {
-    sidecar.respond('stt.transcribe', (params) => ({ transcript: `heard ${String(Buffer.from(params.audio_b64, 'base64').length)} bytes${params.suffix ?? ''}` }))
+    sidecar.respond('stt.transcribe', (params) => ({ transcript: `heard ${String(Buffer.from(params.audio_b64, 'base64').length)} bytes${params.suffix ?? ''}`, filtered: false }))
     const boundary = 'abc'
     const body = [`--${boundary}`, 'Content-Disposition: form-data; name="file"; filename="clip.webm"', 'Content-Type: audio/webm', '', 'audio-bytes', `--${boundary}--`, ''].join('\r\n')
     let res = await s.get('/api/transcribe', { method: 'POST', body, headers: { 'content-type': `multipart/form-data; boundary=${boundary}` } })
     expect(res.status).toBe(200)
-    expect(await json(res)).toEqual({ ok: true, transcript: 'heard 11 bytes.webm' })
+    expect(await json(res)).toEqual({ ok: true, transcript: 'heard 11 bytes.webm', filtered: false })
     res = await s.get('/api/transcribe', { method: 'POST', body: '--x--', headers: { 'content-type': 'multipart/form-data; boundary=x' } })
     expect(res.status).toBe(400)
     res = await post(s, '/api/tts', { text: 'hi', engine: 'openai' })

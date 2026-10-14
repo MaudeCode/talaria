@@ -22,7 +22,7 @@ class LiveSession {
     sidecar.respond('stt.stream', (params, emit, opts) => new Promise((resolve, reject) => {
       this.opened.push(params)
       this.emit = emit
-      this.finish = () => { resolve({ transcript: `final ${String(this.heard)} bytes`, provider: 'fake-live' }) }
+      this.finish = () => { resolve({ transcript: `final ${String(this.heard)} bytes`, filtered: false, provider: 'fake-live' }) }
       opts.signal?.addEventListener('abort', () => {
         this.cancelled = true
         reject(new SidecarError('cancelled', { condition: 'cancelled' }))
@@ -90,7 +90,7 @@ describe('live dictation stream (TAL-802)', () => {
     expect(types.slice(0, -1).length).toBeGreaterThan(0)
     expect(types.slice(0, -1).every((type) => type === 'partial')).toBe(true)
     expect(done.events.at(-2)).toEqual({ type: 'partial', text: 'heard 19200 bytes' })
-    expect(done.events.at(-1)).toEqual({ type: 'final', transcript: 'final 19200 bytes', provider: 'fake-live' })
+    expect(done.events.at(-1)).toEqual({ type: 'final', transcript: 'final 19200 bytes', filtered: false, provider: 'fake-live' })
     expect(done.closed).toBe(true)
     expect(session.opened).toEqual([{ profile_home: s.deps.profileHome('default'), sample_rate: 48_000 }])
     // Every chunk reaches the session in order, and the end of speech comes last.

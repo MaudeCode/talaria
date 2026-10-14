@@ -3726,10 +3726,14 @@
     "properties": {
       "transcript": {
         "type": "string"
+      },
+      "filtered": {
+        "type": "boolean"
       }
     },
     "required": [
-      "transcript"
+      "transcript",
+      "filtered"
     ],
     "additionalProperties": false
   },
@@ -3740,12 +3744,16 @@
       "transcript": {
         "type": "string"
       },
+      "filtered": {
+        "type": "boolean"
+      },
       "provider": {
         "type": "string"
       }
     },
     "required": [
       "transcript",
+      "filtered",
       "provider"
     ],
     "additionalProperties": false

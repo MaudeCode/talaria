@@ -40,7 +40,7 @@ export async function handleTranscribe(ctx: RequestContext): Promise<void> {
   if (!sidecar) { ctx.json({ error: 'Speech-to-text is unavailable on this server' }, { status: 503 }); return }
   try {
     const result = await sidecar.call('stt.transcribe', { profile_home: ctx.deps.profileHome(activeProfileName(ctx)), audio_b64: file.body.toString('base64'), suffix }, { timeoutMs: 120_000 })
-    ctx.json({ ok: true, transcript: result.transcript.trim() })
+    ctx.json({ ok: true, transcript: result.transcript.trim(), filtered: result.filtered })
   } catch (error) {
     if (error instanceof SidecarError) {
       const message = error.message || 'Transcription failed'
