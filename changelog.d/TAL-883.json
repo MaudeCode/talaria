@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "OAuth model-provider plugins now show as needing setup until they are signed in, instead of appearing ready and failing on the first message.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

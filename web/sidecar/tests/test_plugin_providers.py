@@ -160,3 +160,57 @@ def test_hosted_plugins_with_a_shared_provider_id_are_not_attributed_by_name(tmp
         assert sidecar.result("providers.model_ids", {"profile_home": str(home), "provider": "shared"})["model_ids"] == []
     finally:
         sidecar.close()
+
+
+SIGN_IN_PROFILES = textwrap.dedent(
+    """
+    from providers import register_provider
+    from providers.base import ProviderProfile
+
+    fake_oauth = ProviderProfile(
+        name="fake-oauth", display_name="Fake OAuth", auth_type={auth_type!r}, base_url="https://oauth.invalid/v1",
+        refresh_credential=lambda entry: None,
+    )
+    fake_key = ProviderProfile(
+        name="fake-key", display_name="Fake Key", auth_type="api_key", base_url="https://key.invalid/v1",
+        env_vars=("FAKE_KEY_API_KEY",),
+    )
+    register_provider(fake_oauth)
+    register_provider(fake_key)
+    """
+)
+
+
+@requires_agent
+@pytest.mark.parametrize("auth_type", ["oauth_external", "oauth_device_code"])
+def test_an_oauth_plugin_is_ready_only_once_the_agent_holds_a_sign_in(tmp_path: pathlib.Path, auth_type: str) -> None:
+    """A registered OAuth plugin with no pooled token reads as needing setup; a live or refreshable token makes it ready."""
+    home = tmp_path / "home" / ".hermes"
+    root = home / "plugins" / "fake-oauth"
+    root.mkdir(parents=True)
+    (root / "plugin.yaml").write_text("name: fake-oauth-provider\nkind: model-provider\nversion: 0.0.1\n")
+    (root / "__init__.py").write_text(SIGN_IN_PROFILES.format(auth_type=auth_type))
+    (home / "config.yaml").write_text("plugins:\n  isolation: in_process\n")
+
+    def pool(*entries: dict) -> None:
+        (home / "auth.json").write_text(json.dumps({"providers": {}, "credential_pool": {"fake-oauth": list(entries)}}))
+
+    sidecar = SidecarProcess(home)
+    try:
+        def setup() -> dict:
+            result = sidecar.result("plugins.providers", {"profile_home": str(home)})
+            assert validate(result, load_schema("plugins.providers")) == []
+            return {row["name"]: row["setup"] for row in result["providers"]}
+
+        assert setup() == {"fake-oauth": "needs_setup", "fake-key": "needs_setup"}
+        token = {"id": "synthetic", "label": "synthetic", "auth_type": "oauth", "source": "manual", "priority": 0, "access_token": "synthetic-access"}
+        pool({**token, "expires_at_ms": 4102444800000})  # 2100-01-01
+        assert setup()["fake-oauth"] == "ready"
+        pool({**token, "expires_at_ms": 946684800000, "refresh_token": "synthetic-refresh"})  # expired in 2000
+        assert setup()["fake-oauth"] == "ready"
+        pool({**token, "expires_at_ms": 946684800000})  # expired, nothing to refresh with
+        assert setup()["fake-oauth"] == "needs_setup"
+        (home / ".env").write_text("FAKE_KEY_API_KEY=synthetic-key\n")
+        assert setup()["fake-key"] == "ready"
+    finally:
+        sidecar.close()
