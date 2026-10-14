@@ -1,0 +1,92 @@
+"""TAL-821: ``chat.start`` turns the Agent's live rate-limit wait line (``thinking_callback``, written by
+``turn_recovery.compute_error_backoff``) into ``rate_limit_wait`` frames with the provider and the reset time, and clears
+the wait when the Agent moves on. The wait lines are the pinned Agent's real ``_emit_diagnostic_wait`` strings."""
+
+from __future__ import annotations
+
+import threading
+import time
+
+import pytest
+
+from conftest import AGENT_DIR
+from test_chat_turn import Ctx, FakeAgent, _params, _patch
+from talaria_sidecar.methods import Registry, chat
+
+FREE_BUSY_WITH_RESET = "⏳ the free model is busy — resets in ~17m, retrying in 600s (attempt 1/3)"
+FREE_BUSY = "⏳ the free model is busy — retrying in 600s (attempt 1/3)"
+RATE_LIMITED = "⏳ rate limited — resets in ~1h 5m, retrying in 60s (attempt 2/3)"
+OVERLOADED = "⏳ provider overloaded — resets in ~45s, retrying in 30s (attempt 1/5)"
+SPINNER = "(｡◕‿◕｡) pondering..."
+
+
+def _run(monkeypatch, *lines):
+    """One turn on a stand-in agent that writes ``lines`` to its live status line, then answers."""
+    _patch(monkeypatch)
+
+    def run_conversation(self, **kwargs):
+        # Like the Agent, which writes its live status line only when a driver wired one.
+        status_line = self.kwargs.get("thinking_callback") or (lambda text: None)
+        for line in lines:
+            status_line(line)
+        self.kwargs["stream_delta_callback"]("ok")
+        return {"final_response": "ok", "messages": [{"role": "assistant", "content": "ok"}]}
+
+    monkeypatch.setattr(FakeAgent, "run_conversation", run_conversation)
+    ctx = Ctx()
+    before = time.time()
+    assert chat.start(ctx, _params("rl-1"))["status"] == "completed"
+    return before, [(event, data) for event, data in ctx.frames if event in ("rate_limit_wait", "token")]
+
+
+@pytest.mark.parametrize(("line", "seconds"), [(FREE_BUSY_WITH_RESET, 17 * 60), (FREE_BUSY, 600), (RATE_LIMITED, 65 * 60), (OVERLOADED, 45)])
+def test_a_rate_limit_wait_reports_its_reset_and_clears_when_the_agent_retries(monkeypatch, line, seconds) -> None:
+    before, frames = _run(monkeypatch, line, "", SPINNER)
+    assert [event for event, _data in frames] == ["rate_limit_wait", "rate_limit_wait", "token"]
+    wait, clear, token = frames
+    assert wait[1]["provider"] == "p"
+    assert before + seconds <= wait[1]["until"] <= time.time() + seconds
+    # The retry's spinner line ends the wait before any text streams.
+    assert clear == ("rate_limit_wait", {"provider": None, "until": None})
+    assert token == ("token", {"text": "ok"})
+
+
+@pytest.mark.skipif(AGENT_DIR is None, reason="pinned Hermes Agent checkout not found")
+def test_the_pinned_agent_still_writes_these_wait_lines() -> None:
+    source = (AGENT_DIR / "agent" / "turn_recovery.py").read_text(encoding="utf-8")
+    for template in ('"The free model is busy"', '"Provider overloaded"', '"Rate limited"', 'f"{_wait_reason.lower()} — resets in {_reset},"',
+                     '"the free model is busy —"', 'f"⏳ {_live_reason} retrying in {wait_time:.0f}s (attempt {retry_count}/{max_retries})"'):
+        assert template in source, template
+
+
+@pytest.mark.parametrize("line", ["⏳ waiting on provider — retrying in 4s (attempt 1/3)", SPINNER, "", "⏱️ Rate limited. Waiting 2.0s (attempt 1/3)..."])
+def test_other_status_lines_report_no_wait(monkeypatch, line) -> None:
+    _before, frames = _run(monkeypatch, line)
+    assert frames == [("token", {"text": "ok"})]
+
+
+def test_stop_during_the_wait_ends_the_turn(monkeypatch) -> None:
+    _patch(monkeypatch)
+    waiting = threading.Event()
+
+    def run_conversation(self, **kwargs):
+        self.block = threading.Event()
+        (self.kwargs.get("thinking_callback") or (lambda text: None))(FREE_BUSY)
+        waiting.set()
+        self.block.wait(5)
+        return {"final_response": "", "messages": [], "interrupted": True}
+
+    monkeypatch.setattr(FakeAgent, "run_conversation", run_conversation)
+    ctx = Ctx()
+    result: dict = {}
+    worker = threading.Thread(target=lambda: result.update(chat.start(ctx, _params("rl-stop"))))
+    worker.start()
+    assert waiting.wait(5)
+    registry = Registry(runtime=None)  # type: ignore[arg-type]
+    chat.register(registry)
+    assert registry.methods["chat.interrupt"](Ctx(), {"stream_id": "rl-stop"})["ok"] is True
+    worker.join(5)
+    assert not worker.is_alive()
+    assert FakeAgent.instances[0].interrupts == [("Cancelled by user", True)]
+    assert result["status"] == "cancelled", result
+    assert [event for event, _data in ctx.frames if event == "rate_limit_wait"] == ["rate_limit_wait"]

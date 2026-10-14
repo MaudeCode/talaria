@@ -7,6 +7,7 @@ import { Menu, MenuGroup, MenuGroupLabel, MenuItem, MenuRadioGroup, MenuRadioIte
 import { cn } from '../../ui/cn'
 import { catalogEntryById } from '../../lib/modelEntry'
 import { useLocale } from '../../i18n/useLocale'
+import { resetTime } from '../../i18n/units'
 import type { Models } from '@maudecode/talaria-web-contracts'
 
 /**
@@ -33,13 +34,6 @@ export function Chip({ icon, label, title, className, disabled, row, size = 'sm'
 }
 
 const RADIO_CLASS = 'flex cursor-default select-none items-center gap-2 rounded-md px-2.5 py-1.5 text-sm outline-none data-[highlighted]:bg-hover data-[checked]:text-accent-text'
-
-/** A reset time in the viewer's zone: the time alone today, else with its weekday. */
-function resetTime(locale: string, iso: string): string {
-  const at = new Date(iso)
-  const today = at.toDateString() === new Date().toDateString()
-  return at.toLocaleString(locale, today ? { hour: 'numeric', minute: '2-digit' } : { weekday: 'short', hour: 'numeric', minute: '2-digit' })
-}
 
 /** TAL-807: the server's rate-limit state for a provider group: its account limit or a low quota level (never both). */
 function GroupLimitBadge({ group, locale }: { group: Models['groups'][number]; locale: string }) {

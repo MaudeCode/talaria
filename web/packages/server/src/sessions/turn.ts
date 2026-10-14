@@ -42,12 +42,15 @@ import type { WorkspaceRegistry } from '../workspace/workspaces.js'
 import { str } from '../util.js'
 import { toolEditDiff } from './tool-display.js'
 import { recordWakeupPause } from './wakeup-pause.js'
+import { displayName } from '../providers/catalog.js'
 
 export const CHAT_LOCK_WAIT_SECONDS = 2
 const IMAGE_MODE_TIMEOUT_MS = 15_000
 const TERMINAL_SSE_VISIBLE_MESSAGE_LIMIT = 80
 /** TAL-397: streamed text reports the live meter at most this often (seconds); a counter change reports at once. */
 const METERING_INTERVAL_S = 1
+/** TAL-821: frames that end a rate-limit wait: the Agent's content (it got an answer) and the turn's terminal frames. */
+const RATE_LIMIT_WAIT_ENDS = new Set(['token', 'reasoning', 'interim_assistant', 'tool', 'tool_complete', 'done', 'cancel', 'apperror', 'error'])
 /** How long a user's message waits for a stopped background turn to unwind before its own turn is admitted. */
 const BACKGROUND_UNWIND_WAIT_MS = 30_000
 
@@ -495,7 +498,13 @@ export class TurnRunner {
       deps.log(`[webui] WARNING: run journal degraded for stream ${streamId}: ${(error as Error).message}`)
     }
     const failure: TurnFailure = { apperror: null, cancelled: false }
+    // TAL-821: whether the run's rate-limit wait is showing; the next content frame or the turn's end clears it.
+    let rateLimitWait = false
     const put = (event: string, data: Record<string, unknown>, meta: { redacted?: boolean } = {}): void => {
+      if (rateLimitWait && RATE_LIMIT_WAIT_ENDS.has(event)) {
+        rateLimitWait = false
+        put('rate_limit_wait', { session_id: sessionId, wait: null })
+      }
       if (event === 'apperror') failure.apperror = data
       else if (event === 'cancel') failure.cancelled = true
       for (const steerEvent of this.takeSteerEventsBefore(streamId, event)) put(steerEvent[0], steerEvent[1])
@@ -734,6 +743,15 @@ export class TurnRunner {
             case 'clarify_resolved': {
               const { head } = deps.pending.resolveClarify(sessionId, str(data.clarify_id))
               if (head) put('clarify', head)
+              return
+            }
+            // TAL-821: the Agent sits out a provider's rate limit (the sidecar's `until` is its reset, epoch seconds).
+            case 'rate_limit_wait': {
+              const until = typeof data.until === 'number' ? data.until : null
+              if (until === null && !rateLimitWait) return
+              rateLimitWait = until !== null
+              const provider = str(data.provider) || null
+              put('rate_limit_wait', { session_id: sessionId, wait: until === null ? null : { provider, provider_label: provider && displayName(provider), until } })
               return
             }
             case 'status':

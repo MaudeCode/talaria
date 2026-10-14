@@ -19,6 +19,7 @@ import inspect
 import json
 import logging
 import os
+import re
 import threading
 import time
 import uuid
@@ -1042,6 +1043,28 @@ def _status_events(kind, text: str) -> list[str]:
     return events
 
 
+#: TAL-821: the Agent's live status line during a rate-limit backoff (``turn_recovery.compute_error_backoff``), e.g.
+#: "⏳ the free model is busy — resets in ~17m, retrying in 600s (attempt 1/3)". A plain "waiting on provider" retry is
+#: not a rate limit. ``webui`` is not an attended source, so the Agent sits out a free-tier cooldown instead of ending.
+_RATE_LIMIT_WAIT_RE = re.compile(r"^⏳ (?:rate limited|the free model is busy|provider overloaded) —.* retrying in (\d+)s\b", re.IGNORECASE)
+#: The line's reset window, in the Agent's ``format_duration_compact`` units ("45s", "17m", "1h 5m", "1.5d").
+_RESET_IN_RE = re.compile(r"resets in ~((?:\d+(?:\.\d+)?[dhms] ?)+)")
+_DURATION_UNITS = {"d": 86400, "h": 3600, "m": 60, "s": 1}
+
+
+def _rate_limit_wait_seconds(text: str) -> float | None:
+    """Seconds until the provider's limit resets (else until the Agent retries) for a rate-limit wait line; None otherwise.
+    The reset is the provider's own ``reset_at`` as the Agent read it from the error; the credential pool's exhausted mark
+    is no better, since without that field it is a fixed one-hour guess."""
+    wait = _RATE_LIMIT_WAIT_RE.match(text)
+    if not wait:
+        return None
+    reset = _RESET_IN_RE.search(text)
+    if not reset:
+        return float(wait.group(1))
+    return sum(float(amount) * _DURATION_UNITS[unit] for amount, unit in re.findall(r"(\d+(?:\.\d+)?)([dhms])", reset.group(1)))
+
+
 def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, one function
     session_id = str(params.get("session_id") or "").strip()
     stream_id = str(params.get("stream_id") or "").strip()
@@ -1179,6 +1202,18 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
                 else:
                     emit("status", {"kind": "terminal_error", "message": text})
 
+        wait_state = {"active": False}
+
+        def on_thinking(text):
+            """TAL-821: a rate-limit wait on the Agent's live status line, cleared by the next line (its retry spinner)."""
+            seconds = _rate_limit_wait_seconds(str(text or "").strip())
+            if seconds is not None:
+                wait_state["active"] = True
+                emit("rate_limit_wait", {"provider": str(getattr(run.agent, "provider", None) or resolved_provider or "") or None, "until": time.time() + seconds})
+            elif wait_state["active"]:
+                wait_state["active"] = False
+                emit("rate_limit_wait", {"provider": None, "until": None})
+
         # TAL-803: the Agent's sticky ``AgentNotice``s (a startup warning such as a memory provider that failed to load,
         # credit and usage bands) and their clears; the server keeps the session's active set.
         def on_notice(notice):
@@ -1272,6 +1307,7 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             ("tool_start_callback", on_tool_start),
             ("tool_complete_callback", on_tool_complete),
             ("status_callback", on_status),
+            ("thinking_callback", on_thinking),
             ("notice_callback", on_notice),
             ("notice_clear_callback", on_notice_clear),
             ("api_mode", runtime.get("api_mode")),
@@ -1318,7 +1354,7 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
                     _AGENT_CACHE.move_to_end(session_id)
                     bind(agent)
         if agent is not None:
-            for name in ("stream_delta_callback", "reasoning_callback", "tool_progress_callback", "clarify_callback", "interim_assistant_callback", "tool_start_callback", "tool_complete_callback", "status_callback", "notice_callback", "notice_clear_callback"):
+            for name in ("stream_delta_callback", "reasoning_callback", "tool_progress_callback", "clarify_callback", "interim_assistant_callback", "tool_start_callback", "tool_complete_callback", "status_callback", "thinking_callback", "notice_callback", "notice_clear_callback"):
                 if name in kwargs and hasattr(agent, name):
                     setattr(agent, name, kwargs[name])
         else:

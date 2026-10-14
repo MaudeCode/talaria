@@ -108,6 +108,50 @@ describe('chat turns through the sidecar', () => {
     release()
   })
 
+  it('ships a rate-limit wait as a run-status frame and clears it on the next token or at turn end (TAL-821)', async () => {
+    const sid = await newSession(s)
+    const until = 1_800_000_600
+    const turn = async (message: string, frames: Json[]): Promise<Json[]> => {
+      sidecar.respond('chat.start', (_params, emit) => {
+        for (const frame of frames) emit(frame as never)
+        return completed([{ role: 'user', content: message }, { role: 'assistant', content: 'ok' }])
+      })
+      const start = await json(await post(s, '/api/chat/start', { session_id: sid, message }))
+      const sse = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+      return sse.filter((f) => ['rate_limit_wait', 'token', 'done'].includes(f.event)).map((f) => ({ event: f.event, ...(f.event === 'rate_limit_wait' ? { data: f.data } : {}) }))
+    }
+    const wait = { event: 'rate_limit_wait', data: { session_id: sid, wait: { provider: 'openrouter', provider_label: 'OpenRouter', until } } }
+    // Same shape as the shared contract example every client is tested against.
+    const example = (JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/rate-limit-wait.json'), 'utf8')) as { wait: { data: { wait: Json } } }).wait.data
+    expect({ ...example, session_id: sid }).toEqual(wait.data)
+    const cleared = { event: 'rate_limit_wait', data: { session_id: sid, wait: null } }
+    // The first token after the wait clears it, even when the Agent's retry line never reached the sidecar.
+    expect(await turn('token', [{ event: 'rate_limit_wait', data: { provider: 'openrouter', until } }, { event: 'token', data: { text: 'ok' } }]))
+      .toEqual([wait, cleared, { event: 'token' }, { event: 'done' }])
+    // The sidecar's own clear (the Agent retried) is forwarded once.
+    expect(await turn('retry', [{ event: 'rate_limit_wait', data: { provider: 'openrouter', until } }, { event: 'rate_limit_wait', data: { provider: null, until: null } }, { event: 'token', data: { text: 'ok' } }]))
+      .toEqual([wait, cleared, { event: 'token' }, { event: 'done' }])
+    // A turn that ends during the wait clears it before its terminal frame; an unnamed provider has no label.
+    expect(await turn('end', [{ event: 'rate_limit_wait', data: { provider: null, until } }]))
+      .toEqual([{ event: 'rate_limit_wait', data: { session_id: sid, wait: { provider: null, provider_label: null, until } } }, cleared, { event: 'done' }])
+  })
+
+  it('stops a turn during a rate-limit wait (TAL-821)', async () => {
+    const sid = await newSession(s)
+    let interrupted!: () => void
+    sidecar.respond('chat.start', (_params, emit) => new Promise((resolve) => {
+      emit({ event: 'rate_limit_wait', data: { provider: 'openrouter', until: 1_800_000_600 } })
+      interrupted = () => { resolve(completed([{ role: 'user', content: 'go' }], { status: 'cancelled' })) }
+    }))
+    sidecar.respond('chat.interrupt', () => { interrupted(); return { ok: true, pending_steer: '' } })
+    const streamId = String((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'go' }))).stream_id)
+    await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'rate_limit_wait')
+    expect((await s.get(`/api/chat/cancel?stream_id=${streamId}`)).status).toBe(200)
+    const frames = await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'cancel')
+    expect(frames.find((f) => f.event === 'cancel')?.data).toMatchObject({ terminal_state: 'cancelled' })
+    await vi.waitFor(() => { expect(s.deps.sessionStore.get(sid).active_stream_id).toBeNull() })
+  })
+
   it('marks only a voice turn for the Agent\'s voice route (TAL-801)', async () => {
     const sid = await newSession(s)
     const marks: unknown[] = []

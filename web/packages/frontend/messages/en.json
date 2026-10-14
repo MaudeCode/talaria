@@ -2237,6 +2237,8 @@
 	"worklog_tool_limit": "Tool limit reached",
 	"worklog_context_limit": "Context limit reached",
 	"live_working": "Working",
+	"live_rate_limited_by": "{provider} rate limit until {time}",
+	"live_rate_limited": "Rate limited until {time}",
 	"live_cancelled": "Stopped",
 	"live_error": "The response failed",
 	"live_continuation": "Open the continuation session",

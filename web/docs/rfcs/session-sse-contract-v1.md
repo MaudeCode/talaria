@@ -52,6 +52,7 @@ and the per-session relay. The chat-turn events:
 | `server_turn_started` | A server-side turn (wakeup, recovery) started on this session |
 | `notices` | The session's Agent notices changed (TAL-803); `notices` replaces the session's `notices` list |
 | `session_goal` | The session's standing `/goal` changed (TAL-808); `goal` replaces the session's `goal` |
+| `rate_limit_wait` | The Agent is sitting out a provider rate limit (TAL-821): `wait` is `{provider, provider_label, until}` (`until`: the reset, epoch seconds), or `null` once the Agent retries, streams, or the turn ends |
 
 Tool call identity: the server gives every `tool` / `tool_complete` frame one
 `id`. It is the Agent's tool-call id; when the Agent supplied none, the server

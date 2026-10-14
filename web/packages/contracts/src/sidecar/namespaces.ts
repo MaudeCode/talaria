@@ -478,6 +478,8 @@ export const ChatStreamSchema = z.discriminatedUnion('event', [
   z.object({ event: z.literal('notice'), data: z.looseObject({ id: z.string().nullable().optional(), key: z.string().nullable().optional(), level: z.string(), kind: z.string(), ttl_ms: z.number().int().nullable().optional(), text: z.string(), lapses_with_agent: z.boolean().optional() }) }),
   z.object({ event: z.literal('notice_clear'), data: z.looseObject({ key: z.string() }) }),
   z.object({ event: z.literal('notices_reset'), data: Loose }),
+  /** TAL-821: the Agent's live rate-limit wait (`until`: the reset, else its retry, epoch seconds); null fields end it. */
+  z.object({ event: z.literal('rate_limit_wait'), data: z.looseObject({ provider: z.string().nullable(), until: z.number().nullable() }) }),
 ])
 export const CHAT_METHODS = {
   'chat.start': {

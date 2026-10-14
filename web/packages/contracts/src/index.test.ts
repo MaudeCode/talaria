@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { z } from 'zod'
-import { MemoryWriteRefusalSchema, ModelsSchema, SIDECAR_RPC_VERSION, SkillsSchema, TranscribeStreamEndSchema, TranscribeStreamEventSchema, TranscribeStreamStartSchema, UpdateNotificationsSchema } from './index.js'
+import { ChatEventSchema, MemoryWriteRefusalSchema, ModelsSchema, SIDECAR_RPC_VERSION, SkillsSchema, TranscribeStreamEndSchema, TranscribeStreamEventSchema, TranscribeStreamStartSchema, UpdateNotificationsSchema } from './index.js'
 
 const shared = (path: string): unknown => JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../contracts', path), 'utf8'))
 
@@ -28,6 +28,13 @@ describe('contracts package', () => {
     expect(fixture.events.map((event) => TranscribeStreamEventSchema.parse(event).type)).toEqual(['partial', 'partial', 'final'])
     expect(TranscribeStreamEventSchema.parse(fixture.unavailable).type).toBe('error')
     expect(TranscribeStreamStartSchema.safeParse({ sample_rate: 96000 }).success).toBe(false)
+  })
+  it('parses the shared rate-limit wait run-status frames (TAL-821)', () => {
+    const fixture = shared('fixtures/rate-limit-wait.json') as { wait: unknown; cleared: unknown }
+    const wait = ChatEventSchema.parse(fixture.wait)
+    expect(wait.event === 'rate_limit_wait' && wait.data.wait).toEqual({ provider: 'openrouter', provider_label: 'OpenRouter', until: 1800000600 })
+    const cleared = ChatEventSchema.parse(fixture.cleared)
+    expect(cleared.event === 'rate_limit_wait' && cleared.data.wait).toBeNull()
   })
   it('exports an integer sidecar RPC version', () => {
     expect(Number.isInteger(SIDECAR_RPC_VERSION)).toBe(true)
