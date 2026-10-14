@@ -59061,6 +59061,12 @@
                         "type": "string"
                       }
                     },
+                    "create_statuses": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
                     "lane_by_profile": {
                       "type": "boolean"
                     },
@@ -59229,6 +59235,7 @@
                   },
                   "required": [
                     "bulk_move_targets",
+                    "create_statuses",
                     "lane_by_profile"
                   ],
                   "additionalProperties": {}

@@ -418,6 +418,8 @@ describe('crons, kanban, extensions, terminal', () => {
     // The Agent's move table stays behind the server's policy.
     expect((board.columns as Json[]).flatMap((c) => c.tasks as Json[]).some((t) => 'agent_move_targets' in t)).toBe(false)
     expect(board.bulk_move_targets).toEqual(['triage', 'todo', 'ready', 'blocked', 'done'])
+    // A new task starts only where a plain write can put it (TAL-796).
+    expect(board.create_statuses).toEqual(['triage', 'todo', 'ready', 'blocked'])
     sidecar.respond('kanban.board', () => ({ changed: false, latest_event_id: 1, read_only: false }))
     expect((await json(await s.get('/api/kanban/board?since=1'))).bulk_move_targets).toEqual(['triage', 'todo', 'ready', 'blocked', 'done'])
     // Detail and every mutation envelope carry the policy of the status the server returned.

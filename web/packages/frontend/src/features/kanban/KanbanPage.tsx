@@ -19,11 +19,11 @@ import { showToast } from '../toast/toast'
 import { cn } from '../../ui/cn'
 
 type KanbanTask = z.infer<typeof KanbanTaskSchema>
-interface KanbanColumn { name: string; tasks: KanbanTask[] }
+interface KanbanColumn { name: string; label: string; tasks: KanbanTask[] }
 
-/** Labels for the Agent's statuses; an unknown status shows as sent. */
+/** Labels for the Agent's statuses; an unknown status shows the server's label, else the status as sent. */
 const STATUS_LABELS: Record<string, () => string> = { triage: m.kanban_status_triage, todo: m.kanban_status_todo, scheduled: m.kanban_status_scheduled, ready: m.kanban_status_ready, running: m.kanban_status_running, blocked: m.kanban_status_blocked, review: m.kanban_status_review, done: m.kanban_status_done, archived: m.kanban_status_archived }
-const statusLabel = (status: string) => STATUS_LABELS[status]?.() ?? status
+const statusLabel = (status: string, label?: string) => STATUS_LABELS[status]?.() ?? label ?? status
 
 function useDebounced<T>(value: T, ms: number): T {
   const [debounced, setDebounced] = useState(value)
@@ -95,7 +95,6 @@ export function KanbanPage() {
   // Placeholder data is the previous board or filter's answer; writes wait until the shown cards are the current ones.
   const stale = board.isPlaceholderData
   const readOnly = serverReadOnly || stale
-  const columnNames = useMemo(() => columns.map((c) => c.name), [columns])
   const currentBoard = boards.data?.boards.find((b) => b.slug === current)
   // The dialog follows the board's current copy of the task, so its actions track every refetch.
   const openTask = useMemo(() => columns.flatMap((c) => c.tasks).find((t) => String(t.id) === openTaskId) ?? null, [columns, openTaskId])
@@ -186,7 +185,7 @@ export function KanbanPage() {
         )
         : renderColumns(columns))}
       {openTask && <TaskDialog board={current} task={openTask} readOnly={readOnly} onClose={() => setOpenTaskId(null)} onChanged={() => { void invalidate() }} />}
-      {creating && <CreateTaskDialog board={current} columns={columnNames} onClose={() => setCreating(false)} onCreated={() => { setCreating(false); void invalidate() }} />}
+      {creating && <CreateTaskDialog board={current} columns={board.data?.create_statuses ?? []} onClose={() => setCreating(false)} onCreated={() => { setCreating(false); void invalidate() }} />}
       {creatingBoard && <CreateBoardDialog onClose={() => setCreatingBoard(false)} onCreated={() => { setCreatingBoard(false); setSelected([]); void invalidate() }} />}
       <ConfirmDialog open={archivingBoard} onOpenChange={setArchivingBoard} title={m.kanban_archive_board_title()} description={m.kanban_archive_board_body({ a0: currentBoard?.name ?? current ?? '' })} confirmLabel={m.kanban_archive()} cancelLabel={m.cancel()} danger onConfirm={() => { if (current) archiveBoard.mutate(current) }} />
     </HubPage>
@@ -197,9 +196,9 @@ function KanbanColumns({ columns, readOnly, stale, selected, onToggle, onOpen }:
   return (
     <div className="kanban-board grid gap-3 md:grid-cols-2 xl:grid-cols-3" id="kanbanList">
       {columns.map((col) => (
-        <section key={col.name} className="kanban-column flex min-h-40 flex-col rounded-lg border border-border bg-surface" aria-label={col.name}>
+        <section key={col.name} className="kanban-column flex min-h-40 flex-col rounded-lg border border-border bg-surface" aria-label={statusLabel(col.name, col.label)}>
           <header className="flex items-center justify-between border-b border-border-subtle px-3 py-2 text-xs font-semibold uppercase tracking-wider text-muted">
-            <span>{col.name}</span><span>{col.tasks.length}</span>
+            <span>{statusLabel(col.name, col.label)}</span><span>{col.tasks.length}</span>
           </header>
           <div className="flex flex-col gap-2 p-2">
             {col.tasks.length === 0 && <div className="px-1 py-2 text-xs text-muted">{m.kanban_no_tasks()}</div>}

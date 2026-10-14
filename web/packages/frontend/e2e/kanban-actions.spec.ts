@@ -7,12 +7,12 @@ test.use({ serviceWorkers: 'block' })
 const actions = (block: boolean, unblock: boolean, complete: boolean, archive: boolean, move_to: string[]) => ({ block, unblock, complete, archive, move_to })
 const task = (id: string, status: string, available_actions: ReturnType<typeof actions>) => ({ id, title: `Task ${id}`, status, priority: 0, available_actions, requires_running_exit_confirmation: status === 'running' })
 const board = {
-  changed: true, latest_event_id: 1, read_only: false, tenants: [], assignees: [], bulk_move_targets: ['triage', 'todo', 'ready', 'blocked', 'done'],
+  changed: true, latest_event_id: 1, read_only: false, tenants: [], assignees: [], bulk_move_targets: ['triage', 'todo', 'ready', 'blocked', 'done'], create_statuses: ['triage', 'todo', 'ready', 'blocked'],
   filters: { tenant: null, assignee: null, include_archived: false, only_mine: false, profile: null },
   columns: [
-    { name: 'todo', tasks: [task('T1', 'todo', actions(false, false, false, true, ['triage', 'ready']))] },
-    { name: 'running', tasks: [task('R1', 'running', actions(true, false, true, true, ['triage', 'todo', 'ready']))] },
-    { name: 'blocked', tasks: [task('B1', 'blocked', actions(false, true, true, true, ['triage', 'todo']))] },
+    { name: 'todo', label: 'todo', tasks: [task('T1', 'todo', actions(false, false, false, true, ['triage', 'ready']))] },
+    { name: 'running', label: 'running', tasks: [task('R1', 'running', actions(true, false, true, true, ['triage', 'todo', 'ready']))] },
+    { name: 'blocked', label: 'blocked', tasks: [task('B1', 'blocked', actions(false, true, true, true, ['triage', 'todo']))] },
   ],
 }
 

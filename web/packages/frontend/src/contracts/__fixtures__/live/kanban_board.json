@@ -51,6 +51,12 @@
         "tasks": []
       }
     ],
+    "create_statuses": [
+      "triage",
+      "todo",
+      "ready",
+      "blocked"
+    ],
     "filters": {
       "assignee": null,
       "include_archived": false,

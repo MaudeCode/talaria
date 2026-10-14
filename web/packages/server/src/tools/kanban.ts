@@ -47,11 +47,14 @@ export function kanbanFailure(error: unknown): never {
 const MOVE_TARGETS: Record<string, string[]> = {
   // Ready from scheduled is the Agent's unblock, which re-gates on parents.
   triage: ['todo', 'ready'], todo: ['triage', 'ready'], scheduled: ['triage', 'todo', 'ready'], ready: ['triage', 'todo'], running: ['triage', 'todo', 'ready'],
-  // Ready from blocked is Unblock, which re-gates on parents. Leaving review reopens it, which lands in ready whatever the target.
+  // Ready from blocked is Unblock, which re-gates on parents. Ready from review is the Agent's reopen; the sidecar refuses todo,
+  // where that reopen would land in ready anyway.
   blocked: ['triage', 'todo'], review: ['ready'], done: ['triage', 'todo', 'ready'], archived: ['triage', 'todo', 'ready'],
 }
 /** Every board column except `running`; the sidecar applies each row through the same transitions. */
 export const KANBAN_BULK_MOVE_TARGETS = ['triage', 'todo', 'ready', 'blocked', 'done']
+/** Where a new task may start: a fresh task carries no result for Complete, and `running`, `scheduled` and `review` need Agent verbs. */
+export const KANBAN_CREATE_STATUSES = ['triage', 'todo', 'ready', 'blocked']
 
 export interface KanbanTaskActions { block: boolean; unblock: boolean; complete: boolean; archive: boolean; move_to: string[] }
 
@@ -61,8 +64,8 @@ export function kanbanTaskActions(task: Dict): KanbanTaskActions {
   // Block and a direct status change release a live worker's claim without stopping it, and the Agent refuses to complete
   // under a live claim, so such a card offers only Archive, which terminates the worker. Unknown liveness counts as live.
   const live = s === 'running' && task.claim_live !== false
-  // The Agent's manual moves from this status; an Agent before 0.21.6 sends none, leaving Talaria's policy alone.
-  const agent = Array.isArray(task.agent_move_targets) ? task.agent_move_targets : null
+  // The Agent's manual moves from this status; only an Agent before 0.21.6 (`null`) leaves Talaria's policy alone.
+  const agent = task.agent_move_targets === null ? null : Array.isArray(task.agent_move_targets) ? task.agent_move_targets : []
   return {
     block: !live && (s === 'ready' || s === 'running'),
     unblock: s === 'blocked',
@@ -160,7 +163,7 @@ export class KanbanService {
     const onlyMine = truthyQuery(q.only_mine)
     const board = await this.sidecar().call('kanban.board', { profile_home: home, board: str(q.board).trim() || null, tenant: str(q.tenant).trim() || null, assignee: onlyMine ? null : str(q.assignee).trim() || null, include_archived: truthyQuery(q.include_archived), only_mine: onlyMine, since, profile: activeProfile || 'default' }).catch(kanbanFailure)
     const lane_by_profile = await this.laneByProfile(home)
-    const out: Dict = { ...withKanbanPolicy(board), bulk_move_targets: [...KANBAN_BULK_MOVE_TARGETS], lane_by_profile }
+    const out: Dict = { ...withKanbanPolicy(board), bulk_move_targets: [...KANBAN_BULK_MOVE_TARGETS], create_statuses: [...KANBAN_CREATE_STATUSES], lane_by_profile }
     if (!Array.isArray(out.columns)) return out
     out.columns = searchColumns(out.columns as Column[], str(q.search))
     if (lane_by_profile) out.lanes = profileLanes(out.columns as Column[])

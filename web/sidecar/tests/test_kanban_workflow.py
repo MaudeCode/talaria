@@ -30,6 +30,9 @@ def test_scheduled_and_review_tasks_have_columns_and_leave_through_the_agent_ver
     assert review["agent_move_targets"] == (["done", "ready", "todo", "triage"] if has_workflow else None)
     assert handshaken.result("kanban.config", home)["columns"] == names
 
+    # A reopened review lands in ready whatever the target, so a move to todo is refused rather than misreported.
+    message, _ = handshaken.call("kanban.patch_task", {**home, "task_id": ids["handed"], "patch": {"status": "todo"}})
+    assert message.get("error", {}).get("data", {}).get("condition") == "conflict", message
     # Leaving scheduled is the Agent's unblock, leaving review its reopen; both re-gate on parents and land in ready.
     for name in ("parked", "handed"):
         task = handshaken.result("kanban.patch_task", {**home, "task_id": ids[name], "patch": {"status": "ready"}})["task"]
@@ -41,3 +44,9 @@ def test_scheduled_and_review_tasks_have_columns_and_leave_through_the_agent_ver
     for status in ("scheduled", "review"):
         message, _ = handshaken.call("kanban.patch_task", {**home, "task_id": ids["plain"], "patch": {"status": status}})
         assert message.get("error", {}).get("code") == -32602, (status, message)
+    # Creating a task in either is refused before the insert, so no stray task is left behind.
+    total = sum(len(c["tasks"]) for c in handshaken.result("kanban.board", home)["columns"])
+    for status in ("scheduled", "review", "running"):
+        message, _ = handshaken.call("kanban.create_task", {**home, "task": {"title": status, "status": status}})
+        assert message.get("error", {}).get("code") == -32602, (status, message)
+    assert sum(len(c["tasks"]) for c in handshaken.result("kanban.board", home)["columns"]) == total

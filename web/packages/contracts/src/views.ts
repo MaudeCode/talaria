@@ -944,6 +944,8 @@ export const KanbanLaneSchema = z.object({ assignee: z.string().nullable(), coun
 export const KanbanBoardViewSchema = z.looseObject({ columns: z.array(KanbanColumnSchema).optional(), assignees: z.array(Json).optional(), filters: Json.optional(), latest_event_id: z.number().optional(), read_only: z.boolean().optional(), tenants: z.array(Json).optional(), changed: z.boolean().optional(),
   /** Statuses a bulk status change may target (TAL-557). */
   bulk_move_targets: z.array(z.string()),
+  /** Statuses a new task may start in (TAL-796). */
+  create_statuses: z.array(z.string()),
   /** The saved board view (TAL-567): `true` groups the board into `lanes` by assignee. */
   lane_by_profile: z.boolean(),
   /** Present when `lane_by_profile`: the columns split into profile lanes, assignees in name order, unassigned last. */
