@@ -218,7 +218,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
         } catch { showToast(m.personalities_load_failed(), 4000, 'error') }
         return true
       }
-      case 'goal': if (sessionId) { const r = await api.goalCommand(sessionId, args ? 'set' : 'status', args || undefined); showToast(r.message ?? (r.goal?.text ?? m.done())) } return true
+      case 'goal': if (sessionId) { const r = await api.goalCommand(sessionId, args); showToast(r.message ?? (r.goal?.text ?? m.done())) } return true
       case 'status': if (sessionId) { const s = await api.fetchSessionStatus(sessionId); showToast(`${s.model ?? ''} · ${s.message_count ?? 0} msgs · ${s.agent_running ? m.status_streaming() : m.done()}`, 4000) } return true
       case 'help': await navigate({ to: '/settings/$section', params: { section: 'help' } }); return true
       case 'skills': await navigate({ to: '/skills' }); return true

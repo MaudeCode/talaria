@@ -128,7 +128,7 @@ export const uploadFile = (session_id: SessionId, file: File) => {
   return postForm(`api/upload${qs({ session_id })}`, form, UploadResponseSchema, { timeoutMs: 120_000 })
 }
 export const rollbackUpload = (session_id: SessionId, rollback_tokens: string[]) => orpc().upload.rollback({ session_id, rollback_tokens })
-export const goalCommand = (session_id: SessionId, action: string, text?: string) => orpc().goal({ session_id, args: action, ...(text !== undefined ? { text } : {}) })
+export const goalCommand = (session_id: SessionId, args: string) => orpc().goal({ session_id, args })
 // TAL-372: the session's background work, one shared record each; reading never consumes a result.
 export const startBackground = (session_id: SessionId, prompt: string) => orpc().background.start({ session_id, prompt })
 export const fetchBackgroundTasks = (session_id: SessionId, kind?: 'delegation' | 'process' | 'background_command') => orpc().background.tasks({ session_id, ...(kind ? { kind } : {}) })

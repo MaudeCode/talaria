@@ -12,9 +12,11 @@ import type { LiveTurn } from '../../stream/reducer'
 import type { QueuedTurn } from './queue'
 import { endFirstSend, getFirstSend } from '../chat/firstSend'
 import { returnToComposer } from './composerReturn'
+import { showToast } from '../toast/toast'
 
 vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await importOriginal()), saveDraft: vi.fn(), fetchDraft: vi.fn(), steerChat: vi.fn(), startChat: vi.fn(), startBackground: vi.fn(), fetchBackgroundTasks: vi.fn(), askBtw: vi.fn(), fetchCommands: vi.fn(), execCommand: vi.fn() }))
 // jsdom has no EventSource: a followed turn opens a stream handle that does nothing.
+vi.mock(import('../toast/toast'), async (importOriginal) => ({ ...(await importOriginal()), showToast: vi.fn() }))
 vi.mock(import('../../api/sse'), async (importOriginal) => ({ ...(await importOriginal()), openChatStream: vi.fn(() => ({ close: () => undefined, readyState: () => 0 })) }))
 import { Composer } from './Composer'
 
@@ -100,6 +102,19 @@ describe('Composer', () => {
     expect(box).toHaveValue('/history')
     expect(onLocalCommand).not.toHaveBeenCalled()
     expect(api.startChat).not.toHaveBeenCalled()
+  })
+
+  // TAL-882: a refused local command (`/goal gate add` without a goal) shows the server's reason and keeps the text.
+  it('shows why a local command was refused and keeps the typed command', async () => {
+    vi.mocked(api.fetchCommands).mockResolvedValue({ commands: [{ name: 'goal', aliases: [], handler: 'client', clients: ['web', 'ios'] }] })
+    vi.mocked(showToast).mockClear()
+    const onLocalCommand = vi.fn(() => Promise.reject(new Error('/goal gate add: no active goal')))
+    renderComposer({ ...writable, is_streaming: false }, null, noop, undefined, undefined, onLocalCommand)
+    const box = screen.getByRole('textbox')
+    await userEvent.type(box, '/goal gate add true{Enter}')
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith('/goal gate add: no active goal', 5000, 'error'))
+    expect(onLocalCommand).toHaveBeenCalledWith('goal', 'gate add true')
+    expect(box).toHaveValue('/goal gate add true')
   })
 
   // TAL-561: an entry the server marks `exec` runs through the exec route; its output shows above the composer.
