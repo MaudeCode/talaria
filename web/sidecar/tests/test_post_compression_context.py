@@ -111,3 +111,72 @@ def test_an_auto_compressed_turn_returns_pruned_context_and_its_estimate(tmp_pat
     assert out["ephemeral"]["estimate"] > agent_prune["estimate"] + 20000
     # Without a compression the turn reports neither.
     assert out["uncompressed"] == {"display_raw": True, "within_budget": None, "context_len": None, "context_roles": None, "estimate": None, "marker": False}
+
+
+# TAL-891: tool payloads put ``exit_code`` / ``error`` / ``success`` after ``output``, so the cap cut the outcome away
+# and a failed call read like a success on the next turn. ``LEGACY`` is the pre-fix cap: successful and non-JSON
+# results must stay byte-identical to it.
+OUTCOME_PROBE = """
+import json, sys
+sys.path.append(sys.argv[1])
+from talaria_sidecar.methods import chat
+
+LEGACY_PREFIX = "[Talaria context budget: omitted "
+
+def legacy(text, tokens, keep_tokens):
+    suffix = f" (~{tokens} rough tokens) from this tool result; the full output remains in the visible transcript.]"
+    if keep_tokens < chat._TAIL_TOOL_MIN_SNIPPET_TOKENS:
+        return f"{LEGACY_PREFIX}{len(text)} chars{suffix}"
+    room = keep_tokens - chat._rough_tokens(f"{LEGACY_PREFIX}{len(text)} of {len(text)} chars{suffix}") - 1
+    snippet = text[: len(text) * room // tokens]
+    while snippet and chat._rough_tokens(snippet) > room:
+        snippet = snippet[: len(snippet) * 3 // 4]
+    snippet = snippet.rstrip()
+    if not snippet:
+        return f"{LEGACY_PREFIX}{len(text)} chars{suffix}"
+    return f"{snippet}\\n\\n{LEGACY_PREFIX}{len(text) - len(snippet)} of {len(text)} chars{suffix}"
+
+OUTPUT = "cc -c build.c: warning: unused variable\\n" * 2000
+payloads = {
+    "exit": {"output": OUTPUT, "exit_code": 2, "error": None},
+    "exit_camel": {"output": OUTPUT, "exitCode": 1},
+    "error": {"output": OUTPUT, "error": "403 Forbidden\\n  (token expired)"},
+    "unsuccessful": {"output": OUTPUT, "success": False},
+    "killed": {"output": OUTPUT, "exit_code": 137, "completion_reason": "killed"},
+    "success": {"output": OUTPUT, "exit_code": 0, "error": None},
+}
+texts = {name: json.dumps(payload) for name, payload in payloads.items()}
+texts["plain"] = OUTPUT
+out = {}
+for name, text in texts.items():
+    tokens = chat._rough_tokens(text)
+    for keep in (2000, 100):
+        capped = chat._capped_tool_result(text, tokens, keep)
+        out[f"{name}/{keep}"] = {
+            "tail": capped[-160:],
+            "fits": chat._rough_tokens(capped) <= keep,
+            "legacy": capped == legacy(text, tokens, keep),
+        }
+print(json.dumps(out))
+"""
+
+
+@requires_agent
+def test_a_capped_tool_result_keeps_its_failure_outcome(tmp_path) -> None:
+    root = tmp_path / ".hermes"
+    root.mkdir()
+    run = subprocess.run([AGENT_PYTHON, "-c", OUTCOME_PROBE, str(AGENT_DIR)], env=isolated_env(root), capture_output=True, text=True, timeout=120)
+    assert run.returncode == 0, run.stderr[-4000:]
+    out = json.loads(run.stdout.strip().splitlines()[-1])
+    for keep in (2000, 100):
+        # Both the head-kept and the note-only branch end on the outcome the cut removed.
+        assert out[f"exit/{keep}"]["tail"].endswith("visible transcript. FAILED: exit 2]")
+        # The server's outcome rule (``toolOutcome``) reads both spellings.
+        assert out[f"exit_camel/{keep}"]["tail"].endswith("visible transcript. FAILED: exit 1]")
+        assert out[f"error/{keep}"]["tail"].endswith("visible transcript. FAILED: 403 Forbidden (token expired)]")
+        assert out[f"unsuccessful/{keep}"]["tail"].endswith("visible transcript. FAILED]")
+        # A process the agent killed exits non-zero by design; like successes and plain text it keeps today's note.
+        for name in ("killed", "success", "plain"):
+            assert out[f"{name}/{keep}"]["legacy"], (name, keep, out[f"{name}/{keep}"]["tail"])
+    # The outcome counts against the remaining budget.
+    assert all(out[f"{name}/2000"]["fits"] for name in ("exit", "exit_camel", "error", "unsuccessful", "killed", "success", "plain"))
