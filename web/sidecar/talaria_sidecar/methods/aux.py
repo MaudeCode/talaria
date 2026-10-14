@@ -204,6 +204,8 @@ def _stream_completion(create, model: str, *, stream: bool, ctx: CallContext) ->
     finish_reason = None
     try:
         chunks = create(stream=True)
+        if hasattr(chunks, "choices"):  # the route resolved to a shim that answers ``stream=True`` whole
+            return _response_result(model, chunks)
         try:
             for chunk in chunks:
                 ctx.check_cancelled()

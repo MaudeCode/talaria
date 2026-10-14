@@ -221,3 +221,16 @@ def test_a_client_that_cannot_stream_is_asked_once_without_stream(monkeypatch) -
     _install_call_llm(monkeypatch, shim, call_llm)
     result = aux.complete("title_generation", MESSAGES, main_runtime=None, max_tokens=None, temperature=None, ctx=CancellableCtx())
     assert result["text"] == "Shim title" and calls == [False]
+
+
+def test_a_whole_response_to_a_stream_request_is_read_once(monkeypatch) -> None:
+    calls = []
+
+    def call_llm(task, *, main_runtime=None, messages, stream=False, **kwargs):
+        # The route resolved to a shim the auxiliary client did not predict: it answers ``stream=True`` whole.
+        calls.append(stream)
+        return _response("Fallback title")
+
+    _install_call_llm(monkeypatch, STREAMING_CLIENT, call_llm)
+    result = aux.complete("title_generation", MESSAGES, main_runtime=None, max_tokens=None, temperature=None, ctx=CancellableCtx())
+    assert result["text"] == "Fallback title" and calls == [True]
