@@ -950,8 +950,14 @@ export class ProviderCatalog {
       const named = [...namedCustom.entries()].find(([, v]) => customProviderEntries(config).some((e) => customProviderSlug(e.name) === customProviderSlug(v.name) && str(e.base_url).trim().replace(/\/+$/, '') === cfgBaseUrl.replace(/\/+$/, '')))
       detected.add(named?.[0] ?? active ?? 'custom')
     }
+    // TAL-911: Agent pickers drop `model_catalog.excluded_providers` under any of their aliases, the active provider included.
+    const excludedCfg = dict(config.model_catalog).excluded_providers
+    const excluded = new Set(Array.isArray(excludedCfg) ? excludedCfg.map(providerIdentity).filter(Boolean) : [])
+    const isExcluded = (pid: unknown): boolean => excluded.has(providerIdentity(pid))
+    const pickerDefault = isExcluded(active) || isExcluded(parseProviderQualifiedModel(defaultModel)?.[1]) ? '' : defaultModel
     const groups: ModelGroup[] = []
     for (const pid of [...detected].map((p) => (p.startsWith('custom') || pluginNames.has(p) ? p : canonicaliseProviderId(p) || p)).filter((v, i, a) => v && a.indexOf(v) === i).sort()) {
+      if (isExcluded(pid)) continue
       if (pid.startsWith('custom:')) {
         const g = namedCustom.get(pid)
         const models = [...(g?.models ?? [])]
@@ -987,7 +993,7 @@ export class ProviderCatalog {
       for (const id of configuredIds.get(pid) ?? []) if (!raw.some((m) => m.id === id)) raw.push({ id, label: labelForModel(id, groups) })
       if (raw.length) groups.push({ provider: pluginNames.get(pid) ?? displayName(pid), provider_id: pid, models: applyProviderPrefix(raw, pid, active) })
     }
-    if (defaultModel) {
+    if (pickerDefault) {
       const all = new Set(groups.flatMap((g) => g.models.map((m) => m.id)))
       if (!all.has(defaultModel) && !all.has(`@${active ?? ''}:${defaultModel}`)) {
         const label = labelForModel(defaultModel, groups)
@@ -1017,7 +1023,7 @@ export class ProviderCatalog {
     if (isDict(rawAliases)) for (const [k, v] of Object.entries(rawAliases)) if (k && v) aliases[k.trim()] = str(v).trim()
     const [defaultBare, defaultProvider] = parseProviderQualifiedModel(defaultModel) ?? [defaultModel, active]
     const defaults = { active_provider: active, default_model: defaultModel, default_provider_id: defaultProvider, default_bare_id: defaultBare }
-    if (!kept.length && defaultModel) {
+    if (!kept.length && pickerDefault) {
       const providerId = active ?? 'default'
       return this.remember(profileHome, { source, unconfirmed }, { ...defaults, groups: [{ provider: 'Default', provider_id: providerId, models: stampModelEntries([{ id: defaultModel, label: labelForModel(defaultModel, []) }], providerId) }], aliases: {}, configured_model_badges: {} })
     }
