@@ -122,7 +122,7 @@ function relay(ws: WebSocket, sidecar: SidecarLike, profileHome: string, log: (l
           send({ type: 'partial', text: data.text })
         }
       },
-    }).then((result) => { finish({ type: 'final', transcript: result.transcript, provider: result.provider }) }, (error: unknown) => {
+    }).then((result) => { finish({ type: 'final', transcript: result.transcript, filtered: result.filtered, provider: result.provider }) }, (error: unknown) => {
       if (!done) log(`[webui] live transcription ended: ${message(error)}`)
       fail(message(error))
     })

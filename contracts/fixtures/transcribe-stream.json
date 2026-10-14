@@ -4,7 +4,7 @@
   "events": [
     { "type": "partial", "text": "Ship the" },
     { "type": "partial", "text": "Ship the release notes" },
-    { "type": "final", "transcript": "Ship the release notes.", "provider": "openai" }
+    { "type": "final", "transcript": "Ship the release notes.", "filtered": false, "provider": "openai" }
   ],
   "unavailable": { "type": "error", "message": "Live transcription is unavailable for the configured provider" }
 }

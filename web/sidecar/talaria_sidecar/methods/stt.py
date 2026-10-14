@@ -48,6 +48,20 @@ def streaming_available() -> bool:
         return False
 
 
+def dictation(transcript: str) -> dict:
+    """The transcript, emptied with ``filtered`` when it is a phrase Whisper invents on silent audio (TAL-917).
+
+    The Agent's ``transcribe_recording`` filter, without its voice-mode tagging. An Agent without it keeps the text."""
+    transcript = transcript.strip()
+    try:
+        from tools.voice_mode_transcript import is_whisper_hallucination
+    except ImportError:
+        return {"transcript": transcript, "filtered": False}
+    if transcript and is_whisper_hallucination(transcript):
+        return {"transcript": "", "filtered": True}
+    return {"transcript": transcript, "filtered": False}
+
+
 # Open live sessions by stream id: the ``stt.stream`` call owns each entry and removes it on every exit.
 _STREAMS: dict[str, tuple[object, threading.Event]] = {}
 _STREAMS_LOCK = threading.Lock()
@@ -95,7 +109,7 @@ def run_stream(ctx: CallContext, session, sample_rate: int) -> dict:
     if not isinstance(result, dict) or not result.get("success"):
         message = str(result.get("error") or "") if isinstance(result, dict) else ""
         raise RpcError(message or "Live transcription failed", condition="stt_failed")
-    return {"transcript": str(result.get("transcript") or "").strip(), "provider": str(result.get("provider") or "")}
+    return {**dictation(str(result.get("transcript") or "")), "provider": str(result.get("provider") or "")}
 
 
 def stream_audio(stream_id: str, audio_b64: str, end: bool) -> dict:
@@ -115,10 +129,6 @@ def stream_audio(stream_id: str, audio_b64: str, end: bool) -> dict:
 
 
 def transcribe(audio_b64: str, suffix: str) -> dict:
-    """The recording's transcript, emptied with ``filtered`` when it is a phrase Whisper invents on silent audio.
-
-    The Agent's ``transcribe_recording`` filter over ``transcribe_audio``, without its voice-mode tagging (TAL-917).
-    An Agent without the filter keeps the raw transcript."""
     try:
         from tools.transcription_tools import transcribe_audio
     except ImportError as exc:
@@ -139,14 +149,7 @@ def transcribe(audio_b64: str, suffix: str) -> dict:
         message = str((result or {}).get("error") or "Transcription failed") if isinstance(result, dict) else "Transcription failed"
         lowered = message.lower()
         raise RpcError(message, condition="stt_unavailable" if "unavailable" in lowered or "not configured" in lowered else "stt_failed")
-    transcript = str(result.get("transcript") or "").strip()
-    try:
-        from tools.voice_mode_transcript import is_whisper_hallucination
-    except ImportError:
-        return {"transcript": transcript, "filtered": False}
-    if transcript and is_whisper_hallucination(transcript):
-        return {"transcript": "", "filtered": True}
-    return {"transcript": transcript, "filtered": False}
+    return dictation(str(result.get("transcript") or ""))
 
 
 def register(registry) -> None:

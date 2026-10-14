@@ -272,7 +272,7 @@ export const STT_METHODS = {
    */
   'stt.stream': {
     params: ProfileHomeParams.extend({ sample_rate: z.number().int().min(8000).max(48000) }),
-    result: z.object({ transcript: z.string(), provider: z.string() }),
+    result: z.object({ transcript: z.string(), filtered: z.boolean(), provider: z.string() }),
     stream: z.discriminatedUnion('event', [
       z.object({ event: z.literal('ready'), data: z.object({ stream_id: z.string() }) }),
       z.object({ event: z.literal('partial'), data: z.object({ text: z.string() }) }),

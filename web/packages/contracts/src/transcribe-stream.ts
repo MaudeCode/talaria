@@ -19,7 +19,8 @@ export const TranscribeStreamEndSchema = z.object({ eos: z.literal(true) })
 export const TranscribeStreamEventSchema = z.discriminatedUnion('type', [
   /** The provider's current text for the whole recording so far; each one replaces the last. */
   z.object({ type: z.literal('partial'), text: z.string() }),
-  z.object({ type: z.literal('final'), transcript: z.string(), provider: z.string() }),
+  /** `filtered` (TAL-917): the server emptied a phrase Whisper invents on silent audio. */
+  z.object({ type: z.literal('final'), transcript: z.string(), filtered: z.boolean(), provider: z.string() }),
   z.object({ type: z.literal('error'), message: z.string() }),
 ])
 
