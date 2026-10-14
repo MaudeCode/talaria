@@ -405,6 +405,8 @@ final class APIClientSessionMutationTests: APIClientTestCase {
             let body = try JSONSerialization.jsonObject(with: data) as? [String: Any]
             XCTAssertEqual(body?["session_id"] as? String, "session-abc")
             XCTAssertEqual(body?["keep_count"] as? Int, 3)
+            XCTAssertEqual(body?["confirm_deep_truncate"] as? Bool, false)
+            XCTAssertNil(body?["confirm_token"])
 
             return apiTestJSONResponse("""
             {
@@ -427,6 +429,28 @@ final class APIClientSessionMutationTests: APIClientTestCase {
         XCTAssertEqual(response.session?.sessionId, "session-abc")
         XCTAssertEqual(response.session?.messages?.count, 3)
         XCTAssertEqual(response.session?.messagesOffset, 0)
+        XCTAssertNil(response.confirmRequired)
+    }
+
+    /// TAL-929: a cut of more than one user turn comes back held, with the server's counts and no session.
+    func testTruncateSessionDecodesConfirmRequiredAndSendsFlag() async throws {
+        let client = makeClient { request in
+            let body = try apiTestJSONBody(from: request)
+            XCTAssertEqual(body["confirm_deep_truncate"] as? Bool, true)
+            XCTAssertEqual(body["confirm_token"] as? String, "rows-0")
+            return apiTestJSONResponse(
+                #"{"ok": false, "confirm_required": true, "discard_user_turns": 3, "discard_messages": 5, "confirm_token": "rows-1"}"#,
+                for: request
+            )
+        }
+
+        let response = try await client.truncateSession(id: "session-abc", keepCount: 0, confirmToken: "rows-0")
+
+        XCTAssertEqual(response.confirmRequired, true)
+        XCTAssertEqual(response.confirmToken, "rows-1")
+        XCTAssertEqual(response.discardUserTurns, 3)
+        XCTAssertEqual(response.discardMessages, 5)
+        XCTAssertNil(response.session)
     }
 
     /// TAL-455: a chat started under a project filter joins that project; without one the body

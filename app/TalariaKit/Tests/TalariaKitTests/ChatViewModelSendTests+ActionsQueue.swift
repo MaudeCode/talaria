@@ -104,6 +104,7 @@ extension ChatViewModelSendTests {
                   "session": {
                     "session_id": "session-abc",
                     "_messages_offset": 10,
+                    "confirms_deep_truncate": true,
                     "messages": [
                       {"role": "user", "content": "First question", "timestamp": 1, "message_id": "u-10"},
                       {"role": "assistant", "content": "First answer", "timestamp": 2, "message_id": "a-11"},
@@ -116,6 +117,8 @@ extension ChatViewModelSendTests {
             case "/api/session/truncate":
                 let body = try XCTUnwrap(apiTestJSONBody(from: request))
                 XCTAssertEqual(body["session_id"] as? String, "session-abc")
+                XCTAssertEqual(body["confirm_deep_truncate"] as? Bool, false)
+                XCTAssertNil(body["confirm_token"])
                 truncateKeepCount = body["keep_count"] as? Int
                 return apiTestJSONResponse("""
                 {
@@ -150,12 +153,207 @@ extension ChatViewModelSendTests {
         let didEdit = await viewModel.editMessage(context, newText: "  Edited question  ")
 
         XCTAssertTrue(didEdit)
+        XCTAssertNil(viewModel.deepTruncateConfirmation)
         XCTAssertEqual(requestPaths, ["/api/session", "/api/session/truncate", "/api/chat/start"])
         XCTAssertEqual(truncateKeepCount, 12)
         XCTAssertEqual(startedMessage, "Edited question")
         XCTAssertEqual(viewModel.messages.compactMap(\.content), ["First question", "First answer", "Edited question"])
         XCTAssertEqual(viewModel.activeStreamID, "stream-edit")
         XCTAssertEqual(streamClient.startedURLs.count, 1)
+    }
+
+    /// TAL-929: the server holds a cut of more than one user turn; nothing changes until the confirmed resend.
+    @MainActor
+    func testDeepEditWaitsForServerConfirmationThenResendsWithItsToken() async throws {
+        var truncateTokens: [String?] = []
+        var startedMessage: String?
+        let viewModel = try makeViewModel(streamClient: SpySSEStreamingClient()) { request in
+            switch request.url?.path {
+            case "/api/session":
+                return apiTestJSONResponse("""
+                {
+                  "session": {
+                    "session_id": "session-abc",
+                    "confirms_deep_truncate": true,
+                    "messages": [
+                      {"role": "user", "content": "First question", "timestamp": 1, "message_id": "u-0"},
+                      {"role": "assistant", "content": "First answer", "timestamp": 2, "message_id": "a-1"},
+                      {"role": "user", "content": "Second question", "timestamp": 3, "message_id": "u-2"},
+                      {"role": "assistant", "content": "Second answer", "timestamp": 4, "message_id": "a-3"}
+                    ]
+                  }
+                }
+                """, for: request)
+            case "/api/session/truncate":
+                let body = try XCTUnwrap(apiTestJSONBody(from: request))
+                XCTAssertEqual(body["keep_count"] as? Int, 0)
+                let token = body["confirm_token"] as? String
+                XCTAssertEqual(body["confirm_deep_truncate"] as? Bool, token != nil)
+                truncateTokens.append(token)
+                return apiTestJSONResponse(token == "rows-1"
+                    ? #"{"ok": true, "session": {"session_id": "session-abc", "messages": []}}"#
+                    : #"{"ok": false, "confirm_required": true, "discard_user_turns": 2, "discard_messages": 3, "confirm_token": "rows-1"}"#,
+                    for: request)
+            case "/api/chat/start":
+                startedMessage = try XCTUnwrap(apiTestJSONBody(from: request))["message"] as? String
+                return apiTestJSONResponse(#"{"session_id": "session-abc", "stream_id": "stream-edit"}"#, for: request)
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        await viewModel.loadMessages()
+        let context = try XCTUnwrap(viewModel.actionContext(for: viewModel.messages[0], visibleIndex: 0))
+        let didEdit = await viewModel.editMessage(context, newText: "Edited question")
+
+        XCTAssertFalse(didEdit)
+        let confirmation = try XCTUnwrap(viewModel.deepTruncateConfirmation)
+        XCTAssertEqual(confirmation.discardMessages, 3)
+        XCTAssertEqual(confirmation.action, .edit(newText: "Edited question"))
+        XCTAssertEqual(viewModel.messages.count, 4)
+        XCTAssertNil(startedMessage)
+        XCTAssertNil(viewModel.messageActionErrorMessage)
+
+        let didConfirm = await viewModel.confirmDeepTruncate(confirmation)
+
+        XCTAssertTrue(didConfirm)
+        XCTAssertNil(viewModel.deepTruncateConfirmation)
+        XCTAssertEqual(truncateTokens, [nil, "rows-1"])
+        XCTAssertEqual(startedMessage, "Edited question")
+        XCTAssertEqual(viewModel.messages.compactMap(\.content), ["Edited question"])
+        XCTAssertEqual(viewModel.activeStreamID, "stream-edit")
+    }
+
+    @MainActor
+    func testDeepRegenerateIsHeldUntilConfirmedAndCancelKeepsTranscript() async throws {
+        var truncateFlags: [Bool] = []
+        let viewModel = try makeViewModel(streamClient: SpySSEStreamingClient()) { request in
+            switch request.url?.path {
+            case "/api/session":
+                return apiTestJSONResponse("""
+                {
+                  "session": {
+                    "session_id": "session-abc",
+                    "confirms_deep_truncate": true,
+                    "messages": [
+                      {"role": "user", "content": "First question", "timestamp": 1, "message_id": "u-0"},
+                      {"role": "assistant", "content": "First answer", "timestamp": 2, "message_id": "a-1"},
+                      {"role": "user", "content": "Second question", "timestamp": 3, "message_id": "u-2"},
+                      {"role": "assistant", "content": "Second answer", "timestamp": 4, "message_id": "a-3"},
+                      {"role": "user", "content": "Third question", "timestamp": 5, "message_id": "u-4"},
+                      {"role": "assistant", "content": "Third answer", "timestamp": 6, "message_id": "a-5"}
+                    ]
+                  }
+                }
+                """, for: request)
+            case "/api/session/truncate":
+                truncateFlags.append(try XCTUnwrap(apiTestJSONBody(from: request)["confirm_deep_truncate"] as? Bool))
+                return apiTestJSONResponse(#"{"ok": false, "confirm_required": true, "discard_user_turns": 2, "discard_messages": 4, "confirm_token": "rows-1"}"#, for: request)
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        await viewModel.loadMessages()
+        let context = try XCTUnwrap(viewModel.actionContext(for: viewModel.messages[1], visibleIndex: 1))
+        let didRegenerate = await viewModel.regenerateAssistantResponse(context)
+
+        XCTAssertFalse(didRegenerate)
+        XCTAssertEqual(viewModel.deepTruncateConfirmation?.action, .regenerate)
+        XCTAssertEqual(viewModel.deepTruncateConfirmation?.discardMessages, 4)
+        viewModel.cancelDeepTruncate()
+        XCTAssertNil(viewModel.deepTruncateConfirmation)
+        XCTAssertEqual(truncateFlags, [false])
+        XCTAssertEqual(viewModel.messages.count, 6)
+    }
+
+    /// An older server cuts at once, so the App asks first with its own count, then sends the cut (TAL-929).
+    @MainActor
+    func testOlderServerEditAsksWithThisDevicesCountBeforeCutting() async throws {
+        var requestPaths: [String] = []
+        let viewModel = try makeViewModel(streamClient: SpySSEStreamingClient()) { request in
+            requestPaths.append(request.url?.path ?? "")
+            switch request.url?.path {
+            case "/api/session":
+                return apiTestJSONResponse("""
+                {
+                  "session": {
+                    "session_id": "session-abc",
+                    "messages": [
+                      {"role": "user", "content": "First question", "timestamp": 1, "message_id": "u-0"},
+                      {"role": "assistant", "content": "First answer", "timestamp": 2, "message_id": "a-1"},
+                      {"role": "user", "content": "Second question", "timestamp": 3, "message_id": "u-2"},
+                      {"role": "assistant", "content": "Second answer", "timestamp": 4, "message_id": "a-3"}
+                    ]
+                  }
+                }
+                """, for: request)
+            case "/api/session/truncate":
+                return apiTestJSONResponse(#"{"session": {"session_id": "session-abc", "messages": []}}"#, for: request)
+            case "/api/chat/start":
+                return apiTestJSONResponse(#"{"session_id": "session-abc", "stream_id": "stream-edit"}"#, for: request)
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        await viewModel.loadMessages()
+        let context = try XCTUnwrap(viewModel.actionContext(for: viewModel.messages[0], visibleIndex: 0))
+        let didEdit = await viewModel.editMessage(context, newText: "Edited question")
+
+        XCTAssertFalse(didEdit)
+        XCTAssertEqual(requestPaths, ["/api/session"])
+        let confirmation = try XCTUnwrap(viewModel.deepTruncateConfirmation)
+        XCTAssertEqual(confirmation.discardMessages, 3)
+
+        let didConfirm = await viewModel.confirmDeepTruncate(confirmation)
+
+        XCTAssertTrue(didConfirm)
+        XCTAssertEqual(requestPaths, ["/api/session", "/api/session/truncate", "/api/chat/start"])
+    }
+
+    /// A reload from a server that no longer says it holds deep cuts (a rollback) brings the device's prompt back (TAL-929).
+    @MainActor
+    func testReloadWithoutTheCapabilityAsksOnTheDeviceAgain() async throws {
+        var detailLoads = 0
+        var requestPaths: [String] = []
+        let viewModel = try makeViewModel(streamClient: SpySSEStreamingClient()) { request in
+            requestPaths.append(request.url?.path ?? "")
+            switch request.url?.path {
+            case "/api/session":
+                detailLoads += 1
+                let capability = detailLoads == 1 ? #""confirms_deep_truncate": true,"# : ""
+                return apiTestJSONResponse("""
+                {
+                  "session": {
+                    "session_id": "session-abc",
+                    \(capability)
+                    "messages": [
+                      {"role": "user", "content": "First question", "timestamp": 1, "message_id": "u-0"},
+                      {"role": "assistant", "content": "First answer", "timestamp": 2, "message_id": "a-1"},
+                      {"role": "user", "content": "Second question", "timestamp": 3, "message_id": "u-2"},
+                      {"role": "assistant", "content": "Second answer", "timestamp": 4, "message_id": "a-3"}
+                    ]
+                  }
+                }
+                """, for: request)
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        await viewModel.loadMessages()
+        await viewModel.loadMessages()
+        let context = try XCTUnwrap(viewModel.actionContext(for: viewModel.messages[0], visibleIndex: 0))
+        let didEdit = await viewModel.editMessage(context, newText: "Edited question")
+
+        XCTAssertFalse(didEdit)
+        XCTAssertEqual(requestPaths, ["/api/session", "/api/session"])
+        XCTAssertEqual(viewModel.deepTruncateConfirmation?.discardMessages, 3)
     }
 
     @MainActor

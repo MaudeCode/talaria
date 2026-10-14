@@ -316,7 +316,7 @@ describe('state.db projection', () => {
     let res = await s.get('/api/session?session_id=tui-tip')
     expect(res.status).toBe(200)
     let body = (await res.json()) as { session: Record<string, unknown> }
-    expect(body.session).toMatchObject({ session_id: 'tui-tip', is_cli_session: true, read_only: false, message_count: 4, tool_calls: [] })
+    expect(body.session).toMatchObject({ session_id: 'tui-tip', is_cli_session: true, read_only: false, message_count: 4, tool_calls: [], confirms_deep_truncate: true })
     expect((body.session.messages as { content: string }[]).map((m) => m.content)).toEqual(['user says', 'assistant says', 'user says', 'assistant says'])
     // State.db-only transcripts get the same server turn projection as WebUI sessions: turn ids and each turn's scene.
     const stateMessages = body.session.messages as Record<string, unknown>[]

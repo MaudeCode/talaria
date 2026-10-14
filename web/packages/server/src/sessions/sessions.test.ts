@@ -1003,6 +1003,168 @@ describe('projects, workspaces, and files over HTTP', () => {
   })
 })
 
+describe('a truncate that discards more than one user turn waits for confirmation (TAL-929)', () => {
+  let s: TestServer
+  beforeAll(async () => {
+    s = await bootTestServer()
+    // The Agent's state.db, as every profile it has run in has one.
+    const db = new DatabaseSync(join(s.state, 'state.db'))
+    db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
+    db.close()
+  })
+  afterAll(() => s.close())
+  // Eight stored rows, seven shown: the tool result folds into its turn's scene. Six are later than the first.
+  const threeTurns = (): Json[] => [
+    { role: 'user', content: 'u1', timestamp: 100 }, { role: 'assistant', content: 'a1', timestamp: 101 },
+    { role: 'user', content: 'u2', timestamp: 102 }, { role: 'assistant', content: '', tool_calls: [{ id: 't', name: 'read_file' }], timestamp: 103 },
+    { role: 'tool', tool_call_id: 't', content: 'x', timestamp: 104 }, { role: 'assistant', content: 'a2', timestamp: 105 },
+    { role: 'user', content: 'u3', timestamp: 106 }, { role: 'assistant', content: 'a3', timestamp: 107 },
+  ]
+  const seed = async (): Promise<string> => {
+    const sid = String((await newSession(s)).session_id)
+    const session = s.deps.sessionStore.get(sid)
+    session.messages = threeTurns()
+    session.context_messages = threeTurns()
+    s.deps.sessionStore.save(session)
+    return sid
+  }
+
+  it('refuses a cut at the first of three user turns without the flag and changes nothing', async () => {
+    const sid = await seed()
+    const file = join(s.state, 'sessions', `${sid}.json`)
+    const before = readFileSync(file, 'utf8')
+    const stored = s.deps.sessionStore.get(sid)
+    const boundaries = { watermark: stored.truncation_watermark, boundary: stored.truncation_boundary }
+    const res = await post(s, '/api/session/truncate', { session_id: sid, keep_count: 0, confirm_deep_truncate: false })
+    expect(res.status).toBe(200)
+    expect(await json(res)).toEqual({ ok: false, confirm_required: true, discard_user_turns: 3, discard_messages: 6, confirm_token: expect.stringMatching(/^[0-9a-f]{32}$/) as unknown })
+    expect(readFileSync(file, 'utf8')).toBe(before)
+    const after = s.deps.sessionStore.get(sid)
+    expect(after.messages).toHaveLength(8)
+    expect(after.context_messages).toHaveLength(8)
+    expect({ watermark: after.truncation_watermark, boundary: after.truncation_boundary }).toEqual(boundaries)
+  })
+
+  it('cuts with the token of the rows it confirmed, and cuts one turn or less without one', async () => {
+    let sid = await seed()
+    const held = await json(await post(s, '/api/session/truncate', { session_id: sid, keep_count: 2, confirm_deep_truncate: false }))
+    // The flag alone, or a token for other rows, confirms nothing.
+    for (const body of [{ confirm_deep_truncate: true }, { confirm_deep_truncate: true, confirm_token: 'stale' }, { confirm_deep_truncate: false, confirm_token: held.confirm_token }]) {
+      expect(await json(await post(s, '/api/session/truncate', { session_id: sid, keep_count: 2, ...body }))).toEqual(held)
+    }
+    let res = await post(s, '/api/session/truncate', { session_id: sid, keep_count: 2, confirm_deep_truncate: true, confirm_token: held.confirm_token })
+    expect(((await json(res)).session as Json).messages).toHaveLength(2)
+    sid = await seed()
+    res = await post(s, '/api/session/truncate', { session_id: sid, keep_count: 6, confirm_deep_truncate: false })
+    expect(((await json(res)).session as Json).messages).toHaveLength(6)
+    sid = await seed()
+    res = await post(s, '/api/session/truncate', { session_id: sid, keep_count: 3, confirm_deep_truncate: false })
+    expect(((await json(res)).session as Json).messages).toHaveLength(3)
+  })
+
+  it('asks again when a turn arrives between the question and the confirmation', async () => {
+    const sid = await seed()
+    const held = await json(await post(s, '/api/session/truncate', { session_id: sid, keep_count: 2, confirm_deep_truncate: false }))
+    const session = s.deps.sessionStore.get(sid)
+    session.messages = [...threeTurns(), { role: 'user', content: 'u4', timestamp: 108 }, { role: 'assistant', content: 'a4', timestamp: 109 }]
+    s.deps.sessionStore.save(session)
+    const again = await json(await post(s, '/api/session/truncate', { session_id: sid, keep_count: 2, confirm_deep_truncate: true, confirm_token: held.confirm_token }))
+    expect(again).toMatchObject({ ok: false, confirm_required: true, discard_user_turns: 3, discard_messages: 6 })
+    expect(again.confirm_token).not.toBe(held.confirm_token)
+    expect(s.deps.sessionStore.get(sid).messages).toHaveLength(10)
+  })
+
+  it('counts the turns a CLI continuation added in state.db, which the detail shows', async () => {
+    const sid = String((await newSession(s)).session_id)
+    const rows: [string, string, number][] = [['user', 'u1', 100], ['assistant', 'a1', 101], ['user', 'u2', 102], ['assistant', 'a2', 103], ['user', 'u3', 104], ['assistant', 'a3', 105]]
+    writeMessages(s, sid, rows.slice(0, 2).map(([role, content, timestamp]) => ({ role, content, timestamp })))
+    const db = new DatabaseSync(join(s.state, 'state.db'))
+    db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
+    db.prepare('INSERT INTO sessions (id, source, started_at) VALUES (?, ?, ?)').run(sid, 'cli', 100)
+    for (const [role, content, ts] of rows) db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, role, content, ts)
+    db.close()
+    const shown = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).messages as Json[]
+    expect(shown.map((m) => m.content)).toEqual(['u1', 'a1', 'u2', 'a2', 'u3', 'a3'])
+    expect(await json(await post(s, '/api/session/truncate', { session_id: sid, keep_count: 0, confirm_deep_truncate: false }))).toMatchObject({ ok: false, confirm_required: true, discard_user_turns: 3, discard_messages: 5 })
+    const served = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).messages as Json[]
+    expect(served.map((m) => m.content)).toEqual(['u1', 'a1', 'u2', 'a2', 'u3', 'a3'])
+  })
+
+  it('keeps a CLI row committed during the confirmed cut, which its count never saw', async () => {
+    const sid = String((await newSession(s)).session_id)
+    const rows: [string, string, number][] = [['user', 'u1', 100], ['assistant', 'a1', 101], ['user', 'u2', 102], ['assistant', 'a2', 103], ['user', 'u3', 104], ['assistant', 'a3', 105]]
+    writeMessages(s, sid, rows.slice(0, 2).map(([role, content, timestamp]) => ({ role, content, timestamp })))
+    const dbPath = join(s.state, 'state.db')
+    const insert = (role: string, content: string, ts: number): void => {
+      const db = new DatabaseSync(dbPath)
+      db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, role, content, ts)
+      db.close()
+    }
+    const db = new DatabaseSync(dbPath)
+    db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
+    db.prepare('INSERT INTO sessions (id, source, started_at) VALUES (?, ?, ?)').run(sid, 'cli', 100)
+    db.close()
+    for (const [role, content, ts] of rows) insert(role, content, ts)
+    const held = await json(await post(s, '/api/session/truncate', { session_id: sid, keep_count: 2, confirm_deep_truncate: false }))
+    // The CLI commits a turn just after the confirmed request first reads state.db.
+    const sessions = s.deps.sessions
+    const read = sessions.stateDbRead.bind(sessions)
+    const spy = vi.spyOn(sessions, 'stateDbRead').mockImplementationOnce((session) => { const result = read(session); insert('user', 'from the CLI meanwhile', 200); return result })
+    try {
+      expect((await post(s, '/api/session/truncate', { session_id: sid, keep_count: 2, confirm_deep_truncate: true, confirm_token: held.confirm_token })).status).toBe(200)
+    } finally { spy.mockRestore() }
+    const served = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).messages as Json[]
+    expect(served.map((m) => m.content)).toEqual(['u1', 'a1', 'from the CLI meanwhile'])
+  })
+
+  it.each([['no model history', false], ['its own model history', true]])('keeps the state.db turns before a cut inside the continuation, with %s', async (_name, withContext) => {
+    const sid = String((await newSession(s)).session_id)
+    const rows: [string, string, number][] = [['user', 'u1', 100], ['assistant', 'a1', 101], ['user', 'u2', 102], ['assistant', 'a2', 103], ['user', 'u3', 104], ['assistant', 'a3', 105]]
+    const local = rows.slice(0, 2).map(([role, content, timestamp]) => ({ role, content, timestamp }))
+    writeMessages(s, sid, local)
+    if (withContext) {
+      const stored = s.deps.sessionStore.get(sid)
+      stored.context_messages = local.map((m) => ({ ...m }))
+      s.deps.sessionStore.save(stored)
+    }
+    const db = new DatabaseSync(join(s.state, 'state.db'))
+    db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
+    db.prepare('INSERT INTO sessions (id, source, started_at) VALUES (?, ?, ?)').run(sid, 'cli', 100)
+    for (const [role, content, ts] of rows) db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, role, content, ts)
+    db.close()
+    expect((await post(s, '/api/session/truncate', { session_id: sid, keep_count: 4, confirm_deep_truncate: false })).status).toBe(200)
+    const served = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).messages as Json[]
+    expect(served.map((m) => m.content)).toEqual(['u1', 'a1', 'u2', 'a2'])
+    expect(s.deps.sessions.modelContext(s.deps.sessionStore.get(sid)).map((m) => m.content)).toEqual(['u1', 'a1', 'u2', 'a2'])
+  })
+
+  it('cuts at once for a released App, which asks on the device and sends no confirm_deep_truncate', async () => {
+    const sid = await seed()
+    const res = await json(await post(s, '/api/session/truncate', { session_id: sid, keep_count: 0 }))
+    expect(res.ok).toBe(true)
+    expect((res.session as Json).messages).toEqual([])
+  })
+
+  it('refuses a held cut when state.db cannot be read, whether or not the session recorded rows from it', async () => {
+    const sid = String((await newSession(s)).session_id)
+    writeMessages(s, sid, [{ role: 'user', content: 'u1', timestamp: 100 }, { role: 'assistant', content: 'a1', timestamp: 101 }])
+    // No turn recorded state.db rows for it (state_db_seen_id stays null), and state.db is briefly away.
+    expect(s.deps.sessionStore.get(sid).state_db_seen_id ?? null).toBeNull()
+    const dbPath = join(s.state, 'state.db')
+    renameSync(dbPath, `${dbPath}.away`)
+    try {
+      const res = await post(s, '/api/session/truncate', { session_id: sid, keep_count: 0, confirm_deep_truncate: false })
+      expect(res.status).toBe(503)
+      expect(s.deps.sessionStore.get(sid).messages).toHaveLength(2)
+    } finally { renameSync(`${dbPath}.away`, dbPath) }
+  })
+
+  it('tells clients this server holds a deep cut', async () => {
+    const sid = await seed()
+    expect(((await json(await s.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).confirms_deep_truncate).toBe(true)
+  })
+})
+
 describe('truncation keeps deleted state.db turns deleted (TAL-504)', () => {
   let s: TestServer
   beforeAll(async () => { s = await bootTestServer() })

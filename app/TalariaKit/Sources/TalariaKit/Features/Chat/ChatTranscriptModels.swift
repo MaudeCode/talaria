@@ -906,6 +906,21 @@ public struct MessageActionContext: Equatable, Identifiable {
     }
 }
 
+/// An edit or regenerate the server held because its cut discards more than one user turn (TAL-929).
+/// `discardMessages` is the server's count of the later messages the cut removes, and `confirmToken` confirms it.
+public struct DeepTruncateConfirmation: Equatable, Identifiable {
+    public enum Action: Equatable {
+        case edit(newText: String)
+        case regenerate
+    }
+
+    public var id: String { context.messageID }
+    public let context: MessageActionContext
+    public let action: Action
+    public let discardMessages: Int
+    let confirmToken: String
+}
+
 extension ChatViewModel {
     nonisolated static func reasoningDisplayGroups(
         messages: [ChatMessage],

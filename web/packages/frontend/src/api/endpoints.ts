@@ -90,7 +90,8 @@ export const duplicateSession = (session_id: SessionId) => orpc().session.duplic
 export const importSession = (doc: Record<string, unknown>) => orpc().session.import(doc)
 /** `keep_count`: number of messages (absolute, from the start of the session) to copy or keep; omit to fork the whole conversation. */
 export const branchSession = (session_id: SessionId, keep_count?: number) => orpc().session.branch({ session_id, ...(keep_count !== undefined ? { keep_count } : {}) })
-export const truncateSession = (session_id: SessionId, keep_count: number) => orpc().session.truncate({ session_id, keep_count })
+/** TAL-929: a cut of more than one user turn answers `confirm_required` and changes nothing until resent with its `confirm_token`. */
+export const truncateSession = (session_id: SessionId, keep_count: number, confirm_token?: string) => orpc().session.truncate({ session_id, keep_count, confirm_deep_truncate: confirm_token !== undefined, ...(confirm_token !== undefined ? { confirm_token } : {}) })
 export const undoSession = (session_id: SessionId) => orpc().session.undo({ session_id })
 export const retrySession = (session_id: SessionId) => orpc().session.retry({ session_id })
 export const clearSession = (session_id: SessionId) => orpc().session.clear({ session_id })

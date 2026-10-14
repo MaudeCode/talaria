@@ -4769,6 +4769,10 @@
                           "type": "boolean",
                           "description": "TAL-614: a manual compression would start now: writable, no running turn, and at least four model-history messages. Only the full session detail carries it; absent means no."
                         },
+                        "confirms_deep_truncate": {
+                          "type": "boolean",
+                          "description": "TAL-929: this server holds a `session.truncate` that discards more than one user turn until it is confirmed; absent on older servers, which cut at once."
+                        },
                         "source_label": {
                           "anyOf": [
                             {
@@ -7181,6 +7185,10 @@
                           "type": "boolean",
                           "description": "TAL-614: a manual compression would start now: writable, no running turn, and at least four model-history messages. Only the full session detail carries it; absent means no."
                         },
+                        "confirms_deep_truncate": {
+                          "type": "boolean",
+                          "description": "TAL-929: this server holds a `session.truncate` that discards more than one user turn until it is confirmed; absent on older servers, which cut at once."
+                        },
                         "source_label": {
                           "anyOf": [
                             {
@@ -9338,6 +9346,10 @@
                         "can_compress": {
                           "type": "boolean",
                           "description": "TAL-614: a manual compression would start now: writable, no running turn, and at least four model-history messages. Only the full session detail carries it; absent means no."
+                        },
+                        "confirms_deep_truncate": {
+                          "type": "boolean",
+                          "description": "TAL-929: this server holds a `session.truncate` that discards more than one user turn until it is confirmed; absent on older servers, which cut at once."
                         },
                         "source_label": {
                           "anyOf": [
@@ -12696,6 +12708,10 @@
                           "type": "boolean",
                           "description": "TAL-614: a manual compression would start now: writable, no running turn, and at least four model-history messages. Only the full session detail carries it; absent means no."
                         },
+                        "confirms_deep_truncate": {
+                          "type": "boolean",
+                          "description": "TAL-929: this server holds a `session.truncate` that discards more than one user turn until it is confirmed; absent on older servers, which cut at once."
+                        },
                         "source_label": {
                           "anyOf": [
                             {
@@ -13061,6 +13077,7 @@
     "/api/session/truncate": {
       "post": {
         "operationId": "session.truncate",
+        "description": "TAL-929: a cut that discards more than one user turn changes nothing and answers `confirm_required` with the counts to confirm, until resent with `confirm_deep_truncate` and the `confirm_token` of those same rows. A body without `confirm_deep_truncate` (a released App, which asks on the device) cuts at once; 503 when the profile's state.db cannot be read.",
         "tags": [
           "sessions"
         ],
@@ -13075,7 +13092,13 @@
                     "type": "string",
                     "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
                   },
-                  "keep_count": {}
+                  "keep_count": {},
+                  "confirm_deep_truncate": {
+                    "type": "boolean"
+                  },
+                  "confirm_token": {
+                    "type": "string"
+                  }
                 },
                 "required": [
                   "session_id"
@@ -13090,348 +13113,383 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "ok": {
-                      "const": true
-                    },
-                    "session": {
+                  "anyOf": [
+                    {
                       "type": "object",
                       "properties": {
-                        "session_id": {
-                          "type": "string",
-                          "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
+                        "ok": {
+                          "const": true
                         },
-                        "title": {
-                          "type": "string"
-                        },
-                        "workspace": {
-                          "type": "string"
-                        },
-                        "model": {
-                          "anyOf": [
-                            {
+                        "session": {
+                          "type": "object",
+                          "properties": {
+                            "session_id": {
+                              "type": "string",
+                              "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
+                            },
+                            "title": {
                               "type": "string"
                             },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "created_at": {
-                          "type": "number"
-                        },
-                        "updated_at": {
-                          "type": "number"
-                        },
-                        "last_message_at": {
-                          "anyOf": [
-                            {
-                              "type": "number"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "message_count": {
-                          "type": "number"
-                        },
-                        "pinned": {
-                          "type": "boolean"
-                        },
-                        "archived": {
-                          "type": "boolean"
-                        },
-                        "project_id": {
-                          "anyOf": [
-                            {
+                            "workspace": {
                               "type": "string"
                             },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "profile": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "is_streaming": {
-                          "type": "boolean",
-                          "description": "True only while the session's run is a live stream on this server."
-                        },
-                        "is_cli_session": {
-                          "type": "boolean"
-                        },
-                        "source_kind": {
-                          "enum": [
-                            "webui",
-                            "cli",
-                            "messaging",
-                            "cron",
-                            "webhook",
-                            "subagent",
-                            "claude_code",
-                            "kanban",
-                            "api",
-                            "other"
-                          ],
-                          "type": "string",
-                          "description": "The session's source family. `is_cli_session` is true only for `cli` and `claude_code`."
-                        },
-                        "is_messaging_session": {
-                          "type": "boolean",
-                          "description": "`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it."
-                        },
-                        "sort_ts": {
-                          "type": "number",
-                          "description": "Epoch seconds the session sorts and date-buckets by: `last_message_at`, else `updated_at`, else `created_at`."
-                        },
-                        "cron_running": {
-                          "type": "boolean"
-                        },
-                        "read_only": {
-                          "type": "boolean",
-                          "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
-                        },
-                        "can_branch": {
-                          "type": "boolean",
-                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
-                        },
-                        "can_pin": {
-                          "type": "boolean",
-                          "description": "Web may pin or unpin this session: never a subagent child."
-                        },
-                        "can_archive": {
-                          "type": "boolean",
-                          "description": "Web may archive or unarchive this session: never a subagent child."
-                        },
-                        "can_delete": {
-                          "type": "boolean",
-                          "description": "Web may delete this session: never a read-only session (a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming)."
-                        },
-                        "can_duplicate": {
-                          "type": "boolean",
-                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
-                        },
-                        "attention": {
-                          "anyOf": [
-                            {
-                              "type": "object",
-                              "properties": {
-                                "kind": {
+                            "model": {
+                              "anyOf": [
+                                {
                                   "type": "string"
                                 },
-                                "count": {
-                                  "type": "number"
+                                {
+                                  "type": "null"
                                 }
-                              },
-                              "additionalProperties": {}
+                              ]
                             },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "source_tag": {
-                          "anyOf": [
-                            {
+                            "created_at": {
+                              "type": "number"
+                            },
+                            "updated_at": {
+                              "type": "number"
+                            },
+                            "last_message_at": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "message_count": {
+                              "type": "number"
+                            },
+                            "pinned": {
+                              "type": "boolean"
+                            },
+                            "archived": {
+                              "type": "boolean"
+                            },
+                            "project_id": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "profile": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "is_streaming": {
+                              "type": "boolean",
+                              "description": "True only while the session's run is a live stream on this server."
+                            },
+                            "is_cli_session": {
+                              "type": "boolean"
+                            },
+                            "source_kind": {
+                              "enum": [
+                                "webui",
+                                "cli",
+                                "messaging",
+                                "cron",
+                                "webhook",
+                                "subagent",
+                                "claude_code",
+                                "kanban",
+                                "api",
+                                "other"
+                              ],
+                              "type": "string",
+                              "description": "The session's source family. `is_cli_session` is true only for `cli` and `claude_code`."
+                            },
+                            "is_messaging_session": {
+                              "type": "boolean",
+                              "description": "`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it."
+                            },
+                            "sort_ts": {
+                              "type": "number",
+                              "description": "Epoch seconds the session sorts and date-buckets by: `last_message_at`, else `updated_at`, else `created_at`."
+                            },
+                            "cron_running": {
+                              "type": "boolean"
+                            },
+                            "read_only": {
+                              "type": "boolean",
+                              "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
+                            },
+                            "can_branch": {
+                              "type": "boolean",
+                              "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                            },
+                            "can_pin": {
+                              "type": "boolean",
+                              "description": "Web may pin or unpin this session: never a subagent child."
+                            },
+                            "can_archive": {
+                              "type": "boolean",
+                              "description": "Web may archive or unarchive this session: never a subagent child."
+                            },
+                            "can_delete": {
+                              "type": "boolean",
+                              "description": "Web may delete this session: never a read-only session (a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming)."
+                            },
+                            "can_duplicate": {
+                              "type": "boolean",
+                              "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
+                            },
+                            "attention": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "type": "string"
+                                    },
+                                    "count": {
+                                      "type": "number"
+                                    }
+                                  },
+                                  "additionalProperties": {}
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "source_tag": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "source_label": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "session_source": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "raw_source": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "parent_session_id": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "active_stream_id": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "The live stream id; non-null only while `is_streaming` is true."
+                            },
+                            "share_token": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "share_url": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "worktree_branch": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "match_type": {
+                              "enum": [
+                                "title",
+                                "metadata",
+                                "content"
+                              ],
                               "type": "string"
                             },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "source_label": {
-                          "anyOf": [
-                            {
-                              "type": "string"
+                            "match_preview": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
                             },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "session_source": {
-                          "anyOf": [
-                            {
-                              "type": "string"
+                            "workspace_name": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
                             },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "raw_source": {
-                          "anyOf": [
-                            {
-                              "type": "string"
+                            "context_used_tokens": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991,
+                                  "exclusiveMinimum": 0
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
                             },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "parent_session_id": {
-                          "anyOf": [
-                            {
-                              "type": "string"
+                            "context_window_tokens": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991,
+                                  "exclusiveMinimum": 0
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
                             },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "active_stream_id": {
-                          "anyOf": [
-                            {
-                              "type": "string"
+                            "context_usage_percent": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 100
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
                             },
-                            {
-                              "type": "null"
+                            "context_threshold_percent": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 100
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
                             }
-                          ],
-                          "description": "The live stream id; non-null only while `is_streaming` is true."
-                        },
-                        "share_token": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "share_url": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "worktree_branch": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "match_type": {
-                          "enum": [
+                          },
+                          "required": [
+                            "session_id",
                             "title",
-                            "metadata",
-                            "content"
+                            "is_streaming",
+                            "source_kind",
+                            "is_messaging_session",
+                            "sort_ts",
+                            "read_only",
+                            "can_branch",
+                            "can_pin",
+                            "can_archive",
+                            "can_delete",
+                            "can_duplicate"
                           ],
-                          "type": "string"
-                        },
-                        "match_preview": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "workspace_name": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "context_used_tokens": {
-                          "anyOf": [
-                            {
-                              "type": "integer",
-                              "minimum": -9007199254740991,
-                              "maximum": 9007199254740991,
-                              "exclusiveMinimum": 0
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "context_window_tokens": {
-                          "anyOf": [
-                            {
-                              "type": "integer",
-                              "minimum": -9007199254740991,
-                              "maximum": 9007199254740991,
-                              "exclusiveMinimum": 0
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "context_usage_percent": {
-                          "anyOf": [
-                            {
-                              "type": "integer",
-                              "minimum": 0,
-                              "maximum": 100
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "context_threshold_percent": {
-                          "anyOf": [
-                            {
-                              "type": "integer",
-                              "minimum": 0,
-                              "maximum": 100
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
+                          "additionalProperties": {}
                         }
                       },
                       "required": [
-                        "session_id",
-                        "title",
-                        "is_streaming",
-                        "source_kind",
-                        "is_messaging_session",
-                        "sort_ts",
-                        "read_only",
-                        "can_branch",
-                        "can_pin",
-                        "can_archive",
-                        "can_delete",
-                        "can_duplicate"
+                        "ok",
+                        "session"
                       ],
                       "additionalProperties": {}
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "const": false
+                        },
+                        "confirm_required": {
+                          "const": true
+                        },
+                        "discard_user_turns": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "discard_messages": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "confirm_token": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "confirm_required",
+                        "discard_user_turns",
+                        "discard_messages",
+                        "confirm_token"
+                      ]
                     }
-                  },
-                  "required": [
-                    "ok",
-                    "session"
-                  ],
-                  "additionalProperties": {}
+                  ]
                 }
               }
             }
@@ -15885,6 +15943,10 @@
                         "can_compress": {
                           "type": "boolean",
                           "description": "TAL-614: a manual compression would start now: writable, no running turn, and at least four model-history messages. Only the full session detail carries it; absent means no."
+                        },
+                        "confirms_deep_truncate": {
+                          "type": "boolean",
+                          "description": "TAL-929: this server holds a `session.truncate` that discards more than one user turn until it is confirmed; absent on older servers, which cut at once."
                         },
                         "source_label": {
                           "anyOf": [
@@ -19781,6 +19843,10 @@
                           "type": "boolean",
                           "description": "TAL-614: a manual compression would start now: writable, no running turn, and at least four model-history messages. Only the full session detail carries it; absent means no."
                         },
+                        "confirms_deep_truncate": {
+                          "type": "boolean",
+                          "description": "TAL-929: this server holds a `session.truncate` that discards more than one user turn until it is confirmed; absent on older servers, which cut at once."
+                        },
                         "source_label": {
                           "anyOf": [
                             {
@@ -21963,6 +22029,10 @@
                         "can_compress": {
                           "type": "boolean",
                           "description": "TAL-614: a manual compression would start now: writable, no running turn, and at least four model-history messages. Only the full session detail carries it; absent means no."
+                        },
+                        "confirms_deep_truncate": {
+                          "type": "boolean",
+                          "description": "TAL-929: this server holds a `session.truncate` that discards more than one user turn until it is confirmed; absent on older servers, which cut at once."
                         },
                         "source_label": {
                           "anyOf": [
@@ -24209,6 +24279,10 @@
                           "type": "boolean",
                           "description": "TAL-614: a manual compression would start now: writable, no running turn, and at least four model-history messages. Only the full session detail carries it; absent means no."
                         },
+                        "confirms_deep_truncate": {
+                          "type": "boolean",
+                          "description": "TAL-929: this server holds a `session.truncate` that discards more than one user turn until it is confirmed; absent on older servers, which cut at once."
+                        },
                         "source_label": {
                           "anyOf": [
                             {
@@ -26440,6 +26514,10 @@
                         "can_compress": {
                           "type": "boolean",
                           "description": "TAL-614: a manual compression would start now: writable, no running turn, and at least four model-history messages. Only the full session detail carries it; absent means no."
+                        },
+                        "confirms_deep_truncate": {
+                          "type": "boolean",
+                          "description": "TAL-929: this server holds a `session.truncate` that discards more than one user turn until it is confirmed; absent on older servers, which cut at once."
                         },
                         "source_label": {
                           "anyOf": [
@@ -36453,6 +36531,10 @@
                           "type": "boolean",
                           "description": "TAL-614: a manual compression would start now: writable, no running turn, and at least four model-history messages. Only the full session detail carries it; absent means no."
                         },
+                        "confirms_deep_truncate": {
+                          "type": "boolean",
+                          "description": "TAL-929: this server holds a `session.truncate` that discards more than one user turn until it is confirmed; absent on older servers, which cut at once."
+                        },
                         "source_label": {
                           "anyOf": [
                             {
@@ -38777,6 +38859,10 @@
                           "type": "boolean",
                           "description": "TAL-614: a manual compression would start now: writable, no running turn, and at least four model-history messages. Only the full session detail carries it; absent means no."
                         },
+                        "confirms_deep_truncate": {
+                          "type": "boolean",
+                          "description": "TAL-929: this server holds a `session.truncate` that discards more than one user turn until it is confirmed; absent on older servers, which cut at once."
+                        },
                         "source_label": {
                           "anyOf": [
                             {
@@ -40995,6 +41081,10 @@
                             "can_compress": {
                               "type": "boolean",
                               "description": "TAL-614: a manual compression would start now: writable, no running turn, and at least four model-history messages. Only the full session detail carries it; absent means no."
+                            },
+                            "confirms_deep_truncate": {
+                              "type": "boolean",
+                              "description": "TAL-929: this server holds a `session.truncate` that discards more than one user turn until it is confirmed; absent on older servers, which cut at once."
                             },
                             "source_label": {
                               "anyOf": [

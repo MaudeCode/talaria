@@ -131,11 +131,10 @@ struct ChatView: View {
     @State private var editContext: MessageActionContext?
     @State private var editDraft = ""
     @State private var showEditSheet = false
-    @State private var showEditDiscardConfirmation = false
+    /// True until the edit sheet's dismissal finishes, so a confirmation the send brings back presents after it (TAL-929).
+    @State private var isEditSheetOnScreen = false
     @State private var showApprovalBypassOffConfirmation = false
     @State private var showsQueuedMessagesSheet = false
-    @State private var regenerateContext: MessageActionContext?
-    @State private var showRegenerateDiscardConfirmation = false
     @State private var selectableResponseText: SelectableTextPresentation?
     @State private var attachmentPreviewItem: ChatAttachmentPreviewItem?
     @State private var transcriptMediaPreviewItem: TranscriptMediaPreviewItem?
@@ -738,7 +737,7 @@ struct ChatView: View {
                     }
                 )
             }
-            .sheet(isPresented: $showEditSheet) {
+            .sheet(isPresented: $showEditSheet, onDismiss: { isEditSheetOnScreen = false }) {
                 EditMessageSheet(
                     originalText: editContext?.copyText ?? "",
                     editDraft: $editDraft,
@@ -751,34 +750,26 @@ struct ChatView: View {
             }
             .alert(
                 "Discard Later Messages?",
-                isPresented: $showEditDiscardConfirmation
-            ) {
+                isPresented: Binding(
+                    get: { viewModel.deepTruncateConfirmation != nil && !isEditSheetOnScreen },
+                    set: { if !$0 { viewModel.cancelDeepTruncate() } }
+                ),
+                presenting: viewModel.deepTruncateConfirmation
+            ) { confirmation in
                 Button("Cancel", role: .cancel) {
-                    editContext = nil
-                    editDraft = ""
+                    viewModel.cancelDeepTruncate()
                 }
-                Button("Discard & Edit", role: .destructive) {
+                Button(
+                    confirmation.action == .regenerate
+                        ? String(localized: "Discard & Regenerate")
+                        : String(localized: "Discard & Edit"),
+                    role: .destructive
+                ) {
                     ChatHaptics.destructiveConfirmationAccepted(isEnabled: isHapticsEnabled)
-                    showEditSheet = true
+                    Task { await submitDeepTruncate(confirmation) }
                 }
-            } message: {
-                Text(editDiscardWarningMessage)
-            }
-            .alert(
-                "Discard Later Messages?",
-                isPresented: $showRegenerateDiscardConfirmation
-            ) {
-                Button("Cancel", role: .cancel) {
-                    regenerateContext = nil
-                }
-                Button("Discard & Regenerate", role: .destructive) {
-                    if let context = regenerateContext {
-                        ChatHaptics.destructiveConfirmationAccepted(isEnabled: isHapticsEnabled)
-                        Task { await submitRegenerate(context) }
-                    }
-                }
-            } message: {
-                Text(regenerateDiscardWarningMessage)
+            } message: { confirmation in
+                Text(deepTruncateWarningMessage(confirmation))
             }
             .alert(
                 "Start New Session?",
@@ -2887,17 +2878,12 @@ struct ChatView: View {
     private func beginEditMessage(_ context: MessageActionContext) {
         editDraft = context.copyText
         editContext = context
-        let messagesAfter = transcriptMessagesAfter(context)
-        if messagesAfter > 0 {
-            showEditDiscardConfirmation = true
-        } else {
-            showEditSheet = true
-        }
+        isEditSheetOnScreen = true
+        showEditSheet = true
     }
 
     private func submitEdit(_ context: MessageActionContext) async {
         editContext = nil
-        showEditDiscardConfirmation = false
 
         let success = await viewModel.editMessage(context, newText: editDraft, modelContext: modelContext)
 
@@ -2911,19 +2897,10 @@ struct ChatView: View {
     }
 
     private func beginRegenerateResponse(_ context: MessageActionContext) {
-        regenerateContext = context
-        let messagesAfter = transcriptMessagesAfter(context)
-        if messagesAfter > 0 {
-            showRegenerateDiscardConfirmation = true
-        } else {
-            Task { await submitRegenerate(context) }
-        }
+        Task { await submitRegenerate(context) }
     }
 
     private func submitRegenerate(_ context: MessageActionContext) async {
-        regenerateContext = nil
-        showRegenerateDiscardConfirmation = false
-
         _ = await viewModel.regenerateAssistantResponse(context, modelContext: modelContext)
 
         if let lastError = viewModel.lastError {
@@ -2931,16 +2908,24 @@ struct ChatView: View {
         }
     }
 
-    private var editDiscardWarningMessage: String {
-        guard let context = editContext else { return "" }
-        let messagesAfter = transcriptMessagesAfter(context)
-        return String(localized: "Editing this message will discard \(messagesAfter) later messages.")
+    /// TAL-929: the server held the cut; confirming resends it with the flag.
+    private func submitDeepTruncate(_ confirmation: DeepTruncateConfirmation) async {
+        let success = await viewModel.confirmDeepTruncate(confirmation, modelContext: modelContext)
+
+        if success, case .edit = confirmation.action {
+            editDraft = ""
+        }
+
+        if let lastError = viewModel.lastError {
+            onAPIError(lastError)
+        }
     }
 
-    private var regenerateDiscardWarningMessage: String {
-        guard let context = regenerateContext else { return "" }
-        let messagesAfter = transcriptMessagesAfter(context)
-        return String(localized: "Regenerating this response will discard \(messagesAfter) later messages.")
+    private func deepTruncateWarningMessage(_ confirmation: DeepTruncateConfirmation) -> String {
+        let count = confirmation.discardMessages
+        return confirmation.action == .regenerate
+            ? String(localized: "Regenerating this response will discard \(count) later messages.")
+            : String(localized: "Editing this message will discard \(count) later messages.")
     }
 
     private var profileSwitchWarningMessage: String {
@@ -2949,14 +2934,6 @@ struct ChatView: View {
         }
 
         return String(localized: "Switch to \(profile.displayName) and start a new session. This keeps the current transcript on its original profile.")
-    }
-
-    private func transcriptMessagesAfter(_ context: MessageActionContext) -> Int {
-        guard let index = transcriptMessages.firstIndex(where: { $0.id == context.messageID }) else {
-            return 0
-        }
-
-        return max(0, transcriptMessages.count - 1 - index)
     }
 }
 

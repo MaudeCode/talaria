@@ -15,6 +15,7 @@ import { configureStream, cancelTurn, startTurn } from '../../stream/connection'
 import { dispatch } from '../../stream/store'
 import { isTerminal } from '../../stream/reducer'
 import { useTranscript, type VisibleMessage } from './useTranscript'
+import { useEditMessage } from './useEditMessage'
 import { Transcript } from './Transcript'
 import { TranscriptSkeleton } from './TranscriptSkeleton'
 import { Composer, turnRequest } from '../composer/Composer'
@@ -228,17 +229,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     }
   }, [sessionId, navigate, refresh, qc, onToggleYolo, onModelChange, onWorkspaceChange, onRegenerate, reasoning, setReasoning, runCompression])
 
-  // The return appends to the composer, so a second Edit click while the first is pending must not return the text twice.
-  const editing = useRef(false)
-  const onEdit = useCallback(async (row: VisibleMessage, text: string) => {
-    if (!sessionId || editing.current) return
-    editing.current = true
-    try {
-      await api.truncateSession(sessionId, row.index)
-      await refresh()
-      returnToComposer(sessionId, text)
-    } finally { editing.current = false }
-  }, [sessionId, refresh])
+  const { onEdit, dialog: editDialog } = useEditMessage(sessionId, refresh)
   const onBranch = useCallback(async (row: VisibleMessage) => {
     if (!sessionId) return
     const r = await api.branchSession(sessionId, row.index + 1)
@@ -400,6 +391,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
         <span className="sr-only" aria-live="polite" id="a11yAnnouncer">{live?.status === 'done' ? m.done() : ''}</span>
       </div>
       {/* Always mounted beside main (its queries run only while open) so opening and closing animate and the edge tab is always there. */}
+      {editDialog}
       {sessionId && removingWorktree && <WorktreeRemoveDialog sessionId={sessionId} onClose={() => setRemovingWorktree(false)} />}
       {sessionId && <ChatSidePanel key={sessionId} sessionId={sessionId} workspace={workspace} open={sidePanelOpen} onToggle={toggleSidePanel} onClose={() => setSidePanelOpen(false)} />}
     </>
