@@ -420,13 +420,17 @@ export const toolsRouter = os.router({
       const command = str(input.command).trim()
       if (!command) throw new HttpError(400, 'command is required')
       const [, name = '', args = ''] = /^\/?(\S*)\s*([\s\S]*)$/.exec(command) ?? []
+      const sessionId = str(input.session_id).trim()
       // TAL-902: a session command runs on the chat's own agent (the request guard already checked the chat's profile).
       if (SESSION_EXEC_COMMANDS.has(name.toLowerCase())) {
-        const sid = str(input.session_id).trim()
-        return { output: await ctx.deps.turns.refine(sid ? ctx.deps.sessionStore.get(sid) : null, args.trim()) }
+        return { output: await ctx.deps.turns.refine(sessionId ? ctx.deps.sessionStore.get(sessionId) : null, args.trim()) }
       }
+      // TAL-904: a chat's command runs under that chat's session and the workspace its next turn would use.
+      let workspace = ''
+      if (sessionId) try { workspace = ctx.deps.sessions.turnWorkspace(ctx.deps.sessionStore.get(sessionId, { metadataOnly: true })) } catch { /* the session id alone still binds */ }
+      const chat = sessionId ? { session_id: sessionId, workspace } : {}
       try {
-        return { output: (await runningSidecar(ctx).call('commands.exec', { profile_home: home(ctx), command }, { timeoutMs: 120_000 })).output }
+        return { output: (await runningSidecar(ctx).call('commands.exec', { profile_home: home(ctx), command, ...chat }, { timeoutMs: 120_000 })).output }
       } catch (error) {
         return commandFailure(error, 'command_not_found', 'Plugin command not found')
       }

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
 import logging
 import os
@@ -601,7 +602,12 @@ def register(registry) -> None:
             output = execute_agent_command(command)
             source = "agent"
             if output is None:
-                output = execute_plugin_command(command)
+                from .chat import _turn_identity
+
+                # TAL-904: a chat's plugin command runs under that chat's session and workspace, as its turns do.
+                session_id = str(params.get("session_id") or "").strip()
+                with _turn_identity(session_id, str(params.get("workspace") or "")) if session_id else contextlib.nullcontext():
+                    output = execute_plugin_command(command)
                 source = "plugin"
         if output is None:
             raise RpcError(f"unknown command {parse_slash_command(command)[0]!r}", condition="command_not_found")

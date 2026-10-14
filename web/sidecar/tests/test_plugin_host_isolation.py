@@ -97,3 +97,35 @@ def test_isolation_survey_reports_each_profiles_mode_and_installed_plugins_witho
         assert not any("probe-work" in line and "Loading plugin" in line for line in sidecar.stderr_lines)
     finally:
         sidecar.close()
+
+
+SESSION_PLUGIN = """
+from agent.runtime_cwd import scoped_session_cwd
+from gateway.session_context import get_session_env
+
+
+def register(ctx):
+    ctx.register_command("probe-session", lambda args: f"{get_session_env('HERMES_SESSION_ID')}|{scoped_session_cwd()}", description="Probe")
+"""
+
+
+@requires_agent
+def test_plugin_command_runs_under_the_invoking_chats_session_binding(tmp_path: pathlib.Path) -> None:
+    """TAL-904: like the Agent's gateway and TUI, a chat's plugin command sees that chat's session and workspace."""
+    home = tmp_path / "home" / ".hermes"
+    path = home / "plugins" / "probe-session"
+    path.mkdir(parents=True)
+    (path / "plugin.yaml").write_text("name: probe-session\nversion: 0.0.1\ndescription: Synthetic probe\n")
+    (path / "__init__.py").write_text(SESSION_PLUGIN)
+    (home / "config.yaml").write_text("plugins:\n  enabled: [probe-session]\n")
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    sidecar = SidecarProcess(home)
+    try:
+        params = {"profile_home": str(home), "command": "/probe-session"}
+        bound = sidecar.result("commands.exec", {**params, "session_id": "chat-904", "workspace": str(workspace)})
+        assert bound["output"] == f"chat-904|{workspace}"
+        # Without a chat (Settings) nothing is bound.
+        assert sidecar.result("commands.exec", params)["output"] == "|"
+    finally:
+        sidecar.close()
