@@ -69,6 +69,30 @@ describe('password login: CSRF exemption and attempt persistence', () => {
     expect(new AuthStore({ stateDir: s.state, env: s.deps.config.env, settings: s.deps.settings }).checkLoginRate('127.0.0.1')).toBe(true)
   })
 
+  it('without the trusted-proxy opt-in a forwarded header does not escape the peer budget', async () => {
+    for (let i = 0; i < 5; i += 1) await post(s, '/api/auth/login', { password: 'wrong' }, { 'x-forwarded-for': '203.0.113.1' })
+    expect((await post(s, '/api/auth/login', { password: PASSWORD }, { 'x-forwarded-for': '203.0.113.2' })).status).toBe(429)
+    s.deps.auth.clearLoginAttempts('127.0.0.1')
+  })
+})
+
+describe('login limiter behind an opted-in trusted proxy', () => {
+  let s: TestServer
+  const PASSWORD = 'correct horse battery'
+  beforeAll(async () => { s = await bootTestServer({ env: { HERMES_WEBUI_PASSWORD: PASSWORD, HERMES_WEBUI_PASSKEY: '1', HERMES_WEBUI_TRUST_FORWARDED_FOR: '1' } }) })
+  afterAll(() => s.close())
+
+  it('password login keeps a budget per forwarded client that a rotated left-most hop does not reset', async () => {
+    for (let i = 0; i < 5; i += 1) expect((await post(s, '/api/auth/login', { password: 'wrong' }, { 'x-forwarded-for': '203.0.113.1' })).status).toBe(401)
+    expect((await post(s, '/api/auth/login', { password: PASSWORD }, { 'x-forwarded-for': '198.51.100.9, 203.0.113.1' })).status).toBe(429)
+    expect((await post(s, '/api/auth/login', { password: PASSWORD }, { 'x-forwarded-for': '203.0.113.2' })).status).toBe(200)
+  })
+
+  it('passkey login keeps a budget per forwarded client', async () => {
+    for (let i = 0; i < 5; i += 1) expect((await post(s, '/api/auth/passkey/login', { id: 'unknown' }, { 'x-forwarded-for': '203.0.113.3' })).status).toBe(401)
+    expect((await post(s, '/api/auth/passkey/login', { id: 'unknown' }, { 'x-forwarded-for': '198.51.100.9, 203.0.113.3' })).status).toBe(429)
+    expect((await post(s, '/api/auth/passkey/login', { id: 'unknown' }, { 'x-forwarded-for': '203.0.113.4' })).status).toBe(401)
+  })
 })
 
 describe('auth persistence off the request path', () => {

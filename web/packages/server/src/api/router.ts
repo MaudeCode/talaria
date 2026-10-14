@@ -161,7 +161,7 @@ export const coreRouter = os.router({
       const { ctx } = context
       const auth = ctx.deps.auth
       if (!(await auth.isAuthEnabled())) return { ok: true as const, message: 'Auth not enabled' }
-      const clientIp = ctx.peer
+      const clientIp = rateLimitClientIp(ctx)
       if (!auth.checkLoginRate(clientIp)) throw new HttpError(429, 'Too many attempts. Try again in a minute.')
       // Reserve the attempt before the async hash so concurrent guesses see it; success releases only this one.
       const reservation = auth.recordLoginAttempt(clientIp)
@@ -212,7 +212,7 @@ export const coreRouter = os.router({
       const auth = ctx.deps.auth
       if (!auth.passkeyFeatureFlagEnabled()) throw new HttpError(404, 'Passkey support is disabled.')
       if (!(await auth.isAuthEnabled())) throw new HttpError(400, 'Auth not enabled')
-      const clientIp = ctx.peer
+      const clientIp = rateLimitClientIp(ctx)
       if (!auth.checkLoginRate(clientIp)) throw new HttpError(429, 'Too many attempts. Try again in a minute.')
       try {
         ctx.deps.passkeys.finishLogin(input)
@@ -264,7 +264,7 @@ function passkeyList(ctx: RequestContext): PasskeysList {
   return { credentials: ctx.deps.passkeys.registered() as PasskeysList['credentials'] }
 }
 
-/** Python `_client_ip_for_rate_limit` + trusted-proxy forwarding for the native OIDC start limiter. */
+/** Python `_client_ip_for_rate_limit` + trusted-proxy forwarding: the key for the login, native OIDC start, and TTS limiters. */
 export function rateLimitClientIp(ctx: RequestContext): string {
   const env = ctx.deps.config.env
   if (truthy(env.HERMES_WEBUI_TRUST_FORWARDED_FOR) && rawPeerIsTrustedProxy(ctx.peer, env)) {
