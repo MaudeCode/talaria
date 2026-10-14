@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Deleting or clearing a chat in Talaria Web stops its background memory and skill review, so it no longer keeps calling the model or saving memories for a chat that is gone.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

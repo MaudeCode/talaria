@@ -757,6 +757,28 @@ def _join(threads, deadline: float) -> None:
         thread.join(max(0.0, deadline - time.monotonic()))
 
 
+def _cancel_background_reviews(agents, message: str) -> list[threading.Thread]:
+    """TAL-897: stop each agent's post-turn memory/skill review fork, which no turn interrupt or release reaches, so a
+    deleted session or a stopping sidecar no longer pays for it. Returns the cancels running side by side for the
+    caller to join; the Agent bounds each one's wait for the fork's acknowledgement."""
+    try:
+        from agent.background_review import cancel_background_review_for_live_turn
+    except ImportError:
+        return []
+
+    def cancel(agent) -> None:
+        try:
+            cancel_background_review_for_live_turn(agent, message=message, tool_reason="session ended")
+        except Exception:  # noqa: BLE001 - teardown continues without it
+            log.warning("cancelling a background review failed", exc_info=True)
+
+    unique = {id(agent): agent for agent in agents if agent is not None}
+    threads = [threading.Thread(target=cancel, args=(agent,), daemon=True, name="chat-review-cancel") for agent in unique.values()]
+    for thread in threads:
+        thread.start()
+    return threads
+
+
 def evict_all_agents() -> int:
     """Drop every cached agent (credentials or environment changed underneath them)."""
     with _AGENT_CACHE_LOCK:
@@ -770,6 +792,9 @@ def drain_agents(timeout: float = _AGENT_RELEASE_TIMEOUT) -> None:
     """Shutdown: release every cached agent, stop running turns (like a Stop) so each releases the agent it holds, and
     wait, bounded, for those turns and every release still running."""
     deadline = time.monotonic() + timeout
+    with _AGENT_CACHE_LOCK, _RUNS_LOCK:
+        agents = [entry[0] for entry in _AGENT_CACHE.values()] + [run.agent for run in _RUNS.values()]
+    cancels = _cancel_background_reviews(agents, "sidecar shutting down")
     evict_all_agents()
     with _RUNS_LOCK:
         _DRAINING.set()
@@ -785,7 +810,7 @@ def drain_agents(timeout: float = _AGENT_RELEASE_TIMEOUT) -> None:
     evict_all_agents()
     with _RELEASES_LOCK:
         threads = list(_RELEASES)
-    _join(threads, deadline)
+    _join(cancels + threads, deadline)
 
 
 def release_profile_agents(home) -> None:
@@ -1580,7 +1605,8 @@ def register(registry) -> None:
     @registry.method("chat.evict_agent", requires_agent=False)
     def evict_(ctx: CallContext, params: dict) -> dict:
         """Drop a session's cached agent. Only delete/clear (``clear_session``) end its approval grants, parked
-        approvals and kernels; a model switch, truncate or compress leaves a running turn's agent in place."""
+        approvals, kernels and background review; a model switch, truncate or compress leaves a running turn's agent
+        in place."""
         session_id = str(params.get("session_id") or "").strip()
         end_session = params.get("clear_session") is True
         with _AGENT_CACHE_LOCK:
@@ -1591,6 +1617,8 @@ def register(registry) -> None:
             entry = _AGENT_CACHE.pop(session_id, None)
             _release_agents_locked([entry] if entry else [])
         if end_session:
+            cancels = _cancel_background_reviews([entry and entry[0], run and run.agent], "session deleted or cleared")
+            _join(cancels, time.monotonic() + _AGENT_RELEASE_TIMEOUT)
             try:
                 from tools.approval import clear_session
                 clear_session(session_id)
