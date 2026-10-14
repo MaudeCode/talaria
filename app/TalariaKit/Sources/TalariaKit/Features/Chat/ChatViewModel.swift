@@ -2622,6 +2622,7 @@ public final class ChatViewModel {
             messageAttachments: [messageAttachment],
             apiPayloads: [pending.toJSONValue()],
             attachmentsToRestoreOnFailure: [],
+            voiceTurn: true,
             modelContext: modelContext
         )
     }
@@ -2638,6 +2639,7 @@ public final class ChatViewModel {
         messageAttachments: [MessageAttachment],
         apiPayloads: [JSONValue]?,
         attachmentsToRestoreOnFailure: [PendingAttachment],
+        voiceTurn: Bool = false,
         modelContext: ModelContext?
     ) async -> ChatSendOutcome {
         // Single-owner backstop for the shared start pipeline: only one caller may
@@ -2685,7 +2687,8 @@ public final class ChatViewModel {
                 modelProvider: requestModelProvider,
                 profile: requestProfileName,
                 explicitModelPick: explicitModelPick,
-                attachments: apiPayloads
+                attachments: apiPayloads,
+                voiceTurn: voiceTurn
             )
 
             guard let streamID = response.streamId else {

@@ -9,7 +9,8 @@ extension APIClient {
         modelProvider: String? = nil,
         profile: String? = nil,
         explicitModelPick: Bool = false,
-        attachments: [JSONValue]? = nil
+        attachments: [JSONValue]? = nil,
+        voiceTurn: Bool = false
     ) async throws -> ChatStartResponse {
         try await send(
             endpoint: .chatStart,
@@ -22,7 +23,8 @@ extension APIClient {
                 modelProvider: modelProvider,
                 profile: profile,
                 explicitModelPick: explicitModelPick ? true : nil,
-                attachments: attachments
+                attachments: attachments,
+                voiceTurn: voiceTurn ? true : nil
             )
         )
     }
@@ -183,6 +185,8 @@ private struct ChatStartRequest: Encodable {
     let profile: String?
     let explicitModelPick: Bool?
     let attachments: [JSONValue]?
+    /// A spoken turn, which the Agent runs on the profile's voice-chat model (TAL-801).
+    let voiceTurn: Bool?
 }
 
 private struct SteerWithdrawRequest: Encodable {

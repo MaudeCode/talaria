@@ -451,6 +451,8 @@ export const CHAT_METHODS = {
       persist_user_message: z.string().optional(),
       /** TAL-529: a `/btw` side question, whose throwaway session the Agent keeps out of the profile's state.db. */
       ephemeral: z.boolean().optional(),
+      /** TAL-801: a spoken turn, which the Agent runs on the profile's `auxiliary.voice_chat` slot when it has that route. */
+      voice_turn: z.boolean().optional(),
     }),
     result: ChatStartResultSchema,
     stream: ChatStreamSchema,

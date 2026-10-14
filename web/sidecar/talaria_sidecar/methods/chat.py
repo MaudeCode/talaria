@@ -14,6 +14,7 @@ import contextlib
 import contextvars
 import copy
 import hashlib
+import importlib.util
 import inspect
 import json
 import logging
@@ -963,6 +964,14 @@ def _max_iterations_summary_request() -> str:
     return str(MAX_ITERATIONS_SUMMARY_REQUEST)
 
 
+def _has_voice_turn_route() -> bool:
+    """Whether the Agent routes a marked turn to ``auxiliary.voice_chat`` (``agent.voice_turn_route``, v0.21.6)."""
+    try:
+        return importlib.util.find_spec("agent.voice_turn_route") is not None
+    except (ImportError, ValueError):
+        return False
+
+
 def _supported(cls, name: str) -> bool:
     """Whether ``cls.__init__`` accepts ``name`` (named, or through ``**kwargs``)."""
     try:
@@ -1391,6 +1400,10 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             persist = user_message if isinstance(user_message, str) else None
         if "persist_user_message" in run_params and persist is not None:
             run_kwargs["persist_user_message"] = persist
+        # TAL-801: a spoken turn runs on the profile's ``auxiliary.voice_chat`` slot; the Agent consumes the mark at turn
+        # setup. Every turn sets it, as the Agent's own surfaces do, so a mark a failed turn never consumed cannot leak.
+        if _has_voice_turn_route():
+            agent._voice_turn_pending = params.get("voice_turn") is True
         error: str | None = None
         result: dict = {}
         try:
@@ -1445,7 +1458,8 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             "max_iterations_summary_request": _max_iterations_summary_request(),
             "usage": _usage(agent),
             "context": _context_length(agent),
-            "model": str(getattr(agent, "model", None) or resolved_model),
+            # TAL-801: the Agent's result names the model the turn ran on; a voice turn's route is undone by now.
+            "model": str(result.get("model") or getattr(agent, "model", None) or resolved_model),
             "provider": str(resolved_provider or ""),
             "compressed": compressed,
             "agent_session_id": str(getattr(agent, "session_id", None) or session_id),
