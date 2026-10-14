@@ -18,7 +18,9 @@ import { CommandPaletteList, useCommandPalette } from './CommandPalette'
 import { parseCommand, resolveCommand, runsOnServer, type CommandSuggestion } from './commands'
 import { ContextRing, ContextRow, type ContextFigures, ModelChip, ReasoningChip, ToolsetsChip, WorkspaceChip } from './chips'
 import { clearDraft, readLocalDraft, useDraftPersistence, useServerDraft } from './useDraft'
-import { createRecognition, dictationSupported, classifyDictationError } from '../voice/dictation'
+import { createRecognition, dictationSupported, classifyDictationError, type DictationErrorKind } from '../voice/dictation'
+import { dictateLive, liveDictationErrorKind, liveDictationSupported, type LiveDictationHandle } from '../voice/liveDictation'
+import { useTranscribeCapabilityQuery } from '../../app/queries'
 import { ProfileMenu } from '../../shell/ProfileMenu'
 import { setTheme } from '../../app/appearance'
 import { ThemeSchema } from '../../contracts/persisted'
@@ -183,15 +185,27 @@ export function Composer(props: ComposerProps) {
   }, [configOpen])
   const textarea = useRef<HTMLTextAreaElement>(null)
   const recognition = useRef<ReturnType<typeof createRecognition>>(null)
+  // TAL-802: the server's live stream when it reports `streaming`; the browser recognizer otherwise.
+  const liveDictation = useRef<LiveDictationHandle | null>(null)
+  const liveOffered = !!useTranscribeCapabilityQuery().data?.streaming && liveDictationSupported()
+  const dropLiveDictation = () => {
+    if (!liveDictation.current) return
+    liveDictation.current.cancel()
+    liveDictation.current = null
+    setDictating(false)
+  }
   // When a clarification takes the box over, dictation into the parked draft stops: its control is hidden, and
   // later results must not land in the draft. `onend` then clears the dictating state.
   const answering = !!clarify
   useEffect(() => {
+    if (!answering) return
+    dropLiveDictation()
     const r = recognition.current
-    if (!answering || !r) return
+    if (!r) return
     r.onresult = null
     r.stop()
   }, [answering])
+  useEffect(() => () => { liveDictation.current?.cancel() }, [])
   const busy = !!live && !isTerminal(live.status)
   const busyMode: BusyMode = (settings?.default_message_mode as BusyMode | undefined) ?? 'steer'
   const sendKey = settings?.send_key ?? 'enter'
@@ -489,19 +503,30 @@ export function Composer(props: ComposerProps) {
   }
   const onDrop = (e: DragEvent<HTMLDivElement>) => { e.preventDefault(); setDragOver(false); if (!clarify) addFiles(e.dataTransfer.files) }
 
+  const dictationError = (kind: DictationErrorKind, detail: string) => { showToast(kind === 'denied' ? m.mic_denied() : kind === 'no_speech' ? m.mic_no_speech() : kind === 'network' ? m.mic_network() : m.mic_error() + detail, 3000, 'error') }
   const toggleDictation = () => {
+    if (dictating) { recognition.current?.stop(); liveDictation.current?.stop(); return }
+    const base = text
+    const dictated = (transcript: string) => { setText(settings?.dictation_append === false ? transcript : `${base}${base && !base.endsWith(' ') ? ' ' : ''}${transcript}`) }
+    if (liveOffered) {
+      const handle = dictateLive(dictated, (error) => {
+        if (liveDictation.current === handle) { liveDictation.current = null; setDictating(false) }
+        if (error) dictationError(liveDictationErrorKind(error), error instanceof Error ? error.message : '')
+      })
+      liveDictation.current = handle
+      setDictating(true)
+      return
+    }
     if (!dictationSupported()) { showToast(m.composer_dictation_unsupported(), 3000, 'error'); return }
-    if (dictating) { recognition.current?.stop(); return }
     const r = createRecognition(document.documentElement.lang || 'en-US')
     if (!r) return
     recognition.current = r
-    const base = text
     r.onresult = (ev) => {
       let transcript = ''
       for (const result of Array.from(ev.results)) transcript += result[0]?.transcript ?? ''
-      setText(settings?.dictation_append === false ? transcript : `${base}${base && !base.endsWith(' ') ? ' ' : ''}${transcript}`)
+      dictated(transcript)
     }
-    r.onerror = (ev) => { const kind = classifyDictationError(ev.error); showToast(kind === 'denied' ? m.mic_denied() : kind === 'no_speech' ? m.mic_no_speech() : kind === 'network' ? m.mic_network() : m.mic_error() + ev.error, 3000, 'error'); setDictating(false) }
+    r.onerror = (ev) => { dictationError(classifyDictationError(ev.error), ev.error); setDictating(false) }
     r.onend = () => { setDictating(false); recognition.current = null }
     r.start()
     setDictating(true)
@@ -625,7 +650,7 @@ export function Composer(props: ComposerProps) {
                   <button type="button" className="icon-btn has-tooltip" id="btnAttach" data-tooltip={m.composer_control_attach()} aria-label={m.composer_control_attach()} onClick={() => document.getElementById('fileInput')?.click()}><Paperclip size={16} aria-hidden="true" /></button>
                 </>
               )}
-              {!hide('hide_composer_mic') && dictationSupported() && <button type="button" className={cn('icon-btn mic-btn has-tooltip', dictating && 'active')} id="btnMic" data-tooltip={dictating ? m.voice_dictate_active() : m.voice_dictate()} aria-label={dictating ? m.voice_dictate_active() : m.voice_dictate()} aria-pressed={dictating} onClick={toggleDictation}><Mic size={16} aria-hidden="true" /></button>}
+              {!hide('hide_composer_mic') && (liveOffered || dictationSupported()) && <button type="button" className={cn('icon-btn mic-btn has-tooltip', dictating && 'active')} id="btnMic" data-tooltip={dictating ? m.voice_dictate_active() : m.voice_dictate()} aria-label={dictating ? m.voice_dictate_active() : m.voice_dictate()} aria-pressed={dictating} onClick={toggleDictation}><Mic size={16} aria-hidden="true" /></button>}
             </div>
             {!hide('hide_composer_context') && <ContextRing {...context} />}
             {clarify && (

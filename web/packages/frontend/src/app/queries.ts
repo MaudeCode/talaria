@@ -25,6 +25,11 @@ export function useSetDefaultModel() {
   return useMutation({ mutationFn: ({ model, provider, advanced }: { model: string; provider?: string | null; advanced?: { service_tier: string } }) => api.setDefaultModel(model, provider, advanced), onSuccess: async () => { await Promise.all([qc.invalidateQueries({ queryKey: keys.settings }), qc.invalidateQueries({ queryKey: keys.models }), qc.invalidateQueries({ queryKey: keys.auxiliaryModels })]) } })
 }
 
+/** TAL-802: whether this profile offers live dictation. */
+export function useTranscribeCapabilityQuery() {
+  return useQuery({ queryKey: keys.transcribeCapability, queryFn: api.fetchTranscribeCapability, staleTime: 60_000 })
+}
+
 export function useAuxiliaryModelsQuery(enabled = true) {
   return useQuery({ queryKey: keys.auxiliaryModels, queryFn: api.fetchAuxiliaryModels, staleTime: 30_000, enabled })
 }
