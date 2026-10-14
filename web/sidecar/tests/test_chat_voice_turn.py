@@ -25,8 +25,10 @@ class VoiceAgent(FakeAgent):
         # ``begin_voice_turn_route``: consume the mark and bind the configured slot's model for this turn only.
         voice = bool(self._voice_turn_pending)
         self._voice_turn_pending = False
-        VoiceAgent.turns.append(("voice_chat" if voice else "main", VOICE_MODEL if voice else self.model))
-        return super().run_conversation(**kwargs)
+        model = VOICE_MODEL if voice else self.model
+        VoiceAgent.turns.append(("voice_chat" if voice else "main", model))
+        # The Agent reports the turn's model in its result, then ``end_voice_turn_route`` restores the main one.
+        return {**super().run_conversation(**kwargs), "model": model}
 
 
 def _setup(monkeypatch, route: bool = True):
@@ -38,9 +40,12 @@ def _setup(monkeypatch, route: bool = True):
 
 def test_a_voice_turn_runs_on_the_voice_route_and_the_next_typed_turn_on_the_main_model(monkeypatch) -> None:
     _setup(monkeypatch)
-    assert chat.start(Ctx(), {**_params("st-1"), "voice_turn": True})["status"] == "completed"
-    assert chat.start(Ctx(), _params("st-2"))["status"] == "completed"
+    voice = chat.start(Ctx(), {**_params("st-1"), "voice_turn": True})
+    typed = chat.start(Ctx(), _params("st-2"))
     assert VoiceAgent.turns == [("voice_chat", VOICE_MODEL), ("main", "m")]
+    # Each turn reports the model it ran on, which the server records as the reply's model.
+    assert (voice["status"], voice["model"]) == ("completed", VOICE_MODEL)
+    assert (typed["status"], typed["model"]) == ("completed", "m")
     # Both turns ran on the one cached agent: the mark never outlives its turn.
     assert len(FakeAgent.instances) == 1
 
