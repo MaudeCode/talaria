@@ -1110,6 +1110,27 @@ describe('a truncate that discards more than one user turn waits for confirmatio
     expect(served.map((m) => m.content)).toEqual(['u1', 'a1', 'from the CLI meanwhile'])
   })
 
+  it.each([['no model history', false], ['its own model history', true]])('keeps the state.db turns before a cut inside the continuation, with %s', async (_name, withContext) => {
+    const sid = String((await newSession(s)).session_id)
+    const rows: [string, string, number][] = [['user', 'u1', 100], ['assistant', 'a1', 101], ['user', 'u2', 102], ['assistant', 'a2', 103], ['user', 'u3', 104], ['assistant', 'a3', 105]]
+    const local = rows.slice(0, 2).map(([role, content, timestamp]) => ({ role, content, timestamp }))
+    writeMessages(s, sid, local)
+    if (withContext) {
+      const stored = s.deps.sessionStore.get(sid)
+      stored.context_messages = local.map((m) => ({ ...m }))
+      s.deps.sessionStore.save(stored)
+    }
+    const db = new DatabaseSync(join(s.state, 'state.db'))
+    db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
+    db.prepare('INSERT INTO sessions (id, source, started_at) VALUES (?, ?, ?)').run(sid, 'cli', 100)
+    for (const [role, content, ts] of rows) db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, role, content, ts)
+    db.close()
+    expect((await post(s, '/api/session/truncate', { session_id: sid, keep_count: 4 })).status).toBe(200)
+    const served = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).messages as Json[]
+    expect(served.map((m) => m.content)).toEqual(['u1', 'a1', 'u2', 'a2'])
+    expect(s.deps.sessions.modelContext(s.deps.sessionStore.get(sid)).map((m) => m.content)).toEqual(['u1', 'a1', 'u2', 'a2'])
+  })
+
   it('tells clients this server holds a deep cut', async () => {
     const sid = await seed()
     expect(((await json(await s.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).confirms_deep_truncate).toBe(true)

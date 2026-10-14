@@ -1231,6 +1231,12 @@ export class SessionService {
       const read = this.stateDbRead(s)
       const held = this.heldCut(s, keep, read.rows)
       if (held && held.confirm_token !== confirmToken) return held
+      // A cut inside the state.db continuation keeps the continuation's rows before it: the boundary below hides every
+      // row this read saw, so those rows join the stored transcript and model history first.
+      if (keep > s.messages.length) {
+        if (s.context_messages.length) s.context_messages = this.modelContext(s, read.rows)
+        s.messages = this.mergedTranscript(s, s.messages, read.rows)
+      }
       truncateSessionAtKeep(s, keep)
       this.markStateDbSeen(s, read, { boundary: true })
       this.store.save(s)
