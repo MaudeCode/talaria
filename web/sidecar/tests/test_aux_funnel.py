@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
@@ -17,6 +18,7 @@ pytestmark = requires_agent
 
 class _Stub(BaseHTTPRequestHandler):
     bodies: list[dict] = []
+    release: threading.Event | None = None
 
     def log_message(self, *args):  # noqa: D102 - quiet
         pass
@@ -28,6 +30,17 @@ class _Stub(BaseHTTPRequestHandler):
     def do_POST(self):  # noqa: N802 - streams the title in two token chunks
         body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
         _Stub.bodies.append(body)
+        if _Stub.release is not None:
+            _Stub.release.wait(10)
+        if not body.get("stream"):
+            data = json.dumps({"id": "c1", "object": "chat.completion", "created": 0, "model": "stub-model",
+                               "choices": [{"index": 0, "message": {"role": "assistant", "content": "Ship it"}, "finish_reason": "stop"}]}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.end_headers()
@@ -40,6 +53,7 @@ class _Stub(BaseHTTPRequestHandler):
 @pytest.fixture
 def llm():
     _Stub.bodies = []
+    _Stub.release = None
     server = ThreadingHTTPServer(("127.0.0.1", 0), _Stub)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     yield f"http://127.0.0.1:{server.server_address[1]}/v1"
@@ -97,3 +111,41 @@ def test_a_title_call_carries_the_custom_provider_extra_body(hermes_home, llm) -
     _title_call(hermes_home, llm)
     (body,) = _Stub.bodies
     assert body["stream"] is True and body.get("user") == "talaria-probe", body
+
+
+def test_a_title_cancelled_while_queued_for_the_task_permit_never_reaches_the_provider(hermes_home, llm) -> None:
+    config = {"model": {"provider": "custom", "default": "stub-model", "base_url": llm, "api_key": "sk-stub"},
+              "auxiliary": {"title_generation": {"max_concurrency": 1}}}
+    (hermes_home / "config.yaml").write_text(json.dumps(config))
+    _Stub.release = threading.Event()
+    params = {"profile_home": str(hermes_home), "task": "title_generation", "messages": [{"role": "system", "content": "Title it."}, {"role": "user", "content": "ship it?"}], "max_tokens": 64}
+    proc = SidecarProcess(hermes_home)
+    try:
+        first = proc.request("aux.complete", params)
+        deadline = time.monotonic() + 30
+        while not _Stub.bodies and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert len(_Stub.bodies) == 1, "the first title never reached the provider"
+        # The second title queues behind the first for the task's only permit; the server's timeout cancels it.
+        second = proc.request("aux.complete", params)
+        time.sleep(0.5)
+        proc.send({"jsonrpc": "2.0", "id": 9999, "method": "rpc.cancel", "params": {"id": second}})
+        answers: dict = {}
+        while second not in answers:
+            message = proc.next_message(timeout=5)
+            assert message is not None, proc.stderr_lines[-10:]
+            if message.get("id") in (first, second):
+                answers[message["id"]] = message
+        assert answers[second]["error"]["data"]["condition"] == "cancelled", answers[second]
+        _Stub.release.set()
+        while first not in answers:
+            message = proc.next_message(timeout=30)
+            assert message is not None, proc.stderr_lines[-10:]
+            if message.get("id") == first:
+                answers[first] = message
+        assert answers[first]["result"]["text"] == "Ship it", answers[first]
+        time.sleep(1.0)  # the permit is free now: a request still queued for it would have been sent
+    finally:
+        _Stub.release.set()
+        proc.close()
+    assert len(_Stub.bodies) == 1, _Stub.bodies

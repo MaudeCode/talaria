@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import contextvars
 import inspect
 import logging
 import threading
@@ -121,9 +122,7 @@ def complete(task: str, messages: list, *, main_runtime: dict | None, max_tokens
         if main_fallback and main_runtime and main_runtime.get("model"):
             return _main_model_completion(messages, main_runtime, task=task)
         raise RpcError(f"no auxiliary model configured for task {task!r}", condition="aux_unconfigured")
-    create = _aux_request(task, client, model, messages, main_runtime=main_runtime, max_tokens=max_tokens, temperature=temperature, ctx=ctx)
-    # The Agent's Codex, Anthropic and Bedrock shims answer ``stream=True`` whole, so they are asked once without it.
-    stream = hasattr(client.chat.completions, "with_streaming_response")
+    create, stream = _aux_request(task, client, model, messages, main_runtime=main_runtime, max_tokens=max_tokens, temperature=temperature, ctx=ctx)
     if main_fallback and main_runtime and main_runtime.get("model"):
         try:
             return _stream_completion(create, model, stream=stream, ctx=ctx)
@@ -135,21 +134,41 @@ def complete(task: str, messages: list, *, main_runtime: dict | None, max_tokens
     return _stream_completion(create, model, stream=stream, ctx=ctx)
 
 
-def _call_llm(task: str, ctx: CallContext, **kwargs):
-    """The Agent's ``call_llm`` once the task's ``max_concurrency`` permit is free. ``call_llm`` waits for the permit
-    uncancellably and then dispatches a paid request, so the wait happens here, where a cancelled call stops."""
+def _permit_limited(task: str) -> bool:
+    """Whether ``auxiliary.<task>.max_concurrency`` limits the task, so the Agent's ``call_llm`` may wait for a permit."""
     from agent import auxiliary_client
 
     acquire = getattr(auxiliary_client, "_acquire_sync_aux_semaphore", None)
-    semaphore = acquire(task) if callable(acquire) else None
-    if semaphore is not None:
-        while not semaphore.acquire(timeout=0.25):
-            ctx.check_cancelled()
-        # ponytail: the permit goes back for call_llm to take (holding it would deadlock call_llm's own acquire); a
-        # concurrent call can win it in between, and this call then waits inside call_llm for one in-flight request.
-        semaphore.release()
+    return callable(acquire) and acquire(task) is not None
+
+
+def _call_llm(task: str, ctx: CallContext, **kwargs):
+    """The Agent's ``call_llm``. For a permit-limited task ``call_llm`` waits for the permit uncancellably, so the call
+    runs on a helper thread under the Agent's interrupt protection: a cancelled call returns at once and frees its
+    worker, and the Agent's protected provider call drops the request before dispatch once the permit comes."""
+    from agent import auxiliary_client
+
+    if not _permit_limited(task):
+        return auxiliary_client.call_llm(task, **kwargs)
+    outcome: dict = {}
+    done = threading.Event()
+
+    def run() -> None:
+        try:
+            with auxiliary_client.aux_interrupt_protection(cancel_event=ctx.cancel_event):
+                outcome["response"] = auxiliary_client.call_llm(task, **kwargs)
+        except BaseException as exc:  # noqa: BLE001 - handed to the waiting worker
+            outcome["error"] = exc
+        finally:
+            done.set()
+
+    threading.Thread(target=contextvars.copy_context().run, args=(run,), daemon=True, name=f"aux-{task}").start()
+    while not done.wait(0.25):
+        ctx.check_cancelled()
     ctx.check_cancelled()
-    return auxiliary_client.call_llm(task, **kwargs)
+    if "error" in outcome:
+        raise outcome["error"]
+    return outcome["response"]
 
 
 def _call_llm_streams() -> bool:
@@ -162,16 +181,19 @@ def _call_llm_streams() -> bool:
 
 
 def _aux_request(task: str, client, model: str, messages: list, *, main_runtime: dict | None, max_tokens: int | None, temperature: float | None, ctx: CallContext):
-    """``create(**stream)`` for one auxiliary request. TAL-823: through the Agent's ``call_llm`` funnel (plugin hooks, a
-    custom provider's ``extra_body``, watchdogs, response unwrap, fallbacks) when it streams; else the raw client."""
+    """``(create(**stream), stream)`` for one auxiliary request. TAL-823: through the Agent's ``call_llm`` funnel (plugin
+    hooks, a custom provider's ``extra_body``, watchdogs, response unwrap, fallbacks) when it streams; else the raw
+    client. ``stream`` is False for a permit-limited task (its call must stay cancellable, see ``_call_llm``) and for
+    the Agent's Codex, Anthropic and Bedrock shims, which answer ``stream=True`` whole."""
     kwargs: dict = {"messages": messages}
     if max_tokens:
         kwargs["max_tokens"] = int(max_tokens)
     if temperature is not None:
         kwargs["temperature"] = float(temperature)
+    stream = hasattr(client.chat.completions, "with_streaming_response")
     if _call_llm_streams():
-        return lambda **stream: _call_llm(task, ctx, main_runtime=main_runtime, **kwargs, **stream)
-    return lambda **stream: client.chat.completions.create(model=model, **kwargs, **stream)
+        return (lambda **stream: _call_llm(task, ctx, main_runtime=main_runtime, **kwargs, **stream)), stream and not _permit_limited(task)
+    return (lambda **stream: client.chat.completions.create(model=model, **kwargs, **stream)), stream
 
 
 def _stream_completion(create, model: str, *, stream: bool, ctx: CallContext) -> dict:
