@@ -407,8 +407,9 @@ export function latestCronSessionInfo(dbPath: string, jobIds: Iterable<string>, 
 }
 
 /**
- * TAL-358: the `sessions.source` owner of each present id, in one chunked read. A missing state.db (or one without a
- * `source` column) owns nothing; an unreadable one answers null, so callers fail closed on an unknown owner.
+ * TAL-358: the `sessions.source` owner of each present id, in one chunked read; a Kanban-owned lineage answers `kanban`
+ * (TAL-793). A missing state.db (or one without a `source` column) owns nothing; an unreadable one answers null, so
+ * callers fail closed on an unknown owner.
  */
 export function stateDbSessionSources(dbPath: string, sessionIds: Iterable<string>): Map<string, string> | null {
   const sources = new Map<string, string>()
@@ -423,12 +424,54 @@ export function stateDbSessionSources(dbPath: string, sessionIds: Iterable<strin
       const chunk = ids.slice(i, i + 500)
       for (const row of db.prepare(`SELECT id, source FROM sessions WHERE id IN (${chunk.map(() => '?').join(',')})`).all(...chunk) as { id: string; source: unknown }[]) sources.set(row.id, str(row.source))
     }
+    for (const id of kanbanOwnedIds(db, cols, [...sources.keys()])) sources.set(id, 'kanban')
     return sources
   } catch {
     return null
   } finally {
     db.close()
   }
+}
+
+/**
+ * Python `_resume_lineage_ids`: a walk from a session up the compression segments it continues, root first. Null when
+ * the sessions table lacks the lineage columns; the walk stops at a non-continuation, a cycle, or 20 hops.
+ */
+function continuationAncestry(db: DatabaseSync): ((sid: string) => string[]) | null {
+  const cols = tableColumns(db, 'sessions')
+  if (!['id', 'parent_session_id', 'end_reason', 'started_at', 'source'].every((c) => cols.has(c))) return null
+  const select = db.prepare('SELECT id, source, started_at, parent_session_id, ended_at, end_reason FROM sessions WHERE id = ?')
+  return (sid) => {
+    const chain = [sid]
+    let current = select.get(sid) as Dict | undefined
+    for (let hop = 0; hop < 20 && current; hop += 1) {
+      const parentId = str(current.parent_session_id)
+      if (!parentId || chain.includes(parentId)) break
+      const parent = select.get(parentId) as Dict | undefined
+      if (!parent || !isContinuationSession(parent, current)) break
+      chain.unshift(parentId)
+      current = parent
+    }
+    return chain
+  }
+}
+
+/**
+ * TAL-793 (Agent `is_kanban_owned_session`): the `ids` whose compression lineage has a `kanban` `source` or
+ * `created_source` (schema v31; `source` alone decides before it), a Kanban worker's transcript only its dispatcher continues.
+ */
+function kanbanOwnedIds(db: DatabaseSync, cols: Set<string>, ids: string[]): string[] {
+  if (!ids.length) return []
+  const walk = continuationAncestry(db)
+  const lineages = ids.map((id) => walk?.(id) ?? [id])
+  const segments = [...new Set(lineages.flat())]
+  const match = cols.has('created_source') ? "(source = 'kanban' OR created_source = 'kanban')" : "source = 'kanban'"
+  const kanban = new Set<string>()
+  for (let i = 0; i < segments.length; i += 500) {
+    const chunk = segments.slice(i, i + 500)
+    for (const row of db.prepare(`SELECT id FROM sessions WHERE id IN (${chunk.map(() => '?').join(',')}) AND ${match}`).all(...chunk) as { id: string }[]) kanban.add(row.id)
+  }
+  return ids.filter((_, i) => lineages[i]!.some((sid) => kanban.has(sid)))
 }
 
 /** Python `state_db_has_session`: true only when `sid` is a row of the sessions table; a missing or unreadable db is false. */
@@ -736,24 +779,7 @@ export function stateDbSessionRead(dbPath: string, sid: string, opts: { stitch?:
     const hasId = available.has('id')
     const selected = [...(hasId ? ['id'] : []), ...(available.has('message_uid') ? ['message_uid'] : []), 'role', 'content', 'timestamp', ...OPTIONAL_MESSAGE_COLUMNS.filter((c) => available.has(c))]
     // TAL-529: an explicit lineage (the session and its compression continuations) replaces the parent walk.
-    const chain = opts.lineage?.length ? [...opts.lineage] : [id]
-    if (!opts.lineage?.length && (opts.stitch ?? true)) {
-      const sessionCols = tableColumns(db, 'sessions')
-      if (['parent_session_id', 'end_reason', 'started_at', 'source'].every((c) => sessionCols.has(c))) {
-        const select = db.prepare('SELECT id, source, started_at, parent_session_id, ended_at, end_reason FROM sessions WHERE id = ?')
-        let current = select.get(id) as Dict | undefined
-        const seen = new Set([id])
-        for (let hop = 0; hop < 20 && current; hop += 1) {
-          const parentId = str(current.parent_session_id)
-          if (!parentId || seen.has(parentId)) break
-          const parent = select.get(parentId) as Dict | undefined
-          if (!parent || !isContinuationSession(parent, current)) break
-          chain.unshift(parentId)
-          seen.add(parentId)
-          current = parent
-        }
-      }
-    }
+    const chain = opts.lineage?.length ? [...opts.lineage] : (opts.stitch ?? true) ? continuationAncestry(db)?.(id) ?? [id] : [id]
     const activeClause = available.has('active') ? ' AND (active IS NULL OR active != 0)' : ''
     const order = hasId ? 'id' : 'timestamp'
     const rows = db.prepare(`SELECT ${selected.join(', ')}, session_id FROM messages WHERE session_id IN (${chain.map(() => '?').join(', ')})${activeClause} ORDER BY ${order} ASC`).all(...chain) as Dict[]

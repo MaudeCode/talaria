@@ -562,6 +562,67 @@ describe('claiming a CLI session for WebUI (TAL-256)', () => {
   })
 })
 
+describe('Kanban worker sessions (TAL-793)', () => {
+  let s: TestServer
+  let db: DatabaseSync
+  const post = (path: string, body: unknown): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
+  beforeAll(async () => {
+    s = await bootTestServer({ sidecar: new FakeSidecar() })
+    db = createStateDb(join(s.state, 'state.db'))
+    // Agent schema v31's immutable `created_source`.
+    db.exec('ALTER TABLE sessions ADD COLUMN created_source TEXT')
+    const insert = (row: Parameters<typeof insertSession>[1], createdSource: string): void => {
+      insertSession(db, row)
+      db.prepare('UPDATE sessions SET created_source = ? WHERE id = ?').run(createdSource, row.id)
+    }
+    const turns = (t: number): [string, number][] => [['user', t + 1], ['assistant', t + 2], ['user', t + 3], ['assistant', t + 4]]
+    insert({ id: 'kanban-w1', source: 'kanban', started_at: 1000, title: 'Worker run', messages: turns(1000) }, 'kanban')
+    // A worker transcript whose live `source` a later surface flipped to `cli`.
+    insert({ id: 'kanban-retagged', source: 'cli', started_at: 1100, title: 'Retagged worker run', messages: turns(1100) }, 'kanban')
+    // A worker transcript compressed into a continuation the Agent created as `cli`: the lineage stays Kanban-owned.
+    insert({ id: 'kanban-root', source: 'cli', started_at: 1200, title: 'Rotated worker run', ended_at: 1300, end_reason: 'compression', messages: turns(1200) }, 'kanban')
+    insert({ id: 'kanban-tip', source: 'cli', started_at: 1300.5, title: 'Rotated worker run', parent: 'kanban-root', messages: turns(1300) }, 'cli')
+    insert({ id: 'cli-plain', source: 'cli', started_at: 1400, title: 'Plain CLI work', messages: turns(1400) }, 'cli')
+    await s.deps.settings.save({ show_cli_sessions: true, show_kanban_sessions: true })
+  })
+  afterAll(async () => { db.close(); await s.close() })
+
+  const owned = ['kanban-w1', 'kanban-retagged', 'kanban-tip']
+
+  it('opens a Kanban-owned transcript read-only, by source, created_source or lineage, and refuses messaging and claiming it', async () => {
+    const rows = (await json(await s.get('/api/sessions'))).sessions as Json[]
+    for (const sid of owned) {
+      expect(((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).read_only, `${sid} detail`).toBe(true)
+      expect(rows.find((r) => r.session_id === sid)?.read_only, `${sid} list`).toBe(true)
+      expect((await post('/api/chat/start', { session_id: sid, message: 'carry on' })).status, `${sid} chat`).toBe(403)
+      expect((await post('/api/session/rename', { session_id: sid, title: 'claimed' })).status, `${sid} claim`).toBe(403)
+      expect(s.deps.sessionStore.loadMetadataOnly(sid), sid).toBeNull()
+    }
+  })
+
+  it('locks a sidecar an earlier claim left on a Kanban-owned transcript', async () => {
+    s.deps.sessionStore.save(new Session({ session_id: 'kanban-retagged', title: 'Retagged worker run', source_tag: 'cli', raw_source: 'cli', is_cli_session: true, messages: [{ role: 'user', content: 'hi', timestamp: 1101 }] }, { workspace: s.state, model: null }))
+    expect(((await json(await s.get('/api/session?session_id=kanban-retagged'))).session as Json).read_only).toBe(true)
+    expect((await post('/api/chat/start', { session_id: 'kanban-retagged', message: 'carry on' })).status).toBe(403)
+  })
+
+  it('keeps an ordinary CLI transcript claimable', async () => {
+    expect(((await json(await s.get('/api/session?session_id=cli-plain'))).session as Json).read_only).toBe(false)
+    expect(((await json(await s.get('/api/sessions'))).sessions as Json[]).find((r) => r.session_id === 'cli-plain')?.read_only).toBe(false)
+    expect((await post('/api/session/pin', { session_id: 'cli-plain', pinned: true })).status).toBe(200)
+    expect(s.deps.sessionStore.loadMetadataOnly('cli-plain')?.read_only).toBeFalsy()
+  })
+
+  it('reads the owner from `source` alone on a state.db without created_source', () => {
+    const path = join(s.state, 'pre-v31', 'state.db')
+    const old = createStateDb(path)
+    insertSession(old, { id: 'old-kanban', source: 'kanban', started_at: 1, messages: [['user', 2]] })
+    insertSession(old, { id: 'old-cli', source: 'cli', started_at: 1, messages: [['user', 2]] })
+    old.close()
+    expect(stateDbSessionSources(path, ['old-kanban', 'old-cli'])).toEqual(new Map([['old-kanban', 'kanban'], ['old-cli', 'cli']]))
+  })
+})
+
 describe('session lineage report', () => {
   let dir: string
   let n = 0

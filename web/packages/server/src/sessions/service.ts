@@ -310,9 +310,9 @@ export class SessionService {
    * The list's owner locks and orphan prune (an orphan's sidecar goes, as nothing else ever removes it), with their
    * state.db reads made on the listing worker up front so the synchronous build never opens state.db (TAL-920).
    */
-  private async listStateDbLookups(rows: Row[]): Promise<Pick<ListParams, 'stateDbSources' | 'pruneOrphanedImports'>> {
+  private async listStateDbLookups(rows: Row[], cliRowIds: string[]): Promise<Pick<ListParams, 'stateDbSources' | 'pruneOrphanedImports'>> {
     const dbPath = this.stateDbPath(null)
-    const ownerIds = ownerLockCandidates(rows)
+    const ownerIds = [...ownerLockCandidates(rows), ...cliRowIds]
     const owners = ownerIds.length ? await stateDbSessionSourcesAsync(dbPath, ownerIds) : new Map<string, string>()
     const checked = new Set(this.orphanCandidates(rows))
     const existing = checked.size ? await agentSessionRowsExistingAsync(dbPath, checked) : new Set<string>()
@@ -566,7 +566,7 @@ export class SessionService {
       if (!meta.created_at && row.started_at) meta.created_at = row.started_at
       if (!meta.updated_at && (row.ended_at || row.started_at)) meta.updated_at = row.ended_at || row.started_at
     }
-    const claimable = isClaimableCliSource(meta, stateDbSource)
+    const claimable = isClaimableCliSource(meta, stateDbSessionSources(dbPath, [sid])?.get(sid) || stateDbSource)
     const workspace = str(meta.workspace || meta.cwd).trim() || this.deps.workspaces.lastWorkspace(profile)
     const defaults = this.store.deps.defaults(profile)
     const session = new Session({
@@ -919,7 +919,7 @@ export class SessionService {
     const gatewayIdentity = loadGatewaySessionIdentityMap(join(this.deps.profileHome(activeProfile), 'sessions', 'sessions.json'))
     const truncatedSources = cliRead?.truncated
     const webuiRows = allSessions(this.store, { sidebarMetadataOnly: true })
-    const lookups = await this.listStateDbLookups(webuiRows)
+    const lookups = await this.listStateDbLookups(webuiRows, (cliRead?.rows ?? []).map((r) => str(r.session_id)))
     const payload = buildSessionListPayload(this.store, { ...params, ...(cliRows ? { cliRows } : {}), ...(truncatedSources ? { truncatedSources } : {}), gatewayIdentity, ...lookups, webuiRows, activeProfile, isolatedProfileMode: this.deps.isolatedProfileMode(), profilesMatch: this.deps.profilesMatch })
     return sessionListResponse(payload, this.deps.runtime, this.deps.redactEnabled(), this.deps.now(), this.workspaceNames())
   }
