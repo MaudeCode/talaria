@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { z } from 'zod'
-import { ChatEventSchema, MemoryWriteRefusalSchema, ModelsSchema, SIDECAR_RPC_VERSION, SkillsSchema, TranscribeStreamEndSchema, TranscribeStreamEventSchema, TranscribeStreamStartSchema, UpdateNotificationsSchema } from './index.js'
+import { ChatEventSchema, ClarifyPendingEnvelopeSchema, MemoryWriteRefusalSchema, ModelsSchema, SIDECAR_RPC_VERSION, SkillsSchema, TranscribeStreamEndSchema, TranscribeStreamEventSchema, TranscribeStreamStartSchema, UpdateNotificationsSchema } from './index.js'
 
 const shared = (path: string): unknown => JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../contracts', path), 'utf8'))
 
@@ -35,6 +35,13 @@ describe('contracts package', () => {
     expect(wait.event === 'rate_limit_wait' && wait.data.wait).toEqual({ provider: 'openrouter', provider_label: 'OpenRouter', until: 1800000600, until_kind: 'reset' })
     const cleared = ChatEventSchema.parse(fixture.cleared)
     expect(cleared.event === 'rate_limit_wait' && cleared.data.wait).toBeNull()
+  })
+  it('parses the shared password-manager prompts (TAL-887)', () => {
+    const fixture = shared('fixtures/vault-prompts.json') as Record<string, unknown>
+    const prompts = Object.values(fixture).map((body) => ClarifyPendingEnvelopeSchema.parse(body).pending?.vault)
+    expect(prompts.map((p) => [p?.kind, p?.fields.map((f) => `${f.key}${f.secure ? '*' : ''}`)])).toEqual([
+      ['vault_unlock', ['master_password*']], ['vault_save_login', ['identifier', 'password*']], ['vault_code', ['code']],
+    ])
   })
   it('exports an integer sidecar RPC version', () => {
     expect(Number.isInteger(SIDECAR_RPC_VERSION)).toBe(true)

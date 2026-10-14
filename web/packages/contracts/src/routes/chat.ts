@@ -8,7 +8,7 @@ const Json = z.unknown()
 const tags = ['chat']
 
 export const ApprovalRespondSchema = z.object({ session_id: z.string().optional(), choice: z.string().optional(), approval_id: z.string().optional(), yolo: z.boolean().optional(), run_id: z.string().optional(), mirror_token: z.string().optional() }).catchall(Json)
-export const ClarifyRespondSchema = z.object({ session_id: z.string().optional(), answers: ClarifyAnswersSchema.optional(), response: z.string().optional(), answer: z.string().optional(), choice: z.string().optional(), clarify_id: z.string().optional() }).catchall(Json)
+export const ClarifyRespondSchema = z.object({ session_id: z.string().optional(), answers: ClarifyAnswersSchema.optional(), response: z.string().optional(), answer: z.string().optional(), choice: z.string().optional(), clarify_id: z.string().optional(), decline: z.boolean().optional() }).catchall(Json)
 /** Legacy blocking chat (`POST /api/chat`): no current client; `result` is the server's own summary, not the Agent result. */
 export const ChatSyncRequestSchema = z.object({ session_id: z.string().optional(), message: z.string().optional(), workspace: z.string().nullable().optional(), model: z.string().nullable().optional(), model_provider: z.string().nullable().optional() }).catchall(Json)
 export const ChatSyncResponseSchema = z.object({ answer: z.string(), status: z.enum(['done', 'partial']), session: SessionSchema, result: z.object({ final_response: z.string(), completed: z.boolean(), interrupted: z.boolean() }) })

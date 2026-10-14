@@ -27,6 +27,18 @@ export interface Clarify {
   send: () => void
 }
 
+/** The session's clarify queue head while its turn runs; every reader shares one query, which `useClarify` re-reads on frames. */
+export function useClarifyHead(sessionId: string | null, live: LiveTurn | null) {
+  const running = !!sessionId && !!live && !isTerminal(live.status)
+  const query = useQuery({
+    queryKey: keys.clarify(sessionId ?? ''),
+    queryFn: () => api.fetchClarifyPending(sessionId ?? ''),
+    enabled: running,
+    refetchInterval: live?.status === 'streaming' ? 15_000 : 1_500,
+  })
+  return { running, query }
+}
+
 /**
  * While the session's turn runs (the only time the Agent can park on a question), reads the canonical queue head
  * from `/api/clarify/pending` (docs/sse-streams.md: re-read on every chat-stream `clarify` frame and (re)attach,
@@ -36,13 +48,7 @@ export interface Clarify {
  */
 export function useClarify(sessionId: string | null, live: LiveTurn | null): Clarify | null {
   const qc = useQueryClient()
-  const running = !!sessionId && !!live && !isTerminal(live.status)
-  const query = useQuery({
-    queryKey: keys.clarify(sessionId ?? ''),
-    queryFn: () => api.fetchClarifyPending(sessionId ?? ''),
-    enabled: running,
-    refetchInterval: live?.status === 'streaming' ? 15_000 : 1_500,
-  })
+  const { running, query } = useClarifyHead(sessionId, live)
   const frame = live?.clarify
   useEffect(() => {
     if (!frame || !sessionId) return

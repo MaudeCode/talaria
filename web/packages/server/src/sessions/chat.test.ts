@@ -803,6 +803,62 @@ describe('chat turns through the sidecar', () => {
     expect(await json(await post(s, '/api/approval/respond', { session_id: sid, choice: 'deny', approval_id: 'old' }))).toEqual({ ok: true, choice: 'deny', stale_cleared: true })
   })
 
+  it('relays the Agent\'s password-manager prompts and hands their answers only to the Agent (TAL-887)', async () => {
+    const sid = await newSession(s)
+    const secrets = { master: 'correct horse battery', password: 's3cret-pass', code: '481516' }
+    const replies: string[] = []
+    let release: (response: string) => void = () => undefined
+    sidecar.respond('clarify.respond', (params) => { replies.push(params.response); release(params.response); return { ok: true, clarify_id: String(params.clarify_id) } })
+    const ask = async (emit: (frame: { event: string; data: Json }) => void, clarifyId: string, data: Json): Promise<string> => {
+      emit({ event: 'clarify', data: { clarify_id: clarifyId, session_id: sid, requested_at: 1800000000, ...data } })
+      const answer = await new Promise<string>((resolve) => { release = resolve })
+      emit({ event: 'clarify_resolved', data: { clarify_id: clarifyId, session_id: sid } })
+      return answer
+    }
+    sidecar.respond('chat.start', async (params, emit) => {
+      await ask(emit, 'v-unlock', { kind: 'vault_unlock', backend: 'bitwarden', display_name: 'Bitwarden', timeout_seconds: 120 })
+      await ask(emit, 'v-login', { kind: 'vault_save_login', origin: 'https://login.example.com', site: 'login.example.com', timeout_seconds: 180 })
+      await ask(emit, 'v-code', { kind: 'vault_code', site: 'login.example.com', hint: '', timeout_seconds: 180 })
+      return completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Signed in.' }])
+    })
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'log in to example' }))
+    const streamId = String(start.stream_id)
+    const respond = async (seen: number, body: Json): Promise<[Json, Response, number]> => {
+      const frames = await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:${String(seen)}`, (f) => f.event === 'clarify')
+      const pending = (await json(await s.get(`/api/clarify/pending?session_id=${sid}`))).pending as Json
+      return [pending, await post(s, '/api/clarify/respond', { session_id: sid, clarify_id: pending.clarify_id, ...body }), seen + frames.length]
+    }
+
+    // The server owns the prompt: its kind, display fields, inputs, and deadline.
+    let [pending, res, seen] = await respond(0, { response: secrets.master })
+    expect(pending).toMatchObject({ clarify_id: 'v-unlock', kind: 'vault_unlock', steps: [], vault: { kind: 'vault_unlock', backend: 'bitwarden', display_name: 'Bitwarden', origin: null, site: null, hint: null, fields: [{ key: 'master_password', secure: true }], timeout_at: 1800000120 } })
+    expect(pending).not.toHaveProperty('backend')
+    // A vault prompt takes keyed answers only; a raw reply is refused and never reaches the Agent.
+    expect(res.status).toBe(400)
+    res = await post(s, '/api/clarify/respond', { session_id: sid, clarify_id: 'v-unlock', answers: { master_password: secrets.master } })
+    expect(res.status).toBe(200)
+    // The answer is never echoed back.
+    expect(await json(res)).toEqual({ ok: true })
+
+    ;[pending, res, seen] = await respond(seen, { answers: { identifier: ' me@example.com ', password: secrets.password } })
+    expect(pending.vault).toEqual({ kind: 'vault_save_login', backend: null, display_name: null, origin: 'https://login.example.com', site: 'login.example.com', hint: null, fields: [{ key: 'identifier', secure: false }, { key: 'password', secure: true }], timeout_at: 1800000180 })
+    expect(await json(res)).toEqual({ ok: true })
+
+    ;[pending, res] = await respond(seen, { decline: true })
+    expect(pending.vault).toMatchObject({ kind: 'vault_code', site: 'login.example.com', fields: [{ key: 'code', secure: false }] })
+    expect(await json(res)).toEqual({ ok: true })
+    expect(replies).toEqual([secrets.master, JSON.stringify({ identifier: 'me@example.com', password: secrets.password }), ''])
+
+    const replay = await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'stream_end')
+    expect(eventNames(replay)).toContain('done')
+    expect(await json(await s.get(`/api/clarify/pending?session_id=${sid}`))).toEqual({ pending: null, pending_count: 0 })
+    // No answer survives anywhere the server keeps or serves the session.
+    const exports = await Promise.all(['json', 'md', 'html'].map(async (format) => (await s.get(`/api/session/export?session_id=${sid}&format=${format}`)).text()))
+    const kept = [JSON.stringify(replay), JSON.stringify(s.deps.sessionStore.get(sid)), JSON.stringify(await json(await s.get(`/api/session?session_id=${sid}`))), ...exports, s.logs.join('\n')].join('\n')
+    expect(exports.every((text) => text.includes('Signed in.'))).toBe(true)
+    for (const secret of [...Object.values(secrets), 'me@example.com']) expect(kept).not.toContain(secret)
+  })
+
   it('skips background titling when the profile turns auxiliary.title_generation.enabled off; manual regenerate still titles (TAL-531)', async () => {
     const turns = s.deps.turns as unknown as { deps: { profileConfig: ((profile: string | null) => Promise<Record<string, unknown> | null>) | undefined } }
     const original = turns.deps.profileConfig

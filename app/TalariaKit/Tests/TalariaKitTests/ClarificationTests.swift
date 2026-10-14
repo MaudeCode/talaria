@@ -809,6 +809,60 @@ final class ClarificationTests: APIClientTestCase {
         XCTAssertEqual(model.clarificationPrompt?.pending.clarifyId, "new")
     }
 
+    /// TAL-887: the shared vault prompts decode from contract fields, render as the vault prompt (never the composer's
+    /// clarification), and answer with keyed values or a decline.
+    @MainActor
+    func testVaultPromptsRenderFromContractFieldsAndAnswerOrDecline() async throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let fixture = try JSONSerialization.jsonObject(with: Data(contentsOf: root.appendingPathComponent("contracts/fixtures/vault-prompts.json"))) as? [String: Any]
+        let envelope = { (name: String) throws -> Data in try JSONSerialization.data(withJSONObject: XCTUnwrap(fixture?[name])) }
+        var bodies: [[String: Any]] = []
+        let model = try makeViewModel { request in
+            switch request.url?.path {
+            case "/api/chat/start":
+                return apiTestJSONResponse(#"{"session_id":"session-abc","stream_id":"stream-123"}"#, for: request)
+            case "/api/clarify/respond":
+                bodies.append(try apiTestJSONBody(from: request))
+                return apiTestJSONResponse(#"{"ok":true}"#, for: request)
+            case "/api/clarify/pending":
+                return apiTestJSONResponse(#"{"pending":null}"#, for: request)
+            default:
+                throw URLError(.badURL)
+            }
+        }
+        _ = await model.sendMessage("Log in")
+
+        let unlock = try JSONDecoder().decode(ClarificationPendingResponse.self, from: envelope("unlock"))
+        model.applyClarificationUpdate(unlock, sessionID: "session-abc")
+        XCTAssertNil(model.clarificationPrompt)
+        var prompt = try XCTUnwrap(model.vaultPrompt)
+        XCTAssertEqual(prompt.pending.vault?.kind, .unlock)
+        XCTAssertEqual(prompt.pending.vault?.displayName, "Bitwarden")
+        XCTAssertEqual(prompt.pending.vault?.fields.map(\.key), [.masterPassword])
+        XCTAssertEqual(prompt.pending.vault?.fields.map(\.secure), [true])
+        XCTAssertEqual(prompt.pending.vault?.timeoutAt, 1_800_000_120)
+        let unlocked = await model.respondToVaultPrompt(["master_password": "correct horse"], promptID: prompt.id)
+        XCTAssertTrue(unlocked)
+        XCTAssertNil(model.vaultPrompt)
+
+        let login = try JSONDecoder().decode(ClarificationPendingResponse.self, from: envelope("save_login"))
+        model.applyClarificationUpdate(login, sessionID: "session-abc")
+        prompt = try XCTUnwrap(model.vaultPrompt)
+        XCTAssertEqual(prompt.pending.vault?.site, "login.example.com")
+        XCTAssertEqual(prompt.pending.vault?.fields.map(\.key), [.identifier, .password])
+        XCTAssertEqual(prompt.pending.vault?.fields.map(\.secure), [false, true])
+        let declined = await model.respondToVaultPrompt(nil, promptID: prompt.id)
+        XCTAssertTrue(declined)
+
+        XCTAssertEqual(bodies.count, 2)
+        XCTAssertEqual(bodies.map { $0["clarify_id"] as? String }, ["contract-vault-unlock", "contract-vault-login"])
+        XCTAssertEqual(bodies[0]["answers"] as? [String: String], ["master_password": "correct horse"])
+        XCTAssertNil(bodies[0]["decline"])
+        XCTAssertNil(bodies[1]["answers"])
+        XCTAssertEqual(bodies[1]["decline"] as? Bool, true)
+    }
+
     @MainActor
     private func makeViewModel(
         streamClient: SSEStreamingClient? = nil,

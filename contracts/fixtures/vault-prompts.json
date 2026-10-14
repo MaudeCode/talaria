@@ -1,0 +1,41 @@
+{
+  "unlock": {
+    "pending": {
+      "clarify_id": "contract-vault-unlock",
+      "session_id": "contract-session",
+      "kind": "vault_unlock",
+      "requested_at": 1800000000,
+      "timeout_seconds": 120,
+      "expires_at": 1800000120,
+      "steps": [],
+      "vault": { "kind": "vault_unlock", "backend": "bitwarden", "display_name": "Bitwarden", "origin": null, "site": null, "hint": null, "fields": [{ "key": "master_password", "secure": true }], "timeout_at": 1800000120 }
+    },
+    "pending_count": 1
+  },
+  "save_login": {
+    "pending": {
+      "clarify_id": "contract-vault-login",
+      "session_id": "contract-session",
+      "kind": "vault_save_login",
+      "requested_at": 1800000000,
+      "timeout_seconds": 180,
+      "expires_at": 1800000180,
+      "steps": [],
+      "vault": { "kind": "vault_save_login", "backend": null, "display_name": null, "origin": "https://login.example.com", "site": "login.example.com", "hint": null, "fields": [{ "key": "identifier", "secure": false }, { "key": "password", "secure": true }], "timeout_at": 1800000180 }
+    },
+    "pending_count": 1
+  },
+  "code": {
+    "pending": {
+      "clarify_id": "contract-vault-code",
+      "session_id": "contract-session",
+      "kind": "vault_code",
+      "requested_at": 1800000000,
+      "timeout_seconds": 180,
+      "expires_at": 1800000180,
+      "steps": [],
+      "vault": { "kind": "vault_code", "backend": null, "display_name": null, "origin": null, "site": "login.example.com", "hint": null, "fields": [{ "key": "code", "secure": false }], "timeout_at": 1800000180 }
+    },
+    "pending_count": 1
+  }
+}

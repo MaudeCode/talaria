@@ -116,6 +116,10 @@ final class ChatPendingActionCoordinator {
 
     private(set) var isRespondingToClarification = false
     private(set) var clarificationErrorMessage: String?
+    /// A clarify-queue head that is the Agent's password-manager prompt (TAL-887): its own sheet, never the composer.
+    private(set) var vaultPrompt: ClarificationPromptState? {
+        didSet { if oldValue?.id != vaultPrompt?.id { clarificationErrorMessage = nil } }
+    }
 
     weak var delegate: ChatPendingActionCoordinatorDelegate?
     var approvalHeadDidBecomeVisible: (ApprovalPromptState) -> Void = { _ in }
@@ -132,7 +136,7 @@ final class ChatPendingActionCoordinator {
     private var clarificationUsesPollingFallback = false
 
     var hasPendingPrompt: Bool {
-        approvalPrompt != nil || clarificationPrompt != nil
+        approvalPrompt != nil || clarificationPrompt != nil || vaultPrompt != nil
     }
 
     init(
@@ -365,6 +369,47 @@ final class ChatPendingActionCoordinator {
         }
     }
 
+    /// Answers a vault prompt with the typed `values` keyed by field, or declines it with `nil`. The values pass
+    /// straight to the server; nothing here keeps them.
+    @discardableResult
+    func respondToVaultPrompt(_ values: [String: String]?, promptID: String) async -> Bool {
+        guard !isRespondingToClarification,
+              let prompt = vaultPrompt, prompt.id == promptID,
+              prompt.sessionID == delegate?.pendingActionSessionID
+        else { return false }
+
+        isRespondingToClarification = true
+        clarificationErrorMessage = nil
+        delegate?.pendingActionCoordinatorWillSubmitAction()
+        defer { isRespondingToClarification = false }
+
+        do {
+            _ = try await client.respondClarification(
+                sessionID: prompt.sessionID,
+                clarifyID: prompt.pending.clarifyId,
+                answers: (values ?? [:]).mapValues(JSONValue.string),
+                decline: values == nil
+            )
+            guard vaultPrompt?.id == prompt.id, delegate?.pendingActionSessionID == prompt.sessionID else { return true }
+            clarificationPendingBySession[prompt.sessionID] = nil
+            vaultPrompt = nil
+            await refreshClarificationPending(sessionID: prompt.sessionID)
+            return true
+        } catch {
+            guard vaultPrompt?.id == prompt.id, delegate?.pendingActionSessionID == prompt.sessionID else { return false }
+            if (error as? APIError)?.indicatesExpiredPendingPrompt == true {
+                clarificationPendingBySession[prompt.sessionID] = nil
+                vaultPrompt = nil
+                delegate?.pendingActionCoordinatorDidFailAction(PendingPromptExpiredError(prompt: .clarification))
+                await refreshClarificationPending(sessionID: prompt.sessionID)
+                return false
+            }
+            clarificationErrorMessage = error.localizedDescription
+            delegate?.pendingActionCoordinatorDidFailAction(error)
+            return false
+        }
+    }
+
     func applyClarificationUpdate(_ update: ClarificationPendingResponse, sessionID: String) {
         clarificationUpdateRevision &+= 1
         if let pending = update.pending, !pending.isEmpty {
@@ -374,7 +419,7 @@ final class ChatPendingActionCoordinator {
                 pendingCount: max(update.pendingCount ?? 1, 1)
             )
             if let current = clarificationPendingBySession[sessionID], current.requestID == prompt.requestID {
-                prompt.questionIndex = min(current.questionIndex, prompt.questionCount - 1)
+                prompt.questionIndex = max(0, min(current.questionIndex, prompt.questionCount - 1))
             }
             clarificationPendingBySession[sessionID] = prompt
         } else {
@@ -518,6 +563,7 @@ final class ChatPendingActionCoordinator {
             clarificationPendingBySession[sessionID] = nil
         }
         clarificationPrompt = nil
+        vaultPrompt = nil
         clarificationErrorMessage = nil
     }
 
@@ -583,19 +629,11 @@ final class ChatPendingActionCoordinator {
     }
 
     private func renderClarificationPromptForCurrentSession() {
-        guard let sessionID = delegate?.pendingActionSessionID else {
-            clarificationPrompt = nil
-            return
+        let prompt = delegate?.pendingActionSessionID.flatMap { sessionID in
+            delegate?.pendingActionHasActiveStream == true ? clarificationPendingBySession[sessionID] : nil
         }
-
-        guard delegate?.pendingActionHasActiveStream == true,
-              let prompt = clarificationPendingBySession[sessionID]
-        else {
-            clarificationPrompt = nil
-            return
-        }
-
-        clarificationPrompt = prompt
+        clarificationPrompt = prompt?.pending.vault == nil ? prompt : nil
+        vaultPrompt = prompt?.pending.vault == nil ? nil : prompt
     }
 }
 

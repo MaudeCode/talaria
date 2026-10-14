@@ -425,6 +425,40 @@ def _post_compression_context(agent: Any, messages: list, system_message: Any) -
     return context, estimate if isinstance(estimate, int) and estimate > 0 else None
 
 
+# TAL-887: the Agent's password-manager prompts, answered like a clarify; the waits are the Agent's own surfaces' (its TUI).
+_VAULT_PROMPT_TIMEOUTS = {"vault_unlock": 120, "vault_save_login": 180, "vault_code": 180}
+
+
+def _set_vault_session(session_id) -> None:
+    """Bind the session an unlock made on this thread belongs to (released with it)."""
+    try:
+        from agent.vault_backends import unlock
+    except Exception:  # noqa: BLE001 - an Agent without the credential vault
+        return
+    unlock.set_current_session_id(session_id)
+
+
+def _release_vault_session(session_id) -> None:
+    """Lock the password managers ``session_id`` unlocked; other sessions keep theirs."""
+    try:
+        from agent.vault_backends.unlock import release_session
+    except Exception:  # noqa: BLE001 - an Agent without the credential vault
+        return
+    release_session(session_id)
+
+
+def _set_vault_prompts(session_id, unlock_cb, save_login_cb, code_cb) -> None:
+    """Bind (or with ``None``s clear) the Agent's per-thread vault prompts and the session an unlock belongs to."""
+    try:
+        from agent.vault_backends import unlock
+    except Exception:  # noqa: BLE001 - an Agent without the credential vault
+        return
+    _set_vault_session(session_id)
+    unlock.set_unlock_prompt_callback(unlock_cb)
+    unlock.set_save_login_prompt_callback(save_login_cb)
+    unlock.set_code_prompt_callback(code_cb)
+
+
 def _clarify_timeout(params: dict) -> int:
     """Predecessor ``_clarify_timeout_seconds``: an explicit request value wins, else the Agent's resolver over config."""
     explicit = params.get("clarify_timeout_seconds")
@@ -1337,22 +1371,9 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             if key:
                 emit("notice_clear", {"key": str(key)})
 
-        def clarify_callback(question, choices=None, multi_select=False, questions=None):
-            # TAL-351: remove the legacy signature path when v0.21.6 is the oldest supported Agent.
-            structured = isinstance(question, list)
-            if structured:
-                questions, question = question, ""
-            choices_list = [str(c) for c in (choices or [])]
-            # Predecessor `_clarify_timeout_seconds`: the Agent's own resolver over this profile's config
-            # (``clarify.timeout`` else ``agent.clarify_timeout`` else 3600); ``<= 0`` waits until answered or cancelled.
-            # The advertised ``timeout_seconds`` is what the clients count down, so it is the same number.
-            timeout = _clarify_timeout(params)
-            data = {"question": str(question or ""), "choices_offered": choices_list, "session_id": session_id, "kind": "clarify", "requested_at": time.time(), "timeout_seconds": timeout}
-            if multi_select:
-                data["multi_select"] = True
-            # Batch prompts (the Agent's ``_run_batch``) carry no top-level question and expect the ``{"answers": {...}}`` reply.
-            if isinstance(questions, list) and questions:
-                data["questions"] = questions
+        def ask(data: dict, timeout: int) -> str | None:
+            """Park on a prompt the server relays until it is answered, the turn is cancelled or ends, or ``timeout``
+            passes (``<= 0``: no limit). The answer, or None, goes back to the Agent and is never emitted."""
             entry = _ClarifyEntry(data)
             entry.data["clarify_id"] = entry.clarify_id
             with run.lock:
@@ -1372,10 +1393,54 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             with run.lock:
                 run.clarify_entries.pop(entry.clarify_id, None)
             emit("clarify_resolved", {"clarify_id": entry.clarify_id, "session_id": session_id})
-            if entry.result is not None:
+            return entry.result
+
+        def ask_vault(kind: str, fields: dict) -> str:
+            """TAL-887: a password-manager prompt; an empty answer is the Agent's decline, as are expiry and cancel."""
+            timeout = _VAULT_PROMPT_TIMEOUTS[kind]
+            data = {"kind": kind, "session_id": session_id, "requested_at": time.time(), "timeout_seconds": timeout, **fields}
+            return ask(data, timeout) or ""
+
+        def vault_unlock_prompt(backend, display_name):
+            # The Agent stores the unlock right after this returns, on the thread that called it: a tool worker
+            # inherits this callback but not the turn's session, so bind it here too, or closing the session could
+            # not lock the manager again.
+            _set_vault_session(session_id)
+            return ask_vault("vault_unlock", {"backend": str(backend), "display_name": str(display_name)})
+
+        def vault_save_login_prompt(origin, site):
+            # The server sends ``{"identifier", "password"}``; the Agent stores it in its vault and fills the page.
+            raw = ask_vault("vault_save_login", {"origin": str(origin), "site": str(site)})
+            try:
+                answer = json.loads(raw) if raw else None
+            except ValueError:
+                return None
+            return answer if isinstance(answer, dict) and answer.get("password") else None
+
+        def vault_code_prompt(site, hint):
+            return ask_vault("vault_code", {"site": str(site), "hint": str(hint or "")})
+
+        def clarify_callback(question, choices=None, multi_select=False, questions=None):
+            # TAL-351: remove the legacy signature path when v0.21.6 is the oldest supported Agent.
+            structured = isinstance(question, list)
+            if structured:
+                questions, question = question, ""
+            choices_list = [str(c) for c in (choices or [])]
+            # Predecessor `_clarify_timeout_seconds`: the Agent's own resolver over this profile's config
+            # (``clarify.timeout`` else ``agent.clarify_timeout`` else 3600); ``<= 0`` waits until answered or cancelled.
+            # The advertised ``timeout_seconds`` is what the clients count down, so it is the same number.
+            timeout = _clarify_timeout(params)
+            data = {"question": str(question or ""), "choices_offered": choices_list, "session_id": session_id, "kind": "clarify", "requested_at": time.time(), "timeout_seconds": timeout}
+            if multi_select:
+                data["multi_select"] = True
+            # Batch prompts (the Agent's ``_run_batch``) carry no top-level question and expect the ``{"answers": {...}}`` reply.
+            if isinstance(questions, list) and questions:
+                data["questions"] = questions
+            answer = ask(data, timeout)
+            if answer is not None:
                 if structured:
-                    return {"answers": json.loads(entry.result)["answers"], "outcome": "submitted"}
-                return entry.result
+                    return {"answers": json.loads(answer)["answers"], "outcome": "submitted"}
+                return answer
             cancelled = run.cancel.is_set() or run.finished.is_set()
             if structured:
                 return {"answers": {}, "outcome": "cancelled" if cancelled else "timed_out",
@@ -1526,6 +1591,8 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             agent._voice_turn_pending = params.get("voice_turn") is True
         error: str | None = None
         result: dict = {}
+        # The Agent reads its vault prompts from the thread running the turn (and copies them onto tool workers).
+        _set_vault_prompts(session_id, vault_unlock_prompt, vault_save_login_prompt, vault_code_prompt)
         try:
             raw = agent.run_conversation(**run_kwargs)
             result = raw if isinstance(raw, dict) else {}
@@ -1533,6 +1600,7 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             log.warning("agent turn failed for %s: %s", session_id, exc)
             error = f"{type(exc).__name__}: {exc}"
         finally:
+            _set_vault_prompts(None, None, None, None)
             run.finished.set()
             watcher.join(timeout=2)
             # A successor turn for the same session (admitted past the cancel-unwind ceiling) may have registered
@@ -1593,6 +1661,10 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
                 _RUNS.pop(stream_id, None)
                 if _RUNS_BY_SESSION.get(session_id) == stream_id:
                     _RUNS_BY_SESSION.pop(session_id, None)
+                # TAL-887: a session ended mid-turn (``chat.evict_agent`` marks the run under these locks) released its
+                # unlocks then; one the Agent stored after that is released now.
+                if run.session_ended:
+                    _release_vault_session(session_id)
             # An agent evicted or replaced while this turn held it is released now that the turn is over.
             _release_if_dropped_locked(run.agent, home)
 
@@ -1932,6 +2004,8 @@ def register(registry) -> None:
                 clear_session(session_id)
             except Exception:  # noqa: BLE001
                 pass
+            # TAL-887: a password manager this session unlocked locks again with it; other sessions keep theirs.
+            _release_vault_session(session_id)
         return {"evicted": entry is not None}
 
     @registry.method("chat.commit_memory", requires_agent=False)
@@ -2023,10 +2097,8 @@ def register(registry) -> None:
 
     @registry.method("clarify.respond", requires_agent=False)
     def clarify_respond_(ctx: CallContext, params: dict) -> dict:
-        response = str(params.get("response") or "").strip()
+        response = str(params.get("response") or "")
         clarify_id = str(params.get("clarify_id") or "").strip()
-        if not response:
-            raise InvalidParams("response is required")
         run = _run_for(params)
         if run is None:
             return {"ok": False}
@@ -2039,6 +2111,12 @@ def register(registry) -> None:
             target = entries[0]
         if target is None:
             return {"ok": False}
+        # A password or code is the Agent's as typed; only a vault prompt takes an empty answer, its decline (TAL-887).
+        vault = str(target.data.get("kind") or "").startswith("vault_")
+        if not vault:
+            response = response.strip()
+        if not response and not vault:
+            raise InvalidParams("response is required")
         target.result = response
         target.event.set()
         return {"ok": True, "clarify_id": target.clarify_id}
