@@ -4995,6 +4995,40 @@
     ],
     "additionalProperties": false
   },
+  "personalities.list": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "personalities": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": {
+              "type": "string"
+            },
+            "prompt": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "description",
+            "prompt"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": [
+      "personalities"
+    ],
+    "additionalProperties": false
+  },
   "chat.start": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The personality picker now offers the Agent's built-in personalities and the top-level personalities in config.yaml, and a chosen one applies to Web chats.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

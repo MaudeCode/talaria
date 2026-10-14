@@ -2990,12 +2990,13 @@ describe('turn context from config.yaml (Python streaming worker)', () => {
     const sidecar = new FakeSidecar()
     const s = await bootTestServer({ sidecar })
     try {
-      sidecar.respond('config.get', (params) => ({ path: params.config_path, exists: true, config: { agent: { max_turns: 7, reasoning_effort: 'high', personalities: { pirate: { system_prompt: 'Talk like a pirate', tone: 'jolly' } } }, max_tokens: 4096, platforms: { telegram: { home_channel: { name: 'ops' } } } } }))
+      sidecar.respond('config.get', (params) => ({ path: params.config_path, exists: true, config: { agent: { max_turns: 7, reasoning_effort: 'high' }, personalities: { Reviewer: 'You review code tersely.' }, max_tokens: 4096, platforms: { telegram: { home_channel: { name: 'ops' } } } } }))
       writeFileSync(join(s.state, 'config.yaml'), '# cfg\n')
       s.deps.agentConfig.invalidate()
       const sid = await newSession(s)
       const session = s.deps.sessionStore.get(sid)
-      session.personality = 'pirate'
+      // TAL-901: a top-level block entry, resolved by the Agent (the recorded `personalities.list` fixture).
+      session.personality = 'reviewer'
       s.deps.sessionStore.save(session)
       let seen: Record<string, unknown> = {}
       sidecar.respond('chat.start', (params, emit) => { seen = params; emit({ event: 'token', data: { text: 'arr' } }); return completed([{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'arr' }]) })
@@ -3007,7 +3008,7 @@ describe('turn context from config.yaml (Python streaming worker)', () => {
       expect(seen.user_message).toBe('hi')
       const ephemeral = String(seen.ephemeral_system_prompt)
       expect(ephemeral).toContain(`- Workspace: ${ws}`)
-      expect(ephemeral.startsWith('Talk like a pirate\nTone: jolly\n\nWebUI session context:')).toBe(true)
+      expect(ephemeral.split('\n\nWebUI session context:')[0]).toBe('You review code tersely.')
       expect(ephemeral).toContain(`- Session ID: ${sid}`)
       expect(ephemeral).toContain('WebUI progress guidance:')
       expect(ephemeral).toContain('**Connected Platforms:** local (files on this machine)')

@@ -1,5 +1,5 @@
-"""``config.*`` and ``models.reasoning_efforts``: a profile's ``config.yaml`` and ``.env``,
-and the Agent's per-model reasoning capability.
+"""``config.*``, ``models.reasoning_efforts`` and ``personalities.list``: a profile's ``config.yaml`` and ``.env``,
+the Agent's per-model reasoning capability, and the personalities the Agent offers for a config.
 
 The TypeScript server owns every config.yaml *policy* (which keys mean what);
 the sidecar only parses and serialises YAML with the Agent's own parser so the
@@ -223,6 +223,16 @@ def reasoning_efforts(model: str, provider: str) -> dict:
     return {"efforts": [str(e) for e in (efforts or [])], "supports_reasoning": supports_reasoning}
 
 
+def personalities(config) -> list[dict]:
+    """TAL-901: ``config``'s personalities as the Agent offers them (``hermes_cli.personality``), with its list preview
+    and rendered prompt."""
+    from hermes_cli.personality import available_personalities, describe_personality, render_personality_prompt
+
+    if not isinstance(config, dict):
+        raise InvalidParams("config must be a mapping")
+    return [{"name": name, "description": describe_personality(value), "prompt": render_personality_prompt(value)} for name, value in available_personalities(config).items()]
+
+
 def register(registry) -> None:
     @registry.method("config.get", requires_agent=False)
     def get(ctx: CallContext, params: dict) -> dict:
@@ -240,3 +250,7 @@ def register(registry) -> None:
     def efforts(ctx: CallContext, params: dict) -> dict:
         with scoped_home(profile_home_param(params)):
             return reasoning_efforts(str(params.get("model") or ""), str(params.get("provider") or ""))
+
+    @registry.method("personalities.list")
+    def personalities_(ctx: CallContext, params: dict) -> dict:
+        return {"personalities": personalities(params.get("config"))}

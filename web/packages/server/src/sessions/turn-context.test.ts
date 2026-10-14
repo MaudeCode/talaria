@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { webuiEphemeralSystemPrompt, workspaceSystemMessage } from './turn-context.js'
 
 describe('workspace in the turn context (TAL-710)', () => {
-  const ephemeral = (workspace: string): string => webuiEphemeralSystemPrompt({ config: {}, personality: null, sessionId: 's1', profile: null, workspace, hermesHome: '/nonexistent', homeDisplay: '~/.hermes' })
+  const ephemeral = (workspace: string): string => webuiEphemeralSystemPrompt({ config: {}, personalityPrompt: null, sessionId: 's1', profile: null, workspace, hermesHome: '/nonexistent', homeDisplay: '~/.hermes' })
 
   it('names a plain workspace path as is', () => {
     expect(ephemeral('/home/u/project')).toContain('\n- Workspace: /home/u/project\n')

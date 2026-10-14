@@ -23,7 +23,7 @@ import { RunJournal, type RunJournalWriter } from './journal.js'
 import { COMPRESSION_RECOVERY_ACTION_START_FOCUSED, COMPRESSION_RECOVERY_TERMINAL_STATE, CONTEXT_USAGE_FIELDS, Session, contextUsage, titleFrom, type Message } from './session.js'
 import { anchorMessageKey, compressionReference, markerSummary, visibleMessagesForAnchor } from './compress.js'
 import { buildActiveTurnToken, completedToolIndex, publicToolFrame, redactNestedMessageContainers, redactSessionData, redactString, withToolId } from '../redact.js'
-import { dict, type Config } from '../config/agent-config.js'
+import { dict, findPersonality, type Config, type PersonalityRow } from '../config/agent-config.js'
 import { ReasoningTitleTracker, reasoningEventPayload } from './reasoning-titles.js'
 import { messageWindowForDisplay, messagesForLimitedPayload, toolCallsForMessageWindow } from './window.js'
 import { UNSETTLED_TODO_KEY, attachTodoState, parseTodoToolResult } from './todo.js'
@@ -88,6 +88,8 @@ export interface TurnRunnerDeps {
   configPath?: (profileHome: string) => string
   /** The profile's config.yaml (turn budgets, reasoning effort, personality, delivery context); null when unavailable. */
   profileConfig?: (profile: string | null) => Promise<Config | null>
+  /** TAL-901: the personalities the profile's Agent offers (`AgentConfig.personalities`). */
+  personalities?: (profile: string | null) => Promise<PersonalityRow[]>
   /** `auto_title_refresh_every`: a generated title follows the latest exchange every N exchanges; 0 turns it off. */
   titleRefreshEvery?: () => number
   env?: Record<string, string | undefined>
@@ -551,6 +553,8 @@ export class TurnRunner {
       // system message carries the frozen session workspace, the WebUI guidance rides as the ephemeral prompt with this
       // turn's workspace (TAL-710: never a tag on the user's message, which the Agent can persist from memory).
       const cfg = (await deps.profileConfig?.(s.profile ?? null)) ?? {}
+      const personality = str(s.personality)
+      const personalities = personality && deps.personalities ? await deps.personalities(s.profile ?? null).catch(() => []) : []
       // The sidecar's per-session YOLO state does not survive its restarts: push the local flag (either way) before
       // the turn so a stale sidecar-side enable cannot auto-approve a session the UI reports as guarded.
       await this.withYoloLock(sessionId, async () => { try { await sidecar.call('approval.set_yolo', { session_id: sessionId, enabled: deps.service().yolo(sessionId).yolo_enabled === true }) } catch { /* the approval path re-asserts it */ } })
@@ -563,7 +567,7 @@ export class TurnRunner {
       }
       const turnContext = {
         system_message: workspaceSystemMessage(str(s.created_workspace) || str(s.workspace)),
-        ephemeral_system_prompt: webuiEphemeralSystemPrompt({ config: cfg, personality: str(s.personality) || null, sessionId, profile: s.profile ?? null, workspace: opts.workspace, hermesHome: deps.profileHome(s.profile), homeDisplay: deps.homeDisplay?.() ?? '~/.hermes', background: turnOrigin(opts.source) === 'background' }),
+        ephemeral_system_prompt: webuiEphemeralSystemPrompt({ config: cfg, personalityPrompt: findPersonality(personalities, personality)?.prompt ?? null, sessionId, profile: s.profile ?? null, workspace: opts.workspace, hermesHome: deps.profileHome(s.profile), homeDisplay: deps.homeDisplay?.() ?? '~/.hermes', background: turnOrigin(opts.source) === 'background' }),
         max_iterations: processWakeupMaxIterations(maxIterationsFromConfig(cfg), opts.source ?? 'webui', deps.env ?? {}),
         max_tokens: maxTokensFromConfig(cfg),
         reasoning_config: reasoningConfigFromConfig(cfg, opts.modelProvider ?? s.model_provider ?? null),
