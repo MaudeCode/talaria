@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A cron run's response no longer shows part of its prompt when the prompt itself contains a Response heading.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
