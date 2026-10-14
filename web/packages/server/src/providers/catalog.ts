@@ -139,8 +139,13 @@ export function stampAuxiliarySelections(aux: { tasks: Dict[]; main: Dict }, cat
   // `HERMES_MODEL`-style override never reaches `aux.main`).
   const mainParsed = parseProviderQualifiedModel(catalog.default_model)
   const main = describe(mainParsed?.[1] ?? catalog.active_provider ?? aux.main.provider, mainParsed?.[0] ?? (catalog.default_model || aux.main.model))
-  const tasks = aux.tasks.map((t) => {
-    if ((str(t.provider).trim() || 'auto') === 'auto' && !str(t.model).trim()) return { ...t, is_auto: true, value_label: main.value_label, provider_label: main.provider_label, selected_option_id: null, in_catalog: true }
+  const isAuto = (route: Dict): boolean => (str(route.provider).trim() || 'auto') === 'auto' && !str(route.model).trim()
+  const tasks = aux.tasks.map(({ effective, ...t }) => {
+    if (isAuto(t)) {
+      // TAL-800: an Auto task that inherits another slot runs on that slot's route, the main model only when it is Auto too.
+      const base = isDict(effective) && !isAuto(effective) ? describe(effective.provider, effective.model) : main
+      return { ...t, is_auto: true, value_label: base.value_label, provider_label: base.provider_label, selected_option_id: null, in_catalog: true }
+    }
     const pinned = describe(t.provider, t.model)
     return { ...t, is_auto: false, value_label: pinned.value_label, provider_label: pinned.provider_label, selected_option_id: pinned.option_id, in_catalog: pinned.option_id !== null }
   })

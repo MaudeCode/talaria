@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Auxiliary model settings now list every slot the Agent has, including Voice chat and tasks added by a profile's plugins.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

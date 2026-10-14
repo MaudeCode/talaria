@@ -99,6 +99,7 @@ SCENARIOS: list[tuple[str, dict]] = [
     ("models.estimate_tokens", {"messages": [{"role": "user", "content": "hello world"}]}),
     ("models.capabilities", {"profile_home": "{home}", "provider": "anthropic", "model": "claude-sonnet-4-5"}),
     ("aux.resolve", {"profile_home": "{home}", "task": "title_generation"}),
+    ("aux.tasks", {"profile_home": "{home}"}),
     ("text.portal_tags", {"profile_home": "{home}"}),
     ("text.image_mode", {"profile_home": "{home}", "provider": "anthropic", "model": "claude-sonnet-4-5"}),
     ("memory.check", {"profile_home": "{home}", "target": "memory", "content": "User prefers tabs\n§\nDeploy box is 10.0.0.5"}),

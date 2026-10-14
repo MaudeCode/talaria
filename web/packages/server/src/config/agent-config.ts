@@ -11,10 +11,12 @@ import { homedir } from 'node:os'
 import { join, resolve as resolvePath } from 'node:path'
 import type { SidecarResult } from '@maudecode/talaria-web-contracts'
 import type { SidecarLike } from '../sidecar/client.js'
-import { PORTAL_PROVIDERS, PROVIDER_ALIASES, PROVIDER_DISPLAY, PROVIDER_MODELS, VALID_REASONING_EFFORTS, AUXILIARY_TASK_CATALOG, AUX_TASK_SLOTS, RETIRED_AUX_TASK_SLOTS } from '../providers/tables.js'
+import { PORTAL_PROVIDERS, PROVIDER_ALIASES, PROVIDER_DISPLAY, PROVIDER_MODELS, VALID_REASONING_EFFORTS, AUXILIARY_TASK_CATALOG, RETIRED_AUX_TASK_SLOTS } from '../providers/tables.js'
 import { str } from '../util.js'
 
 export type SpeedTier = SidecarResult<'models.speed_tiers'>['tiers'][number][number]
+/** One auxiliary slot as the Agent lists it (TAL-800); the static catalog's rows carry no effort or inheritance. */
+export type AuxSlot = Omit<SidecarResult<'aux.tasks'>['tasks'][number], 'reasoning_effort'> & { reasoning_effort: string | null }
 export type Config = Record<string, unknown>
 export type Dict = Record<string, unknown>
 
@@ -120,6 +122,17 @@ export class AgentConfig {
     } catch (error) {
       throw new ConfigUnavailable(`Speed tiers are unavailable: ${String(error)}`)
     }
+  }
+
+  /**
+   * TAL-800: the profile's auxiliary slots as its Agent lists them (plugin tasks included), and the Agent's other
+   * `auxiliary.*` keys. The static catalog only when the Agent cannot list them; `reserved` is then unknown (null).
+   */
+  async auxiliarySlots(profileHome: string): Promise<{ slots: AuxSlot[]; reserved: string[] | null }> {
+    const sidecar = this.deps.sidecar()
+    // A failed listing offers the built-in table only, so a plugin slot is never assignable without the Agent vouching for it.
+    const listed = sidecar ? await sidecar.call('aux.tasks', { profile_home: profileHome }).catch(() => null) : null
+    return listed ? { slots: listed.tasks, reserved: listed.reserved } : { slots: AUXILIARY_TASK_CATALOG.map((slot) => ({ ...slot, inherit_from: null, reasoning_effort: null, effective: null })), reserved: null }
   }
 
   invalidate(profileHome?: string): void {
@@ -451,10 +464,10 @@ export function modelBaseUrl(config: Config, provider: string): string {
   return str(custom?.base_url).trim()
 }
 
-function auxTaskPayload(key: string, entry: unknown, label: string, description: string): Dict {
+function auxTaskPayload(slot: AuxSlot, entry: unknown): Dict {
   const e = dict(entry)
   return {
-    task: key,
+    task: slot.key,
     provider: str(e.provider).trim() || 'auto',
     model: str(e.model).trim(),
     base_url: str(e.base_url).trim(),
@@ -463,18 +476,21 @@ function auxTaskPayload(key: string, entry: unknown, label: string, description:
     max_concurrency: e.max_concurrency ?? '',
     extra_body: isDict(e.extra_body) ? e.extra_body : {},
     api_key_set: Boolean(str(e.api_key).trim()),
-    label,
-    description,
+    label: slot.label,
+    description: slot.description,
+    inherit_from: slot.inherit_from,
+    reasoning_effort: slot.reasoning_effort,
+    effective: slot.effective,
   }
 }
 
-export function auxiliaryModels(config: Config, tiers: SpeedTier[]): { tasks: Dict[]; main: Dict } {
+export function auxiliaryModels(config: Config, tiers: SpeedTier[], slots: AuxSlot[]): { tasks: Dict[]; main: Dict } {
   const modelCfg = modelSection(config)
   const aux = dict(config.auxiliary)
   const mainProvider = str(modelCfg.provider).trim()
   const mainModel = str(modelCfg.default ?? modelCfg.name).trim()
   return {
-    tasks: AUXILIARY_TASK_CATALOG.map((slot) => auxTaskPayload(slot.key, aux[slot.key], slot.label, slot.description)),
+    tasks: slots.map((slot) => auxTaskPayload(slot, aux[slot.key])),
     main: {
       provider: mainProvider,
       model: mainModel,
@@ -501,7 +517,9 @@ function auxiliarySelection(providerRaw: string, modelRaw: string): [string, str
 const isCustomProvider = (provider: unknown): boolean => { const p = str(provider).trim(); return p === 'custom' || p.startsWith('custom:') }
 
 export async function setAuxiliaryModel(store: AgentConfig, home: string, task: string, providerRaw: string, modelRaw: string, advanced: unknown): Promise<{ ok: true; task: string; provider: string; model: string }> {
-  if (task !== '__reset__' && !AUX_TASK_SLOTS.includes(task)) throw new Error(`Unknown auxiliary task slot: '${task}'. Valid: [${AUX_TASK_SLOTS.map((s) => `'${s}'`).join(', ')}]`)
+  const listing = await store.auxiliarySlots(home)
+  const slots = listing.slots.map((slot) => slot.key)
+  if (task !== '__reset__' && !slots.includes(task)) throw new Error(`Unknown auxiliary task slot: '${task}'. Valid: [${slots.map((s) => `'${s}'`).join(', ')}]`)
   const [provider, model] = task === '__reset__' ? ['auto', ''] : auxiliarySelection(providerRaw, modelRaw)
   await store.update(home, (config) => {
     const aux = dict(config.auxiliary)
@@ -509,7 +527,11 @@ export async function setAuxiliaryModel(store: AgentConfig, home: string, task: 
     const autoSlot = (entry: unknown): Dict => { const slot: Dict = { ...dict(entry), provider: 'auto', model: '' }; Reflect.deleteProperty(slot, 'base_url'); return slot }
     if (task === '__reset__') {
       for (const retired of RETIRED_AUX_TASK_SLOTS) Reflect.deleteProperty(aux, retired)
-      for (const slot of AUX_TASK_SLOTS) aux[slot] = autoSlot(aux[slot])
+      // A route block the Agent neither lists nor owns is a disabled or removed plugin's task: Reset All clears it too, so
+      // re-enabling the plugin does not bring back a pin the user reset. Unknown ownership (no listing) leaves it alone.
+      const { reserved } = listing
+      const orphans = reserved ? Object.keys(aux).filter((key) => isDict(aux[key]) && !slots.includes(key) && !reserved.includes(key)) : []
+      for (const slot of [...slots, ...orphans]) aux[slot] = autoSlot(aux[slot])
       config.auxiliary = aux
       return
     }

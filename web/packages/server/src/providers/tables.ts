@@ -14,6 +14,7 @@ export const SELF_HOSTED_PROVIDER_IDS = new Set<string>(["lmstudio", "ollama"])
 export const PORTAL_PROVIDERS = new Set<string>(["actual", "commandcode", "nebius-token-factory", "nous", "nvidia", "opencode-go", "opencode-zen", "router"])
 export const ACCOUNT_USAGE_PROVIDERS = new Set<string>(["anthropic", "openai-codex"])
 export const VALID_REASONING_EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'] as const
+/** Fallback auxiliary slots for an Agent that cannot list its own (`aux.tasks`, TAL-800). */
 export const AUXILIARY_TASK_CATALOG: { key: string; label: string; description: string }[] = [
   { key: 'vision', label: 'Vision', description: 'image/screenshot analysis' },
   { key: 'web_extract', label: 'Web extract', description: 'web page summarization' },
@@ -27,7 +28,6 @@ export const AUXILIARY_TASK_CATALOG: { key: string; label: string; description: 
   { key: 'profile_describer', label: 'Profile describer', description: 'profile summaries' },
   { key: 'triage_specifier', label: 'Triage specifier', description: 'issue/task triage specs' },
 ]
-export const AUX_TASK_SLOTS = AUXILIARY_TASK_CATALOG.map((t) => t.key)
 export const RETIRED_AUX_TASK_SLOTS = ['session_search']
 
 export interface ProviderSetup {

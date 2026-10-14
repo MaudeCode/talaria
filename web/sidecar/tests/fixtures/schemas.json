@@ -3751,6 +3751,86 @@
     ],
     "additionalProperties": false
   },
+  "aux.tasks": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "tasks": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "key": {
+              "type": "string",
+              "minLength": 1
+            },
+            "label": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "inherit_from": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "reasoning_effort": {
+              "type": "string"
+            },
+            "effective": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "provider": {
+                      "type": "string"
+                    },
+                    "model": {
+                      "type": "string"
+                    },
+                    "base_url": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "provider",
+                    "model",
+                    "base_url"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "key",
+            "label",
+            "description",
+            "inherit_from",
+            "reasoning_effort",
+            "effective"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "reserved": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "required": [
+      "tasks",
+      "reserved"
+    ],
+    "additionalProperties": false
+  },
   "aux.resolve": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

@@ -5,7 +5,7 @@ import { createServer } from 'node:net'
 import { createServer as createHttpServer } from 'node:http'
 import { createHash } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { FakeSidecar } from '../sidecar/fake.js'
+import { FakeSidecar, loadSidecarFixtures } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
 import { AccountUsageSnapshotSchema, ProviderQuotaSchema, type SidecarResult } from '@maudecode/talaria-web-contracts'
 import { bootTestServer, type TestServer } from '../test/harness.js'
@@ -630,7 +630,7 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     const body = await json(res)
     const tasks = body.tasks as { task: string; provider: string; model: string }[]
     expect(tasks.find((t) => t.task === 'vision')).toMatchObject({ provider: 'openai', model: 'gpt-4o' })
-    expect(tasks).toHaveLength(11)
+    expect(tasks).toHaveLength(14)
     expect(body.main).toMatchObject({ provider: 'openrouter', model: 'anthropic/claude-opus-4.7', api_key_set: false })
     res = await post(s, '/api/model/set', { scope: 'main', provider: 'anthropic', model: 'claude-sonnet-4-6' })
     expect(await json(res)).toEqual({ ok: true, model: 'claude-sonnet-4-6', provider: 'anthropic' })
@@ -678,7 +678,7 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
 
       // Read: server order, Auto, and a saved model the catalog no longer lists stay explicit.
       let tasks = await read()
-      expect(tasks.map((t) => t.task)).toEqual(['vision', 'web_extract', 'compression', 'approval', 'mcp', 'title_generation', 'skills_hub', 'curator', 'kanban_decomposer', 'profile_describer', 'triage_specifier'])
+      expect(tasks.map((t) => t.task)).toEqual(['vision', 'compression', 'approval', 'mcp', 'title_generation', 'review', 'memory_query_rewrite', 'tts_audio_tags', 'voice_chat', 'skills_hub', 'triage_specifier', 'kanban_decomposer', 'profile_describer', 'curator'])
       expect(tasks.find((t) => t.task === 'title_generation')).toMatchObject({ label: 'Title generation', provider: 'auto', model: '', is_auto: true, value_label: mainOption.label, provider_label: 'Anthropic', selected_option_id: null, in_catalog: true })
       expect(tasks.find((t) => t.task === 'vision')).toMatchObject({ is_auto: false, value_label: 'legacy/gone-model', provider_label: 'OpenRouter', selected_option_id: null, in_catalog: false })
       // Auto names the effective main model, including an environment override the config section does not hold.
@@ -700,7 +700,7 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
       const title = tasksOf(dictOf(body.auxiliary)).find((t) => t.task === 'title_generation')
       expect(title).toMatchObject({ is_auto: false, value_label: betaOption.label, provider_label: beta.provider, selected_option_id: betaOption.id, in_catalog: true })
       expect((configs.get(s.state)?.auxiliary as Json).title_generation).toEqual({ provider: 'custom:beta', model: 'llama3', base_url: 'http://beta.test/v1' })
-      // The other ten slots and the main model are untouched.
+      // The other slots and the main model are untouched.
       tasks = await read()
       expect(tasks.filter((t) => t.task !== 'title_generation' && t.task !== 'vision').every((t) => t.is_auto)).toBe(true)
       expect(tasks.find((t) => t.task === 'vision')).toMatchObject({ provider: 'openrouter', model: 'legacy/gone-model' })
@@ -742,6 +742,69 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
       expect(tasksOf(dictOf(body.auxiliary)).every((t) => t.is_auto)).toBe(true)
       expect(configs.get(s.state)?.model).toEqual({ default: 'claude-sonnet-4-6', provider: 'anthropic' })
     } finally {
+      sidecar.respond('profiles.list', () => ({ profiles: [{ name: 'default', path: s.state, is_default: true, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 }] }))
+      s.deps.profiles.invalidate()
+      configs.delete(profileHome)
+      if (saved) reset(saved)
+    }
+  })
+
+  it("auxiliary slots are the Agent's: voice_chat, profile plugin tasks, inherited values, and the static fallback (TAL-800)", async () => {
+    const saved = configs.get(s.state)
+    const reset = (config: Json): void => { configs.set(s.state, config); s.deps.agentConfig.invalidate(); s.deps.catalog.invalidate() }
+    interface Task { task: string; label: string; provider: string; model: string; is_auto: boolean; value_label: string | null; inherit_from: string | null; reasoning_effort: string | null }
+    const read = async (headers: Record<string, string> = {}): Promise<Task[]> => (await json(await s.get('/api/model/auxiliary', { headers }))).tasks as Task[]
+    const task = async (key: string, headers: Record<string, string> = {}): Promise<Task | undefined> => (await read(headers)).find((t) => t.task === key)
+    const profileHome = join(s.state, 'profiles', 'plugless')
+    reset({ model: { default: 'claude-sonnet-4-6', provider: 'anthropic' }, auxiliary: { compression: { provider: 'anthropic', model: 'claude-opus-4-7' } } })
+    try {
+      // The recorded Agent listing: voice_chat ships with reasoning off and is assignable.
+      expect(await task('voice_chat')).toMatchObject({ label: 'Voice chat', is_auto: true, inherit_from: null, reasoning_effort: 'none' })
+      let res = await post(s, '/api/model/set', { scope: 'auxiliary', task: 'voice_chat', provider: 'anthropic', model: 'claude-opus-4-7' })
+      expect(res.status).toBe(200)
+      expect((configs.get(s.state)?.auxiliary as Json).voice_chat).toEqual({ provider: 'anthropic', model: 'claude-opus-4-7' })
+
+      // A plugin task exists only in the profile whose Agent lists it; while Auto it shows its base slot's model.
+      const { tasks: builtins, reserved } = loadSidecarFixtures().get('aux.tasks')![0]!.result as SidecarResult<'aux.tasks'>
+      expect(reserved).toContain('goal_judge')
+      const sideTask = { key: 'side_task', label: 'Side model', description: 'side summaries', inherit_from: 'compression', reasoning_effort: '', effective: { provider: 'anthropic', model: 'claude-opus-4-7', base_url: '' } }
+      sidecar.respond('aux.tasks', (params) => ({ tasks: params.profile_home === s.state ? [...builtins, sideTask] : builtins, reserved }))
+      const opus = (await json(await s.get('/api/models'))).groups as { provider_id: string; models: { id: string; label: string }[] }[]
+      const opusLabel = opus.find((g) => g.provider_id === 'anthropic')!.models.find((m) => m.id.endsWith('claude-opus-4-7'))!.label
+      expect(await task('side_task')).toMatchObject({ label: 'Side model', provider: 'auto', is_auto: true, inherit_from: 'compression', value_label: opusLabel })
+      res = await post(s, '/api/model/set', { scope: 'auxiliary', task: 'side_task', provider: 'anthropic', model: 'claude-sonnet-4-6' })
+      expect(res.status).toBe(200)
+      expect(((dictOf((await json(res)).auxiliary).tasks ?? []) as Task[]).find((t) => t.task === 'side_task')).toMatchObject({ is_auto: false, model: 'claude-sonnet-4-6' })
+      // Reset All also clears a disabled plugin's leftover pin, never the Agent's own unlisted routes or settings.
+      const pinned = { provider: 'anthropic', model: 'claude-opus-4-7' }
+      reset({ ...configs.get(s.state), auxiliary: { ...dictOf(configs.get(s.state)?.auxiliary), gone_task: pinned, goal_judge: pinned, free_only: true } })
+      res = await post(s, '/api/model/set', { scope: 'auxiliary', task: '__reset__', provider: 'auto', model: '' })
+      expect(configs.get(s.state)?.auxiliary).toMatchObject({ side_task: { provider: 'auto', model: '' }, gone_task: { provider: 'auto', model: '' }, goal_judge: pinned, free_only: true })
+      expect(await task('side_task')).toMatchObject({ is_auto: true, value_label: opusLabel })
+
+      mkdirSync(profileHome, { recursive: true })
+      writeFileSync(join(profileHome, 'config.yaml'), '# seed\n')
+      configs.set(profileHome, { model: { default: 'claude-sonnet-4-6', provider: 'anthropic' } })
+      sidecar.respond('profiles.list', () => ({ profiles: [{ name: 'default', path: s.state, is_default: true, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 }, { name: 'plugless', path: profileHome, is_default: false, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 }] }))
+      s.deps.profiles.invalidate()
+      const cookie = ((await post(s, '/api/profile/switch', { name: 'plugless' })).headers.get('set-cookie') ?? '').split(';')[0] ?? ''
+      expect(await task('side_task', { cookie })).toBeUndefined()
+      res = await post(s, '/api/model/set', { scope: 'auxiliary', task: 'side_task', provider: 'anthropic', model: 'claude-sonnet-4-6' }, { cookie })
+      expect(res.status).toBe(400)
+      expect(configs.get(profileHome)?.auxiliary).toBeUndefined()
+
+      // An Agent that cannot list its slots gets the static built-ins, and nothing else is assignable.
+      sidecar.respond('aux.tasks', () => { throw new SidecarError('no slot list', { condition: 'sidecar_error' }) })
+      const fallback = await read()
+      expect(fallback).toHaveLength(11)
+      expect(fallback.find((t) => t.task === 'vision')).toMatchObject({ inherit_from: null, reasoning_effort: null })
+      expect((await post(s, '/api/model/set', { scope: 'auxiliary', task: 'side_task', provider: 'anthropic', model: 'claude-sonnet-4-6' })).status).toBe(400)
+      // Without the Agent's word on which keys it owns, Reset All leaves every unlisted block alone.
+      reset({ ...configs.get(s.state), auxiliary: { ...dictOf(configs.get(s.state)?.auxiliary), gone_task: pinned } })
+      expect((await post(s, '/api/model/set', { scope: 'auxiliary', task: '__reset__', provider: 'auto', model: '' })).status).toBe(200)
+      expect((configs.get(s.state)?.auxiliary as Json).gone_task).toEqual(pinned)
+    } finally {
+      sidecar.respond('aux.tasks', undefined)
       sidecar.respond('profiles.list', () => ({ profiles: [{ name: 'default', path: s.state, is_default: true, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 }] }))
       s.deps.profiles.invalidate()
       configs.delete(profileHome)
@@ -1475,7 +1538,7 @@ describe('Agent speed tiers (TAL-788)', () => {
       expect(read.status).toBe(200)
       const auxiliary = await json(read)
       expect(auxiliary.main).toMatchObject({ model: 'gpt-6-astra', supported_speed_tiers: [] })
-      expect(auxiliary.tasks).toHaveLength(11)
+      expect(auxiliary.tasks).toHaveLength(14)
       const res = await post(server, '/api/model/set', { scope: 'main', model: 'gpt-6-astra', provider: 'openai-codex' })
       expect(res.status).toBe(503)
       expect(saved.get(server.state)).toEqual(before)

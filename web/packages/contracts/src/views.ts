@@ -627,6 +627,10 @@ export const AuxiliaryTaskSchema = z.looseObject({
   selected_option_id: z.string().nullable(),
   /** False only for a pinned model the current catalog does not list; it stays visible and editable. */
   in_catalog: z.boolean(),
+  /** TAL-800: the slot a plugin task inherits its route from; while the task is Auto, `value_label` names that slot's model. */
+  inherit_from: z.string().nullable(),
+  /** TAL-800: the reasoning effort the slot runs with (the Agent's default until one is saved; `''` = provider default); null when the Agent does not report its slots. */
+  reasoning_effort: z.string().nullable(),
 })
 export const AuxiliaryModelsSchema = z.looseObject({ main: z.looseObject({ model: z.string().optional(), provider: z.string().optional(), base_url: z.string().optional(), api_key_set: z.boolean().optional(), service_tier: z.enum(['', 'default', 'priority', 'ultrafast']).optional().describe('Empty string is the Standard value returned by older servers.'), supported_speed_tiers: z.array(SpeedTierSchema).optional() }), tasks: z.array(AuxiliaryTaskSchema) })
 export const MaxTokensSchema = z.looseObject({ max_tokens: NullableNumber, max_tokens_effective: NullableNumber, max_tokens_fallback: NullableNumber })
