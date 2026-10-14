@@ -14,6 +14,8 @@ final class VaultPromptSheetHostedTests: XCTestCase {
         XCTAssertNotNil(HostedAccessibility.element(in: window, label: "Unlock Bitwarden"), "\(HostedAccessibility.labels(in: window))")
         let fields = textFields(in: window)
         XCTAssertEqual(fields.map(\.isSecureTextEntry), [true])
+        // Relay fields never ask AutoFill for the credentials iOS keeps for Talaria itself.
+        XCTAssertEqual(fields.map(\.textContentType), [nil])
         let submit = try XCTUnwrap(HostedAccessibility.element(in: window, label: "Unlock"), "\(HostedAccessibility.labels(in: window))")
         XCTAssertTrue(submit.accessibilityTraits.contains(.notEnabled), "Nothing typed, nothing to send")
 
@@ -30,6 +32,7 @@ final class VaultPromptSheetHostedTests: XCTestCase {
         XCTAssertNotNil(HostedAccessibility.element(in: window, label: "login.example.com"))
         let fields = textFields(in: window)
         XCTAssertEqual(fields.map(\.isSecureTextEntry), [false, true])
+        XCTAssertEqual(fields.map(\.textContentType), [nil, nil])
         type("me@example.com", into: fields[0])
         type("s3cret", into: fields[1])
         HostedAccessibility.activate(try XCTUnwrap(HostedAccessibility.element(in: window, label: "Save")))
@@ -44,6 +47,8 @@ final class VaultPromptSheetHostedTests: XCTestCase {
         let fields = textFields(in: window)
         XCTAssertEqual(fields.map(\.isSecureTextEntry), [false])
         XCTAssertEqual(fields.first?.textContentType, .oneTimeCode)
+        // Codes can have letters.
+        XCTAssertEqual(fields.first?.keyboardType, .asciiCapable)
         type("4815", into: fields[0])
         HostedAccessibility.activate(try XCTUnwrap(HostedAccessibility.element(in: window, label: "Skip")))
         XCTAssertEqual(responses, [nil])

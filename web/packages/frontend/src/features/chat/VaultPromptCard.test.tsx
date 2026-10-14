@@ -50,6 +50,8 @@ describe('password-manager prompts (TAL-887)', () => {
     expect(screen.getByText('120s')).toBeTruthy()
     const input = screen.getByLabelText('Master password')
     expect(input.getAttribute('type')).toBe('password')
+    // Relay fields never ask for the credentials the browser keeps for Talaria itself.
+    expect(input.getAttribute('autocomplete')).toBe('off')
     const unlock = screen.getByRole('button', { name: 'Unlock' })
     expect((unlock as HTMLButtonElement).disabled).toBe(true)
     await userEvent.type(input, 'correct horse')
@@ -64,6 +66,7 @@ describe('password-manager prompts (TAL-887)', () => {
     expect(await screen.findByRole('dialog', { name: 'Save login for login.example.com' })).toBeTruthy()
     expect(screen.getByLabelText('Email or username').getAttribute('type')).toBe('text')
     expect(screen.getByLabelText('Password').getAttribute('type')).toBe('password')
+    expect(['Email or username', 'Password'].map((label) => screen.getByLabelText(label).getAttribute('autocomplete'))).toEqual(['off', 'off'])
     await userEvent.type(screen.getByLabelText('Email or username'), 'me@example.com')
     await userEvent.type(screen.getByLabelText('Password'), 's3cret')
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
@@ -76,6 +79,8 @@ describe('password-manager prompts (TAL-887)', () => {
     const code = screen.getByLabelText('Code')
     expect(code.getAttribute('type')).toBe('text')
     expect(code.getAttribute('autocomplete')).toBe('one-time-code')
+    // Codes can have letters: no numeric-only keyboard.
+    expect(code.getAttribute('inputmode')).toBeNull()
     await userEvent.type(code, '4815')
     await userEvent.click(screen.getByRole('button', { name: 'Skip' }))
     expect(api.respondClarify).toHaveBeenCalledWith({ session_id: 's1', clarify_id: 'contract-vault-code', decline: true })

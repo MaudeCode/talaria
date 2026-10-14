@@ -26,7 +26,9 @@ const HEADING: Record<VaultPrompt['kind'], (vault: VaultPrompt) => string> = {
 }
 const SUBMIT: Record<VaultPrompt['kind'], () => string> = { vault_unlock: m.vault_unlock_submit, vault_save_login: m.vault_save_login_submit, vault_code: m.vault_code_submit }
 const LABEL: Record<VaultPromptField['key'], () => string> = { master_password: m.vault_field_master_password, identifier: m.vault_field_identifier, password: m.vault_field_password, code: m.vault_field_code }
-const AUTOCOMPLETE: Record<VaultPromptField['key'], string> = { master_password: 'current-password', identifier: 'username', password: 'current-password', code: 'one-time-code' }
+// The answers are for another site or a password manager, never Talaria's own login: ask the browser and password
+// managers for nothing they keep for this origin. A one-time code may be read from the message the site sent.
+const AUTOCOMPLETE: Record<VaultPromptField['key'], string> = { master_password: 'off', identifier: 'off', password: 'off', code: 'one-time-code' }
 
 /**
  * The Agent asks for a master password, a login to save, or a one-time code. The answer goes to the server once and
@@ -80,7 +82,9 @@ export function VaultPromptCard({ sessionId, clarifyId, vault }: { sessionId: st
                 type={field.secure ? 'password' : 'text'}
                 name={field.key}
                 autoComplete={AUTOCOMPLETE[field.key]}
-                {...(field.key === 'code' ? { inputMode: 'numeric' as const } : {})}
+                data-1p-ignore=""
+              data-lpignore="true"
+              data-bwignore=""
                 spellCheck={false}
                 autoCapitalize="off"
                 autoFocus={i === 0}

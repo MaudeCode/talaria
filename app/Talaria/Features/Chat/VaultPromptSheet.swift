@@ -66,13 +66,15 @@ struct VaultPromptSheet: View {
     private func input(_ field: VaultPrompt.Field) -> some View {
         let text = Binding(get: { values[field.key] ?? "" }, set: { values[field.key] = $0 })
         Group {
+            // The answers are for another site or a password manager: AutoFill offers nothing iOS keeps for Talaria
+            // itself, only a code read from the message the site sent. Codes can have letters.
             if field.secure {
                 SecureField(label(field.key), text: text)
-                    .textContentType(.password)
+                    .textContentType(nil)
             } else {
                 TextField(label(field.key), text: text)
-                    .textContentType(field.key == .code ? .oneTimeCode : .username)
-                    .keyboardType(field.key == .code ? .numberPad : .emailAddress)
+                    .textContentType(field.key == .code ? .oneTimeCode : nil)
+                    .keyboardType(field.key == .code ? .asciiCapable : .emailAddress)
             }
         }
         .textInputAutocapitalization(.never)
