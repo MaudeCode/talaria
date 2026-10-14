@@ -720,12 +720,15 @@ export const toolsRouter = os.router({
     // One load per profile at a time: a record start during a running load joins it rather than holding another sidecar slot.
     if (sidecar && !warmingHomes.has(profileHome)) {
       warmingHomes.add(profileHome)
+      // The load outlives this request's write lease: it is the profile's activity until it settles, so the profile
+      // cannot be deleted under it. Taken while the request's lease still refuses a deletion in progress.
+      const release = ctx.deps.profileActivity(activeProfileName(ctx))
       // A first use downloads the model, and the Agent's load cannot be cancelled, so the call has no deadline: the entry
       // lives exactly as long as the sidecar worker (a sidecar exit rejects it). Nobody waits on it.
       void sidecar.call('stt.warm', { profile_home: profileHome }, { timeoutMs: 0 })
         .then((result) => { if (result.action === 'error') ctx.deps.log(`[stt] warm-up failed (${result.provider}): ${str(result.error)}`) })
         .catch((error: unknown) => { ctx.deps.log(`[stt] warm-up failed: ${str((error as Error).message)}`) })
-        .finally(() => { warmingHomes.delete(profileHome) })
+        .finally(() => { warmingHomes.delete(profileHome); release() })
     }
     return { ok: true as const }
   })),

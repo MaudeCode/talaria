@@ -834,6 +834,29 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     expect(await json(await post(s, '/api/profile/delete', { name: 'memo' }, asWork()))).toEqual({ ok: true, name: 'memo' })
   })
 
+  it('a background STT warm-up counts as profile activity, so the profile cannot be deleted under the load (TAL-916)', async () => {
+    mkdirSync(join(s.state, 'profiles', 'warmth'), { recursive: true })
+    writeFileSync(join(s.state, 'profiles', 'warmth', 'config.yaml'), '# seed\n')
+    s.deps.profiles.invalidate()
+    const switched = await post(s, '/api/profile/switch', { name: 'warmth' })
+    const cookie = (switched.headers.get('set-cookie') ?? '').split(';')[0] ?? ''
+    let finishWarm: () => void = () => undefined
+    sidecar.respond('stt.warm', () => new Promise((resolve) => { finishWarm = () => { resolve({ provider: 'local', warmed: true, action: 'loaded' }) } }))
+    try {
+      // The route answers at once; the load it started keeps running against the profile's home.
+      expect(await json(await post(s, '/api/transcribe/warm', {}, { cookie }))).toEqual({ ok: true })
+      expect(sidecar.calls.filter((c) => c.method === 'stt.warm').at(-1)?.params).toEqual({ profile_home: join(s.state, 'profiles', 'warmth') })
+      sidecar.respond('profiles.delete', (params) => { rmSync(join(s.state, 'profiles', params.name), { recursive: true, force: true }); return { ok: true } })
+      const refused = await post(s, '/api/profile/delete', { name: 'warmth' }, asWork())
+      expect(refused.status).toBe(409)
+    } finally {
+      finishWarm()
+      sidecar.respond('stt.warm', undefined)
+    }
+    await new Promise((r) => setTimeout(r, 50))
+    expect(await json(await post(s, '/api/profile/delete', { name: 'warmth' }, asWork()))).toEqual({ ok: true, name: 'warmth' })
+  })
+
   it('deletion re-checks profile activity after draining writers, so a commit started by a draining request still blocks it', async () => {
     mkdirSync(join(s.state, 'profiles', 'memo2'), { recursive: true })
     writeFileSync(join(s.state, 'profiles', 'memo2', 'config.yaml'), '# seed\n')

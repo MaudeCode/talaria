@@ -665,6 +665,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     cspLimiter: new WindowLimiter(60, 100, now),
     clientEventLimiter: new WindowLimiter(60, 30, now),
     ttsLimiter: new WindowLimiter(2, 1, now),
+    profileActivity,
     fetch: opts.fetch ?? fetch,
     dnsLookup: systemDnsLookup,
     pinnedFetch,

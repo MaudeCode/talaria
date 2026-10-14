@@ -170,6 +170,8 @@ export interface AppDeps {
   cspLimiter: WindowLimiter
   clientEventLimiter: WindowLimiter
   ttsLimiter: WindowLimiter
+  /** Detached sidecar work for a profile (`null` = root): profile deletion is refused until the returned release runs. */
+  profileActivity: (profile: string | null) => () => void
   fetch: typeof fetch
   /** Vetted outbound (`http/pinned.ts`): DNS answers are checked and the connection is pinned to them. */
   dnsLookup: DnsLookup
