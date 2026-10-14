@@ -1043,8 +1043,12 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             if not text:
                 return
             ttl_ms = getattr(notice, "ttl_ms", None)
-            emit("notice", {"id": getattr(notice, "id", None), "key": getattr(notice, "key", None), "level": str(getattr(notice, "level", "") or "info"),
-                            "kind": str(getattr(notice, "kind", "") or "sticky"), "ttl_ms": ttl_ms if isinstance(ttl_ms, int) else None, "text": text})
+            key = getattr(notice, "key", None)
+            # The Agent raises a startup warning (memory provider unavailable) once per process, so a rebuilt agent never
+            # repeats it: it outlives the agent that raised it. Credit notices are per agent and re-raised by the next one.
+            emit("notice", {"id": getattr(notice, "id", None), "key": key, "level": str(getattr(notice, "level", "") or "info"),
+                            "kind": str(getattr(notice, "kind", "") or "sticky"), "ttl_ms": ttl_ms if isinstance(ttl_ms, int) else None, "text": text,
+                            "lapses_with_agent": not str(key or "").startswith("startup-warning.")})
 
         def on_notice_clear(key):
             if key:
@@ -1178,7 +1182,7 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             if session_db is not None:
                 kwargs["session_db"] = session_db
                 kwargs["session_id"] = _execution_session_id(session_db, session_id)
-            # TAL-803: the notices a replaced agent raised are not this one's to clear; it raises its own from here.
+            # TAL-803: the notices a replaced agent raised lapse with it (``lapses_with_agent``); this one raises its own.
             emit("notices_reset", {})
             try:
                 agent = AIAgent(**kwargs)

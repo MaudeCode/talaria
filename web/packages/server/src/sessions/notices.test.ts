@@ -14,8 +14,9 @@ describe('SessionNotices (TAL-803)', () => {
     now = 1005
     expect(notices.list('s1').map((n) => n.key)).toEqual(['mem'])
     expect(notices.list('s2')).toEqual([])
+    notices.add('s1', { key: 'startup-warning.1', level: 'warn', kind: 'sticky', text: 'Memory is off', lapses_with_agent: false })
     expect(notices.reset('s1')).toBe(true)
-    expect(notices.list('s1')).toEqual([])
+    expect(notices.list('s1').map((n) => n.key)).toEqual(['startup-warning.1'])
     expect(notices.reset('s1')).toBe(false)
   })
 

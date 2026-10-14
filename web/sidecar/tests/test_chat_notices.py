@@ -47,7 +47,7 @@ def test_a_startup_warning_reaches_the_server_once_per_agent_and_its_clear_follo
     monkeypatch.setattr(chat, "_agent_class", lambda: StartupWarningAgent)
     first = Ctx()
     assert chat.start(first, _params("st-1"))["status"] == "completed"
-    notice = {"id": WARNING.id, "key": WARNING.key, "level": "warn", "kind": "sticky", "ttl_ms": None, "text": WARNING.text}
+    notice = {"id": WARNING.id, "key": WARNING.key, "level": "warn", "kind": "sticky", "ttl_ms": None, "text": WARNING.text, "lapses_with_agent": False}
     # A new agent first lapses whatever the agent it replaces raised.
     assert [(event, data) for event, data in first.frames if event.startswith("notice")] == [("notices_reset", {}), ("notice", notice)]
     # The cached agent's next turn raises nothing new; its callbacks now point at this turn's stream.

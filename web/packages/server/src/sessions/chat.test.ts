@@ -86,11 +86,13 @@ describe('chat turns through the sidecar', () => {
     frames = await turn('fourth', [{ event: 'notice_clear', data: { key: warning.key } }])
     expect(frames.filter((f) => f.event === 'notices').map((f) => f.data)).toEqual([{ session_id: sid, notices: [] }])
     expect(await detailNotices()).toEqual([])
-    // A rebuilt agent that no longer warns (the provider loads now) lapses what the replaced agent raised.
-    await turn('fifth', [{ event: 'notice', data: warning }])
+    // A rebuilt agent lapses the credit notice the replaced one raised; the Agent never repeats a startup warning in
+    // the same process, so that one stays.
+    const credits = { id: 'credits.usage_band', key: 'credits.usage_band', level: 'info', kind: 'sticky', ttl_ms: null, text: 'Usage at 90%', lapses_with_agent: true }
+    await turn('fifth', [{ event: 'notice', data: { ...warning, lapses_with_agent: false } }, { event: 'notice', data: credits }])
     frames = await turn('sixth', [{ event: 'notices_reset', data: {} }])
-    expect(frames.filter((f) => f.event === 'notices').map((f) => f.data)).toEqual([{ session_id: sid, notices: [] }])
-    expect(await detailNotices()).toEqual([])
+    expect(frames.filter((f) => f.event === 'notices').map((f) => f.data)).toEqual([{ session_id: sid, notices: shown }])
+    expect(await detailNotices()).toEqual(shown)
   })
 
   it('drops a TTL notice when it expires and tells the running turn (TAL-803)', async () => {
