@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "When the free model is busy or a provider's rate limit reports its reset, the status above the composer names the provider and when the wait ends, so you can wait it out or stop and switch models.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

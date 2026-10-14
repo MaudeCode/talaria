@@ -15,7 +15,7 @@
  */
 import type { ChatEvent } from '../contracts/sse'
 import type { ApprovalPending, ClarifyPending, Session } from '../contracts'
-import type { PendingSteer, ToolKind, ToolResultView } from '@maudecode/talaria-web-contracts'
+import type { PendingSteer, RateLimitWait, ToolKind, ToolResultView } from '@maudecode/talaria-web-contracts'
 
 export type TurnStatus = 'starting' | 'connecting' | 'streaming' | 'reconnecting' | 'done' | 'error' | 'cancelled'
 
@@ -77,6 +77,8 @@ export interface LiveTurn {
   /** Steers already taken or withdrawn: a replayed frame or a stale session never brings one back. */
   closedSteerIds: string[]
   compression: { state: 'compressing' | 'compressed'; newSessionId: string | null } | null
+  /** TAL-821: the server's rate-limit wait while the Agent sits one out. */
+  rateLimitWait: RateLimitWait | null
   title: string | null
   doneSession: Session | null
   terminalState?: string | undefined
@@ -133,7 +135,7 @@ function newTurn(sessionId: string, streamId: string, now: number, serverStarted
     sessionId, streamId, turnId: null, userMessageId: null, userText: '', startedAt: runStart(serverStartedAt, now, now), status: 'starting',
     segments: [], tools: {}, toolOrder: [], reasoningText: '', reasoningTitles: [], lastEventId: '', lastSeq: 0,
     usage: null, tps: null, contextStatus: null, warning: null, error: null, cancelledMessage: null, approval: null, clarify: null,
-    pendingSteers: [], closedSteerIds: [], compression: null, title: null, doneSession: null, doneAt: null, streamEnded: false, goal: null, replayed: false, claimsPersistedRows: true,
+    pendingSteers: [], closedSteerIds: [], compression: null, rateLimitWait: null, title: null, doneSession: null, doneAt: null, streamEnded: false, goal: null, replayed: false, claimsPersistedRows: true,
   }
 }
 
@@ -246,6 +248,8 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
       return { ...stamped, compression: { state: 'compressing', newSessionId: event.data.new_session_id ?? event.data.continuation_session_id ?? null } }
     case 'compressed':
       return { ...stamped, compression: { state: 'compressed', newSessionId: event.data.new_session_id ?? event.data.continuation_session_id ?? null } }
+    case 'rate_limit_wait':
+      return { ...stamped, rateLimitWait: event.data.wait }
     case 'title':
     case 'title_status':
       return event.data.title ? { ...stamped, title: event.data.title } : stamped

@@ -43,12 +43,19 @@ const TodoState = TodoStateSchema.extend({ stream_id: z.string().optional() })
 const BgTask = z.looseObject({ session_id: z.string().optional(), task_id: z.string().optional(), id: z.string().optional(), title: z.string().optional(), status: z.string().optional(), summary: z.string().optional(), error: z.string().optional() })
 const ServerTurn = z.looseObject({ session_id: z.string().optional(), stream_id: z.string().optional(), turn_id: z.string().optional(), user_message_id: z.union([z.string(), z.number()]).optional() })
 const Loose = z.looseObject({})
+/**
+ * TAL-821: the Agent is sitting out a provider's rate limit. `until` (epoch seconds) is when the limit resets
+ * (`until_kind: 'reset'`) or, when the provider named no reset, when the Agent retries (`'retry'`); `provider_label` is the
+ * provider's display name. `wait: null` ends it (the Agent retried or streamed), as does the turn's terminal frame.
+ */
+export const RateLimitWaitSchema = z.object({ provider: z.string().nullable(), provider_label: z.string().nullable(), until: z.number(), until_kind: z.enum(['reset', 'retry']) })
+export type RateLimitWait = z.infer<typeof RateLimitWaitSchema>
 
 export const CHAT_EVENT_NAMES = [
   'token', 'reasoning', 'tool', 'tool_complete', 'interim_assistant', 'approval', 'approval_cleared', 'clarify', 'compressing', 'compressed',
   'title', 'title_status', 'warning', 'apperror', 'cancel', 'error', 'done', 'stream_end', 'metering', 'context_status',
   'goal', 'goal_continue', 'steer_consumed', 'steer_pending', 'steer_withdrawn', 'state_saved', 'todo_state', 'bg_task_complete',
-  'server_turn_started', 'notices', 'session_goal', 'hello', 'initial', 'events', 'gateway_status', 'sessions_changed',
+  'server_turn_started', 'notices', 'session_goal', 'rate_limit_wait', 'hello', 'initial', 'events', 'gateway_status', 'sessions_changed',
 ] as const
 export type ChatEventName = (typeof CHAT_EVENT_NAMES)[number]
 
@@ -88,6 +95,7 @@ export const ChatEventSchema = z.discriminatedUnion('event', [
   z.object({ event: z.literal('notices'), data: z.looseObject({ session_id: z.string().optional(), notices: z.array(SessionNoticeSchema) }) }),
   /** TAL-808: the session's standing goal changed; `goal` replaces the session's `goal`. */
   z.object({ event: z.literal('session_goal'), data: z.looseObject({ session_id: z.string().optional(), goal: SessionGoalSchema.nullable() }) }),
+  z.object({ event: z.literal('rate_limit_wait'), data: z.looseObject({ session_id: z.string().optional(), wait: RateLimitWaitSchema.nullable() }) }),
   z.object({ event: z.literal('hello'), data: Loose }),
   z.object({ event: z.literal('initial'), data: Loose }),
   z.object({ event: z.literal('events'), data: Loose }),

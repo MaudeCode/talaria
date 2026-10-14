@@ -42,12 +42,15 @@ import type { WorkspaceRegistry } from '../workspace/workspaces.js'
 import { str } from '../util.js'
 import { toolEditDiff } from './tool-display.js'
 import { recordWakeupPause } from './wakeup-pause.js'
+import { displayName } from '../providers/catalog.js'
 
 export const CHAT_LOCK_WAIT_SECONDS = 2
 const IMAGE_MODE_TIMEOUT_MS = 15_000
 const TERMINAL_SSE_VISIBLE_MESSAGE_LIMIT = 80
 /** TAL-397: streamed text reports the live meter at most this often (seconds); a counter change reports at once. */
 const METERING_INTERVAL_S = 1
+/** TAL-821: the Agent's content frames, which end a rate-limit wait (it got an answer). A terminal frame ends the run and its wait. */
+const RATE_LIMIT_WAIT_ENDS = new Set(['token', 'reasoning', 'interim_assistant', 'tool', 'tool_complete'])
 /** How long a user's message waits for a stopped background turn to unwind before its own turn is admitted. */
 const BACKGROUND_UNWIND_WAIT_MS = 30_000
 
@@ -91,6 +94,8 @@ export interface TurnRunnerDeps {
   profileConfig?: (profile: string | null) => Promise<Config | null>
   /** TAL-901: the personalities the profile's Agent offers (`AgentConfig.agentPersonalities`); throws when it cannot list them. */
   personalities?: (profile: string | null) => Promise<PersonalityRow[]>
+  /** TAL-821: a provider's name as the profile's model catalog lists it (`ProviderCatalog.providerLabel`). */
+  providerLabel?: (profile: string | null, provider: string) => string
   /** `auto_title_refresh_every`: a generated title follows the latest exchange every N exchanges; 0 turns it off. */
   titleRefreshEvery?: () => number
   env?: Record<string, string | undefined>
@@ -495,7 +500,13 @@ export class TurnRunner {
       deps.log(`[webui] WARNING: run journal degraded for stream ${streamId}: ${(error as Error).message}`)
     }
     const failure: TurnFailure = { apperror: null, cancelled: false }
+    // TAL-821: whether the run's rate-limit wait is showing; the next content frame clears it.
+    let rateLimitWait = false
     const put = (event: string, data: Record<string, unknown>, meta: { redacted?: boolean } = {}): void => {
+      if (rateLimitWait && RATE_LIMIT_WAIT_ENDS.has(event)) {
+        rateLimitWait = false
+        put('rate_limit_wait', { session_id: sessionId, wait: null })
+      }
       if (event === 'apperror') failure.apperror = data
       else if (event === 'cancel') failure.cancelled = true
       for (const steerEvent of this.takeSteerEventsBefore(streamId, event)) put(steerEvent[0], steerEvent[1])
@@ -734,6 +745,15 @@ export class TurnRunner {
             case 'clarify_resolved': {
               const { head } = deps.pending.resolveClarify(sessionId, str(data.clarify_id))
               if (head) put('clarify', head)
+              return
+            }
+            // TAL-821: the Agent sits out a provider's rate limit (`until`, epoch seconds: its reset, else the Agent's retry).
+            case 'rate_limit_wait': {
+              const until = typeof data.until === 'number' ? data.until : null
+              if (until === null && !rateLimitWait) return
+              rateLimitWait = until !== null
+              const provider = str(data.provider) || null
+              put('rate_limit_wait', { session_id: sessionId, wait: until === null ? null : { provider, provider_label: provider && (deps.providerLabel?.(s.profile ?? null, provider) ?? displayName(provider)), until, until_kind: data.until_kind === 'reset' ? 'reset' : 'retry' } })
               return
             }
             case 'status':
