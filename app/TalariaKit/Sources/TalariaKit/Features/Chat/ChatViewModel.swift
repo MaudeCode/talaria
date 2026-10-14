@@ -3048,15 +3048,7 @@ public final class ChatViewModel {
     /// notice; no chat turn starts.
     func executeServerCommand(_ text: String) async -> SlashCommandExecutionResult {
         do {
-            let output = try await client.execCommand(text, sessionID: sessionID)
-                .output?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            if !output.isEmpty {
-                if activeStreamID == nil {
-                    appendLocalNoticeMessage(output)
-                } else {
-                    pinLocalNoticeMessage(output)
-                }
-            }
+            showNotice(try await client.execCommand(text, sessionID: sessionID).output ?? "")
             return .executed(message: nil)
         } catch {
             lastError = error

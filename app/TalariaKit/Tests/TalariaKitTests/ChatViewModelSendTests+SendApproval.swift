@@ -517,8 +517,9 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(requestedPaths, ["/api/commands/exec"])
         XCTAssertEqual(execBody?["command"] as? String, "/refine testing habits")
         XCTAssertEqual(execBody?["session_id"] as? String, "session-abc")
-        XCTAssertEqual(viewModel.messages.map(\.role), ["local_notice"])
-        XCTAssertEqual(viewModel.messages.first?.content, "Reviewing this conversation in the background.")
+        // TAL-1001: the output shows as a notice, never as a transcript row.
+        XCTAssertEqual(viewModel.currentNotice?.text, "Reviewing this conversation in the background.")
+        XCTAssertTrue(viewModel.messages.isEmpty)
         XCTAssertNil(viewModel.activeStreamID)
     }
 
