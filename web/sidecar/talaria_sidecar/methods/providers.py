@@ -251,6 +251,9 @@ def _setup_state(profile: Any) -> str:
         return "unavailable"
     if profile.auth_type == "external_process":
         return "ready" if status.get("configured") else "missing_cli"
+    if profile.auth_type in ("oauth_external", "oauth_device_code"):
+        # The Agent's ``configured`` only means registered here; a pooled token, live or refreshable on use, means signed in.
+        return "ready" if status.get("logged_in") or status.get("needs_refresh") else "needs_setup"
     return "ready" if status.get("logged_in") or status.get("configured") else "needs_setup"
 
 
