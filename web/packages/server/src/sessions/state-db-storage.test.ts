@@ -2,7 +2,7 @@
  * TAL-785: a damaged state.db reports degraded Agent session storage instead of an empty history with an upgrade hint;
  * a readable database without the `source` column keeps the upgrade path.
  */
-import { closeSync, openSync, readFileSync, rmSync, statSync, writeSync } from 'node:fs'
+import { chmodSync, closeSync, openSync, readFileSync, rmSync, statSync, writeSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
@@ -91,6 +91,15 @@ describe('degraded Agent session storage (TAL-785)', () => {
     writeStateDb(dbPath)
     smash(dbPath, 0, 100)
     expect((await list()).agent_storage).toMatchObject({ state: 'corrupt', reason: expect.stringMatching(/not a database/) as unknown })
+  })
+
+  it('reports a database it cannot read for another reason as unavailable, never ok', async ({ onTestFinished }) => {
+    writeStateDb(dbPath)
+    chmodSync(dbPath, 0o000)
+    onTestFinished(() => { chmodSync(dbPath, 0o644) })
+    const body = await list()
+    expect(body.agent_storage).toMatchObject({ state: 'unavailable', reason: expect.stringMatching(/could not be read/) as unknown })
+    expect(upgradeHint((body.agent_storage as Json).reason)).toBe(false)
   })
 
   it('keeps storage ok when only the full-text index is damaged', async () => {

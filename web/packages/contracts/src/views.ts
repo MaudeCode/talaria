@@ -353,9 +353,10 @@ export type SessionRow = z.infer<typeof SessionRowSchema>
 
 /**
  * TAL-785: whether the Agent's `state.db` could serve the Agent session rows. `corrupt`: SQLite reports the file
- * damaged; `outdated`: a readable database from an older hermes-agent. `reason` explains a degraded state.
+ * damaged; `unavailable`: it could not be read for another reason (permissions, a lock, an I/O error); `outdated`: a
+ * readable database from an older hermes-agent. `reason` explains a degraded state.
  */
-export const AgentStorageSchema = z.object({ state: z.enum(['ok', 'corrupt', 'outdated']), reason: z.string().nullable() })
+export const AgentStorageSchema = z.object({ state: z.enum(['ok', 'corrupt', 'unavailable', 'outdated']), reason: z.string().nullable() })
 export type AgentStorage = z.infer<typeof AgentStorageSchema>
 
 export const SessionsListSchema = z.looseObject({

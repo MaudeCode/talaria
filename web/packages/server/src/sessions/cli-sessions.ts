@@ -9,7 +9,7 @@
  */
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { AGENT_STORAGE_OK, isCliSessionRow, normalizeAgentSessionSource, readImportableAgentSessionRows, readImportableAgentSessionRowsAsync, stateDbCorruptReason, stateDbStorage, stateDbStorageAsync, type Dict, type ReadRowsOptions } from './state-db.js'
+import { AGENT_STORAGE_OK, isCliSessionRow, normalizeAgentSessionSource, readImportableAgentSessionRows, readImportableAgentSessionRowsAsync, stateDbReadFailure, stateDbStorage, stateDbStorageAsync, type Dict, type ReadRowsOptions } from './state-db.js'
 import type { AgentStorage } from '@maudecode/talaria-web-contracts'
 import { sanitizeSessionRow } from './list.js'
 import type { SessionStore } from './store.js'
@@ -122,15 +122,16 @@ export class CliSessionSource {
   }
 
   /**
-   * Build the rows, degrade a failed read or build to none with the Python log line, and cache the outcome. Any read,
-   * interactive or background, failing on a damaged page the storage probe never touched still makes the storage corrupt.
+   * Build the rows, degrade a failed read or build to none with the Python log line, and cache the outcome. A failed
+   * read, interactive or background, decides the storage state (`corrupt` first, else `unavailable`), since it can reach
+   * a damaged page the probe never touched; a probe that alone could not read says nothing about rows that were served.
    */
   private store(slot: CacheSlot, now: number, profile: string, results: QueryResults, probed: AgentStorage): CliSessionRead {
     let rows: Dict[]
     const truncated = new Set<string>()
     const failures = results instanceof Error ? [results] : (results ?? []).filter((r): r is Error => r instanceof Error)
-    const corrupt = failures.map(stateDbCorruptReason).find((reason) => reason !== null) ?? null
-    const storage: AgentStorage = corrupt ? { state: 'corrupt', reason: corrupt } : probed
+    const failed = failures.map(stateDbReadFailure)
+    const storage = failed.find((s) => s.state === 'corrupt') ?? failed[0] ?? (probed.state === 'unavailable' ? AGENT_STORAGE_OK : probed)
     try {
       if (results instanceof Error) throw results
       rows = results ? this.build(profile, slot, results, truncated) : []

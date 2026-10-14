@@ -72,15 +72,19 @@ describe('SessionListPanel Agent storage notice (TAL-785)', () => {
     expect(await screen.findByText('state.db is damaged: database disk image is malformed.')).toBeInTheDocument()
   })
 
-  it('keeps the upgrade hint for an older hermes-agent and shows nothing for healthy storage', async () => {
+  it('keeps the upgrade hint for an older hermes-agent, says unreadable storage, and shows nothing for healthy storage', async () => {
     vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [alpha], agent_storage: { state: 'outdated', reason: null } } as never)
     const { unmount } = panel()
     expect(await screen.findByText('Upgrade hermes-agent to list Agent sessions')).toBeInTheDocument()
     unmount()
+    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [alpha], agent_storage: { state: 'unavailable', reason: 'state.db could not be read: database is locked.' } } as never)
+    const unavailable = panel()
+    expect(await screen.findByText('Agent sessions could not be read')).toBeInTheDocument()
+    unavailable.unmount()
     vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [alpha], agent_storage: { state: 'ok', reason: null } } as never)
     panel()
     await screen.findByText('Alpha zebra')
-    expect(screen.queryByText(/Agent session storage|Upgrade hermes-agent/)).toBeNull()
+    expect(screen.queryByText(/Agent session storage|Agent sessions could not|Upgrade hermes-agent/)).toBeNull()
   })
 })
 

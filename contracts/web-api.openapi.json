@@ -2136,6 +2136,7 @@
                           "enum": [
                             "ok",
                             "corrupt",
+                            "unavailable",
                             "outdated"
                           ],
                           "type": "string"

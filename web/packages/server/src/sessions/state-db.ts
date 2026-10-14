@@ -231,10 +231,18 @@ export function stateDbCorruptReason(error: unknown): string | null {
   return corrupt ? `Agent session storage (state.db) is damaged: ${message}. Agent sessions are unavailable until it is repaired or restored from a backup.` : null
 }
 
+/** The storage state a failed `state.db` read reports: `corrupt` when SQLite says the file is damaged, else `unavailable`. */
+export function stateDbReadFailure(error: unknown): AgentStorage {
+  const corrupt = stateDbCorruptReason(error)
+  if (corrupt) return { state: 'corrupt', reason: corrupt }
+  return { state: 'unavailable', reason: `Agent session storage (state.db) could not be read: ${error instanceof Error ? error.message : String(error)}.` }
+}
+
 /**
- * TAL-785: whether `state.db` can serve the session list: `corrupt` when SQLite reports the file damaged, `outdated`
- * when a readable database has no `sessions.source` column. A missing file, or any other failure, is `ok`; the listing
- * logs that failure itself. Full-text index damage is never probed, so it stays `ok`, as the Agent treats it.
+ * TAL-785: whether `state.db` can serve the session list: `corrupt` when SQLite reports the file damaged, `unavailable`
+ * when it cannot be read for another reason (permissions, a lock, an I/O error), `outdated` when a readable database
+ * has no `sessions.source` column. A missing file is `ok`. Full-text index damage is never probed, so it stays `ok`, as
+ * the Agent treats it.
  */
 export function stateDbStorage(dbPath: string): AgentStorage {
   if (!existsSync(dbPath)) return AGENT_STORAGE_OK
@@ -246,8 +254,7 @@ export function stateDbStorage(dbPath: string): AgentStorage {
       db.close()
     }
   } catch (error) {
-    const reason = stateDbCorruptReason(error)
-    if (reason) return { state: 'corrupt', reason }
+    return stateDbReadFailure(error)
   }
   return AGENT_STORAGE_OK
 }
@@ -656,9 +663,9 @@ export async function cheapChangeFingerprintAsync(dbPath: string, onError?: (rea
   return reply.value as string | null
 }
 
-/** `stateDbStorage` on the listing worker; a worker failure says nothing about the storage, so it is `ok`. */
+/** `stateDbStorage` on the listing worker; a worker failure is `unavailable`. */
 export async function stateDbStorageAsync(dbPath: string): Promise<AgentStorage> {
-  try { return (await callListingWorker({ op: 'storage', dbPath })).value as AgentStorage } catch { return AGENT_STORAGE_OK }
+  try { return (await callListingWorker({ op: 'storage', dbPath })).value as AgentStorage } catch (error) { return stateDbReadFailure(error) }
 }
 
 /** `stateDbSessionSources` on the listing worker; a worker failure is an unreadable state.db (null), so owners stay locked. */
@@ -811,7 +818,7 @@ function replayIdentities(db: DatabaseSync, chain: string[], rows: Dict[], avail
   return identities
 }
 
-/** `reason`: why a failed read failed, when the storage is corrupt (TAL-785). */
+/** `reason`: why a failed read failed (TAL-785). */
 export interface StateDbRead { rows: Dict[]; idCapable: boolean; ok: boolean; reason: string | null }
 
 export function stateDbSessionMessages(dbPath: string, sid: string, opts: { stitch?: boolean } = {}): Dict[] {
@@ -893,7 +900,7 @@ export function stateDbSessionRead(dbPath: string, sid: string, opts: { stitch?:
     }
     return { rows: projected, idCapable: hasId, ok: true, reason: null }
   } catch (error) {
-    return { ...none, reason: stateDbCorruptReason(error) }
+    return { ...none, reason: stateDbReadFailure(error).reason }
   } finally {
     db.close()
   }

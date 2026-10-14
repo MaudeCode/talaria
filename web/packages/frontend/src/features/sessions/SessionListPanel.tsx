@@ -137,7 +137,7 @@ export function SessionListPanel() {
   const webuiCount = rows.length - cliCount
   // TAL-785: the server says when state.db could not serve the Agent sessions; an empty list alone would read as deleted history.
   const storage = data?.agent_storage
-  const storageNotice = storage?.state === 'corrupt' ? m.agent_storage_corrupt() : storage?.state === 'outdated' ? m.agent_storage_outdated() : null
+  const storageNotice = storage?.state === 'corrupt' ? m.agent_storage_corrupt() : storage?.state === 'unavailable' ? m.agent_storage_unavailable() : storage?.state === 'outdated' ? m.agent_storage_outdated() : null
   const hasUnprojected = useMemo(() => rows.some((r) => !r.project_id), [rows])
   const projectList = projects.data?.projects ?? []
   const filtered = useMemo(() => {
