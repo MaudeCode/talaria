@@ -107,7 +107,8 @@ extension ChatViewModelSendTests {
         await viewModel.withdrawPendingSteer(id: "steer-b", reason: .cancel)
         XCTAssertEqual(log.bodies["/api/chat/steer/withdraw"]?.last?["reason"] as? String, "cancel")
         XCTAssertTrue(viewModel.messages.contains { $0.messageId == "steer-b" })
-        XCTAssertEqual(viewModel.pinnedLocalNotices.last, "This steering message can no longer be changed.")
+        XCTAssertEqual(viewModel.currentNotice?.text, "This steering message can no longer be changed.")
+        XCTAssertEqual(viewModel.currentNotice?.kind, .warning)
 
         log.withdraw = [#"{"withdrawn":true}"#]
         await viewModel.withdrawPendingSteer(id: "steer-b", reason: .cancel)
@@ -126,10 +127,11 @@ extension ChatViewModelSendTests {
         log.sendNow = [#"{"redirected":true}"#]
         await viewModel.sendPendingSteerNow(id: "steer-a")
         XCTAssertEqual(log.bodies["/api/chat/steer/send-now"]?.last as? [String: String], ["session_id": "session-abc", "steer_id": "steer-a"])
-        XCTAssertTrue(viewModel.pinnedLocalNotices.isEmpty)
+        XCTAssertNil(viewModel.currentNotice)
 
         await viewModel.sendPendingSteerNow(id: "steer-a")
-        XCTAssertEqual(viewModel.pinnedLocalNotices.last, "Nothing is running to take it now; it stays pending.")
+        XCTAssertEqual(viewModel.currentNotice?.text, "Nothing is running to take it now; it stays pending.")
+        XCTAssertEqual(viewModel.currentNotice?.kind, .info)
         XCTAssertTrue(viewModel.messages.contains { $0.messageId == "steer-a" })
     }
 

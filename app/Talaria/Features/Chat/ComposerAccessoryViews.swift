@@ -2,36 +2,46 @@ import SwiftUI
 import TalariaKit
 import UIKit
 
-struct PinnedLocalNoticeStack: View {
-    let notices: [String]
+/// TAL-1001: the chat's one short notice, in the status chip's look. A tap dismisses it.
+struct ChatNoticeChip: View {
+    let notice: ChatNotice
+    let dismiss: () -> Void
 
     var body: some View {
-        VStack(spacing: 8) {
-            ForEach(Array(notices.enumerated()), id: \.offset) { _, notice in
-                HStack(alignment: .top, spacing: 10) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(Color.green)
-
-                    Text(notice)
-                        .font(.footnote)
-                        .foregroundStyle(.primary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(12)
-                .background(.ultraThinMaterial)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(Color(.separator).opacity(0.45), lineWidth: 0.5)
-                )
+        let style = Self.style(notice.kind)
+        Button(action: dismiss) {
+            HStack(spacing: 8) {
+                Image(systemName: style.symbol)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(style.tint)
+                    .accessibilityHidden(true)
+                Text(notice.text)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
             }
+            .statusChipChrome()
+            .contentShape(.rect)
         }
-        .frame(maxWidth: .infinity)
-        .shadow(color: Color.black.opacity(0.12), radius: 10, y: 4)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(notices.joined(separator: "\n"))
+        .buttonStyle(.plain)
+        .fixedSize(horizontal: false, vertical: true)
+        .accessibilityLabel(notice.text)
+        .accessibilityValue(style.name)
+        .accessibilityHint(String(localized: "Dismiss"))
+        // Once per notice: the same notice shown again keeps its id.
+        .onChange(of: notice.id, initial: true) {
+            AccessibilityNotification.Announcement(notice.text).post()
+        }
+    }
+
+    /// The kind's icon, its tint, and the word VoiceOver reads for it.
+    private static func style(_ kind: ChatNoticeKind) -> (symbol: String, tint: Color, name: String) {
+        switch kind {
+        case .info: ("info.circle", .accentColor, String(localized: "Information"))
+        case .warning: ("exclamationmark.triangle", .orange, String(localized: "Warning"))
+        case .error: ("exclamationmark.octagon", .red, String(localized: "Error"))
+        }
     }
 }
 

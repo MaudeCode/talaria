@@ -55,6 +55,7 @@ struct ChatView: View {
     private let approvalBypassStatusSpacerHeight: CGFloat = 44
     private let queuedMessagesChipSpacerHeight: CGFloat = 44
     private let goalChipSpacerHeight: CGFloat = 36
+    private let noticeChipSpacerHeight: CGFloat = 36
 
     @State private var completionAcknowledgementTask: Task<Void, Never>?
     @State private var completionAcknowledgementGeneration = 0
@@ -1110,9 +1111,8 @@ struct ChatView: View {
                         .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
                 }
 
-                if !viewModel.pinnedLocalNotices.isEmpty {
-                    PinnedLocalNoticeStack(notices: viewModel.pinnedLocalNotices)
-                        .allowsHitTesting(false)
+                if let notice = viewModel.currentNotice {
+                    ChatNoticeChip(notice: notice, dismiss: viewModel.dismissNotice)
                         .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
                 }
 
@@ -1171,7 +1171,7 @@ struct ChatView: View {
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: showsScrollToBottomButton)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: composerAccessoryVisibleItemCount)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: activeRunStatusPresentation)
-            .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: viewModel.pinnedLocalNotices)
+            .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: viewModel.currentNotice)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: visibleSessionNotices)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: showsApprovalBypassStatus)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: goalChipPresentation)
@@ -1476,10 +1476,6 @@ struct ChatView: View {
             || viewModel.uploadAttachmentErrorMessage != nil
     }
 
-    private var pinnedNoticeSpacerHeight: CGFloat {
-        viewModel.pinnedLocalNotices.isEmpty ? 0 : CGFloat(viewModel.pinnedLocalNotices.count) * 60
-    }
-
     private var activeRunStatusPresentation: ChatActiveRunStatusPresentation? {
         ChatActiveRunStatusPolicy.presentation(
             isStartingChat: viewModel.isStartingChat,
@@ -1510,8 +1506,8 @@ struct ChatView: View {
     /// leaves out a floating status (the syncing pill) and the lone scroll chip so they never
     /// shift the chat.
     private func composerAccessorySpacerHeight() -> CGFloat {
-        var height = pinnedNoticeSpacerHeight
-        var itemCount = viewModel.pinnedLocalNotices.isEmpty ? 0 : 1
+        var height: CGFloat = viewModel.currentNotice == nil ? 0 : noticeChipSpacerHeight
+        var itemCount = viewModel.currentNotice == nil ? 0 : 1
         if !visibleSessionNotices.isEmpty {
             height += sessionNoticeChipsHeight
             itemCount += 1
@@ -1541,7 +1537,7 @@ struct ChatView: View {
 
     private var composerAccessoryVisibleItemCount: Int {
         var count = 0
-        if !viewModel.pinnedLocalNotices.isEmpty {
+        if viewModel.currentNotice != nil {
             count += 1
         }
         if !visibleSessionNotices.isEmpty {
@@ -1946,11 +1942,7 @@ struct ChatView: View {
         case .executed(let message):
             if let message {
                 if shouldRenderAsLocalNotice(parsedCommand) {
-                    if viewModel.activeStreamID == nil {
-                        viewModel.appendLocalNoticeMessage(message)
-                    } else {
-                        viewModel.pinLocalNoticeMessage(message)
-                    }
+                    viewModel.showNotice(message)
                 } else {
                     viewModel.appendLocalAssistantMessage(message)
                 }

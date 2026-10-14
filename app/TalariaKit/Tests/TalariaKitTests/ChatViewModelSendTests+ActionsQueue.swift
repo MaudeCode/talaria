@@ -964,7 +964,7 @@ extension ChatViewModelSendTests {
             ["Initial request", "Before hint. ", "Use the focused test"]
         )
         XCTAssertEqual(viewModel.messages.last?.name, "_talaria_steer_waiting")
-        XCTAssertTrue(viewModel.pinnedLocalNotices.isEmpty)
+        XCTAssertNil(viewModel.currentNotice)
 
         streamClient.emit(.token("After hint."))
         XCTAssertEqual(viewModel.messages.map(\.role), ["user", "assistant", "user", "assistant"])

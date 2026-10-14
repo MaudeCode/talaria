@@ -1810,7 +1810,6 @@ private final class CoordinatorDelegateSpy: ChatStreamCoordinatorDelegate {
     private(set) var saveSnapshotCount = 0
     private(set) var restoredSnapshotStreamIDs: [String] = []
     private(set) var removedSnapshotStreamIDs: [String?] = []
-    private(set) var flushedNoticeCount = 0
     private(set) var drainQueueCount = 0
     private(set) var refreshTitleCount = 0
     private(set) var completedNeedsTranscriptRefreshValues: [Bool] = []
@@ -1866,10 +1865,6 @@ private final class CoordinatorDelegateSpy: ChatStreamCoordinatorDelegate {
 
     func streamCoordinatorRemoveSnapshot(streamID: String?) {
         removedSnapshotStreamIDs.append(streamID)
-    }
-
-    func streamCoordinatorFlushPinnedLocalNoticesToTranscript() {
-        flushedNoticeCount += 1
     }
 
     func streamCoordinatorDrainQueuedSlashMessageIfIdle() {

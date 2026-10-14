@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Chat notices such as \"it stays pending\" or a slash command's result now show as one small chip above the composer that goes away on its own or when tapped, instead of stacking cards that stayed until the run ended and then became transcript rows.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

@@ -98,9 +98,18 @@ final class ChatHostedTests: XCTestCase {
         XCTAssertEqual(elements(named: "Edit steering message", in: window).count, 2)
         XCTAssertEqual(elements(named: "Cancel steering message", in: window).count, 2)
 
-        HostedAccessibility.activate(try XCTUnwrap(elements(named: "Send now", in: window).first))
-        let notice = await awaitElement(in: window) { $0.accessibilityLabel?.contains("it stays pending") == true }
+        // TAL-1001: Send now explains itself in one short chip, however often it is tapped, that goes on its own.
+        let isNotice: (NSObject) -> Bool = { $0.accessibilityLabel?.contains("it stays pending") == true }
+        for _ in 0..<5 {
+            HostedAccessibility.activate(try XCTUnwrap(elements(named: "Send now", in: window).first))
+            _ = await awaitElement(in: window, where: isNotice)
+        }
+        let notice = await awaitElement(in: window, where: isNotice)
         XCTAssertNotNil(notice, "Send now gave no notice when nothing could take it")
+        XCTAssertEqual(HostedAccessibility.elements(in: window).filter(isNotice).count, 1, "Repeated Send now stacked notices")
+        XCTAssertEqual(notice?.accessibilityValue, "Information", "The notice does not say its kind")
+        let dismissed = await awaitNoElement(in: window, timeout: 5, where: isNotice)
+        XCTAssertTrue(dismissed, "The notice never went away on its own")
 
         // Edit appends the steer after the draft, a blank line between.
         try await typeIntoComposer("Draft", in: window)

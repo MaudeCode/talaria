@@ -354,12 +354,18 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(liveActivityManager.aggregateArms.first?.sessionTitle, "Planning")
         XCTAssertEqual(viewModel.messages.map(\.role), ["user"])
         XCTAssertEqual(viewModel.messages.last?.content, "Start executing the goal.")
-        XCTAssertEqual(viewModel.pinnedLocalNotices, ["Goal set."])
+        XCTAssertEqual(viewModel.currentNotice?.text, "Goal set.")
 
         streamClient.emit(.token("Working now."))
 
         XCTAssertEqual(viewModel.messages.map(\.role), ["user", "assistant"])
         XCTAssertEqual(viewModel.messages.last?.content, "Working now.")
+
+        // TAL-1001: the run's end writes no notice into the transcript.
+        streamClient.emit(.streamEnd)
+
+        XCTAssertNil(viewModel.activeStreamID)
+        XCTAssertEqual(viewModel.messages.map(\.role), ["user", "assistant"])
     }
 
     @MainActor
@@ -396,8 +402,8 @@ extension ChatViewModelSendTests {
         XCTAssertTrue(viewModel.hasActivatedGoalCommand)
         XCTAssertEqual(viewModel.currentGoal?.goal, "Ship the TestFlight build")
         XCTAssertEqual(viewModel.currentGoal?.status, "active")
-        XCTAssertEqual(viewModel.messages.map(\.role), ["local_notice"])
-        XCTAssertEqual(viewModel.messages.first?.content, "Goal is active.")
+        // TAL-1001: a notice never becomes a transcript row.
+        XCTAssertEqual(viewModel.messages.map(\.role), [])
     }
 
     @MainActor
@@ -598,8 +604,7 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(requestedPaths, ["/api/goal"])
         XCTAssertTrue(viewModel.hasActivatedGoalCommand)
         XCTAssertEqual(viewModel.currentGoal?.status, "active")
-        XCTAssertEqual(viewModel.messages.map(\.role), ["local_notice"])
-        XCTAssertEqual(viewModel.messages.first?.content, "Goal resumed.")
+        XCTAssertEqual(viewModel.messages.map(\.role), [])
     }
 
     @MainActor

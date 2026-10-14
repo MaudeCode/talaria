@@ -243,7 +243,7 @@
 		C107O0000000000000000006 /* ChatTranscriptLoadingSkeletonView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000106 /* ChatTranscriptLoadingSkeletonView.swift */; };
 		C107O0000000000000000007 /* ChatTranscriptLoadingSkeletonRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000107 /* ChatTranscriptLoadingSkeletonRow.swift */; };
 		C107O0000000000000000008 /* ChatOfflineCacheBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000108 /* ChatOfflineCacheBanner.swift */; };
-		C107O0000000000000000009 /* PinnedLocalNoticeStack.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000109 /* PinnedLocalNoticeStack.swift */; };
+		C107O0000000000000000009 /* ComposerAccessoryViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000109 /* ComposerAccessoryViews.swift */; };
 		C107O0000000000000000010 /* ComposerSecondaryControlsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000110 /* ComposerSecondaryControlsView.swift */; };
 		C107O0000000000000000011 /* ComposerWorkspaceSelectorButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000111 /* ComposerWorkspaceSelectorButton.swift */; };
 		TAL631000000000000000001 /* ComposerToolsetsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = TAL631000000000000000002 /* ComposerToolsetsSheet.swift */; };
@@ -666,7 +666,7 @@
 		C107O0000000000000000106 /* ChatTranscriptLoadingSkeletonView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTranscriptLoadingSkeletonView.swift; sourceTree = "<group>"; };
 		C107O0000000000000000107 /* ChatTranscriptLoadingSkeletonRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTranscriptLoadingSkeletonRow.swift; sourceTree = "<group>"; };
 		C107O0000000000000000108 /* ChatOfflineCacheBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatOfflineCacheBanner.swift; sourceTree = "<group>"; };
-		C107O0000000000000000109 /* PinnedLocalNoticeStack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedLocalNoticeStack.swift; sourceTree = "<group>"; };
+		C107O0000000000000000109 /* ComposerAccessoryViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerAccessoryViews.swift; sourceTree = "<group>"; };
 		C107O0000000000000000110 /* ComposerSecondaryControlsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerSecondaryControlsView.swift; sourceTree = "<group>"; };
 		C107O0000000000000000111 /* ComposerWorkspaceSelectorButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerWorkspaceSelectorButton.swift; sourceTree = "<group>"; };
 		TAL631000000000000000002 /* ComposerToolsetsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerToolsetsSheet.swift; sourceTree = "<group>"; };
@@ -1165,7 +1165,7 @@
 				C107O0000000000000000106 /* ChatTranscriptLoadingSkeletonView.swift */,
 				C107O0000000000000000107 /* ChatTranscriptLoadingSkeletonRow.swift */,
 				C107O0000000000000000108 /* ChatOfflineCacheBanner.swift */,
-				C107O0000000000000000109 /* PinnedLocalNoticeStack.swift */,
+				C107O0000000000000000109 /* ComposerAccessoryViews.swift */,
 				C107O0000000000000000110 /* ComposerSecondaryControlsView.swift */,
 				C107O0000000000000000111 /* ComposerWorkspaceSelectorButton.swift */,
 				TAL631000000000000000002 /* ComposerToolsetsSheet.swift */,
@@ -1763,7 +1763,7 @@
 				C107O0000000000000000006 /* ChatTranscriptLoadingSkeletonView.swift in Sources */,
 				C107O0000000000000000007 /* ChatTranscriptLoadingSkeletonRow.swift in Sources */,
 				C107O0000000000000000008 /* ChatOfflineCacheBanner.swift in Sources */,
-				C107O0000000000000000009 /* PinnedLocalNoticeStack.swift in Sources */,
+				C107O0000000000000000009 /* ComposerAccessoryViews.swift in Sources */,
 				C107O0000000000000000010 /* ComposerSecondaryControlsView.swift in Sources */,
 				C107O0000000000000000011 /* ComposerWorkspaceSelectorButton.swift in Sources */,
 				TAL631000000000000000001 /* ComposerToolsetsSheet.swift in Sources */,

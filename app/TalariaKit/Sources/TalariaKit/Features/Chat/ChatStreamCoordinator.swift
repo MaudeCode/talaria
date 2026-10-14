@@ -50,7 +50,6 @@ public protocol ChatStreamCoordinatorDelegate: AnyObject {
     @discardableResult
     func streamCoordinatorRestoreSnapshotIfAvailable(streamID: String) -> String?
     func streamCoordinatorRemoveSnapshot(streamID: String?)
-    func streamCoordinatorFlushPinnedLocalNoticesToTranscript()
     func streamCoordinatorDrainQueuedSlashMessageIfIdle()
     func streamCoordinatorRefreshCompletedResponseTitleIfNeeded()
     func streamCoordinatorDidCompleteCurrentResponse(needsTranscriptRefresh: Bool, outcome: ResponseCompletionOutcome)
@@ -1019,7 +1018,6 @@ public final class ChatStreamCoordinator {
         let finishedStreamID = activeStreamID
         streamClient.stop()
         delegate?.streamCoordinatorStopAuxiliaryMonitoring(clearPrompt: true)
-        delegate?.streamCoordinatorFlushPinnedLocalNoticesToTranscript()
         delegate?.streamCoordinatorRemoveSnapshot(streamID: finishedStreamID)
         activeStreamID = nil
         lastEventID = nil
