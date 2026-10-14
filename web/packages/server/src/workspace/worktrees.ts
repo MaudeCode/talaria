@@ -68,12 +68,16 @@ function includeSymlinkPaths(worktreePath: string, repoRoot: string | null): Set
     const trimmed = line.trim()
     if (!trimmed || trimmed.startsWith('#')) continue
     const entry = posix.normalize(trimmed).replace(/\/+$/, '')
-    const dst = join(worktreePath, entry)
-    try {
-      if (lstatSync(dst).isSymbolicLink() && realpathSync(dst) === realpathSync(join(repoRoot, entry))) paths.add(entry)
-    } catch { /* unreadable or dangling: real state, still counts */ }
+    if (isIncludeLink(worktreePath, repoRoot, entry)) paths.add(entry)
   }
   return paths
+}
+
+function isIncludeLink(worktreePath: string, repoRoot: string, entry: string): boolean {
+  const dst = join(worktreePath, entry)
+  try {
+    return lstatSync(dst).isSymbolicLink() && realpathSync(dst) === realpathSync(join(repoRoot, entry))
+  } catch { return false } // unreadable or dangling: real state, still counts
 }
 
 /** `[dirty, untracked count, ignored include symlinks]`; the Agent's own include symlinks are not user state. */
@@ -176,8 +180,13 @@ export async function removeWorktreeForSession(session: Session, locks: Worktree
   if (locks.lockedByTerminal(session.session_id, worktreePath)) throw new Error('Worktree is locked by an active terminal session')
   await git(['worktree', 'unlock', worktreePath], repoRoot, 5_000)
   // A plain `worktree remove` refuses any untracked entry; drop the Agent's include symlinks (never their targets)
-  // so git still guards everything else.
-  if (!force) for (const link of includeLinks) try { unlinkSync(join(worktreePath, link)) } catch { /* already gone; git decides */ }
+  // so git still guards everything else. Each is rechecked first: one replaced since the probe stays for git to refuse.
+  const resolvedRoot = resolvePath(repoRoot)
+  if (!force && resolvedRoot) {
+    for (const link of includeLinks) {
+      if (isIncludeLink(worktreePath, resolvedRoot, link)) try { unlinkSync(join(worktreePath, link)) } catch { /* already gone; git decides */ }
+    }
+  }
   const args = ['worktree', 'remove']
   if (force) args.push('--force')
   args.push(worktreePath)

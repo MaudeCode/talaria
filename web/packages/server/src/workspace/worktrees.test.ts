@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
@@ -68,6 +68,20 @@ describe('.worktreeinclude symlinks', () => {
     expect(await worktreeStatusForSession(session, unlocked)).toMatchObject({ dirty: true, untracked_count: 1, force_required: true })
     await expect(removeWorktreeForSession(session, unlocked)).rejects.toThrow('Worktree has uncommitted changes. Use force=true to override.')
     expect(existsSync(join(worktree, 'node_modules'))).toBe(true)
+  })
+
+  it('keeps a real file that replaced the symlink after the status probe', async () => {
+    const { repo, worktree, session } = setup()
+    const link = join(worktree, 'node_modules')
+    symlinkSync(join(repo, 'node_modules'), link)
+    // The terminal lock is read once by the probe and rechecked right before removal; swap the symlink in between.
+    let terminalChecks = 0
+    const locks = { lockedByStream: () => false, lockedByTerminal: () => {
+      if (++terminalChecks === 2) { unlinkSync(link); writeFileSync(link, 'mine\n') }
+      return false
+    } }
+    await expect(removeWorktreeForSession(session, locks)).rejects.toThrow()
+    expect(readFileSync(link, 'utf8')).toBe('mine\n')
   })
 
   it('still counts a symlink that points elsewhere', async () => {
