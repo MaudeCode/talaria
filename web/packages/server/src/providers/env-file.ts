@@ -1,8 +1,7 @@
-/** `~/.hermes/.env` reader and order-preserving writer (Python `api/providers.py` `_load_env_file` / `_write_env_file`). */
-import { chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync } from 'node:fs'
-import { writeFully } from '../fs/atomic.js'
-import { dirname, join } from 'node:path'
-import { randomBytes } from 'node:crypto'
+/** `~/.hermes/.env` reader (Python `api/providers.py` `_load_env_file`) and the sidecar-backed writer. */
+import { existsSync, readFileSync } from 'node:fs'
+import { RPC_ERROR_CODES } from '@maudecode/talaria-web-contracts'
+import { SidecarError, type SidecarLike } from '../sidecar/client.js'
 
 export function loadEnvFile(path: string): Record<string, string> {
   const values: Record<string, string> = {}
@@ -26,56 +25,25 @@ function stripQuotes(v: string): string {
   return v.replace(/^"+|"+$/g, '').replace(/^'+|'+$/g, '')
 }
 
+export class EnvWriteError extends Error {
+  constructor(message: string, readonly status: number, readonly condition: string) {
+    super(message)
+  }
+}
+
+const ENV_WRITE_STATUS: Record<string, number> = { env_locked: 503, env_write_refused: 409, sidecar_unavailable: 503 }
+
 /**
- * Upsert `updates` (a `null` value removes the key). Comments, blank lines and
- * key order survive; new keys land after a blank separator. 0600, atomic.
+ * Upsert `updates` into `<profileHome>/.env` (a `null` value removes the key) through the Agent's own locked writer, so
+ * a concurrent gateway, CLI or plugin write cannot drop the change (TAL-797). Comments, blank lines and key order
+ * survive; an empty value is skipped, a line break refused, and the file ends 0600.
  */
-export function writeEnvFile(path: string, updates: Record<string, string | null>): void {
-  let existing: string[] = []
-  if (existsSync(path)) {
-    try { existing = readFileSync(path, 'utf8').split('\n') } catch { existing = [] }
-    if (existing.length && existing[existing.length - 1] === '') existing.pop()
-  }
-  const index = new Map<string, number>()
-  existing.forEach((raw, i) => {
-    const s = raw.trim()
-    if (s && !s.startsWith('#') && s.includes('=')) index.set(s.slice(0, s.indexOf('=')).trim(), i)
-  })
-  const out: (string | null)[] = [...existing]
-  const fresh: string[] = []
-  for (const [key, value] of Object.entries(updates)) {
-    if (value === null) {
-      const at = index.get(key)
-      if (at !== undefined) out[at] = null
-      continue
-    }
-    const clean = value.trim()
-    if (!clean) continue
-    if (clean.includes('\n') || clean.includes('\r')) throw new Error('API key must not contain newline characters.')
-    const at = index.get(key)
-    if (at !== undefined) out[at] = `${key}=${clean}`
-    else fresh.push(`${key}=${clean}`)
-  }
-  const lines = out.filter((l): l is string => l !== null)
-  if (fresh.length) {
-    if (lines.length && lines[lines.length - 1]?.trim() !== '') lines.push('')
-    lines.push(...fresh)
-  }
-  let content = lines.join('\n')
-  if (content) content += '\n'
-  mkdirSync(dirname(path), { recursive: true })
-  const tmp = join(dirname(path), `.env_${randomBytes(6).toString('hex')}.tmp`)
-  const fd = openSync(tmp, 'w', 0o600)
+export async function writeProfileEnv(sidecar: SidecarLike | null, profileHome: string, updates: Record<string, string | null>): Promise<void> {
+  if (!sidecar) throw new EnvWriteError('The Agent sidecar is not running, so the .env change was not saved.', 503, 'sidecar_unavailable')
   try {
-    writeFully(fd, content)
-    fsyncSync(fd)
-    closeSync(fd)
-    chmodSync(tmp, 0o600)
-    renameSync(tmp, path)
+    await sidecar.call('config.env_write', { profile_home: profileHome, updates })
   } catch (error) {
-    try { closeSync(fd) } catch { /* closed */ }
-    try { unlinkSync(tmp) } catch { /* gone */ }
-    throw error
+    if (!(error instanceof SidecarError)) throw error
+    throw new EnvWriteError(error.message, ENV_WRITE_STATUS[error.condition] ?? (error.code === RPC_ERROR_CODES.invalidParams ? 400 : 502), error.condition)
   }
-  try { chmodSync(path, 0o600) } catch { /* best effort */ }
 }

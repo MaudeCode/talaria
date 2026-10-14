@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A provider key saved in Talaria Web is no longer lost when the Agent updates the same profile's environment file at the same moment.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

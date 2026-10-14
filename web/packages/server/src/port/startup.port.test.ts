@@ -10,7 +10,8 @@ import { BootstrapSchema } from '@maudecode/talaria-web-contracts'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
 import { bootTestServer, cookieHeader, type TestServer } from '../test/harness.js'
-import { loadEnvFile, writeEnvFile } from '../providers/env-file.js'
+import { loadEnvFile } from '../providers/env-file.js'
+import { writeEnvFile } from '../test/env-file.js'
 import { OAUTH_PROVIDERS, PROVIDER_ENV_VAR, PROVIDER_ENV_VAR_ALIASES, SUPPORTED_PROVIDER_SETUPS } from '../providers/tables.js'
 
 type Json = Record<string, unknown>

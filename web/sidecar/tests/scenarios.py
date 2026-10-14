@@ -88,6 +88,7 @@ SCENARIOS: list[tuple[str, dict]] = [
     ("cron.status", {}),
     # providers / models / aux / text / process
     ("config.get", {"profile_home": "{home}", "config_path": "{home}/config.yaml"}),
+    ("config.env_write", {"profile_home": "{home}", "updates": {"TALARIA_FIXTURE_KEY": "sk-fixture-1234", "TALARIA_ABSENT_KEY": None}}),
     ("models.reasoning_efforts", {"profile_home": "{home}", "model": "claude-sonnet-4-6", "provider": "anthropic"}),
     ("providers.registry", {"profile_home": "{home}"}),
     ("providers.auth_status", {"profile_home": "{home}", "provider": "anthropic"}),

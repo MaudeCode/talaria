@@ -6,7 +6,7 @@ import { AgentConfig, parseProviderQualifiedModel } from '../config/agent-config
 import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { ProviderCatalog, repairSessionModel, splitPickerOverflow, type ModelEntry, type ModelsCatalog } from './catalog.js'
-import { writeEnvFile } from './env-file.js'
+import { writeEnvFile } from '../test/env-file.js'
 
 type Json = Record<string, unknown>
 interface Entry { id: string; provider_id?: string; bare_id?: string }

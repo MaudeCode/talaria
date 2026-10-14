@@ -7,6 +7,7 @@
  * the process environment are never touched.
  */
 import { homeDotenvKeys, setHomeDotenvKeys } from '../cli/dotenv.js'
+import { writeProfileEnv } from './env-file.js'
 import type { SidecarLike } from '../sidecar/client.js'
 import { str } from '../util.js'
 
@@ -62,12 +63,12 @@ export async function prepareRuntimeCredentialEdit(deps: RuntimeEnvDeps, rootPro
 // ponytail: global chain; per-credential locks only if credential edits ever contend for throughput.
 let credentialEdits: Promise<unknown> = Promise.resolve()
 
-/** Write one root-profile credential to `.env` with the sidecar and process kept in step (`write` performs the file edit). */
-export function writeRuntimeCredential(deps: RuntimeEnvDeps, rootProfile: boolean, envVar: string, apiKey: string | null, write: () => void): Promise<void> {
+/** Write one credential to `<profileHome>/.env`; a root-profile edit keeps the sidecar and process in step. */
+export function writeRuntimeCredential(deps: RuntimeEnvDeps, rootProfile: boolean, profileHome: string, envVar: string, apiKey: string | null): Promise<void> {
   const run = credentialEdits.then(async () => {
     const edit = await prepareRuntimeCredentialEdit(deps, rootProfile, envVar, apiKey)
     try {
-      write()
+      await writeProfileEnv(deps.sidecar(), profileHome, { [envVar]: apiKey })
     } catch (error) {
       await edit.rollback()
       throw error

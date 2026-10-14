@@ -4689,6 +4689,24 @@
     ],
     "additionalProperties": false
   },
+  "config.env_write": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "ok": {
+        "type": "boolean",
+        "const": true
+      },
+      "path": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok",
+      "path"
+    ],
+    "additionalProperties": false
+  },
   "models.reasoning_efforts": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

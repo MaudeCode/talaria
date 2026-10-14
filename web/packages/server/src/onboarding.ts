@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { readFileSync } from 'node:fs'
 import type { AgentConfig, Config, Dict } from './config/agent-config.js'
 import { canonicaliseProviderId, dict, isDict, modelSection, parseProviderQualifiedModel } from './config/agent-config.js'
-import { loadEnvFile, writeEnvFile } from './providers/env-file.js'
+import { EnvWriteError, loadEnvFile } from './providers/env-file.js'
 import { PROVIDER_CATEGORIES, PROVIDER_DISPLAY, SUPPORTED_PROVIDER_SETUPS, UNSUPPORTED_PROVIDER_NOTE } from './providers/tables.js'
 import type { ModelsCatalog } from './providers/catalog.js'
 import { displayBotName, type SettingsStore } from './settings.js'
@@ -259,9 +259,10 @@ export class Onboarding {
   private async writeCredential(home: string, envVar: string, apiKey: string): Promise<void> {
     const rootProfile = this.deps.isRootProfileHome(home)
     try {
-      await writeRuntimeCredential({ env: this.deps.env, sidecar: this.deps.sidecar, log: this.deps.log }, rootProfile, envVar, apiKey, () => { writeEnvFile(join(home, '.env'), { [envVar]: apiKey }) })
+      await writeRuntimeCredential({ env: this.deps.env, sidecar: this.deps.sidecar, log: this.deps.log }, rootProfile, home, envVar, apiKey)
     } catch (error) {
       if (error instanceof RuntimeCredentialError) throw new OnboardingError(error.message, 503)
+      if (error instanceof EnvWriteError) throw new OnboardingError(`Failed to save API key: ${error.message}`, error.status)
       throw error
     }
   }
