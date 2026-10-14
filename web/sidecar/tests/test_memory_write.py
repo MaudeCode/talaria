@@ -72,10 +72,20 @@ def test_memory_write_waits_for_the_agents_lock_file_and_rechecks_under_it(hands
     message = handshaken.next_message(timeout=30)
     assert message["id"] == request_id and message["result"] == {"written": False}, message
     assert memory.read_text(encoding="utf-8") == "Entry A\n§\nEntry B"
-    # SOUL.md has no Agent lock; its save is the same compare-and-write.
-    write = _writer(handshaken, hermes_home)
+
+
+@requires_agent
+def test_memory_write_lets_one_of_two_soul_saves_from_the_same_read_win(handshaken: SidecarProcess, hermes_home: pathlib.Path) -> None:
     soul = hermes_home / "SOUL.md"
-    assert write("soul", _sha256(soul), "Be brief.") == {"written": True}
-    assert write("soul", _sha256(pathlib.Path("/nonexistent")), "Be terse.") == {"written": False}
-    assert soul.read_text(encoding="utf-8") == "Be brief."
-    assert not soul.with_name("SOUL.md.lock").exists()
+    soul.write_text("Be brief.", encoding="utf-8")
+    loaded = _sha256(soul)
+    with open(soul.with_name("SOUL.md.lock"), "a+") as held:
+        fcntl.flock(held, fcntl.LOCK_EX)
+        saves = {handshaken.request("memory.write", {"profile_home": str(hermes_home), "section": "soul", "base": loaded, "content": text}): text for text in ("Be terse.", "Be kind.")}
+        with pytest.raises(queue.Empty):
+            handshaken.next_message(timeout=1.0)
+        fcntl.flock(held, fcntl.LOCK_UN)
+    replies = [handshaken.next_message(timeout=30) for _ in saves]
+    written = [saves[reply["id"]] for reply in replies if reply["result"]["written"]]
+    assert len(written) == 1, replies
+    assert soul.read_text(encoding="utf-8") == written[0]

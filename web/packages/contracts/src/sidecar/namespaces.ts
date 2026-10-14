@@ -249,7 +249,7 @@ export const TEXT_METHODS = {
 /**
  * TAL-886: the Agent's `MemoryStore` reading of a MEMORY.md / USER.md body: its char count and the profile's limit for that store.
  * TAL-784: `memory.write` replaces a memory page file with `content` only while its bytes still hash (SHA-256 hex) to `base`,
- * holding the Agent's per-file lock for MEMORY.md / USER.md; `written: false` means the file changed and is untouched.
+ * holding the Agent's per-file lock (`<file>.lock`); `written: false` means the file changed and is untouched.
  */
 export const MEMORY_METHODS = {
   'memory.check': { params: ProfileHomeParams.extend({ target: z.enum(['memory', 'user']), content: z.string() }), result: z.object({ count: z.number().int(), limit: z.number().int() }) },

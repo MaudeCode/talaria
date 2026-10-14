@@ -47941,7 +47941,10 @@
                   "revision": {
                     "type": "string"
                   }
-                }
+                },
+                "required": [
+                  "revision"
+                ]
               }
             }
           }

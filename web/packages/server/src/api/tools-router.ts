@@ -314,7 +314,7 @@ export const toolsRouter = os.router({
     })),
     write: os.memory.write.handler(({ input, context: { ctx } }) => run(async () => {
       const section = input.section ?? input.target
-      if (section === undefined || input.content === undefined || input.revision === undefined) throw new HttpError(400, 'Missing required field(s): section, content, revision')
+      if (section === undefined || input.content === undefined) throw new HttpError(400, 'Missing required field(s): section, content')
       const profileHome = home(ctx)
       return writeMemory(profileHome, await ctx.deps.agentConfig.read(profileHome), str(section), str(input.content), input.revision, {
         key: ctx.deps.auth.signingKey(),

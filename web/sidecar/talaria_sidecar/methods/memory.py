@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
-import contextlib
 import errno
 import hashlib
 import os
 import stat
+import threading
 from pathlib import Path
 
 from ..errors import InvalidParams, RpcError
 from ..home import profile_home_param, scoped_home
 from ..rpc import CallContext
+
+# Agents without the per-file lock helper: this sidecar's saves still run one at a time.
+_SAVE_LOCK = threading.Lock()
 
 
 def check(target: str, content: str) -> dict:
@@ -45,8 +48,8 @@ def _digest(path: Path) -> str | None:
 def write(home: Path, section: str, base: str, content: str) -> dict:
     """Replace ``section``'s file with ``content`` only while its bytes still hash to ``base``, the server's read.
 
-    MEMORY.md / USER.md are checked and written under the Agent's own per-file lock, so a memory tool call cannot land
-    between the two; an Agent without the lock helper still gets the compare-and-write. SOUL.md has no Agent lock.
+    Each file is checked and written under the Agent's own per-file lock (``<file>.lock``), so neither a memory tool
+    call nor a concurrent save can land between the two; an Agent without the lock helper gets this sidecar's lock.
     """
     from tools.memory_tool_store import MemoryStore
     from utils import atomic_write_text
@@ -54,13 +57,10 @@ def write(home: Path, section: str, base: str, content: str) -> dict:
     if section not in ("memory", "user", "soul"):
         raise InvalidParams("section must be memory, user, or soul")
     # The files the server read: SOUL.md in the profile home, MEMORY.md / USER.md in its memories folder.
-    if section == "soul":
-        path, lock = home / "SOUL.md", None
-    else:
-        path = home / "memories" / ("USER.md" if section == "user" else "MEMORY.md")
-        lock = getattr(MemoryStore, "_file_lock", None)
+    path = home / "SOUL.md" if section == "soul" else home / "memories" / ("USER.md" if section == "user" else "MEMORY.md")
+    file_lock = getattr(MemoryStore, "_file_lock", None)
     try:
-        with lock(path) if lock else contextlib.nullcontext():
+        with file_lock(path) if file_lock else _SAVE_LOCK:
             if _digest(path) != base:
                 return {"written": False}
             atomic_write_text(path, content, tmp_prefix=".mem_", preserve_mode=True)
