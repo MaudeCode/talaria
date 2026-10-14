@@ -14,7 +14,9 @@ import importlib
 import logging
 import multiprocessing
 import queue
+import os
 import re
+import signal
 import threading
 import time
 from datetime import datetime
@@ -193,16 +195,18 @@ def _live_executions(home: Path, job_ids: list[str], *, strict: bool = False) ->
 def _claim_fire(store_home: Path, job: dict) -> dict | bool | None:
     """The Agent's own run-now lease (``claim_job_for_fire(manual=True)``), which a gateway tick must also win.
 
-    The exact record the claim took (the one to run), ``False`` when another process holds the job, or ``None`` for a
-    paused or disabled job, which no tick fires. ``mark_job_run`` releases it when the run ends; the run heartbeats it
-    meanwhile."""
+    The exact record the claim took (the one to run), ``False`` when another process holds the job's claim, or
+    ``None`` for a job the Agent does not claim (paused, disabled, or terminal), which no tick fires. ``mark_job_run``
+    releases a claim when the run ends; the run heartbeats it meanwhile."""
     jobs = _jobs()
     with _store(store_home):
         if not jobs.is_job_runnable(job):
             return None
         claimed = jobs.claim_job_for_fire(job["id"], manual=True, return_job=True)
-    if not isinstance(claimed, dict):
-        return False
+        if not isinstance(claimed, dict):
+            # The claim only loses to a live owner's claim; any other refusal is a record the Agent never claims.
+            current = jobs.get_job(job["id"]) or {}
+            return False if isinstance(current.get("fire_claim"), dict) else None
     return {key: value for key, value in claimed.items() if key != "_scheduled_instant"}
 
 
@@ -348,20 +352,39 @@ def _result_timeout(job) -> float:
     return 6 * 60 * 60.0
 
 
+def _worker(main, *args) -> None:
+    """A run's worker leads its own process group, so stopping the run also reaches every process it started."""
+    if hasattr(os, "setsid"):
+        os.setsid()
+    main(*args)
+
+
+def _signal_group(process, sig) -> None:
+    with contextlib.suppress(ProcessLookupError, PermissionError):
+        os.killpg(process.pid, sig)
+
+
 def _stop(process) -> None:
-    """End a run's worker and return only once it has exited: a worker that ignores SIGTERM is killed, so nothing it
-    started keeps running after the run gives up its claim or its running guard."""
-    process.terminate()
+    """End a run's worker and everything it started, returning only once the worker has exited: SIGTERM to the
+    worker's process group, then SIGKILL to whatever is left, so nothing keeps running after the run gives up its
+    claim or its running guard. Without process groups (Windows) only the worker itself is stopped."""
+    if not hasattr(os, "killpg"):
+        process.terminate()
+        process.join(timeout=5)
+        if process.is_alive():
+            process.kill()
+            process.join()
+        return
+    _signal_group(process, signal.SIGTERM)
     process.join(timeout=5)
-    if process.is_alive():
-        process.kill()
-        process.join()
+    _signal_group(process, signal.SIGKILL)
+    process.join()
 
 
 def _run_in_child(job, execution_home, ctx: CallContext, heartbeat=None):
     ctx_mp = multiprocessing.get_context("spawn")
     result_queue = ctx_mp.Queue(maxsize=1)
-    process = ctx_mp.Process(target=_child_main, args=(job, str(execution_home) if execution_home else None, result_queue))
+    process = ctx_mp.Process(target=_worker, args=(_child_main, job, str(execution_home) if execution_home else None, result_queue))
     process.start()
     deadline = time.monotonic() + _result_timeout(job)
     next_beat = time.monotonic() + _CLAIM_HEARTBEAT_SECONDS
