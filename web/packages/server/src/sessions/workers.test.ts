@@ -438,6 +438,78 @@ describe('async delegation delivery claims (TAL-459)', () => {
   })
 })
 
+describe('subagent process notifications follow the owning profile (TAL-933)', () => {
+  let s: TestServer
+  let sidecar: FakeSidecar
+  beforeAll(async () => {
+    sidecar = new FakeSidecar()
+    s = await bootTestServer({ sidecar })
+  })
+  afterAll(() => s.close())
+
+  /** A session on profile `b` while `a` is active; only the owning profile's `delegation` section counts. */
+  const setup = async (configs: Record<string, Json>): Promise<{ sid: string; drain: CompletionDrain; starts: string[]; consumed: string[]; requeued: Json[]; notified: string[] }> => {
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    const session = s.deps.sessionStore.get(sid)
+    session.profile = 'b'
+    session.messages = [{ role: 'user', content: 'delegate the build' }]
+    s.deps.sessionStore.save(session)
+    const starts: string[] = []
+    const consumed: string[] = []
+    const requeued: Json[] = []
+    const notified: string[] = []
+    sidecar.respond('process.mark_consumed', (params) => { consumed.push(str(params.process_id)); return { ok: true } })
+    sidecar.respond('process.requeue', (params) => { requeued.push(...(params.events as Json[])); return { requeued: params.events.length } })
+    const channels = { emit: (_sid: string, name: string, payload: Json) => { if (name === 'bg_task_complete') notified.push(str(payload.task_id)); return 1 } } as unknown as SessionChannels
+    const drain = new CompletionDrain({
+      sidecar: () => sidecar, baseHome: '/homes', profileHome: (profile) => `/homes/${profile ?? 'default'}`, activeProfile: () => 'a', store: s.deps.sessionStore, channels, registry: s.deps.registry,
+      readConfig: (home: string) => Promise.resolve(configs[home] ?? {}),
+      startTurn: (_session, prompt) => { starts.push(prompt); return { stream_id: 'run' } }, now: () => Date.now() / 1000, log: () => undefined,
+    })
+    return { sid, drain, starts, consumed, requeued, notified }
+  }
+  const optIn = { delegation: { surface_child_process_notifications: true } }
+  type Drained = SidecarResult<'process.drain'>['events'][number]
+  const exit = (sid: string, id: string, child: boolean): Drained => ({ process_id: id, session_id: id, type: 'completion', command: 'npm test', exit_code: 0, output: 'ok', owner_task_id: child ? 'sa-0-abc' : '', session_key: sid, consumed: false, child_process: child })
+
+  it("drops a subagent's process completion without waking the parent when the profile does not opt in", async () => {
+    // The active profile's opt-in does not count for a session owned by profile b.
+    const { sid, drain, starts, consumed, requeued, notified } = await setup({ '/homes/a': optIn })
+    sidecar.respond('process.drain', () => ({ events: [exit(sid, 'proc_child', true)] }))
+    expect(await drain.drainOnce()).toBe(1)
+    await new Promise((r) => setTimeout(r, 100))
+    expect(starts).toEqual([])
+    expect(notified).toEqual([])
+    // Left unconsumed, so the child's teardown still reports an exit nobody read.
+    expect(consumed).toEqual([])
+    expect(requeued).toEqual([])
+    drain.stop()
+  })
+
+  it('wakes the parent when the owning profile sets surface_child_process_notifications: true', async () => {
+    const { sid, drain, starts, consumed } = await setup({ '/homes/b': optIn })
+    expect(await drain.processOne(exit(sid, 'proc_child_on', true))).toBe(true)
+    expect(starts).toHaveLength(1)
+    expect(starts[0]).toContain('Background process proc_child_on completed')
+    expect(consumed).toEqual(['proc_child_on'])
+    drain.stop()
+  })
+
+  it("still wakes the session for its own process completion and routes async delegations unchanged", async () => {
+    const { sid, drain, starts, requeued } = await setup({})
+    sidecar.respond('process.format_notification', () => ({ text: '[ASYNC DELEGATION COMPLETE — deleg_sa]' }))
+    sidecar.respond('process.claim_delivery', () => ({ claim_id: 'c' }))
+    sidecar.respond('process.complete_delivery', () => ({ ok: true }))
+    const delegation = (id: string, origin: string): Drained => ({ process_id: id, delegation_id: id, type: 'async_delegation', owner_task_id: 'sa-0-abc', origin_ui_session_id: origin, consumed: false, child_process: false })
+    sidecar.respond('process.drain', () => ({ events: [exit(sid, 'proc_own', false), delegation('deleg_sa', sid), delegation('deleg_elsewhere', 'gone')] }))
+    expect(await drain.drainOnce()).toBe(2)
+    expect(starts.join('\n')).toContain('Background process proc_own completed')
+    expect(starts.join('\n')).toContain('ASYNC DELEGATION COMPLETE — deleg_sa')
+    expect(requeued.map((e) => e.process_id)).toEqual(['deleg_elsewhere'])
+    drain.stop()
+  })
+})
+
 describe('background wakeups carry their update metadata (TAL-371)', () => {
   let s: TestServer
   let sidecar: FakeSidecar

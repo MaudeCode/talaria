@@ -49,6 +49,8 @@ export interface CompletionDrainDeps {
   configPath?: (profileHome: string) => string
   /** TAL-372: each routed completion settles its background record. */
   background?: Pick<BackgroundActivity, 'recordEvent'>
+  /** TAL-933: a profile's parsed config, for its `delegation.surface_child_process_notifications`. */
+  readConfig?: (profileHome: string) => Promise<Dict>
 }
 
 /** `event` is the raw completion event: async delegations claim and acknowledge it in the Agent's ledger (TAL-459), and every
@@ -201,12 +203,25 @@ export class CompletionDrain {
     return (formatWakeupPrompt(evt) ?? '').trim()
   }
 
+  /** The owning profile's `delegation.surface_child_process_notifications`; off, the Agent's default, when it cannot be read. */
+  private async surfacesChildProcesses(sid: string): Promise<boolean> {
+    try {
+      const session = this.deps.store.get(sid, { metadataOnly: true, promote: false, cacheOnMiss: false })
+      const config = await this.deps.readConfig?.(this.deps.profileHome(session.profile ?? this.deps.activeProfile()))
+      return isDict(config?.delegation) && config.delegation.surface_child_process_notifications === true
+    } catch { return false }
+  }
+
   /** Python `_process_one`; returns false when the event has no owning WebUI session. */
   async processOne(evt: Dict): Promise<boolean> {
     const processId = str(evt.process_id).trim()
     const sid = this.resolveTarget(evt)
     if (!sid) return false
     if (evt.consumed === true) return true
+    // TAL-933 (Agent `should_surface_notification`): a subagent's own process notices stay out of the parent chat unless
+    // the session's profile opts in. Dropped, not consumed, as in the Agent: an exit nobody read still reaches the parent
+    // as the child's `unread_completions`.
+    if (evt.child_process === true && !(await this.surfacesChildProcesses(sid))) return true
     const seen = this.seen.get(sid) ?? new Set<string>()
     this.seen.set(sid, seen)
     // Only a per-process delivery can repeat: a watch event's key is unique, so remembering it would only grow `seen`.

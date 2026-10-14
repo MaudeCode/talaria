@@ -3984,6 +3984,9 @@
             },
             "origin_ui_session_id": {
               "type": "string"
+            },
+            "child_process": {
+              "type": "boolean"
             }
           },
           "required": [
