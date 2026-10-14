@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Chats now follow the AGENTS.md and CLAUDE.md files in the project subdirectories the agent works in, as the CLI does.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

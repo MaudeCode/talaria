@@ -167,6 +167,37 @@ describe('chat turns through the sidecar', () => {
     expect(marks).toEqual([true, undefined])
   })
 
+  it('tells the Agent whether the workspace is a host path, so a remote backend\'s path never anchors host context (TAL-903)', async () => {
+    const sid = await newSession(s)
+    const marks: unknown[] = []
+    sidecar.respond('chat.start', (params) => {
+      marks.push(params.workspace_local)
+      return completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'ok' }])
+    })
+    const turn = async (body: Json): Promise<void> => {
+      const res = await post(s, '/api/chat/start', { session_id: sid, ...body })
+      expect(res.status).toBe(200)
+      await s.sse(`/api/chat/stream?stream_id=${String((await json(res)).stream_id)}`, (f) => f.event === 'done')
+    }
+    await turn({ message: 'local' })
+    // An SSH backend: the workspace is a target-side path under `terminal.cwd`, never statted on the host.
+    const configPath = join(s.state, 'config.yaml')
+    const prior = existsSync(configPath) ? readFileSync(configPath, 'utf8') : null
+    writeFileSync(configPath, 'terminal:\n  backend: ssh\n  cwd: /srv/project\n')
+    sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config: { terminal: { backend: 'ssh', cwd: '/srv/project' } } }))
+    s.deps.agentConfig.invalidate()
+    await s.deps.agentConfig.read(s.state)
+    try {
+      await turn({ message: 'remote', workspace: '/srv/project/app' })
+    } finally {
+      if (prior === null) rmSync(configPath)
+      else writeFileSync(configPath, prior)
+      sidecar.respond('config.get', undefined)
+      s.deps.agentConfig.invalidate()
+    }
+    expect(marks).toEqual([true, false])
+  })
+
   it('streams a turn, settles the transcript, journals every frame, and replays it after the run', async () => {
     const sid = await newSession(s)
     sidecar.respond('chat.start', (params, emit) => {

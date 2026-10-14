@@ -742,7 +742,7 @@ def _agent_signature(model: str, provider, runtime: dict, toolsets, home: str, k
     bundle = {
         "model": model, "provider": provider, "base_url": runtime.get("base_url"), "api_key": key_digest,
         "api_mode": runtime.get("api_mode"), "acp_command": runtime.get("acp_command"), "acp_args": runtime.get("acp_args"),
-        "credential_pool": pool_identity, "toolsets": toolsets, "home": home,
+        "credential_pool": pool_identity, "toolsets": toolsets, "home": home, "cwd": kwargs.get("cwd"),
         "disabled_toolsets": kwargs.get("disabled_toolsets"),
         "max_iterations": kwargs.get("max_iterations"), "max_tokens": kwargs.get("max_tokens"),
         # Bound at construction too: a reasoning-effort change from the composer must build a fresh agent.
@@ -777,6 +777,9 @@ def _agent_kwargs(AIAgent, params: dict, session_id: str, model: str, provider, 
         ("acp_args", runtime.get("acp_args")),
         ("credential_pool", runtime.get("credential_pool")),
         ("gateway_session_key", session_id),
+        # TAL-903: anchors subdirectory AGENTS.md discovery (and the memory provider) at the session workspace, when the
+        # server says it is a host path; a remote terminal backend's target-side path must never be read on the host.
+        ("cwd", params.get("workspace") if params.get("workspace_local") is True else None),
     ):
         if _supported(AIAgent, name) and value is not None:
             kwargs[name] = value

@@ -71,7 +71,8 @@ out: dict = {}
 
 def call(session_id: str, focus: str, messages=MESSAGES) -> str:
     params = {"profile_home": str(ALPHA), "session_id": session_id, "messages": messages, "focus": focus, "model": "gpt-5.4",
-              "model_provider": "openai-codex", "enabled_toolsets": ["memory"], "max_iterations": 7}
+              "model_provider": "openai-codex", "enabled_toolsets": ["memory"], "max_iterations": 7,
+              "workspace": "/srv/project", "workspace_local": True}
     return refine(None, params)["output"]
 
 
@@ -83,7 +84,7 @@ output = call("fresh", "")
 fresh = chat._AGENT_CACHE.get("fresh")
 out["built"] = {
     "output": output, "reviews": [r for agent in Built.instances for r in agent.reviews],
-    "kwargs": {key: Built.instances[0].kwargs.get(key) for key in ("model", "provider", "enabled_toolsets", "max_iterations", "session_id")},
+    "kwargs": {key: Built.instances[0].kwargs.get(key) for key in ("model", "provider", "enabled_toolsets", "max_iterations", "session_id", "cwd")},
     "cached_for_turn": fresh is not None and fresh[0] is Built.instances[0] and str(fresh[2]) == str(ALPHA),
     "held": len(chat._COMMITTING),
 }

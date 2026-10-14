@@ -574,6 +574,8 @@ export const CHAT_METHODS = {
       voice_turn: z.boolean().optional(),
       /** TAL-818: attach the Agent's `connection_callback`, so `manage_connections` streams a `connection` frame and waits on the card. */
       connect_card: z.boolean().optional(),
+      /** TAL-903: `workspace` is a host path (the profile's terminal runs locally), so the Agent anchors AGENTS.md discovery and its memory provider there. A remote backend's target-side path is never read on the host. */
+      workspace_local: z.boolean().optional(),
     }),
     result: ChatStartResultSchema,
     stream: ChatStreamSchema,
@@ -630,6 +632,8 @@ export const CHAT_METHODS = {
       session_id: z.string().min(1), messages: z.array(Loose), focus: z.string(), model: z.string(), model_provider: z.string().nullable().optional(),
       enabled_toolsets: z.array(z.string()).nullable().optional(), max_iterations: z.number().int().nullable().optional(), max_tokens: z.number().int().nullable().optional(),
       reasoning_config: z.object({ enabled: z.boolean(), effort: z.string().optional() }).nullable().optional(),
+      /** TAL-903: the session's workspace, as `chat.start` sends it, so the agent built here is the one its next turn reuses. */
+      workspace: z.string().optional(), workspace_local: z.boolean().optional(),
     }),
     result: z.object({ output: z.string() }),
   },
