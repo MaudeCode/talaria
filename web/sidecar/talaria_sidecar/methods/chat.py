@@ -616,6 +616,18 @@ def _main_model_request_overrides(model: str, provider, base_url: str = "") -> d
     return overrides or None
 
 
+def _request_overrides(model: str, provider, runtime: dict) -> dict | None:
+    """The resolver's ``request_overrides`` (a custom provider entry's ``extra_body``) under the main-model ones, whose
+    ``extra_body`` wins key by key, the Agent's own merge order. Runs under ``scoped_home``."""
+    merged = dict(runtime.get("request_overrides") or {})
+    main = _main_model_request_overrides(model, provider, str(runtime.get("base_url") or "")) or {}
+    extra_body = {**(merged.get("extra_body") or {}), **(main.get("extra_body") or {})}
+    merged.update(main)
+    if extra_body:
+        merged["extra_body"] = extra_body
+    return merged or None
+
+
 def _agent_signature(model: str, provider, runtime: dict, toolsets, home: str, kwargs: dict) -> str:
     """Cache identity of an ``AIAgent``: everything its constructor bound from the resolved runtime, so a rotated key,
     a different API mode, ACP command, or credential pool never reuses an agent built for the old bundle. The key
@@ -1118,7 +1130,7 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
         fallback_chain = _profile_fallback_chain()
         if fallback_chain and _supported(AIAgent, "fallback_model"):
             kwargs["fallback_model"] = fallback_chain
-        request_overrides = _main_model_request_overrides(resolved_model, resolved_provider, str(runtime.get("base_url") or ""))
+        request_overrides = _request_overrides(resolved_model, resolved_provider, runtime)
         if request_overrides and _supported(AIAgent, "request_overrides"):
             kwargs["request_overrides"] = request_overrides
         # TAL-913: the profile's ``checkpoints`` section, as the Agent's own CLI and gateway turns read it.
@@ -1380,6 +1392,7 @@ def compress(ctx: CallContext, params: dict) -> dict:
         ("credential_pool", runtime.get("credential_pool")),
         ("gateway_session_key", session_id),
         ("skip_memory", not _checkpoint_required()),
+        ("request_overrides", _request_overrides(kwargs["model"], kwargs["provider"], runtime)),
     ):
         if _supported(AIAgent, name) and value is not None:
             kwargs[name] = value

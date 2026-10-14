@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Chats and /compress on a custom provider now send the provider's configured extra request body, such as a user field a proxy requires, even when its display name differs from its id.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
