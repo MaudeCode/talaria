@@ -895,8 +895,9 @@ export class TurnRunner {
       const { events: steerEvents, leftovers } = this.finalizeSteers(streamId, result.pending_steer, 'followup')
       s.messages = withoutToolImages(mergeDisplayMessagesAfterAgentResult(previousMessages, previousContext, resultMessages, msgText, { source: opts.source ?? 'webui', activeTurnToken, now: deps.now(), turnId: streamId, attachments: opts.attachments ?? [] }))
       s.context_messages = dedupeContext(context)
+      // The settled turn's own figures: a compaction it waited on (TAL-1005) installed an estimate its prompt now supersedes.
+      s.post_compression_context_tokens_estimate = result.compressed ? estimate : null
       if (result.compressed) {
-        s.post_compression_context_tokens_estimate = estimate
         // TAL-540: the anchor is the last visible row before this turn (never its eager checkpoint); the merged transcript
         // holds no compaction marker, so the summary is the model context's newest one.
         const before = visibleMessagesForAnchor(previousMessages.filter((m) => m._turn_id !== streamId))

@@ -215,6 +215,25 @@ describe('compaction before the next turn', () => {
     } finally { spy.mockRestore() }
   })
 
+  it("settles a turn that waited on a job with its own figures, whichever model it ran", async () => {
+    for (const model of [undefined, 'new-model']) {
+      const sid = await seeded({ ...OVER, model: 'old-model' })
+      let release!: () => void
+      const gate = new Promise<void>((r) => { release = r })
+      sidecar.respond('chat.compress', async (params) => { await gate; return compressed(params) })
+      const job = s.deps.sessions.ensureCompacted(sid)
+      sidecar.respond('chat.start', (params) => { turns.push(params.conversation_history); return reply(params, { threshold_tokens: 400, last_prompt_tokens: 380, next_turn_threshold_tokens: 400 }) })
+      const res = await post(s, '/api/chat/start', { session_id: sid, message: 'joins', ...(model ? { model } : {}) })
+      const streamId = String((await json(res)).stream_id)
+      await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'compressing')
+      release()
+      await job
+      await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'stream_end')
+      // The job's 120-token estimate predates the turn's 380-token prompt, which now decides the next compaction.
+      expect(s.deps.sessionStore.get(sid)).toMatchObject({ post_compression_context_tokens_estimate: null, last_prompt_tokens: 380 })
+    }
+  })
+
   it("leaves a turn on another model to the Agent's own preflight", async () => {
     const sid = await seeded({ ...OVER, model: 'old-model' })
     let model: unknown
