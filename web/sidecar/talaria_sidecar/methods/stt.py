@@ -114,7 +114,11 @@ def stream_audio(stream_id: str, audio_b64: str, end: bool) -> dict:
     return {"ok": True}
 
 
-def transcribe(audio_b64: str, suffix: str) -> str:
+def transcribe(audio_b64: str, suffix: str) -> dict:
+    """The recording's transcript, emptied with ``filtered`` when it is a phrase Whisper invents on silent audio.
+
+    The Agent's ``transcribe_recording`` filter over ``transcribe_audio``, without its voice-mode tagging (TAL-917).
+    An Agent without the filter keeps the raw transcript."""
     try:
         from tools.transcription_tools import transcribe_audio
     except ImportError as exc:
@@ -135,7 +139,14 @@ def transcribe(audio_b64: str, suffix: str) -> str:
         message = str((result or {}).get("error") or "Transcription failed") if isinstance(result, dict) else "Transcription failed"
         lowered = message.lower()
         raise RpcError(message, condition="stt_unavailable" if "unavailable" in lowered or "not configured" in lowered else "stt_failed")
-    return str(result.get("transcript") or "").strip()
+    transcript = str(result.get("transcript") or "").strip()
+    try:
+        from tools.voice_mode_transcript import is_whisper_hallucination
+    except ImportError:
+        return {"transcript": transcript, "filtered": False}
+    if transcript and is_whisper_hallucination(transcript):
+        return {"transcript": "", "filtered": True}
+    return {"transcript": transcript, "filtered": False}
 
 
 def register(registry) -> None:
@@ -149,7 +160,7 @@ def register(registry) -> None:
     @registry.method("stt.transcribe")
     def transcribe_(ctx: CallContext, params: dict) -> dict:
         with scoped_home(profile_home_param(params)):
-            return {"transcript": transcribe(str(params.get("audio_b64") or ""), str(params.get("suffix") or ".webm"))}
+            return transcribe(str(params.get("audio_b64") or ""), str(params.get("suffix") or ".webm"))
 
     @registry.method("stt.stream")
     def stream_(ctx: CallContext, params: dict) -> dict:

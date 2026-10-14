@@ -557,8 +557,8 @@ export const SessionNewRequestSchema = z.looseObject({
 export const TranscribeCapabilitySchema = z.looseObject({ ok: z.literal(true), available: z.boolean(), provider: z.string(), streaming: z.boolean() })
 /** TAL-906: what read-aloud speaks for a message; clients play it as is. */
 export const SpeechPrepareSchema = z.object({ spoken_text: z.string() })
-/** `POST /api/transcribe`: the recording's transcript. */
-export const TranscribeResponseSchema = z.looseObject({ ok: z.literal(true), transcript: z.string() })
+/** `POST /api/transcribe`: the recording's transcript; `filtered` (TAL-917) when the server emptied a phrase Whisper invents on silent audio. */
+export const TranscribeResponseSchema = z.looseObject({ ok: z.literal(true), transcript: z.string(), filtered: z.boolean() })
 
 // ── settings, profiles, models, providers ───────────────────────────────
 

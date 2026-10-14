@@ -79,7 +79,7 @@ describe('live dictation (TAL-802)', () => {
     FakeTap.last = undefined
     FakeSocket.last = undefined as never
     getUserMedia.mockReset().mockResolvedValue({ getTracks: () => [track] })
-    vi.mocked(api.transcribeRecording).mockReset().mockResolvedValue({ ok: true, transcript: ' from the recording ' })
+    vi.mocked(api.transcribeRecording).mockReset().mockResolvedValue({ ok: true, transcript: ' from the recording ', filtered: false })
     track.stop.mockReset()
     vi.stubGlobal('WebSocket', FakeSocket)
     vi.stubGlobal('MediaRecorder', FakeRecorder)

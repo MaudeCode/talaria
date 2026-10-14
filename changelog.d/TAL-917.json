@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Dictating into the App no longer drops \"Thank you.\" or \"you\" into the message when the recording was silent.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

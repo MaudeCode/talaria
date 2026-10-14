@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { z } from 'zod'
-import { ChatEventSchema, ClarifyPendingEnvelopeSchema, MemoryWriteRefusalSchema, ModelsSchema, SIDECAR_RPC_VERSION, SkillsSchema, SpeechPrepareSchema, TranscribeStreamEndSchema, TranscribeStreamEventSchema, TranscribeStreamStartSchema, UpdateNotificationsSchema } from './index.js'
+import { ChatEventSchema, ClarifyPendingEnvelopeSchema, MemoryWriteRefusalSchema, ModelsSchema, SIDECAR_RPC_VERSION, SkillsSchema, SpeechPrepareSchema, TranscribeResponseSchema, TranscribeStreamEndSchema, TranscribeStreamEventSchema, TranscribeStreamStartSchema, UpdateNotificationsSchema } from './index.js'
 
 const shared = (path: string): unknown => JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../contracts', path), 'utf8'))
 
@@ -28,6 +28,12 @@ describe('contracts package', () => {
     expect(fixture.events.map((event) => TranscribeStreamEventSchema.parse(event).type)).toEqual(['partial', 'partial', 'final'])
     expect(TranscribeStreamEventSchema.parse(fixture.unavailable).type).toBe('error')
     expect(TranscribeStreamStartSchema.safeParse({ sample_rate: 96000 }).success).toBe(false)
+  })
+  it('parses the shared dictation transcripts, filtered and heard (TAL-917)', () => {
+    const fixture = shared('fixtures/transcribe.json') as Record<string, unknown>
+    expect(Object.values(fixture).map((body) => TranscribeResponseSchema.parse(body))).toEqual([
+      { ok: true, transcript: 'Ship the release notes.', filtered: false }, { ok: true, transcript: '', filtered: true },
+    ])
   })
   it('parses the shared rate-limit wait run-status frames (TAL-821)', () => {
     const fixture = shared('fixtures/rate-limit-wait.json') as { wait: unknown; cleared: unknown }
