@@ -1285,7 +1285,7 @@ export class SessionService {
    * Python `_handle_session_compress_start`: validate, then join the session's running job or start a fresh one (a
    * finished job is replaced). The stale-runtime refusal comes before a job exists; a running job is joined without it.
    */
-  async startCompression(sid: string, focusRaw: unknown): Promise<CompressionJob> {
+  async startCompression(sid: string, focusRaw: unknown, opts: { automatic?: boolean } = {}): Promise<CompressionJob> {
     const running = (): CompressionJob | undefined => { const job = this.compressionJobs.get(sid); return job?.status === 'running' ? job : undefined }
     // A running job is joined first: once it has installed its short context, the guards below would refuse a new one.
     const existing = running()
@@ -1301,7 +1301,7 @@ export class SessionService {
     if (this.deps.profileDeleting?.(profile)) throw new HttpFailure(409, `Profile '${str(profile)}' is being deleted.`)
     const release = this.deps.profileActivity?.(profile)
     const now = this.deps.now()
-    const job: CompressionJob = { session_id: sid, focus_topic: focusTopic, status: 'running', started_at: now, updated_at: now, turns: new Set(), done: Promise.resolve() }
+    const job: CompressionJob = { session_id: sid, focus_topic: focusTopic, status: 'running', started_at: now, updated_at: now, turns: new Set(), automatic: opts.automatic === true, done: Promise.resolve() }
     job.done = this.compressSession(job).finally(() => { release?.(); this.compressionJobs.expireLater(job) }).then(
       (result) => { Object.assign(job, { status: 'done', result, updated_at: this.deps.now() }) },
       (error: unknown) => {
@@ -1316,17 +1316,16 @@ export class SessionService {
 
   /**
    * TAL-1005: compact the session in its joinable compression job before the next turn reads its history. A running job
-   * is always joined; a new one starts when the context is at or above the next turn's threshold (`thresholdApplies`
-   * false skips that check, for a turn on another model). `turn` is the waiting turn's stream: the job leaves its rows
-   * alone. `onWait` runs once a job is being waited on; an abort of `signal` (the turn's Stop) ends the wait but not the
+   * is always joined; a new one starts when the session is `due` (`compactionDue`, read from the store when omitted).
+   * `turn` is the waiting turn's stream: the job leaves its rows alone. `onWait` runs once a job is being waited on; an abort of `signal` (the turn's Stop) ends the wait but not the
    * job. True when the job installed a compressed context. Never throws: a failed job leaves the Agent's own preflight.
    */
-  async ensureCompacted(sid: string, opts: { turn?: string; signal?: AbortSignal; onWait?: () => void; thresholdApplies?: boolean } = {}): Promise<boolean> {
+  async ensureCompacted(sid: string, opts: { turn?: string; signal?: AbortSignal; onWait?: () => void; due?: boolean } = {}): Promise<boolean> {
     const { turn, signal } = opts
     if (turn) this.compactionWaiters.add(turn)
     try {
       let job = this.compressionJobs.get(sid)
-      if (job?.status !== 'running') job = opts.thresholdApplies !== false && this.overCompactionThreshold(sid) ? await this.startCompression(sid, null) : undefined
+      if (job?.status !== 'running') job = (opts.due ?? this.storedCompactionDue(sid)) ? await this.startCompression(sid, null, { automatic: true }) : undefined
       if (!job || signal?.aborted) return false
       if (turn) job.turns.add(turn)
       opts.onWait?.()
@@ -1341,10 +1340,12 @@ export class SessionService {
     }
   }
 
+  private storedCompactionDue(sid: string): boolean {
+    try { return this.compactionDue(this.store.get(sid, { metadataOnly: true })) } catch { return false }
+  }
+
   /** Whether the session's context (the post-compression estimate, else the last prompt) reached the next turn's threshold. */
-  private overCompactionThreshold(sid: string): boolean {
-    let s: Session
-    try { s = this.store.get(sid, { metadataOnly: true }) } catch { return false }
+  compactionDue(s: Session): boolean {
     const positive = (v: unknown): number | null => { const n = Math.trunc(Number(v ?? 0)); return Number.isFinite(n) && n > 0 ? n : null }
     const used = positive(s.post_compression_context_tokens_estimate) ?? positive(s.last_prompt_tokens)
     const threshold = positive(s.next_turn_threshold_tokens) ?? positive(s.threshold_tokens)
@@ -1567,7 +1568,8 @@ export class SessionService {
         this.markStateDbSeen(live, read, { boundary: true })
         live.last_prompt_tokens = result.after_tokens
         live.post_compression_context_tokens_estimate = result.after_tokens
-        this.store.save(live)
+        // An automatic job is maintenance, not activity: it leaves the session's place in the list alone.
+        this.store.save(live, { touchUpdatedAt: !job.automatic })
         // A backup from before the compression would restore the uncompressed context.
         try { rmSync(`${this.store.pathFor(sid)}.bak`, { force: true }) } catch { /* ignore */ }
         return live

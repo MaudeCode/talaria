@@ -441,8 +441,9 @@ export class TurnRunner {
     const attachments = opts.attachments ?? []
     // A background wakeup stays one in a forked session too (TAL-460).
     const source = opts.source !== 'process_wakeup' && str(s.source_tag).toLowerCase() === 'fork' ? 'fork' : (opts.source ?? 'webui')
-    // TAL-1005: the threshold the last turn reported holds for a turn on the same model only.
-    const sameRuntime = str(s.model) === str(opts.model) && str(s.model_provider) === str(opts.modelProvider)
+    // TAL-1005: the threshold the last turn reported holds for a turn on the same model only, and is judged before admission
+    // clears the post-compression estimate. A `/btw` clone is thrown away after one answer, so it is never due.
+    const compactionDue = !opts.ephemeral && str(s.model) === str(opts.model) && str(s.model_provider) === str(opts.modelProvider) && this.deps.service().compactionDue(s)
     s.workspace = opts.workspace
     s.model = opts.model
     s.model_provider = opts.modelProvider
@@ -471,7 +472,7 @@ export class TurnRunner {
     const channel = this.registry.create(streamId, s.session_id)
     if (opts.goalRelated) this.registry.goalRelated.add(streamId)
     this.registry.registerActiveRun({ stream_id: streamId, session_id: s.session_id, started_at: this.deps.now(), phase: 'starting', workspace: opts.workspace, model: opts.model, provider: opts.modelProvider, ephemeral: Boolean(opts.ephemeral), origin: turnOrigin(source) })
-    const worker = this.run(s.session_id, streamId, channel, opts, sameRuntime).catch((error: unknown) => {
+    const worker = this.run(s.session_id, streamId, channel, opts, compactionDue).catch((error: unknown) => {
       this.deps.log(`[webui] ERROR turn ${streamId} crashed\n${error instanceof Error ? (error.stack ?? error.message) : String(error)}`)
     }).finally(() => { this.workers.delete(streamId) })
     this.workers.set(streamId, worker)
@@ -495,7 +496,7 @@ export class TurnRunner {
 
   // ── worker ───────────────────────────────────────────────────────────────
 
-  private async run(sessionId: string, streamId: string, channel: StreamChannel, opts: StartTurnOptions, sameRuntime: boolean): Promise<void> {
+  private async run(sessionId: string, streamId: string, channel: StreamChannel, opts: StartTurnOptions, compactionDue: boolean): Promise<void> {
     const { deps } = this
     let writer: RunJournalWriter | null = null
     try {
@@ -567,9 +568,8 @@ export class TurnRunner {
     const controller = new AbortController()
     this.abortControllers.set(streamId, controller)
     // TAL-1005: an over-threshold session compacts in its joinable compression job before the turn reads its history, so
-    // a Stop ends only this wait and a resend joins the same job. The turn then reads the compacted session afresh. A
-    // `/btw` clone is thrown away after one answer, so it never starts one.
-    const compacted = await deps.service().ensureCompacted(sessionId, { turn: streamId, signal: controller.signal, thresholdApplies: sameRuntime && !opts.ephemeral, onWait: () => { put('compressing', { session_id: sessionId, message: 'Compressing context' }) } })
+    // a Stop ends only this wait and a resend joins the same job. The turn then reads the compacted session afresh.
+    const compacted = await deps.service().ensureCompacted(sessionId, { turn: streamId, signal: controller.signal, due: compactionDue, onWait: () => { put('compressing', { session_id: sessionId, message: 'Compressing context' }) } })
     if (compacted) {
       try { s = deps.store.get(sessionId) } catch { /* the cancel or error path below reports a deleted session */ }
       ;({ previousMessages, previousContext, apiHistory } = history())

@@ -173,6 +173,23 @@ describe('compaction before the next turn', () => {
     expect((await json(await s.get(`/api/session/compress/status?session_id=${sid}`))).status).toBe('idle')
   })
 
+  it('judges a session the last turn compressed by its post-compression estimate, not the stale prompt size', async () => {
+    const sid = await seeded({ ...OVER, post_compression_context_tokens_estimate: 150 })
+    const { frames } = await turn(sid, 'after an auto-compression')
+    expect(events(frames)).not.toContain('compressing')
+    expect(compressCalls).toBe(0)
+  })
+
+  it("keeps the session's place in the list when an automatic job installs its result", async () => {
+    const sid = await seeded(OVER)
+    const before = s.deps.sessionStore.get(sid).updated_at
+    await new Promise((r) => setTimeout(r, 20))
+    expect(await s.deps.sessions.ensureCompacted(sid)).toBe(true)
+    const stored = s.deps.sessionStore.get(sid)
+    expect(contents(stored.context_messages)).toEqual(['one', 'four'])
+    expect(stored.updated_at).toBe(before)
+  })
+
   it("leaves a turn on another model to the Agent's own preflight", async () => {
     const sid = await seeded({ ...OVER, model: 'old-model' })
     let model: unknown

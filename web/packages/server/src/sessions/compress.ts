@@ -94,6 +94,8 @@ export interface CompressionJob {
   error_extra?: Record<string, unknown>
   /** TAL-1005: the turns that waited on this job; their own rows may land while it runs and follow its result. */
   turns: Set<string>
+  /** TAL-1005: started by the server for an over-threshold session, not by the user's `/compress`. */
+  automatic: boolean
   /** Settles when the worker finishes; never rejects. */
   done: Promise<void>
 }
