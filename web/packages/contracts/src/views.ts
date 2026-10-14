@@ -937,7 +937,8 @@ export const KanbanTaskActionsSchema = z.object({ block: z.boolean(), unblock: z
 /** Server-computed card policy on every task the Kanban routes return (TAL-557). `requires_running_exit_confirmation`: any action takes the task out of a live run, so clients confirm first. */
 export const KanbanTaskPolicyShape = { available_actions: KanbanTaskActionsSchema, requires_running_exit_confirmation: z.boolean() }
 export const KanbanTaskViewSchema = z.looseObject({ id: z.union([z.string(), z.number()]), title: z.string().optional(), status: z.string().optional(), assignee: NullableString.optional(), priority: z.union([z.string(), z.number()]).nullable().optional(), description: z.string().optional(), tags: z.array(z.string()).optional(), session_id: NullableString.optional(), archived: z.boolean().optional(), created_at: Json.optional(), updated_at: Json.optional(), ...KanbanTaskPolicyShape })
-export const KanbanColumnSchema = z.looseObject({ name: z.string(), tasks: z.array(KanbanTaskViewSchema) })
+/** A board column in the Agent workflow's order (TAL-796): `name` is the status key, `label` the Agent's English label. */
+export const KanbanColumnSchema = z.looseObject({ name: z.string(), label: z.string(), tasks: z.array(KanbanTaskViewSchema) })
 /** One profile lane (TAL-567): an assignee's tasks (`null` = unassigned) across every board column, with its task count. */
 export const KanbanLaneSchema = z.object({ assignee: z.string().nullable(), count: z.number().int(), columns: z.array(KanbanColumnSchema) })
 export const KanbanBoardViewSchema = z.looseObject({ columns: z.array(KanbanColumnSchema).optional(), assignees: z.array(Json).optional(), filters: Json.optional(), latest_event_id: z.number().optional(), read_only: z.boolean().optional(), tenants: z.array(Json).optional(), changed: z.boolean().optional(),

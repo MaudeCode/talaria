@@ -72,13 +72,15 @@ export const COMMANDS_METHODS = {
 
 // ── kanban ─────────────────────────────────────────────────────────────
 const Board = ProfileHomeParams.extend({ board: z.string().nullable().optional() })
-/** `claim_live`: a running task's worker still holds its claim. `has_completion_evidence`: the task stores a result, which the Agent requires to complete it (TAL-557). */
-export const KanbanTaskSchema = z.object({ id: z.string(), title: z.string(), status: z.string(), priority: z.number().int(), claim_live: z.boolean(), has_completion_evidence: z.boolean() }).catchall(Json)
+/** `claim_live`: a running task's worker still holds its claim. `has_completion_evidence`: the task stores a result, which the Agent requires to complete it (TAL-557).
+ * `agent_move_targets`: the Agent workflow's manual moves from the task's status, `null` before Agent 0.21.6 (TAL-796). */
+export const KanbanTaskSchema = z.object({ id: z.string(), title: z.string(), status: z.string(), priority: z.number().int(), claim_live: z.boolean(), has_completion_evidence: z.boolean(), agent_move_targets: z.array(z.string()).nullable() }).catchall(Json)
 const TaskEnvelope = z.object({ task: KanbanTaskSchema, read_only: z.boolean() })
 export const KanbanBoardSchema = z.union([
   z.object({ changed: z.literal(false), latest_event_id: z.number().int(), read_only: z.boolean() }),
   z.object({
-    changed: z.literal(true), columns: z.array(z.object({ name: z.string(), tasks: z.array(KanbanTaskSchema) })), tenants: z.array(z.string()), assignees: z.array(z.string()),
+    /** The Agent workflow's columns in board order (TAL-796): `name` is the status key, `label` the Agent's English label. */
+    changed: z.literal(true), columns: z.array(z.object({ name: z.string(), label: z.string(), tasks: z.array(KanbanTaskSchema) })), tenants: z.array(z.string()), assignees: z.array(z.string()),
     latest_event_id: z.number().int(), read_only: z.boolean(),
     filters: z.object({ tenant: z.string().nullable(), assignee: z.string().nullable(), include_archived: z.boolean(), only_mine: z.boolean(), profile: z.string().nullable() }),
   }),
@@ -103,7 +105,8 @@ export const KANBAN_METHODS = {
   'kanban.normalize_board': { params: Board, result: z.object({ board: z.string() }) },
   'kanban.events': { params: Board.extend({ since: z.number().int().optional(), limit: z.number().int().optional() }), result: z.object({ events: z.array(KanbanEventSchema), cursor: z.number().int(), latest_event_id: z.number().int(), read_only: z.boolean() }) },
   'kanban.config': { params: Board, result: z.object({ columns: z.array(z.string()), assignees: z.array(KanbanAssigneeSchema), default_tenant: z.string(), lane_by_profile: z.boolean(), include_archived_by_default: z.boolean(), render_markdown: z.boolean(), read_only: z.boolean() }) },
-  'kanban.stats': { params: Board, result: Loose },
+  /** `column_order`: the Agent workflow's column keys in board order (TAL-796). */
+  'kanban.stats': { params: Board, result: z.object({ column_order: z.array(z.string()) }).catchall(Json) },
   'kanban.assignees': { params: Board, result: z.object({ assignees: z.array(KanbanAssigneeSchema) }) },
   'kanban.task_log': { params: Board.extend({ task_id: z.string(), tail: z.number().int().optional() }), result: z.object({ task_id: z.string(), path: z.string(), exists: z.boolean(), size_bytes: z.number().int(), content: z.string(), truncated: z.boolean() }) },
   'kanban.bulk': { params: Board.extend({ bulk: Loose }), result: z.object({ results: z.array(z.object({ id: z.string(), ok: z.boolean(), error: z.string().optional() })), read_only: z.boolean() }) },

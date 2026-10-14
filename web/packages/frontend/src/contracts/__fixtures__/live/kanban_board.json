@@ -12,26 +12,42 @@
     "columns": [
       {
         "name": "triage",
+        "label": "Triage",
         "tasks": []
       },
       {
         "name": "todo",
+        "label": "Todo",
+        "tasks": []
+      },
+      {
+        "name": "scheduled",
+        "label": "Scheduled",
         "tasks": []
       },
       {
         "name": "ready",
+        "label": "Ready",
         "tasks": []
       },
       {
         "name": "running",
+        "label": "Running",
         "tasks": []
       },
       {
         "name": "blocked",
+        "label": "Blocked",
+        "tasks": []
+      },
+      {
+        "name": "review",
+        "label": "Review",
         "tasks": []
       },
       {
         "name": "done",
+        "label": "Done",
         "tasks": []
       }
     ],

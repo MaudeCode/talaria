@@ -22,7 +22,7 @@ type KanbanTask = z.infer<typeof KanbanTaskSchema>
 interface KanbanColumn { name: string; tasks: KanbanTask[] }
 
 /** Labels for the Agent's statuses; an unknown status shows as sent. */
-const STATUS_LABELS: Record<string, () => string> = { triage: m.kanban_status_triage, todo: m.kanban_status_todo, ready: m.kanban_status_ready, running: m.kanban_status_running, blocked: m.kanban_status_blocked, done: m.kanban_status_done, archived: m.kanban_status_archived }
+const STATUS_LABELS: Record<string, () => string> = { triage: m.kanban_status_triage, todo: m.kanban_status_todo, scheduled: m.kanban_status_scheduled, ready: m.kanban_status_ready, running: m.kanban_status_running, blocked: m.kanban_status_blocked, review: m.kanban_status_review, done: m.kanban_status_done, archived: m.kanban_status_archived }
 const statusLabel = (status: string) => STATUS_LABELS[status]?.() ?? status
 
 function useDebounced<T>(value: T, ms: number): T {

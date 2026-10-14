@@ -45,7 +45,7 @@
           "color": "",
           "default_workdir": null,
           "project_id": null,
-          "created_at": 1791736147,
+          "created_at": 1791941262,
           "archived": false,
           "db_path": "<home>/kanban/boards/experiments/kanban.db"
         },
@@ -72,7 +72,7 @@
           "color": "",
           "default_workdir": null,
           "project_id": null,
-          "created_at": 1791736147,
+          "created_at": 1791941262,
           "archived": false,
           "db_path": "<home>/kanban/boards/experiments/kanban.db"
         },
@@ -112,7 +112,7 @@
         "result": {
           "slug": "experiments",
           "action": "archived",
-          "new_path": "<home>/kanban/boards/_archived/experiments-1791736147"
+          "new_path": "<home>/kanban/boards/_archived/experiments-1791941262"
         },
         "current": "default",
         "read_only": false
@@ -131,14 +131,14 @@
       },
       "result": {
         "task": {
-          "id": "t_d6c468b7",
+          "id": "t_408bf6b1",
           "title": "first task",
           "body": "details",
           "assignee": null,
           "status": "ready",
           "priority": 2,
           "created_by": "webui",
-          "created_at": 1791736147,
+          "created_at": 1791941262,
           "started_at": null,
           "completed_at": null,
           "workspace_kind": "scratch",
@@ -171,6 +171,14 @@
           "completion_contract": "local-only",
           "claim_live": false,
           "has_completion_evidence": false,
+          "agent_move_targets": [
+            "blocked",
+            "done",
+            "review",
+            "scheduled",
+            "todo",
+            "triage"
+          ],
           "age_seconds": {
             "created_age_seconds": 0,
             "started_age_seconds": null,
@@ -195,14 +203,14 @@
       },
       "result": {
         "task": {
-          "id": "t_72b6726b",
+          "id": "t_6d0343b9",
           "title": "second task",
           "body": null,
           "assignee": null,
           "status": "ready",
           "priority": 0,
           "created_by": "webui",
-          "created_at": 1791736147,
+          "created_at": 1791941262,
           "started_at": null,
           "completed_at": null,
           "workspace_kind": "scratch",
@@ -235,6 +243,14 @@
           "completion_contract": "local-only",
           "claim_live": false,
           "has_completion_evidence": false,
+          "agent_move_targets": [
+            "blocked",
+            "done",
+            "review",
+            "scheduled",
+            "todo",
+            "triage"
+          ],
           "age_seconds": {
             "created_age_seconds": 0,
             "started_age_seconds": null,
@@ -260,24 +276,32 @@
         "columns": [
           {
             "name": "triage",
+            "label": "Triage",
             "tasks": []
           },
           {
             "name": "todo",
+            "label": "Todo",
+            "tasks": []
+          },
+          {
+            "name": "scheduled",
+            "label": "Scheduled",
             "tasks": []
           },
           {
             "name": "ready",
+            "label": "Ready",
             "tasks": [
               {
-                "id": "t_d6c468b7",
+                "id": "t_408bf6b1",
                 "title": "first task",
                 "body": "details",
                 "assignee": null,
                 "status": "ready",
                 "priority": 2,
                 "created_by": "webui",
-                "created_at": 1791736147,
+                "created_at": 1791941262,
                 "started_at": null,
                 "completed_at": null,
                 "workspace_kind": "scratch",
@@ -310,6 +334,14 @@
                 "completion_contract": "local-only",
                 "claim_live": false,
                 "has_completion_evidence": false,
+                "agent_move_targets": [
+                  "blocked",
+                  "done",
+                  "review",
+                  "scheduled",
+                  "todo",
+                  "triage"
+                ],
                 "age_seconds": {
                   "created_age_seconds": 0,
                   "started_age_seconds": null,
@@ -328,14 +360,14 @@
                 "comment_count": 0
               },
               {
-                "id": "t_72b6726b",
+                "id": "t_6d0343b9",
                 "title": "second task",
                 "body": null,
                 "assignee": null,
                 "status": "ready",
                 "priority": 0,
                 "created_by": "webui",
-                "created_at": 1791736147,
+                "created_at": 1791941262,
                 "started_at": null,
                 "completed_at": null,
                 "workspace_kind": "scratch",
@@ -368,6 +400,14 @@
                 "completion_contract": "local-only",
                 "claim_live": false,
                 "has_completion_evidence": false,
+                "agent_move_targets": [
+                  "blocked",
+                  "done",
+                  "review",
+                  "scheduled",
+                  "todo",
+                  "triage"
+                ],
                 "age_seconds": {
                   "created_age_seconds": 0,
                   "started_age_seconds": null,
@@ -389,14 +429,22 @@
           },
           {
             "name": "running",
+            "label": "Running",
             "tasks": []
           },
           {
             "name": "blocked",
+            "label": "Blocked",
+            "tasks": []
+          },
+          {
+            "name": "review",
+            "label": "Review",
             "tasks": []
           },
           {
             "name": "done",
+            "label": "Done",
             "tasks": []
           }
         ],
@@ -435,9 +483,11 @@
         "columns": [
           "triage",
           "todo",
+          "scheduled",
           "ready",
           "running",
           "blocked",
+          "review",
           "done"
         ],
         "assignees": [
@@ -466,7 +516,17 @@
         },
         "by_assignee": {},
         "oldest_ready_age_seconds": 0,
-        "now": 1791736147
+        "now": 1791941262,
+        "column_order": [
+          "triage",
+          "todo",
+          "scheduled",
+          "ready",
+          "running",
+          "blocked",
+          "review",
+          "done"
+        ]
       }
     }
   ],
@@ -508,7 +568,7 @@
         "events": [
           {
             "id": 1,
-            "task_id": "t_d6c468b7",
+            "task_id": "t_408bf6b1",
             "run_id": null,
             "kind": "created",
             "payload": {
@@ -526,11 +586,11 @@
               "model_override": null,
               "provider_override": null
             },
-            "created_at": 1791736147
+            "created_at": 1791941262
           },
           {
             "id": 2,
-            "task_id": "t_72b6726b",
+            "task_id": "t_6d0343b9",
             "run_id": null,
             "kind": "created",
             "payload": {
@@ -548,7 +608,7 @@
               "model_override": null,
               "provider_override": null
             },
-            "created_at": 1791736147
+            "created_at": 1791941262
           }
         ],
         "cursor": 2,
@@ -570,8 +630,8 @@
         "reaped_terminal_workers": [],
         "spawned": [],
         "skipped_unassigned": [
-          "t_d6c468b7",
-          "t_72b6726b"
+          "t_408bf6b1",
+          "t_6d0343b9"
         ],
         "auto_assigned_default": [],
         "skipped_nonspawnable": [],
@@ -591,18 +651,18 @@
     {
       "params": {
         "profile_home": "<home>",
-        "task_id": "t_d6c468b7"
+        "task_id": "t_408bf6b1"
       },
       "result": {
         "task": {
-          "id": "t_d6c468b7",
+          "id": "t_408bf6b1",
           "title": "first task",
           "body": "details",
           "assignee": null,
           "status": "ready",
           "priority": 2,
           "created_by": "webui",
-          "created_at": 1791736147,
+          "created_at": 1791941262,
           "started_at": null,
           "completed_at": null,
           "workspace_kind": "scratch",
@@ -635,13 +695,21 @@
           "completion_contract": "local-only",
           "claim_live": false,
           "has_completion_evidence": false,
+          "agent_move_targets": [
+            "blocked",
+            "done",
+            "review",
+            "scheduled",
+            "todo",
+            "triage"
+          ],
           "age_seconds": {
-            "created_age_seconds": 2,
+            "created_age_seconds": 1,
             "started_age_seconds": null,
             "time_to_complete_seconds": null
           },
           "age": {
-            "created_age_seconds": 2,
+            "created_age_seconds": 1,
             "started_age_seconds": null,
             "time_to_complete_seconds": null
           },
@@ -651,7 +719,7 @@
         "events": [
           {
             "id": 1,
-            "task_id": "t_d6c468b7",
+            "task_id": "t_408bf6b1",
             "kind": "created",
             "payload": {
               "assignee": null,
@@ -668,7 +736,7 @@
               "model_override": null,
               "provider_override": null
             },
-            "created_at": 1791736147,
+            "created_at": 1791941262,
             "run_id": null
           }
         ],
@@ -685,20 +753,20 @@
     {
       "params": {
         "profile_home": "<home>",
-        "task_id": "t_d6c468b7",
+        "task_id": "t_408bf6b1",
         "action": "block",
         "reason": "waiting"
       },
       "result": {
         "task": {
-          "id": "t_d6c468b7",
+          "id": "t_408bf6b1",
           "title": "first task",
           "body": "details",
           "assignee": null,
           "status": "blocked",
           "priority": 2,
           "created_by": "webui",
-          "created_at": 1791736147,
+          "created_at": 1791941262,
           "started_at": null,
           "completed_at": null,
           "workspace_kind": "scratch",
@@ -731,13 +799,20 @@
           "completion_contract": "local-only",
           "claim_live": false,
           "has_completion_evidence": false,
+          "agent_move_targets": [
+            "done",
+            "ready",
+            "scheduled",
+            "todo",
+            "triage"
+          ],
           "age_seconds": {
-            "created_age_seconds": 2,
+            "created_age_seconds": 1,
             "started_age_seconds": null,
             "time_to_complete_seconds": null
           },
           "age": {
-            "created_age_seconds": 2,
+            "created_age_seconds": 1,
             "started_age_seconds": null,
             "time_to_complete_seconds": null
           },
@@ -749,19 +824,19 @@
     {
       "params": {
         "profile_home": "<home>",
-        "task_id": "t_d6c468b7",
+        "task_id": "t_408bf6b1",
         "action": "unblock"
       },
       "result": {
         "task": {
-          "id": "t_d6c468b7",
+          "id": "t_408bf6b1",
           "title": "first task",
           "body": "details",
           "assignee": null,
           "status": "ready",
           "priority": 2,
           "created_by": "webui",
-          "created_at": 1791736147,
+          "created_at": 1791941262,
           "started_at": null,
           "completed_at": null,
           "workspace_kind": "scratch",
@@ -794,13 +869,21 @@
           "completion_contract": "local-only",
           "claim_live": false,
           "has_completion_evidence": false,
+          "agent_move_targets": [
+            "blocked",
+            "done",
+            "review",
+            "scheduled",
+            "todo",
+            "triage"
+          ],
           "age_seconds": {
-            "created_age_seconds": 2,
+            "created_age_seconds": 1,
             "started_age_seconds": null,
             "time_to_complete_seconds": null
           },
           "age": {
-            "created_age_seconds": 2,
+            "created_age_seconds": 1,
             "started_age_seconds": null,
             "time_to_complete_seconds": null
           },
@@ -814,7 +897,7 @@
     {
       "params": {
         "profile_home": "<home>",
-        "task_id": "t_d6c468b7",
+        "task_id": "t_408bf6b1",
         "patch": {
           "title": "renamed task",
           "status": "todo"
@@ -822,14 +905,14 @@
       },
       "result": {
         "task": {
-          "id": "t_d6c468b7",
+          "id": "t_408bf6b1",
           "title": "renamed task",
           "body": "details",
           "assignee": null,
           "status": "todo",
           "priority": 2,
           "created_by": "webui",
-          "created_at": 1791736147,
+          "created_at": 1791941262,
           "started_at": null,
           "completed_at": null,
           "workspace_kind": "scratch",
@@ -862,13 +945,18 @@
           "completion_contract": "local-only",
           "claim_live": false,
           "has_completion_evidence": false,
+          "agent_move_targets": [
+            "ready",
+            "scheduled",
+            "triage"
+          ],
           "age_seconds": {
-            "created_age_seconds": 2,
+            "created_age_seconds": 1,
             "started_age_seconds": null,
             "time_to_complete_seconds": null
           },
           "age": {
-            "created_age_seconds": 2,
+            "created_age_seconds": 1,
             "started_age_seconds": null,
             "time_to_complete_seconds": null
           },
@@ -882,7 +970,7 @@
     {
       "params": {
         "profile_home": "<home>",
-        "task_id": "t_d6c468b7",
+        "task_id": "t_408bf6b1",
         "body": "note"
       },
       "result": {
@@ -896,13 +984,13 @@
     {
       "params": {
         "profile_home": "<home>",
-        "parent_id": "t_d6c468b7",
-        "child_id": "t_72b6726b"
+        "parent_id": "t_408bf6b1",
+        "child_id": "t_6d0343b9"
       },
       "result": {
         "ok": true,
-        "parent_id": "t_d6c468b7",
-        "child_id": "t_72b6726b",
+        "parent_id": "t_408bf6b1",
+        "child_id": "t_6d0343b9",
         "read_only": false
       }
     }
@@ -911,14 +999,14 @@
     {
       "params": {
         "profile_home": "<home>",
-        "parent_id": "t_d6c468b7",
-        "child_id": "t_72b6726b"
+        "parent_id": "t_408bf6b1",
+        "child_id": "t_6d0343b9"
       },
       "result": {
         "ok": true,
         "changed": true,
-        "parent_id": "t_d6c468b7",
-        "child_id": "t_72b6726b",
+        "parent_id": "t_408bf6b1",
+        "child_id": "t_6d0343b9",
         "read_only": false
       }
     }
@@ -927,11 +1015,11 @@
     {
       "params": {
         "profile_home": "<home>",
-        "task_id": "t_d6c468b7"
+        "task_id": "t_408bf6b1"
       },
       "result": {
-        "task_id": "t_d6c468b7",
-        "path": "<home>/kanban/logs/t_d6c468b7.log",
+        "task_id": "t_408bf6b1",
+        "path": "<home>/kanban/logs/t_408bf6b1.log",
         "exists": false,
         "size_bytes": 0,
         "content": "",
@@ -945,8 +1033,8 @@
         "profile_home": "<home>",
         "bulk": {
           "ids": [
-            "t_d6c468b7",
-            "t_72b6726b"
+            "t_408bf6b1",
+            "t_6d0343b9"
           ],
           "priority": 5
         }
@@ -954,11 +1042,11 @@
       "result": {
         "results": [
           {
-            "id": "t_d6c468b7",
+            "id": "t_408bf6b1",
             "ok": true
           },
           {
-            "id": "t_72b6726b",
+            "id": "t_6d0343b9",
             "ok": true
           }
         ],

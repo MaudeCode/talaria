@@ -954,6 +954,9 @@
                 "name": {
                   "type": "string"
                 },
+                "label": {
+                  "type": "string"
+                },
                 "tasks": {
                   "type": "array",
                   "items": {
@@ -978,6 +981,19 @@
                       },
                       "has_completion_evidence": {
                         "type": "boolean"
+                      },
+                      "agent_move_targets": {
+                        "anyOf": [
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
                       }
                     },
                     "required": [
@@ -986,7 +1002,8 @@
                       "status",
                       "priority",
                       "claim_live",
-                      "has_completion_evidence"
+                      "has_completion_evidence",
+                      "agent_move_targets"
                     ],
                     "additionalProperties": {}
                   }
@@ -994,6 +1011,7 @@
               },
               "required": [
                 "name",
+                "label",
                 "tasks"
               ],
               "additionalProperties": false
@@ -1270,6 +1288,19 @@
           },
           "has_completion_evidence": {
             "type": "boolean"
+          },
+          "agent_move_targets": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -1278,7 +1309,8 @@
           "status",
           "priority",
           "claim_live",
-          "has_completion_evidence"
+          "has_completion_evidence",
+          "agent_move_targets"
         ],
         "additionalProperties": {}
       },
@@ -1374,6 +1406,19 @@
           },
           "has_completion_evidence": {
             "type": "boolean"
+          },
+          "agent_move_targets": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -1382,7 +1427,8 @@
           "status",
           "priority",
           "claim_live",
-          "has_completion_evidence"
+          "has_completion_evidence",
+          "agent_move_targets"
         ],
         "additionalProperties": {}
       },
@@ -1422,6 +1468,19 @@
           },
           "has_completion_evidence": {
             "type": "boolean"
+          },
+          "agent_move_targets": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -1430,7 +1489,8 @@
           "status",
           "priority",
           "claim_live",
-          "has_completion_evidence"
+          "has_completion_evidence",
+          "agent_move_targets"
         ],
         "additionalProperties": {}
       },
@@ -1470,6 +1530,19 @@
           },
           "has_completion_evidence": {
             "type": "boolean"
+          },
+          "agent_move_targets": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -1478,7 +1551,8 @@
           "status",
           "priority",
           "claim_live",
-          "has_completion_evidence"
+          "has_completion_evidence",
+          "agent_move_targets"
         ],
         "additionalProperties": {}
       },
@@ -1751,9 +1825,17 @@
   "kanban.stats": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
-    "propertyNames": {
-      "type": "string"
+    "properties": {
+      "column_order": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
     },
+    "required": [
+      "column_order"
+    ],
     "additionalProperties": {}
   },
   "kanban.assignees": {

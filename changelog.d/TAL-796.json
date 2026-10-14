@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Kanban tasks that are scheduled or waiting for review now show in their own Scheduled and Review columns instead of disappearing from the board, and can be moved back to Ready or approved with Complete.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
