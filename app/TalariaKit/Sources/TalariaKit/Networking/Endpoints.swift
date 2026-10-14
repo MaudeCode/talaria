@@ -93,6 +93,7 @@ public enum Endpoint {
     case models
     case modelsLive
     case commands
+    case commandsExec
     case defaultModel
     case auxiliaryModels
     case setModel
@@ -332,6 +333,8 @@ public enum Endpoint {
             return "/api/models/live"
         case .commands:
             return "/api/commands"
+        case .commandsExec:
+            return "/api/commands/exec"
         case .defaultModel:
             return "/api/default-model"
         case .auxiliaryModels:

@@ -479,6 +479,44 @@ extension ChatViewModelSendTests {
     }
 
     @MainActor
+    func testServerExecutedSlashCommandRunsThroughCommandRoute() async throws {
+        // TAL-918: the catalog marks `/refine` as `exec`, so the server runs it on this chat instead of the model
+        // receiving it as text.
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let cache = ResponseCache(server: try XCTUnwrap(URL(string: "https://example.test")), root: root)
+        cache.entry(ResponseCache.Kind.commands).save(Data(#"""
+        {"commands": [{"name": "refine", "aliases": [], "handler": "agent", "clients": ["web", "ios"], "exec": true}]}
+        """#.utf8))
+        var requestedPaths: [String] = []
+        var execBody: [String: Any]?
+        let viewModel = try makeViewModel(responseCache: cache) { request in
+            requestedPaths.append(request.url?.path ?? "nil")
+            switch request.url?.path {
+            case "/api/skills":
+                return apiTestJSONResponse(#"{"skills": []}"#, for: request)
+            case "/api/commands/exec":
+                XCTAssertEqual(request.httpMethod, "POST")
+                execBody = try apiTestJSONBody(from: request)
+                return apiTestJSONResponse(#"{"output": "Reviewing this conversation in the background."}"#, for: request)
+            default:
+                throw URLError(.badURL)
+            }
+        }
+        viewModel.showCachedComposerChoices()
+
+        let result = await SlashCommandExecutor.execute(text: "/refine testing habits", viewModel: viewModel)
+
+        XCTAssertEqual(result, .executed(message: nil))
+        XCTAssertEqual(requestedPaths, ["/api/commands/exec"])
+        XCTAssertEqual(execBody?["command"] as? String, "/refine testing habits")
+        XCTAssertEqual(execBody?["session_id"] as? String, "session-abc")
+        XCTAssertEqual(viewModel.messages.map(\.role), ["local_notice"])
+        XCTAssertEqual(viewModel.messages.first?.content, "Reviewing this conversation in the background.")
+        XCTAssertNil(viewModel.activeStreamID)
+    }
+
+    @MainActor
     func testSkillShortcutExecutesBeforeUnknownCommandFallthrough() async throws {
         var startedMessage: String?
         let streamClient = SpySSEStreamingClient()

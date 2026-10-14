@@ -26,6 +26,11 @@ public struct CommandsResponse: Decodable, Equatable {
     public let commands: [AgentCommand]?
 }
 
+/// `POST /api/commands/exec`: the command's output, as the server words it.
+public struct CommandExecResponse: Decodable, Equatable {
+    public let output: String?
+}
+
 /// One entry in the server's slash-command catalog (`GET /api/commands`, TAL-314): client-handled commands first, then
 /// the Agent registry, in display order.
 public struct AgentCommand: Decodable, Equatable, Identifiable, Sendable {
@@ -45,6 +50,8 @@ public struct AgentCommand: Decodable, Equatable, Identifiable, Sendable {
     let clients: [String]?
     /// English text a client outside `clients` shows when the command is typed.
     let unsupportedMessage: String?
+    /// The server runs the command through `POST /api/commands/exec` (TAL-561); absent from older servers.
+    let exec: Bool?
 
     enum CodingKeys: String, CodingKey {
         case name
@@ -58,6 +65,7 @@ public struct AgentCommand: Decodable, Equatable, Identifiable, Sendable {
         case handler
         case clients
         case unsupportedMessage
+        case exec
     }
 
     init(
@@ -71,7 +79,8 @@ public struct AgentCommand: Decodable, Equatable, Identifiable, Sendable {
         gatewayOnly: Bool? = nil,
         handler: String? = nil,
         clients: [String]? = nil,
-        unsupportedMessage: String? = nil
+        unsupportedMessage: String? = nil,
+        exec: Bool? = nil
     ) {
         self.name = name
         self.description = description
@@ -84,6 +93,7 @@ public struct AgentCommand: Decodable, Equatable, Identifiable, Sendable {
         self.handler = handler
         self.clients = clients
         self.unsupportedMessage = unsupportedMessage
+        self.exec = exec
     }
 
     public init(from decoder: Decoder) throws {
@@ -99,12 +109,14 @@ public struct AgentCommand: Decodable, Equatable, Identifiable, Sendable {
         handler = container.decodeLossyStringIfPresent(forKey: .handler)
         clients = try? container.decodeIfPresent([String].self, forKey: .clients)
         unsupportedMessage = container.decodeLossyStringIfPresent(forKey: .unsupportedMessage)
+        exec = container.decodeLossyBoolIfPresent(forKey: .exec)
     }
 
     /// A catalog entry carries `handler` and `clients`; rows from older servers carry neither and are never suggested.
     var isCatalogEntry: Bool { handler != nil && clients != nil }
     var runsOnIOS: Bool { clients?.contains("ios") == true }
     var isClientHandled: Bool { handler == "client" }
+    var runsOnServer: Bool { exec == true }
 
     /// The catalog's documented filter: the name or any alias starts with `prefix`, case-insensitively.
     func matches(prefix: String) -> Bool {

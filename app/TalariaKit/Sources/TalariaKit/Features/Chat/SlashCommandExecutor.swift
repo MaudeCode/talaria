@@ -47,6 +47,9 @@ public enum SlashCommandExecutor {
             if let message = unsupportedMessage(for: parsed.name, in: catalog) {
                 return .unsupported(friendlyMessage: message)
             }
+            if catalog.entry(named: parsed.name)?.runsOnServer == true {
+                return await viewModel.executeServerCommand(text.trimmingCharacters(in: .whitespacesAndNewlines))
+            }
             if parsed.name.lowercased() == "skill" {
                 return .unsupported(friendlyMessage: String(localized: "Use `/skills [query]` to search skills."))
             }
