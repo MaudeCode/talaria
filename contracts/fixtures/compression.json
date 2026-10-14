@@ -1,0 +1,14 @@
+{
+  "compressing": {
+    "event": "compressing",
+    "data": { "session_id": "contract-session", "message": "Compressing context", "started_at": 1800000000 }
+  },
+  "heartbeat": {
+    "event": "compressing",
+    "data": { "session_id": "contract-session", "message": "Compressing context", "started_at": 1800000000 }
+  },
+  "compressed": {
+    "event": "compressed",
+    "data": { "session_id": "contract-session", "message": "Compression finished" }
+  }
+}

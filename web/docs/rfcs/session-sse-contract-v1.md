@@ -32,8 +32,8 @@ and the per-session relay. The chat-turn events:
 | `interim_assistant` | Mid-turn assistant prose (pre-final) |
 | `approval` | Destructive-command approval prompt |
 | `clarify` | Structured clarification prompt |
-| `compressing` | Context compression started |
-| `compressed` | Context compression finished |
+| `compressing` | Context compression is running; `started_at` (epoch seconds) is the span's start, the same on every heartbeat |
+| `compressed` | Context compression finished; it closes the span mid-turn, before the turn's next content frame |
 | `title` | Session title update (often after `done`) |
 | `title_status` | Title generation status / skip reason |
 | `warning` | Non-fatal provider/fallback warning |

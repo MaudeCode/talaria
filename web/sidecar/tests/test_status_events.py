@@ -1,4 +1,4 @@
-"""``chat.start`` turns the Agent's ``status_callback(kind, message)`` lines into the compressing card, fallback
+"""``chat.start`` turns the Agent's ``status_callback(kind, message)`` lines into the compression span, fallback
 warnings, and the captured terminal error. The table holds the pinned Agent's real status strings (its
 ``conversation_compression`` templates, ``turn_overflow``, ``turn_recovery``, ``turn_api_error``)."""
 
@@ -34,7 +34,8 @@ CASES = [
     ("lifecycle", "🗜️ Context reduced to 120,000 tokens (was 250,000), retrying...", []),
     ("lifecycle", "📐 Compression could not reduce the request further — removed retained vision payloads and retrying...", []),
     ("lifecycle", "⚠️  Session compressed 2 times — accuracy may degrade. Consider /new to start fresh.", []),
-    ("compacted", "✓ Context compaction complete — continuing turn...", []),
+    # TAL-1006: the Agent's terminal edge of a started compaction closes the compressing span.
+    ("compacted", "✓ Context compaction complete — continuing turn...", ["compression_finished"]),
     # Provider retries, rate limits, and fallbacks.
     ("lifecycle", "⏱️ Rate limited. Waiting 2.0s (attempt 1/3)...", ["warning"]),
     ("lifecycle", "⏳ Retrying in 2.0s (attempt 1/3)...", ["warning"]),

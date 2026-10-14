@@ -14,6 +14,8 @@ const ToolComplete = Tool.extend({ duration: z.number().nullable().optional(), i
 const Approval = z.looseObject({ approval_id: z.string().optional(), session_id: z.string().optional(), command: z.string().optional(), description: z.string().optional(), title: z.string().optional(), name: z.string().optional(), kind: z.string().optional(), reason: z.string().optional(), action: z.string().optional(), question: z.string().optional(), status: z.string().optional(), pending_count: z.number().optional(), run_id: z.string().optional(), mirror_token: z.string().optional() })
 const Clarify = z.looseObject({ steps: z.array(ClarifyStepSchema).optional(), clarify_id: z.string().optional(), session_id: z.string().optional(), question: z.string().optional(), choices: z.array(z.unknown()).optional(), title: z.string().optional(), name: z.string().optional(), kind: z.string().optional(), reason: z.string().optional(), action: z.string().optional(), status: z.string().optional(), raw_preview: z.string().optional(), timeout_seconds: z.number().optional(), timeout_at: z.number().optional(), index: z.number().optional(), total: z.number().optional() })
 const Compression = z.looseObject({ session_id: z.string().optional(), old_session_id: z.string().optional(), new_session_id: z.string().optional(), continuation_session_id: z.string().optional(), usage: z.looseObject(ContextUsageFields).optional() })
+/** TAL-1006: an open compression span. `started_at` (epoch seconds) is the span's start, the same on every heartbeat; `compressed` closes it, as does the turn's terminal frame. */
+const Compressing = Compression.extend({ started_at: z.number() })
 const Title = z.looseObject({ session_id: z.string().optional(), title: z.string().optional(), status: z.string().optional(), reason: z.string().optional(), message: z.string().optional(), message_key: z.string().optional(), message_args: z.array(z.unknown()).optional(), raw_preview: z.string().optional(), prefill: z.unknown().optional() })
 const Warning = z.looseObject({ type: z.string().optional(), message: z.string().optional() })
 const AppError = z.looseObject({ terminal_state: TurnTerminalStateSchema.optional(), type: z.string().optional(), message: z.string().optional(), details: z.unknown().optional(), hint: z.string().optional(), session_id: z.string().optional(), old_session_id: z.string().optional(), new_session_id: z.string().optional(), continuation_session_id: z.string().optional(), status: z.union([z.string(), z.number()]).optional(), session: z.unknown().optional(), code: z.string().optional() })
@@ -69,7 +71,7 @@ export const ChatEventSchema = z.discriminatedUnion('event', [
   /** TAL-514: the last pending approval was withdrawn (answered elsewhere, or the Agent stopped waiting); clients drop the card. */
   z.object({ event: z.literal('approval_cleared'), data: z.looseObject({ session_id: z.string().optional(), pending_count: z.number() }) }),
   z.object({ event: z.literal('clarify'), data: Clarify }),
-  z.object({ event: z.literal('compressing'), data: Compression }),
+  z.object({ event: z.literal('compressing'), data: Compressing }),
   z.object({ event: z.literal('compressed'), data: Compression }),
   z.object({ event: z.literal('title'), data: Title }),
   z.object({ event: z.literal('title_status'), data: Title }),

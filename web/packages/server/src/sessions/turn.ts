@@ -50,8 +50,8 @@ const IMAGE_MODE_TIMEOUT_MS = 15_000
 const TERMINAL_SSE_VISIBLE_MESSAGE_LIMIT = 80
 /** TAL-397: streamed text reports the live meter at most this often (seconds); a counter change reports at once. */
 const METERING_INTERVAL_S = 1
-/** TAL-821: the Agent's content frames, which end a rate-limit wait (it got an answer). A terminal frame ends the run and its wait. */
-const RATE_LIMIT_WAIT_ENDS = new Set(['token', 'reasoning', 'interim_assistant', 'tool', 'tool_complete'])
+/** The Agent's content frames, which end a rate-limit wait (TAL-821) and a compression span (TAL-1006). A terminal frame ends the run, its wait, and its span. */
+const CONTENT_EVENTS = new Set(['token', 'reasoning', 'interim_assistant', 'tool', 'tool_complete'])
 /** How long a user's message waits for a stopped background turn to unwind before its own turn is admitted. */
 const BACKGROUND_UNWIND_WAIT_MS = 30_000
 
@@ -505,10 +505,21 @@ export class TurnRunner {
     const failure: TurnFailure = { apperror: null, cancelled: false }
     // TAL-821: whether the run's rate-limit wait is showing; the next content frame clears it.
     let rateLimitWait = false
+    // TAL-1006: the open compression span's start (epoch seconds), repeated on each heartbeat. The Agent's end of it closes
+    // it, else the next content frame does.
+    let compressionStartedAt: number | null = null
+    const closeCompression = (): void => {
+      if (compressionStartedAt === null) return
+      compressionStartedAt = null
+      put('compressed', { session_id: sessionId, message: 'Compression finished' })
+    }
     const put = (event: string, data: Record<string, unknown>, meta: { redacted?: boolean } = {}): void => {
-      if (rateLimitWait && RATE_LIMIT_WAIT_ENDS.has(event)) {
-        rateLimitWait = false
-        put('rate_limit_wait', { session_id: sessionId, wait: null })
+      if (CONTENT_EVENTS.has(event)) {
+        if (rateLimitWait) {
+          rateLimitWait = false
+          put('rate_limit_wait', { session_id: sessionId, wait: null })
+        }
+        closeCompression()
       }
       if (event === 'apperror') failure.apperror = data
       else if (event === 'cancel') failure.cancelled = true
@@ -766,6 +777,13 @@ export class TurnRunner {
               if (snapshot.success) put('connect_card', connectorOperation(snapshot.data, catalogNames(deps.profileHome(s.profile))))
               return
             }
+            case 'compressing':
+              compressionStartedAt ??= deps.now()
+              put('compressing', { ...data, started_at: compressionStartedAt })
+              return
+            case 'compression_finished':
+              closeCompression()
+              return
             case 'status':
               if (data.kind === 'terminal_error' && !capturedTerminalError) capturedTerminalError = str(data.message)
               return

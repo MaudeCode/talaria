@@ -3010,6 +3010,45 @@ describe('stale cross-provider session models at chat start (TAL-542)', () => {
   })
 })
 
+describe('the compression span (TAL-1006)', () => {
+  it('stamps every heartbeat with the span\'s start and closes it on the Agent\'s end, else the next content frame, also on replay', async () => {
+    let clock = 1_800_000_000
+    const sidecar = new FakeSidecar()
+    const s = await bootTestServer({ sidecar, now: () => clock })
+    try {
+      const sid = await newSession(s)
+      // A number advances the server's clock between the sidecar's frames.
+      const turn = async (message: string, frames: (Json | number)[]): Promise<{ live: Json[]; replay: Json[] }> => {
+        sidecar.respond('chat.start', (_params, emit) => {
+          for (const frame of frames) { if (typeof frame === 'number') clock += frame; else emit(frame as never) }
+          return completed([{ role: 'user', content: message }, { role: 'assistant', content: 'ok' }])
+        })
+        const streamId = String((await json(await post(s, '/api/chat/start', { session_id: sid, message }))).stream_id)
+        const shown = (frames: SseFrame[]): Json[] => frames.filter((f) => ['compressing', 'compressed', 'token', 'tool', 'done'].includes(f.event)).map((f) => ({ event: f.event, ...(f.event.startsWith('compress') ? { data: f.data } : {}) }))
+        const live = shown(await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'stream_end'))
+        return { live, replay: shown(await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'stream_end')) }
+      }
+      const agentStart = { event: 'compressing', data: { session_id: sid, message: 'Compressing context' } }
+      const span = (startedAt: number): Json => ({ event: 'compressing', data: { session_id: sid, message: 'Compressing context', started_at: startedAt } })
+      const closed = { event: 'compressed', data: { session_id: sid, message: 'Compression finished' } }
+      // Same shapes as the shared contract example every client is tested against.
+      const example = JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/compression.json'), 'utf8')) as Record<string, { event: string; data: Json }>
+      expect(['compressing', 'heartbeat', 'compressed'].map((k) => ({ event: example[k]!.event, data: { ...example[k]!.data, session_id: sid } }))).toEqual([span(1_800_000_000), span(1_800_000_000), closed])
+      // The Agent's end closes the span before the turn's next tool; the heartbeat 60 s in repeats the first start.
+      const start = clock
+      const finished = await turn('finished', [agentStart, 60, agentStart, 5, { event: 'compression_finished', data: { session_id: sid } }, { event: 'tool', data: { name: 'terminal', tid: 't1', args: {} } }, { event: 'token', data: { text: 'ok' } }])
+      expect(finished.live).toEqual([span(start), span(start), closed, { event: 'tool' }, { event: 'token' }, { event: 'done' }])
+      expect(finished.replay).toEqual(finished.live)
+      // Without the Agent's end, the next token closes it; a later span starts afresh.
+      const second = clock
+      const backstop = await turn('backstop', [agentStart, 30, { event: 'token', data: { text: 'ok' } }, 10, agentStart, { event: 'compression_finished', data: { session_id: sid } }])
+      expect(backstop.live).toEqual([span(second), closed, { event: 'token' }, span(second + 40), closed, { event: 'done' }])
+      // A stray end with no span open sends nothing.
+      expect((await turn('stray', [{ event: 'compression_finished', data: { session_id: sid } }, { event: 'token', data: { text: 'ok' } }])).live).toEqual([{ event: 'token' }, { event: 'done' }])
+    } finally { await s.close() }
+  })
+})
+
 describe('stale session models after an Agent sign-in change (TAL-542)', () => {
   it('re-reads a catalog older than the providers listing before repairing', async () => {
     let clock = 1_800_000_000
