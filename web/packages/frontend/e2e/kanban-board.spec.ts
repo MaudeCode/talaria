@@ -148,7 +148,7 @@ test('kanban bulk status, task links and board create and archive write through 
   const links = dialog.getByRole('group', { name: 'Links' })
   await expect(links.getByRole('listitem')).toHaveText(['Plan the release · done', 'C1'])
   await page.screenshot({ path: testInfo.outputPath(`kanban-links-${testInfo.project.name}.png`) })
-  await links.getByRole('button', { name: 'Remove dependency Plan the release' }).click()
+  await links.getByRole('button', { name: 'Remove dependency Plan the release (P1)' }).click()
   await expect.poll(() => writes.at(-1)).toEqual({ method: 'POST', path: '/api/kanban/links/delete', body: { parent_id: 'P1', child_id: 'T1', board: 'ops' } })
   await links.getByRole('button', { name: 'Remove dependency C1' }).click()
   await expect.poll(() => writes.at(-1)).toEqual({ method: 'POST', path: '/api/kanban/links/delete', body: { parent_id: 'T1', child_id: 'C1', board: 'ops' } })
