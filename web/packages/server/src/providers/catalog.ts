@@ -950,13 +950,14 @@ export class ProviderCatalog {
       const named = [...namedCustom.entries()].find(([, v]) => customProviderEntries(config).some((e) => customProviderSlug(e.name) === customProviderSlug(v.name) && str(e.base_url).trim().replace(/\/+$/, '') === cfgBaseUrl.replace(/\/+$/, '')))
       detected.add(named?.[0] ?? active ?? 'custom')
     }
-    // TAL-911: Agent pickers drop `model_catalog.excluded_providers` (`strip().lower()`), the active provider included.
+    // TAL-911: Agent pickers drop `model_catalog.excluded_providers` under any of their aliases, the active provider included.
     const excludedCfg = dict(config.model_catalog).excluded_providers
-    const excluded = new Set(Array.isArray(excludedCfg) ? excludedCfg.map((p) => str(p).trim().toLowerCase()).filter(Boolean) : [])
-    const pickerDefault = excluded.has(str(active).toLowerCase()) ? '' : defaultModel
+    const excluded = new Set(Array.isArray(excludedCfg) ? excludedCfg.map(providerIdentity).filter(Boolean) : [])
+    const isExcluded = (pid: unknown): boolean => excluded.has(providerIdentity(pid))
+    const pickerDefault = isExcluded(active) || isExcluded(parseProviderQualifiedModel(defaultModel)?.[1]) ? '' : defaultModel
     const groups: ModelGroup[] = []
     for (const pid of [...detected].map((p) => (p.startsWith('custom') || pluginNames.has(p) ? p : canonicaliseProviderId(p) || p)).filter((v, i, a) => v && a.indexOf(v) === i).sort()) {
-      if (excluded.has(pid.toLowerCase())) continue
+      if (isExcluded(pid)) continue
       if (pid.startsWith('custom:')) {
         const g = namedCustom.get(pid)
         const models = [...(g?.models ?? [])]

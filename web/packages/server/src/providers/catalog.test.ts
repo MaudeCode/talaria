@@ -204,11 +204,11 @@ describe('keyless self-hosted providers (TAL-570)', () => {
 })
 
 describe('model_catalog.excluded_providers (TAL-911)', () => {
-  const pickerFor = async (modelCatalog: unknown) => {
+  const pickerFor = async (modelCatalog: unknown, model: Json = { provider: 'gemini', default: 'gemini-2.5-flash' }) => {
     const home = mkdtempSync(join(tmpdir(), 'talaria-catalog-'))
     const sidecar = new FakeSidecar()
     const config = {
-      model: { provider: 'gemini', default: 'gemini-2.5-flash' },
+      model,
       providers: { anthropic: { api_key: 'sk-ant-12345678' }, gemini: { api_key: 'gm-12345678' }, openrouter: { api_key: 'sk-or-12345678' } },
       model_catalog: modelCatalog,
     }
@@ -219,8 +219,10 @@ describe('model_catalog.excluded_providers (TAL-911)', () => {
     writeFileSync(join(home, 'config.yaml'), '# cfg\n')
     const catalog = new ProviderCatalog({ sidecar: () => sidecar, config: new AgentConfig({ sidecar: () => sidecar, env: {} }), env: {}, now: () => 1_800_000_000, log: () => undefined, costBudget: () => null, isRootProfileHome: () => true })
     try {
-      const groups = (await catalog.models(home)).groups.map((g) => g.provider_id)
-      return { groups, geminiOption: catalog.modelOptionFor(home, 'gemini-2.5-flash', 'gemini'), anthropicOption: catalog.modelOptionFor(home, 'claude-sonnet-4.6', 'anthropic') }
+      const built = await catalog.models(home)
+      const groups = built.groups.map((g) => g.provider_id)
+      const entries = built.groups.flatMap((g) => [...g.models, ...(g.extra_models ?? [])])
+      return { groups, entries, geminiOption: catalog.modelOptionFor(home, 'gemini-2.5-flash', 'gemini'), anthropicOption: catalog.modelOptionFor(home, 'claude-sonnet-4.6', 'anthropic') }
     } finally {
       rmSync(home, { recursive: true, force: true })
     }
@@ -234,6 +236,18 @@ describe('model_catalog.excluded_providers (TAL-911)', () => {
     // Session model options follow the catalog: an excluded provider's pair selects no picker entry.
     expect(geminiOption).toBeNull()
     expect(anthropicOption).not.toBeNull()
+  })
+
+  it('matches an excluded alias against the provider it names', async () => {
+    const { groups } = await pickerFor({ excluded_providers: ['Claude', 'github-copilot'] })
+    expect(groups).not.toContain('anthropic')
+    expect(groups).toEqual(expect.arrayContaining(['gemini', 'openrouter']))
+  })
+
+  it('never adds a default qualified to an excluded provider to another group', async () => {
+    const { groups, entries } = await pickerFor({ excluded_providers: ['openrouter'] }, { provider: 'anthropic', default: '@openrouter:openai/gpt-5.5' })
+    expect(groups).not.toContain('openrouter')
+    expect(entries.filter((e) => e.provider_id === 'openrouter' || e.id.includes('openrouter'))).toEqual([])
   })
 
   it('treats an empty or non-list value as no exclusion', async () => {
