@@ -1221,13 +1221,13 @@ export class UpdateService {
   }
 
   private agentChannel(): Channel { return this.deps.agentChannel?.() ?? DEFAULT_CHANNEL }
-  /** TAL-930: the Agent's published Stable tag, one anonymous GitHub read per remote per cache TTL, a failed read included. */
+  /** TAL-930: the Agent's published Stable tag, one anonymous GitHub read per remote per cache TTL; an unreadable answer keeps the last verified tag. */
   private readonly publishedTag: PublishedAgentTag = async (repoUrl) => {
     const getPublicJson = this.deps.getPublicJson
     if (!getPublicJson) return null
     const prior = this.publishedTags.get(repoUrl)
     if (prior && this.now() - prior.at < CACHE_TTL_S) return prior.tag
-    const tag = await publishedAgentTag(getPublicJson)(repoUrl)
+    const tag = await publishedAgentTag(getPublicJson)(repoUrl) ?? prior?.tag ?? null
     this.publishedTags.set(repoUrl, { at: this.now(), tag })
     return tag
   }
