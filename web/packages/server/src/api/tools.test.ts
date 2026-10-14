@@ -373,6 +373,21 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     expect(res.status).toBe(404)
   })
 
+  it("a chat's command runs under that chat's session and workspace; one without a chat binds none (TAL-904)", async () => {
+    const created = await json(await post(s, '/api/session/new', {}))
+    const session = created.session as Json
+    await post(s, '/api/commands/exec', { command: '/probe', session_id: session.session_id })
+    expect(sidecar.calls.at(-1)).toEqual({ method: 'commands.exec', params: { profile_home: s.deps.profileHome('default'), command: '/probe', session_id: session.session_id, workspace: session.workspace } })
+    expect(session.workspace).toBeTruthy()
+    await post(s, '/api/commands/exec', { command: '/probe' })
+    expect(sidecar.calls.at(-1)).toEqual({ method: 'commands.exec', params: { profile_home: s.deps.profileHome('default'), command: '/probe' } })
+    // A chat that is gone refuses the command instead of running it without its workspace.
+    const calls = sidecar.calls.length
+    const res = await post(s, '/api/commands/exec', { command: '/probe', session_id: 'feedfacecafe' })
+    expect(res.status).toBe(404)
+    expect(sidecar.calls).toHaveLength(calls)
+  })
+
   it('command bundles list and resolve through the active profile with the old statuses (TAL-265)', async () => {
     let res = await s.get('/api/commands/bundles')
     expect(res.status).toBe(200)

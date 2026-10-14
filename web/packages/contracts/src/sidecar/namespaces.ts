@@ -79,7 +79,8 @@ export const CommandBundleSchema = z.object({ name: z.string(), description: z.s
 export const CommandBundleInvocationSchema = z.object({ name: z.string(), source: z.literal('bundle'), message: z.string(), loaded_skills: z.array(z.string()), missing_skills: z.array(z.string()) })
 export const COMMANDS_METHODS = {
   'commands.registry': { params: ProfileHomeParams, result: z.object({ commands: z.array(CommandSchema) }) },
-  'commands.exec': { params: ProfileHomeParams.extend({ command: z.string().min(1) }), result: z.object({ output: z.string(), source: z.enum(['agent', 'plugin']) }) },
+  /** With `session_id`, a plugin command runs under that chat's session binding and `workspace` (TAL-904). */
+  'commands.exec': { params: ProfileHomeParams.extend({ command: z.string().min(1), session_id: z.string().min(1).optional(), workspace: z.string().optional() }), result: z.object({ output: z.string(), source: z.enum(['agent', 'plugin']) }) },
   /**
    * `/<prompt built-in> [args]` as the turn text (`message`) the Agent's builder writes for the session's profile, workspace and toolsets.
    * `name` is the built-in's canonical name, null when the command is not one; `message` is null when this Agent has no builder for it.

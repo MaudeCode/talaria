@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Plugin slash commands typed in a chat now know which chat and workspace they run in, as they do in the Agent's own apps.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
