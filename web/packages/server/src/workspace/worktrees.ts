@@ -1,6 +1,6 @@
 /** WebUI-managed Agent git worktrees (Python `api/worktrees.py`). */
 import { randomUUID } from 'node:crypto'
-import { lstatSync, readdirSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync } from 'node:fs'
+import { lstatSync, readdirSync, readFileSync, readlinkSync, realpathSync, renameSync, statSync, symlinkSync, unlinkSync } from 'node:fs'
 import { basename, dirname, join, posix } from 'node:path'
 import { spawnGit } from './git.js'
 import { resolvePathLikePython } from './paths.js'
@@ -104,13 +104,15 @@ function coveredIncludeLinks(worktreePath: string, path: string, include: Set<st
  * Unlink an include link without a check-then-delete gap: move it to a private name first, then verify what was moved.
  * Anything else stays under that name and stops the removal.
  */
-function unlinkIncludeLink(worktreePath: string, repoRoot: string, entry: string): void {
+function unlinkIncludeLink(worktreePath: string, repoRoot: string, entry: string): { path: string; target: string } | null {
   const path = join(worktreePath, entry)
-  if (!isIncludeLink(worktreePath, repoRoot, entry)) return // replaced since the probe: git refuses it
+  if (!isIncludeLink(worktreePath, repoRoot, entry)) return null // replaced since the probe: git refuses it
   const moved = join(dirname(path), `.${basename(path)}.talaria-remove-${randomUUID()}`)
-  try { renameSync(path, moved) } catch { return } // already gone: git decides
+  try { renameSync(path, moved) } catch { return null } // already gone: git decides
   if (!isIncludeLink(worktreePath, repoRoot, entry, moved)) throw new Error(`Worktree changed during removal; ${path} was moved to ${moved}.`)
+  const target = readlinkSync(moved)
   unlinkSync(moved)
+  return { path, target }
 }
 
 /** `[dirty, untracked count, ignored include symlinks]`; the Agent's own include symlinks are not user state. */
@@ -215,19 +217,31 @@ export async function removeWorktreeForSession(session: Session, locks: Worktree
   // A plain `worktree remove` refuses any untracked entry; drop the Agent's include symlinks (never their targets)
   // so git still guards everything else. Each is rechecked first: one replaced since the probe stays for git to refuse.
   const resolvedRoot = resolvePath(repoRoot)
-  if (!force && resolvedRoot) for (const link of includeLinks) unlinkIncludeLink(worktreePath, resolvedRoot, link)
-  const args = ['worktree', 'remove']
-  if (force) args.push('--force')
-  args.push(worktreePath)
-  let result: { status: number; stdout: string; stderr: string }
+  // A worktree that survives a failed removal gets them back.
+  const unlinked: { path: string; target: string }[] = []
   try {
-    result = await gitOrThrow(args, repoRoot, 10_000)
+    if (!force && resolvedRoot) {
+      for (const link of includeLinks) {
+        const removed = unlinkIncludeLink(worktreePath, resolvedRoot, link)
+        if (removed) unlinked.push(removed)
+      }
+    }
+    const args = ['worktree', 'remove']
+    if (force) args.push('--force')
+    args.push(worktreePath)
+    let result: { status: number; stdout: string; stderr: string }
+    try {
+      result = await gitOrThrow(args, repoRoot, 10_000)
+    } catch (error) {
+      throw new Error(`Failed to remove worktree: ${error instanceof Error ? error.message : String(error)}`)
+    }
+    if (result.status !== 0) {
+      const stderr = result.stderr.trim().split('\n').pop() ?? ''
+      throw new Error(`git worktree remove failed: ${stderr || result.stdout.trim()}`)
+    }
   } catch (error) {
-    throw new Error(`Failed to remove worktree: ${error instanceof Error ? error.message : String(error)}`)
-  }
-  if (result.status !== 0) {
-    const stderr = result.stderr.trim().split('\n').pop() ?? ''
-    throw new Error(`git worktree remove failed: ${stderr || result.stdout.trim()}`)
+    for (const { path, target } of unlinked) try { symlinkSync(target, path) } catch { /* something else took its place */ }
+    throw error
   }
   await git(['worktree', 'prune'], repoRoot, 5_000)
   return { ok: true, removed_path: worktreePath, warnings: warnings.length ? warnings : null }

@@ -84,6 +84,21 @@ describe('.worktreeinclude symlinks', () => {
     expect(readFileSync(link, 'utf8')).toBe('mine\n')
   })
 
+  it('restores the include symlinks when git refuses the removal', async () => {
+    const { repo, worktree, session } = setup()
+    const link = join(worktree, 'node_modules')
+    symlinkSync(join(repo, 'node_modules'), link)
+    // A real untracked file appears after the status probe; git's own check refuses it.
+    let terminalChecks = 0
+    const locks = { lockedByStream: () => false, lockedByTerminal: () => {
+      if (++terminalChecks === 2) writeFileSync(join(worktree, 'notes.txt'), 'mine\n')
+      return false
+    } }
+    await expect(removeWorktreeForSession(session, locks)).rejects.toThrow('git worktree remove failed')
+    expect(lstatSync(link).isSymbolicLink()).toBe(true)
+    expect(realpathSync(link)).toBe(realpathSync(join(repo, 'node_modules')))
+  })
+
   it('ignores a nested include symlink that git reports as its untracked parent directory', async () => {
     const { repo, worktree, session } = setup()
     writeFileSync(join(repo, '.worktreeinclude'), 'vendor/node_modules/\n')
