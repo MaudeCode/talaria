@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Talaria Web opens Kanban worker conversations read-only, so they can no longer be continued alongside the board's own worker.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

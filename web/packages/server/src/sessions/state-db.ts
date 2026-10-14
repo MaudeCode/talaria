@@ -407,8 +407,9 @@ export function latestCronSessionInfo(dbPath: string, jobIds: Iterable<string>, 
 }
 
 /**
- * TAL-358: the `sessions.source` owner of each present id, in one chunked read. A missing state.db (or one without a
- * `source` column) owns nothing; an unreadable one answers null, so callers fail closed on an unknown owner.
+ * TAL-358: the `sessions.source` owner of each present id, in one chunked read; a Kanban-owned lineage answers `kanban`
+ * (TAL-793). A missing state.db (or one without a `source` column) owns nothing; an unreadable one answers null, so
+ * callers fail closed on an unknown owner.
  */
 export function stateDbSessionSources(dbPath: string, sessionIds: Iterable<string>): Map<string, string> | null {
   const sources = new Map<string, string>()
@@ -423,12 +424,67 @@ export function stateDbSessionSources(dbPath: string, sessionIds: Iterable<strin
       const chunk = ids.slice(i, i + 500)
       for (const row of db.prepare(`SELECT id, source FROM sessions WHERE id IN (${chunk.map(() => '?').join(',')})`).all(...chunk) as { id: string; source: unknown }[]) sources.set(row.id, str(row.source))
     }
+    for (const id of kanbanOwnedIds(db, cols, [...sources.keys()])) sources.set(id, 'kanban')
     return sources
   } catch {
     return null
   } finally {
     db.close()
   }
+}
+
+/** Python `_is_explicit_fork_child_row`: a tool child, or a branch/delegate (`includeReset`: also reset) fork of its parent. */
+function isExplicitForkChild(row: Dict, includeReset: boolean): boolean {
+  if (str(row.source) === 'tool') return true
+  let cfg: unknown = row.model_config
+  if (typeof cfg === 'string') { try { cfg = JSON.parse(cfg) } catch { return false } }
+  if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) return false
+  const c = cfg as Dict
+  const markers = [c._branched_from, c._delegate_from, ...(includeReset ? [c._reset_from] : [])]
+  const parentId = row.parent_session_id
+  return parentId ? markers.includes(parentId) : markers.some((m) => m !== undefined && m !== null)
+}
+
+/**
+ * Python `_resume_lineage_ids`: `sid` and the compression ancestors a resume loads, root first. Each hop's parent ended
+ * `compression` and the child is no branch, reset, delegate or tool fork. The walk stops at a cycle or the Agent's
+ * 1000-hop `_CHAIN_CAP`; without the lineage columns it is `[sid]`.
+ */
+function resumeLineageWalker(db: DatabaseSync, cols: Set<string>): (sid: string) => string[] {
+  if (!['parent_session_id', 'end_reason'].every((c) => cols.has(c))) return (sid) => [sid]
+  const select = db.prepare(`SELECT id, source, parent_session_id, end_reason, ${cols.has('model_config') ? 'model_config' : 'NULL AS model_config'} FROM sessions WHERE id = ?`)
+  return (sid) => {
+    const chain = [sid]
+    let current = select.get(sid) as Dict | undefined
+    if (!current || isExplicitForkChild(current, false)) return chain
+    while (chain.length < 1000) {
+      const parentId = str(current.parent_session_id)
+      if (!parentId || chain.includes(parentId) || isExplicitForkChild(current, true)) break
+      const parent = select.get(parentId) as Dict | undefined
+      if (str(parent?.end_reason) !== 'compression') break
+      chain.push(parentId)
+      current = parent!
+    }
+    return chain.reverse()
+  }
+}
+
+/**
+ * TAL-793 (Agent `is_kanban_owned_session`): the `ids` whose compression lineage has a `kanban` `source` or
+ * `created_source` (schema v31; `source` alone decides before it), a Kanban worker's transcript only its dispatcher continues.
+ */
+function kanbanOwnedIds(db: DatabaseSync, cols: Set<string>, ids: string[]): string[] {
+  if (!ids.length) return []
+  const walk = resumeLineageWalker(db, cols)
+  const lineages = ids.map(walk)
+  const segments = [...new Set(lineages.flat())]
+  const match = cols.has('created_source') ? "(source = 'kanban' OR created_source = 'kanban')" : "source = 'kanban'"
+  const kanban = new Set<string>()
+  for (let i = 0; i < segments.length; i += 500) {
+    const chunk = segments.slice(i, i + 500)
+    for (const row of db.prepare(`SELECT id FROM sessions WHERE id IN (${chunk.map(() => '?').join(',')}) AND ${match}`).all(...chunk) as { id: string }[]) kanban.add(row.id)
+  }
+  return ids.filter((_, i) => lineages[i]!.some((sid) => kanban.has(sid)))
 }
 
 /** Python `state_db_has_session`: true only when `sid` is a row of the sessions table; a missing or unreadable db is false. */

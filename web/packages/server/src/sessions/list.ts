@@ -411,7 +411,7 @@ export interface ListParams {
   /** Gateway `sessions.json` identity map for the messaging dedupe (Python `_load_gateway_session_identity_map`). */
   gatewayIdentity?: Map<string, GatewayIdentity>
   sourceFilter?: string | null
-  /** TAL-358: batched active-profile state.db owner lookup (`stateDbSessionSources`) for the sidecar owner lock. */
+  /** TAL-358: batched active-profile state.db owner lookup (`stateDbSessionSources`) for the sidecar owner lock and the `cliRows` claim gate. */
   stateDbSources?: (ids: string[]) => Map<string, string> | null
   /** TAL-482: background kinds whose state.db rows stopped at the per-kind cap, so more exist than `cliRows` holds. */
   truncatedSources?: ReadonlySet<string>
@@ -465,13 +465,17 @@ export function isMessagingSessionRecord(row: Row): boolean {
   return isKnownMessagingSource(first(row.raw_source, row.source_tag, row.source, row.source_label))
 }
 
-/** Python `_is_claimable_cli_source`: a denylist of foreign families that own their sessions. */
+/**
+ * Python `_is_claimable_cli_source`: a denylist of foreign families that own their sessions. A `kanban` state.db owner
+ * (`stateDbSessionSources` folds in the lineage's `created_source`) refuses whatever the row's tag says (TAL-793).
+ */
 export function isClaimableCliSource(meta: Row, stateDbSource: string): boolean {
   if (meta.read_only) return false
+  if (stateDbSource.trim().toLowerCase() === 'kanban') return false
   const sessionSource = str(meta.session_source).trim().toLowerCase()
   if (['messaging', 'external_agent'].includes(sessionSource)) return false
   const tag = str(meta.source_tag || meta.raw_source).trim().toLowerCase()
-  const refused = new Set(['claude_code', 'cron', 'external_agent', 'gateway', 'messaging', 'subagent', 'unknown'])
+  const refused = new Set(['claude_code', 'cron', 'external_agent', 'gateway', 'kanban', 'messaging', 'subagent', 'unknown'])
   if (tag && refused.has(tag)) return false
   if (isMessagingSessionRecord(meta)) return false
   if (!tag && stateDbSource && refused.has(stateDbSource.trim().toLowerCase())) return false
@@ -722,8 +726,10 @@ export function buildSessionListPayload(store: SessionStore, params: ListParams)
     const represented = new Set<string>()
     for (const s of webuiSessions) for (const id of sessionLineageIds(s)) represented.add(id)
     dedupedCli = dedupeCliSidebarSessions(cliRows, represented, { showCli: params.showCliSessions, showCron: params.showCronSessions, showWebhook: params.showWebhookSessions, showKanban: params.showKanbanSessions, sourceFilter: params.sourceFilter ?? null, requestVisibilityOverrides: params.requestVisibilityOverrides })
-      // A sidecar-less foreign row whose owner refuses claiming is read-only, as its detail and mutations are.
-      .map((r) => ({ ...r, read_only: !isClaimableCliSource(r, str(r.source)), can_duplicate: false }))
+    const owners = params.stateDbSources ? params.stateDbSources(dedupedCli.map((r) => str(r.session_id))) : new Map<string, string>()
+    // A sidecar-less foreign row whose owner refuses claiming is read-only, as its detail and mutations are; an
+    // unreadable owner read (null) locks every row, as it locks sidecars.
+    dedupedCli = dedupedCli.map((r) => ({ ...r, read_only: !owners || !isClaimableCliSource(r, owners.get(str(r.session_id)) || str(r.source)), can_duplicate: false }))
   } else {
     webuiSessions = webuiSessions.filter((r) => !isCliSessionForSettings(r))
   }
