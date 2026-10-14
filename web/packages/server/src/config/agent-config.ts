@@ -135,12 +135,20 @@ export class AgentConfig {
     return listed ? { slots: listed.tasks, reserved: listed.reserved } : { slots: AUXILIARY_TASK_CATALOG.map((slot) => ({ ...slot, inherit_from: null, reasoning_effort: null, effective: null })), reserved: null }
   }
 
-  /** TAL-901: the personalities the profile's Agent offers for its config; the config's own block only while the sidecar cannot list them. */
-  async personalities(profileHome: string): Promise<PersonalityRow[]> {
-    const config = await this.read(profileHome)
+  /** TAL-901: the personalities the profile's Agent offers for its config; throws when the Agent cannot list them. */
+  async agentPersonalities(profileHome: string): Promise<PersonalityRow[]> {
     const sidecar = this.deps.sidecar()
-    const listed = sidecar ? await sidecar.call('personalities.list', { config }).catch(() => null) : null
-    return listed?.personalities ?? configPersonalities(config)
+    if (!sidecar) throw new ConfigUnavailable('Hermes Agent sidecar is not running; personalities are unavailable')
+    return (await sidecar.call('personalities.list', { config: await this.read(profileHome) })).personalities
+  }
+
+  /** The Agent's personalities to list and select from; the config's own block only while the sidecar cannot list them. */
+  async personalities(profileHome: string): Promise<PersonalityRow[]> {
+    try {
+      return await this.agentPersonalities(profileHome)
+    } catch {
+      return configPersonalities(await this.read(profileHome))
+    }
   }
 
   invalidate(profileHome?: string): void {

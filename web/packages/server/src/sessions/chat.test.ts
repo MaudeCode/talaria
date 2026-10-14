@@ -2986,6 +2986,27 @@ describe('chat without a sidecar', () => {
 })
 
 describe('turn context from config.yaml (Python streaming worker)', () => {
+  it('TAL-901: a selected personality the Agent cannot resolve fails the turn instead of starting it without the prompt', async () => {
+    const sidecar = new FakeSidecar()
+    const s = await bootTestServer({ sidecar })
+    try {
+      const sid = await newSession(s)
+      const session = s.deps.sessionStore.get(sid)
+      session.personality = 'reviewer'
+      s.deps.sessionStore.save(session)
+      sidecar.respond('personalities.list', () => { throw new SidecarError('Agent busy', { condition: 'sidecar_error' }) })
+      let started = false
+      sidecar.respond('chat.start', () => { started = true; return completed([{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'ok' }]) })
+      const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'hi' }))
+      const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}&replay=1`, (f) => f.event === 'apperror' || f.event === 'done')
+      expect(frames.map((f) => f.event)).not.toContain('done')
+      expect(String((frames.find((f) => f.event === 'apperror')?.data as Json).message)).toContain('personality "reviewer" could not be resolved')
+      expect(started).toBe(false)
+    } finally {
+      await s.close()
+    }
+  })
+
   it('sends the workspace system message, personality + surface + delivery ephemeral prompt, budgets, and reasoning config', async () => {
     const sidecar = new FakeSidecar()
     const s = await bootTestServer({ sidecar })

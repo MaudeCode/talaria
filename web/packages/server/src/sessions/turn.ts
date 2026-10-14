@@ -88,7 +88,7 @@ export interface TurnRunnerDeps {
   configPath?: (profileHome: string) => string
   /** The profile's config.yaml (turn budgets, reasoning effort, personality, delivery context); null when unavailable. */
   profileConfig?: (profile: string | null) => Promise<Config | null>
-  /** TAL-901: the personalities the profile's Agent offers (`AgentConfig.personalities`). */
+  /** TAL-901: the personalities the profile's Agent offers (`AgentConfig.agentPersonalities`); throws when it cannot list them. */
   personalities?: (profile: string | null) => Promise<PersonalityRow[]>
   /** `auto_title_refresh_every`: a generated title follows the latest exchange every N exchanges; 0 turns it off. */
   titleRefreshEvery?: () => number
@@ -554,7 +554,10 @@ export class TurnRunner {
       // turn's workspace (TAL-710: never a tag on the user's message, which the Agent can persist from memory).
       const cfg = (await deps.profileConfig?.(s.profile ?? null)) ?? {}
       const personality = str(s.personality)
-      const personalities = personality && deps.personalities ? await deps.personalities(s.profile ?? null).catch(() => []) : []
+      // A selected personality never silently drops: an unknown catalog fails the turn (an absent name is the Agent's no-overlay).
+      const personalities = personality && deps.personalities
+        ? await deps.personalities(s.profile ?? null).catch((error: unknown) => { throw new SidecarError(`The session's personality "${personality}" could not be resolved: ${error instanceof Error ? error.message : String(error)}`, { condition: 'sidecar_error' }) })
+        : []
       // The sidecar's per-session YOLO state does not survive its restarts: push the local flag (either way) before
       // the turn so a stale sidecar-side enable cannot auto-approve a session the UI reports as guarded.
       await this.withYoloLock(sessionId, async () => { try { await sidecar.call('approval.set_yolo', { session_id: sessionId, enabled: deps.service().yolo(sessionId).yolo_enabled === true }) } catch { /* the approval path re-asserts it */ } })

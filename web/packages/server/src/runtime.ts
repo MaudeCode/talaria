@@ -443,7 +443,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     },
     configPath: (home) => agentConfig.path(home),
     profileConfig: async (profile) => { try { return await agentConfig.read(profileHome(profile ?? activeProfile())) } catch { return null } },
-    personalities: (profile) => agentConfig.personalities(profileHome(profile ?? activeProfile())),
+    personalities: (profile) => agentConfig.agentPersonalities(profileHome(profile ?? activeProfile())),
     titleRefreshEvery: () => { try { const every = Number(settings.load().auto_title_refresh_every); return Number.isInteger(every) && every > 0 ? every : 0 } catch { return 0 } },
     env,
     hermesHome: config.hermesHome,
