@@ -110,6 +110,7 @@
           "profiles.skills_stats",
           "providers.auth_status",
           "providers.credential_pool",
+          "providers.local_models",
           "providers.model_ids",
           "providers.registry",
           "providers.resolve_runtime",
