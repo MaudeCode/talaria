@@ -949,13 +949,19 @@ export const CronJobViewSchema = z.looseObject({
   derived_state: CronDerivedStateSchema.optional(), needs_attention: z.boolean().optional(), resumable: z.boolean().optional(),
   /** Server-derived (TAL-599): a known cause clients explain in the needs-attention banner. */
   attention_hint: z.enum(['croniter_missing']).nullable(),
+  /** Server-normalized (TAL-810): the job's latest failed run, kept after later successes; `at` is epoch seconds, null when unparseable. */
+  last_failure: z.object({ at: z.number().nullable(), detail: z.string() }).nullable(),
 })
 export type CronJob = z.infer<typeof CronJobViewSchema>
+/** TAL-810: a listed profile's cron store whose writes fail (full disk, read-only mount, permissions), so its scheduler skips every run. `error` and `fix` are the Agent's text; `since` is the last write that landed (epoch seconds), null when unknown. */
+export const CronStoreHealthSchema = z.object({ profile: z.string(), store: z.string(), error: z.string(), fix: z.string(), since: z.number().nullable() })
+export type CronStoreHealth = z.infer<typeof CronStoreHealthSchema>
 export const CronsSchema = z.looseObject({
   jobs: z.array(CronJobViewSchema),
   /** TAL-601: `jobs` arrive in display order (running first, then soonest next run, none last, then name); clients keep it. Absent from older servers. */
   ordered: z.boolean().optional(),
   active_profile: z.string().optional(), all_profiles: z.boolean().optional(), other_profile_count: z.number().optional(), cron_unavailable: z.boolean().optional(),
+  unwritable_stores: z.array(CronStoreHealthSchema),
 })
 export type Crons = z.infer<typeof CronsSchema>
 export const CronContextSourcesSchema = z.object({ profile: z.string(), sources: z.array(z.object({ job_id: z.string(), label: z.string(), selectable: z.boolean() })) })
