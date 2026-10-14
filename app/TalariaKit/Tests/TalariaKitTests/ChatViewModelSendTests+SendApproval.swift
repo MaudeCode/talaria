@@ -354,12 +354,18 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(liveActivityManager.aggregateArms.first?.sessionTitle, "Planning")
         XCTAssertEqual(viewModel.messages.map(\.role), ["user"])
         XCTAssertEqual(viewModel.messages.last?.content, "Start executing the goal.")
-        XCTAssertEqual(viewModel.pinnedLocalNotices, ["Goal set."])
+        XCTAssertEqual(viewModel.currentNotice?.text, "Goal set.")
 
         streamClient.emit(.token("Working now."))
 
         XCTAssertEqual(viewModel.messages.map(\.role), ["user", "assistant"])
         XCTAssertEqual(viewModel.messages.last?.content, "Working now.")
+
+        // TAL-1001: the run's end writes no notice into the transcript.
+        streamClient.emit(.streamEnd)
+
+        XCTAssertNil(viewModel.activeStreamID)
+        XCTAssertEqual(viewModel.messages.map(\.role), ["user", "assistant"])
     }
 
     @MainActor
@@ -396,8 +402,8 @@ extension ChatViewModelSendTests {
         XCTAssertTrue(viewModel.hasActivatedGoalCommand)
         XCTAssertEqual(viewModel.currentGoal?.goal, "Ship the TestFlight build")
         XCTAssertEqual(viewModel.currentGoal?.status, "active")
-        XCTAssertEqual(viewModel.messages.map(\.role), ["local_notice"])
-        XCTAssertEqual(viewModel.messages.first?.content, "Goal is active.")
+        // TAL-1001: a notice never becomes a transcript row.
+        XCTAssertEqual(viewModel.messages.map(\.role), [])
     }
 
     @MainActor
@@ -511,8 +517,9 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(requestedPaths, ["/api/commands/exec"])
         XCTAssertEqual(execBody?["command"] as? String, "/refine testing habits")
         XCTAssertEqual(execBody?["session_id"] as? String, "session-abc")
-        XCTAssertEqual(viewModel.messages.map(\.role), ["local_notice"])
-        XCTAssertEqual(viewModel.messages.first?.content, "Reviewing this conversation in the background.")
+        // TAL-1001: the output shows as a notice, never as a transcript row.
+        XCTAssertEqual(viewModel.currentNotice?.text, "Reviewing this conversation in the background.")
+        XCTAssertTrue(viewModel.messages.isEmpty)
         XCTAssertNil(viewModel.activeStreamID)
     }
 
@@ -598,8 +605,7 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(requestedPaths, ["/api/goal"])
         XCTAssertTrue(viewModel.hasActivatedGoalCommand)
         XCTAssertEqual(viewModel.currentGoal?.status, "active")
-        XCTAssertEqual(viewModel.messages.map(\.role), ["local_notice"])
-        XCTAssertEqual(viewModel.messages.first?.content, "Goal resumed.")
+        XCTAssertEqual(viewModel.messages.map(\.role), [])
     }
 
     @MainActor
@@ -1016,7 +1022,7 @@ extension ChatViewModelSendTests {
             try XCTUnwrap(SlashCommandCatalog.command(named: "background")),
             args: "audit tests"
         )
-        XCTAssertEqual(result, .executed(message: "Background task started. I'll add the result here when it completes."))
+        XCTAssertEqual(result, .executed(message: nil))
 
         // Every loop has polled and is parked, so no request is in flight.
         try await waitUntil { hold.parkedLoops == 3 }

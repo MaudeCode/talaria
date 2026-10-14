@@ -53,7 +53,7 @@ struct ChatView: View {
     private let composerAccessoryVerticalSpacing: CGFloat = 8
     private let activeRunStatusSpacerHeight: CGFloat = 36
     private let approvalBypassStatusSpacerHeight: CGFloat = 44
-    private let queuedMessagesChipSpacerHeight: CGFloat = 44
+    private let sheetChipRowSpacerHeight: CGFloat = 44
     private let goalChipSpacerHeight: CGFloat = 36
 
     @State private var completionAcknowledgementTask: Task<Void, Never>?
@@ -139,7 +139,9 @@ struct ChatView: View {
     @State private var dismissedSessionNotices: Set<SessionNotice> = []
     /// The notice chips' measured height, which the transcript makes room for: a notice can wrap to two lines.
     @State private var sessionNoticeChipsHeight: CGFloat = 0
+    @State private var noticeChipHeight: CGFloat = 0
     @State private var showsQueuedMessagesSheet = false
+    @State private var showsBackgroundWorkSheet = false
     @State private var selectableResponseText: SelectableTextPresentation?
     @State private var attachmentPreviewItem: ChatAttachmentPreviewItem?
     @State private var transcriptMediaPreviewItem: TranscriptMediaPreviewItem?
@@ -731,6 +733,15 @@ struct ChatView: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
             }
+            .sheet(isPresented: $showsBackgroundWorkSheet) {
+                BackgroundWorkSheet(
+                    tasks: viewModel.pinnedBackgroundTasks,
+                    loadResult: { await viewModel.backgroundResult(taskID: $0) },
+                    dismiss: { await viewModel.dismissBackgroundTask(taskID: $0) }
+                )
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+            }
             .sheet(item: $turnDiffPresentation, content: turnDiffSheet)
             // TAL-887: the Agent's password-manager prompt; it closes when the server's queue moves on.
             .sheet(item: Binding(get: { viewModel.vaultPrompt }, set: { _ in })) { prompt in
@@ -1110,24 +1121,28 @@ struct ChatView: View {
                         .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
                 }
 
-                if !viewModel.pinnedLocalNotices.isEmpty {
-                    PinnedLocalNoticeStack(notices: viewModel.pinnedLocalNotices)
-                        .allowsHitTesting(false)
+                if let notice = viewModel.currentNotice {
+                    NoticeChip(text: notice.text, level: notice.level, dismiss: viewModel.dismissNotice)
+                        // A two-line notice is taller than one status row.
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { noticeChipHeight = $0 }
+                        // Once per notice: the same notice shown again keeps its id.
+                        .onChange(of: notice.id, initial: true) {
+                            AccessibilityNotification.Announcement(notice.text).post()
+                        }
                         .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
                 }
 
-                if !viewModel.pinnedBackgroundTasks.isEmpty {
-                    BackgroundWorkCard(
-                        tasks: viewModel.pinnedBackgroundTasks,
-                        loadResult: { await viewModel.backgroundResult(taskID: $0) },
-                        dismiss: { await viewModel.dismissBackgroundTask(taskID: $0) }
-                    )
+                if showsSheetChipRow {
+                    // Background work and the queue each show as one count chip that opens its sheet.
+                    HStack(spacing: composerAccessoryVerticalSpacing) {
+                        if !viewModel.pinnedBackgroundTasks.isEmpty {
+                            backgroundTasksChip(viewModel.pinnedBackgroundTasks)
+                        }
+                        if !viewModel.queuedMessagePreviews.isEmpty {
+                            queuedMessagesChip(viewModel.queuedMessagePreviews)
+                        }
+                    }
                     .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
-                }
-
-                if !viewModel.queuedMessagePreviews.isEmpty {
-                    queuedMessagesChip(viewModel.queuedMessagePreviews)
-                        .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
                 }
 
                 if let activeRunStatusPresentation, activeRunStatusPresentation.reservesTranscriptSpace {
@@ -1171,7 +1186,7 @@ struct ChatView: View {
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: showsScrollToBottomButton)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: composerAccessoryVisibleItemCount)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: activeRunStatusPresentation)
-            .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: viewModel.pinnedLocalNotices)
+            .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: viewModel.currentNotice)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: visibleSessionNotices)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: showsApprovalBypassStatus)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: goalChipPresentation)
@@ -1181,6 +1196,22 @@ struct ChatView: View {
     }
 
     /// What waits to send after this response (TAL-630); tapping opens the queue sheet.
+    private var showsSheetChipRow: Bool {
+        !viewModel.pinnedBackgroundTasks.isEmpty || !viewModel.queuedMessagePreviews.isEmpty
+    }
+
+    private func backgroundTasksChip(_ tasks: [BackgroundWorkTask]) -> some View {
+        Button {
+            showsBackgroundWorkSheet = true
+        } label: {
+            StatusChip(label: String(localized: "Background tasks · \(tasks.count)"), icon: .symbol("square.stack.3d.up"))
+                .frame(minHeight: 44)
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint(String(localized: "Shows the background tasks"))
+    }
+
     private func queuedMessagesChip(_ previews: [QueuedMessagePreview]) -> some View {
         Button {
             showsQueuedMessagesSheet = true
@@ -1476,10 +1507,6 @@ struct ChatView: View {
             || viewModel.uploadAttachmentErrorMessage != nil
     }
 
-    private var pinnedNoticeSpacerHeight: CGFloat {
-        viewModel.pinnedLocalNotices.isEmpty ? 0 : CGFloat(viewModel.pinnedLocalNotices.count) * 60
-    }
-
     private var activeRunStatusPresentation: ChatActiveRunStatusPresentation? {
         ChatActiveRunStatusPolicy.presentation(
             isStartingChat: viewModel.isStartingChat,
@@ -1510,8 +1537,8 @@ struct ChatView: View {
     /// leaves out a floating status (the syncing pill) and the lone scroll chip so they never
     /// shift the chat.
     private func composerAccessorySpacerHeight() -> CGFloat {
-        var height = pinnedNoticeSpacerHeight
-        var itemCount = viewModel.pinnedLocalNotices.isEmpty ? 0 : 1
+        var height: CGFloat = viewModel.currentNotice == nil ? 0 : noticeChipHeight
+        var itemCount = viewModel.currentNotice == nil ? 0 : 1
         if !visibleSessionNotices.isEmpty {
             height += sessionNoticeChipsHeight
             itemCount += 1
@@ -1528,8 +1555,8 @@ struct ChatView: View {
             height += approvalBypassStatusSpacerHeight
             itemCount += 1
         }
-        if !viewModel.queuedMessagePreviews.isEmpty {
-            height += queuedMessagesChipSpacerHeight
+        if showsSheetChipRow {
+            height += sheetChipRowSpacerHeight
             itemCount += 1
         }
 
@@ -1541,13 +1568,10 @@ struct ChatView: View {
 
     private var composerAccessoryVisibleItemCount: Int {
         var count = 0
-        if !viewModel.pinnedLocalNotices.isEmpty {
+        if viewModel.currentNotice != nil {
             count += 1
         }
         if !visibleSessionNotices.isEmpty {
-            count += 1
-        }
-        if !viewModel.pinnedBackgroundTasks.isEmpty {
             count += 1
         }
         if activeRunStatusPresentation != nil || showsScrollToBottomButton {
@@ -1559,7 +1583,7 @@ struct ChatView: View {
         if showsApprovalBypassStatus {
             count += 1
         }
-        if !viewModel.queuedMessagePreviews.isEmpty {
+        if showsSheetChipRow {
             count += 1
         }
         return count
@@ -1946,11 +1970,7 @@ struct ChatView: View {
         case .executed(let message):
             if let message {
                 if shouldRenderAsLocalNotice(parsedCommand) {
-                    if viewModel.activeStreamID == nil {
-                        viewModel.appendLocalNoticeMessage(message)
-                    } else {
-                        viewModel.pinLocalNoticeMessage(message)
-                    }
+                    viewModel.showNotice(message)
                 } else {
                     viewModel.appendLocalAssistantMessage(message)
                 }

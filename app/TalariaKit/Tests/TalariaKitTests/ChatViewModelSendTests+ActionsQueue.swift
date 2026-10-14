@@ -964,7 +964,7 @@ extension ChatViewModelSendTests {
             ["Initial request", "Before hint. ", "Use the focused test"]
         )
         XCTAssertEqual(viewModel.messages.last?.name, "_talaria_steer_waiting")
-        XCTAssertTrue(viewModel.pinnedLocalNotices.isEmpty)
+        XCTAssertNil(viewModel.currentNotice)
 
         streamClient.emit(.token("After hint."))
         XCTAssertEqual(viewModel.messages.map(\.role), ["user", "assistant", "user", "assistant"])
@@ -1447,7 +1447,7 @@ extension ChatViewModelSendTests {
         XCTAssertTrue(didStart)
         let result = await viewModel.submitStreamingMessage("Use the focused test", behavior: .steer)
 
-        XCTAssertEqual(result, .executed(message: "Steer was unavailable, so the message was queued for after this response."))
+        XCTAssertEqual(result, .executed(message: "Couldn't steer, so it's queued."))
         XCTAssertEqual(log.cancelRequests, 0)
         XCTAssertEqual(viewModel.activeStreamID, "stream-1")
         XCTAssertFalse(viewModel.messages.contains(where: \.isLocalSteeringHint))

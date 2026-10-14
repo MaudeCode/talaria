@@ -312,7 +312,11 @@ public final class ChatViewModel {
     public var attachmentUploadGeneration: Int { attachmentCoordinator.uploadStartGeneration }
     public var uploadAttachmentErrorMessage: String? { attachmentCoordinator.uploadAttachmentErrorMessage }
     public var localAttachmentPreviews: [String: [String: Data]] { attachmentCoordinator.localAttachmentPreviews }
-    public private(set) var pinnedLocalNotices: [String] = []
+    /// The one notice above the composer (TAL-1001); a new one replaces it.
+    public private(set) var currentNotice: ChatNotice?
+    /// How long a notice of each kind stays; tests shorten it.
+    @ObservationIgnored var noticeLifetime: (SessionNotice.Level) -> Duration = { $0.noticeLifetime }
+    @ObservationIgnored private var noticeDismissTask: Task<Void, Never>?
     /// The Agent's active notices for the session, oldest first (TAL-831): the server's list, from the session and the
     /// stream's `notices`.
     public private(set) var sessionNotices: [SessionNotice] = []
@@ -1555,7 +1559,6 @@ public final class ChatViewModel {
             ))
             completedReasoningGroups = []
             liveAssistantActivity.removeAll()
-            pinnedLocalNotices = []
             toolCallAnchorMessageID = nil
             reasoningAnchorMessageID = nil
             attachmentCoordinator.removeAllLocalPreviews()
@@ -1606,7 +1609,6 @@ public final class ChatViewModel {
                         setCompletedToolCallGroups([])
                         completedReasoningGroups = []
                         liveAssistantActivity.removeAll()
-                        pinnedLocalNotices = []
                         toolCallAnchorMessageID = nil
                         reasoningAnchorMessageID = nil
                         streamingAssistantMessageID = nil
@@ -2869,7 +2871,7 @@ public final class ChatViewModel {
 
             guard response.kickoffPromptText != nil else {
                 if let message = response.displayMessage {
-                    appendLocalNoticeMessage(message)
+                    showNotice(message)
                 }
                 return true
             }
@@ -2897,7 +2899,7 @@ public final class ChatViewModel {
 
         guard let streamID = activeStreamID else {
             if let noticeMessage {
-                appendLocalNoticeMessage(noticeMessage)
+                showNotice(noticeMessage)
             }
             return true
         }
@@ -2909,7 +2911,7 @@ public final class ChatViewModel {
             streamingAssistantMessageID = Self.latestAssistantMessageID(in: messages)
         }
         if let noticeMessage {
-            pinLocalNoticeMessage(noticeMessage)
+            showNotice(noticeMessage)
         }
 
         streamCoordinator.start(streamID: streamID, armsAggregateForLocalWork: true)
@@ -2972,7 +2974,7 @@ public final class ChatViewModel {
         completedReasoningGroups = []
         archivedAssistantActivity = [:]
         liveAssistantActivity.removeAll()
-        pinnedLocalNotices = []
+        dismissNotice()
         streamingAssistantMessageID = nil
         toolCallAnchorMessageID = nil
         reasoningAnchorMessageID = nil
@@ -3046,15 +3048,7 @@ public final class ChatViewModel {
     /// notice; no chat turn starts.
     func executeServerCommand(_ text: String) async -> SlashCommandExecutionResult {
         do {
-            let output = try await client.execCommand(text, sessionID: sessionID)
-                .output?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            if !output.isEmpty {
-                if activeStreamID == nil {
-                    appendLocalNoticeMessage(output)
-                } else {
-                    pinLocalNoticeMessage(output)
-                }
-            }
+            showNotice(try await client.execCommand(text, sessionID: sessionID).output ?? "")
             return .executed(message: nil)
         } catch {
             lastError = error
@@ -3156,7 +3150,7 @@ public final class ChatViewModel {
             attachments: requeuedAttachments ?? attachmentCoordinator.consumePendingAttachments(),
             steerID: unconfirmedSteerID
         )
-        return .executed(message: String(localized: "Steer was unavailable, so the message was queued for after this response."))
+        return .executed(message: String(localized: "Couldn't steer, so it's queued."))
     }
 
     private func interruptResponseFromSlashCommand(_ args: String) async -> SlashCommandExecutionResult {
@@ -3175,10 +3169,10 @@ public final class ChatViewModel {
         await cancelActiveStream()
 
         if activeStreamID != nil {
-            return .executed(message: String(localized: "Could not stop the current response yet, so the interrupt message was queued for the next turn."))
+            return .executed(message: String(localized: "Couldn't stop yet, so it's queued."))
         }
 
-        return .executed(message: String(localized: "Interrupted the current response and queued your message to send next."))
+        return .executed(message: String(localized: "Interrupted; your message sends next."))
     }
 
     private func statusMessageFromSlashCommand() -> String {
@@ -3282,7 +3276,8 @@ public final class ChatViewModel {
             }
 
             await refreshBackgroundTasks()
-            return .executed(message: String(localized: "Background task started. I'll add the result here when it completes."))
+            // The composer's background tasks chip shows it; a notice would say the same twice (TAL-1001).
+            return .executed(message: nil)
         } catch {
             lastError = error
             return .unsupported(friendlyMessage: error.localizedDescription)
@@ -3954,15 +3949,27 @@ public final class ChatViewModel {
         appendLocalMessage(text, role: "local_assistant", idPrefix: "local-slash")
     }
 
-    @discardableResult
-    public func appendLocalNoticeMessage(_ text: String) -> String? {
-        appendLocalMessage(text, role: "local_notice", idPrefix: "local-notice")
-    }
-
-    public func pinLocalNoticeMessage(_ text: String) {
+    /// Every chat notice goes through here (TAL-1001). It replaces the notice shown; the same notice again only
+    /// restarts its time.
+    public func showNotice(_ text: String, level: SessionNotice.Level = .info) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        pinnedLocalNotices.append(trimmed)
+        if currentNotice?.text != trimmed || currentNotice?.level != level {
+            currentNotice = ChatNotice(id: UUID(), text: trimmed, level: level)
+        }
+        noticeDismissTask?.cancel()
+        let lifetime = noticeLifetime(level)
+        noticeDismissTask = Task { [weak self] in
+            try? await Task.sleep(for: lifetime)
+            guard !Task.isCancelled else { return }
+            self?.dismissNotice()
+        }
+    }
+
+    public func dismissNotice() {
+        noticeDismissTask?.cancel()
+        noticeDismissTask = nil
+        currentNotice = nil
     }
 
     private func appendSteeringHint(
@@ -4145,7 +4152,7 @@ public final class ChatViewModel {
         do {
             let response = try await client.withdrawSteer(sessionID: sessionID, steerID: id, reason: reason)
             guard response.withdrawn else {
-                pinLocalNoticeMessage(String(localized: "This steering message can no longer be changed."))
+                showNotice(String(localized: "The Agent already took this message."), level: .warn)
                 return
             }
             let shownText = messages.first { $0.messageId == id && $0.isLocalSteeringHint }?.content
@@ -4163,7 +4170,7 @@ public final class ChatViewModel {
         defer { steerActionsInFlight.remove(id) }
         do {
             if !(try await client.sendSteerNow(sessionID: sessionID, steerID: id)).redirected {
-                pinLocalNoticeMessage(String(localized: "Nothing is running to take it now; it stays pending."))
+                showNotice(String(localized: "Not delivered yet; it stays pending."))
             }
         } catch {
             lastError = error
@@ -4837,8 +4844,7 @@ public final class ChatViewModel {
                 toolCallAnchorMessageID: toolCallAnchorMessageID,
                 reasoningAnchorMessageID: reasoningAnchorMessageID,
                 contextWindowSnapshot: contextWindowSnapshot,
-                localAttachmentPreviews: attachmentCoordinator.localAttachmentPreviews,
-                pinnedLocalNotices: pinnedLocalNotices
+                localAttachmentPreviews: attachmentCoordinator.localAttachmentPreviews
             ),
             server: server,
             sessionID: sessionID,
@@ -4883,7 +4889,6 @@ public final class ChatViewModel {
         )
         contextWindowSnapshot = contextWindowSnapshot ?? snapshot.contextWindowSnapshot
         attachmentCoordinator.mergeLocalAttachmentPreviews(snapshot.localAttachmentPreviews)
-        pinnedLocalNotices = snapshot.pinnedLocalNotices
         scheduleStreamingScrollTrigger()
         return snapshot.activeStreamLastEventID
     }
@@ -5514,14 +5519,6 @@ public final class ChatViewModel {
         )
     }
 
-    private func flushPinnedLocalNoticesToTranscript() {
-        let notices = pinnedLocalNotices
-        pinnedLocalNotices.removeAll()
-        for notice in notices {
-            appendLocalNoticeMessage(notice)
-        }
-    }
-
     @discardableResult
     private func enqueueQueuedSlashMessage(
         _ text: String,
@@ -5573,10 +5570,10 @@ public final class ChatViewModel {
         if case .unsupported(let notice) = result {
             // Back in place, with no drain: a send that keeps failing must not retry in a loop (issue #202).
             queuedSlashMessages.insert(message, at: min(index, queuedSlashMessages.count))
-            pinLocalNoticeMessage(notice)
+            showNotice(notice, level: .warn)
             return
         }
-        if case .executed(let notice?) = result { pinLocalNoticeMessage(notice) }
+        if case .executed(let notice?) = result { showNotice(notice) }
         // A reply that ended meanwhile skipped its drain while this one held the queue.
         drainQueuedSlashMessageIfIdle()
     }
@@ -6035,10 +6032,6 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
 
     public func streamCoordinatorRemoveSnapshot(streamID: String?) {
         removeActiveStreamSnapshot(streamID: streamID)
-    }
-
-    public func streamCoordinatorFlushPinnedLocalNoticesToTranscript() {
-        flushPinnedLocalNoticesToTranscript()
     }
 
     public func streamCoordinatorDrainQueuedSlashMessageIfIdle() {

@@ -129,10 +129,10 @@ struct ToolCallCardView: View {
     }
 
     static func backgroundSummary(_ link: BackgroundLink) -> String {
-        let counts = BackgroundWorkCard.agentsSummary(link.agents)
+        let counts = BackgroundWorkSheet.agentsSummary(link.agents)
         switch link.status {
         case .running, .completed: return counts
-        default: return "\(BackgroundWorkCard.statusLabel(link.status)) · \(counts)"
+        default: return "\(BackgroundWorkSheet.statusLabel(link.status)) · \(counts)"
         }
     }
 

@@ -17635,108 +17635,108 @@
         }
       }
     },
-    "Background task started. I'll add the result here when it completes." : {
+    "Background tasks · %lld" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "بدأت المهمة في الخلفية. سأضيف النتيجة هنا عند اكتمالها."
+            "value" : "المهام في الخلفية · %lld"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Hintergrundaufgabe gestartet. Ich füge das Ergebnis hier hinzu, sobald sie abgeschlossen ist."
+            "value" : "Hintergrundaufgaben · %lld"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Tarea en segundo plano iniciada. Añadiré el resultado aquí cuando termine."
+            "value" : "Tareas en segundo plano · %lld"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Tâche en arrière-plan démarrée. J'ajouterai le résultat ici lorsqu'elle sera terminée."
+            "value" : "Tâches en arrière-plan · %lld"
           }
         },
         "he" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "משימת הרקע התחילה. אוסיף את התוצאה כאן עם השלמתה."
+            "value" : "משימות רקע · %lld"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Attività in background avviata. Aggiungerò il risultato qui al termine."
+            "value" : "Attività in background · %lld"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "バックグラウンドタスクを開始しました。完了したら結果をここに追加します。"
+            "value" : "バックグラウンドタスク · %lld"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "백그라운드 작업이 시작됐어요. 완료되면 결과를 여기에 추가할게요."
+            "value" : "백그라운드 작업 · %lld"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Achtergrondtaak gestart. Ik voeg het resultaat hier toe zodra deze is voltooid."
+            "value" : "Achtergrondtaken · %lld"
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Zadanie w tle uruchomione. Dodam wynik tutaj po zakończeniu."
+            "value" : "Zadania w tle · %lld"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Tarefa em segundo plano iniciada. Adicionarei o resultado aqui quando ela for concluída."
+            "value" : "Tarefas em segundo plano · %lld"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Фоновая задача запущена. Я добавлю результат здесь, когда она завершится."
+            "value" : "Фоновые задачи · %lld"
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Arka plan görevi başladı. Tamamlandığında sonucu buraya ekleyeceğim."
+            "value" : "Arka plan görevleri · %lld"
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "پس منظر کا ٹاسک شروع ہو گیا۔ مکمل ہونے پر میں نتیجہ یہاں شامل کر دوں گا۔"
+            "value" : "پس منظر کے کام · %lld"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "后台任务已开始。完成后我会把结果添加到这里。"
+            "value" : "后台任务 · %lld"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "背景任務已開始。完成後我會把結果加到這裡。"
+            "value" : "背景工作 · %lld"
           }
         },
         "zh-HK" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "後台任務已開始。完成後我會將結果加入此處。"
+            "value" : "背景工作 · %lld"
           }
         }
       }
@@ -35893,108 +35893,108 @@
         }
       }
     },
-    "Could not stop the current response yet, so the interrupt message was queued for the next turn." : {
+    "Couldn't stop yet, so it's queued." : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "تعذّر إيقاف الرد الحالي بعد، لذا وُضعت رسالة المقاطعة في قائمة الانتظار للدور التالي."
+            "value" : "تعذّر الإيقاف بعد، لذا أُضيفت إلى قائمة الانتظار."
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Die aktuelle Antwort konnte noch nicht gestoppt werden, daher wurde die Unterbrechungsnachricht für den nächsten Zug in die Warteschlange gestellt."
+            "value" : "Noch nicht gestoppt, daher eingereiht."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "No se pudo detener la respuesta actual todavía, por lo que el mensaje de interrupción se puso en cola para el siguiente turno."
+            "value" : "Aún no se pudo detener; quedó en cola."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Impossible d'arrêter la réponse en cours ; le message d'interruption a été mis en file d'attente pour le prochain tour."
+            "value" : "Arrêt pas encore possible, message mis en file."
           }
         },
         "he" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "לא ניתן היה לעצור עדיין את התגובה הנוכחית, ולכן הודעת ההפסקה הוכנסה לתור עבור התור הבא."
+            "value" : "עדיין לא ניתן לעצור, לכן נוסף לתור."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Impossibile interrompere la risposta corrente, il messaggio di interruzione è stato messo in coda per il prossimo turno."
+            "value" : "Non è ancora stato possibile fermare, quindi è in coda."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "現在の応答をまだ停止できなかったため、割り込みメッセージを次のターン用にキューに入れました。"
+            "value" : "まだ停止できないため、キューに追加しました。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "현재 응답을 아직 중지할 수 없어서 중단 메시지를 다음 차례를 위해 대기열에 넣었어요."
+            "value" : "아직 멈출 수 없어 대기열에 추가했습니다."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kon het huidige antwoord nog niet stoppen, dus het onderbrekingsbericht is in de wachtrij geplaatst voor de volgende beurt."
+            "value" : "Stoppen lukte nog niet, dus in de wachtrij."
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Nie można jeszcze zatrzymać bieżącej odpowiedzi, więc wiadomość przerwania została umieszczona w kolejce na następną turę."
+            "value" : "Nie udało się jeszcze zatrzymać, więc dodano do kolejki."
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Ainda não foi possível parar a resposta atual, então a mensagem de interrupção foi enfileirada para o próximo turno."
+            "value" : "Ainda não foi possível parar; ficou na fila."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Пока не удалось остановить текущий ответ, поэтому сообщение прерывания поставлено в очередь на следующий ход."
+            "value" : "Пока не удалось остановить, поэтому в очереди."
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Geçerli yanıt henüz durdurulamadı, bu yüzden kesme mesajı bir sonraki tur için sıraya alındı."
+            "value" : "Henüz durdurulamadı, sıraya alındı."
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "موجودہ جواب ابھی بند نہ ہو سکا، اس لیے اِنٹرپٹ پیغام اگلی باری کے لیے قطار میں رکھ دیا گیا۔"
+            "value" : "ابھی روکا نہ جا سکا، اس لیے قطار میں ہے۔"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "暂时无法停止当前回复，因此中断消息已排入下一轮。"
+            "value" : "暂时无法停止，已加入队列。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "暫時無法停止目前的回覆，因此中斷訊息已排入下一輪。"
+            "value" : "暫時無法停止，已加入佇列。"
           }
         },
         "zh-HK" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "暫時無法停止當前回覆，因此中斷訊息已排入下一輪。"
+            "value" : "暫時無法停止，已加入佇列。"
           }
         }
       }
@@ -53847,108 +53847,108 @@
         }
       }
     },
-    "Interrupted the current response and queued your message to send next." : {
+    "Interrupted; your message sends next." : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "تمّت مقاطعة الردّ الحالي وأُدرجت رسالتك في قائمة الانتظار لإرسالها تاليًا."
+            "value" : "تمت المقاطعة؛ ستُرسل رسالتك تاليًا."
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Die aktuelle Antwort wurde unterbrochen und deine Nachricht wird als Nächstes gesendet."
+            "value" : "Unterbrochen; deine Nachricht wird als Nächstes gesendet."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Se interrumpió la respuesta actual y se puso en cola tu mensaje para enviarlo a continuación."
+            "value" : "Interrumpido; tu mensaje se envía a continuación."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "La réponse en cours a été interrompue et votre message est en file d'attente."
+            "value" : "Interrompu ; votre message part ensuite."
           }
         },
         "he" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "התשובה הנוכחית הופסקה וההודעה שלך נוספה לתור לשליחה הבאה."
+            "value" : "הופסק; ההודעה שלך תישלח הבאה."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Risposta corrente interrotta e messaggio accodato per il prossimo invio."
+            "value" : "Interrotto; il tuo messaggio parte subito dopo."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "現在の応答を中断し、メッセージを次に送信するためキューに追加しました。"
+            "value" : "中断しました。次にメッセージを送信します。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "현재 응답을 중단하고 메시지를 다음에 보내도록 대기열에 추가했어요."
+            "value" : "중단했습니다. 다음에 메시지를 보냅니다."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Het huidige antwoord is onderbroken en uw bericht is in de wachtrij gezet om als volgende te verzenden."
+            "value" : "Onderbroken; je bericht gaat als volgende."
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Przerwano bieżącą odpowiedź i dodano wiadomość do kolejki."
+            "value" : "Przerwano; Twoja wiadomość zostanie wysłana jako następna."
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "A resposta atual foi interrompida e sua mensagem foi colocada na fila para ser enviada em seguida."
+            "value" : "Interrompido; sua mensagem é enviada em seguida."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Текущий ответ прерван, ваше сообщение поставлено в очередь для отправки следующим."
+            "value" : "Прервано; ваше сообщение отправится следующим."
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Mevcut yanıt kesildi ve mesajınız bir sonraki gönderim için kuyruğa alındı."
+            "value" : "Kesildi; mesajınız sırada gönderilecek."
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "موجودہ جواب میں خلل ڈالا اور آپ کا پیغام اگلی بار بھیجنے کے لیے قطار میں لگا دیا۔"
+            "value" : "روک دیا گیا؛ آپ کا پیغام اگلا بھیجا جائے گا۔"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "已中断当前回复，并将你的消息排队，下一轮发送。"
+            "value" : "已中断，接下来发送你的消息。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "已中斷目前的回覆，並將你的訊息排入佇列，下一輪傳送。"
+            "value" : "已中斷，接著會傳送你的訊息。"
           }
         },
         "zh-HK" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "已中斷目前的回應，並將訊息排入佇列，於下一輪傳送。"
+            "value" : "已中斷，接著會傳送你的訊息。"
           }
         }
       }
@@ -106664,108 +106664,108 @@
         }
       }
     },
-    "Steer was unavailable, so the message was queued for after this response." : {
+    "Couldn't steer, so it's queued." : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "التوجيه غير متاح، لذا وُضعت الرسالة في قائمة الانتظار لما بعد هذا الرد."
+            "value" : "تعذّر التوجيه، لذا أُضيفت إلى قائمة الانتظار."
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Steuern war nicht verfügbar, daher wurde die Nachricht für nach dieser Antwort in die Warteschlange gestellt."
+            "value" : "Steuern nicht möglich, daher eingereiht."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "La dirección no estaba disponible, por lo que el mensaje se puso en cola para después de esta respuesta."
+            "value" : "No se pudo dirigir; quedó en cola."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "L'orientation était indisponible ; le message a été mis en attente pour après cette réponse."
+            "value" : "Pilotage impossible, message mis en file."
           }
         },
         "he" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "הכוונה לא הייתה זמינה, ולכן ההודעה הוכנסה לתור לאחר התגובה הזו."
+            "value" : "לא ניתן לכוון, לכן נוסף לתור."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "La guida non era disponibile, quindi il messaggio è stato messo in coda per dopo questa risposta."
+            "value" : "Impossibile indirizzare, quindi è in coda."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "誘導を利用できなかったため、メッセージはこの応答の後に送信されるようキューに入れられました。"
+            "value" : "ステアできなかったため、キューに追加しました。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "유도를 사용할 수 없어 메시지가 이 응답 이후로 대기열에 추가되었어요."
+            "value" : "조정할 수 없어 대기열에 추가했습니다."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Bijsturen was niet beschikbaar, dus het bericht is in de wachtrij geplaatst voor na dit antwoord."
+            "value" : "Bijsturen lukte niet, dus in de wachtrij."
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Sterowanie było niedostępne, więc wiadomość została dodana do kolejki na po tej odpowiedzi."
+            "value" : "Nie udało się pokierować, więc dodano do kolejki."
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "O direcionamento estava indisponível, então a mensagem foi colocada na fila para depois desta resposta."
+            "value" : "Não foi possível direcionar; ficou na fila."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Направление было недоступно, поэтому сообщение поставлено в очередь после этого ответа."
+            "value" : "Не удалось направить, поэтому в очереди."
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Yönlendirme kullanılamadı, bu yüzden mesaj bu yanıttan sonrası için kuyruğa alındı."
+            "value" : "Yönlendirilemedi, sıraya alındı."
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "رہنمائی دستیاب نہیں تھی، اس لیے پیغام اس جواب کے بعد کے لیے قطار میں ڈال دیا گیا۔"
+            "value" : "رہنمائی نہ ہو سکی، اس لیے قطار میں ہے۔"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "引导功能不可用，因此消息已排队，将在此响应之后发送。"
+            "value" : "无法引导，已加入队列。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "引導功能無法使用，因此訊息已排隊，將在此回應之後傳送。"
+            "value" : "無法引導，已加入佇列。"
           }
         },
         "zh-HK" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "引導功能無法使用，因此訊息已排隊，將在此回應之後傳送。"
+            "value" : "無法引導，已加入佇列。"
           }
         }
       }
@@ -107194,214 +107194,214 @@
         }
       }
     },
-    "This steering message can no longer be changed." : {
+    "The Agent already took this message." : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "لم يعد من الممكن تغيير رسالة التوجيه هذه."
+            "value" : "استلم الوكيل هذه الرسالة بالفعل."
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Dieser Steuerhinweis kann nicht mehr geändert werden."
+            "value" : "Der Agent hat diese Nachricht bereits übernommen."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Esta indicación ya no se puede cambiar."
+            "value" : "El agente ya tomó este mensaje."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Cette indication ne peut plus être modifiée."
+            "value" : "L’agent a déjà pris ce message."
           }
         },
         "he" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "כבר אי אפשר לשנות את הודעת ההכוונה הזו."
+            "value" : "הסוכן כבר קיבל את ההודעה הזו."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Questa indicazione non può più essere modificata."
+            "value" : "L’agente ha già preso questo messaggio."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "このステアリングメッセージはもう変更できません。"
+            "value" : "エージェントはこのメッセージをすでに受け取りました。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "이 조정 메시지는 더 이상 변경할 수 없습니다."
+            "value" : "에이전트가 이미 이 메시지를 받았습니다."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Dit stuurbericht kan niet meer worden gewijzigd."
+            "value" : "De agent heeft dit bericht al opgepakt."
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Tej wskazówki nie można już zmienić."
+            "value" : "Agent już przejął tę wiadomość."
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Esta orientação não pode mais ser alterada."
+            "value" : "O agente já recebeu esta mensagem."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Эту подсказку больше нельзя изменить."
+            "value" : "Агент уже принял это сообщение."
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Bu yönlendirme artık değiştirilemez."
+            "value" : "Ajan bu mesajı zaten aldı."
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "یہ رہنمائی کا پیغام اب تبدیل نہیں ہو سکتا۔"
+            "value" : "ایجنٹ یہ پیغام پہلے ہی لے چکا ہے۔"
           }
         },
         "zh-HK" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "這則引導訊息已無法更改。"
+            "value" : "代理已接收此訊息。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "这条引导消息已无法更改。"
+            "value" : "代理已接收此消息。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "這則引導訊息已無法更改。"
+            "value" : "代理已接收此訊息。"
           }
         }
       }
     },
-    "Nothing is running to take it now; it stays pending." : {
+    "Not delivered yet; it stays pending." : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "لا شيء قيد التشغيل لاستلامها الآن؛ تبقى معلّقة."
+            "value" : "لم تُسلَّم بعد؛ تبقى معلّقة."
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Gerade läuft nichts, das ihn übernehmen kann; er bleibt ausstehend."
+            "value" : "Noch nicht zugestellt; bleibt ausstehend."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "No hay nada en curso que pueda tomarla ahora; queda pendiente."
+            "value" : "Aún no entregado; sigue pendiente."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Rien ne tourne pour la prendre maintenant ; elle reste en attente."
+            "value" : "Pas encore transmis ; reste en attente."
           }
         },
         "he" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "אין כרגע ריצה שתקבל אותה; היא נשארת ממתינה."
+            "value" : "עדיין לא נמסר; נשאר בהמתנה."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Non c’è nulla in esecuzione che possa prenderla ora; resta in attesa."
+            "value" : "Non ancora consegnato; resta in sospeso."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "今受け取れる処理が動いていないため、保留のままです。"
+            "value" : "まだ届いていません。保留のままです。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "지금 받을 실행이 없어 대기 상태로 남습니다."
+            "value" : "아직 전달되지 않았습니다. 대기 상태로 남습니다."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Er draait nu niets dat het kan ontvangen; het blijft in afwachting."
+            "value" : "Nog niet afgeleverd; blijft in afwachting."
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Nic teraz nie działa, by ją przyjąć; pozostaje oczekująca."
+            "value" : "Jeszcze nie dostarczono; pozostaje w oczekiwaniu."
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Nada está em execução para recebê-la agora; ela continua pendente."
+            "value" : "Ainda não entregue; continua pendente."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Сейчас нечему её принять; она остаётся в ожидании."
+            "value" : "Пока не доставлено; остаётся в ожидании."
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Şu anda bunu alacak çalışan bir şey yok; beklemede kalıyor."
+            "value" : "Henüz iletilmedi; beklemede kalıyor."
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "ابھی اسے لینے کے لیے کچھ نہیں چل رہا؛ یہ زیرِ التوا رہے گا۔"
+            "value" : "ابھی تک نہیں پہنچا؛ زیر التوا رہے گا۔"
           }
         },
         "zh-HK" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "目前沒有可接收它的執行，它將保持待處理。"
+            "value" : "尚未送達，仍在等候中。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "当前没有可接收它的运行，它将保持待处理。"
+            "value" : "尚未送达，仍在等待中。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "目前沒有可接收它的執行，它將保持待處理。"
+            "value" : "尚未送達，仍在等待中。"
           }
         }
       }
@@ -137747,48 +137747,48 @@
         }
       }
     },
-    "Background work" : {
+    "Background tasks" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "العمل في الخلفية"
+            "value" : "المهام في الخلفية"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Hintergrundarbeit"
+            "value" : "Hintergrundaufgaben"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Trabajo en segundo plano"
+            "value" : "Tareas en segundo plano"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Travail en arrière-plan"
+            "value" : "Tâches en arrière-plan"
           }
         },
         "he" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "עבודה ברקע"
+            "value" : "משימות רקע"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Lavoro in background"
+            "value" : "Attività in background"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "バックグラウンド作業"
+            "value" : "バックグラウンドタスク"
           }
         },
         "ko" : {
@@ -137800,37 +137800,37 @@
         "nl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Achtergrondwerk"
+            "value" : "Achtergrondtaken"
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Praca w tle"
+            "value" : "Zadania w tle"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Trabalho em segundo plano"
+            "value" : "Tarefas em segundo plano"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Фоновая работа"
+            "value" : "Фоновые задачи"
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Arka plan işleri"
+            "value" : "Arka plan görevleri"
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "پس منظر کا کام"
+            "value" : "پس منظر کے کام"
           }
         },
         "zh-HK" : {
@@ -137842,7 +137842,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "后台工作"
+            "value" : "后台任务"
           }
         },
         "zh-Hant" : {

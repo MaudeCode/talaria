@@ -144,7 +144,7 @@ extension ChatViewModelSendTests {
         XCTAssertTrue(viewModel.completedReasoningGroups.isEmpty)
         XCTAssertTrue(viewModel.liveToolCalls.isEmpty)
         XCTAssertTrue(viewModel.liveReasoningText.isEmpty)
-        XCTAssertTrue(viewModel.pinnedLocalNotices.isEmpty)
+        XCTAssertNil(viewModel.currentNotice)
         XCTAssertNil(viewModel.errorMessage)
         XCTAssertNotNil(viewModel.lastError)
         XCTAssertFalse(didSend)

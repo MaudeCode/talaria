@@ -13,7 +13,6 @@ struct ActiveChatStreamSnapshot: Equatable {
     let reasoningAnchorMessageID: String?
     let contextWindowSnapshot: ContextWindowSnapshot?
     let localAttachmentPreviews: [String: [String: Data]]
-    let pinnedLocalNotices: [String]
 }
 
 struct ActiveChatStreamSnapshotKey: Hashable {

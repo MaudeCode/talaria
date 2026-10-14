@@ -128,7 +128,6 @@ extension ActiveChatStreamSnapshot {
         toolCallAnchorMessageID: nil,
         reasoningAnchorMessageID: nil,
         contextWindowSnapshot: nil,
-        localAttachmentPreviews: [:],
-        pinnedLocalNotices: []
+        localAttachmentPreviews: [:]
     )
 }
