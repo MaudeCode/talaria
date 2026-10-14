@@ -2,7 +2,7 @@
   "entries": [
     {
       "category": "Fixed",
-      "summary": "Dictating into the App no longer drops \"Thank you.\" or \"you\" into the message when the recording was silent.",
+      "summary": "Dictating a silent recording no longer puts \"Thank you.\" or \"you\" into the message.",
       "highlight": false,
       "components": ["web"]
     }
