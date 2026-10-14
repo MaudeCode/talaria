@@ -185,8 +185,9 @@ def _clean_artifacts(sessions_dir: Path, removed_id: str) -> bool:
     if not _is_safe_session_id(removed_id):
         return False
     ok = True
-    for suffix in (".json", ".jsonl"):
-        artifact = sessions_dir / f"{removed_id}{suffix}"
+    # ``session_<id>.json`` is the legacy snapshot older Agents wrote; it can carry plaintext secrets.
+    for name in (f"{removed_id}.json", f"{removed_id}.jsonl", f"session_{removed_id}.json"):
+        artifact = sessions_dir / name
         if artifact.exists():
             try:
                 artifact.unlink(missing_ok=True)

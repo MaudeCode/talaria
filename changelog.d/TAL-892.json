@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Deleting a session in Web also removes its legacy session transcript file, which could hold secrets.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
