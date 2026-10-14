@@ -283,4 +283,14 @@ export const savePluginSettings = (key: string, values: Record<string, unknown>,
 export const fetchMcpServers = () => orpc().mcp.servers()
 export const fetchMcpTools = (q: string) => orpc().mcp.tools(q ? { q } : {})
 export const toggleMcpServer = (name: string, enabled: boolean) => orpc().mcp.toggle({ name, enabled })
+export const fetchConnectorsAvailable = () => orpc().connectors.available()
+export const fetchConnectors = () => orpc().connectors.page()
+export const fetchConnectorTools = (connector: string) => orpc().connectors.tools({ connector })
+export const setConnectorRule = (connector: string, revision: string, change: { enabled: boolean } | { tool: string; tool_enabled: boolean }) => orpc().connectors.setPolicy({ connector, revision, ...change })
+/** A connect waits for the app's authorization link (up to 31 s on the server). */
+export const connectConnector = (connector: string) => orpc().connectors.connect({ connector }, { signal: timeout(60_000) })
+export const removeConnectorAccount = (connection_id: string) => orpc().connectors.removeAccount({ connection_id })
+export const fetchConnectorOperation = (op_id: string) => orpc().connectors.operation({ op_id })
+export const respondConnectorOperation = (op_id: string, action: 'skip' | 'retry' | 'approve' | 'continue', target?: string, env?: Record<string, string>) =>
+  orpc().connectors.respond({ op_id, action, ...(target ? { target } : {}), ...(env ? { env } : {}) }, { signal: timeout(60_000) })
 export const shutdownServer = () => orpc().ops.shutdown({})

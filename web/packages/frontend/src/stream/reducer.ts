@@ -15,6 +15,7 @@
  */
 import type { ChatEvent } from '../contracts/sse'
 import type { ApprovalPending, ClarifyPending, Session } from '../contracts'
+import type { ConnectorOperationView } from '@maudecode/talaria-web-contracts'
 import type { PendingSteer, RateLimitWait, ToolKind, ToolResultView } from '@maudecode/talaria-web-contracts'
 
 export type TurnStatus = 'starting' | 'connecting' | 'streaming' | 'reconnecting' | 'done' | 'error' | 'cancelled'
@@ -73,6 +74,8 @@ export interface LiveTurn {
   cancelledMessage: string | null
   approval: ApprovalPending | null
   clarify: ClarifyPending | null
+  /** TAL-818: the turn's open `manage_connections` card; the card reads the operation from the server from here on. */
+  connectCard: ConnectorOperationView | null
   pendingSteers: PendingSteerRow[]
   /** Steers already taken or withdrawn: a replayed frame or a stale session never brings one back. */
   closedSteerIds: string[]
@@ -134,7 +137,7 @@ function newTurn(sessionId: string, streamId: string, now: number, serverStarted
   return {
     sessionId, streamId, turnId: null, userMessageId: null, userText: '', startedAt: runStart(serverStartedAt, now, now), status: 'starting',
     segments: [], tools: {}, toolOrder: [], reasoningText: '', reasoningTitles: [], lastEventId: '', lastSeq: 0,
-    usage: null, tps: null, contextStatus: null, warning: null, error: null, cancelledMessage: null, approval: null, clarify: null,
+    usage: null, tps: null, contextStatus: null, warning: null, error: null, cancelledMessage: null, approval: null, clarify: null, connectCard: null,
     pendingSteers: [], closedSteerIds: [], compression: null, rateLimitWait: null, title: null, doneSession: null, doneAt: null, streamEnded: false, goal: null, replayed: false, claimsPersistedRows: true,
   }
 }
@@ -230,6 +233,10 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
       if (terminal) return stamped
       return { ...live(), clarify: event.data as ClarifyPending }
     }
+    case 'connect_card': {
+      if (terminal) return stamped
+      return { ...live(), connectCard: event.data }
+    }
     case 'steer_consumed': {
       const id = event.data.steer_id ?? `${now}`
       if (stamped.segments.some((s) => s.kind === 'steering' && s.steerId === id)) return stamped
@@ -268,7 +275,7 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
       if (terminal) return stamped
       const session = event.data.session
       // ponytail: old-journal fallback — a `done` recorded before terminal_state shipped completed its turn.
-      return { ...stamped, status: 'done', terminalState: event.data.terminal_state ?? 'completed', doneAt: now, usage: event.data.usage ?? stamped.usage, doneSession: session && typeof session === 'object' ? (session as Session) : null, approval: null, clarify: null }
+      return { ...stamped, status: 'done', terminalState: event.data.terminal_state ?? 'completed', doneAt: now, usage: event.data.usage ?? stamped.usage, doneSession: session && typeof session === 'object' ? (session as Session) : null, approval: null, clarify: null, connectCard: null }
     }
     case 'apperror':
     case 'error': {
@@ -286,12 +293,13 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
         doneSession: sessionOf(event.data),
         approval: null,
         clarify: null,
+        connectCard: null,
         streamEnded: true,
       }
     }
     case 'cancel': {
       if (terminal) return { ...stamped, streamEnded: true }
-      return { ...stamped, status: 'cancelled', terminalState: event.data.terminal_state, doneAt: now, cancelledMessage: '', doneSession: sessionOf(event.data), approval: null, clarify: null, streamEnded: true }
+      return { ...stamped, status: 'cancelled', terminalState: event.data.terminal_state, doneAt: now, cancelledMessage: '', doneSession: sessionOf(event.data), approval: null, clarify: null, connectCard: null, streamEnded: true }
     }
     case 'stream_end':
       return { ...stamped, streamEnded: true }
@@ -340,7 +348,7 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
     case 'settle': {
       const turn = state.turns[action.sessionId]
       if (turn?.streamId !== action.streamId || !turn) return state
-      if (!isTerminal(turn.status)) return { turns: { ...state.turns, [action.sessionId]: { ...turn, status: 'done', doneAt: turn.doneAt ?? Date.now(), doneSession: action.session ?? turn.doneSession, streamEnded: true, approval: null, clarify: null } } }
+      if (!isTerminal(turn.status)) return { turns: { ...state.turns, [action.sessionId]: { ...turn, status: 'done', doneAt: turn.doneAt ?? Date.now(), doneSession: action.session ?? turn.doneSession, streamEnded: true, approval: null, clarify: null, connectCard: null } } }
       return { turns: { ...state.turns, [action.sessionId]: { ...turn, doneSession: action.session ?? turn.doneSession, streamEnded: true } } }
     }
     case 'teardown': {

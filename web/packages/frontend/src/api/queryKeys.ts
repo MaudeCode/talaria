@@ -53,6 +53,7 @@ export const keys = {
   updateNotifications: ['update-notifications'] as const,
   plugins: ['plugins'] as const,
   mcp: { servers: ['mcp', 'servers'] as const, tools: ['mcp', 'tools'] as const },
+  connectors: { all: ['connectors'] as const, available: ['connectors', 'available'] as const, page: ['connectors', 'page'] as const, tools: (slug: string) => ['connectors', 'tools', slug] as const, operation: (opId: string) => ['connectors', 'operation', opId] as const },
   notes: { sources: ['notes', 'sources'] as const },
   approval: (sid: string) => ['approval', sid] as const,
   clarify: (sid: string) => ['clarify', sid] as const,
