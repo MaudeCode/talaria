@@ -47,5 +47,23 @@
         "windows": []
       }
     }
+  ],
+  "usage.limits": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "providers": [
+          {
+            "slug": "deepseek",
+            "models": [
+              "deepseek-chat"
+            ]
+          }
+        ]
+      },
+      "result": {
+        "limits": {}
+      }
+    }
   ]
 }

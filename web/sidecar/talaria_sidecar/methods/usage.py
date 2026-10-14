@@ -134,6 +134,40 @@ def pool(provider: str, *, api_key: str | None = None) -> list[dict]:
     return rows
 
 
+def limits(providers: list[dict]) -> dict[str, dict]:
+    """TAL-807: the Agent's ``CredentialPool.limit_state`` per pooled provider, ISO-dated, as its ``model.options`` attaches
+    ``limit``: ``account`` when every live entry is benched, else ``models`` for the given models no usable entry can serve
+    yet. A provider without a persisted pool, an unreadable pool, or an Agent before v0.21.6 says nothing."""
+    try:
+        from agent.credential_pool import load_pool
+        from hermes_cli.auth import read_credential_pool
+    except Exception as exc:  # noqa: BLE001
+        raise RpcError(f"credential pool unavailable: {exc}", condition="usage_unavailable") from exc
+    try:
+        pooled = {str(slug) for slug, entries in (read_credential_pool() or {}).items() if entries}
+    except Exception:  # noqa: BLE001
+        log.debug("read_credential_pool() failed", exc_info=True)
+        return {}
+    out: dict[str, dict] = {}
+    for row in providers:
+        slug = str(row.get("slug") or "").strip()
+        if slug not in pooled:
+            continue
+        try:
+            limit_state = getattr(load_pool(slug), "limit_state", None)
+            state = limit_state([str(m) for m in row.get("models") or []]) if callable(limit_state) else None
+        except Exception:  # noqa: BLE001 - one unreadable pool must not hide the others
+            log.debug("limit_state(%r) failed", slug, exc_info=True)
+            continue
+        if not state:
+            continue
+        if state.get("scope") == "account":
+            out[slug] = {"scope": "account", "resets_at": _iso(state["resets_at"])}
+        elif state.get("models"):
+            out[slug] = {"scope": "models", "models": {str(m): _iso(at) for m, at in state["models"].items()}}
+    return out
+
+
 _BALANCE_URLS = {
     "openrouter": "https://openrouter.ai/api/v1/key",
     "deepseek": "https://api.deepseek.com/user/balance",
@@ -307,6 +341,14 @@ def register(registry) -> None:
     def pool_providers_(ctx: CallContext, params: dict) -> dict:
         with scoped_home(profile_home_param(params)):
             return {"providers": pool_providers()}
+
+    @registry.method("usage.limits")
+    def limits_(ctx: CallContext, params: dict) -> dict:
+        providers = params.get("providers")
+        if not isinstance(providers, list) or not all(isinstance(p, dict) for p in providers):
+            raise InvalidParams("providers must be a list of {slug, models}")
+        with scoped_home(profile_home_param(params)):
+            return {"limits": limits(providers)}
 
     @registry.method("usage.balance")
     def balance_(ctx: CallContext, params: dict) -> dict:

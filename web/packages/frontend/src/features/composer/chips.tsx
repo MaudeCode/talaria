@@ -6,6 +6,8 @@ import { useModelsQuery, useWorkspacesQuery, useToolsetsCatalogQuery } from '../
 import { Menu, MenuGroup, MenuGroupLabel, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator } from '../../ui/Menu'
 import { cn } from '../../ui/cn'
 import { catalogEntryById } from '../../lib/modelEntry'
+import { useLocale } from '../../i18n/useLocale'
+import type { Models } from '@maudecode/talaria-web-contracts'
 
 /**
  * T3 Code's composer control (TAL-429): borderless and muted until hovered, with a faded chevron. `sm` sits in the card's
@@ -32,12 +34,29 @@ export function Chip({ icon, label, title, className, disabled, row, size = 'sm'
 
 const RADIO_CLASS = 'flex cursor-default select-none items-center gap-2 rounded-md px-2.5 py-1.5 text-sm outline-none data-[highlighted]:bg-hover data-[checked]:text-accent-text'
 
+/** A reset time in the viewer's zone: the time alone today, else with its weekday. */
+function resetTime(locale: string, iso: string): string {
+  const at = new Date(iso)
+  const today = at.toDateString() === new Date().toDateString()
+  return at.toLocaleString(locale, today ? { hour: 'numeric', minute: '2-digit' } : { weekday: 'short', hour: 'numeric', minute: '2-digit' })
+}
+
+/** TAL-807: the server's rate-limit state for a provider group: its account limit or a low quota level (never both). */
+function GroupLimitBadge({ group, locale }: { group: Models['groups'][number]; locale: string }) {
+  const badge = 'shrink-0 text-[11px] font-medium normal-case tracking-normal'
+  if (group.limit?.scope === 'account') return <span data-model-limit="account" className={cn(badge, 'text-error')}>{m.model_limited_until({ time: resetTime(locale, group.limit.resets_at) })}</span>
+  if (group.quota_level === 'critical') return <span data-quota-level="critical" className={cn(badge, 'text-error')}>{m.model_quota_critical()}</span>
+  if (group.quota_level === 'warning') return <span data-quota-level="warning" className={cn(badge, 'text-warning')}>{m.model_quota_warning()}</span>
+  return null
+}
+
 /**
  * Conversation model picker: grouped by provider with a search field and a custom id entry. `optionId` is the entry the
  * server says `model` selects (or a just-picked id); with no `model`, the catalog default is ticked.
  */
 export function ModelChip({ model, optionId, onChange, row }: { model: string | null; optionId: string | null; onChange: (model: string, provider: string | null) => void; row?: boolean }) {
   const models = useModelsQuery()
+  const locale = useLocale()
   const [query, setQuery] = useState('')
   const groups = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -46,13 +65,19 @@ export function ModelChip({ model, optionId, onChange, row }: { model: string | 
   const selected = catalogEntryById(models.data, model ? optionId : models.data?.default_option_id)
   const label = selected ? selected.label ?? selected.id : (model ?? models.data?.default_model) || '—'
   return (
-    <Menu label={m.composer_control_model()} side="top" className="max-h-[60vh] min-w-72" trigger={<Chip id={row ? undefined : "composerModelChip"} icon={<Cpu size={16} aria-hidden="true" />} label={label} title={m.composer_control_model()} row={row} className="composer-model-chip" />}>
+    // TAL-807: opening the picker reads the catalog again, so a rate limit or quota level reflects the server now.
+    <Menu label={m.composer_control_model()} side="top" className="max-h-[60vh] min-w-72" onOpenChange={(open) => { if (open) void models.refetch() }} trigger={<Chip id={row ? undefined : "composerModelChip"} icon={<Cpu size={16} aria-hidden="true" />} label={label} title={m.composer_control_model()} row={row} className="composer-model-chip" />}>
       <div className="p-1"><input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={m.model_search_placeholder()} aria-label={m.model_search_placeholder()} className="h-8 w-full rounded-md border border-border bg-input px-2 text-sm text-text" onKeyDown={(e) => e.stopPropagation()} /></div>
       <MenuRadioGroup value={selected?.id ?? ''} onValueChange={(v: string) => onChange(v, catalogEntryById(models.data, v)?.provider_id ?? null)}>
         {groups.map((g) => (
           <MenuGroup key={g.provider}>
-            <MenuGroupLabel>{g.provider}</MenuGroupLabel>
-            {g.models.map((mm) => <MenuRadioItem key={mm.id} value={mm.id} className={RADIO_CLASS}>{mm.label ?? mm.id}</MenuRadioItem>)}
+            <MenuGroupLabel><span className="flex items-center justify-between gap-2"><span className="truncate">{g.provider}</span><GroupLimitBadge group={g} locale={locale} /></span></MenuGroupLabel>
+            {g.models.map((mm) => (
+              <MenuRadioItem key={mm.id} value={mm.id} className={RADIO_CLASS}>
+                <span className="truncate">{mm.label ?? mm.id}</span>
+                {mm.limit && <span data-model-limit="model" className="ms-auto shrink-0 text-xs text-warning">{m.model_limited_until({ time: resetTime(locale, mm.limit.resets_at) })}</span>}
+              </MenuRadioItem>
+            ))}
           </MenuGroup>
         ))}
       </MenuRadioGroup>
