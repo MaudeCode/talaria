@@ -54,6 +54,7 @@ struct ChatView: View {
     private let activeRunStatusSpacerHeight: CGFloat = 36
     private let approvalBypassStatusSpacerHeight: CGFloat = 44
     private let queuedMessagesChipSpacerHeight: CGFloat = 44
+    private let goalChipSpacerHeight: CGFloat = 36
 
     @State private var completionAcknowledgementTask: Task<Void, Never>?
     @State private var completionAcknowledgementGeneration = 0
@@ -1122,6 +1123,11 @@ struct ChatView: View {
                         .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
                 }
 
+                if let goalChipPresentation {
+                    StatusChip(label: goalChipPresentation.label, icon: .symbol(goalChipPresentation.symbol))
+                        .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
+                }
+
                 if showsApprovalBypassStatus {
                     Button {
                         showApprovalBypassOffConfirmation = true
@@ -1156,6 +1162,7 @@ struct ChatView: View {
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: viewModel.pinnedLocalNotices)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: visibleSessionNotices)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: showsApprovalBypassStatus)
+            .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: goalChipPresentation)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: viewModel.pinnedBackgroundTasks)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: viewModel.queuedMessagePreviews)
         }
@@ -1481,6 +1488,10 @@ struct ChatView: View {
         viewModel.isSessionApprovalBypassEnabled && viewModel.approvalPrompt == nil
     }
 
+    private var goalChipPresentation: SessionGoalChipPresentation? {
+        SessionGoalChipPresentation(goal: viewModel.sessionGoal)
+    }
+
     /// Height of the chips stacked above the composer that the transcript makes room for. It
     /// leaves out a floating status (the syncing pill) and the lone scroll chip so they never
     /// shift the chat.
@@ -1493,6 +1504,10 @@ struct ChatView: View {
         }
         if let activeRunStatusPresentation, activeRunStatusPresentation.reservesTranscriptSpace {
             height += activeRunStatusSpacerHeight
+            itemCount += 1
+        }
+        if goalChipPresentation != nil {
+            height += goalChipSpacerHeight
             itemCount += 1
         }
         if showsApprovalBypassStatus {
@@ -1522,6 +1537,9 @@ struct ChatView: View {
             count += 1
         }
         if activeRunStatusPresentation != nil || showsScrollToBottomButton {
+            count += 1
+        }
+        if goalChipPresentation != nil {
             count += 1
         }
         if showsApprovalBypassStatus {
