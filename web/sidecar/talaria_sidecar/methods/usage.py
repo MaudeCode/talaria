@@ -4,6 +4,8 @@ state, and the key-based balance endpoints (TAL-548). Pool keys never leave the 
 from __future__ import annotations
 
 import dataclasses
+import functools
+import inspect
 import json
 import logging
 import math
@@ -266,10 +268,10 @@ _ANTHROPIC_WINDOWS = (("five_hour", "Current session"), ("seven_day", "Current w
 
 
 def _anthropic_usage(token: str):
-    """The Agent's Anthropic account-usage read for one given token. The Agent's fetcher reads only the ambient token, so a
-    pool account would otherwise report the active account's limits."""
-    # ponytail: mirrors agent.account_usage._fetch_anthropic_account_usage on the Agent's own helpers; drop it once that
-    # fetcher honours its api_key argument.
+    """The Agent's Anthropic account-usage read for one given token. An Agent before v0.21.6 reads only the ambient token,
+    so a pool account would otherwise report the active account's limits."""
+    # ponytail: mirrors agent.account_usage._fetch_anthropic_account_usage on the Agent's own helpers; TAL-351 drops it
+    # once v0.21.6 is the oldest supported Agent.
     from agent import account_usage as agent_usage
 
     if not agent_usage._is_oauth_token(token):
@@ -284,7 +286,18 @@ def _anthropic_usage(token: str):
     return agent_usage._snapshot("anthropic", "oauth_usage_api", windows, details)
 
 
+@functools.cache
+def _reads_read_only(fetch) -> bool:
+    """Agent v0.21.6+: ``fetch_account_usage(read_only=, identity_id=)`` reads one pool account without refreshing or
+    rotating its credential, and every fetcher honours the explicit key."""
+    try:
+        return {"read_only", "identity_id"} <= inspect.signature(fetch).parameters.keys()
+    except (TypeError, ValueError):
+        return False
+
+
 def account(provider: str, *, base_url: str | None, api_key: str | None, credential_id: str | None = None) -> dict | None:
+    entry = None
     if credential_id:
         # One pool account's usage, read with that account's own key.
         entry = _entry(provider, credential_id)
@@ -299,7 +312,12 @@ def account(provider: str, *, base_url: str | None, api_key: str | None, credent
     except Exception as exc:  # noqa: BLE001
         raise RpcError(f"account usage unavailable: {exc}", condition="usage_unavailable") from exc
     try:
-        if credential_id and provider == "anthropic":
+        if entry is not None and _reads_read_only(fetch_account_usage):
+            # A display read never repairs the account: a Codex 401 is reported, not answered with a credential refresh.
+            from agent.account_usage_cache import _identity_id_for
+
+            snapshot = fetch_account_usage(provider, base_url=base_url, api_key=api_key, read_only=True, identity_id=_identity_id_for(provider, entry))
+        elif entry is not None and provider == "anthropic":
             snapshot = _anthropic_usage(api_key)
         else:
             snapshot = fetch_account_usage(provider, base_url=base_url, api_key=api_key)
