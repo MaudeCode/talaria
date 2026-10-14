@@ -8,7 +8,7 @@ import type { StateDbWorkerReply, StateDbWorkerRequest } from './state-db.js'
 
 // Source runs (vitest) start this file as TypeScript; map its `.js` imports back to the sources first.
 if (import.meta.url.endsWith('.ts')) await import(new URL('../test/ts-worker-hooks.ts', import.meta.url).href)
-const { agentSessionRowsExisting, cheapChangeFingerprint, readImportableAgentSessionRows, stateDbSessionSources } = await import('./state-db.js')
+const { agentSessionRowsExisting, cheapChangeFingerprint, readImportableAgentSessionRows, stateDbSessionSources, stateDbStorage } = await import('./state-db.js')
 
 parentPort?.on('message', (request: StateDbWorkerRequest) => {
   const reply: StateDbWorkerReply = { id: request.id, logs: [], failures: [] }
@@ -18,6 +18,7 @@ parentPort?.on('message', (request: StateDbWorkerRequest) => {
     if (request.op === 'crash') process.exit(1)
     else if (request.op === 'rows') reply.value = readImportableAgentSessionRows(request.dbPath, { ...request.opts, log: (line) => { reply.logs.push(line) } })
     else if (request.op === 'fingerprint') reply.value = cheapChangeFingerprint(request.dbPath, (reason, error) => { reply.failures.push([reason, (error as Error).message]) })
+    else if (request.op === 'storage') reply.value = stateDbStorage(request.dbPath)
     else if (request.op === 'sources') reply.value = stateDbSessionSources(request.dbPath, request.ids)
     else reply.value = agentSessionRowsExisting(request.dbPath, request.ids)
   } catch (error) {

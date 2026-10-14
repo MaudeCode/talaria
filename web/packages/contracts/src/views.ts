@@ -351,6 +351,14 @@ export const SessionRowSchema = z.looseObject({
 })
 export type SessionRow = z.infer<typeof SessionRowSchema>
 
+/**
+ * TAL-785: whether the Agent's `state.db` could serve the Agent session rows. `corrupt`: SQLite reports the file
+ * damaged; `unavailable`: it could not be read for another reason (permissions, a lock, an I/O error); `outdated`: a
+ * readable database from an older hermes-agent. `reason` explains a degraded state.
+ */
+export const AgentStorageSchema = z.object({ state: z.enum(['ok', 'corrupt', 'unavailable', 'outdated']), reason: z.string().nullable() })
+export type AgentStorage = z.infer<typeof AgentStorageSchema>
+
 export const SessionsListSchema = z.looseObject({
   sessions: z.array(SessionRowSchema).describe('Canonical display order (TAL-306): pinned first, then active (streaming or a pending prompt), then newest `sort_ts`, then `session_id`. Clients keep it.'), sidebar_reference_sessions: z.array(SessionRowSchema), server_time: z.number(), server_tz: z.string(), active_profile: z.string(), all_profiles: z.boolean(), include_archived: z.boolean(),
   archived_count: z.number().int(), archived_webui_count: z.number().int(), archived_cli_count: z.number().int(), other_profile_count: z.number().int(), cli_count: z.number().int(), webui_session_count: z.number().int(),
@@ -358,6 +366,7 @@ export const SessionsListSchema = z.looseObject({
   // TAL-482: sidebar counts for the "Scheduled sessions" / "Webhook sessions" groups; `_truncated` means more exist than are listed.
   scheduled_session_count: z.number().int().nonnegative(), scheduled_sessions_truncated: z.boolean(),
   webhook_session_count: z.number().int().nonnegative(), webhook_sessions_truncated: z.boolean(),
+  agent_storage: AgentStorageSchema.describe('Agent session storage health; a degraded state explains an empty or missing Agent session list.'),
   archived_limit: z.number().int().nullable().optional(), archived_offset: z.number().int().optional(),
 })
 export type SessionsList = z.infer<typeof SessionsListSchema>

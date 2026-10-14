@@ -60,6 +60,34 @@ describe('SessionListPanel search (TAL-308)', () => {
   })
 })
 
+describe('SessionListPanel Agent storage notice (TAL-785)', () => {
+  const panel = () => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SessionListPanel /></QueryClientProvider>)
+
+  it('says damaged storage instead of an empty Agent history, with the server reason behind the help tip', async () => {
+    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [alpha], agent_storage: { state: 'corrupt', reason: 'state.db is damaged: database disk image is malformed.' } } as never)
+    panel()
+    expect(await screen.findByText('Agent session storage is damaged')).toBeInTheDocument()
+    expect(screen.queryByText(/upgrade hermes-agent/i)).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: /Agent session storage is damaged/ }))
+    expect(await screen.findByText('state.db is damaged: database disk image is malformed.')).toBeInTheDocument()
+  })
+
+  it('keeps the upgrade hint for an older hermes-agent, says unreadable storage, and shows nothing for healthy storage', async () => {
+    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [alpha], agent_storage: { state: 'outdated', reason: null } } as never)
+    const { unmount } = panel()
+    expect(await screen.findByText('Upgrade hermes-agent to list Agent sessions')).toBeInTheDocument()
+    unmount()
+    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [alpha], agent_storage: { state: 'unavailable', reason: 'state.db could not be read: database is locked.' } } as never)
+    const unavailable = panel()
+    expect(await screen.findByText('Agent sessions could not be read')).toBeInTheDocument()
+    unavailable.unmount()
+    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [alpha], agent_storage: { state: 'ok', reason: null } } as never)
+    panel()
+    await screen.findByText('Alpha zebra')
+    expect(screen.queryByText(/Agent session storage|Agent sessions could not|Upgrade hermes-agent/)).toBeNull()
+  })
+})
+
 describe('SessionListPanel import (TAL-607)', () => {
   it('posts the chosen JSON export and opens the created session', async () => {
     vi.mocked(api.importSession).mockResolvedValue({ ok: true, session: { ...alpha, session_id: 'imported' } } as never)

@@ -11,9 +11,9 @@ import { redactText } from '../redact.js'
 import { CONTEXT_USAGE_FIELDS, Session, contextUsage, sharePath, stripSidebarHeavyMetadata } from './session.js'
 import type { SessionStore } from './store.js'
 import { existsSync, readFileSync, statSync } from 'node:fs'
-import { isCliSessionRow as isStateDbCliRow, isCliSessionRowVisible, normalizeAgentSessionSource } from './state-db.js'
+import { AGENT_STORAGE_OK, isCliSessionRow as isStateDbCliRow, isCliSessionRowVisible, normalizeAgentSessionSource } from './state-db.js'
 import { MESSAGING_SOURCES, sourceKind } from './source-kind.js'
-import { SessionRowSchema } from '@maudecode/talaria-web-contracts'
+import { SessionRowSchema, type AgentStorage } from '@maudecode/talaria-web-contracts'
 
 export type Row = Record<string, unknown>
 const num = (v: unknown): number => { const n = Number(v ?? 0); return Number.isFinite(n) && n > 0 ? n : 0 }
@@ -415,6 +415,8 @@ export interface ListParams {
   stateDbSources?: (ids: string[]) => Map<string, string> | null
   /** TAL-482: background kinds whose state.db rows stopped at the per-kind cap, so more exist than `cliRows` holds. */
   truncatedSources?: ReadonlySet<string>
+  /** TAL-785: the state.db storage health `cliRows` came from; omitted when no Agent source is shown. */
+  agentStorage?: AgentStorage
   /** TAL-590: removes the sidebar rows' orphaned imports (Python #3238) and answers their ids, which the list drops. */
   pruneOrphanedImports?: (rows: Row[]) => Set<string>
   /** The sidebar's `allSessions` rows when the caller already read them for its state.db lookups (TAL-920). */
@@ -692,6 +694,7 @@ export interface ListPayload {
   scheduled_sessions_truncated: boolean
   webhook_session_count: number
   webhook_sessions_truncated: boolean
+  agent_storage: AgentStorage
   include_archived: boolean
   archived_limit: number | null
   archived_offset: number
@@ -791,6 +794,7 @@ export function buildSessionListPayload(store: SessionStore, params: ListParams)
     scheduled_sessions_truncated: params.showCronSessions && truncated.has('cron'),
     webhook_session_count: visibleFiltered.filter((r) => sourceKind(r) === 'webhook').length,
     webhook_sessions_truncated: params.showWebhookSessions && truncated.has('webhook'),
+    agent_storage: params.agentStorage ?? AGENT_STORAGE_OK,
     include_archived: params.includeArchived,
     archived_limit: params.archivedLimit,
     archived_offset: params.archivedOffset,
@@ -882,6 +886,7 @@ export interface ListResponse extends Record<string, unknown> {
   scheduled_sessions_truncated: boolean
   webhook_session_count: number
   webhook_sessions_truncated: boolean
+  agent_storage: AgentStorage
   archived_limit?: number
   archived_offset?: number
 }
@@ -918,6 +923,7 @@ export function sessionListResponse(payload: ListPayload, overlay: RuntimeOverla
     scheduled_sessions_truncated: payload.scheduled_sessions_truncated,
     webhook_session_count: payload.webhook_session_count,
     webhook_sessions_truncated: payload.webhook_sessions_truncated,
+    agent_storage: payload.agent_storage,
   }
   if (payload.archived_limit !== null) {
     body.archived_limit = Math.trunc(payload.archived_limit) || 0

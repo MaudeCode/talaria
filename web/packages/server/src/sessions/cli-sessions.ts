@@ -9,7 +9,8 @@
  */
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { isCliSessionRow, normalizeAgentSessionSource, readImportableAgentSessionRows, readImportableAgentSessionRowsAsync, type Dict, type ReadRowsOptions } from './state-db.js'
+import { AGENT_STORAGE_OK, isCliSessionRow, normalizeAgentSessionSource, readImportableAgentSessionRows, readImportableAgentSessionRowsAsync, stateDbReadFailure, stateDbStorage, stateDbStorageAsync, type Dict, type ReadRowsOptions } from './state-db.js'
+import type { AgentStorage } from '@maudecode/talaria-web-contracts'
 import { sanitizeSessionRow } from './list.js'
 import type { SessionStore } from './store.js'
 import { str } from '../util.js'
@@ -36,6 +37,8 @@ export interface CliLoadOptions {
 export interface CliSessionRead {
   rows: Dict[]
   truncated: ReadonlySet<string>
+  /** TAL-785: whether state.db could serve the rows; a corrupt or outdated one explains an empty Agent list. */
+  storage: AgentStorage
 }
 
 function dbStamp(path: string): string {
@@ -57,7 +60,7 @@ function backgroundFailure(query: ListingQuery, error: unknown): Error {
 }
 
 export class CliSessionSource {
-  private readonly cache = new Map<string, { key: string; until: number; rows: Dict[]; truncated: ReadonlySet<string> }>()
+  private readonly cache = new Map<string, { key: string; until: number; rows: Dict[]; truncated: ReadonlySet<string>; storage: AgentStorage }>()
   constructor(private readonly deps: CliSessionsDeps) {}
 
   dbPath(profile: string): string { return join(this.deps.profileHome(profile), 'state.db') }
@@ -76,16 +79,18 @@ export class CliSessionSource {
     if (hit) return hit
     const now = this.deps.now()
     let results: QueryResults = null
+    let storage = AGENT_STORAGE_OK
     try {
       if (existsSync(slot.dbPath)) {
         const settled: QueryResult[] = []
         for (const query of this.queries(slot)) settled.push(await readImportableAgentSessionRowsAsync(slot.dbPath, query.opts).catch((error: unknown) => backgroundFailure(query, error)))
         results = settled
+        storage = await stateDbStorageAsync(slot.dbPath)
       }
     } catch (error) {
       results = error as Error
     }
-    return this.store(slot, now, profile, results)
+    return this.store(slot, now, profile, results, storage)
   }
 
   /** `read` with the state.db queries on this thread, for single-session lookups whose callers are synchronous. */
@@ -94,13 +99,14 @@ export class CliSessionSource {
     const hit = this.cached(slot)
     if (hit) return hit
     const now = this.deps.now()
+    const storage = stateDbStorage(slot.dbPath)
     let results: QueryResults
     try {
       results = existsSync(slot.dbPath) ? this.queries(slot).map((query) => { try { return readImportableAgentSessionRows(slot.dbPath, query.opts) } catch (error) { return backgroundFailure(query, error) } }) : null
     } catch (error) {
       results = error as Error
     }
-    return this.store(slot, now, profile, results)
+    return this.store(slot, now, profile, results, storage)
   }
 
   private slot(profile: string, opts: CliLoadOptions): CacheSlot {
@@ -112,13 +118,20 @@ export class CliSessionSource {
   private cached(slot: CacheSlot): CliSessionRead | null {
     const hit = this.cache.get(slot.cacheKey)
     if (hit?.key !== slot.key || hit.until <= this.deps.now()) return null
-    return { rows: hit.rows.map((r) => ({ ...r })), truncated: hit.truncated }
+    return { rows: hit.rows.map((r) => ({ ...r })), truncated: hit.truncated, storage: hit.storage }
   }
 
-  /** Build the rows, degrade a failed read or build to none with the Python log line, and cache the outcome. */
-  private store(slot: CacheSlot, now: number, profile: string, results: QueryResults): CliSessionRead {
+  /**
+   * Build the rows, degrade a failed read or build to none with the Python log line, and cache the outcome. A failed
+   * read, interactive or background, decides the storage state (`corrupt` first, else `unavailable`), since it can reach
+   * a damaged page the probe never touched; a probe that alone could not read says nothing about rows that were served.
+   */
+  private store(slot: CacheSlot, now: number, profile: string, results: QueryResults, probed: AgentStorage): CliSessionRead {
     let rows: Dict[]
     const truncated = new Set<string>()
+    const failures = results instanceof Error ? [results] : (results ?? []).filter((r): r is Error => r instanceof Error)
+    const failed = failures.map(stateDbReadFailure)
+    const storage = failed.find((s) => s.state === 'corrupt') ?? failed[0] ?? (probed.state === 'unavailable' ? AGENT_STORAGE_OK : probed)
     try {
       if (results instanceof Error) throw results
       rows = results ? this.build(profile, slot, results, truncated) : []
@@ -126,8 +139,8 @@ export class CliSessionSource {
       this.deps.log(`[webui] get_cli_sessions() failed; check state.db schema or path (${slot.dbPath}): ${(error as Error).message}`)
       rows = []
     }
-    this.cache.set(slot.cacheKey, { key: slot.key, until: now + CACHE_TTL_S, rows, truncated })
-    return { rows: rows.map((r) => ({ ...r })), truncated }
+    this.cache.set(slot.cacheKey, { key: slot.key, until: now + CACHE_TTL_S, rows, truncated, storage })
+    return { rows: rows.map((r) => ({ ...r })), truncated, storage }
   }
 
   private queries(slot: CacheSlot): ListingQuery[] {
