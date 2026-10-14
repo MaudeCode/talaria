@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Behind a trusted reverse proxy, failed password and passkey logins now count against the client that made them, so one client's wrong guesses no longer lock everyone else out of signing in.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
