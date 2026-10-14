@@ -1004,7 +1004,13 @@ describe('projects, workspaces, and files over HTTP', () => {
 
 describe('a truncate that discards more than one user turn waits for confirmation (TAL-929)', () => {
   let s: TestServer
-  beforeAll(async () => { s = await bootTestServer() })
+  beforeAll(async () => {
+    s = await bootTestServer()
+    // The Agent's state.db, as every profile it has run in has one.
+    const db = new DatabaseSync(join(s.state, 'state.db'))
+    db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
+    db.close()
+  })
   afterAll(() => s.close())
   // Eight stored rows, seven shown: the tool result folds into its turn's scene. Six are later than the first.
   const threeTurns = (): Json[] => [
@@ -1138,28 +1144,18 @@ describe('a truncate that discards more than one user turn waits for confirmatio
     expect((res.session as Json).messages).toEqual([])
   })
 
-  it('refuses a held cut when it cannot read the state.db rows the session has', async () => {
+  it('refuses a held cut when state.db cannot be read, whether or not the session recorded rows from it', async () => {
     const sid = String((await newSession(s)).session_id)
-    const rows: [string, string, number][] = [['user', 'u1', 100], ['assistant', 'a1', 101], ['user', 'u2', 102], ['assistant', 'a2', 103], ['user', 'u3', 104], ['assistant', 'a3', 105]]
-    writeMessages(s, sid, rows.slice(0, 2).map(([role, content, timestamp]) => ({ role, content, timestamp })))
+    writeMessages(s, sid, [{ role: 'user', content: 'u1', timestamp: 100 }, { role: 'assistant', content: 'a1', timestamp: 101 }])
+    // No turn recorded state.db rows for it (state_db_seen_id stays null), and state.db is briefly away.
+    expect(s.deps.sessionStore.get(sid).state_db_seen_id ?? null).toBeNull()
     const dbPath = join(s.state, 'state.db')
-    const db = new DatabaseSync(dbPath)
-    db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
-    db.prepare('INSERT INTO sessions (id, source, started_at) VALUES (?, ?, ?)').run(sid, 'cli', 100)
-    for (const [role, content, ts] of rows) db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, role, content, ts)
-    db.close()
-    // A settled turn recorded that it read this session's state.db rows.
-    const stored = s.deps.sessionStore.get(sid)
-    s.deps.sessions.markStateDbSeen(stored)
-    s.deps.sessionStore.save(stored)
-    expect(s.deps.sessionStore.get(sid).state_db_seen_id).toBeGreaterThan(0)
-    const read = vi.spyOn(s.deps.sessions, 'stateDbRead').mockReturnValue({ rows: [], idCapable: false, ok: false })
+    renameSync(dbPath, `${dbPath}.away`)
     try {
       const res = await post(s, '/api/session/truncate', { session_id: sid, keep_count: 0, confirm_deep_truncate: false })
       expect(res.status).toBe(503)
       expect(s.deps.sessionStore.get(sid).messages).toHaveLength(2)
-    } finally { read.mockRestore() }
-    expect(s.deps.sessionStore.get(sid).state_db_seen_id).toBeGreaterThan(0)
+    } finally { renameSync(`${dbPath}.away`, dbPath) }
   })
 
   it('tells clients this server holds a deep cut', async () => {

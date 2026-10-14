@@ -7,7 +7,7 @@ import type { ChatReadiness, PendingSteer, RecoveryAudit, RecoveryRepair } from 
 import type { RunJournal } from './journal.js'
 import { str } from '../util.js'
 import { randomUUID } from 'node:crypto'
-import { existsSync, rmSync } from 'node:fs'
+import { rmSync } from 'node:fs'
 import { buildActiveTurnToken, copyJson, redactSessionData, redactValue, stripPublicInternalFields, withSceneToolDisplay } from '../redact.js'
 import type { DraftStore } from './drafts.js'
 import { DraftVersionConflict, normalizeDraftVersion } from './drafts.js'
@@ -1231,8 +1231,9 @@ export class SessionService {
       // One state.db read decides and marks the boundary, so a row committed meanwhile is neither counted nor hidden.
       const read = this.stateDbRead(s)
       if (hold) {
-        // A failed read of a state.db this session has rows in cannot say what the cut removes: fail closed.
-        if (!read.ok && (existsSync(this.stateDbPath(s.profile)) || (s.state_db_seen_id ?? 0) > 0)) throw new HttpFailure(503, 'The session history could not be read. Please try again in a moment.')
+        // A failed read cannot say whether a CLI continuation would go too: fail closed. The Agent keeps a state.db for every
+        // profile it has run in, so a missing one is never evidence of a session without state.db rows.
+        if (!read.ok) throw new HttpFailure(503, 'The session history could not be read. Please try again in a moment.')
         const held = this.heldCut(s, keep, read.rows)
         if (held && held.confirm_token !== hold.confirmToken) return held
       }

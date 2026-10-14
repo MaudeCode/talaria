@@ -3,6 +3,7 @@ import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { ConfirmDialog } from '../../ui/Dialog'
 import { returnToComposer } from '../composer/composerReturn'
+import { showToast } from '../toast/toast'
 import type { VisibleMessage } from './useTranscript'
 
 interface Pending { sessionId: string; row: VisibleMessage; text: string; discard: number; token: string }
@@ -25,6 +26,8 @@ export function useEditMessage(sessionId: string | null, refresh: () => Promise<
       if (!r.ok) { setPending({ sessionId: sid, row, text, discard: r.discard_messages, token: r.confirm_token }); return }
       await refresh()
       returnToComposer(sid, text)
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : String(e), 4000, 'error')
     } finally { editing.current = false }
   }, [refresh])
   const onEdit = useCallback((row: VisibleMessage, text: string) => (sessionId ? edit(sessionId, row, text) : Promise.resolve()), [sessionId, edit])

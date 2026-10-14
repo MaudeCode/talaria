@@ -3,8 +3,10 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await importOriginal()), truncateSession: vi.fn() }))
 vi.mock(import('../composer/composerReturn'), async (importOriginal) => ({ ...(await importOriginal()), returnToComposer: vi.fn() }))
+vi.mock(import('../toast/toast'), async (importOriginal) => ({ ...(await importOriginal()), showToast: vi.fn() }))
 import * as api from '../../api/endpoints'
 import { returnToComposer } from '../composer/composerReturn'
+import { showToast } from '../toast/toast'
 import { useEditMessage } from './useEditMessage'
 import type { VisibleMessage } from './useTranscript'
 
@@ -64,6 +66,14 @@ describe('Edit asks before a cut the server refuses (TAL-929)', () => {
     await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Discard' }))
     await waitFor(() => expect(returnToComposer).toHaveBeenCalledOnce())
     expect(vi.mocked(api.truncateSession).mock.calls.map((c) => c[2])).toEqual([undefined, 'tok-1', 'tok-2'])
+  })
+
+  it('a cut the server cannot make says why and leaves the composer alone', async () => {
+    vi.mocked(api.truncateSession).mockRejectedValueOnce(new Error('The session history could not be read. Please try again in a moment.'))
+    render(<Chat />)
+    await userEvent.click(screen.getByRole('button', { name: 'Edit message' }))
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith('The session history could not be read. Please try again in a moment.', 4000, 'error'))
+    expect(returnToComposer).not.toHaveBeenCalled()
   })
 
   it('a cut the server accepts returns the text without asking', async () => {
