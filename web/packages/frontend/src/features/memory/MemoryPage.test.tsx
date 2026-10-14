@@ -54,4 +54,16 @@ describe('Memory page (TAL-784)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(api.writeMemory).toHaveBeenLastCalledWith({ section: 'memory', content: 'Entry A!?', revision: 'r2' }))
   })
+
+  it('keeps the saved text in the editor when the refetch after a save fails', async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+    render(<QueryClientProvider client={qc}><MemoryPage /></QueryClientProvider>)
+    await userEvent.type(await screen.findByRole('textbox', { name: 'Memory' }), '!')
+    vi.mocked(api.writeMemory).mockResolvedValue({ ok: true, section: 'memory', path: '/h/memories/MEMORY.md' })
+    vi.mocked(api.fetchMemory).mockRejectedValue(new Error('offline'))
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.fetchMemory).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Memory' })).not.toHaveAttribute('readonly'))
+    expect(screen.getByRole('textbox', { name: 'Memory' })).toHaveValue('Entry A!')
+  })
 })

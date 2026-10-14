@@ -30,9 +30,13 @@ export function MemoryPage() {
   // The server's message for a save it refused because the file changed since the edit started.
   const [conflict, setConflict] = useState<Record<string, string>>({})
   const write = useMutation({
-    // The draft clears only once the refetch brings the new revision, so the next edit starts from it.
-    mutationFn: async ({ target, draft: d }: { target: Writable; draft: Draft }) => { await api.writeMemory({ section: target, content: d.text, revision: d.revision }); await qc.refetchQueries({ queryKey: keys.memory }) },
-    onSuccess: (_r, vars) => { showToast(m.memory_saved()); setDraft((d) => without(d, vars.target)) },
+    // The draft clears only once a refetch brings the new revision, so the next edit starts from it. When that refetch
+    // fails the saved text stays in the editor on its old revision, and the next save meets a conflict and its reload.
+    mutationFn: async ({ target, draft: d }: { target: Writable; draft: Draft }) => {
+      await api.writeMemory({ section: target, content: d.text, revision: d.revision })
+      return qc.refetchQueries({ queryKey: keys.memory }, { throwOnError: true }).then(() => true, () => false)
+    },
+    onSuccess: (refetched, vars) => { showToast(m.memory_saved()); if (refetched) setDraft((d) => without(d, vars.target)) },
     onError: (e, vars) => {
       if (isApiError(e) && e.code === 'memory_conflict') setConflict((c) => ({ ...c, [vars.target]: e.message }))
       else showToast(e instanceof Error ? e.message : String(e), 4000, 'error')

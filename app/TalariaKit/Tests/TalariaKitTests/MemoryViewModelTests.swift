@@ -96,7 +96,8 @@ final class MemoryViewModelTests: APIClientTestCase {
         XCTAssertNil(viewModel.lastError)
         XCTAssertEqual(viewModel.memoryText, "Entry A")
 
-        await viewModel.reloadAfterConflict()
+        viewModel.clearActionError()
+        await viewModel.load()
 
         XCTAssertFalse(viewModel.hasSaveConflict)
         XCTAssertNil(viewModel.actionErrorMessage)

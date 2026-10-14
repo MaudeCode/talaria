@@ -75,12 +75,6 @@ public final class MemoryViewModel {
         hasSaveConflict = false
     }
 
-    /// Drops a refused edit's conflict and loads the server's current files.
-    public func reloadAfterConflict() async {
-        clearActionError()
-        await load()
-    }
-
     /// The read-only project-context section only appears when the server sent a
     /// non-empty document. Servers without the field (or with an empty/blank one,
     /// which is what upstream returns when no readable context file exists) render
