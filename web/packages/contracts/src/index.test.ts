@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { z } from 'zod'
-import { MemoryWriteRefusalSchema, SIDECAR_RPC_VERSION, SkillsSchema, UpdateNotificationsSchema } from './index.js'
+import { MemoryWriteRefusalSchema, ModelsSchema, SIDECAR_RPC_VERSION, SkillsSchema, UpdateNotificationsSchema } from './index.js'
 
 const shared = (path: string): unknown => JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../contracts', path), 'utf8'))
 
@@ -15,6 +15,11 @@ describe('contracts package', () => {
   it('parses the shared memory save refusals (TAL-886, TAL-784)', () => {
     const fixture = shared('fixtures/memory-write-refusals.json') as Record<string, unknown>
     expect(Object.values(fixture).map((body) => MemoryWriteRefusalSchema.parse(body).code)).toEqual(['memory_char_limit', 'memory_mask_ambiguous', 'memory_mask_edited', 'memory_conflict'])
+  })
+  it('parses the shared model picker limits (TAL-807, TAL-935)', () => {
+    const groups = ModelsSchema.parse(shared('fixtures/models-limits.json')).groups
+    expect(groups.map((g) => [g.limit?.scope ?? null, g.quota_level ?? null])).toEqual([['models', 'warning'], ['account', null], [null, 'critical']])
+    expect(groups[0]?.models.map((e) => e.limit?.resets_at ?? null)).toEqual([null, '2026-10-14T16:30:00Z'])
   })
   it('exports an integer sidecar RPC version', () => {
     expect(Number.isInteger(SIDECAR_RPC_VERSION)).toBe(true)

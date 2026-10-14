@@ -36,6 +36,58 @@ final class ModelCatalogTests: XCTestCase {
         XCTAssertEqual(response.displayName(for: "@openai:gpt-5.4"), "GPT-5.4")
     }
 
+    func testSharedModelLimitsFixtureDecodesRateLimitsAndQuotaLevels() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let groups = try decoder.decode(
+            ModelsResponse.self,
+            from: Data(contentsOf: root.appendingPathComponent("contracts/fixtures/models-limits.json"))
+        ).catalogGroups
+
+        XCTAssertEqual(groups.map(\.providerID), ["anthropic", "openai-codex", "nous"])
+        XCTAssertEqual(groups.map(\.accountLimitResetsAt), [nil, Date(timeIntervalSince1970: 1_792_054_800), nil])
+        XCTAssertEqual(groups.map(\.quotaLevel), [.warning, nil, .critical])
+        XCTAssertEqual(groups.first?.models.map(\.limitResetsAt), [nil, Date(timeIntervalSince1970: 1_791_995_400)])
+    }
+
+    func testMergingLiveModelsKeepsEachModelsRateLimit() {
+        let resetsAt = Date(timeIntervalSince1970: 1_791_995_400)
+        let groups = [
+            ModelCatalogGroup(
+                id: "anthropic",
+                name: "Anthropic",
+                providerID: "anthropic",
+                models: [
+                    ModelCatalogOption(id: "claude-opus-4.1", displayName: "Claude Opus 4.1", providerID: "anthropic", bareID: "claude-opus-4.1", limitResetsAt: resetsAt),
+                    ModelCatalogOption(id: "claude-sonnet-4.5", displayName: "Claude Sonnet 4.5", providerID: "anthropic", bareID: "claude-sonnet-4.5")
+                ],
+                // An entry the server moved out of the visible list keeps its limit when the live list shows it.
+                extraModels: [
+                    ModelCatalogOption(id: "claude-haiku-4.5", displayName: "Claude Haiku 4.5", providerID: "anthropic", bareID: "claude-haiku-4.5", limitResetsAt: resetsAt)
+                ],
+                accountLimitResetsAt: nil,
+                quotaLevel: .warning
+            )
+        ]
+        let live = ModelsLiveResponse(
+            provider: "anthropic",
+            models: [
+                .object(["id": .string("claude-opus-4.1"), "label": .string("Claude Opus 4.1")]),
+                .object(["id": .string("claude-sonnet-4.5"), "label": .string("Claude Sonnet 4.5")]),
+                .object(["id": .string("claude-haiku-4.5"), "label": .string("Claude Haiku 4.5")])
+            ],
+            count: 3
+        )
+
+        let merged = groups.mergingLiveModels(from: live)
+
+        XCTAssertEqual(merged.first?.models.map(\.limitResetsAt), [resetsAt, nil, resetsAt])
+        XCTAssertEqual(merged.first?.quotaLevel, .warning)
+    }
+
     func testModelsResponseKeepsExtraModelsForSlashAutocompleteOnly() throws {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase

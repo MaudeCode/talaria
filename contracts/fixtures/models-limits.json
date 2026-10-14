@@ -1,0 +1,35 @@
+{
+  "active_provider": "anthropic",
+  "default_model": "claude-sonnet-4.5",
+  "default_provider_id": "anthropic",
+  "default_bare_id": "claude-sonnet-4.5",
+  "default_option_id": "claude-sonnet-4.5",
+  "groups": [
+    {
+      "provider": "Anthropic",
+      "provider_id": "anthropic",
+      "models": [
+        { "id": "claude-sonnet-4.5", "label": "Claude Sonnet 4.5", "provider_id": "anthropic", "bare_id": "claude-sonnet-4.5" },
+        { "id": "claude-opus-4.1", "label": "Claude Opus 4.1", "provider_id": "anthropic", "bare_id": "claude-opus-4.1", "limit": { "scope": "model", "resets_at": "2026-10-14T16:30:00Z" } }
+      ],
+      "limit": { "scope": "models", "models": { "claude-opus-4.1": "2026-10-14T16:30:00Z" } },
+      "quota_level": "warning"
+    },
+    {
+      "provider": "OpenAI Codex",
+      "provider_id": "openai-codex",
+      "models": [
+        { "id": "@openai-codex:gpt-5.5", "label": "GPT-5.5", "provider_id": "openai-codex", "bare_id": "gpt-5.5" }
+      ],
+      "limit": { "scope": "account", "resets_at": "2026-10-15T09:00:00Z" }
+    },
+    {
+      "provider": "Nous",
+      "provider_id": "nous",
+      "models": [
+        { "id": "@nous:hermes-4", "label": "Hermes 4", "provider_id": "nous", "bare_id": "hermes-4" }
+      ],
+      "quota_level": "critical"
+    }
+  ]
+}
