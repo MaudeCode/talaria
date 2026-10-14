@@ -182,15 +182,21 @@ extension APIClient {
         )
     }
 
+    /// `confirmToken`, from a `confirmRequired` answer, confirms a cut of more than one user turn (TAL-929).
     public func truncateSession(
         id: String,
         keepCount: Int,
-        confirmDeepTruncate: Bool = false
+        confirmToken: String? = nil
     ) async throws -> SessionTruncateResponse {
         try await send(
             endpoint: .truncateSession,
             method: "POST",
-            body: TruncateSessionRequest(sessionId: id, keepCount: keepCount, confirmDeepTruncate: confirmDeepTruncate)
+            body: TruncateSessionRequest(
+                sessionId: id,
+                keepCount: keepCount,
+                confirmDeepTruncate: confirmToken != nil,
+                confirmToken: confirmToken
+            )
         )
     }
 
@@ -320,6 +326,7 @@ private struct TruncateSessionRequest: Encodable {
     let sessionId: String
     let keepCount: Int
     let confirmDeepTruncate: Bool
+    let confirmToken: String?
 }
 
 private struct UpdateSessionRequest: Encodable {

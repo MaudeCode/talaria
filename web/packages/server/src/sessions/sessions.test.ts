@@ -1030,7 +1030,7 @@ describe('a truncate that discards more than one user turn waits for confirmatio
     const boundaries = { watermark: stored.truncation_watermark, boundary: stored.truncation_boundary }
     const res = await post(s, '/api/session/truncate', { session_id: sid, keep_count: 0 })
     expect(res.status).toBe(200)
-    expect(await json(res)).toEqual({ ok: false, confirm_required: true, discard_user_turns: 3, discard_messages: 6 })
+    expect(await json(res)).toEqual({ ok: false, confirm_required: true, discard_user_turns: 3, discard_messages: 6, confirm_token: expect.stringMatching(/^[0-9a-f]{32}$/) as unknown })
     expect(readFileSync(file, 'utf8')).toBe(before)
     const after = s.deps.sessionStore.get(sid)
     expect(after.messages).toHaveLength(8)
@@ -1038,9 +1038,14 @@ describe('a truncate that discards more than one user turn waits for confirmatio
     expect({ watermark: after.truncation_watermark, boundary: after.truncation_boundary }).toEqual(boundaries)
   })
 
-  it('cuts with the flag, and cuts one turn or less without it', async () => {
+  it('cuts with the token of the rows it confirmed, and cuts one turn or less without one', async () => {
     let sid = await seed()
-    let res = await post(s, '/api/session/truncate', { session_id: sid, keep_count: 2, confirm_deep_truncate: true })
+    const held = await json(await post(s, '/api/session/truncate', { session_id: sid, keep_count: 2 }))
+    // The flag alone, or a token for other rows, confirms nothing.
+    for (const body of [{ confirm_deep_truncate: true }, { confirm_deep_truncate: true, confirm_token: 'stale' }, { confirm_token: held.confirm_token }]) {
+      expect(await json(await post(s, '/api/session/truncate', { session_id: sid, keep_count: 2, ...body }))).toEqual(held)
+    }
+    let res = await post(s, '/api/session/truncate', { session_id: sid, keep_count: 2, confirm_deep_truncate: true, confirm_token: held.confirm_token })
     expect(((await json(res)).session as Json).messages).toHaveLength(2)
     sid = await seed()
     res = await post(s, '/api/session/truncate', { session_id: sid, keep_count: 6 })
@@ -1048,6 +1053,39 @@ describe('a truncate that discards more than one user turn waits for confirmatio
     sid = await seed()
     res = await post(s, '/api/session/truncate', { session_id: sid, keep_count: 3 })
     expect(((await json(res)).session as Json).messages).toHaveLength(3)
+  })
+
+  it('asks again when a turn arrives between the question and the confirmation', async () => {
+    const sid = await seed()
+    const held = await json(await post(s, '/api/session/truncate', { session_id: sid, keep_count: 2 }))
+    const session = s.deps.sessionStore.get(sid)
+    session.messages = [...threeTurns(), { role: 'user', content: 'u4', timestamp: 108 }, { role: 'assistant', content: 'a4', timestamp: 109 }]
+    s.deps.sessionStore.save(session)
+    const again = await json(await post(s, '/api/session/truncate', { session_id: sid, keep_count: 2, confirm_deep_truncate: true, confirm_token: held.confirm_token }))
+    expect(again).toMatchObject({ ok: false, confirm_required: true, discard_user_turns: 3, discard_messages: 6 })
+    expect(again.confirm_token).not.toBe(held.confirm_token)
+    expect(s.deps.sessionStore.get(sid).messages).toHaveLength(10)
+  })
+
+  it('counts the turns a CLI continuation added in state.db, which the detail shows', async () => {
+    const sid = String((await newSession(s)).session_id)
+    const rows: [string, string, number][] = [['user', 'u1', 100], ['assistant', 'a1', 101], ['user', 'u2', 102], ['assistant', 'a2', 103], ['user', 'u3', 104], ['assistant', 'a3', 105]]
+    writeMessages(s, sid, rows.slice(0, 2).map(([role, content, timestamp]) => ({ role, content, timestamp })))
+    const db = new DatabaseSync(join(s.state, 'state.db'))
+    db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
+    db.prepare('INSERT INTO sessions (id, source, started_at) VALUES (?, ?, ?)').run(sid, 'cli', 100)
+    for (const [role, content, ts] of rows) db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, role, content, ts)
+    db.close()
+    const shown = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).messages as Json[]
+    expect(shown.map((m) => m.content)).toEqual(['u1', 'a1', 'u2', 'a2', 'u3', 'a3'])
+    expect(await json(await post(s, '/api/session/truncate', { session_id: sid, keep_count: 0 }))).toMatchObject({ ok: false, confirm_required: true, discard_user_turns: 3, discard_messages: 5 })
+    const served = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).messages as Json[]
+    expect(served.map((m) => m.content)).toEqual(['u1', 'a1', 'u2', 'a2', 'u3', 'a3'])
+  })
+
+  it('tells clients this server holds a deep cut', async () => {
+    const sid = await seed()
+    expect(((await json(await s.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).confirms_deep_truncate).toBe(true)
   })
 })
 
@@ -1065,7 +1103,8 @@ describe('truncation keeps deleted state.db turns deleted (TAL-504)', () => {
     db.prepare('INSERT INTO sessions (id, source, started_at) VALUES (?, ?, ?)').run(sid, 'cli', 100)
     for (const [role, content, ts] of rows) db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, role, content, ts)
     db.close()
-    expect((await post(s, '/api/session/truncate', { session_id: sid, keep_count: 2, confirm_deep_truncate: true })).status).toBe(200)
+    const held = await json(await post(s, '/api/session/truncate', { session_id: sid, keep_count: 2 }))
+    expect((await post(s, '/api/session/truncate', { session_id: sid, keep_count: 2, confirm_deep_truncate: true, confirm_token: held.confirm_token })).status).toBe(200)
     const served = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).messages as Json[]
     expect(served.map((m) => m.content)).toEqual(['u1', 'a1'])
     expect(s.deps.sessions.modelContext(s.deps.sessionStore.get(sid)).map((m) => m.content)).toEqual(['u1', 'a1'])

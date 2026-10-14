@@ -611,11 +611,11 @@ export class SessionService {
   }
 
   /** `compact()` plus messages, redacted for the wire (Python `_public_session_projection`). */
-  publicSession(s: Session, withMessages = true): Record<string, unknown> {
+  publicSession(s: Session, withMessages = true, messages: Message[] = s.messages): Record<string, unknown> {
     const payload = this.wireRow(s)
     // Mutation replies replace a client's transcript, so they carry the same server-built scenes as the detail.
     if (withMessages) {
-      payload.messages = this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes(withBackgroundUpdates(withMarkerKinds(withTurnIds(s.messages)), s), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, runningScene: !this.journaledActiveTurn(s) }))
+      payload.messages = this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes(withBackgroundUpdates(withMarkerKinds(withTurnIds(messages)), s), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, runningScene: !this.journaledActiveTurn(s) }))
       payload.compression_reference = compressionReference(s, payload.messages as unknown[])
     }
     return redactSessionData(payload, this.deps.redactEnabled())
@@ -749,6 +749,7 @@ export class SessionService {
     withSessionWireFlags(raw, activeStreamIds)
     // A metadata-only read lacks the history the gate counts, so it carries no flag.
     if (loadMessages) raw.can_compress = this.canCompress(s, raw.read_only === true, stateRows)
+    raw.confirms_deep_truncate = true
     raw.pending_steers = raw.active_stream_id ? (this.deps.runtime.pendingSteers?.(str(raw.active_stream_id)) ?? []) : []
     raw.automatic_turns_held = this.deps.runtime.automaticTurnsHeld?.(s.session_id) ?? false
     return redactSessionData(raw, this.deps.redactEnabled())
@@ -1210,8 +1211,11 @@ export class SessionService {
 
   // ── transcript mutations ─────────────────────────────────────────────────
 
-  /** TAL-929: `confirmDeep` lets a cut discard more than one user turn; without it such a cut changes nothing. */
-  async truncate(sid: string, keepRaw: unknown, confirmDeep = false): Promise<Record<string, unknown>> {
+  /**
+   * TAL-929: a cut that discards more than one user turn changes nothing and answers with its counts, unless `confirmToken`
+   * is the token of the rows it would remove now: a transcript that grew or changed since the confirmation asks again.
+   */
+  async truncate(sid: string, keepRaw: unknown, confirmToken: string | null = null): Promise<Record<string, unknown>> {
     this.rejectSubagent(sid, 'modified')
     if (keepRaw === null || keepRaw === undefined) throw new HttpFailure(400, 'Missing required field(s): keep_count')
     const s = this.mutationTarget(sid, 'modified')
@@ -1223,10 +1227,8 @@ export class SessionService {
     if (!Number.isInteger(keep)) throw new HttpFailure(400, 'keep_count must be an integer')
     if (keep < 0) throw new HttpFailure(400, 'keep_count must be non-negative')
     const refused = await this.store.withLock(sid, () => {
-      // Counted on the rows a client shows: the user turns the cut removes, and the messages after the row it starts at.
-      const cut = ((this.publicSession(s).messages ?? []) as Message[]).map((m, i) => ({ m, i })).filter(({ m, i }) => i >= keep && m._display === 'row')
-      const discard = { discard_user_turns: cut.filter(({ m }) => m.role === 'user').length, discard_messages: cut.filter(({ i }) => i > keep).length }
-      if (discard.discard_user_turns > 1 && !confirmDeep) return { ok: false, confirm_required: true, ...discard }
+      const held = this.heldCut(s, keep)
+      if (held && held.confirm_token !== confirmToken) return held
       truncateSessionAtKeep(s, keep)
       this.markStateDbSeen(s, undefined, { boundary: true })
       this.store.save(s)
@@ -1235,6 +1237,20 @@ export class SessionService {
     if (refused) return refused
     this.deps.runtime.evictAgent(sid)
     return { ok: true, session: this.publicSession(s) }
+  }
+
+  /**
+   * TAL-929: the confirmation a cut at `keep` needs, or null for one that removes at most one user turn. Counted on the rows
+   * the detail shows, state.db continuation included, since `keep` indexes them: the user turns the cut removes, and the
+   * messages after the row it starts at.
+   */
+  private heldCut(s: Session, keep: number): { ok: false; confirm_required: true; discard_user_turns: number; discard_messages: number; confirm_token: string } | null {
+    const transcript = this.mergedTranscript(s)
+    const cut = ((this.publicSession(s, true, transcript).messages ?? []) as Message[]).map((m, i) => ({ m, i })).filter(({ m, i }) => i >= keep && m._display === 'row')
+    const userTurns = cut.filter(({ m }) => m.role === 'user').length
+    if (userTurns <= 1) return null
+    const token = createHash('sha256').update(JSON.stringify(transcript.slice(keep))).digest('hex').slice(0, 32)
+    return { ok: false, confirm_required: true, discard_user_turns: userTurns, discard_messages: cut.filter(({ i }) => i > keep).length, confirm_token: token }
   }
 
   // ── manual compression (TAL-255) ────────────────────────────────────────

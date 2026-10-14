@@ -397,7 +397,7 @@ test('editing an early message asks with the server counts and cuts only on Disc
   await page.route('**/api/session/truncate', (route) => {
     const body = route.request().postDataJSON() as Record<string, unknown>
     bodies.push(body)
-    if (body.confirm_deep_truncate !== true) return route.fulfill({ json: { ok: false, confirm_required: true, discard_user_turns: 3, discard_messages: 5 } })
+    if (body.confirm_deep_truncate !== true || body.confirm_token !== 'rows-1') return route.fulfill({ json: { ok: false, confirm_required: true, discard_user_turns: 3, discard_messages: 5, confirm_token: 'rows-1' } })
     truncated = true
     return route.fulfill({ json: { ok: true, session: { session_id: 'edit-deep', title: 'Edit' } } })
   })
@@ -412,7 +412,7 @@ test('editing an early message asks with the server counts and cuts only on Disc
   await expect(page.locator('#msg')).toHaveValue('')
   await dialog.getByRole('button', { name: 'Discard' }).click()
   await expect(page.locator('#msg')).toHaveValue('Plan the release')
-  expect(bodies.map((b) => b.confirm_deep_truncate)).toEqual([false, true])
+  expect(bodies.map((b) => [b.confirm_deep_truncate, b.confirm_token])).toEqual([[false, undefined], [true, 'rows-1']])
 })
 
 test('a second Edit click while the first is pending returns the text once (TAL-516)', async ({ page }) => {

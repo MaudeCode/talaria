@@ -86,6 +86,8 @@ public final class ChatViewModel {
     public private(set) var messageActionErrorMessage: String?
     /// An edit or regenerate the server held for confirmation (TAL-929); `confirmDeepTruncate` resends it.
     public private(set) var deepTruncateConfirmation: DeepTruncateConfirmation?
+    /// The loaded detail's `confirms_deep_truncate`; false until a detail says so (an older server never does).
+    private var serverConfirmsDeepTruncate = false
     private(set) var cacheErrorMessage: String?
     public private(set) var lastError: Error?
     /// The latest queued send that failed; ChatView forwards its error to `onAPIError` (TAL-150).
@@ -211,6 +213,7 @@ public final class ChatViewModel {
         if let readOnly = session?.readOnly { isSessionReadOnly = readOnly }
         if let canBranch = session?.canBranch { self.canBranch = canBranch }
         if let assistantName = session?.assistantName { self.assistantName = assistantName }
+        if let confirms = session?.confirmsDeepTruncate { serverConfirmsDeepTruncate = confirms }
         if let session, session.statesEnabledToolsets { sessionToolsets = SessionToolsets(names: session.enabledToolsets) }
         // A detail relabels the workspace it reports, so a registry rename shows on the next load (TAL-303).
         if let workspace = session?.workspace, workspace == serverWorkspacePath {
@@ -4192,7 +4195,7 @@ public final class ChatViewModel {
     public func editMessage(
         _ context: MessageActionContext,
         newText: String,
-        confirmDeepTruncate: Bool = false,
+        confirmToken: String? = nil,
         modelContext: ModelContext? = nil
     ) async -> Bool {
         guard context.role == .user else {
@@ -4237,7 +4240,7 @@ public final class ChatViewModel {
                 context,
                 action: .edit(newText: editedText),
                 sessionID: sessionID,
-                confirm: confirmDeepTruncate,
+                confirmToken: confirmToken,
                 modelContext: modelContext
             ) else { return false }
 
@@ -4287,7 +4290,7 @@ public final class ChatViewModel {
 
     public func regenerateAssistantResponse(
         _ context: MessageActionContext,
-        confirmDeepTruncate: Bool = false,
+        confirmToken: String? = nil,
         modelContext: ModelContext? = nil
     ) async -> Bool {
         guard context.role == .assistant else {
@@ -4331,7 +4334,7 @@ public final class ChatViewModel {
                 context,
                 action: .regenerate,
                 sessionID: sessionID,
-                confirm: confirmDeepTruncate,
+                confirmToken: confirmToken,
                 modelContext: modelContext
             ) else { return false }
 
@@ -4368,7 +4371,7 @@ public final class ChatViewModel {
         }
     }
 
-    /// Resends a held edit or regenerate with `confirm_deep_truncate` (TAL-929).
+    /// Resends a held edit or regenerate with its confirmation token (TAL-929).
     public func confirmDeepTruncate(
         _ confirmation: DeepTruncateConfirmation,
         modelContext: ModelContext? = nil
@@ -4379,13 +4382,13 @@ public final class ChatViewModel {
             return await editMessage(
                 confirmation.context,
                 newText: newText,
-                confirmDeepTruncate: true,
+                confirmToken: confirmation.confirmToken,
                 modelContext: modelContext
             )
         case .regenerate:
             return await regenerateAssistantResponse(
                 confirmation.context,
-                confirmDeepTruncate: true,
+                confirmToken: confirmation.confirmToken,
                 modelContext: modelContext
             )
         }
@@ -4401,19 +4404,35 @@ public final class ChatViewModel {
         _ context: MessageActionContext,
         action: DeepTruncateConfirmation.Action,
         sessionID: String,
-        confirm: Bool,
+        confirmToken: String?,
         modelContext: ModelContext?
     ) async throws -> Bool {
+        // Old-server fallback (TAL-929): a server without `confirms_deep_truncate` cuts at once, so this device asks
+        // first with its own count of the later messages, as it did before. Delete once servers ship the field.
+        if !serverConfirmsDeepTruncate, confirmToken == nil {
+            let later = messages.dropFirst(context.visibleIndex + 1).filter { $0.role == "user" || $0.role == "assistant" }
+            if !later.isEmpty {
+                deepTruncateConfirmation = DeepTruncateConfirmation(
+                    context: context,
+                    action: action,
+                    discardMessages: later.count,
+                    confirmToken: ""
+                )
+                return false
+            }
+        }
+
         let truncateResponse = try await client.truncateSession(
             id: sessionID,
             keepCount: context.fullHistoryIndex,
-            confirmDeepTruncate: confirm
+            confirmToken: confirmToken
         )
         if truncateResponse.confirmRequired == true {
             deepTruncateConfirmation = DeepTruncateConfirmation(
                 context: context,
                 action: action,
-                discardMessages: truncateResponse.discardMessages ?? 0
+                discardMessages: truncateResponse.discardMessages ?? 0,
+                confirmToken: truncateResponse.confirmToken ?? ""
             )
             return false
         }

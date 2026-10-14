@@ -323,7 +323,7 @@ class Probe:
             ("session pin", "/api/session/pin", {"session_id": session_id, "pinned": True}),
             ("session archive", "/api/session/archive", {"session_id": session_id, "archived": True}),
             ("session move", "/api/session/move", {"session_id": session_id, "project_id": None}),
-            ("session truncate", "/api/session/truncate", {"session_id": session_id, "keep_count": 0, "confirm_deep_truncate": True}),
+            ("session truncate", "/api/session/truncate", {"session_id": session_id, "keep_count": 0}),
         )
         for boundary, path, body in mutation_checks:
             result = self.request(
@@ -340,6 +340,11 @@ class Probe:
                     raise ContractFailure(f"{boundary}: title did not change")
             else:
                 result = self.require_keys(boundary, result, "ok")
+                if boundary == "session truncate" and result.get("confirm_required") is True:
+                    # TAL-929: a cut of more than one user turn waits for the token of the rows it counted.
+                    token = self.require_keys(boundary, result, "confirm_token")["confirm_token"]
+                    confirmed = {**body, "confirm_deep_truncate": True, "confirm_token": token}
+                    result = self.require_keys(boundary, self.request(boundary, path, method="POST", body=confirmed), "ok")
                 if result["ok"] is not True:
                     raise ContractFailure(f"{boundary}: mutation did not return ok=true")
 

@@ -4716,6 +4716,10 @@
                           "type": "boolean",
                           "description": "TAL-614: a manual compression would start now: writable, no running turn, and at least four model-history messages. Only the full session detail carries it; absent means no."
                         },
+                        "confirms_deep_truncate": {
+                          "type": "boolean",
+                          "description": "TAL-929: this server holds a `session.truncate` that discards more than one user turn until it is confirmed; absent on older servers, which cut at once."
+                        },
                         "source_label": {
                           "anyOf": [
                             {
@@ -7081,6 +7085,10 @@
                           "type": "boolean",
                           "description": "TAL-614: a manual compression would start now: writable, no running turn, and at least four model-history messages. Only the full session detail carries it; absent means no."
                         },
+                        "confirms_deep_truncate": {
+                          "type": "boolean",
+                          "description": "TAL-929: this server holds a `session.truncate` that discards more than one user turn until it is confirmed; absent on older servers, which cut at once."
+                        },
                         "source_label": {
                           "anyOf": [
                             {
@@ -9191,6 +9199,10 @@
                         "can_compress": {
                           "type": "boolean",
                           "description": "TAL-614: a manual compression would start now: writable, no running turn, and at least four model-history messages. Only the full session detail carries it; absent means no."
+                        },
+                        "confirms_deep_truncate": {
+                          "type": "boolean",
+                          "description": "TAL-929: this server holds a `session.truncate` that discards more than one user turn until it is confirmed; absent on older servers, which cut at once."
                         },
                         "source_label": {
                           "anyOf": [
@@ -12501,6 +12513,10 @@
                           "type": "boolean",
                           "description": "TAL-614: a manual compression would start now: writable, no running turn, and at least four model-history messages. Only the full session detail carries it; absent means no."
                         },
+                        "confirms_deep_truncate": {
+                          "type": "boolean",
+                          "description": "TAL-929: this server holds a `session.truncate` that discards more than one user turn until it is confirmed; absent on older servers, which cut at once."
+                        },
                         "source_label": {
                           "anyOf": [
                             {
@@ -12866,7 +12882,7 @@
     "/api/session/truncate": {
       "post": {
         "operationId": "session.truncate",
-        "description": "TAL-929: a cut that discards more than one user turn changes nothing and answers `confirm_required` with the counts to confirm, until resent with `confirm_deep_truncate`.",
+        "description": "TAL-929: a cut that discards more than one user turn changes nothing and answers `confirm_required` with the counts to confirm, until resent with `confirm_deep_truncate` and the `confirm_token` of those same rows.",
         "tags": [
           "sessions"
         ],
@@ -12884,6 +12900,9 @@
                   "keep_count": {},
                   "confirm_deep_truncate": {
                     "type": "boolean"
+                  },
+                  "confirm_token": {
+                    "type": "string"
                   }
                 },
                 "required": [
@@ -13262,13 +13281,17 @@
                           "type": "integer",
                           "minimum": -9007199254740991,
                           "maximum": 9007199254740991
+                        },
+                        "confirm_token": {
+                          "type": "string"
                         }
                       },
                       "required": [
                         "ok",
                         "confirm_required",
                         "discard_user_turns",
-                        "discard_messages"
+                        "discard_messages",
+                        "confirm_token"
                       ]
                     }
                   ]
@@ -15678,6 +15701,10 @@
                         "can_compress": {
                           "type": "boolean",
                           "description": "TAL-614: a manual compression would start now: writable, no running turn, and at least four model-history messages. Only the full session detail carries it; absent means no."
+                        },
+                        "confirms_deep_truncate": {
+                          "type": "boolean",
+                          "description": "TAL-929: this server holds a `session.truncate` that discards more than one user turn until it is confirmed; absent on older servers, which cut at once."
                         },
                         "source_label": {
                           "anyOf": [
@@ -19527,6 +19554,10 @@
                           "type": "boolean",
                           "description": "TAL-614: a manual compression would start now: writable, no running turn, and at least four model-history messages. Only the full session detail carries it; absent means no."
                         },
+                        "confirms_deep_truncate": {
+                          "type": "boolean",
+                          "description": "TAL-929: this server holds a `session.truncate` that discards more than one user turn until it is confirmed; absent on older servers, which cut at once."
+                        },
                         "source_label": {
                           "anyOf": [
                             {
@@ -21662,6 +21693,10 @@
                         "can_compress": {
                           "type": "boolean",
                           "description": "TAL-614: a manual compression would start now: writable, no running turn, and at least four model-history messages. Only the full session detail carries it; absent means no."
+                        },
+                        "confirms_deep_truncate": {
+                          "type": "boolean",
+                          "description": "TAL-929: this server holds a `session.truncate` that discards more than one user turn until it is confirmed; absent on older servers, which cut at once."
                         },
                         "source_label": {
                           "anyOf": [
@@ -23861,6 +23896,10 @@
                           "type": "boolean",
                           "description": "TAL-614: a manual compression would start now: writable, no running turn, and at least four model-history messages. Only the full session detail carries it; absent means no."
                         },
+                        "confirms_deep_truncate": {
+                          "type": "boolean",
+                          "description": "TAL-929: this server holds a `session.truncate` that discards more than one user turn until it is confirmed; absent on older servers, which cut at once."
+                        },
                         "source_label": {
                           "anyOf": [
                             {
@@ -26045,6 +26084,10 @@
                         "can_compress": {
                           "type": "boolean",
                           "description": "TAL-614: a manual compression would start now: writable, no running turn, and at least four model-history messages. Only the full session detail carries it; absent means no."
+                        },
+                        "confirms_deep_truncate": {
+                          "type": "boolean",
+                          "description": "TAL-929: this server holds a `session.truncate` that discards more than one user turn until it is confirmed; absent on older servers, which cut at once."
                         },
                         "source_label": {
                           "anyOf": [
@@ -36011,6 +36054,10 @@
                           "type": "boolean",
                           "description": "TAL-614: a manual compression would start now: writable, no running turn, and at least four model-history messages. Only the full session detail carries it; absent means no."
                         },
+                        "confirms_deep_truncate": {
+                          "type": "boolean",
+                          "description": "TAL-929: this server holds a `session.truncate` that discards more than one user turn until it is confirmed; absent on older servers, which cut at once."
+                        },
                         "source_label": {
                           "anyOf": [
                             {
@@ -38288,6 +38335,10 @@
                           "type": "boolean",
                           "description": "TAL-614: a manual compression would start now: writable, no running turn, and at least four model-history messages. Only the full session detail carries it; absent means no."
                         },
+                        "confirms_deep_truncate": {
+                          "type": "boolean",
+                          "description": "TAL-929: this server holds a `session.truncate` that discards more than one user turn until it is confirmed; absent on older servers, which cut at once."
+                        },
                         "source_label": {
                           "anyOf": [
                             {
@@ -40459,6 +40510,10 @@
                             "can_compress": {
                               "type": "boolean",
                               "description": "TAL-614: a manual compression would start now: writable, no running turn, and at least four model-history messages. Only the full session detail carries it; absent means no."
+                            },
+                            "confirms_deep_truncate": {
+                              "type": "boolean",
+                              "description": "TAL-929: this server holds a `session.truncate` that discards more than one user turn until it is confirmed; absent on older servers, which cut at once."
                             },
                             "source_label": {
                               "anyOf": [

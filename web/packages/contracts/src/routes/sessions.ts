@@ -9,8 +9,11 @@ const Json = z.unknown()
 export const OkSchema = z.object({ ok: z.literal(true) }).catchall(Json)
 const SessionBody = z.object({ session_id: SessionIdSchema })
 const SessionQuery = z.object({ session_id: z.string() })
-/** Counted on the shown (`_display: 'row'`) messages: `discard_user_turns` the user turns the cut removes, `discard_messages` the messages after the row at `keep_count`. */
-export const TruncateConfirmRequiredSchema = z.object({ ok: z.literal(false), confirm_required: z.literal(true), discard_user_turns: z.number().int(), discard_messages: z.number().int() })
+/**
+ * Counted on the shown (`_display: 'row'`) messages: `discard_user_turns` the user turns the cut removes, `discard_messages` the messages after the row at
+ * `keep_count`. `confirm_token` names the rows counted; a confirmation carrying it cuts only while they are unchanged.
+ */
+export const TruncateConfirmRequiredSchema = z.object({ ok: z.literal(false), confirm_required: z.literal(true), discard_user_turns: z.number().int(), discard_messages: z.number().int(), confirm_token: z.string() })
 
 
 export const SessionsListQuerySchema = z.object({
@@ -139,7 +142,7 @@ export const sessionsContract = {
     move: oc.route({ method: 'POST', path: '/api/session/move', tags }).input(SessionBody.extend({ project_id: z.string().nullable().optional() })).output(OkSchema.extend({ session: SessionRowSchema })),
     duplicate: oc.route({ method: 'POST', path: '/api/session/duplicate', tags }).input(z.object({ session_id: z.string() })).output(SessionEnvelopeSchema),
     branch: oc.route({ method: 'POST', path: '/api/session/branch', tags }).input(SessionBody.extend({ keep_count: z.number().int().nullable().optional(), title: z.string().nullable().optional() })).output(z.object({ session_id: z.string(), title: z.string(), parent_session_id: z.string() })),
-    truncate: oc.route({ method: 'POST', path: '/api/session/truncate', tags, description: 'TAL-929: a cut that discards more than one user turn changes nothing and answers `confirm_required` with the counts to confirm, until resent with `confirm_deep_truncate`.' }).input(SessionBody.extend({ keep_count: Json.optional(), confirm_deep_truncate: z.boolean().optional() })).output(OkSchema.extend({ session: SessionRowSchema }).or(TruncateConfirmRequiredSchema)),
+    truncate: oc.route({ method: 'POST', path: '/api/session/truncate', tags, description: 'TAL-929: a cut that discards more than one user turn changes nothing and answers `confirm_required` with the counts to confirm, until resent with `confirm_deep_truncate` and the `confirm_token` of those same rows.' }).input(SessionBody.extend({ keep_count: Json.optional(), confirm_deep_truncate: z.boolean().optional(), confirm_token: z.string().optional() })).output(OkSchema.extend({ session: SessionRowSchema }).or(TruncateConfirmRequiredSchema)),
     clear: oc.route({ method: 'POST', path: '/api/session/clear', tags }).input(SessionBody).output(OkSchema.extend({ session: SessionRowSchema })),
     retry: oc.route({ method: 'POST', path: '/api/session/retry', tags, description: '`last_user_text` is the stored row\'s text; `last_user_prompt` and `last_user_attachments` are what to resend as the new turn.' }).input(SessionBody).output(z.object({ ok: z.literal(true), last_user_text: z.string(), last_user_prompt: z.string().optional(), last_user_attachments: z.array(AttachmentSchema).optional(), removed_count: z.number().int() }).or(z.object({ error: z.string() }))),
     undo: oc.route({ method: 'POST', path: '/api/session/undo', tags }).input(SessionBody).output(z.object({ ok: z.literal(true), removed_count: z.number().int(), removed_preview: z.string() }).or(z.object({ error: z.string() }))),

@@ -93,12 +93,13 @@ public struct SessionResponse: Decodable {
 }
 
 /// `POST /api/session/truncate` (TAL-929): the cut session, or, for a cut that would discard more than one user turn,
-/// `confirmRequired` with the server's counts and nothing changed until the cut is resent with `confirm_deep_truncate`.
+/// `confirmRequired` with the server's counts and nothing changed until the cut is resent with `confirmToken`.
 public struct SessionTruncateResponse: Decodable {
     public let session: SessionDetail?
     public let confirmRequired: Bool?
     public let discardUserTurns: Int?
     public let discardMessages: Int?
+    public let confirmToken: String?
 }
 
 public struct SessionMutationResponse: Decodable {
@@ -868,6 +869,9 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
     public let canDuplicate: Bool?
     /// The agent's display name (TAL-458); nil from a server that predates it.
     public let assistantName: String?
+    /// TAL-929: the server holds an edit or regenerate cut of more than one user turn for confirmation; nil from a
+    /// server that predates it, which cuts at once.
+    public let confirmsDeepTruncate: Bool?
     public let messages: [ChatMessage]?
     public let toolCalls: [PersistedToolCall]?
     public let messagesTruncated: Bool?
@@ -931,6 +935,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
         case canDelete
         case canDuplicate
         case assistantName
+        case confirmsDeepTruncate
         case messages
         case toolCalls
         case messagesTruncated
@@ -995,6 +1000,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
         canDelete = container.decodeLossyBoolIfPresent(forKey: .canDelete)
         canDuplicate = container.decodeLossyBoolIfPresent(forKey: .canDuplicate)
         assistantName = container.decodeLossyStringIfPresent(forKey: .assistantName)
+        confirmsDeepTruncate = container.decodeLossyBoolIfPresent(forKey: .confirmsDeepTruncate)
         messages = Self.decodeMessagesTolerantly(from: container)
         toolCalls = Self.decodeToolCallsTolerantly(from: container)
         messagesTruncated = container.decodeLossyBoolIfPresent(forKey: .underscoredMessagesTruncated)

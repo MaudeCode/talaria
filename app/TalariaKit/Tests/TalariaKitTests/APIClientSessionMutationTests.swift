@@ -406,6 +406,7 @@ final class APIClientSessionMutationTests: APIClientTestCase {
             XCTAssertEqual(body?["session_id"] as? String, "session-abc")
             XCTAssertEqual(body?["keep_count"] as? Int, 3)
             XCTAssertEqual(body?["confirm_deep_truncate"] as? Bool, false)
+            XCTAssertNil(body?["confirm_token"])
 
             return apiTestJSONResponse("""
             {
@@ -436,15 +437,17 @@ final class APIClientSessionMutationTests: APIClientTestCase {
         let client = makeClient { request in
             let body = try apiTestJSONBody(from: request)
             XCTAssertEqual(body["confirm_deep_truncate"] as? Bool, true)
+            XCTAssertEqual(body["confirm_token"] as? String, "rows-0")
             return apiTestJSONResponse(
-                #"{"ok": false, "confirm_required": true, "discard_user_turns": 3, "discard_messages": 5}"#,
+                #"{"ok": false, "confirm_required": true, "discard_user_turns": 3, "discard_messages": 5, "confirm_token": "rows-1"}"#,
                 for: request
             )
         }
 
-        let response = try await client.truncateSession(id: "session-abc", keepCount: 0, confirmDeepTruncate: true)
+        let response = try await client.truncateSession(id: "session-abc", keepCount: 0, confirmToken: "rows-0")
 
         XCTAssertEqual(response.confirmRequired, true)
+        XCTAssertEqual(response.confirmToken, "rows-1")
         XCTAssertEqual(response.discardUserTurns, 3)
         XCTAssertEqual(response.discardMessages, 5)
         XCTAssertNil(response.session)
