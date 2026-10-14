@@ -208,6 +208,7 @@ def _reload_mcp() -> str:
             from agent.secret_scope import is_multiplex_active
             from hermes_constants import get_hermes_home
             from tools.mcp_tool import _lock, _mcp_tool_server_names, _server_visible_in_scope, _servers
+            from tools.mcp_tool_agent import reprobe_tool_availability
             from tools.mcp_tool_discovery import discover_mcp_tools
             from tools.mcp_tool_lifecycle import shutdown_mcp_servers
             from tools.mcp_tool_scope import _key_name
@@ -227,6 +228,9 @@ def _reload_mcp() -> str:
         try:
             old = server_names() | retire_unscoped_launch_mcp_servers()
             shutdown_mcp_servers(scope=scope)
+            # As the gateway does: drop the cached tool availability verdicts, then hand the profile's open chats the
+            # rediscovered tools.
+            reprobe_tool_availability()
             tools = discover_mcp_tools() or []
             refresh_profile_agents_mcp_tools(get_hermes_home())
             connected = server_names()

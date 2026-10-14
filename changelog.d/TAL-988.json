@@ -2,7 +2,7 @@
   "entries": [
     {
       "category": "Fixed",
-      "summary": "Reload MCP now updates the tools of chats that are already open, so a tool whose description or parameters changed under the same name reaches the model on the next message instead of after the chat restarts.",
+      "summary": "Reload MCP now updates the tools in chats that are already open, so their next message uses each server's current tool descriptions.",
       "highlight": false,
       "components": ["web"]
     }
