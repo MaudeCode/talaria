@@ -410,20 +410,6 @@
             "prompt": "expand"
           },
           {
-            "name": "initiate-setup",
-            "description": "Run the first-run setup: learn about you and set Hermes up around you",
-            "category": "Session",
-            "aliases": [
-              "initiate_setup"
-            ],
-            "args_hint": "",
-            "subcommands": [],
-            "cli_only": false,
-            "gateway_only": false,
-            "exec": false,
-            "prompt": "expand"
-          },
-          {
             "name": "moa",
             "description": "Run one prompt through the default Mixture of Agents preset, then restore your model",
             "category": "Session",
@@ -753,15 +739,17 @@
           },
           {
             "name": "fast",
-            "description": "Fast mode — OpenAI Priority Processing / Anthropic Fast Mode (normal/fast/auto/cold)",
+            "description": "Fast mode — OpenAI Priority Processing / Anthropic Fast Mode (normal/fast/auto/cold/ultrafast)",
             "category": "Configuration",
             "aliases": [],
-            "args_hint": "[normal|fast|auto|cold|status] [--global]",
+            "args_hint": "[normal|fast|auto|cold|ultrafast|status] [--global]",
             "subcommands": [
               "normal",
               "fast",
               "auto",
               "cold",
+              "ultrafast",
+              "ultra",
               "status",
               "on",
               "off",

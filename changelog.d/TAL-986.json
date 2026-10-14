@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Talaria Web supports Hermes Agent v0.22.0 and installs it by default, so updating to it no longer shows an unsupported-version warning. Hermes Agent v2026.9.24 is no longer supported.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

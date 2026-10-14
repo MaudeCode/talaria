@@ -8,9 +8,9 @@
       "result": {
         "checkpoints": [
           {
-            "hash": "5950449d0e455c3222453d1261e513dc74a8d306",
-            "short_hash": "5950449",
-            "timestamp": "2026-10-12T16:17:02-04:00",
+            "hash": "4bd547a307128eaff534b6fce8abca75a442d546",
+            "short_hash": "4bd547a",
+            "timestamp": "2026-10-14T00:43:50-04:00",
             "reason": "before write_file",
             "files_changed": 0,
             "insertions": 0,
@@ -26,7 +26,7 @@
       "params": {
         "profile_home": "<home>",
         "workspace": "<user-home>/project",
-        "checkpoint": "5950449d0e455c3222453d1261e513dc74a8d306"
+        "checkpoint": "4bd547a307128eaff534b6fce8abca75a442d546"
       },
       "result": {
         "stat": "notes.txt | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)",
@@ -39,10 +39,10 @@
       "params": {
         "profile_home": "<home>",
         "workspace": "<user-home>/project",
-        "checkpoint": "5950449d0e455c3222453d1261e513dc74a8d306"
+        "checkpoint": "4bd547a307128eaff534b6fce8abca75a442d546"
       },
       "result": {
-        "restored_to": "5950449d",
+        "restored_to": "4bd547a3",
         "reason": "before write_file"
       }
     }
