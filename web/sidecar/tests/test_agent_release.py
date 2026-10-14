@@ -257,6 +257,33 @@ def test_clearing_a_session_mid_turn_stops_its_agent_forking_a_review(monkeypatc
     worker.join(5)
 
 
+def test_clearing_a_session_before_its_turn_binds_an_agent_fences_and_never_caches_that_agent(monkeypatch) -> None:
+    """A clear between the turn's registration and its agent's construction: the agent it builds is the old session's."""
+    _setup(monkeypatch)
+    _reviews(monkeypatch)
+    gate = threading.Event()
+    building = threading.Event()
+
+    class SlowAgent(MemoryAgent):
+        def __init__(self, **kwargs):
+            building.set()
+            gate.wait(5)
+            super().__init__(**kwargs)
+
+    monkeypatch.setattr(chat, "_agent_class", lambda: SlowAgent)
+    registry = Registry(runtime=None)  # type: ignore[arg-type]
+    chat.register(registry)
+    worker = threading.Thread(target=chat.start, args=(Ctx(), _params("st-early", "early")))
+    worker.start()
+    assert building.wait(5)
+    registry.methods["chat.evict_agent"](Ctx(), {"session_id": "early", "clear_session": True})
+    gate.set()
+    worker.join(5)
+    assert SlowAgent.instances[-1].skip_background_review is True
+    assert "early" not in chat._AGENT_CACHE
+    assert _ended("early") == _released("early")
+
+
 def test_a_turn_ending_without_a_clear_keeps_its_review(monkeypatch) -> None:
     _setup(monkeypatch)
     _reviews(monkeypatch)

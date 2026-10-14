@@ -56,6 +56,9 @@ class _Run:
         self.lock = threading.Lock()
         # The Agent's transcript list from before this turn: a Stop while the Agent still holds it has no checkpoint.
         self.prior_messages = None
+        # TAL-897: the session ended (clear/delete) or the sidecar is draining, set under both cache and run locks; an
+        # agent this run binds afterwards forks no review and stays out of the cache.
+        self.session_ended = False
 
 
 class _ClarifyEntry:
@@ -820,6 +823,8 @@ def drain_agents(timeout: float = _AGENT_RELEASE_TIMEOUT) -> None:
     deadline = time.monotonic() + timeout
     with _AGENT_CACHE_LOCK, _RUNS_LOCK:
         agents = [entry[0] for entry in _AGENT_CACHE.values()] + [run.agent for run in _RUNS.values()]
+        for run in _RUNS.values():
+            run.session_ended = True
     cancels = _cancel_background_reviews(agents, "sidecar shutting down")
     evict_all_agents()
     with _RUNS_LOCK:
@@ -1248,6 +1253,8 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             """Claim the agent for this run under ``_AGENT_CACHE_LOCK``, so an eviction never releases it mid-turn."""
             run.prior_messages = getattr(bound, "_session_messages", None)
             run.agent = bound
+            if run.session_ended:
+                bound.skip_background_review = True
 
         if not session_busy:
             with _AGENT_CACHE_LOCK:
@@ -1276,10 +1283,11 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             agent._talaria_session_db = session_db  # released with the agent (``_release_agent``)
             with _AGENT_CACHE_LOCK:
                 bind(agent)
-                replaced = _AGENT_CACHE.pop(session_id, None)
-                _AGENT_CACHE[session_id] = (agent, signature, home)
-                _release_agents_locked([replaced] if replaced else [])
-                _evict_idle_agents_locked()
+                if not run.session_ended:
+                    replaced = _AGENT_CACHE.pop(session_id, None)
+                    _AGENT_CACHE[session_id] = (agent, signature, home)
+                    _release_agents_locked([replaced] if replaced else [])
+                    _evict_idle_agents_locked()
         # Predecessor ``agent.ephemeral_system_prompt``: personality, surface context, progress guidance, and delivery
         # hints travel as runtime instructions that are never persisted to history.
         ephemeral = params.get("ephemeral_system_prompt")
@@ -1639,6 +1647,8 @@ def register(registry) -> None:
         with _AGENT_CACHE_LOCK:
             with _RUNS_LOCK:
                 run = _RUNS.get(_RUNS_BY_SESSION.get(session_id) or "")
+                if end_session and run is not None:
+                    run.session_ended = True
             if not end_session and run is not None and not run.finished.is_set():
                 return {"evicted": False}
             entry = _AGENT_CACHE.pop(session_id, None)
