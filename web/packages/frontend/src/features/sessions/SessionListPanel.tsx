@@ -9,6 +9,7 @@ import { openSessionListStream } from '../../api/sse'
 import type { SessionRow } from '../../contracts'
 import { PanelHead, PanelHeadButton } from '../../shell/Sidebar'
 import { cn } from '../../ui/cn'
+import { HelpTip } from '../../ui/Field'
 import { useNewChat } from './useNewChat'
 import { SessionContextMenu } from './SessionContextMenu'
 import { ProjectChip } from './ProjectChip'
@@ -134,6 +135,9 @@ export function SessionListPanel() {
   const searchFilters: api.SessionSearchFilters = { project_id: project === NO_PROJECT ? 'none' : (project ?? undefined), sidebar_source: cliCount > 0 ? source : undefined, include_archived: showArchived }
   const search = useQuery({ queryKey: keys.sessions.search(q, searchFilters), queryFn: () => api.searchSessions(q, searchFilters), enabled: q.length >= 2, staleTime: 15_000 })
   const webuiCount = rows.length - cliCount
+  // TAL-785: the server says when state.db could not serve the Agent sessions; an empty list alone would read as deleted history.
+  const storage = data?.agent_storage
+  const storageNotice = storage?.state === 'corrupt' ? m.agent_storage_corrupt() : storage?.state === 'outdated' ? m.agent_storage_outdated() : null
   const hasUnprojected = useMemo(() => rows.some((r) => !r.project_id), [rows])
   const projectList = projects.data?.projects ?? []
   const filtered = useMemo(() => {
@@ -235,6 +239,11 @@ export function SessionListPanel() {
             {hasUnprojected && <span role="button" tabIndex={0} className={cn('project-chip no-project', project === NO_PROJECT && 'active')} title={m.project_unassigned_hint()} onClick={() => setProject(NO_PROJECT)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setProject(NO_PROJECT) }}>{m.project_unassigned()}</span>}
             {projectList.map((p) => <ProjectChip key={p.project_id} project={p} active={project === p.project_id} onSelect={() => setProject(p.project_id)} onDeleted={() => setProject((cur) => (cur === p.project_id ? null : cur))} />)}
             <span role="button" tabIndex={0} className="project-chip project-chip-add" title={m.project_new()} aria-label={m.project_new()} onClick={() => { const name = window.prompt(m.project_new_prompt()); if (name?.trim()) createProject.mutate(name.trim()) }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { const name = window.prompt(m.project_new_prompt()); if (name?.trim()) createProject.mutate(name.trim()) } }}>+</span>
+          </div>
+        )}
+        {storageNotice && (
+          <div className="session-list-note session-list-error" role="status">
+            <div>{storageNotice}{storage?.reason && <HelpTip label={m.field_help_about({ label: storageNotice })}>{storage.reason}</HelpTip>}</div>
           </div>
         )}
         {list.isPending && <div className="session-list-note" role="status">{m.loading()}</div>}

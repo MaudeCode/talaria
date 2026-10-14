@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Talaria Web says when the Agent's session storage is damaged instead of showing an empty Agent session list and asking you to upgrade hermes-agent.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

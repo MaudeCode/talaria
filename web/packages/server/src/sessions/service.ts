@@ -3,7 +3,7 @@
  * detail payload, list and search, and every mutation with its guards.
  * Runtime concerns owned by other domains arrive through `SessionServiceDeps`.
  */
-import type { ChatReadiness, PendingSteer, RecoveryAudit, SessionNotice, RecoveryRepair, SidecarResult } from '@maudecode/talaria-web-contracts'
+import type { AgentStorage, ChatReadiness, PendingSteer, RecoveryAudit, SessionNotice, RecoveryRepair, SidecarResult } from '@maudecode/talaria-web-contracts'
 import type { RunJournal } from './journal.js'
 import { str } from '../util.js'
 import { randomUUID } from 'node:crypto'
@@ -153,7 +153,7 @@ export interface SessionServiceDeps {
   yolo: { isEnabled: (sid: string) => boolean; set: (sid: string, enabled: boolean) => void }
   /** state.db sidebar rows for a profile (Python `get_cli_sessions`); null when the projection is unavailable. */
   /** `truncated`: source kinds whose rows stopped at the per-kind window on this read (TAL-482). */
-  cliSessions: (profile: string, opts: { sourceFilter: string | null }) => Promise<{ rows: Row[]; truncated: ReadonlySet<string> }>
+  cliSessions: (profile: string, opts: { sourceFilter: string | null }) => Promise<{ rows: Row[]; truncated: ReadonlySet<string>; storage: AgentStorage }>
   /** `cliSessions` read on this thread, for the synchronous single-session lookups. */
   cliSessionsSync: (profile: string, opts: { sourceFilter: string | null }) => { rows: Row[]; truncated: ReadonlySet<string> }
   /** TAL-551: read-only Claude Code transcripts, listed with the CLI rows when both toggles are on. */
@@ -374,7 +374,7 @@ export class SessionService {
 
   /** `stateDbRows` and whether the read succeeded on a state.db whose messages carry ids (TAL-493). */
   stateDbRead(s: Session): StateDbRead {
-    if (str(s.source_tag || s.raw_source || s.session_source).trim().toLowerCase() === 'subagent') return { rows: [], idCapable: false, ok: false }
+    if (str(s.source_tag || s.raw_source || s.session_source).trim().toLowerCase() === 'subagent') return { rows: [], idCapable: false, ok: false, reason: null }
     // TAL-529: after a compression rotation the Agent writes to the continuation, so the read follows the recorded lineage.
     const lineage = s.state_db_lineage?.[0] === s.session_id ? s.state_db_lineage : null
     return stateDbSessionRead(this.stateDbPath(s.profile), s.session_id, { stitch: false, lineage })
@@ -917,7 +917,7 @@ export class SessionService {
 
   // ── list / search ────────────────────────────────────────────────────────
 
-  async list(params: Omit<ListParams, 'activeProfile' | 'isolatedProfileMode' | 'profilesMatch' | 'cliRows' | 'gatewayIdentity' | 'stateDbSources' | 'truncatedSources' | 'pruneOrphanedImports' | 'webuiRows'>): Promise<{ body: ListResponse; etag: string }> {
+  async list(params: Omit<ListParams, 'activeProfile' | 'isolatedProfileMode' | 'profilesMatch' | 'cliRows' | 'gatewayIdentity' | 'stateDbSources' | 'truncatedSources' | 'agentStorage' | 'pruneOrphanedImports' | 'webuiRows'>): Promise<{ body: ListResponse; etag: string }> {
     const activeProfile = this.deps.activeProfile()
     const wantState = params.showCliSessions || params.showCronSessions || params.showWebhookSessions || params.showKanbanSessions
     // Python reads every profile's state.db under all_profiles; this port projects the active profile only.
@@ -926,9 +926,10 @@ export class SessionService {
     const cliRows = cliRead ? [...cliRead.rows, ...claudeCodeRows] : undefined
     const gatewayIdentity = loadGatewaySessionIdentityMap(join(this.deps.profileHome(activeProfile), 'sessions', 'sessions.json'))
     const truncatedSources = cliRead?.truncated
+    const agentStorage = cliRead?.storage
     const webuiRows = allSessions(this.store, { sidebarMetadataOnly: true })
     const lookups = await this.listStateDbLookups(webuiRows, (cliRead?.rows ?? []).map((r) => str(r.session_id)))
-    const payload = buildSessionListPayload(this.store, { ...params, ...(cliRows ? { cliRows } : {}), ...(truncatedSources ? { truncatedSources } : {}), gatewayIdentity, ...lookups, webuiRows, activeProfile, isolatedProfileMode: this.deps.isolatedProfileMode(), profilesMatch: this.deps.profilesMatch })
+    const payload = buildSessionListPayload(this.store, { ...params, ...(cliRows ? { cliRows } : {}), ...(truncatedSources ? { truncatedSources } : {}), ...(agentStorage ? { agentStorage } : {}), gatewayIdentity, ...lookups, webuiRows, activeProfile, isolatedProfileMode: this.deps.isolatedProfileMode(), profilesMatch: this.deps.profilesMatch })
     return sessionListResponse(payload, this.deps.runtime, this.deps.redactEnabled(), this.deps.now(), this.workspaceNames())
   }
 
@@ -1240,7 +1241,7 @@ export class SessionService {
       if (hold) {
         // A failed read cannot say whether a CLI continuation would go too: fail closed. The Agent keeps a state.db for every
         // profile it has run in, so a missing one is never evidence of a session without state.db rows.
-        if (!read.ok) throw new HttpFailure(503, 'The session history could not be read. Please try again in a moment.')
+        if (!read.ok) throw new HttpFailure(503, read.reason ?? 'The session history could not be read. Please try again in a moment.')
         const held = this.heldCut(s, keep, read.rows)
         if (held && held.confirm_token !== hold.confirmToken) return held
       }

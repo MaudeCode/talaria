@@ -1,6 +1,10 @@
 {
   "body": {
     "active_profile": "default",
+    "agent_storage": {
+      "reason": null,
+      "state": "ok"
+    },
     "all_profiles": false,
     "archived_cli_count": 0,
     "archived_count": 0,

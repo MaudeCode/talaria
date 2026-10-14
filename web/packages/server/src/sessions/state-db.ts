@@ -8,6 +8,7 @@
 import { existsSync, openSync, readSync, closeSync, statSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { Worker } from 'node:worker_threads'
+import type { AgentStorage } from '@maudecode/talaria-web-contracts'
 import { str } from '../util.js'
 import { stateDbMessageFingerprint } from './state-db-identity.js'
 import { MESSAGING_SOURCES } from './source-kind.js'
@@ -211,12 +212,44 @@ export function openStateDbReadonly(dbPath: string, busyTimeoutMs = STATE_DB_BUS
   return db
 }
 
+/** The table's columns; a failed read throws, so an unreadable database is never mistaken for an older schema (TAL-785). */
 function tableColumns(db: DatabaseSync, table: string): Set<string> {
+  return new Set((db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((r) => r.name))
+}
+
+export const AGENT_STORAGE_OK: AgentStorage = Object.freeze({ state: 'ok', reason: null })
+
+/**
+ * The corrupt-storage reason when `error` is SQLite's `SQLITE_CORRUPT` or `SQLITE_NOTADB` (the Agent's
+ * `hermes_state_health`), else null. The message is matched too, since a listing worker failure crosses the thread
+ * boundary as its message alone.
+ */
+export function stateDbCorruptReason(error: unknown): string | null {
+  const code = (error as { errcode?: unknown } | null)?.errcode
+  const message = error instanceof Error ? error.message : String(error)
+  const corrupt = (typeof code === 'number' && [11, 26].includes(code & 0xff)) || /malformed|not a database/i.test(message)
+  return corrupt ? `Agent session storage (state.db) is damaged: ${message}. Agent sessions are unavailable until it is repaired or restored from a backup.` : null
+}
+
+/**
+ * TAL-785: whether `state.db` can serve the session list: `corrupt` when SQLite reports the file damaged, `outdated`
+ * when a readable database has no `sessions.source` column. A missing file, or any other failure, is `ok`; the listing
+ * logs that failure itself. Full-text index damage is never probed, so it stays `ok`, as the Agent treats it.
+ */
+export function stateDbStorage(dbPath: string): AgentStorage {
+  if (!existsSync(dbPath)) return AGENT_STORAGE_OK
   try {
-    return new Set((db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((r) => r.name))
-  } catch {
-    return new Set()
+    const db = openStateDbReadonly(dbPath)
+    try {
+      if (!tableColumns(db, 'sessions').has('source')) return { state: 'outdated', reason: `state.db has no 'source' column (older hermes-agent?). Agent sessions unavailable. Upgrade hermes-agent to fix this.` }
+    } finally {
+      db.close()
+    }
+  } catch (error) {
+    const reason = stateDbCorruptReason(error)
+    if (reason) return { state: 'corrupt', reason }
   }
+  return AGENT_STORAGE_OK
 }
 
 export interface ReadRowsOptions {
@@ -545,6 +578,7 @@ export function cheapChangeFingerprint(dbPath: string, onError?: (reason: string
 type ListingCall =
   | { op: 'rows'; dbPath: string; opts: Omit<ReadRowsOptions, 'log'> }
   | { op: 'fingerprint'; dbPath: string }
+  | { op: 'storage'; dbPath: string }
   | { op: 'sources' | 'existing'; dbPath: string; ids: string[] }
   | { op: 'crash' }
 /** A request to the listing worker; `delayMs` carries the test read delay across the thread boundary. */
@@ -620,6 +654,11 @@ export async function cheapChangeFingerprintAsync(dbPath: string, onError?: (rea
   }
   for (const [reason, message] of reply.failures) onError?.(reason, new Error(message))
   return reply.value as string | null
+}
+
+/** `stateDbStorage` on the listing worker; a worker failure says nothing about the storage, so it is `ok`. */
+export async function stateDbStorageAsync(dbPath: string): Promise<AgentStorage> {
+  try { return (await callListingWorker({ op: 'storage', dbPath })).value as AgentStorage } catch { return AGENT_STORAGE_OK }
 }
 
 /** `stateDbSessionSources` on the listing worker; a worker failure is an unreadable state.db (null), so owners stay locked. */
@@ -772,7 +811,8 @@ function replayIdentities(db: DatabaseSync, chain: string[], rows: Dict[], avail
   return identities
 }
 
-export interface StateDbRead { rows: Dict[]; idCapable: boolean; ok: boolean }
+/** `reason`: why a failed read failed, when the storage is corrupt (TAL-785). */
+export interface StateDbRead { rows: Dict[]; idCapable: boolean; ok: boolean; reason: string | null }
 
 export function stateDbSessionMessages(dbPath: string, sid: string, opts: { stitch?: boolean } = {}): Dict[] {
   return stateDbSessionRead(dbPath, sid, opts).rows
@@ -783,7 +823,7 @@ export function stateDbSessionMessages(dbPath: string, sid: string, opts: { stit
  * (TAL-493: an empty id-capable read is a baseline of 0; a missing database or a failed read says nothing).
  */
 export function stateDbSessionRead(dbPath: string, sid: string, opts: { stitch?: boolean; lineage?: string[] | null } = {}): StateDbRead {
-  const none = { rows: [], idCapable: false, ok: false }
+  const none: StateDbRead = { rows: [], idCapable: false, ok: false, reason: null }
   const id = sid.trim()
   if (!id || !existsSync(dbPath)) return none
   let db: DatabaseSync
@@ -851,9 +891,9 @@ export function stateDbSessionRead(dbPath: string, sid: string, opts: { stitch?:
       const generation = stateDbGeneration(dbPath)
       for (const m of projected) m._state_db_generation = generation
     }
-    return { rows: projected, idCapable: hasId, ok: true }
-  } catch {
-    return none
+    return { rows: projected, idCapable: hasId, ok: true, reason: null }
+  } catch (error) {
+    return { ...none, reason: stateDbCorruptReason(error) }
   } finally {
     db.close()
   }

@@ -2017,6 +2017,8 @@
 	"clear_conversation_filter": "Clear conversation filter",
 	"no_matching_sessions": "No matching conversations",
 	"no_sessions_yet": "No conversations yet",
+	"agent_storage_corrupt": "Agent session storage is damaged",
+	"agent_storage_outdated": "Upgrade hermes-agent to list Agent sessions",
 	"status_streaming": "Streaming",
 	"onboarding_password_summary_set": "Will be set",
 	"all_profiles": "All profiles",

@@ -2129,6 +2129,34 @@
                     "webhook_sessions_truncated": {
                       "type": "boolean"
                     },
+                    "agent_storage": {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "enum": [
+                            "ok",
+                            "corrupt",
+                            "outdated"
+                          ],
+                          "type": "string"
+                        },
+                        "reason": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "reason"
+                      ],
+                      "description": "Agent session storage health; a degraded state explains an empty or missing Agent session list."
+                    },
                     "archived_limit": {
                       "anyOf": [
                         {
@@ -2165,7 +2193,8 @@
                     "scheduled_session_count",
                     "scheduled_sessions_truncated",
                     "webhook_session_count",
-                    "webhook_sessions_truncated"
+                    "webhook_sessions_truncated",
+                    "agent_storage"
                   ],
                   "additionalProperties": {}
                 }
