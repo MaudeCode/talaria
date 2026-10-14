@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -56,6 +57,42 @@ describe('latestCronSessionInfo', () => {
     db.close()
     expect(latestCronSessionInfo(path, ['x'], ['x']).size).toBe(0)
   })
+})
+
+describe('reads during another process\'s DELETE-journal commit (TAL-890)', () => {
+  let dir: string
+  beforeAll(() => { dir = realpathSync(mkdtempSync(join(tmpdir(), 'state-db-commit-'))) })
+  afterAll(() => { rmSync(dir, { recursive: true, force: true }) })
+
+  /** Whether another connection holds a lock that keeps readers out of `path` right now. */
+  function readersLockedOut(path: string): boolean {
+    const probe = new DatabaseSync(path, { readOnly: true, timeout: 0 })
+    try { probe.prepare('SELECT 1 FROM sessions').get(); return false } catch (error) { if (String(error).includes('database is locked')) return true; throw error } finally { probe.close() }
+  }
+
+  /** Hold an exclusive write transaction on `path` from a second process for `ms`; resolves once readers are locked out, with the commit still pending. */
+  async function holdExclusiveCommit(path: string, ms: number): Promise<{ committed: Promise<void> }> {
+    const script = `const { DatabaseSync } = require('node:sqlite'); const db = new DatabaseSync(process.argv[1], { timeout: 5000 });
+      db.exec('BEGIN EXCLUSIVE'); db.exec("UPDATE sessions SET title = 'held'");
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(process.argv[2])); db.exec('COMMIT'); db.close()`
+    const holder = spawn(process.execPath, ['-e', script, path, String(ms)], { stdio: 'inherit' })
+    const exited = new Promise<void>((resolve, reject) => { holder.on('exit', (code) => { if (code === 0) resolve(); else reject(new Error(`holder exited ${String(code)}`)) }) })
+    await vi.waitFor(() => { expect(readersLockedOut(path)).toBe(true) }, { timeout: 10_000, interval: 5 })
+    return { committed: exited }
+  }
+
+  it.each([
+    ['readImportableAgentSessionRows', (path: string): unknown => readImportableAgentSessionRows(path).map((r) => r.id), ['cli-1']],
+    ['stateDbHasSession', (path: string): unknown => stateDbHasSession(path, 'cli-1'), true],
+  ] as const)('%s waits out a 1.5 s exclusive commit', async (name, read, expected) => {
+    const path = join(dir, `${name}.db`)
+    const db = createStateDb(path)
+    db.exec('PRAGMA journal_mode=DELETE')
+    insertSession(db, { id: 'cli-1', source: 'cli', started_at: 1000, messages: [['user', 1000.1], ['assistant', 1000.2]] })
+    db.close()
+    const { committed } = await holdExclusiveCommit(path, 1500)
+    try { expect(read(path)).toEqual(expected) } finally { await committed }
+  }, 15_000)
 })
 
 describe('state.db projection', () => {

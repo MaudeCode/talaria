@@ -17,7 +17,10 @@ import { looksLikeDefaultCliTitle, normalizeSourceName } from './titles.js'
 export type Dict = Record<string, unknown>
 
 export const CLI_MIN_UNTITLED_USER_MESSAGE_COUNT = 2
-const STATE_DB_BUSY_TIMEOUT_MS = 500
+/** The Agent's `_READ_BUSY_TIMEOUT_S` (TAL-890): a DELETE-journal commit by another process blocks readers across its fsyncs. */
+const STATE_DB_BUSY_TIMEOUT_MS = 5000
+/** The gateway watcher's change check stays cheap; a lock there fails over to a full projection. */
+const STATE_DB_FINGERPRINT_BUSY_TIMEOUT_MS = 500
 
 const SOURCE_LABELS: Record<string, string> = {
   acp: 'ACP', api_server: 'API', cli: 'CLI', cron: 'Cron', discord: 'Discord', email: 'Email', kanban: 'Kanban', wecom: 'WeCom', wecom_callback: 'WeCom Callback',
@@ -554,7 +557,7 @@ export function stateDbHasSession(dbPath: string, sid: string): boolean {
 export function cheapChangeFingerprint(dbPath: string, onError?: (reason: string, error: unknown) => void): string | null {
   try {
     const parts: unknown[] = []
-    const db = openStateDbReadonly(dbPath)
+    const db = openStateDbReadonly(dbPath, STATE_DB_FINGERPRINT_BUSY_TIMEOUT_MS)
     try {
       for (const table of ['sessions', 'messages']) {
         try { parts.push((db.prepare(`SELECT MAX(rowid) AS m FROM ${table}`).get() as { m: number | null } | undefined)?.m ?? null) } catch { parts.push(null) }
