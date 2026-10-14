@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Talaria Web chats and cron runs on a named profile now load that profile's plugin secret sources, such as a third-party vault, instead of failing with no usable credentials.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

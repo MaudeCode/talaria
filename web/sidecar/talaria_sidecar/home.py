@@ -140,6 +140,13 @@ def _secret_scope(home: Path):
         return
     if named:
         activate_multi_profile_hosting()
+        # Plugin managers are per home: load this profile's plugins so the secret sources they register exist.
+        try:
+            from hermes_cli.plugins import discover_plugins
+
+            discover_plugins()
+        except Exception:  # noqa: BLE001 - a broken plugin must not block the call, as in the Agent's own discovery
+            log.debug("Plugin discovery failed for %s", home, exc_info=True)
         hydrate_profile_secret_sources(home)
         secrets = build_profile_secret_scope(home)
     else:
