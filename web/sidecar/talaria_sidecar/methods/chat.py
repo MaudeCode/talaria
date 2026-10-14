@@ -865,9 +865,10 @@ def drain_agents(timeout: float = _AGENT_RELEASE_TIMEOUT) -> None:
 
 
 def refresh_profile_agents_mcp_tools(home) -> None:
-    """MCP reload: republish the live registry's tools (a same-name schema change included) to the profile's cached
-    agents, like the gateway's ``_mcp_reload_refresh_cached_agents``. Each keeps its build-time toolset selection; one
-    agent's failure is logged and the rest still refresh."""
+    """MCP reload: republish the live registry's tools to the profile's cached agents, like the gateway's
+    ``_mcp_reload_refresh_cached_agents``. ``content_aware`` publishes a same-name schema change on every supported
+    Agent (0.22.0 implies it for an explicit reload, 0.21.x does not). Each agent keeps its build-time toolset
+    selection; one agent's failure is logged and the rest still refresh."""
     from tools.mcp_tool_agent import refresh_agent_mcp_tools
 
     target = os.path.realpath(home)
@@ -876,7 +877,7 @@ def refresh_profile_agents_mcp_tools(home) -> None:
             if os.path.realpath(entry[2]) != target:
                 continue
             try:
-                refresh_agent_mcp_tools(entry[0], quiet_mode=True)
+                refresh_agent_mcp_tools(entry[0], quiet_mode=True, content_aware=True)
             except Exception:  # noqa: BLE001
                 log.warning("Failed to refresh MCP tools for session %s", session_id, exc_info=True)
 
