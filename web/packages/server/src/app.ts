@@ -3,7 +3,9 @@
  * sandboxed-origin rejection, the auth gate, the startup gate, SPA/static,
  * then the oRPC router; JSON 404 for anything else and JSON 500 on faults.
  */
-import type { IncomingHttpHeaders, IncomingMessage, OutgoingHttpHeaders, ServerResponse } from 'node:http'
+import { ServerResponse, type IncomingHttpHeaders, type IncomingMessage, type OutgoingHttpHeaders } from 'node:http'
+import type { Socket } from 'node:net'
+import type { Duplex } from 'node:stream'
 import { gzipSync } from 'node:zlib'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -13,6 +15,7 @@ import { OpenAPIHandler } from '@orpc/openapi/node'
 import { sessionsRouter } from './api/sessions-router.js'
 import { gitRouter } from './api/git-router.js'
 import { handleWorkspacePreview, RAW_GET_ROUTES, RAW_POST_ROUTES, runRaw } from './api/raw-routes.js'
+import { rememberUpgrade } from './api/transcribe-stream.js'
 import { PREVIEW_PREFIX } from './workspace/preview.js'
 import { chatRouter } from './api/chat-router.js'
 import { settingsRouter } from './api/settings-router.js'
@@ -50,6 +53,8 @@ export type RequestHandler = (req: IncomingMessage, res: ServerResponse) => Prom
 export interface App {
   deps: AppDeps
   handler: RequestHandler
+  /** An HTTP upgrade runs the same pipeline as a request; only a WebSocket route takes the socket over. */
+  upgrade: (req: IncomingMessage, socket: Duplex, head: Buffer) => Promise<void>
 }
 
 function sendBytes(ctx: RequestContext, body: Buffer, contentType: string, opts: { cacheControl: string; headers?: HeaderMap; gz?: Buffer | null; etag?: string }): void {
@@ -331,6 +336,17 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
     return deps.requestScope.run(ctx, () => dispatch(ctx))
   }
 
+  const upgrade = (req: IncomingMessage, socket: Duplex, head: Buffer) => {
+    socket.on('error', () => { socket.destroy() })
+    const res = new ServerResponse(req)
+    res.assignSocket(socket as Socket)
+    // Any answer other than the upgrade itself ends the connection.
+    res.shouldKeepAlive = false
+    res.on('finish', () => { socket.end() })
+    rememberUpgrade(req, socket, head)
+    return handler(req, res)
+  }
+
   const dispatch = async (ctx: RequestContext): Promise<void> => {
     const { req, res } = ctx
     deps.stats.requestsTotal += 1
@@ -467,7 +483,7 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
       releaseWrite?.()
     }
   }
-  return { deps, handler }
+  return { deps, handler, upgrade }
 }
 
 function lowerKeys(headers: HeaderMap): Record<string, string | string[]> {

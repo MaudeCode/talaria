@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Web dictation shows your words as you speak when the profile turns on live speech-to-text (`stt.streaming`) with a provider that supports it, and still transcribes the recording if the live stream fails.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

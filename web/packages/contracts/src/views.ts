@@ -512,7 +512,10 @@ export const SessionNewRequestSchema = z.looseObject({
   title: z.string().optional(), workspace: z.string().optional(), workspace_inherited_from_prev_session: z.boolean().optional(), model: z.string().nullable().optional(), model_provider: z.string().nullable().optional(),
   profile: z.string().nullable().optional(), prev_session_id: z.string().optional(), project_id: z.string().nullable().optional(), worktree: Json.optional(), enabled_toolsets: z.array(z.string()).nullable().optional(), parent_session_id: z.string().optional(),
 })
-export const TranscribeCapabilitySchema = z.looseObject({ ok: z.literal(true), available: z.boolean(), provider: z.string() })
+/** `streaming` (TAL-802): live dictation over `TRANSCRIBE_STREAM_PATH` would open for this profile (`stt.streaming` on, a live provider wire). */
+export const TranscribeCapabilitySchema = z.looseObject({ ok: z.literal(true), available: z.boolean(), provider: z.string(), streaming: z.boolean() })
+/** `POST /api/transcribe`: the recording's transcript. */
+export const TranscribeResponseSchema = z.looseObject({ ok: z.literal(true), transcript: z.string() })
 
 // ── settings, profiles, models, providers ───────────────────────────────
 

@@ -6,7 +6,54 @@
       },
       "result": {
         "available": false,
-        "provider": "none"
+        "provider": "none",
+        "streaming": false
+      }
+    }
+  ],
+  "stt.stream": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "sample_rate": 48000
+      },
+      "result": {
+        "transcript": "final 3200 bytes",
+        "provider": "fake-live"
+      },
+      "stream": [
+        {
+          "event": "ready",
+          "data": {
+            "stream_id": "q0N8m3V1xY2zA4bC5dE6fG"
+          }
+        },
+        {
+          "event": "partial",
+          "data": {
+            "text": "heard 3200 bytes"
+          }
+        }
+      ]
+    }
+  ],
+  "stt.stream_audio": [
+    {
+      "params": {
+        "stream_id": "q0N8m3V1xY2zA4bC5dE6fG",
+        "audio_b64": "EAAQABAAEAA="
+      },
+      "result": {
+        "ok": true
+      }
+    },
+    {
+      "params": {
+        "stream_id": "q0N8m3V1xY2zA4bC5dE6fG",
+        "end": true
+      },
+      "result": {
+        "ok": true
       }
     }
   ]

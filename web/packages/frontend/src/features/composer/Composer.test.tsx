@@ -14,11 +14,13 @@ import { endFirstSend, getFirstSend } from '../chat/firstSend'
 import { returnToComposer } from './composerReturn'
 import { showToast } from '../toast/toast'
 
-vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await importOriginal()), saveDraft: vi.fn(), fetchDraft: vi.fn(), steerChat: vi.fn(), startChat: vi.fn(), startBackground: vi.fn(), fetchBackgroundTasks: vi.fn(), askBtw: vi.fn(), fetchCommands: vi.fn(), execCommand: vi.fn() }))
+vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await importOriginal()), saveDraft: vi.fn(), fetchDraft: vi.fn(), steerChat: vi.fn(), startChat: vi.fn(), startBackground: vi.fn(), fetchBackgroundTasks: vi.fn(), askBtw: vi.fn(), fetchCommands: vi.fn(), execCommand: vi.fn(), fetchTranscribeCapability: vi.fn() }))
 // jsdom has no EventSource: a followed turn opens a stream handle that does nothing.
 vi.mock(import('../toast/toast'), async (importOriginal) => ({ ...(await importOriginal()), showToast: vi.fn() }))
 vi.mock(import('../../api/sse'), async (importOriginal) => ({ ...(await importOriginal()), openChatStream: vi.fn(() => ({ close: () => undefined, readyState: () => 0 })) }))
+vi.mock(import('../voice/liveDictation'), async (importOriginal) => ({ ...(await importOriginal()), dictateLive: vi.fn(), liveDictationSupported: vi.fn(() => true) }))
 import { Composer } from './Composer'
+import { dictateLive } from '../voice/liveDictation'
 
 const noop = (): void => undefined
 function renderComposer(session: Session | null, live: LiveTurn | null = null, onQueue: (entry: QueuedTurn) => void = noop, settings?: Settings, onEnsureSession: () => Promise<Session> = () => Promise.resolve(session!), onLocalCommand: (name: string, args: string) => Promise<boolean> = () => Promise.resolve(false)) {
@@ -44,9 +46,39 @@ describe('Composer', () => {
     vi.mocked(api.fetchCommands).mockReset().mockResolvedValue({ commands: [] })
     vi.mocked(api.saveDraft).mockReset().mockResolvedValue({ ok: true, draft: { text: '', files: [] }, draft_version: null })
     vi.mocked(api.fetchDraft).mockReset().mockResolvedValue({ draft: { text: '', files: [] }, draft_version: null })
+    vi.mocked(api.fetchTranscribeCapability).mockReset().mockResolvedValue({ ok: true, available: true, provider: 'openai', streaming: false })
+    vi.mocked(dictateLive).mockReset()
     // jsdom has no matchMedia; the composer asks whether it is on a phone-width viewport.
     window.matchMedia = vi.fn(() => ({ matches: false, addEventListener: noop, removeEventListener: noop })) as unknown as typeof window.matchMedia
     globalThis.ResizeObserver = class { observe = noop; unobserve = noop; disconnect = noop }
+  })
+
+  it('dictates through the live stream when the server reports streaming: partials, then the final (TAL-802)', async () => {
+    vi.mocked(api.fetchTranscribeCapability).mockResolvedValue({ ok: true, available: true, provider: 'openai', streaming: true })
+    const stop = vi.fn()
+    let onText: (text: string) => void = noop
+    let onEnd: (error: unknown) => void = noop
+    vi.mocked(dictateLive).mockImplementation((text, end) => { onText = text; onEnd = end; return { stop, cancel: vi.fn() } })
+    renderComposer({ ...writable, is_streaming: false })
+    const box = screen.getByRole('textbox')
+    await userEvent.type(box, 'Note:')
+    // jsdom has no SpeechRecognition: the control exists only because the server offers the stream.
+    await userEvent.click(await screen.findByRole('button', { name: 'Dictate' }))
+    act(() => { onText('Ship the') })
+    expect(box).toHaveValue('Note: Ship the')
+    await userEvent.click(screen.getByRole('button', { name: 'Stop dictation' }))
+    expect(stop).toHaveBeenCalledOnce()
+    act(() => { onText('Ship the release notes.'); onEnd(null) })
+    expect(box).toHaveValue('Note: Ship the release notes.')
+    expect(screen.getByRole('button', { name: 'Dictate' })).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('keeps the browser recognizer path when the server reports no streaming (TAL-802)', async () => {
+    renderComposer({ ...writable, is_streaming: false })
+    await waitFor(() => { expect(api.fetchTranscribeCapability).toHaveBeenCalled() })
+    // jsdom has no SpeechRecognition, so without the stream there is no dictation control at all.
+    expect(screen.queryByRole('button', { name: 'Dictate' })).toBeNull()
+    expect(dictateLive).not.toHaveBeenCalled()
   })
 
   it('offers no send, command or session controls for a session the server marks read-only (TAL-312)', () => {

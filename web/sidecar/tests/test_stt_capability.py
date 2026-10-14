@@ -32,17 +32,17 @@ COMMAND_PROVIDER = "stt:\n  provider: mycmd\n  providers:\n    mycmd:\n      typ
 @pytest.mark.parametrize(
     ("config", "expected"),
     [
-        ("stt:\n  provider: local_command\n", {"available": True, "provider": "local_command"}),
-        ("stt:\n  provider: deepinfra\n", {"available": True, "provider": "deepinfra"}),
-        (COMMAND_PROVIDER, {"available": True, "provider": "mycmd"}),
+        ("stt:\n  provider: local_command\n", {"available": True, "provider": "local_command", "streaming": False}),
+        ("stt:\n  provider: deepinfra\n", {"available": True, "provider": "deepinfra", "streaming": False}),
+        (COMMAND_PROVIDER, {"available": True, "provider": "mycmd", "streaming": False}),
         # The Agent passes an unknown name through; stt.transcribe fails it as not registered.
-        ("stt:\n  provider: not-registered\n", {"available": False, "provider": "not-registered"}),
+        ("stt:\n  provider: not-registered\n", {"available": False, "provider": "not-registered", "streaming": False}),
         ("", None),  # auto-detect: whatever the Agent picks
     ],
 )
 def test_capability_matches_agent_provider(hermes_home, config, expected):
     (hermes_home / "config.yaml").write_text(config)
-    expected = expected or {"available": True, "provider": agent_provider(hermes_home)}
+    expected = expected or {"available": True, "provider": agent_provider(hermes_home), "streaming": False}
     sidecar = SidecarProcess(hermes_home, env=STT_ENV)
     try:
         result = sidecar.result("stt.capability", {"profile_home": str(hermes_home)})

@@ -1,0 +1,10 @@
+{
+  "start": { "sample_rate": 48000 },
+  "end": { "eos": true },
+  "events": [
+    { "type": "partial", "text": "Ship the" },
+    { "type": "partial", "text": "Ship the release notes" },
+    { "type": "final", "transcript": "Ship the release notes.", "provider": "openai" }
+  ],
+  "unavailable": { "type": "error", "message": "Live transcription is unavailable for the configured provider" }
+}

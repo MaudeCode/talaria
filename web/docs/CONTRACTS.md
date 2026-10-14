@@ -38,7 +38,8 @@ is edited.
   run-journal replay source, `session_snapshot` fallback, the session detail
   `transcript_seq` cursor, and persisted tool-call outcomes.
 - [`docs/sse-streams.md`](sse-streams.md): every SSE endpoint, approval and
-  clarify prompts, the merged sidebar stream, and heartbeats.
+  clarify prompts, the merged sidebar stream, heartbeats, and the live
+  dictation WebSocket.
 - [`docs/remote-workspaces.md`](remote-workspaces.md): remote terminal
   profiles (SSH, Docker), target-side path preservation, and the
   `profileSupportsLocalIo` host-isolation gate.

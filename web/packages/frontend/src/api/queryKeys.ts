@@ -12,6 +12,7 @@ export const keys = {
   providerCostHistory: ['providers', 'cost-history', 'openrouter'] as const,
   personalities: ['personalities'] as const,
   auxiliaryModels: ['models', 'auxiliary'] as const,
+  transcribeCapability: ['transcribe', 'capability'] as const,
   sessions: {
     all: ['sessions'] as const,
     list: (params: Record<string, string | boolean | number | undefined>) => ['sessions', 'list', params] as const,

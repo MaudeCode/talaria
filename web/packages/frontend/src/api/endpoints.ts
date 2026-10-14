@@ -9,7 +9,7 @@ import { postForm } from './client'
 import { loadedBuild, tabId } from '../app/tabBuild'
 import { UploadResponseSchema, type ChatStartRequest, type SessionId, type SessionNewRequestSchema, type SteerRequestSchema, type ApprovalRespondRequestSchema, type ClarifyRespondRequestSchema, type DraftRequestSchema } from '../contracts'
 import type { z } from 'zod'
-import type { SteerSendNowRequestSchema, SteerWithdrawRequest } from '@maudecode/talaria-web-contracts'
+import { TranscribeResponseSchema, type SteerSendNowRequestSchema, type SteerWithdrawRequest } from '@maudecode/talaria-web-contracts'
 
 const qs = (params: Record<string, string | number | boolean | undefined | null>) => {
   const p = new URLSearchParams()
@@ -127,6 +127,13 @@ export const uploadFile = (session_id: SessionId, file: File) => {
   form.set('session_id', session_id)
   form.set('file', file, file.name)
   return postForm(`api/upload${qs({ session_id })}`, form, UploadResponseSchema, { timeoutMs: 120_000 })
+}
+// TAL-802: live dictation is offered when the server reports `streaming`; a recording is the fallback.
+export const fetchTranscribeCapability = () => orpc().transcribeCapability()
+export const transcribeRecording = (audio: Blob, filename: string) => {
+  const form = new FormData()
+  form.set('file', audio, filename)
+  return postForm('api/transcribe', form, TranscribeResponseSchema, { timeoutMs: 120_000 })
 }
 export const rollbackUpload = (session_id: SessionId, rollback_tokens: string[]) => orpc().upload.rollback({ session_id, rollback_tokens })
 export const goalCommand = (session_id: SessionId, args: string) => orpc().goal({ session_id, args })

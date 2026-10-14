@@ -11,6 +11,7 @@ import type { App } from './app.js'
 import type { ServerConfig } from './config.js'
 import { fixCredentialPermissions, warnUnauthenticatedBind } from './startup.js'
 import { stopStateDbWorker } from './sessions/state-db.js'
+import { closeTranscribeStreams } from './api/transcribe-stream.js'
 
 export async function isAlreadyServing(host: string, port: number): Promise<boolean> {
   const probeHost = ['0.0.0.0', '', '::'].includes(host) ? '127.0.0.1' : host
@@ -67,6 +68,7 @@ export async function startServer(app: App, config: ServerConfig, opts: { log?: 
   // Bounds receiving the request (headers and body) only; a streamed response outlives it. A client that drips or
   // stalls an in-limit body therefore holds a socket for at most this long (Python's handler timeout was 30 s).
   server.requestTimeout = REQUEST_TIMEOUT_MS
+  server.on('upgrade', (req: Parameters<App['upgrade']>[0], socket: Parameters<App['upgrade']>[1], head: Buffer) => { void app.upgrade(req, socket, head) })
   server.on('connection', (socket) => {
     socket.setNoDelay(true)
     socket.setKeepAlive(true, 10_000)
@@ -89,6 +91,8 @@ export async function startServer(app: App, config: ServerConfig, opts: { log?: 
     await new Promise<void>((resolve) => {
       server.close(() => { resolve() })
       server.closeAllConnections()
+      // Upgraded sockets left the HTTP server's connection list.
+      closeTranscribeStreams()
     })
     // A retention sweep finishes its current file step before the process exits.
     await hygiene
