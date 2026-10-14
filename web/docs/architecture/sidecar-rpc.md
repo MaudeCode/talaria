@@ -142,7 +142,7 @@ under Hermes Agent's context-local home override (`talaria_sidecar/home.py`).
 | `runtime` | `handshake`, `status`, `ensure_current`, `shutdown` | |
 | `goals` | `get`, `command`, `snapshot`, `restore`, `evaluate` | |
 | `commands` | `registry`, `exec`, `expand_prompt`, `bundles`, `bundle_resolve`, `moa_preset` | |
-| `plugins` | `providers`, `list` | |
+| `plugins` | `providers`, `list`, `settings`, `settings_save` | |
 | `kanban` | `board`, `boards`, `create_board`, `update_board`, `delete_board`, `switch_board`, `task`, `create_task`, `patch_task`, `task_action`, `comment`, `link`, `unlink`, `events`, `config`, `stats`, `assignees`, `task_log`, `bulk`, `dispatch` | |
 | `state_db` | `sync_start`, `sync_usage`, `sync_title`, `delete_cli_session`, `append_message` | |
 | `profiles` | `list`, `create`, `delete`, `runtime_env`, `skills_stats` | |

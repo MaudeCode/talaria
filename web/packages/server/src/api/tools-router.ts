@@ -20,6 +20,9 @@ import { commandCatalog } from '../tools/commands.js'
 import { agentHealth, applyDashboardConfig, dashboardConfig, dashboardStatus, gatewayStatus, parseDashboardConfig, readLogTail, remoteGatewayBaseUrl, systemHealth } from '../tools/health.js'
 import { restartGateway } from '../tools/gateway-restart.js'
 import { projectOsDashboard } from '../tools/project-os.js'
+import { PluginSettingsInvalid, planPluginSettings } from '../tools/plugin-settings.js'
+import { RuntimeCredentialError, writeRuntimeCredential } from '../providers/runtime-env.js'
+import { EnvWriteError } from '../providers/env-file.js'
 import { loadGatewaySessionIdentityMap } from '../sessions/list.js'
 import { gitBadge } from '../workspace/git.js'
 import { sanitizeError } from '../workspace/media.js'
@@ -62,6 +65,12 @@ function commandFailure(error: unknown, notFound: string, message: string): neve
   if (error instanceof SidecarError && error.condition === notFound) throw new HttpError(404, message)
   if (error instanceof SidecarError && (error.condition === 'invalid_params' || error.code === -32602)) throw new HttpError(400, error.message)
   return failure(error)
+}
+
+/** TAL-806: the active profile's plugins that declare settings; none on an Agent without the settings module. */
+async function pluginSettingsList(ctx: RequestContext) {
+  const result = await runningSidecar(ctx).call('plugins.settings', { profile_home: home(ctx) })
+  return result.plugins
 }
 
 const health = (ctx: RequestContext): Promise<Dict> => agentHealth({ env: ctx.deps.config.env, hermesHome: ctx.deps.config.hermesHome, profileHome: () => home(ctx), fetch: () => ctx.deps.fetch, now: ctx.deps.nowSeconds })
@@ -459,17 +468,58 @@ export const toolsRouter = os.router({
   plugins: os.plugins.handler(({ context: { ctx } }) => run(async () => {
     const sidecar = ctx.deps.sidecar()
     const hooks = ['pre_tool_call', 'post_tool_call', 'pre_llm_call', 'post_llm_call']
-    if (!sidecar) return { plugins: [], empty: true, supported_hooks: hooks, read_only: true as const, unavailable: true }
+    const editable = await sessionCanManageServer(ctx, await ensureTrustedAuthSession(ctx))
+    if (!sidecar) return { plugins: [], empty: true, supported_hooks: hooks, read_only: true, unavailable: true }
     try {
       const config: Dict = await ctx.deps.agentConfig.read(home(ctx)).catch(() => ({}))
       const selected: Record<string, string> = {}
       for (const [k, v] of Object.entries(config)) if (v && typeof v === 'object' && !Array.isArray(v) && typeof (v as Dict).provider === 'string') selected[k] = str((v as Dict).provider).trim().toLowerCase()
       const result = await sidecar.call('plugins.list', { profile_home: home(ctx), selected_providers: selected })
-      return { plugins: result.plugins, empty: result.plugins.length === 0, supported_hooks: result.supported_hooks, read_only: true as const }
+      // A settings failure leaves the list itself readable.
+      const declared = await pluginSettingsList(ctx).catch((error: unknown) => { ctx.deps.log(`[plugins] settings fields failed: ${str((error as Error).message)}`); return [] })
+      const settings = new Map(declared.map((entry) => [entry.key, entry.fields]))
+      const plugins = result.plugins.map((plugin) => settings.has(plugin.key) ? { ...plugin, settings: settings.get(plugin.key) } : plugin)
+      return { plugins, empty: plugins.length === 0, supported_hooks: result.supported_hooks, read_only: !editable }
     } catch (error) {
       ctx.deps.log(`[plugins] visibility payload failed: ${str((error as Error).message)}`)
-      return { plugins: [], empty: true, supported_hooks: hooks, read_only: true as const, unavailable: true }
+      return { plugins: [], empty: true, supported_hooks: hooks, read_only: true, unavailable: true }
     }
+  })),
+  pluginSettings: os.pluginSettings.handler(({ input, context: { ctx } }) => run(async () => {
+    const sidecar = runningSidecar(ctx)
+    const fields = (await pluginSettingsList(ctx)).find((entry) => entry.key === input.key)?.fields
+    if (!fields) throw new HttpError(404, `Plugin '${input.key}' declares no settings`)
+    let plan
+    try {
+      plan = planPluginSettings(fields, input.values ?? {}, input.secrets ?? {})
+    } catch (error) {
+      if (error instanceof PluginSettingsInvalid) throw new HttpError(400, error.message)
+      throw error
+    }
+    let result = { key: input.key, written: [] as string[], fields }
+    if (Object.keys(plan.values).length) {
+      try {
+        result = await sidecar.call('plugins.settings_save', { profile_home: home(ctx), key: input.key, values: plan.values })
+      } catch (error) {
+        if (error instanceof SidecarError && error.condition === 'plugin_settings_managed') throw new HttpError(403, error.message, { condition: error.condition })
+        if (error instanceof SidecarError && error.condition === 'plugin_not_found') throw new HttpError(404, error.message)
+        if (error instanceof SidecarError && error.code === -32602) throw new HttpError(400, error.message)
+        throw error
+      }
+    }
+    // Secrets never reach config.yaml: each goes to the profile `.env` under the name the manifest field declares.
+    for (const [envVar, value] of Object.entries(plan.secrets)) {
+      try {
+        await writeRuntimeCredential({ env: ctx.deps.config.env, sidecar: ctx.deps.sidecar, log: ctx.deps.log }, ctx.deps.isRootProfile(activeProfileName(ctx)), home(ctx), envVar, value)
+      } catch (error) {
+        if (error instanceof RuntimeCredentialError) throw new HttpError(503, error.message)
+        if (error instanceof EnvWriteError) throw new HttpError(error.status, `Failed to save ${envVar}: ${error.message}`, { condition: error.condition })
+        throw error
+      }
+    }
+    const written = [...result.written, ...fields.filter((field) => field.env && field.env in plan.secrets).map((field) => field.key)]
+    const settings = Object.keys(plan.secrets).length ? ((await pluginSettingsList(ctx)).find((entry) => entry.key === result.key)?.fields ?? result.fields) : result.fields
+    return { ok: true as const, key: result.key, written, settings }
   })),
   updates: {
     check: os.updates.check.handler(({ context: { ctx } }) => run(() => {

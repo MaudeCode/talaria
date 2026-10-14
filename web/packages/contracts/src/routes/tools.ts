@@ -1,7 +1,7 @@
 import { oc } from '@orpc/contract'
 import { z } from 'zod'
 import { SkillsSchema, SkillContentSchema, SkillsUsageSchema, MemorySchema, PromptSchema, PromptsSchema, CommandsSchema, LogsSchema, InsightsSchema, AgentHealthSchema, SystemHealthSchema, McpServerSchema, McpServersSchema, McpToolsSchema, PluginsSchema, UpdatesCheckSchema, UpdatesSummarySchema, UpdateApplySchema, UpdateNotificationsSchema, UpdateNotificationSchema, TabIdSchema, FrontendBuildIdSchema, NotesSourcesSchema, NotesSearchSchema, NoteItemSchema, WikiStatusSchema, WikiBrowseSchema, WikiPageSchema, DashboardStatusSchema, DashboardConfigSchema, GatewayStatusSchema, GatewayActionSchema, ProjectOsDashboardSchema, TranscribeCapabilitySchema } from '../views.js'
-import { ToolsetsCatalogSchema, CommandBundleInvocationSchema, CommandBundleSchema } from '../sidecar/namespaces.js'
+import { ToolsetsCatalogSchema, CommandBundleInvocationSchema, CommandBundleSchema, PluginSettingFieldSchema } from '../sidecar/namespaces.js'
 
 /** Skills, memory, prompts, commands, notes, insights, logs, health, MCP, plugins, updates, and diagnostics. */
 
@@ -99,6 +99,9 @@ export const toolsContract = {
     delete: oc.route({ method: 'DELETE', path: '/api/mcp/servers/{name}', tags }).input(z.object({ name: z.string() })).output(z.object({ ok: z.literal(true), deleted: z.string() })),
   },
   plugins: oc.route({ method: 'GET', path: '/api/plugins', tags }).output(PluginsSchema),
+  pluginSettings: oc.route({ method: 'POST', path: '/api/plugins/settings', tags, summary: 'TAL-806 (operator only): save a plugin\'s manifest-declared settings. `values` holds non-secret fields as the form entered them (numbers and JSON as text); the server checks each against the field list, writes the changed ones to `plugins.entries.<key>.settings`, and writes `secrets` to the profile `.env` under each field\'s `env` name. 400 for an undeclared key or bad value, 403 on a managed install, 404 for an unknown plugin.' })
+    .input(z.object({ key: z.string().min(1), values: z.record(z.string(), Json).optional(), secrets: z.record(z.string(), z.string().min(1)).optional() }))
+    .output(z.object({ ok: z.literal(true), key: z.string(), written: z.array(z.string()), settings: z.array(PluginSettingFieldSchema) })),
   updates: {
     check: oc.route({ method: 'GET', path: '/api/updates/check', tags, summary: 'Cached status; `POST` runs the check. Git source installs can update from completed releases (stable) or origin/main (experimental); direct global npm installs can update to completed stable npm releases.' }).output(UpdatesCheckSchema),
     checkNow: oc.route({ method: 'POST', path: '/api/updates/check', tags }).input(z.object({ force: Json.optional(), channel: z.string().nullable().optional(), agent_channel: AgentOptions.agent_channel })).output(UpdatesCheckSchema),

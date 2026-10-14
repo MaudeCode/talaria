@@ -505,6 +505,59 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     expect(res.status).toBe(404)
   })
 
+  it('TAL-806: plugin settings ship as fields and save non-secrets to config, secrets to .env', async () => {
+    const fields = (): Json[] => [
+      { key: 'endpoint', type: 'string', label: 'Endpoint', description: '', required: false, value: current.endpoint },
+      { key: 'limit', type: 'number', label: 'limit', description: '', required: false, default: 5, value: current.limit },
+      { key: 'verbose', type: 'boolean', label: 'verbose', description: '', required: false, value: current.verbose },
+      { key: 'mode', type: 'enum', label: 'mode', description: '', required: false, choices: ['fast', 'careful'], default: 'fast', value: current.mode },
+      { key: 'rules', type: 'json', label: 'rules', description: '', required: false, value: current.rules },
+      { key: 'api_key', type: 'secret', label: 'API key', description: '', required: false, env: 'FAKE_SETTINGS_API_KEY', has_value: existsSync(join(home, '.env')) },
+    ]
+    const current: Json = { endpoint: 'https://example.invalid', limit: 5, verbose: null, mode: 'fast', rules: null }
+    let home = ''
+    const saves: Json[] = []
+    sidecar.respond('plugins.list', () => ({ plugins: [{ name: 'fake-settings', key: 'fake-settings', version: '1', description: '', enabled: true, kind: 'standalone', activation: 'enabled', hooks: [] }], supported_hooks: [] }))
+    sidecar.respond('plugins.settings', (params) => { home = params.profile_home; return { supported: true, plugins: [{ key: 'fake-settings', fields: fields() as never }] } })
+    sidecar.respond('plugins.settings_save', (params) => { saves.push(params.values); Object.assign(current, params.values); return { key: params.key, written: Object.keys(params.values), fields: fields() as never } })
+    try {
+      let body = await json(await s.get('/api/plugins'))
+      expect(body).toMatchObject({ read_only: false })
+      expect(((body.plugins as Json[])[0]!.settings as Json[]).map((f) => f.type)).toEqual(['string', 'number', 'boolean', 'enum', 'json', 'secret'])
+
+      // Numbers and JSON arrive as typed text; secrets go to `.env` under the manifest's name, never to the config writer.
+      let res = await post(s, '/api/plugins/settings', { key: 'fake-settings', values: { endpoint: 'https://api.example.invalid', limit: ' 9 ', verbose: true, mode: 'careful', rules: '{"a": [1]}' }, secrets: { api_key: ' sk-synthetic-plugin ' } })
+      body = await json(res)
+      expect(res.status).toBe(200)
+      expect(saves).toEqual([{ endpoint: 'https://api.example.invalid', limit: 9, verbose: true, mode: 'careful', rules: { a: [1] } }])
+      expect(body).toMatchObject({ ok: true, key: 'fake-settings', written: ['endpoint', 'limit', 'verbose', 'mode', 'rules', 'api_key'] })
+      expect(readFileSync(join(home, '.env'), 'utf8')).toContain('FAKE_SETTINGS_API_KEY=sk-synthetic-plugin')
+      expect(((body.settings as Json[]).find((f) => f.key === 'api_key'))).toMatchObject({ has_value: true })
+      expect(JSON.stringify(saves)).not.toContain('sk-synthetic-plugin')
+
+      // An unchanged form writes nothing.
+      res = await post(s, '/api/plugins/settings', { key: 'fake-settings', values: { limit: '9', mode: 'careful' } })
+      expect(await json(res)).toMatchObject({ written: [] })
+      expect(saves).toHaveLength(1)
+
+      for (const bad of [{ values: { api_key: 'sk-x' } }, { values: { mode: 'reckless' } }, { values: { nope: 1 } }, { values: { limit: 'abc' } }, { values: { rules: '"text"' } }, { secrets: { limit: 'x' } }, { secrets: { api_key: '   ' } }]) {
+        res = await post(s, '/api/plugins/settings', { key: 'fake-settings', ...bad })
+        expect(res.status, JSON.stringify(bad)).toBe(400)
+      }
+      expect(saves).toHaveLength(1)
+      expect((await post(s, '/api/plugins/settings', { key: 'other', values: { limit: '1' } })).status).toBe(404)
+
+      sidecar.respond('plugins.settings_save', () => { throw new SidecarError('Plugin settings cannot be changed in a managed install', { condition: 'plugin_settings_managed' }) })
+      res = await post(s, '/api/plugins/settings', { key: 'fake-settings', values: { limit: '3' } })
+      expect(res.status).toBe(403)
+    } finally {
+      sidecar.respond('plugins.settings', undefined)
+      sidecar.respond('plugins.settings_save', undefined)
+      sidecar.respond('plugins.list', undefined)
+      rmSync(join(home, '.env'), { force: true })
+    }
+  })
+
   it('insights, logs, health, dashboard, plugins, and updates answer their shapes', async () => {
     let res = await s.get('/api/insights?days=7')
     expect(res.status).toBe(200)
@@ -549,6 +602,7 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     body = await json(res)
     expect(body.empty).toBe(false)
     expect((body.plugins as Json[])[0]).toMatchObject({ key: 'memory/p' })
+    expect((body.plugins as Json[])[0]).not.toHaveProperty('settings')
     // GET answers the cache without network or git work; POST runs the check (an npm install has no checkout to fast-forward).
     res = await s.get('/api/updates/check')
     body = await json(res)

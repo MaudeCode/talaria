@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import logging
 import os
+import pathlib
 import threading
 from typing import Any
 
@@ -519,6 +520,51 @@ def plugin_visibility(selected_providers: dict) -> dict:
     return {"plugins": rows, "supported_hooks": list(PLUGIN_VISIBILITY_HOOKS)}
 
 
+def _plugin_settings_modules():
+    """The Agent's manifest ``config_schema`` reader/writer (v0.21.6+) and its plugin resolver; ``None`` on older Agents."""
+    try:
+        import hermes_cli.plugins_cmd as plugins_cmd
+        import hermes_cli.plugins_settings as plugins_settings
+    except ImportError:
+        return None
+    return plugins_cmd, plugins_settings
+
+
+def plugin_settings() -> dict:
+    """Every discovered plugin whose manifest declares settings, with its fields (secrets as ``env`` + ``has_value`` only)."""
+    modules = _plugin_settings_modules()
+    if modules is None:
+        return {"supported": False, "plugins": []}
+    plugins_cmd, plugins_settings = modules
+    rows = []
+    for _name, _version, _desc, _source, plugin_dir, key in plugins_cmd._discover_all_plugins():
+        fields = plugins_settings.plugin_settings_fields(key, pathlib.Path(str(plugin_dir)) if plugin_dir else None)
+        if fields:
+            rows.append({"key": key, "fields": fields})
+    return {"supported": True, "plugins": rows}
+
+
+def save_plugin_settings(key: str, values: Any) -> dict:
+    """Write manifest-declared, non-secret settings through the Agent's locked writer; returns the refreshed fields."""
+    if not key or not isinstance(values, dict):
+        raise InvalidParams("plugins.settings_save requires a 'key' and a 'values' mapping")
+    modules = _plugin_settings_modules()
+    if modules is None:
+        raise RpcError("This Hermes Agent cannot edit plugin settings", condition="plugin_settings_unsupported")
+    plugins_cmd, plugins_settings = modules
+    found = plugins_cmd._find_plugin_entry(key)
+    if found is None:
+        raise RpcError(f"plugin {key!r} not found", condition="plugin_not_found")
+    plugin_dir = pathlib.Path(str(found[4])) if found[4] else None
+    try:
+        written = plugins_settings.save_plugin_settings(found[5], plugin_dir, values)
+    except PermissionError as exc:
+        raise RpcError(str(exc), condition="plugin_settings_managed") from exc
+    except ValueError as exc:
+        raise InvalidParams(str(exc)) from exc
+    return {"key": found[5], "written": written, "fields": plugins_settings.plugin_settings_fields(found[5], plugin_dir)}
+
+
 def register(registry) -> None:
     @registry.method("commands.registry")
     def registry_(ctx: CallContext, params: dict) -> dict:
@@ -567,3 +613,13 @@ def register(registry) -> None:
     def list_(ctx: CallContext, params: dict) -> dict:
         with scoped_home(profile_home_param(params)):
             return plugin_visibility(params.get("selected_providers") if isinstance(params.get("selected_providers"), dict) else {})
+
+    @registry.method("plugins.settings")
+    def settings(ctx: CallContext, params: dict) -> dict:
+        with scoped_home(profile_home_param(params)):
+            return plugin_settings()
+
+    @registry.method("plugins.settings_save")
+    def settings_save(ctx: CallContext, params: dict) -> dict:
+        with scoped_home(profile_home_param(params)):
+            return save_plugin_settings(str(params.get("key") or "").strip(), params.get("values"))

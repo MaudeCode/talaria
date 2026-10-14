@@ -33,6 +33,15 @@ def _seed_checkpoint(home: pathlib.Path, workspace: pathlib.Path) -> None:
     (workspace / "notes.txt").write_text("edited by the agent\n", encoding="utf-8")
 
 
+PLUGIN_SETTINGS_MANIFEST = """name: fake-settings
+version: 0.0.1
+config_schema:
+  limit: {type: int, default: 5}
+  mode: {type: str, choices: [fast, careful], default: fast}
+  api_key: {type: secret, label: API key}
+"""
+
+
 def run_scenarios(proc: SidecarProcess, home: pathlib.Path):
     """Yield ``(method, params, message, frames)`` for every scenario plus the dynamic ones."""
     profile = home / "profiles" / "alpha"
@@ -58,6 +67,9 @@ def run_scenarios(proc: SidecarProcess, home: pathlib.Path):
         if method == "commands.bundles":
             (profile / "skill-bundles").mkdir(exist_ok=True)
             (profile / "skill-bundles" / "media-kit.yaml").write_text("name: media-kit\ndescription: Find media\nskills: [gif-search, not-installed]\n", encoding="utf-8")
+        if method == "plugins.settings":
+            (home / "plugins" / "fake-settings").mkdir(parents=True, exist_ok=True)
+            (home / "plugins" / "fake-settings" / "plugin.yaml").write_text(PLUGIN_SETTINGS_MANIFEST, encoding="utf-8")
         message, frames = proc.call(method, params, timeout=180)
         yield method, params, message, frames
         result = message.get("result") or {}

@@ -346,7 +346,11 @@ describe('trusted-header auth', () => {
     expect(cookieHeader(cookies, 'hermes_profile')).toMatch(/^hermes_profile=work\.[0-9a-f]{64}$/)
     const boot = BootstrapSchema.parse(await (await s.get('/api/bootstrap', { headers: { cookie: session!, 'X-Remote-User': 'kim', 'X-Remote-Groups': 'ops' } })).json())
     expect(boot.profile?.name).toBe('work')
-    const out = await s.get('/api/auth/logout', { method: 'POST', headers: { cookie: session!, 'X-Remote-User': 'kim', 'X-Remote-Groups': 'ops' } })
+    // TAL-806: a profile-bound session cannot write Agent plugin settings.
+    const pluginSave = await s.get('/api/plugins/settings', { method: 'POST', headers: { cookie: session!, 'X-Remote-User': 'kim', 'X-Remote-Groups': 'ops', 'content-type': 'application/json' }, body: JSON.stringify({ key: 'p', values: {} }) })
+    expect(pluginSave.status).toBe(403)
+    expect(await pluginSave.json()).toEqual({ error: 'Owner session required' })
+    const out =await s.get('/api/auth/logout', { method: 'POST', headers: { cookie: session!, 'X-Remote-User': 'kim', 'X-Remote-Groups': 'ops' } })
     expect(await out.json()).toEqual({ ok: true, trusted_logout_url: 'https://sso.example/logout' })
   })
 })
