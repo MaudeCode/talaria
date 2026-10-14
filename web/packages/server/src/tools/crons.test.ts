@@ -75,6 +75,17 @@ describe('cron job payloads carry the derived fields', () => {
     'legacy.md': '# Cron run\n# Response\nhello\n',
     'script.md': 'plain stdout\n',
     'empty.md': '# Cron run\n\n## Response',
+    // TAL-912: the v0.21.6 writer's layout; a prompt documenting its own format quotes the heading and a frame.
+    'framed.md': agentRunDoc('Report alerts. 🚨\n\n**Response Characters:** 22\n## Response\n\n- one bullet per alert', '- disk 91% on db-1\n- cert expires in 6 days'),
+    'framed-answer.md': agentRunDoc('Summarize. 🚨', 'Intro\n\n## Response\n\nquoted 🚨 tail'),
+    'legacy-quoted.md': '# Cron Job: Digest\n\n## Prompt\n\nFormat:\n## Response\n\n- bullets\n\n## Response\n\nanswer\n',
+    'framed-crlf.md': agentRunDoc('a\n## Response\nb', 'ok').replaceAll('\n', '\r\n'),
+    'framed-truncated.md': agentRunDoc('Format:\n## Response\n\n- bullets', 'lost').split('**Response Characters:**')[0]!,
+    'framed-tool-xml.md': agentRunDoc('Use <tool_call>{"name":"x"}</tool_call> once.', 'Intro <tool_call>{}</tool_call>\n\n## Response\n\ntail'),
+  }
+  // The v0.21.6 `cron.scheduler.run_job` run document; frame lengths count Python code points.
+  function agentRunDoc(prompt: string, response: string): string {
+    return `# Cron Job: Digest\n\n**Job ID:** ${String(recurring.id)}\n**Run Time:** 2026-10-12 08:00:00\n**Schedule:** every 1h\n\n**Prompt Characters:** ${Array.from(prompt).length}\n## Prompt\n\n${prompt}\n\n**Response Characters:** ${Array.from(response).length}\n## Response\n\n${response}\n`
   }
 
   it('ships a run file\'s reply after its Response heading, else the whole trimmed text (TAL-599)', async () => {
@@ -84,6 +95,19 @@ describe('cron job payloads carry the derived fields', () => {
     expect(await response('legacy.md')).toBe('hello')
     expect(await response('script.md')).toBe('plain stdout')
     expect(await response('empty.md')).toBe('')
+  })
+
+  it('skips a framed run\'s prompt by its length frame, else splits at the last Response heading (TAL-912)', async () => {
+    const { service, home } = setup()
+    const response = async (filename: string) => (await service.runDetail(home, String(recurring.id), filename)).response
+    expect(await response('framed.md')).toBe('- disk 91% on db-1\n- cert expires in 6 days')
+    expect(await response('framed-answer.md')).toBe('Intro\n\n## Response\n\nquoted 🚨 tail')
+    expect(await response('legacy-quoted.md')).toBe('answer')
+    expect(await response('framed-crlf.md')).toBe('ok')
+    // A recognized prompt frame whose answer frame never landed is unusable, never the quoted prompt heading.
+    expect(await response('framed-truncated.md')).toBe('')
+    // Frames count the Agent's raw text; tool-call XML is stripped from the extracted answer afterward.
+    expect(await response('framed-tool-xml.md')).toBe('Intro \n\n## Response\n\ntail')
   })
 
   it('lists running jobs first, then by next run (none last), then by name (TAL-601)', async () => {

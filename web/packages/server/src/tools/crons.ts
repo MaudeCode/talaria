@@ -75,12 +75,39 @@ function compareListedJobs(a: Dict, b: Dict): number {
   return (str(a.name) || str(a.schedule_display)).localeCompare(str(b.name) || str(b.schedule_display), 'en', { sensitivity: 'accent' })
 }
 
-/** TAL-599: the agent's reply from a run file: everything after the `## Response` heading, else the whole text. */
-function runResponse(content: string): string {
-  const idx = content.search(/^#{1,2} Response\s*$/m)
+const PROMPT_HEADING = '## Prompt\n\n'
+const PROMPT_FRAME = /^\*\*Prompt Characters:\*\* (\d+)\n## Prompt\n\n/m
+const RESPONSE_FRAME = /^\*\*Response Characters:\*\* (\d+)\n## Response\n\n/
+
+/**
+ * TAL-599, TAL-912: the agent's reply from a run file, read like the Agent's v0.21.6 `_archive_answer`. A framed run skips its
+ * prompt by the writer's length stamp and takes exactly the stamped answer (none when that frame is broken), so a prompt
+ * quoting `## Response` never leaks.
+ * Otherwise the last Response heading is the writer's own; a run without one (script mode) is the whole text.
+ */
+function runResponse(raw: string): string {
+  const content = raw.replace(/\r\n?/g, '\n')
+  const prompt = PROMPT_FRAME.exec(content)
+  const promptStart = prompt ? prompt.index + prompt[0].length : -1
+  if (prompt && content.indexOf(PROMPT_HEADING) === promptStart - PROMPT_HEADING.length) {
+    const frameAt = advanceCodePoints(content, promptStart, Number(prompt[1])) + 2
+    const frame = RESPONSE_FRAME.exec(content.slice(frameAt))
+    const answerStart = frame ? frameAt + frame[0].length : -1
+    const answerEnd = frame ? advanceCodePoints(content, answerStart, Number(frame[1])) : -1
+    // A truncated or missing answer frame is unusable: any later heading belongs to the prompt.
+    return frame && content.slice(answerEnd) === '\n' ? content.slice(answerStart, answerEnd).trim() : ''
+  }
+  const idx = [...content.matchAll(/^#{1,2} Response\s*$/gm)].at(-1)?.index ?? -1
   if (idx < 0) return content.trim()
   const afterHeading = content.indexOf('\n', idx)
   return afterHeading < 0 ? '' : content.slice(afterHeading + 1).trim()
+}
+
+/** The writer's frames count Python code points; JavaScript indexes UTF-16 units. */
+function advanceCodePoints(text: string, from: number, count: number): number {
+  let at = from
+  for (let i = 0; i < count && at < text.length; i++) at += text.codePointAt(at)! > 0xffff ? 2 : 1
+  return at
 }
 
 /** TAL-298: the schedule's display text and the editor's prefill, in the scheduler's own vocabulary (not localized copy). */
@@ -548,9 +575,10 @@ export class CronService {
     home = (await this.resolveStore(home, jobId)).home
     try {
       const detail = await this.sidecar().call('cron.run_detail', { profile_home: home, job_id: jobId, filename })
-      // Leaked tool-call XML is removed from the run's text, as from a transcript reply (TAL-302).
+      // Leaked tool-call XML is removed from the run's text, as from a transcript reply (TAL-302); the response is
+      // framed on the Agent's raw text (TAL-912), then stripped.
       const content = stripToolCallXml(detail.content)
-      return { ...detail, content, snippet: stripToolCallXml(detail.snippet), response: runResponse(content) }
+      return { ...detail, content, snippet: stripToolCallXml(detail.snippet), response: stripToolCallXml(runResponse(detail.content)) }
     } catch (error) {
       if (error instanceof SidecarError && error.condition === 'not_found') throw new HttpFailure(404, 'run not found')
       throw error
