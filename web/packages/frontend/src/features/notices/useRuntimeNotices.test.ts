@@ -62,3 +62,19 @@ describe('useRuntimeNotices agent_unavailable', () => {
     expect(screen.getByTitle('Hermes Agent is unavailable · gateway_not_running')).toBeTruthy()
   })
 })
+
+describe('useRuntimeNotices agent notices (TAL-803)', () => {
+  it('shows each of the session\'s Agent notices in its level\'s tone', () => {
+    vi.mocked(api.fetchAgentHealth).mockResolvedValue({ alive: true, chat: { available: true, condition: null } })
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const wrapper = ({ children }: { children: ReactNode }) => createElement(QueryClientProvider, { client: qc }, children)
+    const agentNotices = [
+      { key: 'startup-warning.1', level: 'warn' as const, text: 'Memory is off', expires_at: null },
+      { key: 'credits.band', level: 'info' as const, text: 'Usage at 90%', expires_at: 1_005 },
+    ]
+    const { result } = renderHook(() => useRuntimeNotices({ live: null, compressing: false, agentNotices }), { wrapper })
+    expect(result.current.notices.map((n) => [n.id, n.tone])).toEqual([['runtime:agent_notice:startup-warning.1', 'warning'], ['runtime:agent_notice:credits.band', 'info']])
+    render(createElement(Fragment, null, result.current.notices[0]!.content))
+    expect(screen.getByText('Memory is off')).toBeTruthy()
+  })
+})

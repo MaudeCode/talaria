@@ -2,7 +2,7 @@
  * Assemble the application dependencies for one state directory. Used by the
  * launcher and by tests, which pass a temp directory and a fixed environment.
  */
-import type { PendingSteer } from '@maudecode/talaria-web-contracts'
+import type { PendingSteer, SessionNotice } from '@maudecode/talaria-web-contracts'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { pinnedFetch, systemDnsLookup } from './http/pinned.js'
 import { mkdirSync, readFileSync } from 'node:fs'
@@ -339,6 +339,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
       journalDegraded: (streamId) => registry.degradedJournals.has(streamId),
       pendingSteers: (streamId: string): PendingSteer[] => turns.pendingSteers(streamId),
       automaticTurnsHeld: (sid: string): boolean => turns.automaticTurnsHeld(sid),
+      sessionNotices: (sid: string): SessionNotice[] => turns.sessionNotices(sid),
       evictAgent: (sid, endSession) => { if (sidecar) sidecar.call('chat.evict_agent', endSession ? { session_id: sid, clear_session: true } : { session_id: sid }).catch(() => undefined) },
       closeTerminal: (sid) => { deps.terminals.close(sid) },
       deleteCliSession: async (profile, sid) => {

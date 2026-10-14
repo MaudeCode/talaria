@@ -57,6 +57,57 @@ describe('chat turns through the sidecar', () => {
     } finally { guard.mockRestore() }
   })
 
+  it('keeps the Agent\'s notices on the session, one per key across turns, until the Agent clears them (TAL-803)', async () => {
+    const sid = await newSession(s)
+    const warning = { id: 'startup-warning.1a2b3c4d', key: 'startup-warning.1a2b3c4d', level: 'warn', kind: 'sticky', ttl_ms: null, text: "⚠ Memory provider 'honcho' could not be loaded; memory is off." }
+    const turn = async (message: string, frames: Json[]): Promise<SseFrame[]> => {
+      sidecar.respond('chat.start', (_params, emit) => {
+        for (const frame of frames) emit(frame as never)
+        return completed([{ role: 'user', content: message }, { role: 'assistant', content: 'ok' }])
+      })
+      const start = await json(await post(s, '/api/chat/start', { session_id: sid, message }))
+      return s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    }
+    const detailNotices = async (): Promise<unknown> => ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).notices
+    const shown = [{ key: warning.key, level: 'warn', text: warning.text, expires_at: null }]
+    // A startup warning: every client gets the session's list live, then on the settled and loaded session.
+    let frames = await turn('first', [{ event: 'notice', data: warning }])
+    expect(frames.filter((f) => f.event === 'notices').map((f) => f.data)).toEqual([{ session_id: sid, notices: shown }])
+    expect(((frames.find((f) => f.event === 'done')?.data as Json).session as Json).notices).toEqual(shown)
+    expect(await detailNotices()).toEqual(shown)
+    // Same shape as the shared contract example every client is tested against.
+    const example = (JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as { notices_session: { notices: Json[] } }).notices_session.notices[0]!
+    expect(Object.keys((await detailNotices() as Json[])[0]!).sort()).toEqual(Object.keys(example).sort())
+    // A cached agent's next turn raises nothing; a rebuilt agent raises the same key again: still one notice.
+    await turn('second', [])
+    frames = await turn('third', [{ event: 'notices_reset', data: {} }, { event: 'notice', data: warning }])
+    expect(await detailNotices()).toEqual(shown)
+    // The Agent's clear removes it everywhere.
+    frames = await turn('fourth', [{ event: 'notice_clear', data: { key: warning.key } }])
+    expect(frames.filter((f) => f.event === 'notices').map((f) => f.data)).toEqual([{ session_id: sid, notices: [] }])
+    expect(await detailNotices()).toEqual([])
+    // A rebuilt agent lapses the credit notice the replaced one raised; the Agent never repeats a startup warning in
+    // the same process, so that one stays.
+    const credits = { id: 'credits.usage_band', key: 'credits.usage_band', level: 'info', kind: 'sticky', ttl_ms: null, text: 'Usage at 90%', lapses_with_agent: true }
+    await turn('fifth', [{ event: 'notice', data: { ...warning, lapses_with_agent: false } }, { event: 'notice', data: credits }])
+    frames = await turn('sixth', [{ event: 'notices_reset', data: {} }])
+    expect(frames.filter((f) => f.event === 'notices').map((f) => f.data)).toEqual([{ session_id: sid, notices: shown }])
+    expect(await detailNotices()).toEqual(shown)
+  })
+
+  it('drops a TTL notice when it expires and tells the running turn (TAL-803)', async () => {
+    const sid = await newSession(s)
+    let release!: () => void
+    sidecar.respond('chat.start', (_params, emit) => new Promise((resolve) => {
+      emit({ event: 'notice', data: { id: 'band', key: 'band', level: 'info', kind: 'ttl', ttl_ms: 200, text: 'Usage at 90%' } })
+      release = () => { resolve(completed([{ role: 'user', content: 'go' }, { role: 'assistant', content: 'ok' }])) }
+    }))
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'go' }))
+    const notices = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'notices' && (f.data as Json).notices instanceof Array && ((f.data as Json).notices as Json[]).length === 0)
+    expect(notices.filter((f) => f.event === 'notices').map((f) => ((f.data as Json).notices as Json[]).map((n) => n.key))).toEqual([['band'], []])
+    release()
+  })
+
   it('streams a turn, settles the transcript, journals every frame, and replays it after the run', async () => {
     const sid = await newSession(s)
     sidecar.respond('chat.start', (params, emit) => {

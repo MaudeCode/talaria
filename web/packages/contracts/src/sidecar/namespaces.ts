@@ -398,6 +398,14 @@ export const ChatStreamSchema = z.discriminatedUnion('event', [
   z.object({ event: z.literal('compressing'), data: Loose }),
   z.object({ event: z.literal('warning'), data: Loose }),
   z.object({ event: z.literal('status'), data: Loose }),
+  /**
+   * TAL-803: the Agent's `AgentNotice` (`kind` `sticky` or `ttl`, `ttl_ms` only for `ttl`), the clear of one by `key`, and
+   * `notices_reset` before a new agent for the session is built: the notices of the one it replaces with
+   * `lapses_with_agent` lapse (an Agent startup warning, raised once per process, does not).
+   */
+  z.object({ event: z.literal('notice'), data: z.looseObject({ id: z.string().nullable().optional(), key: z.string().nullable().optional(), level: z.string(), kind: z.string(), ttl_ms: z.number().int().nullable().optional(), text: z.string(), lapses_with_agent: z.boolean().optional() }) }),
+  z.object({ event: z.literal('notice_clear'), data: z.looseObject({ key: z.string() }) }),
+  z.object({ event: z.literal('notices_reset'), data: Loose }),
 ])
 export const CHAT_METHODS = {
   'chat.start': {
