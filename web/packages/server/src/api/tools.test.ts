@@ -506,6 +506,32 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     expect(res.status).toBe(404)
   })
 
+  it('TAL-820: Settings advises plugins.isolation: host when several profiles have third-party plugins and one runs them in-process', async () => {
+    const row = (name: string, isolation: 'in_process' | 'host', plugins: number) => ({ name, isolation, third_party_plugins: plugins })
+    const cases: [ReturnType<typeof row>[], boolean][] = [
+      [[row('default', 'in_process', 1), row('work', 'in_process', 2)], true],
+      [[row('default', 'host', 1), row('work', 'in_process', 1)], true],
+      [[row('default', 'in_process', 1), row('work', 'in_process', 0)], false],
+      [[row('default', 'in_process', 0), row('work', 'in_process', 3), row('play', 'host', 0)], false],
+      [[row('default', 'host', 1), row('work', 'host', 1)], false],
+    ]
+    const bases: string[] = []
+    try {
+      for (const [profiles, advisory] of cases) {
+        sidecar.respond('plugins.isolation', (params) => { bases.push(params.base_home); return { profiles } })
+        expect((await json(await s.get('/api/plugins'))).plugin_isolation_advisory).toBe(advisory)
+      }
+      expect(new Set(bases)).toEqual(new Set([s.deps.profileHome('default')]))
+      // A survey failure drops only the advisory.
+      sidecar.respond('plugins.isolation', () => { throw new SidecarError('survey failed', { condition: 'yaml_unavailable' }) })
+      const body = await json(await s.get('/api/plugins'))
+      expect(body.plugin_isolation_advisory).toBe(false)
+      expect(body.unavailable).toBeUndefined()
+    } finally {
+      sidecar.respond('plugins.isolation', undefined)
+    }
+  })
+
   /** TAL-806: one synthetic plugin whose settings the fake sidecar keeps in memory; `.env` writes go through the fake's real file writer. */
   const fakePlugin = () => {
     const state = { home: '', saves: [] as Json[], secretEnvs: [] as Json[], current: { endpoint: 'https://example.invalid', limit: 5, verbose: null, mode: 'fast', rules: null } as Json }

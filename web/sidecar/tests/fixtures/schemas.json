@@ -981,6 +981,45 @@
     ],
     "additionalProperties": false
   },
+  "plugins.isolation": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "profiles": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "isolation": {
+              "type": "string",
+              "enum": [
+                "in_process",
+                "host"
+              ]
+            },
+            "third_party_plugins": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "name",
+            "isolation",
+            "third_party_plugins"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": [
+      "profiles"
+    ],
+    "additionalProperties": false
+  },
   "plugins.settings": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

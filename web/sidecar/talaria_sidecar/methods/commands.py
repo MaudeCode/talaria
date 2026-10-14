@@ -520,6 +520,21 @@ def plugin_visibility(selected_providers: dict) -> dict:
     return {"plugins": rows, "supported_hooks": list(PLUGIN_VISIBILITY_HOOKS)}
 
 
+def isolation_survey(base_home: pathlib.Path) -> list[dict]:
+    """Each profile's ``plugins.isolation`` and installed third-party plugin count, read from disk without loading a plugin."""
+    from hermes_cli.plugin_isolation import isolation_mode
+    from hermes_cli.plugins_cmd import _scan_level
+
+    from .profiles import _yaml_load, named_profile_homes
+
+    rows = []
+    for name, home in [("default", base_home), *named_profile_homes(base_home)]:
+        seen: dict = {}
+        _scan_level(home / "plugins", "user", set(), "", 0, seen)
+        rows.append({"name": name, "isolation": isolation_mode(_yaml_load(home / "config.yaml") or {}), "third_party_plugins": len(seen)})
+    return rows
+
+
 def _plugin_settings_modules():
     """The Agent's manifest ``config_schema`` reader/writer (v0.21.6+) and its plugin resolver; ``None`` on older Agents."""
     try:
@@ -621,6 +636,10 @@ def register(registry) -> None:
     def list_(ctx: CallContext, params: dict) -> dict:
         with scoped_home(profile_home_param(params)):
             return plugin_visibility(params.get("selected_providers") if isinstance(params.get("selected_providers"), dict) else {})
+
+    @registry.method("plugins.isolation")
+    def isolation(ctx: CallContext, params: dict) -> dict:
+        return {"profiles": isolation_survey(profile_home_param(params, "base_home"))}
 
     @registry.method("plugins.settings")
     def settings(ctx: CallContext, params: dict) -> dict:

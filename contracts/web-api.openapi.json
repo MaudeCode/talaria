@@ -53313,6 +53313,9 @@
                     },
                     "unavailable": {
                       "type": "boolean"
+                    },
+                    "plugin_isolation_advisory": {
+                      "type": "boolean"
                     }
                   },
                   "required": [

@@ -35,6 +35,7 @@ SCENARIOS: list[tuple[str, dict]] = [
     ("commands.expand_prompt", {"profile_home": "{home}", "command": "/plan add a dark mode", "workspace": "{home}", "enabled_toolsets": None}),
     ("plugins.list", {"profile_home": "{home}"}),
     ("plugins.providers", {"profile_home": "{home}"}),
+    ("plugins.isolation", {"base_home": "{home}"}),
     # profiles
     ("profiles.list", {"base_home": "{home}"}),
     ("profiles.create", {"base_home": "{home}", "name": "alpha"}),
