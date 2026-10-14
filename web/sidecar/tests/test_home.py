@@ -327,3 +327,57 @@ def _record(errors: list, body) -> None:
         body()
     except Exception as exc:  # noqa: BLE001 - reported to the test
         errors.append(repr(exc))
+
+
+_VAULT_PLUGIN = '''
+from agent.secret_sources.base import SECRET_SOURCE_API_VERSION, FetchResult, SecretSource
+
+
+class TestVaultSource(SecretSource):
+    api_version = SECRET_SOURCE_API_VERSION
+    name = "testvault"
+    label = "Test Vault"
+    shape = "bulk"
+
+    def fetch(self, cfg, home_path):
+        return FetchResult(secrets={"TESTVAULT_API_KEY": "stub-vault-key"})
+
+
+def register(ctx):
+    ctx.register_secret_source(TestVaultSource())
+'''
+
+
+@requires_agent
+def test_a_named_profiles_plugin_secret_source_reaches_its_scope_after_the_root_loaded_the_agent_on_the_installed_agent(tmp_path) -> None:
+    """A vault plugin a named profile ships hydrates its scope even though the Agent's one-time discovery ran under the root."""
+    root = tmp_path / ".hermes"
+    named = root / "profiles" / "b"
+    for name, body in (("test-vault", _VAULT_PLUGIN), ("broken", "def register(ctx):\n    raise RuntimeError('broken plugin')\n")):
+        plugin = named / "plugins" / name
+        plugin.mkdir(parents=True)
+        (plugin / "plugin.yaml").write_text(f"name: {name}\ndescription: stub\n")
+        (plugin / "__init__.py").write_text(body)
+    (named / "config.yaml").write_text(
+        "secrets:\n  sources: [testvault]\n  testvault:\n    enabled: true\nplugins:\n  enabled: [test-vault, broken]\n"
+    )
+    (named / ".env").write_text("")
+    code = """
+import json, os, sys
+from pathlib import Path
+sys.path.append(sys.argv[1])
+from talaria_sidecar.home import scoped_home
+from agent.secret_scope import current_secret_scope
+root = Path(os.environ["HERMES_HOME"])
+with scoped_home(root):  # a default-profile chat imports the Agent first
+    import run_agent  # noqa: F401
+seen = []
+for _ in range(2):
+    with scoped_home(root / "profiles" / "b"):
+        seen.append((current_secret_scope() or {}).get("TESTVAULT_API_KEY"))
+print(json.dumps(seen))
+"""
+    run = subprocess.run([AGENT_PYTHON, "-c", code, str(AGENT_DIR)], env=isolated_env(root), capture_output=True, text=True, timeout=120)
+    assert run.returncode == 0, run.stderr[-4000:]
+    # A plugin whose register raises does not fail the call or keep its sibling's source from loading.
+    assert json.loads(run.stdout.strip().splitlines()[-1]) == ["stub-vault-key", "stub-vault-key"]
