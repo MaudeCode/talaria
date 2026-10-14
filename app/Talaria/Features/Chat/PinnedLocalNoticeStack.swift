@@ -35,6 +35,59 @@ struct PinnedLocalNoticeStack: View {
     }
 }
 
+/// TAL-831: the Agent's notices for the session (a memory provider that failed to load, a credit warning) as status
+/// chips above the composer, toned by the server's level. Dismissing one hides it on this device only.
+struct SessionNoticeChips: View {
+    let notices: [SessionNotice]
+    let dismiss: (SessionNotice) -> Void
+
+    var body: some View {
+        VStack(spacing: 8) {
+            ForEach(notices, id: \.self) { notice in
+                let style = Self.style(notice.level)
+                HStack(spacing: 8) {
+                    Image(systemName: style.symbol)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(style.tint)
+                        .accessibilityHidden(true)
+                    Text(notice.text)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityValue(style.name)
+                    Button {
+                        dismiss(notice)
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 28, height: 28)
+                            .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                    .chatMinimumHitTarget(in: Circle())
+                    .accessibilityLabel(String(localized: "Dismiss notice"))
+                    .accessibilityValue(notice.text)
+                }
+                .statusChipChrome()
+                .accessibilityElement(children: .contain)
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// The level's icon, its tint, and the word VoiceOver reads for it.
+    private static func style(_ level: SessionNotice.Level) -> (symbol: String, tint: Color, name: String) {
+        switch level {
+        case .error: ("xmark.octagon.fill", .red, String(localized: "Error"))
+        case .warn: ("exclamationmark.triangle.fill", .orange, String(localized: "Warning"))
+        case .info: ("info.circle.fill", .accentColor, String(localized: "Information"))
+        case .success: ("checkmark.circle.fill", .green, String(localized: "Success"))
+        }
+    }
+}
+
 /// TAL-372: the session's background work the server pins (running work, and a finished `/background` result until
 /// dismissed), with each status, the full result on request, and Dismiss where the server offers it.
 struct BackgroundWorkCard: View {

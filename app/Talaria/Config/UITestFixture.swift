@@ -36,6 +36,8 @@ struct UITestFixtureEnvironment {
     /// out while a slow runner snapshots the list before tapping Undo (TAL-650). TalariaKit's
     /// `SessionListArchiveUndoTests` covers the expiry itself.
     nonisolated static let holdArchiveUndoArgument = "--ui-test-hold-archive-undo"
+    /// Serves the fixture chat with the Agent's notices for the session (TAL-831).
+    nonisolated static let sessionNoticesArgument = "--ui-test-session-notices"
     /// Opens the Chats list with its update notifications sheet up.
     nonisolated static let updateNotificationsArgument = "--ui-test-update-notifications"
     /// Reports the Agent's session storage as corrupt on `/api/sessions` (TAL-830).
@@ -69,6 +71,15 @@ struct UITestFixtureEnvironment {
     }
     nonisolated static var hasBranchedFrom: Bool {
         ProcessInfo.processInfo.arguments.contains(branchedFromArgument)
+    }
+    nonisolated static var hasSessionNotices: Bool {
+        ProcessInfo.processInfo.arguments.contains(sessionNoticesArgument)
+    }
+    /// The Agent's notices the fixture serves: a memory warning, then a credit band (TAL-831).
+    nonisolated static func sessionNotices(clearingWarning: Bool = false) -> [[String: Any]] {
+        let warning: [String: Any] = ["key": "startup-warning.fixture", "level": "warn", "text": "Memory provider 'honcho' could not be loaded; memory is off.", "expires_at": NSNull()]
+        let band: [String: Any] = ["key": "credits.usage_band", "level": "info", "text": "You've used 90% of your credits.", "expires_at": NSNull()]
+        return clearingWarning ? [band] : [warning, band]
     }
     nonisolated static let serverURL = UITestFixtureLaunch.serverURL
 
@@ -790,6 +801,9 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         messages.append(contentsOf: linkInteractionMessages)
         var detail = session(id: sessionID, title: sessionTitle)
         detail["messages"] = messages
+        if UITestFixtureEnvironment.hasSessionNotices {
+            detail["notices"] = UITestFixtureEnvironment.sessionNotices()
+        }
         return json(["session": detail])
     }
 
@@ -1338,6 +1352,10 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             ])
             finish()
         case .pendingSteers:
+            // TAL-831: the Agent's notices arrive on the stream, and its clear follows the steer's edit.
+            if UITestFixtureEnvironment.hasSessionNotices {
+                send(events: [("notices", ["session_id": Self.sessionID, "notices": UITestFixtureEnvironment.sessionNotices()])])
+            }
             send(events: [
                 ("token", ["text": "Working on the backup."]),
                 ("steer_pending", [
@@ -1360,6 +1378,9 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             guard !isStopped else { return }
             if let steerID = Self.chatState.steerWithdrawnIDSnapshot() {
                 send(events: [("steer_withdrawn", ["steer_id": steerID, "reason": "edit", "text": Self.pendingSteerText])])
+            }
+            if UITestFixtureEnvironment.hasSessionNotices {
+                send(events: [("notices", ["session_id": Self.sessionID, "notices": UITestFixtureEnvironment.sessionNotices(clearingWarning: true)])])
             }
             wait { $0.wasCancelled }
             guard !isStopped else { return }

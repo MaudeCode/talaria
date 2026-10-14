@@ -82,6 +82,7 @@ public protocol ChatStreamCoordinatorDelegate: AnyObject {
     @discardableResult
     func streamCoordinatorApplyPendingSteer(_ steer: PendingSteer)
     func streamCoordinatorWithdrawSteer(_ event: SteerWithdrawnEvent)
+    func streamCoordinatorApplyNotices(_ event: SessionNoticesEvent)
 }
 
 @MainActor
@@ -774,6 +775,8 @@ public final class ChatStreamCoordinator {
         case .steerWithdrawn(let event):
             delegate?.streamCoordinatorWithdrawSteer(event)
             markProgress()
+        case .notices(let event):
+            delegate?.streamCoordinatorApplyNotices(event)
         case .streamEnd:
             if !isCurrentRunTerminated {
                 liveActivityManager?.end(status: .complete, activity: String(localized: "Response complete"), errorSummary: nil)

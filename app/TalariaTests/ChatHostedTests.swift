@@ -127,6 +127,37 @@ final class ChatHostedTests: XCTestCase {
         XCTAssertTrue(removed, "A server-confirmed disabled bypass left the chip")
     }
 
+    /// The Agent's notices show as chips above the composer with the server's text, and Dismiss hides one (TAL-831).
+    func testTheAgentsNoticesShowAboveTheComposerAndDismiss() async throws {
+        let window = try await hostFixtureChat(["--ui-test-session-notices"])
+        let warning = "Memory provider 'honcho' could not be loaded; memory is off."
+        let chip = try await requireElement(in: window, label: warning, "The Agent's warning is not above the composer")
+        XCTAssertTrue(window.bounds.contains(window.convert(chip.accessibilityFrame, from: nil)), "The warning is off screen")
+        _ = try await requireElement(in: window, label: "You've used 90% of your credits.", "The Agent's credit notice is missing")
+
+        let dismissals = elements(named: "Dismiss notice", in: window)
+        XCTAssertEqual(dismissals.count, 2, "Each notice needs its own Dismiss")
+        HostedAccessibility.activate(try XCTUnwrap(dismissals.first))
+        let dismissed = await awaitNoElement(in: window) { $0.accessibilityLabel == warning }
+        XCTAssertTrue(dismissed, "Dismiss left the warning up")
+        let kept = await awaitElement(in: window, label: "You've used 90% of your credits.")
+        XCTAssertNotNil(kept, "Dismiss hid the other notice")
+    }
+
+    /// The Agent's notices arrive on the stream, and the one the Agent clears leaves its chip (TAL-831).
+    func testANoticeTheServerClearsLeavesItsChip() async throws {
+        let window = try await hostFixtureChat(["--ui-test-chat-pending-steers", "--ui-test-session-notices"])
+        try await sendFromComposer("Back up the cluster", in: window)
+        let warning = "Memory provider 'honcho' could not be loaded; memory is off."
+        _ = try await requireElement(in: window, label: warning, "The stream's warning is not above the composer")
+        // The fixture's Agent clears its warning after the steer's edit.
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Edit steering message"))
+        let cleared = await awaitNoElement(in: window) { $0.accessibilityLabel == warning }
+        XCTAssertTrue(cleared, "The warning the server cleared is still up")
+        let kept = await awaitElement(in: window, label: "You've used 90% of your credits.")
+        XCTAssertNotNil(kept, "The clear hid the notice the server kept")
+    }
+
     /// An edit or regenerate the server holds asks with the server's count, the edit only once its sheet has closed;
     /// Cancel keeps the transcript (TAL-929).
     func testHeldEditAndRegenerateAskWithTheServersCount() async throws {

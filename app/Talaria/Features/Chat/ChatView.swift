@@ -134,6 +134,10 @@ struct ChatView: View {
     /// True until the edit sheet's dismissal finishes, so a confirmation the send brings back presents after it (TAL-929).
     @State private var isEditSheetOnScreen = false
     @State private var showApprovalBypassOffConfirmation = false
+    /// The Agent's notices dismissed on this device (TAL-831); a notice whose text changes shows again.
+    @State private var dismissedSessionNotices: Set<SessionNotice> = []
+    /// The notice chips' measured height, which the transcript makes room for: a notice can wrap to two lines.
+    @State private var sessionNoticeChipsHeight: CGFloat = 0
     @State private var showsQueuedMessagesSheet = false
     @State private var selectableResponseText: SelectableTextPresentation?
     @State private var attachmentPreviewItem: ChatAttachmentPreviewItem?
@@ -1087,6 +1091,12 @@ struct ChatView: View {
                         .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
                 }
 
+                if !visibleSessionNotices.isEmpty {
+                    SessionNoticeChips(notices: visibleSessionNotices) { dismissedSessionNotices.insert($0) }
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { sessionNoticeChipsHeight = $0 }
+                        .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
+                }
+
                 if !viewModel.pinnedLocalNotices.isEmpty {
                     PinnedLocalNoticeStack(notices: viewModel.pinnedLocalNotices)
                         .allowsHitTesting(false)
@@ -1144,6 +1154,7 @@ struct ChatView: View {
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: composerAccessoryVisibleItemCount)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: activeRunStatusPresentation)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: viewModel.pinnedLocalNotices)
+            .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: visibleSessionNotices)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: showsApprovalBypassStatus)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: viewModel.pinnedBackgroundTasks)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: viewModel.queuedMessagePreviews)
@@ -1462,6 +1473,10 @@ struct ChatView: View {
         )
     }
 
+    private var visibleSessionNotices: [SessionNotice] {
+        viewModel.sessionNotices.filter { !dismissedSessionNotices.contains($0) }
+    }
+
     private var showsApprovalBypassStatus: Bool {
         viewModel.isSessionApprovalBypassEnabled && viewModel.approvalPrompt == nil
     }
@@ -1472,6 +1487,10 @@ struct ChatView: View {
     private func composerAccessorySpacerHeight() -> CGFloat {
         var height = pinnedNoticeSpacerHeight
         var itemCount = viewModel.pinnedLocalNotices.isEmpty ? 0 : 1
+        if !visibleSessionNotices.isEmpty {
+            height += sessionNoticeChipsHeight
+            itemCount += 1
+        }
         if let activeRunStatusPresentation, activeRunStatusPresentation.reservesTranscriptSpace {
             height += activeRunStatusSpacerHeight
             itemCount += 1
@@ -1494,6 +1513,9 @@ struct ChatView: View {
     private var composerAccessoryVisibleItemCount: Int {
         var count = 0
         if !viewModel.pinnedLocalNotices.isEmpty {
+            count += 1
+        }
+        if !visibleSessionNotices.isEmpty {
             count += 1
         }
         if !viewModel.pinnedBackgroundTasks.isEmpty {

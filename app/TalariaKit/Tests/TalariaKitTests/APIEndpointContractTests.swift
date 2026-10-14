@@ -761,6 +761,31 @@ final class SharedContractTests: XCTestCase {
         XCTAssertNil(try decoder.decode(SessionDetail.self, from: Data(#"{"session_id":"s"}"#.utf8)).pendingSteers)
     }
 
+    func testSharedWebSessionDecodesTheAgentsNotices() throws {
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
+        // A release checks this App against every retained Web; one from before TAL-803 has no such example.
+        guard let example = object["notices_session"] as? [String: Any] else { return }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let detail = try decoder.decode(SessionDetail.self, from: JSONSerialization.data(withJSONObject: example))
+        XCTAssertEqual(detail.notices?.map(\.key), ["startup-warning.1a2b3c4d", "credits.usage_band"])
+        XCTAssertEqual(detail.notices?.map(\.level), [.warn, .info])
+        // The stream's frames: the full list, then the list after the Agent cleared its startup warning.
+        let frames = try XCTUnwrap(example["events"] as? [[String: Any]]).map { frame in
+            SSEEventDecoder.decode(
+                eventType: frame["event"] as? String ?? "",
+                data: String(decoding: try JSONSerialization.data(withJSONObject: frame["data"] ?? [:]), as: UTF8.self)
+            )
+        }
+        XCTAssertEqual(frames, [
+            .notices(SessionNoticesEvent(sessionId: "contract-notices", notices: detail.notices ?? [])),
+            .notices(SessionNoticesEvent(sessionId: "contract-notices", notices: Array((detail.notices ?? []).suffix(1))))
+        ])
+        // A detail without the list (a Web older than TAL-803) decodes none.
+        XCTAssertNil(try decoder.decode(SessionDetail.self, from: Data(#"{"session_id":"s"}"#.utf8)).notices)
+        XCTAssertEqual(try decoder.decode(SessionDetail.self, from: Data(#"{"session_id":"s","notices":[]}"#.utf8)).notices, [])
+    }
+
     func testSessionDetailDecodesWhoStartedTheRunningTurn() throws {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
