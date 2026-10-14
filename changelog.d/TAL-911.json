@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The model picker now hides providers listed under model_catalog.excluded_providers in config.yaml, including the current one, matching the Agent's pickers.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
