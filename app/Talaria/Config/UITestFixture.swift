@@ -72,6 +72,12 @@ struct UITestFixtureEnvironment {
     nonisolated static var hasSessionNotices: Bool {
         ProcessInfo.processInfo.arguments.contains(sessionNoticesArgument)
     }
+    /// The Agent's notices the fixture serves: a memory warning, then a credit band (TAL-831).
+    nonisolated static func sessionNotices(clearingWarning: Bool = false) -> [[String: Any]] {
+        let warning: [String: Any] = ["key": "startup-warning.fixture", "level": "warn", "text": "Memory provider 'honcho' could not be loaded; memory is off.", "expires_at": NSNull()]
+        let band: [String: Any] = ["key": "credits.usage_band", "level": "info", "text": "You've used 90% of your credits.", "expires_at": NSNull()]
+        return clearingWarning ? [band] : [warning, band]
+    }
     nonisolated static let serverURL = UITestFixtureLaunch.serverURL
 
     let authManager: AuthManager
@@ -790,10 +796,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         var detail = session(id: sessionID, title: sessionTitle)
         detail["messages"] = messages
         if UITestFixtureEnvironment.hasSessionNotices {
-            detail["notices"] = [
-                ["key": "startup-warning.fixture", "level": "warn", "text": "Memory provider 'honcho' could not be loaded; memory is off.", "expires_at": NSNull()],
-                ["key": "credits.usage_band", "level": "info", "text": "You've used 90% of your credits.", "expires_at": NSNull()]
-            ]
+            detail["notices"] = UITestFixtureEnvironment.sessionNotices()
         }
         return json(["session": detail])
     }
@@ -1343,6 +1346,10 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             ])
             finish()
         case .pendingSteers:
+            // TAL-831: the Agent's notices arrive on the stream, and its clear follows the steer's edit.
+            if UITestFixtureEnvironment.hasSessionNotices {
+                send(events: [("notices", ["session_id": Self.sessionID, "notices": UITestFixtureEnvironment.sessionNotices()])])
+            }
             send(events: [
                 ("token", ["text": "Working on the backup."]),
                 ("steer_pending", [
@@ -1365,6 +1372,9 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             guard !isStopped else { return }
             if let steerID = Self.chatState.steerWithdrawnIDSnapshot() {
                 send(events: [("steer_withdrawn", ["steer_id": steerID, "reason": "edit", "text": Self.pendingSteerText])])
+            }
+            if UITestFixtureEnvironment.hasSessionNotices {
+                send(events: [("notices", ["session_id": Self.sessionID, "notices": UITestFixtureEnvironment.sessionNotices(clearingWarning: true)])])
             }
             wait { $0.wasCancelled }
             guard !isStopped else { return }

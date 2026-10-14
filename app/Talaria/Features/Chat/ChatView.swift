@@ -54,7 +54,6 @@ struct ChatView: View {
     private let activeRunStatusSpacerHeight: CGFloat = 36
     private let approvalBypassStatusSpacerHeight: CGFloat = 44
     private let queuedMessagesChipSpacerHeight: CGFloat = 44
-    private let sessionNoticeSpacerHeight: CGFloat = 44
 
     @State private var completionAcknowledgementTask: Task<Void, Never>?
     @State private var completionAcknowledgementGeneration = 0
@@ -137,6 +136,8 @@ struct ChatView: View {
     @State private var showApprovalBypassOffConfirmation = false
     /// The Agent's notices dismissed on this device (TAL-831); a notice whose text changes shows again.
     @State private var dismissedSessionNotices: Set<SessionNotice> = []
+    /// The notice chips' measured height, which the transcript makes room for: a notice can wrap to two lines.
+    @State private var sessionNoticeChipsHeight: CGFloat = 0
     @State private var showsQueuedMessagesSheet = false
     @State private var selectableResponseText: SelectableTextPresentation?
     @State private var attachmentPreviewItem: ChatAttachmentPreviewItem?
@@ -1092,6 +1093,7 @@ struct ChatView: View {
 
                 if !visibleSessionNotices.isEmpty {
                     SessionNoticeChips(notices: visibleSessionNotices) { dismissedSessionNotices.insert($0) }
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { sessionNoticeChipsHeight = $0 }
                         .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
                 }
 
@@ -1486,7 +1488,7 @@ struct ChatView: View {
         var height = pinnedNoticeSpacerHeight
         var itemCount = viewModel.pinnedLocalNotices.isEmpty ? 0 : 1
         if !visibleSessionNotices.isEmpty {
-            height += CGFloat(visibleSessionNotices.count) * (sessionNoticeSpacerHeight + 8) - 8
+            height += sessionNoticeChipsHeight
             itemCount += 1
         }
         if let activeRunStatusPresentation, activeRunStatusPresentation.reservesTranscriptSpace {

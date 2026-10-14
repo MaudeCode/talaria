@@ -44,16 +44,18 @@ struct SessionNoticeChips: View {
     var body: some View {
         VStack(spacing: 8) {
             ForEach(notices, id: \.self) { notice in
+                let style = Self.style(notice.level)
                 HStack(spacing: 8) {
-                    Image(systemName: Self.symbol(notice.level))
+                    Image(systemName: style.symbol)
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(Self.tint(notice.level))
+                        .foregroundStyle(style.tint)
                         .accessibilityHidden(true)
                     Text(notice.text)
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.primary)
                         .lineLimit(2)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityValue(style.name)
                     Button {
                         dismiss(notice)
                     } label: {
@@ -66,6 +68,7 @@ struct SessionNoticeChips: View {
                     .buttonStyle(.plain)
                     .chatMinimumHitTarget(in: Circle())
                     .accessibilityLabel(String(localized: "Dismiss notice"))
+                    .accessibilityValue(notice.text)
                 }
                 .statusChipChrome()
                 .accessibilityElement(children: .contain)
@@ -74,21 +77,13 @@ struct SessionNoticeChips: View {
         .fixedSize(horizontal: false, vertical: true)
     }
 
-    private static func symbol(_ level: SessionNotice.Level) -> String {
+    /// The level's icon, its tint, and the word VoiceOver reads for it.
+    private static func style(_ level: SessionNotice.Level) -> (symbol: String, tint: Color, name: String) {
         switch level {
-        case .error: "xmark.octagon.fill"
-        case .warn: "exclamationmark.triangle.fill"
-        case .info: "info.circle.fill"
-        case .success: "checkmark.circle.fill"
-        }
-    }
-
-    private static func tint(_ level: SessionNotice.Level) -> Color {
-        switch level {
-        case .error: .red
-        case .warn: .orange
-        case .info: .accentColor
-        case .success: .green
+        case .error: ("xmark.octagon.fill", .red, String(localized: "Error"))
+        case .warn: ("exclamationmark.triangle.fill", .orange, String(localized: "Warning"))
+        case .info: ("info.circle.fill", .accentColor, String(localized: "Information"))
+        case .success: ("checkmark.circle.fill", .green, String(localized: "Success"))
         }
     }
 }

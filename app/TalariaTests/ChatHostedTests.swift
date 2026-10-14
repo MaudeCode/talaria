@@ -144,6 +144,20 @@ final class ChatHostedTests: XCTestCase {
         XCTAssertNotNil(kept, "Dismiss hid the other notice")
     }
 
+    /// The Agent's notices arrive on the stream, and the one the Agent clears leaves its chip (TAL-831).
+    func testANoticeTheServerClearsLeavesItsChip() async throws {
+        let window = try await hostFixtureChat(["--ui-test-chat-pending-steers", "--ui-test-session-notices"])
+        try await sendFromComposer("Back up the cluster", in: window)
+        let warning = "Memory provider 'honcho' could not be loaded; memory is off."
+        _ = try await requireElement(in: window, label: warning, "The stream's warning is not above the composer")
+        // The fixture's Agent clears its warning after the steer's edit.
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Edit steering message"))
+        let cleared = await awaitNoElement(in: window) { $0.accessibilityLabel == warning }
+        XCTAssertTrue(cleared, "The warning the server cleared is still up")
+        let kept = await awaitElement(in: window, label: "You've used 90% of your credits.")
+        XCTAssertNotNil(kept, "The clear hid the notice the server kept")
+    }
+
     /// An edit or regenerate the server holds asks with the server's count, the edit only once its sheet has closed;
     /// Cancel keeps the transcript (TAL-929).
     func testHeldEditAndRegenerateAskWithTheServersCount() async throws {
