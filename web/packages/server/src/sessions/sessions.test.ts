@@ -1002,6 +1002,55 @@ describe('projects, workspaces, and files over HTTP', () => {
   })
 })
 
+describe('a truncate that discards more than one user turn waits for confirmation (TAL-929)', () => {
+  let s: TestServer
+  beforeAll(async () => { s = await bootTestServer() })
+  afterAll(() => s.close())
+  // Eight stored rows, seven shown: the tool result folds into its turn's scene. Six are later than the first.
+  const threeTurns = (): Json[] => [
+    { role: 'user', content: 'u1', timestamp: 100 }, { role: 'assistant', content: 'a1', timestamp: 101 },
+    { role: 'user', content: 'u2', timestamp: 102 }, { role: 'assistant', content: '', tool_calls: [{ id: 't', name: 'read_file' }], timestamp: 103 },
+    { role: 'tool', tool_call_id: 't', content: 'x', timestamp: 104 }, { role: 'assistant', content: 'a2', timestamp: 105 },
+    { role: 'user', content: 'u3', timestamp: 106 }, { role: 'assistant', content: 'a3', timestamp: 107 },
+  ]
+  const seed = async (): Promise<string> => {
+    const sid = String((await newSession(s)).session_id)
+    const session = s.deps.sessionStore.get(sid)
+    session.messages = threeTurns()
+    session.context_messages = threeTurns()
+    s.deps.sessionStore.save(session)
+    return sid
+  }
+
+  it('refuses a cut at the first of three user turns without the flag and changes nothing', async () => {
+    const sid = await seed()
+    const file = join(s.state, 'sessions', `${sid}.json`)
+    const before = readFileSync(file, 'utf8')
+    const stored = s.deps.sessionStore.get(sid)
+    const boundaries = { watermark: stored.truncation_watermark, boundary: stored.truncation_boundary }
+    const res = await post(s, '/api/session/truncate', { session_id: sid, keep_count: 0 })
+    expect(res.status).toBe(200)
+    expect(await json(res)).toEqual({ ok: false, confirm_required: true, discard_user_turns: 3, discard_messages: 6 })
+    expect(readFileSync(file, 'utf8')).toBe(before)
+    const after = s.deps.sessionStore.get(sid)
+    expect(after.messages).toHaveLength(8)
+    expect(after.context_messages).toHaveLength(8)
+    expect({ watermark: after.truncation_watermark, boundary: after.truncation_boundary }).toEqual(boundaries)
+  })
+
+  it('cuts with the flag, and cuts one turn or less without it', async () => {
+    let sid = await seed()
+    let res = await post(s, '/api/session/truncate', { session_id: sid, keep_count: 2, confirm_deep_truncate: true })
+    expect(((await json(res)).session as Json).messages).toHaveLength(2)
+    sid = await seed()
+    res = await post(s, '/api/session/truncate', { session_id: sid, keep_count: 6 })
+    expect(((await json(res)).session as Json).messages).toHaveLength(6)
+    sid = await seed()
+    res = await post(s, '/api/session/truncate', { session_id: sid, keep_count: 3 })
+    expect(((await json(res)).session as Json).messages).toHaveLength(3)
+  })
+})
+
 describe('truncation keeps deleted state.db turns deleted (TAL-504)', () => {
   let s: TestServer
   beforeAll(async () => { s = await bootTestServer() })
@@ -1016,7 +1065,7 @@ describe('truncation keeps deleted state.db turns deleted (TAL-504)', () => {
     db.prepare('INSERT INTO sessions (id, source, started_at) VALUES (?, ?, ?)').run(sid, 'cli', 100)
     for (const [role, content, ts] of rows) db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, role, content, ts)
     db.close()
-    expect((await post(s, '/api/session/truncate', { session_id: sid, keep_count: 2 })).status).toBe(200)
+    expect((await post(s, '/api/session/truncate', { session_id: sid, keep_count: 2, confirm_deep_truncate: true })).status).toBe(200)
     const served = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).messages as Json[]
     expect(served.map((m) => m.content)).toEqual(['u1', 'a1'])
     expect(s.deps.sessions.modelContext(s.deps.sessionStore.get(sid)).map((m) => m.content)).toEqual(['u1', 'a1'])

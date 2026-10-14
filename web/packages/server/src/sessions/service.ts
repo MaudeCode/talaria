@@ -1210,7 +1210,8 @@ export class SessionService {
 
   // ── transcript mutations ─────────────────────────────────────────────────
 
-  async truncate(sid: string, keepRaw: unknown): Promise<Record<string, unknown>> {
+  /** TAL-929: `confirmDeep` lets a cut discard more than one user turn; without it such a cut changes nothing. */
+  async truncate(sid: string, keepRaw: unknown, confirmDeep = false): Promise<Record<string, unknown>> {
     this.rejectSubagent(sid, 'modified')
     if (keepRaw === null || keepRaw === undefined) throw new HttpFailure(400, 'Missing required field(s): keep_count')
     const s = this.mutationTarget(sid, 'modified')
@@ -1221,11 +1222,17 @@ export class SessionService {
     else keep = /^[+-]?\d+$/.test(str(keepRaw).trim()) ? Number.parseInt(str(keepRaw).trim(), 10) : Number.NaN
     if (!Number.isInteger(keep)) throw new HttpFailure(400, 'keep_count must be an integer')
     if (keep < 0) throw new HttpFailure(400, 'keep_count must be non-negative')
-    await this.store.withLock(sid, () => {
+    const refused = await this.store.withLock(sid, () => {
+      // Counted on the rows a client shows: the user turns the cut removes, and the messages after the row it starts at.
+      const cut = ((this.publicSession(s).messages ?? []) as Message[]).map((m, i) => ({ m, i })).filter(({ m, i }) => i >= keep && m._display === 'row')
+      const discard = { discard_user_turns: cut.filter(({ m }) => m.role === 'user').length, discard_messages: cut.filter(({ i }) => i > keep).length }
+      if (discard.discard_user_turns > 1 && !confirmDeep) return { ok: false, confirm_required: true, ...discard }
       truncateSessionAtKeep(s, keep)
       this.markStateDbSeen(s, undefined, { boundary: true })
       this.store.save(s)
+      return null
     })
+    if (refused) return refused
     this.deps.runtime.evictAgent(sid)
     return { ok: true, session: this.publicSession(s) }
   }

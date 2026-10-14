@@ -92,6 +92,15 @@ public struct SessionResponse: Decodable {
     public let session: SessionDetail?
 }
 
+/// `POST /api/session/truncate` (TAL-929): the cut session, or, for a cut that would discard more than one user turn,
+/// `confirmRequired` with the server's counts and nothing changed until the cut is resent with `confirm_deep_truncate`.
+public struct SessionTruncateResponse: Decodable {
+    public let session: SessionDetail?
+    public let confirmRequired: Bool?
+    public let discardUserTurns: Int?
+    public let discardMessages: Int?
+}
+
 public struct SessionMutationResponse: Decodable {
     public let ok: Bool?
     public let session: SessionSummary?

@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Editing or regenerating an earlier message now asks before discarding more than one later turn, instead of deleting them without warning on the web.",
+      "highlight": false,
+      "components": ["web", "app"]
+    }
+  ]
+}

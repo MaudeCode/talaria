@@ -385,6 +385,36 @@ test('editing a message puts its text in the composer and Send resubmits it (TAL
   await expect.poll(() => body?.message).toBe('Plan the release')
 })
 
+test('editing an early message asks with the server counts and cuts only on Discard (TAL-929)', async ({ page }) => {
+  const bodies: Record<string, unknown>[] = []
+  let truncated = false
+  const messages = [
+    { role: 'user', id: 1, content: 'Plan the release' }, { role: 'assistant', id: 2, content: 'Here is the plan.' },
+    { role: 'user', id: 3, content: 'Add a rollback' }, { role: 'assistant', id: 4, content: 'Added.' },
+    { role: 'user', id: 5, content: 'Ship it' }, { role: 'assistant', id: 6, content: 'Shipped.' },
+  ]
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'edit-deep', title: 'Edit', messages: truncated ? [] : messages } } }))
+  await page.route('**/api/session/truncate', (route) => {
+    const body = route.request().postDataJSON() as Record<string, unknown>
+    bodies.push(body)
+    if (body.confirm_deep_truncate !== true) return route.fulfill({ json: { ok: false, confirm_required: true, discard_user_turns: 3, discard_messages: 5 } })
+    truncated = true
+    return route.fulfill({ json: { ok: true, session: { session_id: 'edit-deep', title: 'Edit' } } })
+  })
+  await page.route('**/api/session/draft', (route) => route.fulfill({ json: { ok: true } }))
+  await page.goto('/session/edit-deep')
+  const first = page.locator('#messages .msg-row[data-role="user"]').first()
+  await first.hover()
+  await first.getByRole('button', { name: 'Edit message' }).click()
+  const dialog = page.getByRole('alertdialog')
+  await expect(dialog).toContainText('Editing this message will discard 5 later messages.')
+  expect(truncated).toBe(false)
+  await expect(page.locator('#msg')).toHaveValue('')
+  await dialog.getByRole('button', { name: 'Discard' }).click()
+  await expect(page.locator('#msg')).toHaveValue('Plan the release')
+  expect(bodies.map((b) => b.confirm_deep_truncate)).toEqual([false, true])
+})
+
 test('a second Edit click while the first is pending returns the text once (TAL-516)', async ({ page }) => {
   const truncate = hold()
   let truncates = 0

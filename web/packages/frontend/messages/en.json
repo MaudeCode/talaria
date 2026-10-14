@@ -518,6 +518,21 @@
 	"dialog_confirm_btn": "Confirm",
 	"unsaved_confirm": "You have unsaved changes in the preview. Discard and navigate?",
 	"discard": "Discard",
+	"edit_discard_title": "Discard later messages?",
+	"edit_discard_desc": [
+		{
+			"declarations": [
+				"input n"
+			],
+			"selectors": [
+				"n"
+			],
+			"match": {
+				"n=1": "Editing this message will discard {n} later message.",
+				"n=*": "Editing this message will discard {n} later messages."
+			}
+		}
+	],
 	"save": "Save",
 	"edit": "Edit",
 	"clear": "Clear",

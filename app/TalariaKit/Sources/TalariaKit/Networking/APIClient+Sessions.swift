@@ -182,11 +182,15 @@ extension APIClient {
         )
     }
 
-    public func truncateSession(id: String, keepCount: Int) async throws -> SessionResponse {
+    public func truncateSession(
+        id: String,
+        keepCount: Int,
+        confirmDeepTruncate: Bool = false
+    ) async throws -> SessionTruncateResponse {
         try await send(
             endpoint: .truncateSession,
             method: "POST",
-            body: TruncateSessionRequest(sessionId: id, keepCount: keepCount)
+            body: TruncateSessionRequest(sessionId: id, keepCount: keepCount, confirmDeepTruncate: confirmDeepTruncate)
         )
     }
 
@@ -315,6 +319,7 @@ private struct CompressSessionRequest: Encodable {
 private struct TruncateSessionRequest: Encodable {
     let sessionId: String
     let keepCount: Int
+    let confirmDeepTruncate: Bool
 }
 
 private struct UpdateSessionRequest: Encodable {

@@ -84,6 +84,8 @@ public final class ChatViewModel {
     }
     private var ownsSendErrorForRecovery = false
     public private(set) var messageActionErrorMessage: String?
+    /// An edit or regenerate the server held for confirmation (TAL-929); `confirmDeepTruncate` resends it.
+    public private(set) var deepTruncateConfirmation: DeepTruncateConfirmation?
     private(set) var cacheErrorMessage: String?
     public private(set) var lastError: Error?
     /// The latest queued send that failed; ChatView forwards its error to `onAPIError` (TAL-150).
@@ -4187,7 +4189,12 @@ public final class ChatViewModel {
     }
 
     /// Edit a user message: truncate to just before the selected message, then send the edited text.
-    public func editMessage(_ context: MessageActionContext, newText: String, modelContext: ModelContext? = nil) async -> Bool {
+    public func editMessage(
+        _ context: MessageActionContext,
+        newText: String,
+        confirmDeepTruncate: Bool = false,
+        modelContext: ModelContext? = nil
+    ) async -> Bool {
         guard context.role == .user else {
             messageActionErrorMessage = String(localized: "Only user messages can be edited.")
             return false
@@ -4226,32 +4233,13 @@ public final class ChatViewModel {
 
         do {
             // Truncate to remove the selected user message and everything after it
-            let truncateResponse = try await client.truncateSession(
-                id: sessionID,
-                keepCount: context.fullHistoryIndex
-            )
-
-            // Update local state from the truncated response
-            if let session = truncateResponse.session {
-                messages = session.messages ?? []
-                updateOlderMessagePagination(from: session, loadedMessageCount: messages.count)
-                setCompletedToolCallGroups(ToolCallGroup.groups(
-                    messages: messages,
-                    messageOffset: messagesOffset
-                ))
-                completedReasoningGroups = []
-                liveAssistantActivity.removeAll()
-                toolCallAnchorMessageID = nil
-                reasoningAnchorMessageID = nil
-
-                if let modelContext {
-                    do {
-                        try cacheMessagesIfCurrent(messages, sessionID: sessionID, in: modelContext)
-                    } catch {
-                        cacheErrorMessage = error.localizedDescription
-                    }
-                }
-            }
+            guard try await truncateForResend(
+                context,
+                action: .edit(newText: editedText),
+                sessionID: sessionID,
+                confirm: confirmDeepTruncate,
+                modelContext: modelContext
+            ) else { return false }
 
             // Now send the edited text through the normal chat flow
             let explicitModelPick = explicitModelPickForChatStart()
@@ -4299,6 +4287,7 @@ public final class ChatViewModel {
 
     public func regenerateAssistantResponse(
         _ context: MessageActionContext,
+        confirmDeepTruncate: Bool = false,
         modelContext: ModelContext? = nil
     ) async -> Bool {
         guard context.role == .assistant else {
@@ -4338,31 +4327,13 @@ public final class ChatViewModel {
         defer { isRegeneratingMessage = false }
 
         do {
-            let truncateResponse = try await client.truncateSession(
-                id: sessionID,
-                keepCount: context.fullHistoryIndex
-            )
-
-            if let session = truncateResponse.session {
-                messages = session.messages ?? []
-                updateOlderMessagePagination(from: session, loadedMessageCount: messages.count)
-                setCompletedToolCallGroups(ToolCallGroup.groups(
-                    messages: messages,
-                    messageOffset: messagesOffset
-                ))
-                completedReasoningGroups = []
-                liveAssistantActivity.removeAll()
-                toolCallAnchorMessageID = nil
-                reasoningAnchorMessageID = nil
-
-                if let modelContext {
-                    do {
-                        try cacheMessagesIfCurrent(messages, sessionID: sessionID, in: modelContext)
-                    } catch {
-                        cacheErrorMessage = error.localizedDescription
-                    }
-                }
-            }
+            guard try await truncateForResend(
+                context,
+                action: .regenerate,
+                sessionID: sessionID,
+                confirm: confirmDeepTruncate,
+                modelContext: modelContext
+            ) else { return false }
 
             let explicitModelPick = explicitModelPickForChatStart()
             let sentAt = Date()
@@ -4395,6 +4366,79 @@ public final class ChatViewModel {
             messageActionErrorMessage = error.localizedDescription
             return false
         }
+    }
+
+    /// Resends a held edit or regenerate with `confirm_deep_truncate` (TAL-929).
+    public func confirmDeepTruncate(
+        _ confirmation: DeepTruncateConfirmation,
+        modelContext: ModelContext? = nil
+    ) async -> Bool {
+        deepTruncateConfirmation = nil
+        switch confirmation.action {
+        case let .edit(newText):
+            return await editMessage(
+                confirmation.context,
+                newText: newText,
+                confirmDeepTruncate: true,
+                modelContext: modelContext
+            )
+        case .regenerate:
+            return await regenerateAssistantResponse(
+                confirmation.context,
+                confirmDeepTruncate: true,
+                modelContext: modelContext
+            )
+        }
+    }
+
+    public func cancelDeepTruncate() {
+        deepTruncateConfirmation = nil
+    }
+
+    /// Cuts the transcript at the action's message and adopts the kept session. Returns false with the transcript
+    /// unchanged when the server holds a cut of more than one user turn for confirmation (TAL-929).
+    private func truncateForResend(
+        _ context: MessageActionContext,
+        action: DeepTruncateConfirmation.Action,
+        sessionID: String,
+        confirm: Bool,
+        modelContext: ModelContext?
+    ) async throws -> Bool {
+        let truncateResponse = try await client.truncateSession(
+            id: sessionID,
+            keepCount: context.fullHistoryIndex,
+            confirmDeepTruncate: confirm
+        )
+        if truncateResponse.confirmRequired == true {
+            deepTruncateConfirmation = DeepTruncateConfirmation(
+                context: context,
+                action: action,
+                discardMessages: truncateResponse.discardMessages ?? 0
+            )
+            return false
+        }
+
+        if let session = truncateResponse.session {
+            messages = session.messages ?? []
+            updateOlderMessagePagination(from: session, loadedMessageCount: messages.count)
+            setCompletedToolCallGroups(ToolCallGroup.groups(
+                messages: messages,
+                messageOffset: messagesOffset
+            ))
+            completedReasoningGroups = []
+            liveAssistantActivity.removeAll()
+            toolCallAnchorMessageID = nil
+            reasoningAnchorMessageID = nil
+
+            if let modelContext {
+                do {
+                    try cacheMessagesIfCurrent(messages, sessionID: sessionID, in: modelContext)
+                } catch {
+                    cacheErrorMessage = error.localizedDescription
+                }
+            }
+        }
+        return true
     }
 
     @discardableResult

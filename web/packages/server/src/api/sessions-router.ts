@@ -254,7 +254,7 @@ export const sessionsRouter = os.router({
     })),
     truncate: os.session.truncate.handler(({ input, context: { ctx } }) => run(async () => {
       guardVisibility(ctx, input.session_id)
-      return ctx.deps.sessions.truncate(input.session_id, input.keep_count) as Promise<{ ok: true; session: { session_id: string; title: string } }>
+      return ctx.deps.sessions.truncate(input.session_id, input.keep_count, input.confirm_deep_truncate === true) as Promise<{ ok: true; session: { session_id: string; title: string } } | { ok: false; confirm_required: true; discard_user_turns: number; discard_messages: number }>
     })),
     clear: os.session.clear.handler(({ input, context: { ctx } }) => run(async () => {
       guardVisibility(ctx, input.session_id)
