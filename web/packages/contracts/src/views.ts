@@ -220,6 +220,12 @@ export const MessageSchema = z.looseObject({
    * part of a turn's reply; it is absent when Web's own error row already reports that turn.
    */
   _notice_kind: z.enum(['failed_turn']).optional(),
+  /**
+   * TAL-816: a user row of a messaging session that the Agent's gateway mirrored after a webhook route's or cron job's
+   * delivery to the chat, not a message the user sent. Clients show it as a delivery notice titled by a localized label
+   * per `kind` with `name`, and `body` (the delivered text, without its label line) beneath, never as a user bubble.
+   */
+  _delivery: z.object({ kind: z.enum(['webhook', 'cron']), name: z.string(), body: z.string() }).optional(),
   /** TAL-460: part of the Agent's reply to the background update just before it in the same turn. */
   _background_reply: z.boolean().optional(),
   /** TAL-460: that reply is only a silence marker; clients show the update's lines and nothing of this turn's reply. */

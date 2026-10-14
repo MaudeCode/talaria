@@ -622,7 +622,7 @@ export class SessionService {
     const payload = this.wireRow(s)
     // Mutation replies replace a client's transcript, so they carry the same server-built scenes as the detail.
     if (withMessages) {
-      payload.messages = this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes(withBackgroundUpdates(withMarkerKinds(withTurnIds(messages)), s), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, runningScene: !this.journaledActiveTurn(s) }))
+      payload.messages = this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes(withBackgroundUpdates(withMarkerKinds(withTurnIds(messages), s), s), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, runningScene: !this.journaledActiveTurn(s) }))
       payload.compression_reference = compressionReference(s, payload.messages as unknown[])
     }
     return redactSessionData(payload, this.deps.redactEnabled())
@@ -692,7 +692,7 @@ export class SessionService {
     if (pending) transcript = withPendingUserTurn(transcript, pending)
     if (journaled)transcript = withoutRunningTurnOutput(transcript, { ...journaled, localCount: s.messages.length })
     // Turn ids, tool outcomes and scenes are computed over the full transcript, so every window reports the same values.
-    const all: unknown[] = loadMessages ? this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes(withBackgroundUpdates(withMarkerKinds(withTurnIds(withAttachmentObjects(transcript))), s), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, runningScene: !journaled, clipToolResults: msgLimit !== null })) : []
+    const all: unknown[] = loadMessages ? this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes(withBackgroundUpdates(withMarkerKinds(withTurnIds(withAttachmentObjects(transcript)), s), s), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, runningScene: !journaled, clipToolResults: msgLimit !== null })) : []
     let truncated: unknown[] = []
     let offset = 0
     let summaryCount: number | null = null
@@ -829,7 +829,7 @@ export class SessionService {
   private foreignSessionDetail(sid: string): Record<string, unknown> {
     const { synth, meta } = this.foreignSession(sid)
     // The same turn projection as a WebUI session: turn ids, tool outcomes, then each completed turn's scene.
-    const msgs = hydrateAnchorActivityScenes(withToolCallOutcomes(withMarkerKinds(withTurnIds(synth.messages)), [], null), {}) as Message[]
+    const msgs = hydrateAnchorActivityScenes(withToolCallOutcomes(withMarkerKinds(withTurnIds(synth.messages), synth), [], null), {}) as Message[]
     const lastTs = Number(msgs[msgs.length - 1]?.timestamp ?? 0) || 0
     const sess: Record<string, unknown> = {
       session_id: synth.session_id, title: synth.title, workspace: synth.workspace, model: synth.model, message_count: msgs.length,

@@ -2043,6 +2043,60 @@ describe('session detail classifies the rows the Agent types for display (TAL-81
   })
 })
 
+describe('session detail shows mirrored deliveries in a messaging session as delivery notices (TAL-816)', () => {
+  let s: TestServer
+  beforeAll(async () => { s = await bootTestServer() })
+  afterAll(() => s.close())
+
+  const webhook = '[Webhook delivery: ambush-nfl]\nHenderson OUT Wednesday'
+  const cron = '[Cron delivery: Morning Brief]\nRain until noon.\n\n- Standup at 9'
+  /** A state.db `source` session holding `rows` as the gateway and its mirror wrote them. */
+  const seed = (sid: string, source: string, rows: [string, string][]): void => {
+    const db = new DatabaseSync(join(s.state, 'state.db'))
+    db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
+    db.prepare('INSERT INTO sessions (id, source, started_at) VALUES (?, ?, ?)').run(sid, source, 1000)
+    rows.forEach(([role, content], i) => db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, role, content, 1000 + i))
+    db.close()
+  }
+  const served = async (sid: string): Promise<Json[]> => ((await json(await s.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).messages as Json[]
+
+  it('serves both mirrored deliveries of a Telegram session as notices and the user\'s own rows as messages', async () => {
+    seed('tg-deliveries', 'telegram', [['user', 'Any news?'], ['assistant', 'Not yet.'], ['user', webhook], ['user', cron], ['user', 'So he is out?'], ['assistant', 'Yes.']])
+    const rows = await served('tg-deliveries')
+    expect(rows.map((m) => [m.role, m._display, m._delivery ?? null])).toEqual([
+      ['user', 'row', null],
+      ['assistant', 'row', null],
+      ['user', 'row', { kind: 'webhook', name: 'ambush-nfl', body: 'Henderson OUT Wednesday' }],
+      ['user', 'row', { kind: 'cron', name: 'Morning Brief', body: 'Rain until noon.\n\n- Standup at 9' }],
+      ['user', 'row', null],
+      ['assistant', 'row', null],
+    ])
+  })
+
+  it('leaves the same prefix a user typed in a webui session, stored or in state.db, as their message', async () => {
+    const sid = String((await newSession(s)).session_id)
+    writeMessages(s, sid, [{ role: 'user', content: webhook, timestamp: 900 }, { role: 'assistant', content: 'Noted.', timestamp: 901 }])
+    seed(sid, 'webui', [['user', cron]])
+    const rows = await served(sid)
+    expect(rows.filter((m) => m.role === 'user').map((m) => [m.content, m._delivery ?? null])).toEqual([[webhook, null], [cron, null]])
+  })
+
+  it('keeps a label without its newline, or with nothing named, as the user\'s message', async () => {
+    seed('tg-near-misses', 'telegram', [['user', '[Cron delivery: Morning Brief] Rain'], ['user', '[Cron delivery: ]\nRain'], ['user', ' [Webhook delivery: x]\nbody']])
+    expect((await served('tg-near-misses')).map((m) => m._delivery ?? null)).toEqual([null, null, null])
+  })
+
+  it('serves the shared delivery example exactly as the contract fixture records it', async () => {
+    const fixture = (JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as Json).delivery_session as Json
+    const sid = String((await newSession(s)).session_id)
+    const session = s.deps.sessionStore.get(sid)
+    // A Telegram chat Web has stored; `_delivery` is what the server adds on the way out.
+    Object.assign(session, fixture.session as Json, { messages: fixture.stored })
+    s.deps.sessionStore.save(session)
+    expect(await served(sid)).toEqual(fixture.messages)
+  })
+})
+
 describe('assistant display normalization on every read (TAL-302)', () => {
   let s: TestServer
   beforeAll(async () => { s = await bootTestServer() })

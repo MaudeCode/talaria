@@ -12,6 +12,7 @@ import { stripAttachedFilesMarker, stripWorkspacePrefix, type Message } from './
 export { WORKSPACE_PREFIX_RE, stripWorkspacePrefix } from './session.js'
 import type { MediaProjection } from '../workspace/media-refs.js'
 import { decidedEditDiff, toolEditDiff, toolName } from './tool-display.js'
+import { sourceKind } from './source-kind.js'
 
 const TOOL_RESULT_SNIPPET_MAX = 4000
 // Python `_TOOL_ARG_CONTENT_KEYS`: file bodies, commands, and patch text keep up to the content cap; incidental args cut at 120.
@@ -151,16 +152,38 @@ export function agentRowKind(msg: unknown): 'failed_turn' | 'hidden' | null {
   return msg.role === 'user' && !msg.display_kind && typeof msg.content === 'string' && msg.content.trimStart().startsWith('[System:') ? 'hidden' : null
 }
 
+export interface DeliveryNotice { kind: 'webhook' | 'cron'; name: string; body: string }
+
+const DELIVERY_PREFIXES = [['webhook', '[Webhook delivery: '], ['cron', '[Cron delivery: ']] as const
+
+/**
+ * TAL-816: the user row the Agent's gateway mirrors into a chat's transcript after a webhook or cron delivery
+ * (`gateway/mirror.py` callers): exactly `[Webhook delivery: <route>]` or `[Cron delivery: <job>]`, a newline, then the
+ * delivered text. Only meaningful in a messaging session; anyone can type the same prefix elsewhere.
+ */
+export function deliveryNotice(msg: unknown): DeliveryNotice | null {
+  if (!isDict(msg) || msg.role !== 'user' || typeof msg.content !== 'string') return null
+  const newline = msg.content.indexOf('\n')
+  const label = newline < 0 ? '' : msg.content.slice(0, newline)
+  const match = DELIVERY_PREFIXES.find(([, prefix]) => label.startsWith(prefix))
+  if (!match || !label.endsWith(']') || label.length <= match[1].length + 1) return null
+  return { kind: match[0], name: label.slice(match[1].length, -1), body: msg.content.slice(newline + 1) }
+}
+
 /**
  * TAL-305: stamps `_marker_kind` on marker rows, and `_marker_body` (the list without its marker line) on a preserved
  * task list, so clients render a marker card instead of a message. TAL-815: a failed turn's boundary gets
  * `_notice_kind`, unless the turn (`_turn_id`) already carries Web's own error row; that copy and every other row the
- * Agent hides leave as `display_kind: 'hidden'`. Returns copies; stored rows are untouched.
+ * Agent hides leave as `display_kind: 'hidden'`. TAL-816: in a messaging `session`, a mirrored delivery gets
+ * `_delivery`. Returns copies; stored rows are untouched.
  */
-export function withMarkerKinds<T>(messages: T[]): T[] {
+export function withMarkerKinds<T>(messages: T[], session: object): T[] {
   const erroredTurns = new Set(messages.flatMap((m) => (isDict(m) && m._error ? [str(m._turn_id)] : [])))
+  const messaging = sourceKind(session as Record<string, unknown>) === 'messaging'
   return messages.map((m) => {
     if (!isDict(m)) return m
+    const delivery = messaging ? deliveryNotice(m) : null
+    if (delivery) return { ...m, _delivery: delivery }
     const kind = markerKind(m)
     if (!kind) {
       const agentKind = agentRowKind(m)
@@ -1087,7 +1110,8 @@ export function withBodyExcerpts<T>(messages: T[], activeTurnId: string | null):
     if (!isDict(m) || (m.role !== 'user' && m.role !== 'assistant')) return m
     if (activeTurnId && m._turn_id === activeTurnId) return m
     let out: Record<string, unknown> = m
-    const text = typeof m._display_content === 'string' ? m._display_content : messageText(m.content)
+    // A delivery shows its body under its own label (TAL-816), so the excerpt is the body's.
+    const text = isDict(m._delivery) ? str(m._delivery.body) : typeof m._display_content === 'string' ? m._display_content : messageText(m.content)
     if (text.length > BODY_EXCERPT_LIMIT) out = { ...out, _display_excerpt: bodyExcerpt(text), _display_truncated: true }
     const scene = m._anchor_activity_scene
     const finalAnswer = isDict(scene) ? (typeof scene.final_answer_display === 'string' ? scene.final_answer_display : scene.final_answer) : null

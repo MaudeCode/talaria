@@ -1,5 +1,5 @@
 import { memo, useState } from 'react'
-import { AlertTriangle, ArrowUp, CheckCircle2, Copy, GitBranch, Info, ListChecks, Pencil, RotateCcw, Shrink, Volume2 } from 'lucide-react'
+import { AlertTriangle, ArrowUp, CalendarClock, CheckCircle2, Copy, GitBranch, Info, ListChecks, Pencil, RotateCcw, Shrink, Volume2, Webhook } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import type { BackgroundLine, Message } from '../../contracts'
 import { Markdown } from './render/Markdown'
@@ -165,6 +165,33 @@ export const NoticeRow = memo(function NoticeRow({ row }: { row: VisibleMessage 
         <AlertTriangle size={14} aria-hidden="true" className="shrink-0 text-warning" />
         <span className="min-w-0">{messageText(row.message.content)}</span>
       </p>
+    </div>
+  )
+})
+
+/**
+ * TAL-816: a webhook or cron delivery the server stamped `_delivery` (the Agent mirrored it into a messaging chat), shown
+ * as a notice titled by its source with the delivered text beneath, never as the user's own bubble.
+ */
+export const DeliveryRow = memo(function DeliveryRow({ row }: { row: VisibleMessage }) {
+  const delivery = row.message._delivery
+  if (!delivery) return null
+  const Icon = delivery.kind === 'webhook' ? Webhook : CalendarClock
+  const label = delivery.kind === 'webhook' ? m.delivery_webhook({ name: delivery.name }) : m.delivery_cron({ name: delivery.name })
+  return (
+    <div className="msg-row" data-role="delivery" data-msg-idx={row.index} data-message-key={row.key}>
+      <section role="note" aria-label={label} className="rounded-md border border-border bg-surface px-3 py-2 text-[13px]">
+        <p className="flex items-center gap-2 text-muted">
+          <Icon size={14} aria-hidden="true" className="shrink-0" />
+          <span className="min-w-0">{label}</span>
+          {row.message.timestamp ? <span className="msg-time ml-auto shrink-0">{formatDate(row.message.timestamp)}</span> : null}
+        </p>
+        <div className="mt-1">
+          <CollapsedBody excerpt={row.message._display_truncated ? row.message._display_excerpt : undefined}>
+            {(excerpt) => <div className="msg-body"><Markdown text={excerpt ?? delivery.body} /></div>}
+          </CollapsedBody>
+        </div>
+      </section>
     </div>
   )
 })
