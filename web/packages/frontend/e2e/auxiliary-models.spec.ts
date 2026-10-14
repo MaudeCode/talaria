@@ -4,19 +4,25 @@ import { expect, settle, test } from './fixtures'
 test.use({ serviceWorkers: 'block' })
 
 const SLOTS: [string, string, string][] = [
-  ['vision', 'Vision', 'image/screenshot analysis'], ['web_extract', 'Web extract', 'web page summarization'],
-  ['compression', 'Compression', 'context summarization'], ['approval', 'Approval', 'smart command approval'],
-  ['mcp', 'MCP', 'MCP tool reasoning'], ['title_generation', 'Title generation', 'session titles'],
-  ['skills_hub', 'Skills hub', 'skills search/install'], ['curator', 'Curator', 'skill-usage review pass'],
-  ['kanban_decomposer', 'Kanban decomposer', 'task decomposition'], ['profile_describer', 'Profile describer', 'profile summaries'],
-  ['triage_specifier', 'Triage specifier', 'issue/task triage specs'],
+  ['vision', 'Vision', 'image/screenshot analysis'], ['compression', 'Compression', 'context summarization'],
+  ['approval', 'Approval', 'smart command approval'], ['mcp', 'MCP', 'MCP tool reasoning'],
+  ['title_generation', 'Title generation', 'session titles'], ['review', 'Review', '/review reviewer subagent'],
+  ['memory_query_rewrite', 'Memory query rewrite', 'memory retrieval queries'], ['tts_audio_tags', 'TTS audio tags', 'Gemini TTS tag insertion'],
+  ['voice_chat', 'Voice chat', 'spoken voice-mode replies'], ['skills_hub', 'Skills hub', 'skills search/install'],
+  ['triage_specifier', 'Triage specifier', 'kanban spec fleshing'], ['kanban_decomposer', 'Kanban decomposer', 'task decomposition'],
+  ['profile_describer', 'Profile describer', 'auto profile descriptions'], ['curator', 'Curator', 'skill-usage review pass'],
+  ['side_task', 'Side model', 'side summaries'],
 ]
 const auxiliary = {
   main: { provider: 'anthropic', model: 'claude-sonnet-4-6' },
   tasks: SLOTS.map(([task, label, description]) => ({
     task, label, description, provider: 'auto', model: '', is_auto: true, value_label: 'Claude Sonnet 4.6', provider_label: 'Anthropic', selected_option_id: null, in_catalog: true,
+    inherit_from: null, reasoning_effort: task === 'voice_chat' ? 'none' : '',
     ...(task === 'title_generation' ? { provider: 'openrouter', model: 'anthropic/claude-haiku-4.5', is_auto: false, value_label: 'Claude Haiku 4.5', provider_label: 'OpenRouter', selected_option_id: '@openrouter:anthropic/claude-haiku-4.5' } : {}),
     ...(task === 'vision' ? { provider: 'openrouter', model: 'legacy/vision-model', is_auto: false, value_label: 'legacy/vision-model', provider_label: 'OpenRouter', in_catalog: false } : {}),
+    // A plugin task inheriting Compression, which is pinned: while Auto it shows Compression's model (TAL-800).
+    ...(task === 'compression' ? { provider: 'anthropic', model: 'claude-opus-4-7', is_auto: false, value_label: 'Claude Opus 4.7', selected_option_id: 'claude-opus-4-7' } : {}),
+    ...(task === 'side_task' ? { inherit_from: 'compression', value_label: 'Claude Opus 4.7' } : {}),
   })),
 }
 const models = {
@@ -36,7 +42,9 @@ for (const width of [1280, 390]) {
     await settle(page)
     await page.getByRole('button', { name: 'Manage', exact: true }).click()
     const list = page.getByRole('list', { name: 'Auxiliary Models' })
-    await expect(list.getByRole('button')).toHaveCount(11)
+    await expect(list.getByRole('button')).toHaveCount(15)
+    await expect(list.getByRole('button', { name: /Voice chat/ })).toBeVisible()
+    await expect(list.getByRole('button', { name: /Side model/ })).toContainText('Anthropic · Claude Opus 4.7')
     await expect(list.getByRole('button', { name: /Title generation/ })).toContainText('OpenRouter · Claude Haiku 4.5')
     await expect(list.getByRole('button', { name: /Vision/ })).toContainText('Not in catalog')
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)

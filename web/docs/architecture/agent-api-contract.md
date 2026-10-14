@@ -82,7 +82,7 @@ changes the pin.
 | Profiles | `profiles.*` | `hermes_cli.profiles` |
 | Operator configuration | `config.*` | YAML parser on the Agent interpreter; no Agent import required |
 | Commands and plugins | `commands.*`, `plugins.*`, `skills.*` | `hermes_cli.commands`, `hermes_cli.plugins`, `agent.skill_utils` |
-| Providers and models | `providers.*`, `models.*`, `aux.*` | `hermes_cli.models`, `hermes_cli.auth`, `agent.credential_pool`, `agent.auxiliary_client`, `agent.model_metadata` |
+| Providers and models | `providers.*`, `models.*`, `aux.*` | `hermes_cli.models`, `hermes_cli.auth`, `hermes_cli.main_provider_setup` (aux slot list), `agent.credential_pool`, `agent.auxiliary_client`, `agent.model_metadata` |
 | Scheduling | `cron.*`, `kanban.*`, `process.*` | `cron.jobs`, `cron.scheduler`, `hermes_cli.kanban_db`, the process registry |
 | Session state | `state_db.*` | `hermes_state.SessionDB` |
 | Text and media | `text.*`, `stt.*`, `mcp.*` | `agent.redact`, STT helpers, MCP discovery |

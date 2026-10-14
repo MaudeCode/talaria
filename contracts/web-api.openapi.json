@@ -43976,6 +43976,26 @@
                           },
                           "in_catalog": {
                             "type": "boolean"
+                          },
+                          "inherit_from": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "reasoning_effort": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           }
                         },
                         "required": [
@@ -43988,7 +44008,9 @@
                           "value_label",
                           "provider_label",
                           "selected_option_id",
-                          "in_catalog"
+                          "in_catalog",
+                          "inherit_from",
+                          "reasoning_effort"
                         ],
                         "additionalProperties": {}
                       }
@@ -44204,6 +44226,26 @@
                               },
                               "in_catalog": {
                                 "type": "boolean"
+                              },
+                              "inherit_from": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "reasoning_effort": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
                               }
                             },
                             "required": [
@@ -44216,7 +44258,9 @@
                               "value_label",
                               "provider_label",
                               "selected_option_id",
-                              "in_catalog"
+                              "in_catalog",
+                              "inherit_from",
+                              "reasoning_effort"
                             ],
                             "additionalProperties": {}
                           }

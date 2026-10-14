@@ -10,5 +10,128 @@
         "model": null
       }
     }
+  ],
+  "aux.tasks": [
+    {
+      "params": {
+        "profile_home": "<home>"
+      },
+      "result": {
+        "tasks": [
+          {
+            "key": "vision",
+            "label": "Vision",
+            "description": "image/screenshot analysis",
+            "inherit_from": null,
+            "reasoning_effort": "",
+            "effective": null
+          },
+          {
+            "key": "compression",
+            "label": "Compression",
+            "description": "context summarization",
+            "inherit_from": null,
+            "reasoning_effort": "",
+            "effective": null
+          },
+          {
+            "key": "approval",
+            "label": "Approval",
+            "description": "smart command approval",
+            "inherit_from": null,
+            "reasoning_effort": "",
+            "effective": null
+          },
+          {
+            "key": "mcp",
+            "label": "MCP",
+            "description": "MCP tool reasoning",
+            "inherit_from": null,
+            "reasoning_effort": "",
+            "effective": null
+          },
+          {
+            "key": "title_generation",
+            "label": "Title generation",
+            "description": "session titles",
+            "inherit_from": null,
+            "reasoning_effort": "",
+            "effective": null
+          },
+          {
+            "key": "review",
+            "label": "Review",
+            "description": "/review reviewer subagent",
+            "inherit_from": null,
+            "reasoning_effort": "",
+            "effective": null
+          },
+          {
+            "key": "memory_query_rewrite",
+            "label": "Memory query rewrite",
+            "description": "memory retrieval queries",
+            "inherit_from": null,
+            "reasoning_effort": "",
+            "effective": null
+          },
+          {
+            "key": "tts_audio_tags",
+            "label": "TTS audio tags",
+            "description": "Gemini TTS tag insertion",
+            "inherit_from": null,
+            "reasoning_effort": "",
+            "effective": null
+          },
+          {
+            "key": "voice_chat",
+            "label": "Voice chat",
+            "description": "spoken voice-mode replies",
+            "inherit_from": null,
+            "reasoning_effort": "none",
+            "effective": null
+          },
+          {
+            "key": "skills_hub",
+            "label": "Skills hub",
+            "description": "skills search/install",
+            "inherit_from": null,
+            "reasoning_effort": "",
+            "effective": null
+          },
+          {
+            "key": "triage_specifier",
+            "label": "Triage specifier",
+            "description": "kanban spec fleshing",
+            "inherit_from": null,
+            "reasoning_effort": "",
+            "effective": null
+          },
+          {
+            "key": "kanban_decomposer",
+            "label": "Kanban decomposer",
+            "description": "task decomposition",
+            "inherit_from": null,
+            "reasoning_effort": "",
+            "effective": null
+          },
+          {
+            "key": "profile_describer",
+            "label": "Profile describer",
+            "description": "auto profile descriptions",
+            "inherit_from": null,
+            "reasoning_effort": "",
+            "effective": null
+          },
+          {
+            "key": "curator",
+            "label": "Curator",
+            "description": "skill-usage review pass",
+            "inherit_from": null,
+            "reasoning_effort": "",
+            "effective": null
+          }
+        ]
+      }
+    }
   ]
 }

@@ -175,6 +175,36 @@ def _usage_dict(usage) -> dict | None:
     return out or None
 
 
+def _effort_word(task_cfg: dict) -> str:
+    """Agent ``_aux_effort_word``: the resolved ``reasoning_effort`` ("" = provider default; YAML False = "none")."""
+    raw = task_cfg.get("reasoning_effort")
+    return "none" if raw is False else str(raw or "").strip().lower()
+
+
+def aux_tasks() -> list[dict]:
+    """TAL-800: the home's auxiliary slots in Agent order, the ``hermes model`` picker's built-ins then the home's plugin
+    tasks, each with its resolved reasoning effort and, for a task that inherits another slot, its effective route."""
+    from agent.auxiliary_client import _get_auxiliary_task_config
+    from hermes_cli.main_provider_setup import _AUX_TASKS
+
+    rows = [{"key": key, "label": label, "description": description, "inherit_from": None} for key, label, description in _AUX_TASKS]
+    builtin = {row["key"] for row in rows}
+    try:
+        from hermes_cli.plugins import get_plugin_auxiliary_tasks
+
+        plugin_tasks = [entry for entry in get_plugin_auxiliary_tasks() if entry.get("key") and entry["key"] not in builtin]
+    except Exception:  # noqa: BLE001 - plugin discovery must never hide the built-in slots (the Agent's own rule)
+        log.debug("plugin auxiliary task lookup failed", exc_info=True)
+        plugin_tasks = []
+    rows += [{"key": str(entry["key"]), "label": str(entry.get("display_name") or entry["key"]), "description": str(entry.get("description") or ""),
+              "inherit_from": str(entry.get("inherit_from") or "") or None} for entry in plugin_tasks]
+    for row in rows:
+        resolved = _get_auxiliary_task_config(row["key"])
+        row["reasoning_effort"] = _effort_word(resolved)
+        row["effective"] = {field: str(resolved.get(field) or "") for field in ("provider", "model", "base_url")} if row["inherit_from"] else None
+    return rows
+
+
 def register(registry) -> None:
     @registry.method("aux.complete")
     def complete_(ctx: CallContext, params: dict) -> dict:
@@ -189,6 +219,11 @@ def register(registry) -> None:
             model = params.get("model")
             return complete(task, messages, main_runtime=main_runtime, max_tokens=params.get("max_tokens"), temperature=params.get("temperature"), ctx=ctx, main_fallback=bool(params.get("main_fallback")),
                             model=str(model).strip() if isinstance(model, str) else None, provider=str(params.get("provider") or "").strip() or None)
+
+    @registry.method("aux.tasks")
+    def tasks(ctx: CallContext, params: dict) -> dict:
+        with scoped_home(profile_home_param(params)):
+            return {"tasks": aux_tasks()}
 
     @registry.method("aux.resolve")
     def resolve(ctx: CallContext, params: dict) -> dict:
