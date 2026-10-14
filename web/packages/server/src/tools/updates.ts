@@ -637,11 +637,12 @@ async function applyNpmWebUpdate(webRoot: string | null, channel: Channel, getJs
     const metadata = dict(JSON.parse(readFileSync(join(candidate, 'package.json'), 'utf8')))
     const bins = dict(metadata.bin)
     if (metadata.name !== WEB_NPM_PACKAGE || metadata.version !== target.version || !target.matches(diskRelease(candidate))
-      || !['talaria-web', 'talaria-web-mcp'].every((name) => str(bins[name]).replace(/^\.\//, '') === `dist/bin/${name}.js` && existsSync(join(candidate, `dist/bin/${name}.js`)))
-      // npm can leave a dependency as an empty directory; swapping that in crash-loops the server.
-      || !Object.keys(dict(metadata.dependencies)).every((name) => existsSync(join(candidate, 'node_modules', name, 'package.json')))) {
+      || !['talaria-web', 'talaria-web-mcp'].every((name) => str(bins[name]).replace(/^\.\//, '') === `dist/bin/${name}.js` && existsSync(join(candidate, `dist/bin/${name}.js`)))) {
       return { ok: false, verification_failed: true, target: 'webui', channel, message: `The downloaded npm package does not match ${channel === 'stable' ? 'the completed release' : 'the Experimental artifact'}. The installed package was preserved.` }
     }
+    // npm can leave a dependency as an empty directory; swapping that in crash-loops the server (TAL-1010).
+    const missing = Object.keys(dict(metadata.dependencies)).filter((name) => !existsSync(join(candidate, 'node_modules', name, 'package.json')))
+    if (missing.length) return { ok: false, verification_failed: true, target: 'webui', channel, message: `The downloaded npm package is missing ${missing.join(', ')}. The installed package was preserved.` }
     const recheck = await npmInstallInfo(webRoot, npmRun)
     if (!canApply() || recheck?.packageRoot !== installed.packageRoot || recheck.version !== installed.version) return { ok: false, message: 'The npm installation or update settings changed; retry the update.' }
     if (switching) {

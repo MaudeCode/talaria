@@ -134,7 +134,8 @@ requires the package root to match the global root reported by the npm executabl
 beside the running Node process. It installs the exact
 `@maudecode/talaria-web@<version>` recorded by the completed release manifest into
 a temporary global prefix beside the running package. It verifies the version,
-CLI files and baked release metadata, then renames the replacement into place.
+CLI files, baked release metadata and that every dependency installed, then renames
+the replacement into place.
 Dependencies move with the package and the existing global CLI links keep working.
 Failed installation or verification preserves the previous package. The service
 user needs write access to the installation directory and room for both versions;

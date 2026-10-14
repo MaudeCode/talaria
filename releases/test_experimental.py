@@ -116,10 +116,10 @@ class ExperimentalTests(unittest.TestCase):
     def test_bundle_carries_direct_dependencies_the_contracts_closure_peers_on(self):
         package = self.root / "package"
         manifests = {
-            ".": {"dependencies": {CONTRACTS: "1", "ws": "8", "zod": "4"}},
+            ".": {"dependencies": {CONTRACTS: "1", "ws": "8", "zod": "4", "seek-bzip": "2"}},
             f"node_modules/{CONTRACTS}": {"dependencies": {"@orpc/server": "1"}},
             "node_modules/@orpc/server": {"peerDependencies": {"ws": ">=8", "crossws": ">=0.3"}},
-            "node_modules/zod": {"peerDependencies": {"ws": ">=8"}},
+            "node_modules/zod": {"peerDependencies": {"seek-bzip": ">=2"}},
         }
         for path, manifest in manifests.items():
             (package / path).mkdir(parents=True, exist_ok=True)
