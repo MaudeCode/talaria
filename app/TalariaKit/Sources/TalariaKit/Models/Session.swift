@@ -843,6 +843,8 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
     public let activeTurnOrigin: String?
     /// The running turn's pending steers, oldest first (TAL-424); nil from a Web older than that.
     public let pendingSteers: [PendingSteer]?
+    /// The Agent's active notices for the session, oldest first (TAL-831); nil from a Web older than TAL-803.
+    public let notices: [SessionNotice]?
     let pendingUserMessage: String?
     let pendingAttachments: [JSONValue]?
     public let pendingStartedAt: Double?
@@ -911,6 +913,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
         case isStreaming
         case activeTurnOrigin
         case pendingSteers
+        case notices
         case pendingUserMessage
         case pendingAttachments
         case pendingStartedAt
@@ -976,6 +979,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
         activeTurnOrigin = container.decodeLossyStringIfPresent(forKey: .activeTurnOrigin)
         // One malformed entry never hides the others.
         pendingSteers = container.decodeLossyArrayIfPresent(PendingSteer.self, forKey: .pendingSteers)
+        notices = container.decodeLossyArrayIfPresent(SessionNotice.self, forKey: .notices)
         pendingUserMessage = container.decodeLossyStringIfPresent(forKey: .pendingUserMessage)
         pendingAttachments = try? container.decodeIfPresent([JSONValue].self, forKey: .pendingAttachments)
         pendingStartedAt = container.decodeLossyDoubleIfPresent(forKey: .pendingStartedAt)

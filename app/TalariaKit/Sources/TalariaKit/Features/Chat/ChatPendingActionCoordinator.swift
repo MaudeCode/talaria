@@ -446,7 +446,7 @@ final class ChatPendingActionCoordinator {
         case .transportError, .error:
             startApprovalFallbackPolling(sessionID: sessionID)
         case .token, .interimAssistant, .reasoning, .toolStarted, .toolCompleted, .title, .metering, .done, .clarificationPending,
-             .steerConsumed, .steerPending, .steerWithdrawn, .streamEnd, .settledSession, .cancelled, .warning, .heartbeat, .ignored:
+             .steerConsumed, .steerPending, .steerWithdrawn, .notices, .streamEnd, .settledSession, .cancelled, .warning, .heartbeat, .ignored:
             break
         }
     }
@@ -538,7 +538,7 @@ final class ChatPendingActionCoordinator {
         case .transportError, .error:
             startClarificationFallbackPolling(sessionID: sessionID)
         case .token, .interimAssistant, .reasoning, .toolStarted, .toolCompleted, .title, .metering, .done,
-             .steerConsumed, .steerPending, .steerWithdrawn, .streamEnd, .settledSession, .cancelled, .warning, .heartbeat, .ignored:
+             .steerConsumed, .steerPending, .steerWithdrawn, .notices, .streamEnd, .settledSession, .cancelled, .warning, .heartbeat, .ignored:
             break
         }
     }

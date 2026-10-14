@@ -749,6 +749,18 @@ final class SSEClientTests: XCTestCase {
         ), .ignored)
     }
 
+    func testDecodesTheSessionsNoticesAndTheirClearing() {
+        // TAL-831: the server's list replaces the shown one; an empty list clears it.
+        let warning = SessionNotice(key: "startup-warning.1", level: .warn, text: "Memory is off.")
+        XCTAssertEqual(SSEEventDecoder.decode(
+            eventType: "notices",
+            data: #"{"session_id":"s","notices":[{"key":"startup-warning.1","level":"warn","text":"Memory is off.","expires_at":null},{"key":""},{"key":"band","level":"new","text":"Credits low.","expires_at":1770000600}]}"#
+        ), .notices(SessionNoticesEvent(sessionId: "s", notices: [warning, SessionNotice(key: "band", level: .info, text: "Credits low.")])))
+        XCTAssertEqual(SSEEventDecoder.decode(eventType: "notices", data: #"{"session_id":"s","notices":[]}"#), .notices(SessionNoticesEvent(sessionId: "s", notices: [])))
+        // A frame without the list says nothing about the notices.
+        XCTAssertEqual(SSEEventDecoder.decode(eventType: "notices", data: #"{"session_id":"s"}"#), .ignored)
+    }
+
     func testErrorAndCancelFramesDeliverTheirSettledSessionFirst() {
         let failed = SSEEventDecoder.decodeFrame(
             eventType: "apperror",

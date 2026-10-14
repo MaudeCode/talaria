@@ -1919,6 +1919,8 @@ private final class CoordinatorDelegateSpy: ChatStreamCoordinatorDelegate {
     func streamCoordinatorWithdrawSteer(_ event: SteerWithdrawnEvent) {
         withdrawnSteers.append(event)
     }
+
+    func streamCoordinatorApplyNotices(_ event: SessionNoticesEvent) {}
 }
 
 @MainActor

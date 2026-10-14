@@ -36,6 +36,8 @@ struct UITestFixtureEnvironment {
     /// out while a slow runner snapshots the list before tapping Undo (TAL-650). TalariaKit's
     /// `SessionListArchiveUndoTests` covers the expiry itself.
     nonisolated static let holdArchiveUndoArgument = "--ui-test-hold-archive-undo"
+    /// Serves the fixture chat with the Agent's notices for the session (TAL-831).
+    nonisolated static let sessionNoticesArgument = "--ui-test-session-notices"
     /// Opens the Chats list with its update notifications sheet up.
     nonisolated static let updateNotificationsArgument = "--ui-test-update-notifications"
 
@@ -66,6 +68,9 @@ struct UITestFixtureEnvironment {
     }
     nonisolated static var hasBranchedFrom: Bool {
         ProcessInfo.processInfo.arguments.contains(branchedFromArgument)
+    }
+    nonisolated static var hasSessionNotices: Bool {
+        ProcessInfo.processInfo.arguments.contains(sessionNoticesArgument)
     }
     nonisolated static let serverURL = UITestFixtureLaunch.serverURL
 
@@ -784,6 +789,12 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         messages.append(contentsOf: linkInteractionMessages)
         var detail = session(id: sessionID, title: sessionTitle)
         detail["messages"] = messages
+        if UITestFixtureEnvironment.hasSessionNotices {
+            detail["notices"] = [
+                ["key": "startup-warning.fixture", "level": "warn", "text": "Memory provider 'honcho' could not be loaded; memory is off.", "expires_at": NSNull()],
+                ["key": "credits.usage_band", "level": "info", "text": "You've used 90% of your credits.", "expires_at": NSNull()]
+            ]
+        }
         return json(["session": detail])
     }
 

@@ -213,6 +213,7 @@ public final class ChatViewModel {
         if let readOnly = session?.readOnly { isSessionReadOnly = readOnly }
         if let canBranch = session?.canBranch { self.canBranch = canBranch }
         if let assistantName = session?.assistantName { self.assistantName = assistantName }
+        if let notices = session?.notices { sessionNotices = notices }
         if let session, session.statesEnabledToolsets { sessionToolsets = SessionToolsets(names: session.enabledToolsets) }
         // A detail relabels the workspace it reports, so a registry rename shows on the next load (TAL-303).
         if let workspace = session?.workspace, workspace == serverWorkspacePath {
@@ -301,6 +302,9 @@ public final class ChatViewModel {
     public var uploadAttachmentErrorMessage: String? { attachmentCoordinator.uploadAttachmentErrorMessage }
     public var localAttachmentPreviews: [String: [String: Data]] { attachmentCoordinator.localAttachmentPreviews }
     public private(set) var pinnedLocalNotices: [String] = []
+    /// The Agent's active notices for the session, oldest first (TAL-831): the server's list, from the session and the
+    /// stream's `notices`.
+    public private(set) var sessionNotices: [SessionNotice] = []
     public var approvalPrompt: ApprovalPromptState? { pendingActionCoordinator.approvalPrompt }
     public var isRespondingToApproval: Bool { pendingActionCoordinator.isRespondingToApproval }
     public var approvalErrorMessage: String? { pendingActionCoordinator.approvalErrorMessage }
@@ -4914,7 +4918,7 @@ public final class ChatViewModel {
             activeBtwAnswer = "Error: \(message)"
             updateActiveBtwMessage(isLoading: false)
             finishBtwStream()
-        case .heartbeat, .ignored, .reasoning, .toolStarted, .toolCompleted, .title, .metering, .steerConsumed, .steerPending, .steerWithdrawn:
+        case .heartbeat, .ignored, .reasoning, .toolStarted, .toolCompleted, .title, .metering, .steerConsumed, .steerPending, .steerWithdrawn, .notices:
             break
         }
     }
@@ -6120,5 +6124,10 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
 
     public func streamCoordinatorWithdrawSteer(_ event: SteerWithdrawnEvent) {
         applyWithdrawnSteer(event)
+    }
+
+    public func streamCoordinatorApplyNotices(_ event: SessionNoticesEvent) {
+        guard event.sessionId == nil || event.sessionId == sessionID else { return }
+        sessionNotices = event.notices
     }
 }

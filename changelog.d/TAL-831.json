@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Chat shows Hermes Agent's notices above the composer, such as a memory provider that failed to load or a credit warning, until the Agent clears them. Dismiss one to hide it.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

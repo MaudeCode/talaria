@@ -127,6 +127,23 @@ final class ChatHostedTests: XCTestCase {
         XCTAssertTrue(removed, "A server-confirmed disabled bypass left the chip")
     }
 
+    /// The Agent's notices show as chips above the composer with the server's text, and Dismiss hides one (TAL-831).
+    func testTheAgentsNoticesShowAboveTheComposerAndDismiss() async throws {
+        let window = try await hostFixtureChat(["--ui-test-session-notices"])
+        let warning = "Memory provider 'honcho' could not be loaded; memory is off."
+        let chip = try await requireElement(in: window, label: warning, "The Agent's warning is not above the composer")
+        XCTAssertTrue(window.bounds.contains(window.convert(chip.accessibilityFrame, from: nil)), "The warning is off screen")
+        _ = try await requireElement(in: window, label: "You've used 90% of your credits.", "The Agent's credit notice is missing")
+
+        let dismissals = elements(named: "Dismiss notice", in: window)
+        XCTAssertEqual(dismissals.count, 2, "Each notice needs its own Dismiss")
+        HostedAccessibility.activate(try XCTUnwrap(dismissals.first))
+        let dismissed = await awaitNoElement(in: window) { $0.accessibilityLabel == warning }
+        XCTAssertTrue(dismissed, "Dismiss left the warning up")
+        let kept = await awaitElement(in: window, label: "You've used 90% of your credits.")
+        XCTAssertNotNil(kept, "Dismiss hid the other notice")
+    }
+
     /// An edit or regenerate the server holds asks with the server's count, the edit only once its sheet has closed;
     /// Cancel keeps the transcript (TAL-929).
     func testHeldEditAndRegenerateAskWithTheServersCount() async throws {

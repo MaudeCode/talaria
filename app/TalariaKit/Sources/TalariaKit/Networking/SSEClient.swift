@@ -134,6 +134,8 @@ public enum SSEEvent: Equatable {
     case steerPending(PendingSteer)
     /// TAL-426: a pending steer taken back (Edit, Cancel, Stop) or sent on as the server's follow-up turn.
     case steerWithdrawn(SteerWithdrawnEvent)
+    /// TAL-831: the session's Agent notices changed; the list replaces the shown one.
+    case notices(SessionNoticesEvent)
     case streamEnd
     /// The settled session an error or cancel frame carries, delivered just before that terminal event.
     case settledSession(SessionDetail)
@@ -452,6 +454,9 @@ struct SSEEventDecoder {
         case "steer_withdrawn":
             guard let payload = decodePayload(SteerWithdrawnEvent.self, eventType: eventType, from: eventData, decoder: snakeCaseDecoder) else { return .ignored }
             return .steerWithdrawn(payload)
+        case "notices":
+            guard let payload = decodePayload(SessionNoticesEvent.self, eventType: eventType, from: eventData, decoder: snakeCaseDecoder) else { return .ignored }
+            return .notices(payload)
         case "stream_end":
             return .streamEnd
         case "cancel":
