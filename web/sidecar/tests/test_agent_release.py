@@ -62,13 +62,18 @@ def _reviews(monkeypatch) -> None:
     """TAL-897: the Agent's background-review canceller, recording which session's agent it reached and why."""
     module = types.ModuleType("agent.background_review")
     module.cancel_background_review_for_live_turn = lambda agent, *, message, tool_reason: EVENTS.append(("cancel_review", agent.kwargs["session_id"], message))
-    module.prepare_background_review_run = lambda agent: object()
+    # The Agent admits a run token only while no unfinished review holds the slot.
+    module.prepare_background_review_run = lambda agent: None if (r := getattr(agent, "_background_review_run", None)) is not None and not r.request_done.is_set() else object()
     monkeypatch.setitem(sys.modules, "agent", types.ModuleType("agent"))
     monkeypatch.setitem(sys.modules, "agent.background_review", module)
 
 
-def _cancels() -> list[tuple]:
-    return [e for e in EVENTS if e[0] == "cancel_review"]
+def _cancels(count: int = 0) -> list[tuple]:
+    """The review cancels so far, once ``count`` arrived (an eviction's cancels run on their own threads)."""
+    deadline = time.monotonic() + 2
+    while len(cancels := [e for e in EVENTS if e[0] == "cancel_review"]) < count and time.monotonic() < deadline:
+        time.sleep(0.01)
+    return cancels
 
 
 def _ended(session_id: str, timeout: float = 2.0) -> list[tuple]:
@@ -231,6 +236,39 @@ def test_profile_deletion_cancels_that_profiles_background_reviews_before_removi
     assert seen == {"cancels": [("cancel_review", "alpha-chat", "profile deleted")]}
 
 
+def test_profile_deletion_waits_for_a_cancelled_review_to_settle(monkeypatch, tmp_path) -> None:
+    """A review past the Agent's bounded cancel wait may still save memory: the home stays until it acknowledges."""
+    _setup(monkeypatch)
+    _reviews(monkeypatch)
+    monkeypatch.setattr(chat, "_PROFILE_RELEASE_TIMEOUT", 0.5)
+    alpha = tmp_path / "profiles" / "alpha"
+    assert chat.start(Ctx(), {**_params("st-slow", "slow"), "profile_home": str(alpha)})["status"] == "completed"
+    review = types.SimpleNamespace(cancel_requested=threading.Event(), request_done=threading.Event())
+    review.cancel_requested.set()
+    MemoryAgent.instances[-1]._background_review_run = review
+    deleted: list = []
+    monkeypatch.setattr(profiles, "delete_profile", lambda base_home, name: deleted.append(name))
+    registry = Registry(runtime=types.SimpleNamespace(load=lambda: None, ensure_current=lambda: None))  # type: ignore[arg-type]
+    profiles.register(registry)
+    with pytest.raises(RpcError, match="still saving memory"):
+        registry.methods["profiles.delete"](Ctx(), {"base_home": str(tmp_path), "name": "alpha"})
+    assert deleted == []
+    review.request_done.set()
+    assert registry.methods["profiles.delete"](Ctx(), {"base_home": str(tmp_path), "name": "alpha"}) == {"ok": True}
+    assert deleted == ["alpha"]
+
+
+def test_shutdown_closes_turn_admission_before_cancelling_reviews(monkeypatch) -> None:
+    """A turn admitted after the review owners were collected would fork a review nobody cancels."""
+    _setup(monkeypatch)
+    assert chat.start(Ctx(), _params("st-adm", "admission"))["status"] == "completed"
+    seen: list = []
+    cancel = chat._cancel_background_reviews
+    monkeypatch.setattr(chat, "_cancel_background_reviews", lambda agents, message: seen.append(chat._DRAINING.is_set()) or cancel(agents, message))
+    chat.drain_agents(timeout=1)
+    assert seen == [True]
+
+
 def test_clearing_a_session_mid_turn_stops_its_agent_forking_a_review(monkeypatch) -> None:
     """The server clears a session without stopping its turn; the Agent would fork that turn's review as it returns."""
     _setup(monkeypatch)
@@ -251,7 +289,7 @@ def test_clearing_a_session_mid_turn_stops_its_agent_forking_a_review(monkeypatc
     worker.start()
     assert started.wait(5)
     registry.methods["chat.evict_agent"](Ctx(), {"session_id": "cleared", "clear_session": True})
-    assert _cancels() == [("cancel_review", "cleared", "session deleted or cleared")]
+    assert _cancels(1) == [("cancel_review", "cleared", "session deleted or cleared")]
     assert BlockingAgent.instances[-1].skip_background_review is True
     gate.set()
     worker.join(5)

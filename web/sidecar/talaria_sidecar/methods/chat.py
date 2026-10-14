@@ -766,8 +766,8 @@ def _cancel_background_reviews(agents, message: str) -> list[threading.Thread]:
     token from the Agent's ``prepare_background_review_run``, never finished), so the Agent admits no later review: not
     from a turn still running (a clear does not stop it), a spawn already under way, or a review deferred to or
     requeued on the idle queue (managed local runtime). ``skip_background_review`` spares the turn finalizer queueing
-    one at all. Returns the cancels running side by side for the caller to join; the Agent bounds each wait for the
-    fork's acknowledgement. Only a turn's start waits on a held slot, and an ended agent runs no further turn."""
+    one at all. Returns the cancels running side by side; each lasts until its fork acknowledges, which the Agent's own
+    wait does not bound. Only a turn's start waits on a held slot, and an ended agent runs no further turn."""
     unique = {id(agent): agent for agent in agents if agent is not None}
     for agent in unique.values():
         try:
@@ -794,10 +794,9 @@ def _cancel_background_reviews(agents, message: str) -> list[threading.Thread]:
                 if current is None:
                     return  # not an Agent with a review slot
                 if current.cancel_requested.is_set():
-                    # A cancelled fork past the Agent's wait: claim the slot once it acknowledges, before the Agent can
-                    # requeue it, without holding up the teardown.
-                    threading.Thread(target=lambda: (current.request_done.wait(), cancel(agent)), daemon=True, name="chat-review-cancel").start()
-                    return
+                    # A cancelled fork past the Agent's wait may still write: this cancel lasts until it acknowledges,
+                    # then claims the slot before the Agent can requeue it. Profile deletion waits for that.
+                    current.request_done.wait()
             log.warning("a background review kept restarting after its session ended")
         except Exception:  # noqa: BLE001 - teardown continues without it
             log.warning("cancelling a background review failed", exc_info=True)
@@ -822,14 +821,14 @@ def drain_agents(timeout: float = _AGENT_RELEASE_TIMEOUT) -> None:
     wait, bounded, for those turns and every release still running."""
     deadline = time.monotonic() + timeout
     with _AGENT_CACHE_LOCK, _RUNS_LOCK:
-        agents = [entry[0] for entry in _AGENT_CACHE.values()] + [run.agent for run in _RUNS.values()]
-        for run in _RUNS.values():
+        # Admission closes with the snapshot, so no later turn forks a review outside it.
+        _DRAINING.set()
+        runs = list(_RUNS.values())
+        agents = [entry[0] for entry in _AGENT_CACHE.values()] + [run.agent for run in runs]
+        for run in runs:
             run.session_ended = True
     cancels = _cancel_background_reviews(agents, "sidecar shutting down")
     evict_all_agents()
-    with _RUNS_LOCK:
-        _DRAINING.set()
-        runs = list(_RUNS.values())
     for run in runs:
         run.cancel.set()
     while time.monotonic() < deadline:
@@ -1654,8 +1653,8 @@ def register(registry) -> None:
             entry = _AGENT_CACHE.pop(session_id, None)
             _release_agents_locked([entry] if entry else [])
         if end_session:
-            cancels = _cancel_background_reviews([entry and entry[0], run and run.agent], "session deleted or cleared")
-            _join(cancels, time.monotonic() + _AGENT_RELEASE_TIMEOUT)
+            # The server does not wait for an eviction; the cancels finish on their own.
+            _cancel_background_reviews([entry and entry[0], run and run.agent], "session deleted or cleared")
             try:
                 from tools.approval import clear_session
                 clear_session(session_id)

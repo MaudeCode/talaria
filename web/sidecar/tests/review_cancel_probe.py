@@ -58,6 +58,10 @@ def reviews_left(parent) -> list:
     """Which reviews ``parent`` can still fork: a post-turn one, a deferred one the idle queue dispatches, and one whose
     spawn had already resolved the method before the session ended."""
     left = [] if getattr(parent, "skip_background_review", False) else ["post-turn"]
+    if not left:  # an ended agent's cancel claims its review slot on its own thread
+        deadline = time.monotonic() + 3
+        while getattr(parent, "_talaria_review_slot", None) is None and time.monotonic() < deadline:
+            time.sleep(0.02)
     spawned = []
     parent.__dict__.setdefault("_spawn_background_review_now", lambda **kwargs: spawned.append(Parent._spawn_background_review_now(parent, **kwargs)))
     QUEUE._dispatch(_PendingReview(parent, "probe", {}, 0.0, contextvars.copy_context()))
@@ -112,7 +116,7 @@ out["running_left"] = reviews_left(parent)
 run.finished.set()
 chat._RUNS.pop("running-stream"), chat._RUNS_BY_SESSION.pop("running")
 
-# A review that never acknowledges holds the eviction only for the Agent's bounded wait.
+# A review that never acknowledges does not hold up the eviction.
 parent, review = admitted(acknowledge=False)
 chat._AGENT_CACHE["wedged"] = (parent, "sig", HOME)
 started = time.monotonic()
