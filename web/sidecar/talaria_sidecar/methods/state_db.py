@@ -181,12 +181,14 @@ def _is_safe_session_id(sid) -> bool:
     return isinstance(sid, str) and bool(_SAFE_SESSION_ID.match(sid))
 
 
-def _clean_artifacts(sessions_dir: Path, removed_id: str) -> bool:
+def _clean_artifacts(sessions_dir: Path, removed_id: str, *, keep_legacy: bool) -> bool:
     if not _is_safe_session_id(removed_id):
         return False
     ok = True
-    # ``session_<id>.json`` is the legacy snapshot older Agents wrote; it can carry plaintext secrets.
-    for name in (f"{removed_id}.json", f"{removed_id}.jsonl", f"session_{removed_id}.json"):
+    # ``session_<id>.json`` is the legacy snapshot older Agents wrote; it can carry plaintext secrets. It is kept while a
+    # live session's id is ``session_<id>``, because then it is that session's own transcript.
+    names = [f"{removed_id}.json", f"{removed_id}.jsonl"] + ([] if keep_legacy else [f"session_{removed_id}.json"])
+    for name in names:
         artifact = sessions_dir / name
         if artifact.exists():
             try:
@@ -220,13 +222,13 @@ def _process_manifests(conn, sessions_dir: Path, *, alive_query) -> bool:
             mp.unlink(missing_ok=True)
             continue
         try:
-            alive = alive_query(conn, pending_ids)
+            alive = alive_query(conn, pending_ids + [f"session_{i}" for i in pending_ids])
         except Exception:  # noqa: BLE001 - fail closed, retry later
             complete = False
             continue
         still_pending = []
         for removed_id in pending_ids:
-            if removed_id in alive or not _clean_artifacts(sessions_dir, removed_id):
+            if removed_id in alive or not _clean_artifacts(sessions_dir, removed_id, keep_legacy=f"session_{removed_id}" in alive):
                 still_pending.append(removed_id)
         if still_pending:
             tmp = mp.with_suffix(".tmp")
