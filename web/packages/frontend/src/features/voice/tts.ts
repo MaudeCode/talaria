@@ -24,7 +24,8 @@ export function stopSpeaking(): void {
 export async function speak(text: string): Promise<void> {
   stopSpeaking()
   const turn = generation
-  const { spoken_text: spoken } = await prepareSpeech(text)
+  // A server without `speech.prepare` (a Stable channel switch) or a dropped request speaks the reply as written.
+  const spoken = await prepareSpeech(text).then((r) => r.spoken_text, () => text.trim().slice(0, 4000))
   if (turn !== generation || !spoken) return
   const engine = readPersisted(TTS_PREF.engine) ?? 'browser'
   const ext = ttsEngine(engine)

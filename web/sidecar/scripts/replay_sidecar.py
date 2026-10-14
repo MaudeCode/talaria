@@ -125,10 +125,13 @@ def _shutdown(ctx, params: dict) -> dict:
 def build_methods() -> dict:
     subs = _substitutions()
     methods = {}
+    spoken: dict[str, dict] = {}
     for path in sorted(FIXTURES.glob("*.json")):
         for method, entries in json.loads(path.read_text()).items():
             if entries:
                 methods[method] = _replay(_resolve(entries[0], subs))
+            if method == "text.spoken":
+                spoken = {entry["params"]["text"]: entry["result"] for entry in entries}
     handshake = methods["runtime.handshake"]
     methods["runtime.handshake"] = lambda ctx, params: {**handshake(ctx, params), "rpc_version": params.get("rpc_version", 1)}
     methods["chat.start"] = _chat_start
@@ -141,6 +144,8 @@ def build_methods() -> dict:
     methods["approval.set_yolo"] = lambda ctx, params: {"yolo_enabled": bool(params.get("enabled")), "released": 0}
     # Every settled turn asks the goal judge (TAL-396); the replay holds no goal, so it answers as the sidecar does then.
     methods["goals.evaluate"] = lambda ctx, params: {"status": None, "should_continue": False, "continuation_prompt": None, "verdict": "inactive", "reason": "no active goal", "message": ""}
+    # TAL-906: a recorded text gets the Agent's recorded script; any other text is spoken as written.
+    methods["text.spoken"] = lambda ctx, params: spoken.get(str(params.get("text") or ""), {"spoken_text": str(params.get("text") or "")})
     methods["worktree.create"] = _worktree_create
     methods["runtime.shutdown"] = _shutdown
     return methods

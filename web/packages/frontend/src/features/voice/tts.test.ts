@@ -28,6 +28,12 @@ describe('speak (TAL-906)', () => {
     expect(spoken).toEqual([exchange.response.spoken_text])
   })
 
+  it('speaks the reply as written when the server cannot prepare it', async () => {
+    vi.mocked(api.prepareSpeech).mockRejectedValue(new Error('404'))
+    await speak(' Hello there. ')
+    expect(spoken).toEqual(['Hello there.'])
+  })
+
   it('stays quiet when the script is empty or speech stopped while it was prepared', async () => {
     vi.mocked(api.prepareSpeech).mockResolvedValueOnce({ spoken_text: '' })
     await speak('```\nls\n```')

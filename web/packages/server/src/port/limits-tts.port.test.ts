@@ -233,6 +233,8 @@ describe('TTS validation, limits, and engines', () => {
     try {
       sidecar.respond('text.spoken', () => { throw new Error('boom') })
       expect(await json(await post(s, '/api/speech/prepare', { text: `  ${CORPUS}\n` }))).toEqual({ spoken_text: CORPUS })
+      // The text as written keeps the 4000-character spoken cap.
+      expect(await json(await post(s, '/api/speech/prepare', { text: 'word '.repeat(2000) }))).toEqual({ spoken_text: 'word '.repeat(800).trimEnd() })
       sidecar.respond('text.spoken', () => ({ spoken_text: '' }))
       const res = await post(s, '/api/tts', { text: '```\nls\n```', engine: 'openai' })
       expect(res.status).toBe(400)

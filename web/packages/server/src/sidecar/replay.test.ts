@@ -41,4 +41,10 @@ describe.skipIf(!python)('replay sidecar', () => {
     expect(turn.map((f) => f.event)).toContain('done')
     expect(turn.find((f) => f.event === 'apperror')?.data).toBeUndefined()
   })
+
+  it('speaks a recorded text as the Agent did and any other text as written (TAL-906)', async () => {
+    const recorded = 'Saved peyton-sample-20260922.wav to /tmp/out/9f2c1e7a-3b4d-4c2e-8f1a-0b9e2d7c6a51.json, see https://example.com/a/b?x=1 and commit 4bf46b7c8.'
+    expect(await sidecar.call('text.spoken', { text: recorded })).toEqual({ spoken_text: 'Saved to, see and commit 4bf46b7c8.' })
+    expect(await sidecar.call('text.spoken', { text: 'All files checked.' })).toEqual({ spoken_text: 'All files checked.' })
+  })
 })

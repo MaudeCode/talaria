@@ -19,6 +19,8 @@ const CSP_MAX_BODY = 64 * 1024
 const TTS_TIMEOUT_MS = 30_000
 const TTS_MAX_AUDIO_BYTES = 16 * 1024 * 1024
 const SPOKEN_TEXT_TIMEOUT_MS = 10_000
+/** The Agent's `prepare_spoken_text` default `max_chars`. */
+const SPOKEN_TEXT_MAX_CHARS = 4000
 
 export async function handleTranscribe(ctx: RequestContext): Promise<void> {
   const form = await readUploadForm(ctx)
@@ -85,16 +87,21 @@ function normalizedOpenAiBase(raw: string): string {
   return `${u.protocol}//${u.host}${u.pathname.replace(/\/+$/, '')}`
 }
 
-/** TAL-906: the Agent's read-aloud script for `text`, which every engine and client speaks; the text as written when the sidecar cannot prepare it. */
+/**
+ * TAL-906: the Agent's read-aloud script for `text`, which every engine and client speaks; the text as written when the
+ * sidecar cannot prepare it. Either way it keeps the Agent's spoken-text cap.
+ */
 export async function spokenText(ctx: RequestContext, text: string): Promise<string> {
   const sidecar = ctx.deps.sidecar()
-  if (!sidecar) return text
-  try {
-    return (await sidecar.call('text.spoken', { text }, { timeoutMs: SPOKEN_TEXT_TIMEOUT_MS })).spoken_text
-  } catch (error) {
-    ctx.deps.log(`[tts] spoken text unavailable: ${str((error as Error).message)}`)
-    return text
+  let spoken = text
+  if (sidecar) {
+    try {
+      spoken = (await sidecar.call('text.spoken', { text }, { timeoutMs: SPOKEN_TEXT_TIMEOUT_MS })).spoken_text
+    } catch (error) {
+      ctx.deps.log(`[tts] spoken text unavailable: ${str((error as Error).message)}`)
+    }
   }
+  return spoken.slice(0, SPOKEN_TEXT_MAX_CHARS).trimEnd()
 }
 
 /** An upstream engine answered, but not with usable audio (Python answers 502 for these; 500 stays for unexpected faults). */
