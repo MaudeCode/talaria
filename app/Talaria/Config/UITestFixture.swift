@@ -38,6 +38,8 @@ struct UITestFixtureEnvironment {
     nonisolated static let holdArchiveUndoArgument = "--ui-test-hold-archive-undo"
     /// Serves the fixture chat with the Agent's notices for the session (TAL-831).
     nonisolated static let sessionNoticesArgument = "--ui-test-session-notices"
+    /// Serves the fixture chat with a standing `/goal` parked on CI for ten minutes (TAL-833).
+    nonisolated static let goalArgument = "--ui-test-goal"
     /// Opens the Chats list with its update notifications sheet up.
     nonisolated static let updateNotificationsArgument = "--ui-test-update-notifications"
     /// Reports the Agent's session storage as corrupt on `/api/sessions` (TAL-830).
@@ -803,6 +805,12 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         detail["messages"] = messages
         if UITestFixtureEnvironment.hasSessionNotices {
             detail["notices"] = UITestFixtureEnvironment.sessionNotices()
+        }
+        if ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.goalArgument) {
+            detail["goal"] = [
+                "text": "Ship the release notes", "status": "parked", "turns_used": 5, "max_turns": 20,
+                "reason": "CI running", "parked_until": Date().timeIntervalSince1970 + 600
+            ]
         }
         return json(["session": detail])
     }

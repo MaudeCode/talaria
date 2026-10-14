@@ -209,6 +209,8 @@ public final class ChatViewModel {
         compressionReference = session?.compressionReference
         recomputeCompressionReferenceCard()
     }
+    /// TAL-833: the standing `/goal` every session detail carries; nil hides its chip.
+    public private(set) var sessionGoal: SessionGoal?
     /// Mirrors the list-row merge rule: the server's `read_only` replaces the
     /// seeded flag; a detail that omits it keeps it. A load passes the notices count it fetched at.
     private func applyReadOnlyState(from session: SessionDetail?, noticesChangesAtFetch: Int? = nil) {
@@ -218,6 +220,7 @@ public final class ChatViewModel {
         if let notices = session?.notices, noticesChangesAtFetch.map({ $0 == noticesChangeCount }) ?? true {
             sessionNotices = notices
         }
+        sessionGoal = session?.goal
         if let session, session.statesEnabledToolsets { sessionToolsets = SessionToolsets(names: session.enabledToolsets) }
         // A detail relabels the workspace it reports, so a registry rename shows on the next load (TAL-303).
         if let workspace = session?.workspace, workspace == serverWorkspacePath {

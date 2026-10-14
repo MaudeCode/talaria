@@ -122,3 +122,51 @@ struct GoalDecision: Decodable, Equatable {
             ?? (try? container.decodeIfPresent([JSONValue].self, forKey: .messageArgsSnake))
     }
 }
+
+/// TAL-808: the session's standing `/goal` while it runs (session `goal`); a done, cleared or absent goal is null.
+/// `parked` is an active goal waiting on a process or a timer. Decoded with `convertFromSnakeCase`.
+public struct SessionGoal: Decodable, Equatable {
+    public enum Status: String, Equatable {
+        case active, paused, parked
+    }
+
+    public let text: String
+    public let status: Status
+    public let turnsUsed: Int
+    public let maxTurns: Int
+    /// Why it is paused, or what a park waits on.
+    public let reason: String?
+    /// When a timed park ends, in Unix seconds; nil for an untimed park and every other status.
+    public let parkedUntil: Double?
+
+    public init(text: String, status: Status, turnsUsed: Int, maxTurns: Int, reason: String? = nil, parkedUntil: Double? = nil) {
+        self.text = text
+        self.status = status
+        self.turnsUsed = turnsUsed
+        self.maxTurns = maxTurns
+        self.reason = reason
+        self.parkedUntil = parkedUntil
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case text, status, turnsUsed, maxTurns, reason, parkedUntil
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        // A goal missing what the chip shows is dropped rather than shown with invented values.
+        guard let status = container.decodeLossyStringIfPresent(forKey: .status).flatMap(Status.init(rawValue:)),
+              let text = container.decodeLossyStringIfPresent(forKey: .text),
+              let turnsUsed = container.decodeLossyIntIfPresent(forKey: .turnsUsed),
+              let maxTurns = container.decodeLossyIntIfPresent(forKey: .maxTurns)
+        else {
+            throw DecodingError.dataCorruptedError(forKey: .status, in: container, debugDescription: "A session goal needs a known status, its text and its turns")
+        }
+        self.status = status
+        self.text = text
+        self.turnsUsed = turnsUsed
+        self.maxTurns = maxTurns
+        reason = container.decodeLossyStringIfPresent(forKey: .reason)
+        parkedUntil = container.decodeLossyDoubleIfPresent(forKey: .parkedUntil)
+    }
+}

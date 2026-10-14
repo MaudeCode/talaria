@@ -73,6 +73,16 @@ final class ChatHostedTests: XCTestCase {
         XCTAssertTrue(HostedAccessibility.elements(in: window).contains(where: containing("Fix CI")), "Dismiss removed running work")
     }
 
+    /// The session's standing `/goal` shows as one chip above the composer, worded from the server's field (TAL-833).
+    func testTheStandingGoalShowsAboveTheComposer() async throws {
+        let window = try await hostFixtureChat(["--ui-test-goal"])
+        let chip = await awaitElement(in: window) {
+            $0.accessibilityLabel?.hasPrefix("Goal parked · 5/20 turns · until ") == true
+                && $0.accessibilityLabel?.hasSuffix(" · CI running · Ship the release notes") == true
+        }
+        XCTAssertNotNil(chip, "The parked goal chip is missing")
+    }
+
     /// Steers pending from another device offer only the actions the server allows; Send now explains itself when
     /// nothing can take it, and Edit appends the steer after the draft (TAL-300).
     func testPendingSteerFromAnotherDeviceOffersSendNowEditAndCancel() async throws {
