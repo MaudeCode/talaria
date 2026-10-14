@@ -2,7 +2,7 @@
  * TAL-785: a damaged state.db reports degraded Agent session storage instead of an empty history with an upgrade hint;
  * a readable database without the `source` column keeps the upgrade path.
  */
-import { closeSync, openSync, rmSync, statSync, writeSync } from 'node:fs'
+import { closeSync, openSync, readFileSync, rmSync, statSync, writeSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
@@ -70,6 +70,21 @@ describe('degraded Agent session storage (TAL-785)', () => {
     writeStateDb(dbPath)
     smash(dbPath, 4096)
     expect((await list()).agent_storage).toMatchObject({ state: 'corrupt', reason: expect.stringMatching(/malformed/) as unknown })
+  })
+
+  it('reports damage that only a background kind\'s read reaches as corrupt', async () => {
+    writeStateDb(dbPath)
+    const db = new DatabaseSync(dbPath)
+    db.prepare("INSERT INTO sessions (id, source, started_at, title, message_count) VALUES ('cron_job_1', 'cron', 5000, 'Nightly', 2)").run()
+    for (const ts of [5000.1, 5000.2]) db.prepare("INSERT INTO messages (session_id, role, content, timestamp) VALUES ('cron_job_1', 'assistant', ?, ?)").run(`CRONPAGE${'c'.repeat(3900)}`, ts)
+    db.exec('CREATE INDEX idx_messages_session ON messages(session_id, timestamp)')
+    db.close()
+    // A row this size fills a page alone, so only the cron read reaches the damaged one.
+    const at = readFileSync(dbPath).lastIndexOf('CRONPAGE')
+    smash(dbPath, Math.floor(at / 4096) * 4096, Math.floor(at / 4096) * 4096 + 4096)
+    const body = await list()
+    expect((body.sessions as Json[]).some((r) => r.session_id === 'cli-99')).toBe(true)
+    expect(body.agent_storage).toMatchObject({ state: 'corrupt', reason: expect.stringMatching(/malformed/) as unknown })
   })
 
   it('reports a file that is not a database as corrupt', async () => {

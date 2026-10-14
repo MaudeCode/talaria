@@ -122,13 +122,14 @@ export class CliSessionSource {
   }
 
   /**
-   * Build the rows, degrade a failed read or build to none with the Python log line, and cache the outcome. The
-   * interactive read failing on a damaged page the storage probe never touched still makes the storage corrupt.
+   * Build the rows, degrade a failed read or build to none with the Python log line, and cache the outcome. Any read,
+   * interactive or background, failing on a damaged page the storage probe never touched still makes the storage corrupt.
    */
   private store(slot: CacheSlot, now: number, profile: string, results: QueryResults, probed: AgentStorage): CliSessionRead {
     let rows: Dict[]
     const truncated = new Set<string>()
-    const corrupt = results instanceof Error ? stateDbCorruptReason(results) : null
+    const failures = results instanceof Error ? [results] : (results ?? []).filter((r): r is Error => r instanceof Error)
+    const corrupt = failures.map(stateDbCorruptReason).find((reason) => reason !== null) ?? null
     const storage: AgentStorage = corrupt ? { state: 'corrupt', reason: corrupt } : probed
     try {
       if (results instanceof Error) throw results
