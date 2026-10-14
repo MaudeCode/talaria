@@ -2086,6 +2086,19 @@ describe('session detail shows mirrored deliveries in a messaging session as del
     expect((await served('tg-near-misses')).map((m) => m._delivery ?? null)).toEqual([null, null, null])
   })
 
+  it('keeps a messaging session\'s deliveries as notices in its duplicate and branch, which are WebUI sessions', async () => {
+    const sid = String((await newSession(s)).session_id)
+    const session = s.deps.sessionStore.get(sid)
+    Object.assign(session, { source_tag: 'telegram', raw_source: 'telegram', session_source: 'messaging', messages: [{ role: 'user', content: 'Any news?', timestamp: 900 }, { role: 'assistant', content: 'Not yet.', timestamp: 901 }, { role: 'user', content: webhook, timestamp: 902 }, { role: 'user', content: cron, timestamp: 903 }] })
+    s.deps.sessionStore.save(session)
+    const duplicate = String(((await json(await post(s, '/api/session/duplicate', { session_id: sid }))).session as Json).session_id)
+    const branch = String((await json(await post(s, '/api/session/branch', { session_id: sid }))).session_id)
+    for (const copy of [duplicate, branch]) {
+      const rows = await served(copy)
+      expect(rows.map((m) => (m._delivery as Json | undefined)?.kind ?? m.role), copy).toEqual(['user', 'assistant', 'webhook', 'cron'])
+    }
+  })
+
   it('serves the shared delivery example exactly as the contract fixture records it', async () => {
     const fixture = (JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as Json).delivery_session as Json
     const sid = String((await newSession(s)).session_id)

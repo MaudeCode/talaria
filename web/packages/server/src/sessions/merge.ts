@@ -171,19 +171,32 @@ export function deliveryNotice(msg: unknown): DeliveryNotice | null {
 }
 
 /**
+ * TAL-816: `session`'s rows for a copy that is no longer a messaging session (duplicate, branch), each mirrored delivery
+ * marked with the Agent's own mirror metadata (`mirror_source`, which it drops at the SQLite boundary) so the copy still
+ * shows it as a delivery. Returns copies; stored rows are untouched.
+ */
+export function withMirrorSources<T>(messages: T[], session: object): T[] {
+  if (sourceKind(session as Record<string, unknown>) !== 'messaging') return messages
+  return messages.map((m) => {
+    const delivery = deliveryNotice(m)
+    return delivery ? { ...(m as Record<string, unknown>), mirror_source: delivery.kind } as T : m
+  })
+}
+
+/**
  * TAL-305: stamps `_marker_kind` on marker rows, and `_marker_body` (the list without its marker line) on a preserved
  * task list, so clients render a marker card instead of a message. TAL-815: a failed turn's boundary gets
  * `_notice_kind`, unless the turn (`_turn_id`) already carries Web's own error row; that copy and every other row the
- * Agent hides leave as `display_kind: 'hidden'`. TAL-816: in a messaging `session`, a mirrored delivery gets
- * `_delivery`. Returns copies; stored rows are untouched.
+ * Agent hides leave as `display_kind: 'hidden'`. TAL-816: a mirrored delivery in a messaging `session`, or one a copy
+ * marked with its `mirror_source`, gets `_delivery`. Returns copies; stored rows are untouched.
  */
 export function withMarkerKinds<T>(messages: T[], session: object): T[] {
   const erroredTurns = new Set(messages.flatMap((m) => (isDict(m) && m._error ? [str(m._turn_id)] : [])))
   const messaging = sourceKind(session as Record<string, unknown>) === 'messaging'
   return messages.map((m) => {
     if (!isDict(m)) return m
-    const delivery = messaging ? deliveryNotice(m) : null
-    if (delivery) return { ...m, _delivery: delivery }
+    const delivery = deliveryNotice(m)
+    if (delivery && (messaging || m.mirror_source === delivery.kind)) return { ...m, _delivery: delivery }
     const kind = markerKind(m)
     if (!kind) {
       const agentKind = agentRowKind(m)
