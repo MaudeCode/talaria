@@ -144,6 +144,16 @@ def _manager_from(params: dict) -> _Manager:
     return _Manager(session_id, profile_home_param(params), int(max_turns), str(params.get("workspace") or "") or None)
 
 
+#: Older Agents run gates in their launch directory, where a gate checks another project and can pass for it.
+_GATES_NEED_WORKSPACE = "Goal gates need Hermes Agent 0.21.6 or later, which runs them in the session workspace."
+
+
+def _gates_run_in_workspace() -> bool:
+    from hermes_cli import goals as agent_goals
+
+    return hasattr(agent_goals, "_gate_workspace")
+
+
 #: The response ``action`` of each control verb the Agent dispatches; any other command sets the goal.
 _CONTROL_ACTIONS = {
     "": "status", "status": "status", "show": "show", "pause": "pause", "resume": "resume", "continue": "resume",
@@ -189,10 +199,8 @@ def register(registry) -> None:
         action = _CONTROL_ACTIONS.get(tokens[0] if tokens else "", "set") if is_goal_control(text) else "set"
         if action == "set" and params.get("stream_running"):
             return _payload(ok=False, action="set", error="agent_running", message="Agent is running — use /goal status / pause / clear mid-run, or /stop before setting a new goal.")
-        # Older Agents run gates in the launch directory, so a gate could pass for another project.
-        if tokens[:2] == ["gate", "add"] and not hasattr(agent_goals, "_gate_workspace"):
-            return _payload(ok=False, action="gate", error="gates_unsupported", state=mgr.state,
-                            message="Goal gates need Hermes Agent 0.21.6 or later, which runs them in the session workspace.")
+        if tokens[:2] == ["gate", "add"] and not _gates_run_in_workspace():
+            return _payload(ok=False, action="gate", error="gates_unsupported", state=mgr.state, message=_GATES_NEED_WORKSPACE)
         had_goal = bool(mgr.has_goal())
         # Only goal-setting text reads it: a re-pasted goal kicks off without repeating itself.
         last_user_message = mgr.scoped(agent_goals.last_user_message_from_db, mgr.session_id) if action == "set" else None
@@ -229,6 +237,11 @@ def register(registry) -> None:
         try:
             if not mgr.is_active():
                 return _inactive("no active goal", getattr(mgr.state, "status", None) if mgr.state is not None else None)
+            # Gates set on a newer Agent persist across a channel switch; this one would run them outside the workspace.
+            if getattr(mgr.state, "gates", None) and not _gates_run_in_workspace():
+                mgr.pause(reason="gates need Hermes Agent 0.21.6 or later")
+                return {"status": "paused", "should_continue": False, "continuation_prompt": None, "verdict": "gate_failed", "reason": "gates not run",
+                        "message": f"⏸ Goal paused — quality gates not run. {_GATES_NEED_WORKSPACE} /goal gate clear, then /goal resume."}
             decision = mgr.evaluate_after_turn(str(params.get("last_response") or ""), user_initiated=bool(params.get("user_initiated", True)))
         except Exception as exc:  # noqa: BLE001 - never fail a turn on goal evaluation
             log.debug("goal evaluation failed", exc_info=True)

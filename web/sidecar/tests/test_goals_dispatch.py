@@ -30,6 +30,7 @@ def goal(tmp_path, hermes_home):
         return proc.result("goals.evaluate", {"session_id": "s1", "profile_home": str(hermes_home), "last_response": "worked on it", **extra})
 
     command.evaluate = evaluate
+    command.proc = proc
     yield command
     proc.close()
 
@@ -62,6 +63,25 @@ def test_gate_add_is_refused_where_gates_would_leave_the_workspace(goal):
     refused = goal("gate add pwd")
     assert refused["ok"] is False and refused["error"] == "gates_unsupported", refused
     assert goal("gate list")["ok"], "listing and clearing gates still work"
+
+
+@pytest.mark.skipif(GATES_IN_WORKSPACE, reason="this Agent runs gates in the session workspace")
+def test_gates_from_a_newer_agent_pause_instead_of_running(goal, tmp_path, hermes_home):
+    """A gate set on Agent 0.21.6+ persists across a channel switch; this Agent would run it in its launch directory."""
+    import json
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    goal("ship the release notes")
+    snap = goal.proc.result("goals.snapshot", {"session_id": "s1", "profile_home": str(hermes_home)})["snapshot"]
+    state = json.loads(snap)
+    marker = tmp_path / "gate-ran.txt"
+    state["gates"] = [{"command": f"pwd > '{marker}'"}]
+    goal.proc.result("goals.restore", {"session_id": "s1", "profile_home": str(hermes_home), "snapshot": json.dumps(state)})
+    decision = goal.evaluate(workspace=str(workspace))
+    assert decision["status"] == "paused" and "quality gates not run" in decision["message"], decision
+    assert not marker.exists(), "the gate ran"
+    assert goal("status")["goal"]["status"] == "paused"
 
 
 @pytest.mark.skipif(not GATES_IN_WORKSPACE, reason="this Agent refuses gate add")
