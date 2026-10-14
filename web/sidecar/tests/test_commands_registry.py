@@ -36,8 +36,11 @@ def test_prompt_builtins_expand_through_the_agents_own_builders(tmp_path: pathli
     sidecar = SidecarProcess(home)
     try:
         rows = {row["name"]: row["prompt"] for row in sidecar.result("commands.registry", {"profile_home": str(home)})["commands"]}
-        assert {name: rows.get(name) for name in ("plan", "learn", "init", "initiate-setup", "blueprint", "new")} == {
-            "plan": "expand", "learn": "expand", "init": "expand", "initiate-setup": "expand", "blueprint": "unsupported", "new": None}
+        assert {name: rows.get(name) for name in ("plan", "learn", "init", "blueprint", "new")} == {
+            "plan": "expand", "learn": "expand", "init": "expand", "blueprint": "unsupported", "new": None}
+        # /initiate-setup arrived in Agent v0.21.6; older supported releases do not list it.
+        has_setup = "initiate-setup" in rows
+        assert rows.get("initiate-setup", "expand") == "expand"
 
         def expand(command: str) -> dict:
             params = {"profile_home": str(home), "command": command, "workspace": str(workspace), "enabled_toolsets": None}
@@ -46,9 +49,12 @@ def test_prompt_builtins_expand_through_the_agents_own_builders(tmp_path: pathli
             return result
 
         setup = expand("/initiate_setup")
-        assert setup["name"] == "initiate-setup"
-        assert setup["message"].startswith("[/initiate-setup]\n\n")
-        assert '"surface": "webui"' in setup["message"] and '"primary_profile": "default"' in setup["message"]
+        if has_setup:
+            assert setup["name"] == "initiate-setup"
+            assert setup["message"].startswith("[/initiate-setup]\n\n")
+            assert '"surface": "webui"' in setup["message"] and '"primary_profile": "default"' in setup["message"]
+        else:
+            assert setup == {"name": None, "message": None}
         plan = expand("/plan add a dark mode")
         assert plan["name"] == "plan" and plan["message"].startswith("[/plan") and "add a dark mode" in plan["message"]
         assert str(workspace) in expand("/init")["message"]
