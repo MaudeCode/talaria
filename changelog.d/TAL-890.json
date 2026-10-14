@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "CLI and gateway chats no longer vanish from the Chats list, or fail to open with \"Session not found\", while the Agent is committing a slow write to its session store.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
