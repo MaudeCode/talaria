@@ -570,10 +570,10 @@ describe('Kanban worker sessions (TAL-793)', () => {
     s = await bootTestServer({ sidecar: new FakeSidecar() })
     db = createStateDb(join(s.state, 'state.db'))
     // Agent schema v31's immutable `created_source`.
-    db.exec('ALTER TABLE sessions ADD COLUMN created_source TEXT')
-    const insert = (row: Parameters<typeof insertSession>[1], createdSource: string): void => {
+    db.exec('ALTER TABLE sessions ADD COLUMN created_source TEXT; ALTER TABLE sessions ADD COLUMN model_config TEXT')
+    const insert = (row: Parameters<typeof insertSession>[1], createdSource: string, modelConfig: Json | null = null): void => {
       insertSession(db, row)
-      db.prepare('UPDATE sessions SET created_source = ? WHERE id = ?').run(createdSource, row.id)
+      db.prepare('UPDATE sessions SET created_source = ?, model_config = ? WHERE id = ?').run(createdSource, modelConfig ? JSON.stringify(modelConfig) : null, row.id)
     }
     const turns = (t: number): [string, number][] => [['user', t + 1], ['assistant', t + 2], ['user', t + 3], ['assistant', t + 4]]
     insert({ id: 'kanban-w1', source: 'kanban', started_at: 1000, title: 'Worker run', messages: turns(1000) }, 'kanban')
@@ -586,12 +586,19 @@ describe('Kanban worker sessions (TAL-793)', () => {
     for (let i = 0; i <= 30; i += 1) {
       insert({ id: `kanban-long-${String(i)}`, source: 'cli', started_at: 2000 + i * 10, title: 'Long worker run', parent: i ? `kanban-long-${String(i - 1)}` : null, ...(i < 30 ? { ended_at: 2000 + i * 10 + 5, end_reason: 'compression' } : {}), messages: turns(2000 + i * 10) }, i ? 'cli' : 'kanban')
     }
+    // The Agent's compression edge needs neither a matching source nor a prompt start: a later CLI continuation is owned,
+    // while a branch or reset fork of the same worker is its own conversation.
+    insert({ id: 'kanban-gap-root', source: 'kanban', started_at: 3000, title: 'Worker run', ended_at: 3005, end_reason: 'compression', messages: turns(3000) }, 'kanban')
+    insert({ id: 'kanban-gap-tip', source: 'cli', started_at: 3500, title: 'Worker run', parent: 'kanban-gap-root', messages: turns(3500) }, 'cli')
+    insert({ id: 'kanban-branch', source: 'cli', started_at: 3600, title: 'Branched from a worker', parent: 'kanban-gap-root', messages: turns(3600) }, 'cli', { _branched_from: 'kanban-gap-root' })
+    insert({ id: 'kanban-reset', source: 'cli', started_at: 3700, title: 'Reset from a worker', parent: 'kanban-gap-root', messages: turns(3700) }, 'cli', { _reset_from: 'kanban-gap-root' })
     insert({ id: 'cli-plain', source: 'cli', started_at: 1400, title: 'Plain CLI work', messages: turns(1400) }, 'cli')
+    insert({ id: 'cli-unknown-owner', source: 'cli', started_at: 1500, title: 'Owner read fails', messages: turns(1500) }, 'cli')
     await s.deps.settings.save({ show_cli_sessions: true, show_kanban_sessions: true })
   })
   afterAll(async () => { db.close(); await s.close() })
 
-  const owned = ['kanban-w1', 'kanban-retagged', 'kanban-tip', 'kanban-long-30']
+  const owned = ['kanban-w1', 'kanban-retagged', 'kanban-tip', 'kanban-long-30', 'kanban-gap-tip']
 
   it('opens a Kanban-owned transcript read-only, by source, created_source or lineage, and refuses messaging and claiming it', async () => {
     const rows = (await json(await s.get('/api/sessions'))).sessions as Json[]
@@ -608,6 +615,23 @@ describe('Kanban worker sessions (TAL-793)', () => {
     s.deps.sessionStore.save(new Session({ session_id: 'kanban-retagged', title: 'Retagged worker run', source_tag: 'cli', raw_source: 'cli', is_cli_session: true, messages: [{ role: 'user', content: 'hi', timestamp: 1101 }] }, { workspace: s.state, model: null }))
     expect(((await json(await s.get('/api/session?session_id=kanban-retagged'))).session as Json).read_only).toBe(true)
     expect((await post('/api/chat/start', { session_id: 'kanban-retagged', message: 'carry on' })).status).toBe(403)
+  })
+
+  it('keeps a branch or reset fork of a Kanban worker claimable', async () => {
+    for (const sid of ['kanban-branch', 'kanban-reset']) {
+      expect(((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).read_only, sid).toBe(false)
+      expect((await post('/api/session/rename', { session_id: sid, title: 'Forked' })).status, sid).toBe(200)
+    }
+  })
+
+  it('refuses a claim when the owner read fails', async ({ onTestFinished }) => {
+    const sessions = s.deps.sessions as unknown as { stateDbSources: (ids: string[]) => Map<string, string> | null }
+    const read = sessions.stateDbSources
+    sessions.stateDbSources = () => null
+    onTestFinished(() => { sessions.stateDbSources = read })
+    expect(((await json(await s.get('/api/session?session_id=cli-unknown-owner'))).session as Json).read_only).toBe(true)
+    expect((await post('/api/session/rename', { session_id: 'cli-unknown-owner', title: 'claimed' })).status).toBe(403)
+    expect(s.deps.sessionStore.loadMetadataOnly('cli-unknown-owner')).toBeNull()
   })
 
   it('keeps an ordinary CLI transcript claimable', async () => {

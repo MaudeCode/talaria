@@ -726,9 +726,10 @@ export function buildSessionListPayload(store: SessionStore, params: ListParams)
     const represented = new Set<string>()
     for (const s of webuiSessions) for (const id of sessionLineageIds(s)) represented.add(id)
     dedupedCli = dedupeCliSidebarSessions(cliRows, represented, { showCli: params.showCliSessions, showCron: params.showCronSessions, showWebhook: params.showWebhookSessions, showKanban: params.showKanbanSessions, sourceFilter: params.sourceFilter ?? null, requestVisibilityOverrides: params.requestVisibilityOverrides })
-    const owners = params.stateDbSources?.(dedupedCli.map((r) => str(r.session_id))) ?? null
-    // A sidecar-less foreign row whose owner refuses claiming is read-only, as its detail and mutations are.
-    dedupedCli = dedupedCli.map((r) => ({ ...r, read_only: !isClaimableCliSource(r, owners?.get(str(r.session_id)) || str(r.source)), can_duplicate: false }))
+    const owners = params.stateDbSources ? params.stateDbSources(dedupedCli.map((r) => str(r.session_id))) : new Map<string, string>()
+    // A sidecar-less foreign row whose owner refuses claiming is read-only, as its detail and mutations are; an
+    // unreadable owner read (null) locks every row, as it locks sidecars.
+    dedupedCli = dedupedCli.map((r) => ({ ...r, read_only: !owners || !isClaimableCliSource(r, owners.get(str(r.session_id)) || str(r.source)), can_duplicate: false }))
   } else {
     webuiSessions = webuiSessions.filter((r) => !isCliSessionForSettings(r))
   }

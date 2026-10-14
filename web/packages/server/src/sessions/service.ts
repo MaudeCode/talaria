@@ -566,7 +566,9 @@ export class SessionService {
       if (!meta.created_at && row.started_at) meta.created_at = row.started_at
       if (!meta.updated_at && (row.ended_at || row.started_at)) meta.updated_at = row.ended_at || row.started_at
     }
-    const claimable = isClaimableCliSource(meta, stateDbSessionSources(dbPath, [sid])?.get(sid) || stateDbSource)
+    // An owner read that fails is an unknown owner, which never releases a claim (TAL-793).
+    const owners = this.stateDbSources([sid])
+    const claimable = owners !== null && isClaimableCliSource(meta, owners.get(sid) || stateDbSource)
     const workspace = str(meta.workspace || meta.cwd).trim() || this.deps.workspaces.lastWorkspace(profile)
     const defaults = this.store.deps.defaults(profile)
     const session = new Session({

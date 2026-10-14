@@ -433,26 +433,37 @@ export function stateDbSessionSources(dbPath: string, sessionIds: Iterable<strin
   }
 }
 
+/** Python `_is_explicit_fork_child_row`: a tool child, or a branch/delegate (`includeReset`: also reset) fork of its parent. */
+function isExplicitForkChild(row: Dict, includeReset: boolean): boolean {
+  if (str(row.source) === 'tool') return true
+  let cfg: unknown = row.model_config
+  if (typeof cfg === 'string') { try { cfg = JSON.parse(cfg) } catch { return false } }
+  if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) return false
+  const c = cfg as Dict
+  const markers = [c._branched_from, c._delegate_from, ...(includeReset ? [c._reset_from] : [])]
+  const parentId = row.parent_session_id
+  return parentId ? markers.includes(parentId) : markers.some((m) => m !== undefined && m !== null)
+}
+
 /**
- * Python `_resume_lineage_ids`: a walk from a session up the compression segments it continues, root first. Null when
- * the sessions table lacks the lineage columns; the walk stops at a non-continuation, a cycle, or `maxHops`.
+ * Python `_resume_lineage_ids`: `sid` and the compression ancestors a resume loads, root first. Each hop's parent ended
+ * `compression` and the child is no branch, reset, delegate or tool fork. The walk stops at a cycle or the Agent's
+ * 1000-hop `_CHAIN_CAP`; without the lineage columns it is `[sid]`.
  */
-function continuationAncestry(db: DatabaseSync, maxHops = 20): ((sid: string) => string[]) | null {
-  const cols = tableColumns(db, 'sessions')
-  if (!['id', 'parent_session_id', 'end_reason', 'started_at', 'source'].every((c) => cols.has(c))) return null
-  const select = db.prepare('SELECT id, source, started_at, parent_session_id, ended_at, end_reason FROM sessions WHERE id = ?')
+function resumeLineageWalker(db: DatabaseSync, cols: Set<string>): (sid: string) => string[] {
+  if (!['parent_session_id', 'end_reason'].every((c) => cols.has(c))) return (sid) => [sid]
+  const select = db.prepare(`SELECT id, source, parent_session_id, end_reason, ${cols.has('model_config') ? 'model_config' : 'NULL AS model_config'} FROM sessions WHERE id = ?`)
   return (sid) => {
     const chain = [sid]
-    const seen = new Set(chain)
     let current = select.get(sid) as Dict | undefined
-    for (let hop = 0; hop < maxHops && current; hop += 1) {
+    if (!current || isExplicitForkChild(current, false)) return chain
+    while (chain.length < 1000) {
       const parentId = str(current.parent_session_id)
-      if (!parentId || seen.has(parentId)) break
+      if (!parentId || chain.includes(parentId) || isExplicitForkChild(current, true)) break
       const parent = select.get(parentId) as Dict | undefined
-      if (!parent || !isContinuationSession(parent, current)) break
+      if (str(parent?.end_reason) !== 'compression') break
       chain.push(parentId)
-      seen.add(parentId)
-      current = parent
+      current = parent!
     }
     return chain.reverse()
   }
@@ -464,9 +475,8 @@ function continuationAncestry(db: DatabaseSync, maxHops = 20): ((sid: string) =>
  */
 function kanbanOwnedIds(db: DatabaseSync, cols: Set<string>, ids: string[]): string[] {
   if (!ids.length) return []
-  // The Agent's `_CHAIN_CAP`: real worker lineages pass the transcript stitch's 20 hops, and ownership sits at the root.
-  const walk = continuationAncestry(db, 1000)
-  const lineages = ids.map((id) => walk?.(id) ?? [id])
+  const walk = resumeLineageWalker(db, cols)
+  const lineages = ids.map(walk)
   const segments = [...new Set(lineages.flat())]
   const match = cols.has('created_source') ? "(source = 'kanban' OR created_source = 'kanban')" : "source = 'kanban'"
   const kanban = new Set<string>()
@@ -782,7 +792,24 @@ export function stateDbSessionRead(dbPath: string, sid: string, opts: { stitch?:
     const hasId = available.has('id')
     const selected = [...(hasId ? ['id'] : []), ...(available.has('message_uid') ? ['message_uid'] : []), 'role', 'content', 'timestamp', ...OPTIONAL_MESSAGE_COLUMNS.filter((c) => available.has(c))]
     // TAL-529: an explicit lineage (the session and its compression continuations) replaces the parent walk.
-    const chain = opts.lineage?.length ? [...opts.lineage] : (opts.stitch ?? true) ? continuationAncestry(db)?.(id) ?? [id] : [id]
+    const chain = opts.lineage?.length ? [...opts.lineage] : [id]
+    if (!opts.lineage?.length && (opts.stitch ?? true)) {
+      const sessionCols = tableColumns(db, 'sessions')
+      if (['parent_session_id', 'end_reason', 'started_at', 'source'].every((c) => sessionCols.has(c))) {
+        const select = db.prepare('SELECT id, source, started_at, parent_session_id, ended_at, end_reason FROM sessions WHERE id = ?')
+        let current = select.get(id) as Dict | undefined
+        const seen = new Set([id])
+        for (let hop = 0; hop < 20 && current; hop += 1) {
+          const parentId = str(current.parent_session_id)
+          if (!parentId || seen.has(parentId)) break
+          const parent = select.get(parentId) as Dict | undefined
+          if (!parent || !isContinuationSession(parent, current)) break
+          chain.unshift(parentId)
+          seen.add(parentId)
+          current = parent
+        }
+      }
+    }
     const activeClause = available.has('active') ? ' AND (active IS NULL OR active != 0)' : ''
     const order = hasId ? 'id' : 'timestamp'
     const rows = db.prepare(`SELECT ${selected.join(', ')}, session_id FROM messages WHERE session_id IN (${chain.map(() => '?').join(', ')})${activeClause} ORDER BY ${order} ASC`).all(...chain) as Dict[]
