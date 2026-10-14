@@ -157,6 +157,18 @@ export const MarkerRow = memo(function MarkerRow({ row }: { row: VisibleMessage 
   )
 })
 
+/** TAL-815: an assistant row the server stamped `_notice_kind` (a failed turn's boundary), one quiet line in its place, never a reply. */
+export const NoticeRow = memo(function NoticeRow({ row }: { row: VisibleMessage }) {
+  return (
+    <div className="msg-row" data-role="notice" data-msg-idx={row.index} data-message-key={row.key}>
+      <p role="note" className="flex items-center gap-2 text-[13px] text-muted">
+        <AlertTriangle size={14} aria-hidden="true" className="shrink-0 text-warning" />
+        <span className="min-w-0">{messageText(row.message.content)}</span>
+      </p>
+    </div>
+  )
+})
+
 /** `continuation`: the live turn that continues this running scene (TAL-374). */
 export const AssistantMessageRow = memo(function AssistantMessageRow({ row, name, mode, actions, tts, isLast, sessionId, scope, continuation }: { row: VisibleMessage; name: string; mode: ActivityMode; actions: RowActions; tts: boolean; isLast: boolean; sessionId?: string | undefined; scope?: string | undefined; continuation?: LiveTurn | undefined }) {
   const activity = continuation ? continuedActivity(persistedActivity(row), continuation) : persistedActivity(row)

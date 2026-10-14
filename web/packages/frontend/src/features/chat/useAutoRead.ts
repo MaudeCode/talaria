@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import type { LiveTurn } from '../../stream/reducer'
 import { isTerminal } from '../../stream/reducer'
 import { speak } from '../voice/tts'
-import { activityText, persistedActivity } from './turnActivity'
+import { activityText, isReplyRow, persistedActivity } from './turnActivity'
 import type { VisibleMessage } from './useTranscript'
 
 /**
@@ -16,7 +16,7 @@ export function useAutoRead(enabled: boolean, rows: VisibleMessage[], live: Live
     if (!live) return
     if (!isTerminal(live.status)) { watched.current.add(live.streamId); return }
     if (!enabled || !settled || live.status !== 'done' || !watched.current.has(live.streamId) || spoken.current.has(live.streamId)) return
-    const row = rows.findLast((r) => r.message.role === 'assistant' && !r.message._marker_kind && (r.turnKey === live.streamId || r.turnKey === live.turnId))
+    const row = rows.findLast((r) => isReplyRow(r.message) && (r.turnKey === live.streamId || r.turnKey === live.turnId))
     const text = row ? activityText(persistedActivity(row)) : ''
     if (!text.trim()) return
     spoken.current.add(live.streamId)

@@ -214,6 +214,12 @@ export const MessageSchema = z.looseObject({
   _marker_kind: z.enum(['context_compaction', 'preserved_task_list']).optional(),
   /** TAL-305: a preserved task list's card body, without its marker line. */
   _marker_body: z.string().optional(),
+  /**
+   * TAL-815: an assistant row the Agent wrote as a notice, not the model's reply. `failed_turn`: the boundary closing a
+   * turn that failed, with its copy in `content`. Clients show it as a notice in its place, never as a reply bubble or
+   * part of a turn's reply; it is absent when Web's own error row already reports that turn.
+   */
+  _notice_kind: z.enum(['failed_turn']).optional(),
   /** TAL-460: part of the Agent's reply to the background update just before it in the same turn. */
   _background_reply: z.boolean().optional(),
   /** TAL-460: that reply is only a silence marker; clients show the update's lines and nothing of this turn's reply. */

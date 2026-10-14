@@ -133,14 +133,40 @@ export function isContextCompressionMarker(msg: unknown): boolean {
   return markerKind(msg) === 'context_compaction'
 }
 
+// The Agent's failed-turn boundary copy (`agent/turn_failure_copy.py`): an older row carries it without its kind.
+const FAILED_TURN_NOTICES = new Set([
+  'Your request was not processed. Send it again if you still want me to carry it out.',
+  'This turn did not complete. Some actions may already have run; verify their effects before resending.',
+])
+
+/**
+ * TAL-815: rows the Agent writes outside the conversation, by its `display_kind` and its own read-side rules.
+ * `failed_turn`: the assistant boundary closing a turn that failed, never the model's reply. `hidden`: a row the Agent
+ * never renders, such as the empty interrupt placeholder or an untyped `[System:` scaffold notice in a user row.
+ */
+export function agentRowKind(msg: unknown): 'failed_turn' | 'hidden' | null {
+  if (!isDict(msg)) return null
+  if (msg.display_kind === 'hidden') return 'hidden'
+  if (msg.role === 'assistant' && (msg.display_kind === 'failed_turn' || (!msg.display_kind && typeof msg.content === 'string' && FAILED_TURN_NOTICES.has(msg.content.trim())))) return 'failed_turn'
+  return msg.role === 'user' && !msg.display_kind && typeof msg.content === 'string' && msg.content.trimStart().startsWith('[System:') ? 'hidden' : null
+}
+
 /**
  * TAL-305: stamps `_marker_kind` on marker rows, and `_marker_body` (the list without its marker line) on a preserved
- * task list, so clients render a marker card instead of a message. Returns copies; stored rows are untouched.
+ * task list, so clients render a marker card instead of a message. TAL-815: a failed turn's boundary gets
+ * `_notice_kind`, unless the turn (`_turn_id`) already carries Web's own error row; that copy and every other row the
+ * Agent hides leave as `display_kind: 'hidden'`. Returns copies; stored rows are untouched.
  */
 export function withMarkerKinds<T>(messages: T[]): T[] {
+  const erroredTurns = new Set(messages.flatMap((m) => (isDict(m) && m._error ? [str(m._turn_id)] : [])))
   return messages.map((m) => {
+    if (!isDict(m)) return m
     const kind = markerKind(m)
-    if (!kind || !isDict(m)) return m
+    if (!kind) {
+      const agentKind = agentRowKind(m)
+      if (!agentKind) return m
+      return agentKind === 'failed_turn' && !erroredTurns.has(str(m._turn_id)) ? { ...m, _notice_kind: agentKind } : { ...m, display_kind: 'hidden' }
+    }
     if (kind === 'context_compaction') return { ...m, _marker_kind: kind }
     const body = messageText(m.content).trim().slice(PRESERVED_TASK_LIST_PREFIX.length).trim()
     return { ...m, _marker_kind: kind, _marker_body: body }
@@ -187,7 +213,8 @@ export interface MergeOptions { source?: string; activeTurnToken?: string | null
 /** Python `_merge_display_messages_after_agent_result` (append-only display merge). */
 /** Python `_assistant_message_has_final_visible_text`: a non-error assistant row carrying visible answer text. */
 function assistantHasFinalVisibleText(msg: Message): boolean {
-  if (msg.role !== 'assistant' || msg._error) return false
+  // The Agent's failed-turn boundary is no answer (TAL-815).
+  if (msg.role !== 'assistant' || msg._error || agentRowKind(msg)) return false
   return messageText(msg.content).trim().length > 0
 }
 

@@ -5,11 +5,11 @@ import { Link } from '@tanstack/react-router'
 import { m } from '../../paraglide/messages.js'
 import type { LiveTurn } from '../../stream/reducer'
 import { isTerminal } from '../../stream/reducer'
-import { AssistantMessageRow, BackgroundUpdateRow, MarkerRow, UserMessageRow, type RowActions } from './MessageRow'
+import { AssistantMessageRow, BackgroundUpdateRow, MarkerRow, NoticeRow, UserMessageRow, type RowActions } from './MessageRow'
 import { LiveTurnView } from './LiveTurnView'
 import { messageKey, type VisibleMessage } from './useTranscript'
 import { WorklogDisclosureProvider, type ActivityMode } from './blocks/Worklog'
-import { groupAssistantTurns, persistedActivity, toolIdsOf } from './turnActivity'
+import { groupAssistantTurns, isReplyRow, persistedActivity, toolIdsOf } from './turnActivity'
 import { cn } from '../../ui/cn'
 import { Button } from '../../ui/Button'
 import { onScrollRequest, requestComposerRest } from './sendMotion'
@@ -66,7 +66,7 @@ export function Transcript(props: TranscriptProps) {
     return grouped.filter((row) => row.message.role !== 'assistant' || (row.turnKey !== live.streamId && row.turnKey !== live.turnId))
   }, [grouped, live, showLive])
   // A live turn attached without replay continues the running scene the server shipped for its persisted rows (TAL-374).
-  const continued = useMemo(() => (showLive && live && !live.claimsPersistedRows ? rows.find((row) => row.message.role === 'assistant' && !row.message._marker_kind && (row.turnKey === live.streamId || row.turnKey === live.turnId)) : undefined), [rows, live, showLive])
+  const continued = useMemo(() => (showLive && live && !live.claimsPersistedRows ? rows.find((row) => isReplyRow(row.message) && (row.turnKey === live.streamId || row.turnKey === live.turnId)) : undefined), [rows, live, showLive])
   const continuedTools = useMemo(() => (continued ? toolIdsOf(persistedActivity(continued)) : undefined), [continued])
   const lastRowIsUser = rows.length > 0 && rows[rows.length - 1]?.message.role === 'user' && !rows[rows.length - 1]?.message._marker_kind
   const showLiveUser = !!live && !isTerminal(live.status) && live.userText.trim() !== '' && !lastRowIsUser && !rows.some((r) => r.message.role === 'user' && messageKey(r.message) === live.userMessageId)
@@ -75,7 +75,7 @@ export function Transcript(props: TranscriptProps) {
   // A persisted user row as the tail means the server already carries the pending text; never show it twice.
   const liveUserText = showLiveUser ? (live?.userText ?? '') : !live && pendingUserText && !lastRowIsUser ? pendingUserText : ''
   useAutoRead(props.autoRead === true, rows, live, !showLive)
-  const lastAssistantIndex = useMemo(() => { for (let i = rows.length - 1; i >= 0; i--) if (rows[i]?.message.role === 'assistant' && !rows[i]?.message._marker_kind) return i; return -1 }, [rows])
+  const lastAssistantIndex = useMemo(() => rows.findLastIndex((row) => isReplyRow(row.message)), [rows])
   const virtualize = virtualizeLongTranscripts && rows.length > VIRTUALIZE_AT
 
   const pinnedRef = useRef(pinned)
@@ -184,6 +184,8 @@ export function Transcript(props: TranscriptProps) {
       ? <BackgroundUpdateRow key={row.key} row={row} />
       : row.message._marker_kind
       ? <MarkerRow key={row.key} row={row} />
+      : row.message._notice_kind
+      ? <NoticeRow key={row.key} row={row} />
       : row.message.role === 'user'
       ? <UserMessageRow key={row.key} row={row} renderMarkdown={renderUserMarkdown} sessionId={sessionId} actions={actions} />
       : <AssistantMessageRow sessionId={sessionId} scope={props.disclosureScope} key={row.key} row={row} name={assistantName} mode={mode} actions={actions} tts={tts} isLast={i === lastAssistantIndex && !showLive} continuation={row === continued ? live ?? undefined : undefined} />

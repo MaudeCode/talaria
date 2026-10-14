@@ -53,9 +53,14 @@ export function turnIdOf(message: Message): string | undefined {
   return typeof message._turn_id === 'string' && message._turn_id ? message._turn_id : undefined
 }
 
+/** An assistant row of a reply: a marker card (`_marker_kind`) or a notice (`_notice_kind`, TAL-815) renders on its own. */
+export function isReplyRow(message: Message): boolean {
+  return message.role === 'assistant' && !message._marker_kind && !message._notice_kind
+}
+
 /**
  * Consecutive assistant rows with one `_turn_id` form a turn; the final row retains its original mutation index. A marker
- * row (`_marker_kind`) is a card of its own, never part of a turn.
+ * or notice row is a row of its own, never part of a turn.
  */
 export function groupAssistantTurns(rows: VisibleMessage[]): VisibleMessage[] {
   const out: VisibleMessage[] = []
@@ -67,7 +72,7 @@ export function groupAssistantTurns(rows: VisibleMessage[]): VisibleMessage[] {
     group = []
   }
   for (const row of rows) {
-    if (row.message.role !== 'assistant' || row.message._marker_kind) { flush(); out.push(row); continue }
+    if (!isReplyRow(row.message)) { flush(); out.push(row); continue }
     const previous = group.at(-1)
     if (previous && turnIdOf(previous.message) !== turnIdOf(row.message)) flush()
     group.push(row)
