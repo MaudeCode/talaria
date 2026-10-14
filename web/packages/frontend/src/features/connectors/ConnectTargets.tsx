@@ -5,6 +5,7 @@ import { ExternalLink } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
+import { isApiError } from '../../contracts'
 import { Button, buttonClass } from '../../ui/Button'
 import { TextInput } from '../../ui/Field'
 import { showToast } from '../toast/toast'
@@ -23,10 +24,13 @@ const STATE: Record<Target['state'], () => string> = {
 }
 export const targetState = (state: Target['state']): string => STATE[state]()
 
+/** The server no longer holds the operation (the sidecar restarted, or it aged out): nothing is left to wait on. */
+const isGone = (error: unknown): boolean => isApiError(error) && error.code === 'operation_not_found'
+
 /**
  * One connection operation, read from the server until it settles. `initial` is the view the connect or the chat frame
- * carried; every later read replaces it. A read that fails (the operation is gone) stops the polling; `lost` lets the
- * caller drop it.
+ * carried; every later read replaces it. A failed read (a network blip, a busy server) keeps the last view and polls on;
+ * only a server answer that the operation is gone stops it, and `lost` lets the caller drop it.
  */
 export function useConnectorOperation(initial: ConnectorOperationView) {
   const qc = useQueryClient()
@@ -35,14 +39,14 @@ export function useConnectorOperation(initial: ConnectorOperationView) {
     queryFn: () => api.fetchConnectorOperation(initial.op_id),
     initialData: initial,
     retry: false,
-    refetchInterval: (q) => (q.state.data?.settled || q.state.status === 'error' ? false : 2000),
+    refetchInterval: (q) => (q.state.data?.settled || isGone(q.state.error) ? false : 2000),
   })
   const move = useMutation({
     mutationFn: (move: { action: Move; target?: string; env?: Record<string, string> }) => api.respondConnectorOperation({ op_id: initial.op_id, ...move }),
     onSuccess: (view) => qc.setQueryData(keys.connectors.operation(initial.op_id), view),
     onError: (error) => showToast(error instanceof Error ? error.message : m.connectors_failed(), 5000, 'error'),
   })
-  return { view: query.data, lost: query.isError, move }
+  return { view: query.data, lost: isGone(query.error), move }
 }
 
 /** The operation's targets: state, the authorization link while one waits, and the moves the server offers. */

@@ -53667,12 +53667,23 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "rules_error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
                     "available",
                     "connectors",
-                    "policy_revision"
+                    "policy_revision",
+                    "rules_error"
                   ]
                 }
               }

@@ -52,8 +52,15 @@ function layers(policy: Policy | null): { member: Rules | null; others: Rules[] 
   }
 }
 
-/** `available: false` hides the page; a missing policy (unreadable rules) shows every app on, read-only. */
-export function connectorsPage(catalog: Catalog, accounts: Accounts, policy: Policy | null): ConnectorsPage {
+/** A layer's tag rules keep a tool off: it carries a disabled tag, or the layer enables tags and it carries none of them. */
+const tagBlocks = (rules: Rules, hints: string[]): boolean =>
+  rules.tags.disable.some((tag) => hints.includes(tag)) || (rules.tags.enable.length > 0 && !rules.tags.enable.some((tag) => hints.includes(tag)))
+
+/**
+ * `available: false` hides the page. Rules that cannot be read (`policy` null) fail closed: every app reads off and
+ * read-only, and `rules_error` says why, instead of showing apps the rules may keep off as on.
+ */
+export function connectorsPage(catalog: Catalog, accounts: Accounts, policy: Policy | null, rulesError: string | null = null): ConnectorsPage {
   const { member, others } = layers(policy)
   const slugs = [...new Set([...catalog.map((row) => row.slug), ...accounts.map((row) => row.connector)])]
   const connectors = slugs.map((slug) => {
@@ -67,30 +74,37 @@ export function connectorsPage(catalog: Catalog, accounts: Accounts, policy: Pol
       connected: mine.length > 0,
       accounts: mine.map((row) => ({ connection_id: row.connection_id, name: row.alias?.trim() || row.label, problem: accountProblem(row.status), status_reason: row.status_reason?.trim() || null, active: row.active, created_at: row.created_at })),
       // The switch shows what Hermes gets: an app another layer locks off reads off, whatever the member rule says.
-      enabled: (member === null || allows(member, slug)) && !orgLocked,
+      enabled: policy !== null && (member === null || allows(member, slug)) && !orgLocked,
       org_locked: orgLocked,
       rules_editable: member !== null && !orgLocked,
       tools_off: member?.tools[slug]?.length ?? 0,
     }
   })
-  return { available: true, connectors, policy_revision: member?.revision ?? null }
+  return { available: true, connectors, policy_revision: member?.revision ?? null, rules_error: policy === null ? rulesError ?? 'Connector rules are unavailable.' : null }
 }
 
+/**
+ * Each tool as Hermes gets it: on only when every layer allows the app, no layer turns the tool off by name or tag, and the
+ * member rules leave it on. Its switch writes the member's tool rule, so it is editable only where that rule decides.
+ * Unreadable rules fail closed: every tool reads off and read-only.
+ */
 export function connectorTools(listing: Tools, policy: Policy | null): ConnectorToolsView {
   const { member, others } = layers(policy)
   const slug = listing.connector
   const off = new Set(member?.tools[slug] ?? [])
-  // The Agent refuses a tool rule for an app the member rules keep off (`compose_tools_write`), and another layer's lock wins.
-  const appEditable = member !== null && allows(member, slug) && others.every((rules) => allows(rules, slug))
-  const locked = (tool: Tools['tools'][number]): boolean => others.some((rules) =>
-    (rules.tools[slug] ?? []).includes(tool.slug)
-    || rules.tags.disable.some((tag) => tool.hints.includes(tag))
-    || (rules.tags.enable.length > 0 && !rules.tags.enable.some((tag) => tool.hints.includes(tag))))
+  const appOn = policy !== null && (member === null || allows(member, slug)) && others.every((rules) => allows(rules, slug))
   return {
     connector: slug, policy_revision: member?.revision ?? null,
     tools: listing.tools.map((tool) => {
-      const isLocked = locked(tool)
-      return { slug: tool.slug, name: tool.name, description: tool.description, facet: facetOf(tool.facet), deprecated: tool.deprecated, enabled: !off.has(tool.slug) && !isLocked, locked: isLocked, editable: appEditable && !isLocked }
+      // Another layer's name or tag rule locks the tool; the member's own tag rules keep it off without its switch deciding.
+      const locked = others.some((rules) => (rules.tools[slug] ?? []).includes(tool.slug) || tagBlocks(rules, tool.hints))
+      const memberTagOff = member !== null && tagBlocks(member, tool.hints)
+      return {
+        slug: tool.slug, name: tool.name, description: tool.description, facet: facetOf(tool.facet), deprecated: tool.deprecated,
+        enabled: appOn && !off.has(tool.slug) && !locked && !memberTagOff, locked,
+        // The Agent refuses a tool rule for an app the member rules keep off (`compose_tools_write`).
+        editable: member !== null && appOn && !locked && !memberTagOff,
+      }
     }),
   }
 }

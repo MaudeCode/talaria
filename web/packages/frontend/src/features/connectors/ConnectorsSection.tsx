@@ -43,12 +43,15 @@ export function ConnectorsSection() {
   if (page.data.connectors.length === 0) return <EmptyState>{m.connectors_empty()}</EmptyState>
   const revision = page.data.policy_revision
   return (
+    <>
+    {page.data.rules_error && <p role="status" className="mb-2 text-xs text-error" data-connectors-rules-error>{page.data.rules_error}</p>}
     <ul className="flex flex-col divide-y divide-border-subtle" aria-label={m.settings_section_connectors_title()} data-section="connectors">
       {page.data.connectors.map((connector) => (
         <ConnectorRow key={connector.slug} connector={connector} ruleBusy={rule.isPending}
           onRule={(next) => { if (revision) rule.mutate({ connector: connector.slug, revision, rule: next }) }} />
       ))}
     </ul>
+    </>
   )
 }
 

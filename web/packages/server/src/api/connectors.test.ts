@@ -31,7 +31,7 @@ describe('TAL-818: the Connectors page and connect card', () => {
   it('hides the page for a profile without connectors (server flag)', async () => {
     sidecar.respond('connectors.available', () => ({ available: false }))
     expect(await json(await s.get('/api/connectors/available'))).toEqual({ available: false })
-    expect(await json(await s.get('/api/connectors'))).toEqual({ available: false, connectors: [], policy_revision: null })
+    expect(await json(await s.get('/api/connectors'))).toEqual({ available: false, connectors: [], policy_revision: null, rules_error: null })
     expect(sidecar.calls.some((c) => c.method === 'connectors.catalog')).toBe(false)
     // A sidecar that cannot answer fails closed.
     sidecar.respond('connectors.available', () => { throw new SidecarError('down', { condition: 'sidecar_unavailable' }) })
@@ -67,17 +67,34 @@ describe('TAL-818: the Connectors page and connect card', () => {
       { slug: 'notion_send', name: 'Send', description: '', facet: 'write', hints: [], categories: [], deprecated: false },
       { slug: 'notion_delete', name: 'Delete', description: '', facet: 'destructive', hints: [], categories: [], deprecated: false },
       { slug: 'notion_purge', name: 'Purge', description: '', facet: 'destructive', hints: ['destructiveHint'], categories: [], deprecated: false },
+      { slug: 'notion_share', name: 'Share', description: '', facet: 'write', hints: ['openWorldHint'], categories: [], deprecated: false },
     ] }))
+    // Notion is off in the member rules: Hermes gets none of its tools, and no tool switch may write (the Agent refuses that rule).
+    const appOff = await json(await s.get('/api/connectors/notion/tools'))
+    expect((appOff.tools as Json[]).every((t) => t.enabled === false && t.editable === false)).toBe(true)
+
+    // With Notion on: the member turns Send off by name and Share off by tag; the organization locks Delete by name and Purge by tag.
+    sidecar.respond('connectors.policy.get', () => ({
+      layers: [
+        { kind: 'org', revision: 'org-1', body: { mode: 'allow', connectors: ['notion'], tools: { notion: { disable: ['notion_delete'] } }, tags: { disable: ['destructiveHint'] } } },
+        { kind: 'member', revision: 'rev-7', body: { mode: 'deny', disabled_connectors: [], tools: { notion: { disable: ['notion_send'] } }, tags: { disable: ['openWorldHint'] } } },
+      ],
+      effective: { mode: 'allow', connectors: ['notion'], revision: 'eff-1' },
+    }))
     const tools = await json(await s.get('/api/connectors/notion/tools'))
     expect(tools).toEqual(shared.tools)
-    // Notion is off in the member rules, so none of its tool switches may write (the Agent refuses that rule).
-    expect((tools.tools as Json[]).map((t) => [t.slug, t.enabled, t.locked, t.editable])).toEqual([['notion_read', true, false, false], ['notion_send', false, false, false], ['notion_delete', false, true, false], ['notion_purge', false, true, false]])
+    expect((tools.tools as Json[]).map((t) => [t.slug, t.enabled, t.locked, t.editable])).toEqual([
+      ['notion_read', true, false, true], ['notion_send', false, false, true], ['notion_delete', false, true, false], ['notion_purge', false, true, false], ['notion_share', false, false, false],
+    ])
 
-    // Rules another layer refuses to show leave the page read-only instead of failing it.
+    // Rules that cannot be read fail closed: every app reads off and read-only, and the page says why.
     sidecar.respond('connectors.policy.get', () => { throw new SidecarError('Select an organization', { condition: 'connectors_org_required' }) })
     const readOnly = await json(await s.get('/api/connectors'))
     expect(readOnly.policy_revision).toBeNull()
-    expect((readOnly.connectors as Json[]).map((c) => [c.enabled, c.rules_editable])).toEqual([[true, false], [true, false]])
+    expect((readOnly.connectors as Json[]).map((c) => [c.enabled, c.rules_editable])).toEqual([[false, false], [false, false]])
+    expect(readOnly.rules_error).toBe('Select an organization')
+    const toolsUnread = await json(await s.get('/api/connectors/notion/tools'))
+    expect((toolsUnread.tools as Json[]).every((t) => t.enabled === false && t.editable === false)).toBe(true)
     for (const method of ['connectors.accounts', 'connectors.policy.get', 'connectors.tools'] as const) sidecar.respond(method, undefined)
   })
 

@@ -60,6 +60,18 @@ describe('ConnectorsSection (TAL-818)', () => {
 })
 
 describe('ConnectCard (TAL-818)', () => {
+  it('keeps the card and polls on after a failed read; only a gone operation drops it', async () => {
+    const { ApiError } = await import('../../contracts')
+    const read = vi.mocked(api.fetchConnectorOperation)
+    read.mockRejectedValueOnce(new ApiError({ kind: 'http', status: 502, path: '/api/connectors/operations/op-chat', message: 'Bad gateway', retryable: true }))
+    renderWith(<ConnectCard initial={shared.connect_card} />)
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(1), { timeout: 4000 })
+    expect(screen.getByRole('region', { name: 'Connect apps' })).toBeInTheDocument()
+    read.mockRejectedValueOnce(new ApiError({ kind: 'http', status: 404, code: 'operation_not_found', path: '/api/connectors/operations/op-chat', message: 'gone', retryable: false }))
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Connect apps' })).not.toBeInTheDocument(), { timeout: 6000 })
+    expect(read).toHaveBeenCalledTimes(2)
+  }, 15_000)
+
   it('shows each app with the moves the server offers and continues the turn', async () => {
     operation = shared.connect_card
     renderWith(<ConnectCard initial={shared.connect_card} />)

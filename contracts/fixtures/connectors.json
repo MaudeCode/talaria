@@ -46,7 +46,8 @@
         "tools_off": 1
       }
     ],
-    "policy_revision": "rev-7"
+    "policy_revision": "rev-7",
+    "rules_error": null
   },
   "tools": {
     "connector": "notion",
@@ -60,7 +61,7 @@
         "deprecated": false,
         "enabled": true,
         "locked": false,
-        "editable": false
+        "editable": true
       },
       {
         "slug": "notion_send",
@@ -70,7 +71,7 @@
         "deprecated": false,
         "enabled": false,
         "locked": false,
-        "editable": false
+        "editable": true
       },
       {
         "slug": "notion_delete",
@@ -90,6 +91,16 @@
         "deprecated": false,
         "enabled": false,
         "locked": true,
+        "editable": false
+      },
+      {
+        "slug": "notion_share",
+        "name": "Share",
+        "description": "",
+        "facet": "write",
+        "deprecated": false,
+        "enabled": false,
+        "locked": false,
         "editable": false
       }
     ]

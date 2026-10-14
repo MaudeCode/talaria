@@ -22,7 +22,7 @@ const waiting: ConnectorOperationView = { op_id: 'op-page', settled: false, outc
     await page.route('**/api/connectors', (route) => route.fulfill({ json: connected
       ? { ...shared.page, connectors: shared.page.connectors.map((c) => c.slug === 'gmail' ? { ...c, connected: true, accounts: [{ connection_id: 'conn-1', name: 'me@example.test', problem: null, status_reason: null, active: true, created_at: '2026-10-14T00:00:00Z' }] } : c) }
       : shared.page }))
-    await page.route('**/api/connectors/notion/tools', (route) => route.fulfill({ json: { ...shared.tools, tools: shared.tools.tools.map((t) => ({ ...t, editable: !t.locked })) } }))
+    await page.route('**/api/connectors/notion/tools', (route) => route.fulfill({ json: shared.tools }))
     await page.route('**/api/connectors/*/policy', async (route) => { rules.push(route.request().postDataJSON()); await route.fulfill({ json: { ok: true, revision: 'rev-8' } }) })
     await page.route('**/api/connectors/gmail/connect', (route) => route.fulfill({ json: waiting }))
     await page.route('**/api/connectors/operations/op-page', (route) => route.fulfill({ json: connected
@@ -39,7 +39,7 @@ const waiting: ConnectorOperationView = { op_id: 'op-page', settled: false, outc
     await page.screenshot({ path: testInfo.outputPath(`connectors-${shot}.png`) })
 
     await notion.getByRole('button', { name: /Tools/ }).click()
-    await expect(notion.getByRole('list', { name: 'Tools' }).getByRole('listitem')).toHaveCount(4)
+    await expect(notion.getByRole('list', { name: 'Tools' }).getByRole('listitem')).toHaveCount(5)
     await notion.getByRole('switch', { name: 'Send available to Hermes' }).click()
     await expect.poll(() => rules).toEqual([{ revision: 'rev-7', tool: 'notion_send', tool_enabled: true }])
     await page.screenshot({ path: testInfo.outputPath(`connectors-${shot}-tools.png`) })
