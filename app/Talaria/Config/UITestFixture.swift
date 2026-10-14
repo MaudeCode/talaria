@@ -523,6 +523,8 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         }
     }
 
+    private static let compressionStartedAt = Date().timeIntervalSince1970 - 65
+
     private static func responseData(for request: URLRequest) -> Data {
         guard let url = request.url else { return json([:]) }
         switch url.path {
@@ -667,6 +669,9 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             return json(["personalities": []])
         case "/api/skills":
             return json(["skills": []])
+        case "/api/session/compress/start", "/api/session/compress/status":
+            // TAL-1006: a manual compression job that keeps running, started 65 s before the first request.
+            return json(["ok": true, "status": "running", "session_id": sessionID, "started_at": compressionStartedAt])
         case "/api/chat/start":
             chatState.startChat()
             return json(["stream_id": chatStreamID, "session_id": sessionID])

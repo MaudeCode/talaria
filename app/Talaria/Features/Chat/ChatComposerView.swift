@@ -1041,8 +1041,6 @@ struct MessageComposerView: View {
             return (String(localized: "This session is read-only."), false, false)
         } else if isWaitingForStream && isCancellingStream {
             return (String(localized: "Stopping response..."), false, false)
-        } else if isCompressingSession {
-            return (String(localized: "Compressing context..."), false, false)
         } else if let uploadAttachmentErrorMessage {
             return (uploadAttachmentErrorMessage, true, true)
         } else if isSendingVoiceNote {

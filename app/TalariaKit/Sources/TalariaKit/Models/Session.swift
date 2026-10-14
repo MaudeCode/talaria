@@ -227,8 +227,13 @@ public struct SessionBranchResponse: Decodable, Equatable {
     public let error: String?
 }
 
+/// The manual compression job (`compress/start` and `compress/status`): `running`, then `done` with the compressed
+/// session and summary, or `error`; `idle` when no job exists.
 public struct SessionCompressResponse: Decodable, Equatable {
     let ok: Bool?
+    public let status: String?
+    /// TAL-1006: when the job started, in epoch seconds.
+    public let startedAt: Double?
     public let session: SessionDetail?
     public let summary: SessionCompressionSummary?
     public let focusTopic: String?

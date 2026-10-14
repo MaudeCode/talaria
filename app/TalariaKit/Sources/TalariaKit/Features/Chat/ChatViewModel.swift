@@ -46,6 +46,10 @@ public final class ChatViewModel {
     public private(set) var isEditingMessage = false
     public private(set) var isRegeneratingMessage = false
     public private(set) var isCompressingSession = false
+    /// TAL-1006: the server's start of this view's manual compression job.
+    private var manualCompressionStartedAt: Date?
+    /// TAL-1006: the open compression span the run status chip shows: the manual job's, else the live run's.
+    public var compressionStartedAt: Date? { manualCompressionStartedAt ?? streamCoordinator.compressionStartedAt }
     public private(set) var isCancellingStream = false
     public private(set) var isViewingCachedData = false
     public var activeStreamID: String? { streamCoordinator.activeStreamID }
@@ -3627,13 +3631,21 @@ public final class ChatViewModel {
         lastError = nil
         sendErrorMessage = nil
         messageActionErrorMessage = nil
-        defer { isCompressingSession = false }
+        defer {
+            isCompressingSession = false
+            manualCompressionStartedAt = nil
+        }
 
         do {
-            let response = try await client.compressSession(
+            var response = try await client.startSessionCompression(
                 id: sessionID,
                 focusTopic: focusTopic.isEmpty ? nil : focusTopic
             )
+            manualCompressionStartedAt = response.startedAt.map { Date(timeIntervalSince1970: $0) }
+            while response.status == "running" {
+                try await Task.sleep(for: .seconds(1))
+                response = try await client.sessionCompressionStatus(id: sessionID)
+            }
 
             if let error = response.error {
                 return .unsupported(friendlyMessage: error)
@@ -4926,7 +4938,8 @@ public final class ChatViewModel {
             activeBtwAnswer = "Error: \(message)"
             updateActiveBtwMessage(isLoading: false)
             finishBtwStream()
-        case .heartbeat, .ignored, .reasoning, .toolStarted, .toolCompleted, .title, .metering, .steerConsumed, .steerPending, .steerWithdrawn, .notices:
+        case .heartbeat, .ignored, .reasoning, .toolStarted, .toolCompleted, .title, .metering, .steerConsumed, .steerPending, .steerWithdrawn, .notices,
+             .compressing, .compressed:
             break
         }
     }

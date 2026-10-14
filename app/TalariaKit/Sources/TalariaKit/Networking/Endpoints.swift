@@ -29,7 +29,8 @@ public enum Endpoint {
     /// A real copy: independent messages, tool calls and usage counters, and no
     /// fork lineage. `branchSession` means "fork a child from here".
     case duplicateSession
-    case compressSession
+    case compressSessionStart
+    case compressSessionStatus(id: String)
     case undoSession
     case retrySession
     case truncateSession
@@ -204,8 +205,10 @@ public enum Endpoint {
             return "/api/session/branch"
         case .duplicateSession:
             return "/api/session/duplicate"
-        case .compressSession:
-            return "/api/session/compress"
+        case .compressSessionStart:
+            return "/api/session/compress/start"
+        case .compressSessionStatus:
+            return "/api/session/compress/status"
         case .undoSession:
             return "/api/session/undo"
         case .retrySession:
@@ -527,7 +530,7 @@ public enum Endpoint {
             }
 
             return items
-        case let .sessionStatus(id):
+        case let .sessionStatus(id), let .compressSessionStatus(id):
             return [URLQueryItem(name: "session_id", value: id)]
         case let .toolResult(sessionID, toolCallID):
             return [URLQueryItem(name: "session_id", value: sessionID), URLQueryItem(name: "tool_call_id", value: toolCallID)]
