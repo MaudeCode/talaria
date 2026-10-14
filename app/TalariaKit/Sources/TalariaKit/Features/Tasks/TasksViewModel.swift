@@ -4,6 +4,8 @@ import Observation
 public enum CronJobListMutation: Equatable {
     case upsert(CronJob)
     case delete(jobID: String)
+    /// Run-now found the job already running, possibly in another process (TAL-835).
+    case running(jobID: String)
 }
 
 @MainActor
@@ -160,6 +162,8 @@ public final class TasksViewModel {
             jobs.removeAll { $0.jobId == jobID }
             runningJobs.removeValue(forKey: jobID)
             listedRunningJobs.remove(jobID)
+        case .running(let jobID):
+            listedRunningJobs.insert(jobID)
         }
     }
 
@@ -177,6 +181,10 @@ public final class TasksViewModel {
             matchingIndex = nil
         }
 
+        // A mutation's job comes from the live server, so its `running` is current (TAL-835).
+        if let jobID = job.jobId, let running = job.running {
+            if running { listedRunningJobs.insert(jobID) } else { listedRunningJobs.remove(jobID) }
+        }
         if let index = matchingIndex {
             jobs[index] = job
         } else {

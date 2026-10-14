@@ -72,7 +72,7 @@ final class TasksHostedTests: XCTestCase {
     func testRunNowOnAJobRunningElsewhereSaysItIsAlreadyRunning() async throws {
         let fixture = try FixtureApp([UITestFixtureEnvironment.unwritableCronStoreArgument], for: self)
         let jobs = try await fixture.client.crons().jobs ?? []
-        let job = try XCTUnwrap(jobs.first { $0.jobId == UITestFixtureURLProtocol.cronGatewayJobID })
+        let job = try XCTUnwrap(jobs.first { $0.jobId == UITestFixtureURLProtocol.cronRunningElsewhereJobID })
         let viewModel = TaskDetailViewModel(job: job, runningElapsed: nil, isRunning: true, server: UITestFixtureEnvironment.serverURL)
         XCTAssertTrue(viewModel.isRunning)
 

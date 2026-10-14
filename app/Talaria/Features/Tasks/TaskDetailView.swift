@@ -135,7 +135,7 @@ struct TaskDetailView: View {
                 deliveryOptions: viewModel.deliveryOptions
             ) { draft in
                 let didUpdate = await viewModel.update(from: draft)
-                handleActionResult(didUpdate)
+                handleActionResult()
                 return didUpdate
             }
         }
@@ -357,35 +357,35 @@ struct TaskDetailView: View {
     }
 
     private func runNow() async {
-        let didRun = await viewModel.runNow()
-        handleActionResult(didRun)
+        _ = await viewModel.runNow()
+        handleActionResult()
     }
 
     private func togglePauseResume() async {
-        let didMutate: Bool
         if shouldResume {
-            didMutate = await viewModel.resume()
+            _ = await viewModel.resume()
         } else {
-            didMutate = await viewModel.pause()
+            _ = await viewModel.pause()
         }
-        handleActionResult(didMutate)
+        handleActionResult()
     }
 
     private func deleteTask() async {
         let didDelete = await viewModel.delete()
-        handleActionResult(didDelete)
+        handleActionResult()
 
         if didDelete {
             dismiss()
         }
     }
 
-    private func handleActionResult(_ success: Bool) {
+    private func handleActionResult() {
         if let lastError = viewModel.lastError {
             onAPIError(lastError)
         }
 
-        guard success, let mutation = viewModel.lastMutation else {
+        // An already-running refusal fails yet still tells the list the job runs (TAL-835).
+        guard let mutation = viewModel.lastMutation else {
             return
         }
 

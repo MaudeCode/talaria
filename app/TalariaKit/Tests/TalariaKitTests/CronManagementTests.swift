@@ -828,6 +828,11 @@ final class CronManagementViewModelTests: APIClientTestCase {
         XCTAssertFalse(viewModel.isRunning(try XCTUnwrap(jobs["job-idle"])))
         XCTAssertEqual(viewModel.activeRunningCount, 2)
 
+        viewModel.apply(.running(jobID: "job-idle"))
+        XCTAssertTrue(viewModel.isRunning(try XCTUnwrap(jobs["job-idle"])), "Run-now's already-running answer reaches the list")
+        viewModel.apply(.upsert(try decodeCronJob(#"{"id": "job-idle", "name": "Idle", "running": false}"#)))
+        XCTAssertFalse(viewModel.isRunning(try XCTUnwrap(jobs["job-idle"])), "A mutation's live job carries the server's running state")
+
         listJSON = #"{"ordered": true, "jobs": [{"id": "job-idle", "name": "Idle"}], "unwritable_stores": []}"#
         await viewModel.load()
 
@@ -869,6 +874,7 @@ final class CronManagementViewModelTests: APIClientTestCase {
         XCTAssertFalse(didRun)
         XCTAssertTrue(viewModel.isRunning)
         XCTAssertEqual(viewModel.actionErrorMessage, "This task is already running.")
+        XCTAssertEqual(viewModel.lastMutation, .running(jobID: "job123"), "The list learns the job runs")
 
         await viewModel.refresh()
         XCTAssertTrue(viewModel.isRunning, "The list still reports the run another process owns")

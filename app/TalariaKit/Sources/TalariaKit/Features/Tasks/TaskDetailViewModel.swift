@@ -195,6 +195,7 @@ public final class TaskDetailViewModel {
             // TAL-835: the server refused because the job runs, possibly in another process.
             isListedRunning = true
             actionErrorMessage = String(localized: "This task is already running.")
+            lastMutation = job.jobId.map { .running(jobID: $0) }
         }
         return success
     }

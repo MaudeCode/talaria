@@ -2,7 +2,7 @@
 import Foundation
 
 extension UITestFixtureURLProtocol {
-    static let cronGatewayJobID = "fixture-cron-gateway"
+    static let cronRunningElsewhereJobID = "fixture-cron-gateway"
 
     /// Tasks for `--ui-test-unwritable-cron-store` (TAL-835): an unwritable store, a job another process runs (absent
     /// from the status poll, which sees only this server's runs), and a recovered job that keeps its last failure.
@@ -12,7 +12,7 @@ extension UITestFixtureURLProtocol {
         case "/api/crons":
             body = """
             {"ordered": true, "active_profile": "default", "jobs": [
-              {"id": "\(cronGatewayJobID)", "name": "Morning digest", "prompt": "Summarize overnight activity.",
+              {"id": "\(cronRunningElsewhereJobID)", "name": "Morning digest", "prompt": "Summarize overnight activity.",
                "schedule_display": "0 7 * * *", "schedule_input": "0 7 * * *", "derived_state": "active",
                "deliver": "local", "running": true, "last_failure": null},
               {"id": "fixture-cron-recovered", "name": "Inbox triage", "prompt": "Sort new mail into folders.",
@@ -29,7 +29,7 @@ extension UITestFixtureURLProtocol {
         case "/api/crons/status":
             body = #"{"running": {}}"#
         case "/api/crons/run" where request.httpMethod == "POST":
-            body = #"{"ok": false, "job_id": "\#(cronGatewayJobID)", "status": "already_running", "elapsed": 42}"#
+            body = #"{"ok": false, "job_id": "\#(cronRunningElsewhereJobID)", "status": "already_running", "elapsed": 42}"#
         case "/api/crons/history":
             body = #"{"runs": [], "total": 0, "offset": 0}"#
         case "/api/crons/recent":
