@@ -9,7 +9,7 @@ import type { SidecarResult } from '@maudecode/talaria-web-contracts'
 import { SessionSchema } from '@maudecode/talaria-web-contracts'
 import { str } from '../util.js'
 import { Session } from './session.js'
-import { agentSessionRowsExisting, cheapChangeFingerprint, latestCronSessionInfo, isCliSessionRowVisible, normalizeAgentSessionSource, projectAgentSessionRows, readImportableAgentSessionRows, stateDbHasSession, stateDbLineageReport, stateDbSessionSources } from './state-db.js'
+import { agentSessionRowsExisting, cheapChangeFingerprint, latestCronSessionInfo, isCliSessionRowVisible, normalizeAgentSessionSource, projectAgentSessionRows, readImportableAgentSessionRows, stateDbCompressionLineage, stateDbHasSession, stateDbLineageReport, stateDbSessionRead, stateDbSessionSources } from './state-db.js'
 import { GatewayWatcher, snapshotHash } from './gateway-watcher.js'
 import { capRecentCliSessions, keepLatestMessagingSessionPerSource, mergeCliSidebarMetadata, withOwnerLocks, type GatewayIdentity } from './list.js'
 
@@ -769,6 +769,42 @@ describe('session lineage report', () => {
     } finally {
       chmodSync(join(db, '..'), 0o755)
     }
+  })
+
+  /** TAL-893: a `length`-segment compression chain `seg-000` (root) .. tip, one message per segment; `cyclic` makes the root the tip's continuation. */
+  function chain(length: number, cyclic = false): { path: string; segments: string[] } {
+    const segments = Array.from({ length }, (_, i) => `seg-${String(i).padStart(3, '0')}`)
+    const parent = (i: number): string | undefined => (i ? segments[i - 1] : cyclic ? segments[length - 1] : undefined)
+    const path = fresh(segments.map((id, i) => ({
+      id, started_at: t0 + i * 10, ...(parent(i) ? { parent: parent(i)! } : {}),
+      ...(i < length - 1 || cyclic ? { end_reason: 'compression', ...(cyclic ? {} : { ended_at: t0 + i * 10 + 5 }) } : {}),
+    })))
+    const db = new DatabaseSync(path)
+    for (const [i, id] of segments.entries()) db.prepare("INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, 'user', ?, ?)").run(id, `${id} says`, t0 + i * 10 + 1)
+    db.close()
+    return { path, segments }
+  }
+
+  it.each([30, 200])('follows a %i-segment compression chain from the root to the tip (TAL-893)', (length) => {
+    const { path, segments } = chain(length)
+    expect(stateDbCompressionLineage(path, segments[0]!)).toEqual(segments)
+  })
+
+  it.each([30, 200])('stitches every segment of a %i-segment compression chain read from the tip (TAL-893)', (length) => {
+    const { path, segments } = chain(length)
+    expect(stateDbSessionRead(path, segments.at(-1)!).rows.map((m) => m.content)).toEqual(segments.map((id) => `${id} says`))
+  })
+
+  it.each([30, 200])('reports every segment of a %i-segment compression chain from the tip (TAL-893)', (length) => {
+    const { path, segments } = chain(length)
+    expect(stateDbLineageReport(path, segments.at(-1)!)).toMatchObject({ found: true, total_segments: length, manual_review: false, lineage_key: segments[0], tip_session_id: segments.at(-1) })
+  })
+
+  it('stops a cyclic compression chain after one lap (TAL-893)', () => {
+    const { path, segments } = chain(3, true)
+    expect(stateDbCompressionLineage(path, segments[0]!)).toEqual(segments)
+    expect(stateDbSessionRead(path, segments[2]!).rows.map((m) => m.content)).toEqual(segments.map((id) => `${id} says`))
+    expect(stateDbLineageReport(path, segments[2]!)).toMatchObject({ found: true, total_segments: 3, manual_review: true })
   })
 
   describe('GET /api/session/lineage/report', () => {

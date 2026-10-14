@@ -306,14 +306,22 @@ def _is_continuation(parent: dict, child: dict) -> bool:
     return math.isfinite(started) and math.isfinite(ended) and started + 1.0 >= ended
 
 
+# The Agent's ``_CHAIN_CAP`` and the server's ``COMPRESSION_CHAIN_CAP``: the most hops a compression-chain walk takes.
+_COMPRESSION_CHAIN_CAP = 1000
+
+
 def _compression_lineage(records: list[dict], sid: str) -> list[str]:
-    """The server's ``stateDbCompressionLineage``: ``sid`` then each single continuation, up to 20 hops, root first."""
+    """The server's ``stateDbCompressionLineage``: ``sid`` then each single continuation, up to ``_COMPRESSION_CHAIN_CAP``
+    hops, root first."""
     by_id = {r["id"]: r for r in records}
+    children: dict[str, list[dict]] = {}
+    for r in records:
+        children.setdefault(r["parent_id"], []).append(r)
     lineage, current = [sid], by_id.get(sid)
-    for _ in range(20):
+    for _ in range(_COMPRESSION_CHAIN_CAP):
         if current is None:
             break
-        nxt = [r for r in records if r["parent_id"] == current["id"] and _is_continuation(current, r)]
+        nxt = [r for r in children.get(current["id"], []) if _is_continuation(current, r)]
         if len(nxt) != 1 or nxt[0]["id"] in lineage:
             break
         current = nxt[0]
