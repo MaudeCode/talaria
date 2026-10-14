@@ -24,6 +24,19 @@ extension APIClient {
         try await send(endpoint: .commands, caching: cache)
     }
 
+    /// Runs a catalog command marked `exec` on the server, for the open chat when there is one (TAL-561).
+    public func execCommand(_ command: String, sessionID: String?) async throws -> CommandExecResponse {
+        try await send(
+            endpoint: .commandsExec,
+            method: "POST",
+            body: CommandExecRequest(command: command, sessionId: sessionID),
+            timeout: Self.commandExecTimeout
+        )
+    }
+
+    /// The server gives a command up to 120s; wait past that so a slow command never fails here while it still runs.
+    private static let commandExecTimeout: TimeInterval = 150
+
     /// Saves the default model. Pass `provider` whenever the row names its
     /// provider (`provider_id` from the catalog group): Core persists
     /// `{model, provider}` atomically and resolves slash-qualified ids like
@@ -247,6 +260,11 @@ private struct DefaultModelRequest: Encodable {
     /// Optional so a providerless custom-model save still sends the bare
     /// `{model}` body; synthesized Encodable omits nil keys.
     let provider: String?
+}
+
+private struct CommandExecRequest: Encodable {
+    let command: String
+    let sessionId: String?
 }
 
 private struct ReasoningEffortRequest: Encodable {

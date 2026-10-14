@@ -3042,6 +3042,26 @@ public final class ChatViewModel {
         }
     }
 
+    /// Runs a catalog command the server marks `exec` (TAL-918), such as `/refine`, and shows the server's output as a
+    /// notice; no chat turn starts.
+    func executeServerCommand(_ text: String) async -> SlashCommandExecutionResult {
+        do {
+            let output = try await client.execCommand(text, sessionID: sessionID)
+                .output?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if !output.isEmpty {
+                if activeStreamID == nil {
+                    appendLocalNoticeMessage(output)
+                } else {
+                    pinLocalNoticeMessage(output)
+                }
+            }
+            return .executed(message: nil)
+        } catch {
+            lastError = error
+            return .unsupported(friendlyMessage: error.localizedDescription)
+        }
+    }
+
     public func submitStreamingMessage(
         _ draft: String,
         behavior: StreamingSendBehavior

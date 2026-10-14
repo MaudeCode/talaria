@@ -4,6 +4,8 @@ public struct ParsedSlashCommand: Equatable {
     public let command: SlashCommand?
     let name: String
     let args: String
+    /// The server catalog marks the command `exec` for iOS: the server runs it (TAL-918).
+    public var runsOnServer = false
 }
 
 public enum SlashCommandExecutionResult: Equatable {
@@ -30,10 +32,12 @@ public enum SlashCommandExecutor {
             String($0).trimmingCharacters(in: .whitespacesAndNewlines)
         } ?? ""
 
+        let entry = catalog.entry(named: name)
         return ParsedSlashCommand(
             command: SlashCommandCatalog.command(named: name, in: catalog),
             name: name,
-            args: args
+            args: args,
+            runsOnServer: entry?.runsOnIOS == true && entry?.runsOnServer == true
         )
     }
 
@@ -46,6 +50,9 @@ public enum SlashCommandExecutor {
         guard let command = parsed.command else {
             if let message = unsupportedMessage(for: parsed.name, in: catalog) {
                 return .unsupported(friendlyMessage: message)
+            }
+            if parsed.runsOnServer {
+                return await viewModel.executeServerCommand(text.trimmingCharacters(in: .whitespacesAndNewlines))
             }
             if parsed.name.lowercased() == "skill" {
                 return .unsupported(friendlyMessage: String(localized: "Use `/skills [query]` to search skills."))

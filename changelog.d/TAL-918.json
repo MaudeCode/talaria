@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "/refine in the iOS app reviews the conversation in the background, instead of sending the command to the model as a message.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

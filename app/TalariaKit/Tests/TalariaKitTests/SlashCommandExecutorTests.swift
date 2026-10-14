@@ -9,6 +9,20 @@ final class SlashCommandExecutorTests: XCTestCase {
         AgentCommand(name: "background", aliases: ["bg"], handler: "client", clients: ["web", "ios"])
     ]
 
+    func testParseMarksServerRunCommandsForIOSOnly() {
+        // TAL-918: ChatView consumes a server-run command's draft before awaiting it, as it does a local command's.
+        let catalog = [
+            AgentCommand(name: "refine", handler: "agent", clients: ["web", "ios"], exec: true),
+            AgentCommand(name: "webonly", handler: "agent", clients: ["web"], exec: true),
+            AgentCommand(name: "resume", handler: "agent", clients: ["web", "ios"])
+        ]
+
+        XCTAssertEqual(SlashCommandExecutor.parse("/refine habits", catalog: catalog)?.runsOnServer, true)
+        XCTAssertEqual(SlashCommandExecutor.parse("/webonly", catalog: catalog)?.runsOnServer, false)
+        XCTAssertEqual(SlashCommandExecutor.parse("/resume", catalog: catalog)?.runsOnServer, false)
+        XCTAssertEqual(SlashCommandExecutor.parse("/clear", catalog: catalog)?.runsOnServer, false)
+    }
+
     func testParseClearWithoutArgs() {
         let parsed = SlashCommandExecutor.parse("/clear")
         XCTAssertEqual(parsed?.command?.name, "clear")
