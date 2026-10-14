@@ -411,17 +411,6 @@
       },
       {
         "activation": "enabled",
-        "description": "Native Spotify integration — 7 tools (playback, devices, queue, search, playlists, albums, library) using Spotify Web API + PKCE OAuth. Auth via `hermes auth spotify`. Tools gate on `providers.spotify` in ~/.hermes/auth.json.",
-        "enabled": true,
-        "hooks": [],
-        "is_active_provider": false,
-        "key": "spotify",
-        "kind": "backend",
-        "name": "spotify",
-        "version": "1.0.0"
-      },
-      {
-        "activation": "enabled",
         "description": "Microsoft Teams gateway adapter for Hermes Agent. Connects to Microsoft Teams via the Bot Framework and relays messages between Teams chats (personal DMs, group chats, channel posts) and the Hermes agent. Supports Adaptive Card approval prompts.",
         "enabled": true,
         "hooks": [],

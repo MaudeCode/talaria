@@ -61,12 +61,16 @@ def main() -> int:
     finally:
         proc.close()
     TARGET.mkdir(parents=True, exist_ok=True)
-    for stale in TARGET.glob("*.json"):
-        # Scenarios cannot reach unexercised methods, so their hand-written entries carry over.
-        for method, entries in json.loads(stale.read_text(encoding="utf-8")).items():
-            if method in UNEXERCISED and method not in fixtures.get(method.split(".", 1)[0], {}):
-                fixtures.setdefault(method.split(".", 1)[0], {})[method] = entries
-        stale.unlink()
+    stale = sorted(TARGET.glob("*.json"))
+    # Scenarios cannot reach unexercised methods, so their hand-written entries carry over.
+    # Read every file before deleting any, so a malformed one leaves the directory intact.
+    for previous in [json.loads(path.read_text(encoding="utf-8")) for path in stale]:
+        for method, entries in previous.items():
+            namespace = method.split(".", 1)[0]
+            if method in UNEXERCISED and method not in fixtures.get(namespace, {}):
+                fixtures.setdefault(namespace, {})[method] = entries
+    for path in stale:
+        path.unlink()
     for namespace, methods in sorted(fixtures.items()):
         (TARGET / f"{namespace}.json").write_text(json.dumps(methods, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(f"record-fixtures: wrote {sum(len(v) for v in fixtures.values())} methods across {len(fixtures)} namespaces to {TARGET}")
