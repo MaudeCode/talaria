@@ -13,7 +13,8 @@ final class ChatHostedTests: XCTestCase {
         _ = try await requireElement(in: window, label: "Linked chart", "The linked image did not render as a thumbnail")
         // Thumbnails show a spinner until their bytes load, then the image in its 132-point box or, on failure, a
         // shorter unavailable chip under the same alt-text name.
-        let loaded = await awaitCondition { !window.containsView(ofType: UIActivityIndicatorView.self) }
+        // Every spinner counts, the audio tile's too, and a hosted CI simulator can take well over 10 s to start audio.
+        let loaded = await awaitCondition(timeout: 30) { !window.containsView(ofType: UIActivityIndicatorView.self) }
         XCTAssertTrue(loaded, "The thumbnails never finished loading")
         for name in ["Linked chart", "chart.png", "Chart"] {
             let thumbnail = try XCTUnwrap(elements(named: name, in: window).first, "Missing the \(name) thumbnail")
