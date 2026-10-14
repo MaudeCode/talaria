@@ -505,7 +505,7 @@ def test_usage_changes_and_the_full_todo_result_reach_the_server(monkeypatch) ->
     monkeypatch.setattr(chat, "_agent_class", lambda: MeteredAgent)
     ctx = Ctx()
     assert chat.start(ctx, _params("st-meter"))["status"] == "completed"
-    events = [event for event, _ in ctx.frames if event != "steer_pending"]
+    events = [event for event, _ in ctx.frames if event not in ("steer_pending", "notices_reset")]
     assert events == ["token", "usage", "tool", "tool_complete", "token"]
     assert dict(ctx.frames)["usage"] == {"prompt_tokens": 100, "completion_tokens": 10, "cache_read_tokens": 0, "cache_write_tokens": 0, "estimated_cost_usd": 0.5}
     complete = dict(ctx.frames)["tool_complete"]
