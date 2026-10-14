@@ -107194,214 +107194,214 @@
         }
       }
     },
-    "This steering message can no longer be changed." : {
+    "The Agent already took this message." : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "لم يعد من الممكن تغيير رسالة التوجيه هذه."
+            "value" : "استلم الوكيل هذه الرسالة بالفعل."
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Dieser Steuerhinweis kann nicht mehr geändert werden."
+            "value" : "Der Agent hat diese Nachricht bereits übernommen."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Esta indicación ya no se puede cambiar."
+            "value" : "El agente ya tomó este mensaje."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Cette indication ne peut plus être modifiée."
+            "value" : "L’agent a déjà pris ce message."
           }
         },
         "he" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "כבר אי אפשר לשנות את הודעת ההכוונה הזו."
+            "value" : "הסוכן כבר קיבל את ההודעה הזו."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Questa indicazione non può più essere modificata."
+            "value" : "L’agente ha già preso questo messaggio."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "このステアリングメッセージはもう変更できません。"
+            "value" : "エージェントはこのメッセージをすでに受け取りました。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "이 조정 메시지는 더 이상 변경할 수 없습니다."
+            "value" : "에이전트가 이미 이 메시지를 받았습니다."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Dit stuurbericht kan niet meer worden gewijzigd."
+            "value" : "De agent heeft dit bericht al opgepakt."
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Tej wskazówki nie można już zmienić."
+            "value" : "Agent już przejął tę wiadomość."
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Esta orientação não pode mais ser alterada."
+            "value" : "O agente já recebeu esta mensagem."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Эту подсказку больше нельзя изменить."
+            "value" : "Агент уже принял это сообщение."
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Bu yönlendirme artık değiştirilemez."
+            "value" : "Ajan bu mesajı zaten aldı."
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "یہ رہنمائی کا پیغام اب تبدیل نہیں ہو سکتا۔"
+            "value" : "ایجنٹ یہ پیغام پہلے ہی لے چکا ہے۔"
           }
         },
         "zh-HK" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "這則引導訊息已無法更改。"
+            "value" : "代理已接收此訊息。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "这条引导消息已无法更改。"
+            "value" : "代理已接收此消息。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "這則引導訊息已無法更改。"
+            "value" : "代理已接收此訊息。"
           }
         }
       }
     },
-    "Nothing is running to take it now; it stays pending." : {
+    "Not delivered yet; it stays pending." : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "لا شيء قيد التشغيل لاستلامها الآن؛ تبقى معلّقة."
+            "value" : "لم تُسلَّم بعد؛ تبقى معلّقة."
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Gerade läuft nichts, das ihn übernehmen kann; er bleibt ausstehend."
+            "value" : "Noch nicht zugestellt; bleibt ausstehend."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "No hay nada en curso que pueda tomarla ahora; queda pendiente."
+            "value" : "Aún no entregado; sigue pendiente."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Rien ne tourne pour la prendre maintenant ; elle reste en attente."
+            "value" : "Pas encore transmis ; reste en attente."
           }
         },
         "he" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "אין כרגע ריצה שתקבל אותה; היא נשארת ממתינה."
+            "value" : "עדיין לא נמסר; נשאר בהמתנה."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Non c’è nulla in esecuzione che possa prenderla ora; resta in attesa."
+            "value" : "Non ancora consegnato; resta in sospeso."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "今受け取れる処理が動いていないため、保留のままです。"
+            "value" : "まだ届いていません。保留のままです。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "지금 받을 실행이 없어 대기 상태로 남습니다."
+            "value" : "아직 전달되지 않았습니다. 대기 상태로 남습니다."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Er draait nu niets dat het kan ontvangen; het blijft in afwachting."
+            "value" : "Nog niet afgeleverd; blijft in afwachting."
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Nic teraz nie działa, by ją przyjąć; pozostaje oczekująca."
+            "value" : "Jeszcze nie dostarczono; pozostaje w oczekiwaniu."
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Nada está em execução para recebê-la agora; ela continua pendente."
+            "value" : "Ainda não entregue; continua pendente."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Сейчас нечему её принять; она остаётся в ожидании."
+            "value" : "Пока не доставлено; остаётся в ожидании."
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Şu anda bunu alacak çalışan bir şey yok; beklemede kalıyor."
+            "value" : "Henüz iletilmedi; beklemede kalıyor."
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "ابھی اسے لینے کے لیے کچھ نہیں چل رہا؛ یہ زیرِ التوا رہے گا۔"
+            "value" : "ابھی تک نہیں پہنچا؛ زیر التوا رہے گا۔"
           }
         },
         "zh-HK" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "目前沒有可接收它的執行，它將保持待處理。"
+            "value" : "尚未送達，仍在等候中。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "当前没有可接收它的运行，它将保持待处理。"
+            "value" : "尚未送达，仍在等待中。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "目前沒有可接收它的執行，它將保持待處理。"
+            "value" : "尚未送達，仍在等待中。"
           }
         }
       }

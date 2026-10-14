@@ -1,20 +1,16 @@
 import Foundation
 
-/// A notice's kind, as Web's toasts have: it picks the chip's icon and how long the notice stays.
-public enum ChatNoticeKind: Equatable, Sendable {
-    case info
-    case warning
-    case error
-
-    /// Web's default toast lifetime for info; a warning or error stays longer to be read.
-    var lifetime: Duration {
-        self == .info ? .milliseconds(2500) : .seconds(5)
-    }
-}
-
-/// TAL-1001: the chat's one short notice above the composer. It goes on its own or on tap and is never saved.
-public struct ChatNotice: Equatable, Identifiable, Sendable {
+/// TAL-1001: the chat's one short notice above the composer, at an Agent notice's level so both share one chip. It
+/// goes on its own or on tap and is never saved.
+public struct ChatNotice: Equatable, Identifiable {
     public let id: UUID
     public let text: String
-    public let kind: ChatNoticeKind
+    public let level: SessionNotice.Level
+}
+
+extension SessionNotice.Level {
+    /// How long a chat notice at this level stays: Web's default toast lifetime, longer for a warning or error.
+    var noticeLifetime: Duration {
+        self == .warn || self == .error ? .seconds(5) : .milliseconds(2500)
+    }
 }

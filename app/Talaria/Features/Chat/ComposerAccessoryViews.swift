@@ -2,49 +2,6 @@ import SwiftUI
 import TalariaKit
 import UIKit
 
-/// TAL-1001: the chat's one short notice, in the status chip's look. A tap dismisses it.
-struct ChatNoticeChip: View {
-    let notice: ChatNotice
-    let dismiss: () -> Void
-
-    var body: some View {
-        let style = Self.style(notice.kind)
-        Button(action: dismiss) {
-            HStack(spacing: 8) {
-                Image(systemName: style.symbol)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(style.tint)
-                    .accessibilityHidden(true)
-                Text(notice.text)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-            }
-            .statusChipChrome()
-            .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .fixedSize(horizontal: false, vertical: true)
-        .accessibilityLabel(notice.text)
-        .accessibilityValue(style.name)
-        .accessibilityHint(String(localized: "Dismiss"))
-        // Once per notice: the same notice shown again keeps its id.
-        .onChange(of: notice.id, initial: true) {
-            AccessibilityNotification.Announcement(notice.text).post()
-        }
-    }
-
-    /// The kind's icon, its tint, and the word VoiceOver reads for it.
-    private static func style(_ kind: ChatNoticeKind) -> (symbol: String, tint: Color, name: String) {
-        switch kind {
-        case .info: ("info.circle", .accentColor, String(localized: "Information"))
-        case .warning: ("exclamationmark.triangle", .orange, String(localized: "Warning"))
-        case .error: ("exclamationmark.octagon", .red, String(localized: "Error"))
-        }
-    }
-}
-
 /// TAL-831: the Agent's notices for the session (a memory provider that failed to load, a credit warning) as status
 /// chips above the composer, toned by the server's level. Dismissing one hides it on this device only.
 struct SessionNoticeChips: View {
@@ -54,37 +11,47 @@ struct SessionNoticeChips: View {
     var body: some View {
         VStack(spacing: 8) {
             ForEach(notices, id: \.self) { notice in
-                let style = Self.style(notice.level)
-                HStack(spacing: 8) {
-                    Image(systemName: style.symbol)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(style.tint)
-                        .accessibilityHidden(true)
-                    Text(notice.text)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.primary)
-                        .lineLimit(2)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .accessibilityValue(style.name)
-                    Button {
-                        dismiss(notice)
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 28, height: 28)
-                            .contentShape(.rect)
-                    }
-                    .buttonStyle(.plain)
-                    .chatMinimumHitTarget(in: Circle())
-                    .accessibilityLabel(String(localized: "Dismiss notice"))
-                    .accessibilityValue(notice.text)
-                }
-                .statusChipChrome()
-                .accessibilityElement(children: .contain)
+                NoticeChip(text: notice.text, level: notice.level) { dismiss(notice) }
             }
         }
         .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// A notice above the composer in the status chip's look: its level's icon, up to two lines, and a dismiss button.
+/// The Agent's session notices and the chat's own short notices (TAL-1001) share it.
+struct NoticeChip: View {
+    let text: String
+    let level: SessionNotice.Level
+    let dismiss: () -> Void
+
+    var body: some View {
+        let style = Self.style(level)
+        HStack(spacing: 8) {
+            Image(systemName: style.symbol)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(style.tint)
+                .accessibilityHidden(true)
+            Text(text)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityValue(style.name)
+            Button(action: dismiss) {
+                Image(systemName: "xmark")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 28, height: 28)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .chatMinimumHitTarget(in: Circle())
+            .accessibilityLabel(String(localized: "Dismiss notice"))
+            .accessibilityValue(text)
+        }
+        .statusChipChrome()
+        .accessibilityElement(children: .contain)
     }
 
     /// The level's icon, its tint, and the word VoiceOver reads for it.

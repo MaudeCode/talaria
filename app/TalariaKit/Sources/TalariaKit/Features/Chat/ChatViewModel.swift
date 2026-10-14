@@ -315,7 +315,7 @@ public final class ChatViewModel {
     /// The one notice above the composer (TAL-1001); a new one replaces it.
     public private(set) var currentNotice: ChatNotice?
     /// How long a notice of each kind stays; tests shorten it.
-    @ObservationIgnored var noticeLifetime: (ChatNoticeKind) -> Duration = { $0.lifetime }
+    @ObservationIgnored var noticeLifetime: (SessionNotice.Level) -> Duration = { $0.noticeLifetime }
     @ObservationIgnored private var noticeDismissTask: Task<Void, Never>?
     /// The Agent's active notices for the session, oldest first (TAL-831): the server's list, from the session and the
     /// stream's `notices`.
@@ -3958,14 +3958,14 @@ public final class ChatViewModel {
 
     /// Every chat notice goes through here (TAL-1001). It replaces the notice shown; the same notice again only
     /// restarts its time.
-    public func showNotice(_ text: String, kind: ChatNoticeKind = .info) {
+    public func showNotice(_ text: String, level: SessionNotice.Level = .info) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        if currentNotice?.text != trimmed || currentNotice?.kind != kind {
-            currentNotice = ChatNotice(id: UUID(), text: trimmed, kind: kind)
+        if currentNotice?.text != trimmed || currentNotice?.level != level {
+            currentNotice = ChatNotice(id: UUID(), text: trimmed, level: level)
         }
         noticeDismissTask?.cancel()
-        let lifetime = noticeLifetime(kind)
+        let lifetime = noticeLifetime(level)
         noticeDismissTask = Task { [weak self] in
             try? await Task.sleep(for: lifetime)
             guard !Task.isCancelled else { return }
@@ -4159,7 +4159,7 @@ public final class ChatViewModel {
         do {
             let response = try await client.withdrawSteer(sessionID: sessionID, steerID: id, reason: reason)
             guard response.withdrawn else {
-                showNotice(String(localized: "This steering message can no longer be changed."), kind: .warning)
+                showNotice(String(localized: "The Agent already took this message."), level: .warn)
                 return
             }
             let shownText = messages.first { $0.messageId == id && $0.isLocalSteeringHint }?.content
@@ -4177,7 +4177,7 @@ public final class ChatViewModel {
         defer { steerActionsInFlight.remove(id) }
         do {
             if !(try await client.sendSteerNow(sessionID: sessionID, steerID: id)).redirected {
-                showNotice(String(localized: "Nothing is running to take it now; it stays pending."))
+                showNotice(String(localized: "Not delivered yet; it stays pending."))
             }
         } catch {
             lastError = error
@@ -5577,7 +5577,7 @@ public final class ChatViewModel {
         if case .unsupported(let notice) = result {
             // Back in place, with no drain: a send that keeps failing must not retry in a loop (issue #202).
             queuedSlashMessages.insert(message, at: min(index, queuedSlashMessages.count))
-            showNotice(notice, kind: .warning)
+            showNotice(notice, level: .warn)
             return
         }
         if case .executed(let notice?) = result { showNotice(notice) }

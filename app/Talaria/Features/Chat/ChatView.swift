@@ -1112,9 +1112,13 @@ struct ChatView: View {
                 }
 
                 if let notice = viewModel.currentNotice {
-                    ChatNoticeChip(notice: notice, dismiss: viewModel.dismissNotice)
+                    NoticeChip(text: notice.text, level: notice.level, dismiss: viewModel.dismissNotice)
                         // A two-line notice is taller than one status row.
                         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { noticeChipHeight = $0 }
+                        // Once per notice: the same notice shown again keeps its id.
+                        .onChange(of: notice.id, initial: true) {
+                            AccessibilityNotification.Announcement(notice.text).post()
+                        }
                         .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
                 }
 
