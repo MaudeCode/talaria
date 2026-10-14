@@ -759,26 +759,43 @@ def _join(threads, deadline: float) -> None:
 
 def _cancel_background_reviews(agents, message: str) -> list[threading.Thread]:
     """TAL-897: stop each agent's post-turn memory/skill review fork, which no turn interrupt or release reaches, so a
-    deleted session or a stopping sidecar no longer pays for it. Each agent first stops forking reviews: the turn
-    finalizer skips one (a turn still running, which a clear does not stop, ends without one), and a review deferred
-    to the idle queue (managed local runtime), including the one a cancelled fork requeues, dispatches into nothing.
-    Returns the cancels running side by side for the caller to join; the Agent bounds each one's wait for the fork's
-    acknowledgement."""
+    deleted session or a stopping sidecar no longer pays for it. Each cancel then holds the agent's review slot (a run
+    token from the Agent's ``prepare_background_review_run``, never finished), so the Agent admits no later review: not
+    from a turn still running (a clear does not stop it), a spawn already under way, or a review deferred to or
+    requeued on the idle queue (managed local runtime). ``skip_background_review`` spares the turn finalizer queueing
+    one at all. Returns the cancels running side by side for the caller to join; the Agent bounds each wait for the
+    fork's acknowledgement. Only a turn's start waits on a held slot, and an ended agent runs no further turn."""
     unique = {id(agent): agent for agent in agents if agent is not None}
     for agent in unique.values():
         try:
             agent.skip_background_review = True
-            agent._spawn_background_review_now = lambda **_kwargs: None
         except AttributeError:  # an object without instance attributes forks no reviews
             pass
     try:
-        from agent.background_review import cancel_background_review_for_live_turn
+        from agent.background_review import cancel_background_review_for_live_turn, prepare_background_review_run
     except ImportError:
         return []
 
     def cancel(agent) -> None:
         try:
-            cancel_background_review_for_live_turn(agent, message=message, tool_reason="session ended")
+            # A spawn that slipped in between the cancel and the slot claim is cancelled on the next pass.
+            for _ in range(3):
+                if getattr(agent, "_talaria_review_slot", None) is not None:
+                    return
+                cancel_background_review_for_live_turn(agent, message=message, tool_reason="session ended")
+                slot = prepare_background_review_run(agent)
+                if slot is not None:
+                    agent._talaria_review_slot = slot
+                    return
+                current = getattr(agent, "_background_review_run", None)
+                if current is None:
+                    return  # not an Agent with a review slot
+                if current.cancel_requested.is_set():
+                    # A cancelled fork past the Agent's wait: claim the slot once it acknowledges, before the Agent can
+                    # requeue it, without holding up the teardown.
+                    threading.Thread(target=lambda: (current.request_done.wait(), cancel(agent)), daemon=True, name="chat-review-cancel").start()
+                    return
+            log.warning("a background review kept restarting after its session ended")
         except Exception:  # noqa: BLE001 - teardown continues without it
             log.warning("cancelling a background review failed", exc_info=True)
 

@@ -62,6 +62,7 @@ def _reviews(monkeypatch) -> None:
     """TAL-897: the Agent's background-review canceller, recording which session's agent it reached and why."""
     module = types.ModuleType("agent.background_review")
     module.cancel_background_review_for_live_turn = lambda agent, *, message, tool_reason: EVENTS.append(("cancel_review", agent.kwargs["session_id"], message))
+    module.prepare_background_review_run = lambda agent: object()
     monkeypatch.setitem(sys.modules, "agent", types.ModuleType("agent"))
     monkeypatch.setitem(sys.modules, "agent.background_review", module)
 

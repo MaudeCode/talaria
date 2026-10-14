@@ -1,9 +1,10 @@
 """Run on the Agent interpreter: evict and drain agents whose post-turn background review fork the Agent admitted.
 
 Prints one JSON line: per scenario (a cache-only eviction, a delete/clear eviction of a cached and of a running turn's
-agent, a shutdown drain), the interrupts the admitted review fork received and whether the agent can still fork a
-review: a post-turn one (``skip_background_review``) or a deferred one the Agent's idle queue dispatches. Also how
-long a delete/clear eviction waited on a review that never acknowledges.
+agent, a shutdown drain), the interrupts the admitted review fork received and which reviews the agent can still fork:
+a post-turn one (``skip_background_review``), a deferred one the Agent's idle queue dispatches, and one whose spawn was
+already under way when the session ended. Also how long a delete/clear eviction waited on a review that never
+acknowledges.
 """
 
 from __future__ import annotations
@@ -42,20 +43,29 @@ class Review:
 
 
 class Parent:
-    """The parent agent: ``_spawn_background_review_now`` is what the idle queue calls for a deferred review."""
-
-    def __init__(self):
-        self.spawned = []
+    """The parent agent. Like the Agent's, ``_spawn_background_review_now`` (what the idle queue calls for a deferred
+    review) forks only once it holds the review slot."""
 
     def _spawn_background_review_now(self, **kwargs):
-        self.spawned.append(kwargs)
+        run = prepare_background_review_run(self)
+        if run is None:
+            return False
+        finish_background_review_run(self, run)
+        return True
 
 
 def reviews_left(parent) -> list:
-    """Which reviews ``parent`` can still fork: a post-turn one, and a deferred one the idle queue dispatches."""
+    """Which reviews ``parent`` can still fork: a post-turn one, a deferred one the idle queue dispatches, and one whose
+    spawn had already resolved the method before the session ended."""
     left = [] if getattr(parent, "skip_background_review", False) else ["post-turn"]
+    spawned = []
+    parent.__dict__.setdefault("_spawn_background_review_now", lambda **kwargs: spawned.append(Parent._spawn_background_review_now(parent, **kwargs)))
     QUEUE._dispatch(_PendingReview(parent, "probe", {}, 0.0, contextvars.copy_context()))
-    return left + (["deferred"] if parent.spawned else [])
+    if spawned == [True]:
+        left.append("deferred")
+    if Parent._spawn_background_review_now(parent):
+        left.append("in-flight")
+    return left
 
 
 def admitted(acknowledge: bool = True):
@@ -81,6 +91,7 @@ evict(None, {"session_id": "switch"})
 time.sleep(0.3)
 out["switch"] = review.interrupts
 out["switch_review_live"] = parent._background_review_run is not None
+finish_background_review_run(parent, review.run)
 out["switch_left"] = reviews_left(parent)
 
 # Delete / clear of an idle session.
@@ -108,6 +119,12 @@ started = time.monotonic()
 out["wedged_evicted"] = evict(None, {"session_id": "wedged", "clear_session": True})["evicted"]
 out["wedged_seconds"] = round(time.monotonic() - started, 1)
 out["wedged"] = settled(review)
+# The fork acknowledges late; the Agent would requeue a cancelled review on the idle queue.
+finish_background_review_run(parent, review.run)
+deadline = time.monotonic() + 3
+while parent._background_review_run is None and time.monotonic() < deadline:
+    time.sleep(0.02)
+out["wedged_left"] = reviews_left(parent)
 
 # Shutdown.
 parent, review = admitted()

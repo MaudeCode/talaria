@@ -1,5 +1,5 @@
 """TAL-897: deleting or clearing a session, and sidecar shutdown, cancel its agent's post-turn background review fork and
-stop the agent forking another, immediate or deferred; a model switch or truncate leaves its reviews alone."""
+stop the agent forking another, immediate, deferred or already under way; a model switch or truncate leaves its reviews alone."""
 
 from __future__ import annotations
 
@@ -26,13 +26,14 @@ def test_delete_clear_and_shutdown_cancel_the_admitted_background_review(tmp_pat
     assert out == {
         "switch": [],
         "switch_review_live": True,
-        "switch_left": ["post-turn", "deferred"],
+        "switch_left": ["post-turn", "deferred", "in-flight"],
         "deleted": [ENDED],
         "deleted_left": [],
         "running": [ENDED],
         "running_left": [],
         "wedged_evicted": True,
         "wedged": [ENDED],
+        "wedged_left": [],
         "drained": [["sidecar shutting down", "session ended"]],
         "drained_left": [],
     }
