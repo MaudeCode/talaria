@@ -144,7 +144,7 @@ def env_write(home: Path, updates) -> dict:
 
     Unlike those two, nothing is published into ``os.environ``: other threads (a gateway spawn snapshotting the
     environment) must never see another profile's key, and ``runtime.env`` alone owns this process's environment.
-    Values are trimmed and an empty one is skipped; a line break is refused rather than stripped. Every key is
+    Values are trimmed and an empty one is skipped; a value the Agent would strip or quote is refused. Every key is
     checked against the Agent's refusals before the write, and the file ends 0600.
     """
     if not isinstance(updates, dict) or not all(isinstance(k, str) and _ENV_NAME.match(k) and (v is None or isinstance(v, str)) for k, v in updates.items()):
@@ -157,6 +157,10 @@ def env_write(home: Path, updates) -> dict:
                 continue
             if "\n" in value or "\r" in value:
                 raise InvalidParams("API key must not contain newline characters.")
+            # The Agent would strip non-ASCII and quote the rest; refused instead, so the running process and the
+            # server's reader see exactly the bytes the file holds.
+            if any(not "!" <= c <= "~" or c in "#\"'" for c in value):
+                raise InvalidParams("API key must not contain spaces, quotes, '#' or non-ASCII characters.")
         changes[key] = value
     from hermes_cli import config as agent_config
 
@@ -178,7 +182,7 @@ def env_write(home: Path, updates) -> dict:
                         lines = [line for line in lines if not defines(line, key)]
                         continue
                     agent_config.validate_env_var_name_for_write(key)
-                    entry = f"{key}={agent_config._quote_env_value(agent_config._check_non_ascii_credential(key, value))}\n"
+                    entry = f"{key}={value}\n"
                     at = next((i for i, line in enumerate(lines) if defines(line, key)), None)
                     if at is not None:
                         lines[at] = entry

@@ -33,6 +33,7 @@ export function writeEnvFile(path: string, updates: Record<string, string | null
     const clean = value.trim()
     if (!clean) continue
     if (clean.includes('\n') || clean.includes('\r')) throw new Error('API key must not contain newline characters.')
+    if (/[^\x21-\x7e]|[#"']/.test(clean)) throw new Error("API key must not contain spaces, quotes, '#' or non-ASCII characters.")
     const at = index.get(key)
     if (at !== undefined) out[at] = `${key}=${clean}`
     else fresh.push(`${key}=${clean}`)

@@ -331,7 +331,7 @@ export const CONFIG_METHODS = {
   // `config_path` is the server-resolved file (honouring HERMES_CONFIG_PATH); the sidecar reads and writes exactly that path.
   'config.get': { params: ProfileHomeParams.extend({ config_path: z.string().min(1) }), result: z.object({ path: z.string(), exists: z.boolean(), config: Loose }) },
   'config.set': { params: ProfileHomeParams.extend({ config_path: z.string().min(1), config: Loose }), result: z.object({ ok: z.literal(true), path: z.string() }) },
-  /** TAL-797: `.env` edits through the Agent's locked writer; `null` removes a key, an empty value is skipped, a line break is refused. */
+  /** TAL-797: `.env` edits through the Agent's locked writer; `null` removes a key, an empty value is skipped; line breaks, spaces, quotes, `#` and non-ASCII are refused. */
   'config.env_write': { params: ProfileHomeParams.extend({ updates: z.record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/), z.string().nullable()) }), result: z.object({ ok: z.literal(true), path: z.string() }) },
   'models.reasoning_efforts': { params: ProfileHomeParams.extend({ model: z.string(), provider: z.string() }), result: z.object({ efforts: z.array(z.string()), supports_reasoning: z.boolean().nullable() }) },
 } as const

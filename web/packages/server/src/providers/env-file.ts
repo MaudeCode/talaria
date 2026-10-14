@@ -36,7 +36,7 @@ const ENV_WRITE_STATUS: Record<string, number> = { env_locked: 503, env_write_re
 /**
  * Upsert `updates` into `<profileHome>/.env` (a `null` value removes the key) through the Agent's own locked writer, so
  * a concurrent gateway, CLI or plugin write cannot drop the change (TAL-797). Comments, blank lines and key order
- * survive; an empty value is skipped, a line break refused, and the file ends 0600.
+ * survive; an empty value is skipped, a value the Agent would strip or quote is refused, and the file ends 0600.
  */
 export async function writeProfileEnv(sidecar: SidecarLike | null, profileHome: string, updates: Record<string, string | null>): Promise<void> {
   if (!sidecar) throw new EnvWriteError('The Agent sidecar is not running, so the .env change was not saved.', 503, 'sidecar_unavailable')

@@ -230,6 +230,16 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     expect((body.providers as { id: string; has_key: boolean }[]).find((p) => p.id === 'deepseek')?.has_key).toBe(false)
   })
 
+  it('POST /api/providers refuses a key the Agent writer would rewrite and leaves no runtime copy (TAL-797)', async () => {
+    const res = await post(s, '/api/providers', { provider: 'deepseek', api_key: 'sk-caf\u00e9-12345' })
+    expect(res.status).toBe(400)
+    expect(loadEnvFile(join(s.state, '.env'))).not.toHaveProperty('DEEPSEEK_API_KEY')
+    expect(s.deps.config.env.DEEPSEEK_API_KEY).toBeUndefined()
+    // The sidecar was given the key before the write and has been told to drop it again.
+    const runtime = sidecar.calls.filter((c) => c.method === 'runtime.env').slice(-2).map((c) => c.params)
+    expect(runtime).toEqual([{ set: { DEEPSEEK_API_KEY: 'sk-caf\u00e9-12345' } }, { unset: ['DEEPSEEK_API_KEY'] }])
+  })
+
   it('a credential copied from the default profile .env at startup never counts for a named profile, and removing it retires the runtime copy', async () => {
     // Simulates `loadStartupEnv`: the default profile's .env put OPENAI_API_KEY into the process environment.
     const env = s.deps.config.env

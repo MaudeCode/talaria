@@ -74,6 +74,10 @@ def test_env_write_keeps_comments_and_order_and_ends_owner_only(handshaken: Side
     message, _ = handshaken.call("config.env_write", {**params, "updates": {"D": "x\ny"}})
     assert "newline" in message["error"]["message"]
     assert "D=" not in path.read_text()
+    for value in ("sk-caf\u00e9-1234", "sk-a b", 'sk-a"b', "sk-a'b", "sk-a#b", "sk-a\tb"):
+        message, _ = handshaken.call("config.env_write", {**params, "updates": {"E": value}})
+        assert "non-ASCII" in message["error"]["message"], (value, message)
+    assert "E=" not in path.read_text()
 
 
 @requires_agent
