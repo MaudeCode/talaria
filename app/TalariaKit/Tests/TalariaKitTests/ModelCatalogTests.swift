@@ -64,6 +64,10 @@ final class ModelCatalogTests: XCTestCase {
                     ModelCatalogOption(id: "claude-opus-4.1", displayName: "Claude Opus 4.1", providerID: "anthropic", bareID: "claude-opus-4.1", limitResetsAt: resetsAt),
                     ModelCatalogOption(id: "claude-sonnet-4.5", displayName: "Claude Sonnet 4.5", providerID: "anthropic", bareID: "claude-sonnet-4.5")
                 ],
+                // An entry the server moved out of the visible list keeps its limit when the live list shows it.
+                extraModels: [
+                    ModelCatalogOption(id: "claude-haiku-4.5", displayName: "Claude Haiku 4.5", providerID: "anthropic", bareID: "claude-haiku-4.5", limitResetsAt: resetsAt)
+                ],
                 accountLimitResetsAt: nil,
                 quotaLevel: .warning
             )
@@ -72,14 +76,15 @@ final class ModelCatalogTests: XCTestCase {
             provider: "anthropic",
             models: [
                 .object(["id": .string("claude-opus-4.1"), "label": .string("Claude Opus 4.1")]),
-                .object(["id": .string("claude-sonnet-4.5"), "label": .string("Claude Sonnet 4.5")])
+                .object(["id": .string("claude-sonnet-4.5"), "label": .string("Claude Sonnet 4.5")]),
+                .object(["id": .string("claude-haiku-4.5"), "label": .string("Claude Haiku 4.5")])
             ],
-            count: 2
+            count: 3
         )
 
         let merged = groups.mergingLiveModels(from: live)
 
-        XCTAssertEqual(merged.first?.models.map(\.limitResetsAt), [resetsAt, nil])
+        XCTAssertEqual(merged.first?.models.map(\.limitResetsAt), [resetsAt, nil, resetsAt])
         XCTAssertEqual(merged.first?.quotaLevel, .warning)
     }
 

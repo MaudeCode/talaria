@@ -149,7 +149,7 @@ extension Array where Element == ModelCatalogGroup {
             guard group.providerID == provider else { return group }
             // The live list carries no rate limits; a model keeps the one the catalog gave it.
             var limits: [String: Date] = [:]
-            for option in group.models {
+            for option in group.models + group.extraModels {
                 guard let resetsAt = option.limitResetsAt else { continue }
                 limits[option.id] = resetsAt
                 if let bareID = option.bareID { limits[bareID] = resetsAt }
