@@ -153,6 +153,29 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     expect(body.supports_thinking_toggle).toBe(false)
   })
 
+  it('the reasoning display toggle writes only the webui platform key and reads a global value as before', async () => {
+    const seeded = configs.get(s.state) ?? {}
+    try {
+      // TAL-895: a global display.show_reasoning overrides every gateway platform; sidecar/tests/test_display_config.py
+      // proves the Agent resolver keeps telegram off and webui on for exactly this display section.
+      configs.set(s.state, { model: { default: 'claude-sonnet-4-6', provider: 'anthropic' } })
+      s.deps.agentConfig.invalidate()
+      expect((await json(await post(s, '/api/reasoning', { display: 'show' }))).show_reasoning).toBe(true)
+      expect(configs.get(s.state)?.display).toEqual({ platforms: { webui: { show_reasoning: true } } })
+      expect((await json(await post(s, '/api/reasoning', { display: 'hide' }))).show_reasoning).toBe(false)
+      expect(configs.get(s.state)?.display).toEqual({ platforms: { webui: { show_reasoning: false } } })
+      // An existing global value still reads, and survives the Web toggle untouched.
+      configs.set(s.state, { model: { default: 'claude-sonnet-4-6', provider: 'anthropic' }, display: { show_reasoning: false, platforms: { telegram: { show_reasoning: true } } } })
+      s.deps.agentConfig.invalidate()
+      expect((await json(await s.get('/api/reasoning'))).show_reasoning).toBe(false)
+      expect((await json(await post(s, '/api/reasoning', { display: 'show' }))).show_reasoning).toBe(true)
+      expect(configs.get(s.state)?.display).toEqual({ show_reasoning: false, platforms: { telegram: { show_reasoning: true }, webui: { show_reasoning: true } } })
+    } finally {
+      configs.set(s.state, seeded)
+      s.deps.agentConfig.invalidate()
+    }
+  })
+
   it('personalities list from config.yaml and personality/set resolves the prompt onto the session', async () => {
     let res = await s.get('/api/personalities')
     expect(await json(res)).toEqual({ personalities: [{ name: 'pirate', description: 'Talk like a pirate' }, { name: 'calm', description: 'Calm helper' }] })

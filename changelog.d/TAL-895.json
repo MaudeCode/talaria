@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Showing or hiding reasoning in Talaria Web now changes only Web, so Telegram, Discord, Slack, Signal and email replies keep their own reasoning setting.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

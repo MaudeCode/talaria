@@ -12,7 +12,7 @@ import { HttpFailure } from '../sessions/service.js'
 import { SidecarError } from '../sidecar/client.js'
 import type { SidecarParams, SidecarResult } from '@maudecode/talaria-web-contracts'
 import { SessionNotFound } from '../sessions/store.js'
-import { auxiliaryModels, modelSection, canonicaliseProviderId, ConfigUnavailable, maxTokensStatus, personalityPrompt, personalityRows, reasoningStatus, setAuxiliaryModel, setDefaultModel, setMaxTokens, validReasoningEffort, type Dict } from '../config/agent-config.js'
+import { auxiliaryModels, dict, modelSection, canonicaliseProviderId, ConfigUnavailable, maxTokensStatus, personalityPrompt, personalityRows, reasoningStatus, setAuxiliaryModel, setDefaultModel, setMaxTokens, validReasoningEffort, type Dict } from '../config/agent-config.js'
 import { ProfileError, validateProfileName } from '../profiles/profiles.js'
 import { OnboardingError } from '../onboarding.js'
 import { EnvWriteError } from '../providers/env-file.js'
@@ -366,7 +366,14 @@ export const settingsRouter = os.router({
         if (['show', 'on', 'true', '1'].includes(flag)) show = true
         else if (['hide', 'off', 'false', '0'].includes(flag)) show = false
         else throw new HttpError(400, `display must be show|hide|on|off (got '${str(input.display)}')`)
-        const config = await ctx.deps.agentConfig.update(h, (c) => { c.display = { ...(c.display && typeof c.display === 'object' && !Array.isArray(c.display) ? (c.display) : {}), show_reasoning: show } })
+        // A global display.show_reasoning overrides every gateway platform, so Web writes only its own platform key.
+        const config = await ctx.deps.agentConfig.update(h, (c) => {
+          const display = dict(c.display)
+          const platforms = dict(display.platforms)
+          platforms.webui = { ...dict(platforms.webui), show_reasoning: show }
+          display.platforms = platforms
+          c.display = display
+        })
         return reasoningStatus(config, effortsResolver(ctx))
       }
       if (input.effort !== undefined && input.effort !== null) {
