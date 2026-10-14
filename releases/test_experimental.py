@@ -12,7 +12,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from build import CONTRACTS, experimental_component, require_bundled_contracts
+from build import CONTRACTS, bundled_peers, experimental_component, require_bundled_contracts
 from experimental import MOVING, moves_forward, newest_published, pruned
 from plan import git
 
@@ -112,6 +112,19 @@ class ExperimentalTests(unittest.TestCase):
         ):
             with self.subTest(label), self.assertRaisesRegex(ValueError, "bundle"):
                 require_bundled_contracts(candidate, version)
+
+    def test_bundle_carries_direct_dependencies_the_contracts_closure_peers_on(self):
+        package = self.root / "package"
+        manifests = {
+            ".": {"dependencies": {CONTRACTS: "1", "ws": "8", "zod": "4", "seek-bzip": "2"}},
+            f"node_modules/{CONTRACTS}": {"dependencies": {"@orpc/server": "1"}},
+            "node_modules/@orpc/server": {"peerDependencies": {"ws": ">=8", "crossws": ">=0.3"}},
+            "node_modules/zod": {"peerDependencies": {"seek-bzip": ">=2"}},
+        }
+        for path, manifest in manifests.items():
+            (package / path).mkdir(parents=True, exist_ok=True)
+            (package / path / "package.json").write_text(json.dumps(manifest))
+        self.assertEqual(bundled_peers(package), ["ws"])
 
     def test_experimental_tag_moves_only_forward(self):
         base = self.git("rev-parse", "HEAD")

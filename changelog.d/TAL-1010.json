@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Experimental Web updates install the live-dictation WebSocket package again, and an update with a missing package now leaves the current version running instead of breaking the server.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
