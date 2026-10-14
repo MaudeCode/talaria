@@ -38,7 +38,15 @@ class FakeSocket {
 }
 
 const track = { stop: vi.fn() }
-let tap: { port: { onmessage: ((event: { data: Float32Array }) => void) | null }; connect: () => void; disconnect: () => void }
+const getUserMedia = vi.fn(() => Promise.resolve({ getTracks: () => [track] }))
+
+class FakeTap {
+  static last: FakeTap | undefined
+  port: { onmessage: ((event: { data: Float32Array }) => void) | null } = { onmessage: null }
+  connect = vi.fn()
+  disconnect = vi.fn()
+  constructor() { FakeTap.last = this }
+}
 
 class FakeRecorder {
   state = 'inactive'
@@ -60,7 +68,7 @@ async function start() {
   const texts: string[] = []
   const ends: unknown[] = []
   const handle = dictateLive((text) => texts.push(text), (error) => ends.push(error))
-  await vi.waitFor(() => { expect(tap).toBeDefined() })
+  await vi.waitFor(() => { expect(FakeTap.last).toBeDefined() })
   const ws = FakeSocket.last
   ws.open()
   return { handle, texts, ends, ws }
@@ -68,17 +76,13 @@ async function start() {
 
 describe('live dictation (TAL-802)', () => {
   beforeEach(() => {
-    tap = undefined as never
+    FakeTap.last = undefined
+    getUserMedia.mockReset().mockResolvedValue({ getTracks: () => [track] })
     vi.mocked(api.transcribeRecording).mockReset().mockResolvedValue({ ok: true, transcript: ' from the recording ' })
     track.stop.mockReset()
     vi.stubGlobal('WebSocket', FakeSocket)
     vi.stubGlobal('MediaRecorder', FakeRecorder)
-    vi.stubGlobal('AudioWorkletNode', class {
-      port = { onmessage: null }
-      connect = vi.fn()
-      disconnect = vi.fn()
-      constructor() { tap = this as never }
-    })
+    vi.stubGlobal('AudioWorkletNode', FakeTap)
     vi.stubGlobal('AudioContext', class {
       sampleRate = exchange.start.sample_rate
       destination = {}
@@ -86,13 +90,13 @@ describe('live dictation (TAL-802)', () => {
       createMediaStreamSource() { return { connect: vi.fn(), disconnect: vi.fn() } }
       close() { return Promise.resolve() }
     })
-    Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: vi.fn(() => Promise.resolve({ getTracks: () => [track] })) } })
+    Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia } })
   })
   afterEach(() => { vi.unstubAllGlobals() })
 
   it('streams PCM, shows partials while recording, and ends on the final without uploading', async () => {
     const { handle, texts, ends, ws } = await start()
-    tap.port.onmessage?.({ data: new Float32Array(4096).fill(0.5) })
+    FakeTap.last?.port.onmessage?.({ data: new Float32Array(4096).fill(0.5) })
     expect(ws.url.pathname).toBe('/api/transcribe/stream')
     expect(ws.url.protocol).toBe('ws:')
     expect(ws.text()).toEqual([exchange.start])
@@ -114,7 +118,7 @@ describe('live dictation (TAL-802)', () => {
   it('falls back to transcribing the recording when the server reports an error', async () => {
     const { handle, texts, ends, ws } = await start()
     ws.receive(exchange.unavailable)
-    tap.port.onmessage?.({ data: new Float32Array(4096) })
+    FakeTap.last?.port.onmessage?.({ data: new Float32Array(4096) })
     expect(ws.audioBytes()).toBe(0)
     handle.stop()
     await vi.waitFor(() => { expect(ends).toEqual([null]) })
@@ -156,7 +160,7 @@ describe('live dictation (TAL-802)', () => {
 
   it('reports a refused microphone as denied', async () => {
     const refused = new DOMException('Permission denied', 'NotAllowedError')
-    vi.mocked(navigator.mediaDevices.getUserMedia).mockRejectedValue(refused)
+    getUserMedia.mockRejectedValue(refused)
     const ends: unknown[] = []
     dictateLive(() => undefined, (error) => ends.push(error))
     await vi.waitFor(() => { expect(ends).toEqual([refused]) })
