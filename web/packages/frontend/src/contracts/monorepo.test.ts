@@ -14,6 +14,12 @@ describe('shared monorepo contracts', () => {
     expect(window).toMatchObject({ label: 'Weekly', pace: { burn_rate: 1.12 }, forecast: { outcome: 'warning' } })
   })
 
+  it('parses the shared compression span the App decodes (TAL-1006)', () => {
+    const fixture = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../contracts/fixtures/compression.json'), 'utf8')) as Record<string, unknown>
+    const events = ['compressing', 'heartbeat', 'compressed'].map((key) => ChatEventSchema.parse(fixture[key]))
+    expect(events.map((e) => [e.event, e.event === 'compressing' ? e.data.started_at : null])).toEqual([['compressing', 1_800_000_000], ['compressing', 1_800_000_000], ['compressed', null]])
+  })
+
   it('accepts the same session and activity scene as the native client', () => {
     const fixture: unknown = JSON.parse(readFileSync(
       resolve(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8',

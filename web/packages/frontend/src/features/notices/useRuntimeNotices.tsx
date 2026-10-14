@@ -8,6 +8,7 @@ import { isApiError } from '../../contracts/common'
 import type { ChatReadiness, SessionGoal, SessionNotice } from '@maudecode/talaria-web-contracts'
 import type { LiveTurn } from '../../stream/reducer'
 import type { ComposerNotice } from '../composer/ComposerTab'
+import { RunElapsed } from '../chat/LiveTurnView'
 
 type AgentHealth = Awaited<ReturnType<typeof api.fetchAgentHealth>>
 
@@ -116,9 +117,10 @@ export function recheckServer(qc: QueryClient): void {
 /**
  * Connection and runtime state as composer top-tab entries (legacy HWEB-11, moved into the tab by TAL-429): thread
  * error, unreachable Talaria server, offline, agent unavailable, provider failure, the session's Agent notices (TAL-803),
- * manual compression, the standing goal (TAL-808). A live turn's reconnect is the live row's own label.
+ * compression (TAL-1006: the manual job from `compressingSince`, its start in ms, or the live turn's open span), the
+ * standing goal (TAL-808). A live turn's reconnect is the live row's own label.
  */
-export function useRuntimeNotices({ live, onRetry, compressing, agentNotices = [], goal = null }: { live: LiveTurn | null; onRetry?: (() => void) | undefined; compressing: boolean; agentNotices?: SessionNotice[] | undefined; goal?: SessionGoal | null | undefined }): { notices: ComposerNotice[]; announcement: Announcement | null } {
+export function useRuntimeNotices({ live, onRetry, compressingSince, agentNotices = [], goal = null }: { live: LiveTurn | null; onRetry?: (() => void) | undefined; compressingSince: number | null; agentNotices?: SessionNotice[] | undefined; goal?: SessionGoal | null | undefined }): { notices: ComposerNotice[]; announcement: Announcement | null } {
   const { online, probe, failures, retry } = useServerProbe()
   const [dismissed, setDismissed] = useState<Set<string>>(new Set())
   const health = probe.data?.health
@@ -131,7 +133,8 @@ export function useRuntimeNotices({ live, onRetry, compressing, agentNotices = [
   if (live?.warning) list.push({ kind: 'provider_failure', tone: 'warning', title: live.warning, dismissible: true })
   if (live?.status === 'error' && live.error) list.push({ kind: 'thread_error', tone: 'error', title: m.live_error(), detail: live.error.message, action: onRetry ? { label: m.retry(), run: onRetry } : undefined, dismissible: true })
   for (const n of agentNotices) list.push({ id: `runtime:agent_notice:${n.key}`, kind: 'agent_notice', tone: NOTICE_TONE[n.level], title: n.text, dismissible: true })
-  if (compressing) list.push({ kind: 'compressing', tone: 'info', title: m.live_compressing(), dismissible: false })
+  const compressionSince = compressingSince ?? live?.compressionStartedAt ?? null
+  if (compressionSince !== null) list.push({ kind: 'compressing', tone: 'info', title: m.live_compressing(), status: <RunElapsed since={compressionSince} />, dismissible: false, oneLine: true })
   if (goal) list.push(goalNotice(goal))
   const visible = list.filter((n) => !dismissed.has(`${n.kind}:${n.title}`)).sort((a, b) => PRIORITY.indexOf(a.kind) - PRIORITY.indexOf(b.kind))
   const first = visible[0]

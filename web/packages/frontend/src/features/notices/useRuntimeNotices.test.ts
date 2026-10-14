@@ -8,6 +8,8 @@ import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { m } from '../../paraglide/messages.js'
 import { markServerStopped, retryDelay, STOPPED_AFTER, useRuntimeNotices, useServerProbe } from './useRuntimeNotices'
+import { initialStreamState, streamReducer, type LiveTurn } from '../../stream/reducer'
+import { parseChatEvent } from '../../contracts/sse'
 
 describe('retryDelay', () => {
   it('waits 1 s after the first failure and doubles to a 30 s cap', () => {
@@ -36,7 +38,7 @@ describe('useRuntimeNotices agent_unavailable', () => {
     vi.mocked(api.fetchAgentHealth).mockResolvedValue(health as Awaited<ReturnType<typeof api.fetchAgentHealth>>)
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const wrapper = ({ children }: { children: ReactNode }) => createElement(QueryClientProvider, { client: qc }, children)
-    const { result } = renderHook(() => useRuntimeNotices({ live: null, compressing: false }), { wrapper })
+    const { result } = renderHook(() => useRuntimeNotices({ live: null, compressingSince: null }), { wrapper })
     await waitFor(() => expect(qc.getQueryState([...keys.health.agent, 'probe'])?.status).toBe('success'))
     return result.current.notices
   }
@@ -72,7 +74,7 @@ describe('useRuntimeNotices agent notices (TAL-803)', () => {
       { key: 'startup-warning.1', level: 'warn' as const, text: 'Memory is off', expires_at: null },
       { key: 'credits.band', level: 'info' as const, text: 'Usage at 90%', expires_at: 1_005 },
     ]
-    const { result } = renderHook(() => useRuntimeNotices({ live: null, compressing: false, agentNotices }), { wrapper })
+    const { result } = renderHook(() => useRuntimeNotices({ live: null, compressingSince: null, agentNotices }), { wrapper })
     expect(result.current.notices.map((n) => [n.id, n.tone])).toEqual([['runtime:agent_notice:startup-warning.1', 'warning'], ['runtime:agent_notice:credits.band', 'info']])
     render(createElement(Fragment, null, result.current.notices[0]!.content))
     expect(screen.getByText('Memory is off')).toBeTruthy()
@@ -85,7 +87,7 @@ describe('useRuntimeNotices standing goal (TAL-808)', () => {
     vi.mocked(api.fetchAgentHealth).mockResolvedValue({ alive: true, chat: { available: true, condition: null } })
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const wrapper = ({ children }: { children: ReactNode }) => createElement(QueryClientProvider, { client: qc }, children)
-    const { result } = renderHook(() => useRuntimeNotices({ live: null, compressing: false, goal }), { wrapper })
+    const { result } = renderHook(() => useRuntimeNotices({ live: null, compressingSince: null, goal }), { wrapper })
     const row = result.current.notices.find((n) => n.id === 'runtime:goal')
     if (!row) return null
     const { container, unmount } = render(createElement(Fragment, null, row.content))
@@ -102,5 +104,35 @@ describe('useRuntimeNotices standing goal (TAL-808)', () => {
     const time = new Date(until * 1000).toLocaleTimeString(undefined, { timeStyle: 'short' })
     expect(goalRow({ ...base, status: 'parked', reason: 'CI running', parked_until: until })?.text).toBe(`Goal parked · CI running · Ship the release notes3/20 · until ${time}`)
     expect(goalRow(null)).toBeNull()
+  })
+})
+
+describe('useRuntimeNotices compression (TAL-1006)', () => {
+  const NOW = 1_800_000_000_000
+  const liveTurn = (events: [string, unknown][]): LiveTurn => {
+    let state = streamReducer(initialStreamState, { type: 'start', sessionId: 's', streamId: 'r', turnId: null, userMessageId: null, userText: 'hi', now: NOW - 300_000 })
+    for (const [name, data] of events) state = streamReducer(state, { type: 'event', sessionId: 's', streamId: 'r', event: parseChatEvent(name, JSON.stringify(data))!, lastEventId: '', now: NOW })
+    return state.turns.s!
+  }
+  const row = (args: Partial<Parameters<typeof useRuntimeNotices>[0]>) => {
+    vi.mocked(api.fetchAgentHealth).mockResolvedValue({ alive: true, chat: { available: true, condition: null } })
+    vi.spyOn(Date, 'now').mockReturnValue(NOW)
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const wrapper = ({ children }: { children: ReactNode }) => createElement(QueryClientProvider, { client: qc }, children)
+    const { result } = renderHook(() => useRuntimeNotices({ live: null, compressingSince: null, ...args }), { wrapper })
+    const notice = result.current.notices.find((n) => n.id === 'runtime:compressing')
+    if (!notice) return null
+    const { container, unmount } = render(createElement(Fragment, null, notice.content))
+    const text = container.textContent
+    unmount()
+    return text
+  }
+
+  it('shows the live turn\'s open span and the manual job with the time since the server\'s start, and clears with the span', () => {
+    const since = NOW / 1000 - 65
+    expect(row({ live: liveTurn([['compressing', { session_id: 's', started_at: since }]]) })).toBe('Compressing context1m')
+    expect(row({ live: liveTurn([['compressing', { session_id: 's', started_at: since }], ['compressed', { session_id: 's' }]]) })).toBeNull()
+    expect(row({ live: liveTurn([['compressing', { session_id: 's', started_at: since }], ['done', {}]]) })).toBeNull()
+    expect(row({ compressingSince: NOW - 12_000 })).toBe('Compressing context12s')
   })
 })
