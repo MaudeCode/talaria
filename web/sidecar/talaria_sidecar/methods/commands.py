@@ -72,7 +72,12 @@ def _expand_initiate_setup(_args: str, *, enabled_toolsets, **_turn) -> str:
     from .chat import _turn_toolsets
     from .toolsets import disabled_toolsets
 
-    # The gateway's ``_hm_cmd_initiate_setup``: the tools this turn's agent gets, by name.
+    # The gateway's ``_hm_cmd_initiate_setup``: the tools this turn's agent gets, by name. MCP servers connect first, as
+    # chat start connects them before its agent snapshots tools; a failure leaves them out, as it does for the turn.
+    try:
+        discover_profile_mcp_tools()
+    except Exception:  # noqa: BLE001
+        log.warning("MCP discovery failed", exc_info=True)
     tools = get_tool_definitions(enabled_toolsets=_turn_toolsets(enabled_toolsets), disabled_toolsets=disabled_toolsets(),
                                  quiet_mode=True, skip_tool_search_assembly=True)
     return build_initiate_setup_prompt("webui", [tool["function"]["name"] for tool in tools], primary_profile(get_hermes_home()))

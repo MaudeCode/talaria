@@ -92,8 +92,9 @@ function visibleOrRetag(ctx: RequestContext, s: Session, requestedProfile: strin
 }
 
 /**
- * TAL-817: the turn text for a typed Agent prompt built-in (`/plan`, `/initiate-setup`, …) is the Agent's own expansion of
- * it for this session's profile, workspace and toolsets; null when `msg` is not one. One the Agent cannot expand is
+ * TAL-817: what the model gets for a typed Agent prompt built-in (`/plan`, `/initiate-setup`, …): the Agent's own expansion
+ * of it for this session's profile, workspace and toolsets, while the transcript keeps the typed text; null when `msg` is
+ * not one. One the Agent cannot expand is
  * refused with the catalog's message instead of reaching the model raw. Without a sidecar the turn reports that itself.
  */
 async function expandPromptBuiltin(ctx: RequestContext, s: Session, msg: string, workspace: unknown): Promise<string | null> {
@@ -145,7 +146,7 @@ async function startChat(ctx: RequestContext, body: Record<string, unknown>, set
   const requestedProfile = str(body.profile).trim()
   if (requestedProfile && requestedProfile !== 'default' && !PROFILE_ID_RE.test(requestedProfile)) throw new HttpError(400, 'invalid profile')
   visibleOrRetag(ctx, s, requestedProfile)
-  let msg = str(body.message).trim()
+  const msg = str(body.message).trim()
   const attachments = normalizeChatAttachments(body.attachments).slice(0, MAX_CHAT_ATTACHMENTS)
   // TAL-276: an attached file alone makes a turn; one with neither text nor a file path is refused.
   if (!msg && !attachments.some((att) => str(att.path))) throw new HttpError(400, 'message is required')
@@ -157,7 +158,6 @@ async function startChat(ctx: RequestContext, body: Record<string, unknown>, set
     s = ctx.deps.sessionStore.get(sid)
     visibleOrRetag(ctx, s, requestedProfile)
   }
-  if (prompt !== null) msg = prompt
   // Python `compression_recovery_payload_for_session` + `is_generic_continuation_intent`.
   if (compressionRecoveryPayload(s) && !attachments.length && isGenericContinuationIntent(msg)) {
     throw new HttpError(409, 'This session exhausted context compression. Start a focused continuation, then describe the next narrow task.', { type: 'compression_recovery_required', compression_recovery: s.compression_recovery, session_id: s.session_id })
@@ -165,7 +165,7 @@ async function startChat(ctx: RequestContext, body: Record<string, unknown>, set
   const workspace = ctx.deps.sessions.turnWorkspace(s, body.workspace)
   const [model, provider, normalized] = ctx.deps.sessions.turnModel(s, body)
   if (body.moa_config) throw new HttpError(503, 'MoA overrides need the Agent command registry (checkpoint 7).')
-  const response = ctx.deps.turns.start(s, { msg, attachments, workspace, model, modelProvider: provider, normalizedModel: normalized, source: 'webui', ...settle })
+  const response = ctx.deps.turns.start(s, { msg, ...(prompt === null ? {} : { prompt }), attachments, workspace, model, modelProvider: provider, normalizedModel: normalized, source: 'webui', ...settle })
   if (response._status !== undefined && response._status >= 400) throw new HttpError(response._status, response.error ?? 'chat start failed', response.active_stream_id ? { active_stream_id: response.active_stream_id } : {})
   return startPayload(response)
 }

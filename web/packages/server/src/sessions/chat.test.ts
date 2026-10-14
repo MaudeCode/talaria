@@ -1025,16 +1025,21 @@ describe('chat turns through the sidecar', () => {
       return { name: null, message: null }
     })
     const prompts: string[] = []
+    const persisted: string[] = []
     const steered: string[] = []
     let release: () => void = () => undefined
     sidecar.respond('chat.steer', (params) => { steered.push(params.text); return { accepted: true, fallback: null } })
     sidecar.respond('chat.start', (params) => {
       prompts.push(str(params.user_message))
-      const done = completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'ok' }])
+      persisted.push(str(params.persist_user_message))
+      // The Agent writes `persist_user_message` as the row and what the model got as its `api_content`.
+      const done = completed([{ role: 'user', content: str(params.persist_user_message), api_content: str(params.user_message) }, { role: 'assistant', content: 'ok' }])
       return prompts.length < 3 ? done : new Promise((resolve) => { release = () => { resolve(done) } })
     })
+    const titles: unknown[] = []
     const turn = async (message: string, settle = true): Promise<string> => {
       const start = await json(await post(s, '/api/chat/start', { session_id: sid, message }))
+      titles.push(start.title)
       if (settle) await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
       return String(start.stream_id)
     }
@@ -1042,6 +1047,10 @@ describe('chat turns through the sidecar', () => {
       // The model gets the Agent-built prompt, asked for by alias with the session's workspace and toolsets.
       await turn('/initiate_setup')
       expect(prompts).toEqual(['[/initiate-setup]\n\nSETUP SKILL'])
+      // The transcript, its title and the Agent's stored row keep what the user typed.
+      expect(persisted).toEqual(['/initiate_setup'])
+      expect(titles).toEqual(['/initiate_setup'])
+      expect(s.deps.sessionStore.get(sid).messages.filter((m) => m.role === 'user').map((m) => m.content)).toEqual(['/initiate_setup'])
       expect(asked[0]).toMatchObject({ command: '/initiate_setup', workspace: s.deps.sessionStore.get(sid).workspace, enabled_toolsets: null })
       // Other slash text is still the user's own message.
       await turn('/etc/hosts looks wrong')

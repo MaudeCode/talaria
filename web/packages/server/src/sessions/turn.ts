@@ -108,7 +108,10 @@ interface ConsumedSteer { steer_id: string; text: string; agent_text: string; su
 export type SteerWithdrawReason = SteerWithdrawRequest['reason']
 
 export interface StartTurnOptions {
+  /** The user's text: the transcript row, title, and `persist_user_message`. */
   msg: string
+  /** What the model gets instead of `msg` (TAL-817: a prompt built-in's expansion); the Agent keeps it as the row's `api_content`. */
+  prompt?: string
   attachments?: Record<string, unknown>[]
   workspace: string
   model: string | null
@@ -532,7 +535,7 @@ export class TurnRunner {
     // TAL-545: one image mode decides both this turn's upload and the replayed history, which a text-mode turn sends
     // without native images; only a turn with an image on either side asks for it.
     const imageMode = attachments.some(isImageAttachment) || hasNativeImages(apiHistory) ? await this.imageInputMode(sessionId, s, opts, controller.signal) : null
-    const userMessage = this.buildUserMessage(msgText, attachments, opts.workspace, sessionId, imageMode)
+    const userMessage = this.buildUserMessage(opts.prompt ?? msgText, attachments, opts.workspace, sessionId, imageMode)
     const conversationHistory = imageMode === 'text' ? withoutNativeImages(apiHistory) : apiHistory
     // The prompt the Agent actually gets, native image parts included.
     const stop = this.stopContexts.get(streamId)

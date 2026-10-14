@@ -71,3 +71,28 @@ def test_an_agent_without_the_builder_takes_the_unsupported_path(monkeypatch) ->
     monkeypatch.setattr(commands.importlib.util, "find_spec", lambda name, *a: None if name == "agent.initiate_setup_prompt" else real(name, *a))
     assert commands._prompt_mode("initiate-setup") == "unsupported"
     assert commands.expand_prompt("/initiate_setup", "", None) == {"name": "initiate-setup", "message": None}
+
+
+def test_the_setup_prompt_lists_the_tools_after_mcp_discovery(monkeypatch) -> None:
+    """The turn's agent connects MCP servers before snapshotting tools; the prompt's tool list must match it."""
+    import sys
+    import types
+
+    from talaria_sidecar.methods import chat, commands, toolsets
+
+    connected: list[str] = []
+
+    def fake(name: str, **attrs) -> None:
+        package = name.rsplit(".", 1)[0]
+        monkeypatch.setitem(sys.modules, package, sys.modules.get(package) or types.ModuleType(package))
+        monkeypatch.setitem(sys.modules, name, types.SimpleNamespace(**attrs))
+
+    fake("agent.initiate_setup_prompt", build_initiate_setup_prompt=lambda surface, tools, profile: f"{surface}|{','.join(tools)}|{profile}")
+    fake("hermes_cli.setup_profile", primary_profile=lambda home: "default")
+    monkeypatch.setitem(sys.modules, "hermes_constants", types.SimpleNamespace(get_hermes_home=lambda: "/home"))
+    monkeypatch.setitem(sys.modules, "model_tools", types.SimpleNamespace(get_tool_definitions=lambda **kw: [
+        {"function": {"name": name}} for name in ["terminal", *connected]]))
+    monkeypatch.setattr(commands, "discover_profile_mcp_tools", lambda: connected.append("mcp_notes_search"))
+    monkeypatch.setattr(chat, "_turn_toolsets", lambda toolsets: toolsets or [])
+    monkeypatch.setattr(toolsets, "disabled_toolsets", lambda: [])
+    assert commands._expand_initiate_setup("", enabled_toolsets=None) == "webui|terminal,mcp_notes_search|default"
