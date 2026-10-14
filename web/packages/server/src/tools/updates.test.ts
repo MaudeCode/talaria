@@ -321,7 +321,7 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
   })
 
   /** `runtimeOf` stamps the installed package of each requested version; by default every install is `s.release`. */
-  function npmPackageInstall(s: Install, initial: 'success' | 'failure' | 'bad-stamp' = 'success', runtimeOf?: (version: string) => Dict) {
+  function npmPackageInstall(s: Install, initial: 'success' | 'failure' | 'bad-stamp' | 'empty-dependency' = 'success', runtimeOf?: (version: string) => Dict) {
     const mode = { outcome: initial }
     const globalRoot = join(tmp(), 'lib/node_modules')
     const packageRoot = join(globalRoot, '@maudecode/talaria-web')
@@ -338,12 +338,14 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
         if (mode.outcome === 'failure') return Promise.resolve({ ok: false, out: 'synthetic npm failure' })
         const candidate = join(args[args.indexOf('--prefix') + 1]!, 'lib/node_modules/@maudecode/talaria-web')
         const version = runtimeOf ? /@maudecode\/talaria-web@(.+)$/.exec(args.at(-1)!)![1]! : '2.0.0'
-        write(join(candidate, 'package.json'), JSON.stringify({ name: '@maudecode/talaria-web', version, bin: { 'talaria-web': 'dist/bin/talaria-web.js', 'talaria-web-mcp': 'dist/bin/talaria-web-mcp.js' } }))
+        write(join(candidate, 'package.json'), JSON.stringify({ name: '@maudecode/talaria-web', version, bin: { 'talaria-web': 'dist/bin/talaria-web.js', 'talaria-web-mcp': 'dist/bin/talaria-web-mcp.js' }, dependencies: { ws: '8.22.0' } }))
+        mkdirSync(join(candidate, 'node_modules/ws'), { recursive: true })
+        if (mode.outcome !== 'empty-dependency') write(join(candidate, 'node_modules/ws/package.json'), '{}')
         write(join(candidate, 'sidecar/agent_dependency.json'), JSON.stringify(PIN))
         write(join(candidate, 'contract_versions.json'), JSON.stringify(VERSIONS))
         write(join(candidate, 'dist/bin/talaria-web.js'), '// fixture')
         write(join(candidate, 'dist/bin/talaria-web-mcp.js'), '// fixture')
-        if (mode.outcome === 'success') writeFileSync(join(candidate, '_release.json'), JSON.stringify(runtimeOf?.(version) ?? s.release.runtime))
+        if (mode.outcome !== 'bad-stamp') writeFileSync(join(candidate, '_release.json'), JSON.stringify(runtimeOf?.(version) ?? s.release.runtime))
         return Promise.resolve({ ok: true, out: '' })
       }
       return Promise.resolve({ ok: false, out: 'unexpected npm command' })
@@ -387,7 +389,7 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     expect(restarts).toEqual([1])
   })
 
-  it.each(['failure', 'bad-stamp'] as const)('fails closed when the npm replacement is %s', async (outcome) => {
+  it.each(['failure', 'bad-stamp', 'empty-dependency'] as const)('fails closed when the npm replacement is %s', async (outcome) => {
     const s = sourceInstall()
     const n = npmPackageInstall(s, outcome)
     const result = await applyWebUpdate(n.packageRoot, 'stable', s.run, s.getJson, s.identity, n.npm)

@@ -43,6 +43,24 @@ def require_bundled_contracts(tarball, version):
         raise ValueError("the Experimental package must bundle its exact contracts package")
 
 
+def bundled_peers(package):
+    """Direct dependencies that the bundled contracts closure peer-depends on. npm treats such a peer as part of
+    the bundle and installs it as an empty directory unless the tarball carries it (`ws` via `@orpc/server`)."""
+    modules = package / "node_modules"
+    direct = load(package / "package.json").get("dependencies", {})
+    seen, queue, peers = set(), [CONTRACTS], set()
+    while queue:
+        name = queue.pop()
+        # ponytail: follows only top-level installs; a nested conflicting copy's own peers are not checked.
+        if name in seen or not (modules / name / "package.json").exists():
+            continue
+        seen.add(name)
+        manifest = load(modules / name / "package.json")
+        queue += manifest.get("dependencies", {})
+        peers |= manifest.get("peerDependencies", {}).keys() & direct.keys()
+    return sorted(peers - seen)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("component", choices=("app", "web", "relay"))
@@ -108,7 +126,9 @@ def main():
                 contracts = stage / f"maudecode-talaria-web-contracts-{component['version']}.tgz"
                 subprocess.run(["npm", "pkg", "set", f"dependencies.{CONTRACTS}=file:{contracts}"], cwd=package, check=True)
                 subprocess.run(["npm", "install", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund", "--no-package-lock"], cwd=package, check=True)
-                subprocess.run(["npm", "pkg", "set", f"dependencies.{CONTRACTS}={component['version']}", f"bundleDependencies[0]={CONTRACTS}"], cwd=package, check=True)
+                bundle = [CONTRACTS, *bundled_peers(package)]
+                subprocess.run(["npm", "pkg", "set", f"dependencies.{CONTRACTS}={component['version']}",
+                                *(f"bundleDependencies[{index}]={name}" for index, name in enumerate(bundle))], cwd=package, check=True)
                 # The staged package already holds prepack's copies, and its prepack cannot see the Web root.
                 subprocess.run(["npm", "pack", "--ignore-scripts", "--pack-destination", str(output / "npm")], cwd=package, check=True)
             tarballs = list((output / "npm").glob("*.tgz"))
