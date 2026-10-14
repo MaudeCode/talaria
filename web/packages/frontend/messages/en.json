@@ -218,6 +218,17 @@
 	"composer_clarify": "Send answer",
 	"composer_clarify_next": "Next question",
 	"clarify_responding": "Responding…",
+	"vault_unlock_heading": "Unlock {name}",
+	"vault_save_login_heading": "Save login for {site}",
+	"vault_code_heading": "Code for {site}",
+	"vault_field_master_password": "Master password",
+	"vault_field_identifier": "Email or username",
+	"vault_field_password": "Password",
+	"vault_field_code": "Code",
+	"vault_unlock_submit": "Unlock",
+	"vault_save_login_submit": "Save",
+	"vault_code_submit": "Enter code",
+	"vault_skip": "Skip",
 	"session_attention_approval": [
 		{
 			"declarations": [

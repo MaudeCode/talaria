@@ -732,6 +732,18 @@ struct ChatView: View {
                 .presentationDragIndicator(.visible)
             }
             .sheet(item: $turnDiffPresentation, content: turnDiffSheet)
+            // TAL-887: the Agent's password-manager prompt; it closes when the server's queue moves on.
+            .sheet(item: Binding(get: { viewModel.vaultPrompt }, set: { _ in })) { prompt in
+                if let vault = prompt.pending.vault {
+                    VaultPromptSheet(
+                        vault: vault,
+                        isResponding: viewModel.isRespondingToClarification,
+                        errorMessage: viewModel.clarificationErrorMessage
+                    ) { values in
+                        Task { await viewModel.respondToVaultPrompt(values, promptID: prompt.id) }
+                    }
+                }
+            }
             .alert(item: $gitAlert, content: gitAlertPresentation)
             .sheet(isPresented: $showsGoalSheet) {
                 GoalSubmissionSheet(

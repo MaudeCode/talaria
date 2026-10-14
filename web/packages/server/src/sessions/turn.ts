@@ -19,7 +19,7 @@ import type { SessionEventBus } from './events.js'
 import { StreamRegistry, SessionChannels, type StreamChannel } from './streams.js'
 import { ChatUsageSchema, ConnectorOperationSnapshotSchema, type ClarifyAnswers, type PendingSteer, type SessionGoal, type SessionNotice, type SidecarResult, type SteerWithdrawn, type SteerWithdrawRequest } from '@maudecode/talaria-web-contracts'
 import { catalogNames, connectorOperation } from '../tools/connectors.js'
-import { PendingPrompts, clarifyReply } from './pending.js'
+import { PendingPrompts, clarifyReply, isVaultPrompt, vaultReply } from './pending.js'
 import { RunJournal, type RunJournalWriter } from './journal.js'
 import { COMPRESSION_RECOVERY_ACTION_START_FOCUSED, COMPRESSION_RECOVERY_TERMINAL_STATE, CONTEXT_USAGE_FIELDS, Session, contextUsage, titleFrom, type Message } from './session.js'
 import { anchorMessageKey, compressionReference, markerSummary, visibleMessagesForAnchor } from './compress.js'
@@ -741,7 +741,7 @@ export class TurnRunner {
               return
             }
             case 'clarify': {
-              deps.pending.submitClarify(sessionId, { ...data, session_id: sessionId, kind: 'clarify' })
+              deps.pending.submitClarify(sessionId, { ...data, session_id: sessionId })
               const head = deps.pending.clarifyHeadFrame(sessionId)
               if (head) put('clarify', head)
               return
@@ -2034,15 +2034,18 @@ export class TurnRunner {
    * prompt is queued; `invalid` when the answers do not fit its steps; `ok:false` without either when the sidecar
    * did not acknowledge (prompt retained).
    */
-  async respondClarify(sessionId: string, clarifyId: string, reply: string | ClarifyAnswers): Promise<{ ok: boolean; response?: string; stale?: boolean; invalid?: boolean; error?: string }> {
+  async respondClarify(sessionId: string, clarifyId: string, reply: string | ClarifyAnswers | null): Promise<{ ok: boolean; response?: string; stale?: boolean; invalid?: boolean; error?: string }> {
     const entry = this.deps.pending.peekClarify(sessionId, clarifyId)
     if (!entry) return { ok: false, stale: true }
-    const response = clarifyReply(entry, reply)
+    // TAL-887: a password-manager answer goes to the Agent and nowhere else; `null` (a decline) is its empty reply.
+    const vault = isVaultPrompt(entry)
+    if (vault && typeof reply === 'string') return { ok: false, invalid: true }
+    const response = vault ? vaultReply(entry, reply as ClarifyAnswers | null) : reply === null ? null : clarifyReply(entry, reply)
     if (response === null) return { ok: false, invalid: true }
     // A test-hook prompt has no parked Agent waiter: it is answered here.
     if (entry._injected === true) {
       this.deps.pending.resolveClarify(sessionId, str(entry.clarify_id))
-      return { ok: true, response }
+      return vault ? { ok: true } : { ok: true, response }
     }
     const sidecar = this.deps.sidecar()
     if (!sidecar) return { ok: false, error: 'The Agent sidecar is not running; retry in a moment.' }
@@ -2055,7 +2058,7 @@ export class TurnRunner {
     if (!ok) return { ok: false, stale: true }
     const { head } = this.deps.pending.resolveClarify(sessionId, str(entry.clarify_id))
     if (head) this.emitToSession(sessionId, 'clarify', head)
-    return { ok: true, response }
+    return vault ? { ok: true } : { ok: true, response }
   }
 }
 

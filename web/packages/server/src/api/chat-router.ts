@@ -280,14 +280,16 @@ export const chatRouter = os.router({
     respond: os.clarify.respond.handler(({ input, context: { ctx } }) => run(async () => {
       const sid = str(input.session_id)
       if (!sid) throw new HttpError(400, 'session_id is required')
-      // Both keyed answers and older clients' raw replies are shaped against the pending prompt.
-      const reply = input.answers ?? str(input.response ?? input.answer ?? input.choice).trim()
-      if (!reply) throw new HttpError(400, 'response is required')
+      // Both keyed answers and older clients' raw replies are shaped against the pending prompt; only a vault prompt
+      // takes a decline (TAL-887).
+      const reply = input.decline === true ? null : input.answers ?? str(input.response ?? input.answer ?? input.choice).trim()
+      if (reply === '') throw new HttpError(400, 'response is required')
       const result = await ctx.deps.turns.respondClarify(sid, str(input.clarify_id), reply)
       if (result.stale) throw new HttpError(409, 'Clarification prompt expired or not found. The agent may have already proceeded.', { ok: false, stale: true })
       if (result.invalid) throw new HttpError(400, 'answers must answer every question of the pending clarification', { ok: false })
       if (!result.ok) throw new HttpError(503, result.error ?? 'clarify relay failed', { ok: false })
-      return { ok: true, response: str(result.response) }
+      // A vault answer is never echoed back.
+      return result.response === undefined ? { ok: true } : { ok: true, response: result.response }
     })),
   },
   goal: os.goal.handler(({ input, context: { ctx } }) => run(async () => {

@@ -233,6 +233,14 @@ answer envelope. The callback returns `answers` and `outcome` to the Agent:
 fabricated answer. The two older supported Agent releases retain their legacy
 callback and result shapes until the support window drops them.
 
+The Agent's password-manager prompts (master password, a login to save, a
+one-time code) are per-thread callbacks the sidecar binds on the turn's thread,
+with the session an unlock belongs to, and clears when the turn ends. Each
+parks like a clarify prompt with a `vault_*` `kind` and the Agent's own timeout
+(120 s to unlock, 180 s otherwise); an empty `clarify.respond` answer is its
+decline. Ending a session (`chat.evict_agent` with `clear_session`) locks the
+password managers that session unlocked.
+
 Each turn agent holds a reference to its profile's `state.db` from the Agent's
 shared-handle registry (released with the agent), keyed by the Web session id,
 so the Agent writes each turn's rows there like any other surface. A new agent

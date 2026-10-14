@@ -85,10 +85,12 @@ extension APIClient {
         Endpoint.clarifyStream(sessionID: sessionID).url(relativeTo: baseURL)
     }
 
+    /// `decline` answers a vault prompt with nothing (TAL-887); a clarification always sends `answers`.
     public func respondClarification(
         sessionID: String,
         clarifyID: String?,
-        answers: [String: JSONValue]
+        answers: [String: JSONValue],
+        decline: Bool = false
     ) async throws -> ClarificationRespondResponse {
         try await send(
             endpoint: .clarifyRespond,
@@ -96,7 +98,8 @@ extension APIClient {
             body: ClarificationRespondRequest(
                 sessionId: sessionID,
                 clarifyId: clarifyID,
-                answers: answers
+                answers: decline ? nil : answers,
+                decline: decline ? true : nil
             )
         )
     }
@@ -224,7 +227,8 @@ private struct ApprovalRespondRequest: Encodable {
 private struct ClarificationRespondRequest: Encodable {
     let sessionId: String
     let clarifyId: String?
-    let answers: [String: JSONValue]
+    let answers: [String: JSONValue]?
+    let decline: Bool?
 }
 
 private struct BtwRequest: Encodable {

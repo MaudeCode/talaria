@@ -7,7 +7,7 @@
 import { randomUUID } from 'node:crypto'
 import type { SessionEventBus } from './events.js'
 import { str } from '../util.js'
-import type { ClarifyAnswers, ClarifyStep } from '@maudecode/talaria-web-contracts'
+import type { ClarifyAnswers, ClarifyStep, VaultPrompt, VaultPromptField } from '@maudecode/talaria-web-contracts'
 
 export interface PendingSubscriber { queue: Record<string, unknown>[]; wake: (() => void) | null; closed: boolean }
 
@@ -103,6 +103,35 @@ export function clarifyReply(entry: Record<string, unknown>, reply: string | Cla
   return Array.isArray(only) ? JSON.stringify(only) : str(only)
 }
 
+/** TAL-887: the inputs each password-manager prompt asks for, in order; the reply the Agent takes is built from them. */
+const VAULT_FIELDS: Record<VaultPrompt['kind'], VaultPromptField[]> = {
+  vault_unlock: [{ key: 'master_password', secure: true }],
+  vault_save_login: [{ key: 'identifier', secure: false }, { key: 'password', secure: true }],
+  vault_code: [{ key: 'code', secure: false }],
+}
+
+const vaultKind = (kind: unknown): VaultPrompt['kind'] | null => typeof kind === 'string' && Object.hasOwn(VAULT_FIELDS, kind) ? kind as VaultPrompt['kind'] : null
+
+/** The password-manager prompt a sidecar frame carries, built once the frame has its timeout metadata. */
+function vaultPrompt(item: Record<string, unknown>, kind: VaultPrompt['kind']): VaultPrompt {
+  const text = (key: string): string | null => typeof item[key] === 'string' ? item[key] : null
+  return { kind, backend: text('backend'), display_name: text('display_name'), origin: text('origin'), site: text('site'), hint: text('hint') || null, fields: VAULT_FIELDS[kind], timeout_at: Number(item.expires_at) }
+}
+
+/**
+ * The reply a parked vault prompt takes: the master password or code as typed, or the login as the Agent's
+ * `{identifier, password}` JSON. A decline, or any input left empty, is the Agent's decline (`""`).
+ */
+export function vaultReply(entry: Record<string, unknown>, answers: ClarifyAnswers | null): string {
+  const kind = (entry.vault as VaultPrompt).kind
+  const value = (key: string): string => { const raw = answers?.[key]; return typeof raw === 'string' ? raw : '' }
+  if (VAULT_FIELDS[kind].some((field) => !value(field.key).trim())) return ''
+  if (kind === 'vault_save_login') return JSON.stringify({ identifier: value('identifier').trim(), password: value('password') })
+  return value(kind === 'vault_unlock' ? 'master_password' : 'code')
+}
+
+export const isVaultPrompt = (entry: Record<string, unknown>): boolean => entry.vault !== undefined
+
 function withTimeoutMetadata(data: Record<string, unknown>, now: number): Record<string, unknown> {
   const item = { ...data }
   const requestedAt = Number(item.requested_at) || now
@@ -116,6 +145,8 @@ function withTimeoutMetadata(data: Record<string, unknown>, now: number): Record
 }
 
 function dedupeIdentity(data: Record<string, unknown>): string {
+  // Two vault prompts never look alike by question: only a re-sent frame (same id) is the same prompt.
+  if (data.vault) return JSON.stringify(['vault', str(data.clarify_id)])
   const questions = data.questions
   if (Array.isArray(questions) && questions.length) return JSON.stringify(questions.map((q) => { const item = q as Record<string, unknown>; return [str(item.qid), str(item.question), (item.choices as unknown[] | undefined ?? []).map(String), Boolean(item.multi_select)] }))
   return JSON.stringify([str(data.question), ((data.choices_offered as unknown[] | undefined) ?? []).map(String)])
@@ -253,11 +284,16 @@ export class PendingPrompts {
   // ── clarify ──
   submitClarify(sid: string, data: Record<string, unknown>): Record<string, unknown> {
     const item = withTimeoutMetadata(data, this.now())
+    const vault = vaultKind(item.kind)
+    if (vault) {
+      item.vault = vaultPrompt(item, vault)
+      delete item.backend; delete item.display_name; delete item.origin; delete item.site; delete item.hint
+    } else item.kind = 'clarify'
     // The server owns the batch shape: the normalized list (iOS reads it) and the steps every client renders.
     const batch = normalizeQuestions(item.questions)
     if (batch) item.questions = batch
     else delete item.questions
-    item.steps = clarifySteps(item)
+    item.steps = vault ? [] : clarifySteps(item)
     const q = this.queue(this.clarifies, sid)
     const last = q.entries[q.entries.length - 1]
     let entry: Record<string, unknown>

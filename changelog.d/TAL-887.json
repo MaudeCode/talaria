@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "When the agent needs to unlock your password manager, save a login for a site, or enter a verification code, chats now ask you for it in a private prompt that is never saved to the conversation.",
+      "highlight": false,
+      "components": ["app", "web"]
+    }
+  ]
+}

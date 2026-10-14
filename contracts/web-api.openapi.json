@@ -42936,6 +42936,112 @@
                                 "additionalProperties": {}
                               }
                             },
+                            "vault": {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "enum": [
+                                    "vault_unlock",
+                                    "vault_save_login",
+                                    "vault_code"
+                                  ],
+                                  "type": "string"
+                                },
+                                "backend": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "The password manager (`vault_unlock`)."
+                                },
+                                "display_name": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "Its display name (`vault_unlock`)."
+                                },
+                                "origin": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "The page origin the login is saved for (`vault_save_login`)."
+                                },
+                                "site": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "The site, by host (`vault_save_login`, `vault_code`)."
+                                },
+                                "hint": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "Where the code was sent, when the Agent says (`vault_code`)."
+                                },
+                                "fields": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "key": {
+                                        "enum": [
+                                          "master_password",
+                                          "identifier",
+                                          "password",
+                                          "code"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "secure": {
+                                        "type": "boolean"
+                                      }
+                                    },
+                                    "required": [
+                                      "key",
+                                      "secure"
+                                    ]
+                                  }
+                                },
+                                "timeout_at": {
+                                  "type": "number",
+                                  "description": "Unix seconds when the Agent stops waiting."
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "backend",
+                                "display_name",
+                                "origin",
+                                "site",
+                                "hint",
+                                "fields",
+                                "timeout_at"
+                              ]
+                            },
                             "clarify_id": {
                               "type": "string"
                             },
@@ -43081,6 +43187,9 @@
                   },
                   "clarify_id": {
                     "type": "string"
+                  },
+                  "decline": {
+                    "type": "boolean"
                   }
                 },
                 "additionalProperties": {}

@@ -57,6 +57,7 @@
 		D857083559F0B34BD088CA04 /* TasksHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856083559F0B34BD088CA04 /* TasksHostedTests.swift */; };
 		D857297464F3055587B2ACEF /* TranscriptHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856297464F3055587B2ACEF /* TranscriptHostedTests.swift */; };
 		D857E7989860057E41C369DF /* HostedViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856E7989860057E41C369DF /* HostedViewTests.swift */; };
+		C1A887000000000000000003 /* VaultPromptSheetHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A887000000000000000004 /* VaultPromptSheetHostedTests.swift */; };
 		D857DB3766E41DE9EB67A261 /* FixtureApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856DB3766E41DE9EB67A261 /* FixtureApp.swift */; };
 		D8574E4D45F8F4C581740A3A /* HostedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8564E4D45F8F4C581740A3A /* HostedView.swift */; };
 		C4840000000000000000001A /* ComposerChipLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4840000000000000000001B /* ComposerChipLayoutTests.swift */; };
@@ -150,6 +151,7 @@
 		A048C0DE0000000000000001 /* SessionRenameSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A048C0DE0000000000000002 /* SessionRenameSheet.swift */; };
 		A04200000000000000000003 /* ApprovalRequestOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04200000000000000000004 /* ApprovalRequestOverlay.swift */; };
 		C1A042000000000000000003 /* ClarificationRequestOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A042000000000000000004 /* ClarificationRequestOverlay.swift */; };
+		C1A887000000000000000001 /* VaultPromptSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A887000000000000000002 /* VaultPromptSheet.swift */; };
 		C22600000000000000000105 /* PerformanceBudgetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C22600000000000000000106 /* PerformanceBudgetTests.swift */; };
 		C22600000000000000000103 /* ReplayCatchUpPerformanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C22600000000000000000104 /* ReplayCatchUpPerformanceTests.swift */; };
 		1A2B3C4D5E6F7000000000D8 /* MessageBubbleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000D9 /* MessageBubbleView.swift */; };
@@ -492,6 +494,7 @@
 		D856083559F0B34BD088CA04 /* TasksHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksHostedTests.swift; sourceTree = "<group>"; };
 		D856297464F3055587B2ACEF /* TranscriptHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptHostedTests.swift; sourceTree = "<group>"; };
 		D856E7989860057E41C369DF /* HostedViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostedViewTests.swift; sourceTree = "<group>"; };
+		C1A887000000000000000004 /* VaultPromptSheetHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultPromptSheetHostedTests.swift; sourceTree = "<group>"; };
 		D856DB3766E41DE9EB67A261 /* FixtureApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixtureApp.swift; sourceTree = "<group>"; };
 		D8564E4D45F8F4C581740A3A /* HostedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostedView.swift; sourceTree = "<group>"; };
 		C4840000000000000000001B /* ComposerChipLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerChipLayoutTests.swift; sourceTree = "<group>"; };
@@ -571,6 +574,7 @@
 		A048C0DE0000000000000002 /* SessionRenameSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionRenameSheet.swift; sourceTree = "<group>"; };
 		A04200000000000000000004 /* ApprovalRequestOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalRequestOverlay.swift; sourceTree = "<group>"; };
 		C1A042000000000000000004 /* ClarificationRequestOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClarificationRequestOverlay.swift; sourceTree = "<group>"; };
+		C1A887000000000000000002 /* VaultPromptSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultPromptSheet.swift; sourceTree = "<group>"; };
 		C22600000000000000000106 /* PerformanceBudgetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceBudgetTests.swift; sourceTree = "<group>"; };
 		C22600000000000000000104 /* ReplayCatchUpPerformanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayCatchUpPerformanceTests.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000D9 /* MessageBubbleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageBubbleView.swift; sourceTree = "<group>"; };
@@ -952,6 +956,7 @@
 				D856083559F0B34BD088CA04 /* TasksHostedTests.swift */,
 				D856297464F3055587B2ACEF /* TranscriptHostedTests.swift */,
 				D856E7989860057E41C369DF /* HostedViewTests.swift */,
+				C1A887000000000000000004 /* VaultPromptSheetHostedTests.swift */,
 				D856DB3766E41DE9EB67A261 /* FixtureApp.swift */,
 				D8564E4D45F8F4C581740A3A /* HostedView.swift */,
 				C22600000000000000000106 /* PerformanceBudgetTests.swift */,
@@ -1178,6 +1183,7 @@
 				C0DE20000000000000000002 /* ChatTactileButtonStyle.swift */,
 				A04200000000000000000004 /* ApprovalRequestOverlay.swift */,
 				C1A042000000000000000004 /* ClarificationRequestOverlay.swift */,
+				C1A887000000000000000002 /* VaultPromptSheet.swift */,
 				1A2B3C4D5E6F7000000000D9 /* MessageBubbleView.swift */,
 				C03190000000000000F002 /* InlineAudioPlayerView.swift */,
 				BEEF02400000000000000002 /* ChatAttachmentPreviewView.swift */,
@@ -1938,6 +1944,7 @@
 				1A2B3C4D5E6F70000000131 /* ContextWindowIndicatorView.swift in Sources */,
 				A04200000000000000000003 /* ApprovalRequestOverlay.swift in Sources */,
 				C1A042000000000000000003 /* ClarificationRequestOverlay.swift in Sources */,
+				C1A887000000000000000001 /* VaultPromptSheet.swift in Sources */,
 				3F91D2A54B9A4F66A2C01002 /* TasksView.swift in Sources */,
 				3F91D2A54B9A4F66A2C01004 /* TaskDetailView.swift in Sources */,
 				C166A0000000000000000001 /* TaskRunHistoryViews.swift in Sources */,
@@ -1990,6 +1997,7 @@
 				D857083559F0B34BD088CA04 /* TasksHostedTests.swift in Sources */,
 				D857297464F3055587B2ACEF /* TranscriptHostedTests.swift in Sources */,
 				D857E7989860057E41C369DF /* HostedViewTests.swift in Sources */,
+				C1A887000000000000000003 /* VaultPromptSheetHostedTests.swift in Sources */,
 				D857DB3766E41DE9EB67A261 /* FixtureApp.swift in Sources */,
 				D8574E4D45F8F4C581740A3A /* HostedView.swift in Sources */,
 				C22600000000000000000105 /* PerformanceBudgetTests.swift in Sources */,

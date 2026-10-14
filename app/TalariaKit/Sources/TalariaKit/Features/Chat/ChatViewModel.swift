@@ -359,6 +359,13 @@ public final class ChatViewModel {
     }
 
     public var isRespondingToClarification: Bool { pendingActionCoordinator.isRespondingToClarification }
+    public var vaultPrompt: ClarificationPromptState? { pendingActionCoordinator.vaultPrompt }
+
+    /// Answers the Agent's password-manager prompt with values keyed by field, or declines it with `nil` (TAL-887).
+    @discardableResult
+    public func respondToVaultPrompt(_ values: [String: String]?, promptID: String) async -> Bool {
+        await pendingActionCoordinator.respondToVaultPrompt(values, promptID: promptID)
+    }
     public var clarificationErrorMessage: String? { pendingActionCoordinator.clarificationErrorMessage }
     public private(set) var currentGoal: SubmittedGoal?
     public private(set) var isSubmittingGoal = false

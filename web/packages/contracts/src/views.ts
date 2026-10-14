@@ -466,15 +466,36 @@ export type ClarifyStep = z.infer<typeof ClarifyStepSchema>
 /** Keyed step answers; a multi-select step takes a list. The server shapes them into the Agent's reply. */
 export const ClarifyAnswersSchema = z.record(z.string(), z.union([z.string(), z.array(z.string())]))
 export type ClarifyAnswers = z.infer<typeof ClarifyAnswersSchema>
+/** TAL-887: one input of a password-manager prompt, answered under its `key`; a `secure` input is masked. */
+export const VaultPromptFieldSchema = z.object({ key: z.enum(['master_password', 'identifier', 'password', 'code']), secure: z.boolean() })
+export type VaultPromptField = z.infer<typeof VaultPromptFieldSchema>
+/**
+ * TAL-887: the Agent asks for a password manager's master password (`vault_unlock`), a login to save for the page it is
+ * on (`vault_save_login`), or the one-time code a site sent (`vault_code`). Clients render `fields` and answer through
+ * `/api/clarify/respond` with keyed `answers`, or `decline`; an empty answer, a decline, a cancel and `timeout_at` all
+ * resolve it unanswered. Answers go to the Agent only: never stored, logged, streamed, or echoed back.
+ */
+export const VaultPromptSchema = z.object({
+  kind: z.enum(['vault_unlock', 'vault_save_login', 'vault_code']),
+  backend: z.string().nullable().describe('The password manager (`vault_unlock`).'),
+  display_name: z.string().nullable().describe('Its display name (`vault_unlock`).'),
+  origin: z.string().nullable().describe('The page origin the login is saved for (`vault_save_login`).'),
+  site: z.string().nullable().describe('The site, by host (`vault_save_login`, `vault_code`).'),
+  hint: z.string().nullable().describe('Where the code was sent, when the Agent says (`vault_code`).'),
+  fields: z.array(VaultPromptFieldSchema),
+  timeout_at: z.number().describe('Unix seconds when the Agent stops waiting.'),
+})
+export type VaultPrompt = z.infer<typeof VaultPromptSchema>
 export const ClarifyPendingSchema = z.looseObject({
   steps: z.array(ClarifyStepSchema).optional(),
+  vault: VaultPromptSchema.optional(),
   clarify_id: z.string().optional(), session_id: z.string().optional(), question: z.string().optional(), description: z.string().optional(), choices: z.array(ClarifyChoiceSchema).optional(), title: z.string().optional(),
   name: z.string().optional(), kind: z.string().optional(), reason: z.string().optional(), action: z.string().optional(), status: z.string().optional(), raw_preview: z.string().optional(), timeout_at: z.number().optional(),
   timeout_seconds: z.number().optional(), pending_count: z.number().optional(), index: z.number().optional(), total: z.number().optional(),
 })
 export type ClarifyPending = z.infer<typeof ClarifyPendingSchema>
 export const ClarifyPendingEnvelopeSchema = z.looseObject({ pending: ClarifyPendingSchema.nullable(), pending_count: z.number().int() })
-export const ClarifyRespondRequestSchema = z.looseObject({ session_id: SessionIdSchema, answers: ClarifyAnswersSchema.optional(), response: z.string().optional(), answer: z.string().optional(), choice: z.string().optional(), clarify_id: z.string().optional() })
+export const ClarifyRespondRequestSchema = z.looseObject({ session_id: SessionIdSchema, answers: ClarifyAnswersSchema.optional(), response: z.string().optional(), answer: z.string().optional(), choice: z.string().optional(), clarify_id: z.string().optional(), decline: z.boolean().optional() })
 export const ClarifyRespondResponseSchema = z.looseObject({ ok: z.boolean(), response: z.string().optional(), error: z.string().optional(), stale: z.boolean().optional() })
 
 export const DraftSchema = z.looseObject({ text: z.string(), files: z.array(Json) })

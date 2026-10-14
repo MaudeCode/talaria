@@ -66,9 +66,11 @@ public struct PendingClarification: Decodable, Equatable, Identifiable {
     public let timeoutSeconds: Int?
     public let expiresAt: Double?
     public let steps: [ClarificationStep]?
+    /// The Agent's password-manager prompt, which the server sends with no `steps` (TAL-887).
+    public let vault: VaultPrompt?
 
-    /// Only server `steps` are answerable; a payload without them renders no prompt.
-    public var isEmpty: Bool { steps?.isEmpty ?? true }
+    /// Only server `steps` or a vault prompt are answerable; a payload without either renders no prompt.
+    public var isEmpty: Bool { (steps?.isEmpty ?? true) && vault == nil }
 
     init(
         clarifyId: String? = nil,
@@ -77,7 +79,8 @@ public struct PendingClarification: Decodable, Equatable, Identifiable {
         requestedAt: Double? = nil,
         timeoutSeconds: Int? = nil,
         expiresAt: Double? = nil,
-        steps: [ClarificationStep]? = nil
+        steps: [ClarificationStep]? = nil,
+        vault: VaultPrompt? = nil
     ) {
         self.clarifyId = clarifyId
         self.question = question
@@ -86,6 +89,7 @@ public struct PendingClarification: Decodable, Equatable, Identifiable {
         self.timeoutSeconds = timeoutSeconds
         self.expiresAt = expiresAt
         self.steps = steps
+        self.vault = vault
     }
 
     enum CodingKeys: String, CodingKey {
@@ -101,6 +105,7 @@ public struct PendingClarification: Decodable, Equatable, Identifiable {
         case expiresAt
         case expiresAtSnake = "expires_at"
         case steps
+        case vault
     }
 
     public init(from decoder: Decoder) throws {
@@ -117,6 +122,42 @@ public struct PendingClarification: Decodable, Equatable, Identifiable {
         expiresAt = container.decodeLossyDoubleIfPresent(forKey: .expiresAt)
             ?? container.decodeLossyDoubleIfPresent(forKey: .expiresAtSnake)
         steps = try container.decodeIfPresent([ClarificationStep].self, forKey: .steps)
+        vault = try? container.decodeIfPresent(VaultPrompt.self, forKey: .vault)
+    }
+}
+
+/// The Agent asks for a password manager's master password, a login to save, or a one-time code (TAL-887). The server
+/// owns every field; the answers go back once, keyed by field, and are never kept.
+public struct VaultPrompt: Decodable, Equatable {
+    public enum Kind: String, Decodable {
+        case unlock = "vault_unlock"
+        case saveLogin = "vault_save_login"
+        case code = "vault_code"
+    }
+
+    public struct Field: Decodable, Equatable, Identifiable {
+        public enum Key: String, Decodable {
+            case masterPassword = "master_password"
+            case identifier, password, code
+        }
+
+        public let key: Key
+        public let secure: Bool
+        public var id: Key { key }
+    }
+
+    public let kind: Kind
+    public let backend: String?
+    public let displayName: String?
+    public let site: String?
+    public let hint: String?
+    public let fields: [Field]
+    public let timeoutAt: Double
+
+    enum CodingKeys: String, CodingKey {
+        case kind, backend, site, hint, fields
+        case displayName = "display_name"
+        case timeoutAt = "timeout_at"
     }
 }
 

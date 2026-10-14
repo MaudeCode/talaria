@@ -25,6 +25,7 @@ import { ApprovalCard } from './ApprovalCard'
 import { ClarifyCard } from './ClarifyCard'
 import { ConnectCard } from '../connectors/ConnectCard'
 import { useClarify } from './useClarify'
+import { VaultPromptCard, useVaultPrompt } from './VaultPromptCard'
 import { useMarkViewed } from './useMarkViewed'
 import { TerminalPanel } from '../terminal/TerminalPanel'
 import { ChatSidePanel } from './ChatSidePanel'
@@ -47,6 +48,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   const settings = useSettingsQuery()
   const { query, session, rows, base, live, truncated, loadOlder, loadingOlder, refresh } = useTranscript(sessionId)
   const clarify = useClarify(sessionId, live)
+  const vaultPrompt = useVaultPrompt(sessionId, live)
   useMarkViewed(sessionId, query.isFetchedAfterMount || (query.isSuccess && !query.isStale), live && isTerminal(live.status) ? live.streamId : null)
   const [terminalOpen, setTerminalOpen] = useState(false)
   const { sidePanelOpen } = useShellState()
@@ -356,6 +358,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
         <div className="composer-flyout">
           {sessionId && live?.approval && <ApprovalCard key={live.approval.approval_id} sessionId={sessionId} pending={live.approval} onResolved={() => dispatch({ type: 'clear_approval', sessionId })} />}
           {clarify && <ClarifyCard key={clarify.pending.clarify_id} clarify={clarify} />}
+          {sessionId && vaultPrompt && <VaultPromptCard key={vaultPrompt.clarifyId} sessionId={sessionId} clarifyId={vaultPrompt.clarifyId} vault={vaultPrompt.vault} />}
           {live?.connectCard && <ConnectCard key={live.connectCard.op_id} initial={live.connectCard} />}
           {terminalOpen && sessionId && <TerminalPanel sessionId={sessionId} workspace={workspace} onClose={() => setTerminalOpen(false)} />}
         </div>

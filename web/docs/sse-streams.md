@@ -52,6 +52,13 @@ JSON array, or batch `{"answers": {...}}` envelope to the pending steps and
 validates every answer before relaying it. Legacy Agent single-question frames
 retain their raw reply format.
 
+A head with a `vault` object is the Agent's password-manager prompt instead
+(`vault_unlock`, `vault_save_login`, `vault_code`): no `steps`, and `vault`
+carries the display fields, the inputs (`fields`, each `key` and whether it is
+`secure`), and `timeout_at`. Clients answer it with `answers` keyed by field
+`key`, or `decline: true`; any empty input declines too. The answer goes to the
+Agent only: the response does not echo it and the server keeps no copy.
+
 ## Merged sidebar stream
 
 A browser allows six concurrent HTTP/1.1 connections per origin, and every SSE
