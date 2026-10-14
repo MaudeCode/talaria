@@ -1339,6 +1339,12 @@
                 "type": "null"
               }
             ]
+          },
+          "current_run_started_at": {
+            "type": [
+              "number",
+              "null"
+            ]
           }
         },
         "required": [
@@ -1348,7 +1354,8 @@
           "priority",
           "claim_live",
           "has_completion_evidence",
-          "agent_move_targets"
+          "agent_move_targets",
+          "current_run_started_at"
         ],
         "additionalProperties": {}
       },
@@ -1394,6 +1401,29 @@
         ],
         "additionalProperties": false
       },
+      "link_tasks": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "title",
+            "status"
+          ],
+          "additionalProperties": false
+        }
+      },
       "runs": {
         "type": "array",
         "items": {
@@ -1413,6 +1443,7 @@
       "comments",
       "events",
       "links",
+      "link_tasks",
       "runs",
       "read_only"
     ],
