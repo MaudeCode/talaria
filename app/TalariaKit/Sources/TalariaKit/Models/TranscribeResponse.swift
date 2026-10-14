@@ -11,3 +11,9 @@ public struct TranscribeResponse: Codable {
     public let transcript: String?
     public let error: String?
 }
+
+/// Tolerant `GET /api/transcribe/capability`. Only `warm_supported` is read; a server
+/// without the field never asks the client to warm.
+struct TranscribeCapability: Decodable {
+    let warmSupported: Bool?
+}

@@ -262,8 +262,18 @@ export const CONNECTORS_METHODS = {
 
 // ── stt ────────────────────────────────────────────────────────────────
 export const STT_METHODS = {
-  /** `streaming` (TAL-802): `stt.streaming` is on and the provider has a live wire with credentials, so `stt.stream` would open. */
-  'stt.capability': { params: ProfileHomeParams, result: z.object({ available: z.boolean(), provider: z.string(), streaming: z.boolean() }) },
+  /**
+   * `streaming` (TAL-802): `stt.streaming` is on and the provider has a live wire with credentials, so `stt.stream` would open.
+   * `warm_supported` (TAL-916): the available provider is the local engine and the Agent can pre-load it (`tools.stt_lease`),
+   * so `stt.warm` does real work.
+   */
+  'stt.capability': { params: ProfileHomeParams, result: z.object({ available: z.boolean(), provider: z.string(), streaming: z.boolean(), warm_supported: z.boolean() }) },
+  /**
+   * TAL-916: pre-load the profile's local engine (first-use download and model load) so the next `stt.transcribe` starts
+   * hot. Blocks until loaded; a no-op (`warmed: false`) for remote providers, and `action: 'unsupported'` on an Agent
+   * without the warmer.
+   */
+  'stt.warm': { params: ProfileHomeParams, result: z.object({ provider: z.string(), warmed: z.boolean(), action: z.string(), error: z.string().optional() }) },
   'stt.transcribe': { params: ProfileHomeParams.extend({ audio_b64: z.string().min(1), suffix: z.string().optional() }), result: z.object({ transcript: z.string(), filtered: z.boolean() }) },
   /**
    * TAL-802: one live dictation. Opens the profile's streaming session for s16le mono PCM at `sample_rate` (the sidecar

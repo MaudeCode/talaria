@@ -856,7 +856,7 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     res = await post(s, '/api/updates/check', { force: true })
     expect((await json(res)).channel).toBe('stable')
     res = await s.get('/api/transcribe/capability')
-    expect(await json(res)).toEqual({ ok: true, available: false, provider: 'none', streaming: false })
+    expect(await json(res)).toEqual({ ok: true, available: false, provider: 'none', streaming: false, warm_supported: false })
   })
 
   it('insights add CLI, messaging, and cron sessions from state.db, counting a Web session once (TAL-550)', async () => {

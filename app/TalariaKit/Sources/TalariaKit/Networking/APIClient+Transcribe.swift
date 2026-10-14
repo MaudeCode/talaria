@@ -1,6 +1,17 @@
 import Foundation
 
 extension APIClient {
+    /// Asks the server to load its speech-to-text engine while a recording is still
+    /// in progress, so a cold local model does not eat the upload's transcription
+    /// timeout. Sent only when the capability's `warm_supported` says so. Best
+    /// effort: the server answers at once and every failure is ignored.
+    func warmTranscriptionIfSupported() async {
+        guard let capability: TranscribeCapability = try? await send(endpoint: .transcribeCapability, method: "GET"),
+              capability.warmSupported == true
+        else { return }
+        _ = try? await sendData(endpoint: .transcribeWarm, method: "POST", body: EmptyBody())
+    }
+
     /// Uploads an audio clip to the server's speech-to-text endpoint and returns
     /// the tolerant `{ok, transcript, error}` payload. Mirrors `uploadFile`'s
     /// multipart shape but sends only the `file` field (no `session_id`).

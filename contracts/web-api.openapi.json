@@ -58823,13 +58823,17 @@
                     },
                     "streaming": {
                       "type": "boolean"
+                    },
+                    "warm_supported": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
                     "ok",
                     "available",
                     "provider",
-                    "streaming"
+                    "streaming",
+                    "warm_supported"
                   ],
                   "additionalProperties": {}
                 }
@@ -58879,6 +58883,35 @@
                   },
                   "required": [
                     "spoken_text"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/transcribe/warm": {
+      "post": {
+        "operationId": "transcribeWarm",
+        "summary": "Start loading the profile's speech-to-text engine in the background and answer at once (TAL-916). Send when a recording starts and the capability has warm_supported.",
+        "tags": [
+          "tools"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok"
                   ]
                 }
               }

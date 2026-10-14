@@ -153,5 +153,6 @@ export const toolsContract = {
     prepare: oc.route({ method: 'POST', path: '/api/speech/prepare', tags, summary: 'TAL-906: the read-aloud script for `text` (the Agent\'s `prepare_spoken_text`): Markdown, reasoning blocks, filenames, paths, UUIDs, hashes, and URLs are dropped, at most 4000 characters. `/api/tts` speaks the same script. The text as written, trimmed, when the Agent cannot prepare it.' })
       .input(z.object({ text: z.string().max(100_000) })).output(SpeechPrepareSchema),
   },
+  transcribeWarm: oc.route({ method: 'POST', path: '/api/transcribe/warm', tags, summary: 'Start loading the profile\'s speech-to-text engine in the background and answer at once (TAL-916). Send when a recording starts and the capability has warm_supported.' }).output(z.object({ ok: z.literal(true) })),
   clientEvents: oc.route({ method: 'POST', path: '/api/client-events/log', tags, summary: 'Bounded browser diagnostics; only whitelisted scalar fields are logged.' }).input(Loose).output(z.object({ ok: z.literal(true), event: z.string().nullable() })),
 }

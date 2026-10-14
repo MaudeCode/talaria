@@ -7,7 +7,20 @@
       "result": {
         "available": false,
         "provider": "none",
-        "streaming": false
+        "streaming": false,
+        "warm_supported": false
+      }
+    }
+  ],
+  "stt.warm": [
+    {
+      "params": {
+        "profile_home": "<home>"
+      },
+      "result": {
+        "provider": "none",
+        "warmed": false,
+        "action": "noop"
       }
     }
   ],

@@ -21,6 +21,7 @@ public final class ComposerVoiceInputController {
 
     private let speechRecognizerFactory: () -> SFSpeechRecognizer?
     private let audioEngineFactory: () -> AVAudioEngine
+    private let microphonePermissionRequester: () async -> Bool
     private var speechRecognizer: SFSpeechRecognizer?
     private var audioEngine: AVAudioEngine?
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
@@ -42,10 +43,12 @@ public final class ComposerVoiceInputController {
 
     public init(
         speechRecognizerFactory: @escaping () -> SFSpeechRecognizer? = { SFSpeechRecognizer(locale: Locale.current) },
-        audioEngineFactory: @escaping () -> AVAudioEngine = { AVAudioEngine() }
+        audioEngineFactory: @escaping () -> AVAudioEngine = { AVAudioEngine() },
+        microphonePermissionRequester: @escaping () async -> Bool = { await ComposerVoiceMicrophonePermissionRequester.request() }
     ) {
         self.speechRecognizerFactory = speechRecognizerFactory
         self.audioEngineFactory = audioEngineFactory
+        self.microphonePermissionRequester = microphonePermissionRequester
     }
 
     public var isListening: Bool {
@@ -135,6 +138,9 @@ public final class ComposerVoiceInputController {
     }
 
     private func startServerProvider() async {
+        if let apiClient {
+            Task { await apiClient.warmTranscriptionIfSupported() }
+        }
         let isMicrophonePermissionGranted = await requestMicrophonePermission()
         logger.info("Server voice input microphone permission completed granted=\(isMicrophonePermissionGranted, privacy: .public)")
         guard state == .requestingPermission else { return }
@@ -766,7 +772,7 @@ public final class ComposerVoiceInputController {
     }
 
     private func requestMicrophonePermission() async -> Bool {
-        await ComposerVoiceMicrophonePermissionRequester.request()
+        await microphonePermissionRequester()
     }
 
     private static func speechAuthorizationMessage(for status: SFSpeechRecognizerAuthorizationStatus) -> String {

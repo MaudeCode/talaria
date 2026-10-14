@@ -553,8 +553,11 @@ export const SessionNewRequestSchema = z.looseObject({
   title: z.string().optional(), workspace: z.string().optional(), workspace_inherited_from_prev_session: z.boolean().optional(), model: z.string().nullable().optional(), model_provider: z.string().nullable().optional(),
   profile: z.string().nullable().optional(), prev_session_id: z.string().optional(), project_id: z.string().nullable().optional(), worktree: Json.optional(), enabled_toolsets: z.array(z.string()).nullable().optional(), parent_session_id: z.string().optional(),
 })
-/** `streaming` (TAL-802): live dictation over `TRANSCRIBE_STREAM_PATH` would open for this profile (`stt.streaming` on, a live provider wire). */
-export const TranscribeCapabilitySchema = z.looseObject({ ok: z.literal(true), available: z.boolean(), provider: z.string(), streaming: z.boolean() })
+/**
+ * `streaming` (TAL-802): live dictation over `TRANSCRIBE_STREAM_PATH` would open for this profile (`stt.streaming` on, a live provider wire).
+ * `warm_supported` (TAL-916): a client starting a recording should `POST /api/transcribe/warm` so the engine loads while the user speaks.
+ */
+export const TranscribeCapabilitySchema = z.looseObject({ ok: z.literal(true), available: z.boolean(), provider: z.string(), streaming: z.boolean(), warm_supported: z.boolean() })
 /** TAL-906: what read-aloud speaks for a message; clients play it as is. */
 export const SpeechPrepareSchema = z.object({ spoken_text: z.string() })
 /** `POST /api/transcribe`: the recording's transcript; `filtered` (TAL-917) when the server emptied a phrase Whisper invents on silent audio. */

@@ -46,7 +46,7 @@ describe('Composer', () => {
     vi.mocked(api.fetchCommands).mockReset().mockResolvedValue({ commands: [] })
     vi.mocked(api.saveDraft).mockReset().mockResolvedValue({ ok: true, draft: { text: '', files: [] }, draft_version: null })
     vi.mocked(api.fetchDraft).mockReset().mockResolvedValue({ draft: { text: '', files: [] }, draft_version: null })
-    vi.mocked(api.fetchTranscribeCapability).mockReset().mockResolvedValue({ ok: true, available: true, provider: 'openai', streaming: false })
+    vi.mocked(api.fetchTranscribeCapability).mockReset().mockResolvedValue({ ok: true, available: true, provider: 'openai', streaming: false, warm_supported: false })
     vi.mocked(dictateLive).mockReset()
     // jsdom has no matchMedia; the composer asks whether it is on a phone-width viewport.
     window.matchMedia = vi.fn(() => ({ matches: false, addEventListener: noop, removeEventListener: noop })) as unknown as typeof window.matchMedia
@@ -54,7 +54,7 @@ describe('Composer', () => {
   })
 
   it('dictates through the live stream when the server reports streaming: partials, then the final (TAL-802)', async () => {
-    vi.mocked(api.fetchTranscribeCapability).mockResolvedValue({ ok: true, available: true, provider: 'openai', streaming: true })
+    vi.mocked(api.fetchTranscribeCapability).mockResolvedValue({ ok: true, available: true, provider: 'openai', streaming: true, warm_supported: false })
     const stop = vi.fn()
     let onText: (text: string) => void = noop
     let onEnd: (error: unknown) => void = noop

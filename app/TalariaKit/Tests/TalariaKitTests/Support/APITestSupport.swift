@@ -418,3 +418,11 @@ final class RedirectingMockURLProtocol: URLProtocol {
 
     override func stopLoading() {}
 }
+
+/// A shared App/Web contract fixture from the repository's `contracts/fixtures/<name>.json`.
+func sharedContractFixture(_ name: String) throws -> Data {
+    // app/TalariaKit/Tests/TalariaKitTests/Support/<file> -> repository root
+    var root = URL(fileURLWithPath: #filePath)
+    for _ in 0..<6 { root.deleteLastPathComponent() }
+    return try Data(contentsOf: root.appendingPathComponent("contracts/fixtures/\(name).json"))
+}

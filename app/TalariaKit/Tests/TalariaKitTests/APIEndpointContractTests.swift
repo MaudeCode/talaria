@@ -299,7 +299,9 @@ final class ContractReadinessTests: APIClientTestCase {
                 path: "/api/skills/content",
                 query: ["name": "swiftui-ui-patterns", "file": "references/navigation.md"]
             ),
-            .init(name: "upload", endpoint: .upload, path: "/api/upload")
+            .init(name: "upload", endpoint: .upload, path: "/api/upload"),
+            .init(name: "transcribe capability", endpoint: .transcribeCapability, path: "/api/transcribe/capability"),
+            .init(name: "transcribe warm", endpoint: .transcribeWarm, path: "/api/transcribe/warm")
         ]
 
         let baseURL = URL(string: "https://example.test")!
@@ -442,11 +444,7 @@ final class SharedContractTests: XCTestCase {
     }
 
     private func fixture(_ name: String) throws -> Data {
-        // app/TalariaKit/Tests/TalariaKitTests/<file> -> repository root
-        let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            .deletingLastPathComponent().deletingLastPathComponent()
-        return try Data(contentsOf: root.appendingPathComponent("contracts/fixtures/\(name).json"))
+        try sharedContractFixture(name)
     }
 
     private func session(_ handler: @escaping MockURLProtocol.Handler) -> URLSession {
