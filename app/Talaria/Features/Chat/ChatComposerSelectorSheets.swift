@@ -219,11 +219,33 @@ struct ComposerModelPickerSheet: View {
                     .foregroundStyle(.secondary)
 
                 Spacer(minLength: 0)
+
+                groupLimitBadge(group)
             }
             .padding(.vertical, 7)
             .contentShape(Rectangle())
         }
         .tint(Color(.secondaryLabel))
+    }
+
+    /// TAL-807: the server's rate-limit state for a provider: its account limit or a low quota level (never both).
+    @ViewBuilder
+    private func groupLimitBadge(_ group: ModelCatalogGroup) -> some View {
+        if let resetsAt = group.accountLimitResetsAt {
+            limitBadge("Limited until \(modelLimitResetTime(resetsAt))", color: .red)
+        } else if group.quotaLevel == .critical {
+            limitBadge("Quota nearly out", color: .red)
+        } else if group.quotaLevel == .warning {
+            limitBadge("Low quota", color: .orange)
+        }
+    }
+
+    private func limitBadge(_ text: LocalizedStringKey, color: Color) -> some View {
+        Text(text)
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(color)
+            .lineLimit(1)
+            .layoutPriority(1)
     }
 
     private func modelOptionRow(_ option: ModelCatalogOption, allowsDelete: Bool) -> some View {
@@ -243,6 +265,10 @@ struct ComposerModelPickerSheet: View {
                             .font(.system(size: 14, weight: .regular))
                             .foregroundStyle(.primary)
                             .lineLimit(1)
+
+                        if let resetsAt = option.limitResetsAt {
+                            limitBadge("Limited until \(modelLimitResetTime(resetsAt))", color: .orange)
+                        }
 
                         if option.id != option.displayName {
                             Text(option.id)
@@ -328,12 +354,7 @@ struct ComposerModelPickerSheet: View {
 
                 guard !filteredModels.isEmpty else { return nil }
 
-                return ModelCatalogGroup(
-                    id: group.id,
-                    name: group.name,
-                    providerID: group.providerID,
-                    models: filteredModels
-                )
+                return group.replacingModels(filteredModels)
             }
         }
 
@@ -459,6 +480,13 @@ struct ComposerModelPickerSheet: View {
             || option.id.localizedCaseInsensitiveContains(query)
             || (option.providerID?.localizedCaseInsensitiveContains(query) ?? false)
     }
+}
+
+/// A rate-limit reset in the viewer's zone: the time alone today, else with its weekday.
+private func modelLimitResetTime(_ date: Date) -> String {
+    Calendar.current.isDateInToday(date)
+        ? date.formatted(date: .omitted, time: .shortened)
+        : date.formatted(.dateTime.weekday(.abbreviated).hour().minute())
 }
 
 private struct ModelProviderChoice: Identifiable, Hashable {

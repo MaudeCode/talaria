@@ -59,6 +59,7 @@
 		D857DB3766E41DE9EB67A261 /* FixtureApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856DB3766E41DE9EB67A261 /* FixtureApp.swift */; };
 		D8574E4D45F8F4C581740A3A /* HostedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8564E4D45F8F4C581740A3A /* HostedView.swift */; };
 		C4840000000000000000001A /* ComposerChipLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4840000000000000000001B /* ComposerChipLayoutTests.swift */; };
+		C93500000000000000000001 /* ComposerModelPickerHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C93500000000000000000002 /* ComposerModelPickerHostedTests.swift */; };
 		C0410000000000000000015A /* ComposerTextViewMarkedTextTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0410000000000000000015B /* ComposerTextViewMarkedTextTests.swift */; };
 		C05000000000000000000001 /* ChatComposerAttachmentStripView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C05000000000000000000002 /* ChatComposerAttachmentStripView.swift */; };
 		C042A000000000000000003 /* ChatComposerSelectorSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = C042A000000000000000004 /* ChatComposerSelectorSheets.swift */; };
@@ -491,6 +492,7 @@
 		D856DB3766E41DE9EB67A261 /* FixtureApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixtureApp.swift; sourceTree = "<group>"; };
 		D8564E4D45F8F4C581740A3A /* HostedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostedView.swift; sourceTree = "<group>"; };
 		C4840000000000000000001B /* ComposerChipLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerChipLayoutTests.swift; sourceTree = "<group>"; };
+		C93500000000000000000002 /* ComposerModelPickerHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerModelPickerHostedTests.swift; sourceTree = "<group>"; };
 		C0410000000000000000015B /* ComposerTextViewMarkedTextTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerTextViewMarkedTextTests.swift; sourceTree = "<group>"; };
 		C05000000000000000000002 /* ChatComposerAttachmentStripView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatComposerAttachmentStripView.swift; sourceTree = "<group>"; };
 		C042A000000000000000004 /* ChatComposerSelectorSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatComposerSelectorSheets.swift; sourceTree = "<group>"; };
@@ -931,6 +933,7 @@
 				BC003779138F2D96721F2A82 /* ChatViewModelSendTests+Support.swift */,
 				D399000000000000000000C1 /* APITestSupport.swift */,
 					C4840000000000000000001B /* ComposerChipLayoutTests.swift */,
+					C93500000000000000000002 /* ComposerModelPickerHostedTests.swift */,
 					C0410000000000000000015B /* ComposerTextViewMarkedTextTests.swift */,
 					C0390000000000000000000E /* ChatViewModelSendTests.swift */,
 					C1TAL49E0000000000000001 /* ChatMessageLinkInteractionTests.swift */,
@@ -1965,6 +1968,7 @@
 				1DCA640D41674C1510CBA1C2 /* ChatViewModelSendTests+Support.swift in Sources */,
 				D399000000000000000000C2 /* APITestSupport.swift in Sources */,
 					C4840000000000000000001A /* ComposerChipLayoutTests.swift in Sources */,
+					C93500000000000000000001 /* ComposerModelPickerHostedTests.swift in Sources */,
 					C0410000000000000000015A /* ComposerTextViewMarkedTextTests.swift in Sources */,
 					C0391000000000000000000E /* ChatViewModelSendTests.swift in Sources */,
 					C1TAL49E0000000000000002 /* ChatMessageLinkInteractionTests.swift in Sources */,

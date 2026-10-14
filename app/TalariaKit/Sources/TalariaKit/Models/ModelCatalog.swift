@@ -6,33 +6,41 @@ public struct ModelCatalogGroup: Identifiable, Equatable, Sendable {
     public let providerID: String?
     public let models: [ModelCatalogOption]
     public let extraModels: [ModelCatalogOption]
+    /// TAL-807: every account in the provider's credential pool is rate-limited
+    /// until then (`limit.scope == "account"`).
+    public let accountLimitResetsAt: Date?
+    /// TAL-807: the server's level for the provider's tightest account-usage
+    /// window; absent while the group is account-limited.
+    public let quotaLevel: ProviderQuotaUrgency?
 
     public init(
         id: String,
         name: String,
         providerID: String?,
         models: [ModelCatalogOption],
-        extraModels: [ModelCatalogOption]
+        extraModels: [ModelCatalogOption] = [],
+        accountLimitResetsAt: Date? = nil,
+        quotaLevel: ProviderQuotaUrgency? = nil
     ) {
         self.id = id
         self.name = name
         self.providerID = providerID
         self.models = models
         self.extraModels = extraModels
+        self.accountLimitResetsAt = accountLimitResetsAt
+        self.quotaLevel = quotaLevel
     }
 
-    public init(
-        id: String,
-        name: String,
-        providerID: String?,
-        models: [ModelCatalogOption]
-    ) {
-        self.init(
+    /// This group showing `models`, keeping its other fields.
+    public func replacingModels(_ models: [ModelCatalogOption]) -> ModelCatalogGroup {
+        ModelCatalogGroup(
             id: id,
             name: name,
             providerID: providerID,
             models: models,
-            extraModels: []
+            extraModels: extraModels,
+            accountLimitResetsAt: accountLimitResetsAt,
+            quotaLevel: quotaLevel
         )
     }
 }
@@ -51,12 +59,15 @@ public struct ModelCatalogOption: Identifiable, Equatable, Hashable, Sendable {
     /// The server's split of `id` (`bare_id`); `nil` for an older server or a
     /// typed custom id.
     public let bareID: String?
+    /// TAL-807: the provider's pool cannot serve this model until then.
+    public let limitResetsAt: Date?
 
-    public init(id: String, displayName: String, providerID: String?, bareID: String? = nil) {
+    public init(id: String, displayName: String, providerID: String?, bareID: String? = nil, limitResetsAt: Date? = nil) {
         self.id = id
         self.displayName = displayName
         self.providerID = providerID
         self.bareID = bareID
+        self.limitResetsAt = limitResetsAt
     }
 }
 
@@ -136,13 +147,23 @@ extension Array where Element == ModelCatalogGroup {
 
         return map { group in
             guard group.providerID == provider else { return group }
-            return ModelCatalogGroup(
-                id: group.id,
-                name: group.name,
-                providerID: group.providerID,
-                models: liveModels,
-                extraModels: group.extraModels
-            )
+            // The live list carries no rate limits; a model keeps the one the catalog gave it.
+            var limits: [String: Date] = [:]
+            for option in group.models {
+                guard let resetsAt = option.limitResetsAt else { continue }
+                limits[option.id] = resetsAt
+                if let bareID = option.bareID { limits[bareID] = resetsAt }
+            }
+            return group.replacingModels(liveModels.map { option in
+                guard let resetsAt = limits[option.id] else { return option }
+                return ModelCatalogOption(
+                    id: option.id,
+                    displayName: option.displayName,
+                    providerID: option.providerID,
+                    bareID: option.bareID,
+                    limitResetsAt: resetsAt
+                )
+            })
         }
     }
 }
@@ -160,12 +181,17 @@ private enum ModelCatalogParser {
             let extraModels = parseModelOptions(from: groupDict["extra_models"], providerID: providerID)
             guard !models.isEmpty else { return nil }
 
+            let limit = objectValue(from: groupDict["limit"])
             return ModelCatalogGroup(
                 id: providerID ?? "\(name)-\(index)",
                 name: name,
                 providerID: providerID,
                 models: models,
-                extraModels: extraModels
+                extraModels: extraModels,
+                accountLimitResetsAt: stringValue(from: limit?["scope"]) == "account"
+                    ? ProviderQuotaDateParser.date(from: stringValue(from: limit?["resets_at"]))
+                    : nil,
+                quotaLevel: stringValue(from: groupDict["quota_level"]).flatMap(ProviderQuotaUrgency.init(rawValue:))
             )
         }
     }
@@ -188,9 +214,17 @@ private enum ModelCatalogParser {
                 id: id,
                 displayName: displayName,
                 providerID: optionProviderID,
-                bareID: stringValue(from: dict["bare_id"])
+                bareID: stringValue(from: dict["bare_id"]),
+                limitResetsAt: ProviderQuotaDateParser.date(
+                    from: stringValue(from: objectValue(from: dict["limit"])?["resets_at"])
+                )
             )
         }
+    }
+
+    private static func objectValue(from value: JSONValue?) -> [String: JSONValue]? {
+        guard case .object(let dict) = value else { return nil }
+        return dict
     }
 
     private static func stringValue(from value: JSONValue?) -> String? {
