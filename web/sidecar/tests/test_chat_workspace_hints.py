@@ -101,4 +101,3 @@ def test_an_agent_without_the_cwd_kwarg_is_built_as_before(hermes_home: pathlib.
     workspace = _project(hermes_home.parent, "alpha", "ALPHA-AREA-RULE")
     run = subprocess.run([AGENT_PYTHON, "-c", NO_CWD_PROBE, str(AGENT_DIR), str(workspace)], env=isolated_env(hermes_home), capture_output=True, text=True, timeout=120)
     assert run.returncode == 0, run.stderr[-4000:]
-
