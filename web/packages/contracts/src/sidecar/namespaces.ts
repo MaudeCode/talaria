@@ -617,6 +617,19 @@ export const CHAT_METHODS = {
   'chat.compress_finalize': { params: z.object({ commit_token: z.string().min(1), committed: z.boolean() }), result: z.object({ finalized: z.boolean() }) },
   'chat.evict_agent': { params: z.object({ session_id: z.string().min(1), clear_session: z.boolean().optional() }), result: z.object({ evicted: z.boolean() }) },
   'chat.commit_memory': { params: ProfileHomeParams.extend({ session_id: z.string().min(1) }), result: z.object({ committed: z.boolean() }) },
+  /**
+   * TAL-902: `/refine [focus]`, the Agent's on-demand memory/skill review of `messages` (the session's model context) on the
+   * session's cached agent, else one built from the turn parameters and cached like a turn's. `output` is the Agent's
+   * wording: the review started, or why not (a turn is running, the conversation is empty).
+   */
+  'chat.refine': {
+    params: ProfileHomeParams.extend({
+      session_id: z.string().min(1), messages: z.array(Loose), focus: z.string(), model: z.string(), model_provider: z.string().nullable().optional(),
+      enabled_toolsets: z.array(z.string()).nullable().optional(), max_iterations: z.number().int().nullable().optional(), max_tokens: z.number().int().nullable().optional(),
+      reasoning_config: z.object({ enabled: z.boolean(), effort: z.string().optional() }).nullable().optional(),
+    }),
+    result: z.object({ output: z.string() }),
+  },
   'approval.respond': { params: ProfileHomeParams.extend({ session_id: z.string().min(1), choice: z.enum(['once', 'session', 'always', 'deny']), request_id: z.string().nullable().optional() }), result: z.object({ ok: z.boolean(), resolved: z.number().int(), choice: z.string() }) },
   'approval.pending': { params: z.object({ session_id: z.string().min(1) }), result: z.object({ pending: z.array(Loose) }) },
   'approval.set_yolo': { params: z.object({ session_id: z.string().min(1), enabled: z.boolean() }), result: z.object({ yolo_enabled: z.boolean(), released: z.number().int() }) },

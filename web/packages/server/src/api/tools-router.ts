@@ -17,7 +17,7 @@ import { JoplinError, joplinNote, joplinSearch, notesSources, type JoplinDeps } 
 import { catalogNames, connectorOperation, connectorsPage, connectorTools, rememberCatalogNames } from '../tools/connectors.js'
 import { resolveWikiLocation, wikiPages, type WikiLocation } from '../tools/wiki.js'
 import { buildInsights } from '../tools/insights.js'
-import { commandCatalog } from '../tools/commands.js'
+import { commandCatalog, SESSION_EXEC_COMMANDS } from '../tools/commands.js'
 import { agentHealth, applyDashboardConfig, dashboardConfig, dashboardStatus, gatewayStatus, parseDashboardConfig, readLogTail, remoteGatewayBaseUrl, systemHealth } from '../tools/health.js'
 import { restartGateway } from '../tools/gateway-restart.js'
 import { projectOsDashboard } from '../tools/project-os.js'
@@ -419,6 +419,12 @@ export const toolsRouter = os.router({
     exec: os.commands.exec.handler(({ input, context: { ctx } }) => run(async () => {
       const command = str(input.command).trim()
       if (!command) throw new HttpError(400, 'command is required')
+      const [, name = '', args = ''] = /^\/?(\S*)\s*([\s\S]*)$/.exec(command) ?? []
+      // TAL-902: a session command runs on the chat's own agent (the request guard already checked the chat's profile).
+      if (SESSION_EXEC_COMMANDS.has(name.toLowerCase())) {
+        const sid = str(input.session_id).trim()
+        return { output: await ctx.deps.turns.refine(sid ? ctx.deps.sessionStore.get(sid) : null, args.trim()) }
+      }
       try {
         return { output: (await runningSidecar(ctx).call('commands.exec', { profile_home: home(ctx), command }, { timeoutMs: 120_000 })).output }
       } catch (error) {

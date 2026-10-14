@@ -759,7 +759,8 @@ export const PromptsSchema = z.looseObject({ prompts: z.array(PromptSchema) })
  * clients can run it, and `unsupported_message` is the English text a client outside `clients` shows when it is typed.
  * Clients suggest the entries listing them whose name or any alias starts with the typed text (case-insensitive), and
  * resolve a typed alias to the entry's `name`. `exec` marks an Agent entry `POST /api/commands/exec` runs: the client
- * posts the typed text there and shows the returned output instead of starting a chat turn (TAL-561).
+ * posts the typed text there with the open chat's `session_id` and shows the returned output instead of starting a chat turn
+ * (TAL-561); `/refine` reviews that chat (TAL-902).
  * `handler: 'prompt'` marks an Agent prompt built-in: the client sends the typed text as a chat turn and the server starts the
  * turn with the Agent's expansion of it (TAL-817).
  */
