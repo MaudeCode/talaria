@@ -95,8 +95,7 @@ public final class TaskDetailViewModel {
             runningElapsed = status.running == true ? (status.elapsed ?? runningElapsed ?? 0) : nil
         }
         if let latest = await jobsResponse?.jobs?.first(where: { $0.jobId == jobID }) {
-            job = latest
-            isListedRunning = latest.running == true
+            adopt(latest)
         }
         if let output = await outputResponse {
             outputs = output.outputs ?? []
@@ -266,6 +265,12 @@ public final class TaskDetailViewModel {
         }
     }
 
+    /// Takes a live job record, with the server's running state (TAL-835).
+    private func adopt(_ latest: CronJob) {
+        job = latest
+        isListedRunning = latest.running == true
+    }
+
     private func mutateJob(
         action: (String) async throws -> CronMutationResponse
     ) async -> Bool {
@@ -288,7 +293,7 @@ public final class TaskDetailViewModel {
             }
 
             if let updatedJob = response.job {
-                job = updatedJob
+                adopt(updatedJob)
                 lastMutation = .upsert(updatedJob)
             }
             return true

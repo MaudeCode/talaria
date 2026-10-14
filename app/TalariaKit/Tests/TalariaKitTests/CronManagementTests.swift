@@ -884,6 +884,27 @@ final class CronManagementViewModelTests: APIClientTestCase {
         XCTAssertFalse(viewModel.isRunning, "The run elsewhere finished")
     }
 
+    /// A mutation's live job carries the server's running state, so a run elsewhere that ended clears the badge (TAL-835).
+    @MainActor
+    func testTaskDetailMutationSyncsTheServersRunningState() async throws {
+        let client = makeClient { request in
+            XCTAssertEqual(request.url?.path, "/api/crons/resume")
+            return apiTestJSONResponse(#"{"ok": true, "job": {"id": "job123", "name": "Digest", "running": false}}"#, for: request)
+        }
+        let viewModel = TaskDetailViewModel(
+            job: try decodeCronJob(#"{"id": "job123", "name": "Digest", "running": true}"#),
+            runningElapsed: nil,
+            isRunning: true,
+            server: try XCTUnwrap(URL(string: "https://example.test")),
+            client: client
+        )
+
+        let didResume = await viewModel.resume()
+
+        XCTAssertTrue(didResume)
+        XCTAssertFalse(viewModel.isRunning, "The resumed job's live record says the run ended")
+    }
+
     @MainActor
     func testTaskDetailViewModelDeletePublishesDeleteMutation() async throws {
         let client = makeClient { request in
