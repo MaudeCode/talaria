@@ -945,13 +945,48 @@ describe('Agent checkout updates', () => {
     await svc.check(true)
     const result = await svc.summarize('agent')
     expect(result).toMatchObject({ ok: true, target: 'agent', current_version: 'v1.0.0', target_version: 'v2.1.0', source: 'release_notes', generated_by: 'llm', cached: false, summary_sections: [{ title: "What you'll notice", items: ['Chats open faster.'] }] })
-    expect(paths).toEqual(['/repos/Synthetic/agent/releases/tags/v2.0.0', '/repos/Synthetic/agent/releases/tags/v2.1.0'])
+    expect(paths).toEqual(['/repos/Synthetic/agent/releases/latest', '/repos/Synthetic/agent/releases/tags/v2.0.0', '/repos/Synthetic/agent/releases/tags/v2.1.0'])
     expect(prompts).toHaveLength(1)
     expect(prompts[0]!.indexOf('Release notes for v2.0.0')).toBeGreaterThan(-1)
     expect(prompts[0]!.indexOf('Release notes for v2.0.0')).toBeLessThan(prompts[0]!.indexOf('Release notes for v2.1.0'))
     expect(prompts[0]).not.toContain('synthetic internal refactor')
     expect(await svc.summarize('agent')).toMatchObject({ cached: true, source: 'release_notes' })
     expect(prompts).toHaveLength(1)
+  })
+
+  /** TAL-930: v0.21.7 is published at `a.v2`; v0.21.8 is tagged on origin, and `latest` is the stub's `releases/latest` answer. */
+  function unpublishedTagInstall(latest: () => Promise<unknown>): { a: ReturnType<typeof agentInstall>; next: string; svc: UpdateService; paths: string[] } {
+    const a = agentInstall()
+    git(a.origin, 'tag', '-d', 'v1.0.0', 'v2.0.0')
+    git(a.agent, 'tag', '-d', 'v1.0.0')
+    git(a.origin, 'tag', 'v0.21.6', a.v1)
+    git(a.origin, 'tag', 'v0.21.7', a.v2)
+    git(a.origin, 'commit', '--allow-empty', '-m', 'release draft')
+    git(a.origin, 'tag', 'v0.21.8')
+    const paths: string[] = []
+    const { svc } = summaryService(a, { getPublicJson: (path) => { paths.push(path); return path.endsWith('/releases/latest') ? latest() : Promise.resolve({ tag_name: path.split('/').pop(), body: 'notes' }) } })
+    return { a, next: git(a.origin, 'rev-parse', 'HEAD'), svc, paths }
+  }
+
+  it('Stable skips a newer tag whose GitHub release is not published (TAL-930)', async () => {
+    const { a, svc, paths } = unpublishedTagInstall(() => Promise.resolve({ tag_name: 'v0.21.7', draft: false, prerelease: false }))
+    const agent = (await svc.check(true)).agent as Dict
+    expect(agent).toMatchObject({ latest_version: 'v0.21.7', latest_sha: a.v2, behind: 1 })
+    expect((agent.versions as Dict[]).map((v) => v.version)).toEqual(['v0.21.7'])
+    await svc.check(true)
+    expect(paths.filter((p) => p.endsWith('/releases/latest'))).toEqual(['/repos/Synthetic/agent/releases/latest'])
+    expect(await svc.apply('agent', null, () => true, { confirmedRevision: a.v2 })).toMatchObject({ ok: true, verified_revision: a.v2, verified_version: 'v0.21.7' })
+  })
+
+  it.each<[string, () => Promise<unknown>]>([
+    ['the published release is the newest tag', () => Promise.resolve({ tag_name: 'v0.21.8', draft: false, prerelease: false })],
+    ['the releases/latest read fails', () => Promise.reject(new ReleaseUnavailable('GitHub answered 403'))],
+    ['the latest release is a draft', () => Promise.resolve({ tag_name: 'v0.21.7', draft: true, prerelease: false })],
+    ['the latest release is a prerelease', () => Promise.resolve({ tag_name: 'v0.21.7', draft: false, prerelease: true })],
+    ['the latest release tag is not a strict vX.Y.Z', () => Promise.resolve({ tag_name: 'v0.21.7+canary.1', draft: false, prerelease: false })],
+  ])('Stable targets the newest tag when %s (TAL-930)', async (_name, latest) => {
+    const { next, svc } = unpublishedTagInstall(latest)
+    expect((await svc.check(true)).agent).toMatchObject({ latest_version: 'v0.21.8', latest_sha: next, behind: 2 })
   })
 
   const notesFor = (paths: string[], body = (tag: string) => `Release notes for ${tag}`): GetJson => (path) => { paths.push(path); const tag = path.split('/').pop() ?? ''; return Promise.resolve({ tag_name: tag, body: body(tag) }) }
@@ -982,8 +1017,8 @@ describe('Agent checkout updates', () => {
     const { svc, prompts } = summaryService(a, { getPublicJson: notesFor(paths, (tag) => (tag === 'v2.10.0' ? 'x'.repeat(9000) : `Release notes for ${tag}`)) })
     await svc.check(true)
     const result = await svc.summarize('agent')
-    expect(paths).toHaveLength(10)
-    expect(paths[0]).toBe('/repos/Synthetic/agent/releases/tags/v2.1.0')
+    expect(paths).toHaveLength(11)
+    expect(paths.slice(0, 2)).toEqual(['/repos/Synthetic/agent/releases/latest', '/repos/Synthetic/agent/releases/tags/v2.1.0'])
     expect(prompts[0]).not.toContain('Release notes for v2.0.0')
     expect(prompts[0]).not.toContain('x'.repeat(8001))
     expect((result.summary_sections as Dict[])[1]).toEqual({ title: 'Worth knowing', items: [expect.stringMatching(/^Hermes Agent has 11 releases to install; this summary covers the release notes for v2\.1\.0, .*v2\.10\.0\.$/)] })

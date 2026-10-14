@@ -132,6 +132,9 @@ function normalizeRemoteUrl(remote: string): string {
   return url.replace(/\/+$/, '')
 }
 
+/** `owner/repo` of a GitHub remote, else null. */
+const githubRepo = (url: string): string | null => /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)$/.exec(url)?.[1] ?? null
+
 const isWebUrl = (url: string): boolean => { try { return ['http:', 'https:'].includes(new URL(url).protocol) } catch { return false } }
 
 function compareUrl(repoUrl: string, current: string | null, latest: string | null): string | null {
@@ -699,6 +702,24 @@ async function detectDefaultBranch(path: string, git: GitRun): Promise<string> {
   throw new Error('Agent default branch is unavailable')
 }
 
+/** TAL-930: the tag of the Agent remote's latest published GitHub release (not draft, not prerelease, strict `vX.Y.Z`); null when GitHub cannot say. */
+export type PublishedAgentTag = (repoUrl: string) => Promise<string | null>
+export const publishedAgentTag = (getJson: GetJson): PublishedAgentTag => async (repoUrl) => {
+  const repo = githubRepo(repoUrl)
+  if (!repo) return null
+  try {
+    const release = dict(await getJson(`/repos/${repo}/releases/latest`, { asset: false }))
+    const tag = release.tag_name
+    return release.draft !== true && release.prerelease !== true && typeof tag === 'string' && AGENT_RELEASE_TAG.test(tag) ? tag : null
+  } catch { return null }
+}
+/** Stable `tags` from the published one down, so a tag pushed before its release is published is skipped; all of them when none is known. */
+function publishedTags(tags: string[], published: string | null | undefined): string[] {
+  if (!published) return tags
+  const at = tags.findIndex((tag) => tag === published || compareVersions(tag.slice(1), published.slice(1)) < 0)
+  return at < 0 ? [] : tags.slice(at)
+}
+
 /** TAL-946: the Stable releases a fast-forward reaches, newest first: tags after HEAD up to `tags[0]`, each with its peeled commit; none unless the newest is one. */
 async function agentVersions(path: string, tags: string[], repoUrl: string, git: GitRun): Promise<UpdateVersion[]> {
   const listed = tags[0] ? await git(['tag', '--list', AGENT_TAG_GLOB, '--merged', tags[0], '--no-merged', 'HEAD', '--contains', 'HEAD'], path) : null
@@ -713,12 +734,12 @@ async function agentVersions(path: string, tags: string[], repoUrl: string, git:
 }
 
 /** The checkout's update target: `version` (a listed Stable tag) or the channel's newest. */
-async function agentTarget(path: string, git: GitRun, channel: Channel, version?: string): Promise<Dict> {
+async function agentTarget(path: string, git: GitRun, channel: Channel, version?: string, published?: PublishedAgentTag): Promise<Dict> {
   if (version !== undefined && channel !== 'stable') throw new Error(ONLY_STABLE_VERSIONS)
-  const tags = channel === 'stable' ? await releaseTags(path, git) : []
+  const remote = normalizeRemoteUrl((await git(['remote', 'get-url', 'origin'], path)).out)
+  const tags = channel === 'stable' ? publishedTags(await releaseTags(path, git), await published?.(remote)) : []
   const newest = channel === 'experimental' ? `origin/${await detectDefaultBranch(path, git)}` : tags[0]
   if (!newest) throw new Error('No stable Agent release is available')
-  const remote = normalizeRemoteUrl((await git(['remote', 'get-url', 'origin'], path)).out)
   const versions = await agentVersions(path, tags, remote, git)
   const ref = selectVersion(versions, version, 'Hermes Agent')?.ref ?? newest
   const current = await git(['rev-parse', 'HEAD'], path)
@@ -778,7 +799,7 @@ async function isDirty(path: string, git: GitRun): Promise<boolean> {
 }
 
 /** Fetch and compare the independently selected Agent channel. */
-export async function checkAgentUpdate(path: string | null, git: GitRun, channel: Channel = DEFAULT_CHANNEL): Promise<Dict> {
+export async function checkAgentUpdate(path: string | null, git: GitRun, channel: Channel = DEFAULT_CHANNEL, published?: PublishedAgentTag): Promise<Dict> {
   if (!path || !existsSync(join(path, '.git'))) return { name: 'agent', behind: null, no_git: true }
   const fetched = await fetchWithRetry(git, ['fetch', 'origin', '--tags', '--force'], path, 15_000)
   if (!fetched.ok) {
@@ -786,7 +807,7 @@ export async function checkAgentUpdate(path: string | null, git: GitRun, channel
     return { name: 'agent', channel, behind: null, error: message, stale_check: true, dirty: await isDirty(path, git) }
   }
   await recoverInterruptedAutostash(path, git)
-  try { return { ...await agentTarget(path, git, channel), dirty: await isDirty(path, git) } }
+  try { return { ...await agentTarget(path, git, channel, undefined, published), dirty: await isDirty(path, git) } }
   catch (error) { return { name: 'agent', channel, behind: null, error: (error as Error).message } }
 }
 
@@ -800,7 +821,7 @@ async function prepareAgentMutation(path: string, info: Dict, policy?: AgentUpda
 }
 
 /** Fetch, confirm the immutable Agent target, stash, fast-forward, and restore the stash. */
-export async function applyAgentUpdate(path: string | null, git: GitRun, channel: Channel = DEFAULT_CHANNEL, policy?: AgentUpdatePolicy, version?: string): Promise<Dict> {
+export async function applyAgentUpdate(path: string | null, git: GitRun, channel: Channel = DEFAULT_CHANNEL, policy?: AgentUpdatePolicy, version?: string, published?: PublishedAgentTag): Promise<Dict> {
   if (!path || !existsSync(join(path, '.git'))) return { ok: false, message: 'Not a git repository' }
   const fetched = await git(['fetch', 'origin', '--quiet', '--tags', '--force'], path, 15_000)
   if (!fetched.ok) {
@@ -808,7 +829,7 @@ export async function applyAgentUpdate(path: string | null, git: GitRun, channel
     return { ok: false, message: fetchFailureMessage(fetched.out, 'Could not reach the remote repository. Check your internet connection and try again.') }
   }
   let info: Dict
-  try { info = await agentTarget(path, git, channel, version) } catch (error) { return { ok: false, message: (error as Error).message } }
+  try { info = await agentTarget(path, git, channel, version, published) } catch (error) { return { ok: false, message: (error as Error).message } }
   if (info.current_sha === info.latest_sha) {
     const verified = await verifiedAgentIdentity(path, str(info.latest_sha), git)
     if (!verified) return { ok: false, message: 'The installed Agent revision could not be verified.' }
@@ -917,12 +938,12 @@ async function recoverInterruptedAutostash(path: string, git: GitRun): Promise<v
 }
 
 /** Python `apply_force_update` (agent branch): fetch, refuse a pure-ancestor rewind, `checkout . && clean -fd && reset --hard`. */
-export async function forceAgentUpdate(path: string | null, git: GitRun, log: (line: string) => void, channel: Channel = DEFAULT_CHANNEL, policy?: AgentUpdatePolicy, version?: string): Promise<Dict> {
+export async function forceAgentUpdate(path: string | null, git: GitRun, log: (line: string) => void, channel: Channel = DEFAULT_CHANNEL, policy?: AgentUpdatePolicy, version?: string, published?: PublishedAgentTag): Promise<Dict> {
   if (!path || !existsSync(join(path, '.git'))) return { ok: false, message: 'Not a git repository' }
   const fetched = await git(['fetch', 'origin', '--quiet', '--tags', '--force'], path, 15_000)
   if (!fetched.ok) return { ok: false, message: fetchFailureMessage(fetched.out, 'Could not reach the remote repository. Check your connection.') }
   let info: Dict
-  try { info = await agentTarget(path, git, channel, version) } catch (error) { return { ok: false, message: (error as Error).message } }
+  try { info = await agentTarget(path, git, channel, version, published) } catch (error) { return { ok: false, message: (error as Error).message } }
   const ref = str(info.branch)
   const revision = str(info.latest_sha)
   if ((await headContainsRef(path, revision, git)) && !(await canFastForwardTo(path, revision, git))) {
@@ -1190,6 +1211,7 @@ export class UpdateService {
   private autoRunning = false
   private autoRestartScheduled = false
   private readonly summaries = new Map<string, Dict>()
+  private readonly publishedTags = new Map<string, { at: number; tag: string | null }>()
   private readonly git: GitRun
   private readonly now: () => number
 
@@ -1199,6 +1221,16 @@ export class UpdateService {
   }
 
   private agentChannel(): Channel { return this.deps.agentChannel?.() ?? DEFAULT_CHANNEL }
+  /** TAL-930: the Agent's published Stable tag, one anonymous GitHub read per remote per cache TTL, a failed read included. */
+  private readonly publishedTag: PublishedAgentTag = async (repoUrl) => {
+    const getPublicJson = this.deps.getPublicJson
+    if (!getPublicJson) return null
+    const prior = this.publishedTags.get(repoUrl)
+    if (prior && this.now() - prior.at < CACHE_TTL_S) return prior.tag
+    const tag = await publishedAgentTag(getPublicJson)(repoUrl)
+    this.publishedTags.set(repoUrl, { at: this.now(), tag })
+    return tag
+  }
   private agentPolicy(confirmedRevision?: string): AgentUpdatePolicy {
     const supported = dict(this.deps.identity.release().compatibleAgent)
     return {
@@ -1242,7 +1274,7 @@ export class UpdateService {
         // The check may have fetched release tags the startup `git describe` never saw.
         if (this.deps.refreshWebuiVersion) webui.current_version = this.deps.refreshWebuiVersion()
         const agentDir = this.deps.agentDir()
-        const agent = includeAgent ? this.keepLastGood('agent', agentChannel, await checkAgentUpdate(agentDir, this.git, agentChannel)) : ignoredAgent()
+        const agent = includeAgent ? this.keepLastGood('agent', agentChannel, await checkAgentUpdate(agentDir, this.git, agentChannel, this.publishedTag)) : ignoredAgent()
         const marker = agentSyncMarker(agentDir, this.deps.stateDir)
         if (includeAgent && marker && existsSync(marker)) {
           Object.assign(agent, { metadata_repair: true, message: 'Agent dependency sync is incomplete. Apply the update again to finish it.' })
@@ -1373,7 +1405,7 @@ export class UpdateService {
     }
     if (target !== 'agent') return { ok: false, message: `Unknown target: ${target}` }
     const path = this.deps.agentDir()
-    const result = await applyAgentUpdate(path, this.git, options.agentChannel ?? this.agentChannel(), this.agentPolicy(options.confirmedRevision), options.version)
+    const result = await applyAgentUpdate(path, this.git, options.agentChannel ?? this.agentChannel(), this.agentPolicy(options.confirmedRevision), options.version, this.publishedTag)
     if (!result.ok) return result
     return this.finishAgent(result, path)
   }
@@ -1402,7 +1434,7 @@ export class UpdateService {
     return this.locked(async () => {
       if (target !== 'agent') return { ok: false, message: `Unknown target: ${target}` }
       const path = this.deps.agentDir()
-      const result = await forceAgentUpdate(path, this.git, this.deps.log, options.agentChannel ?? this.agentChannel(), this.agentPolicy(options.confirmedRevision), options.version)
+      const result = await forceAgentUpdate(path, this.git, this.deps.log, options.agentChannel ?? this.agentChannel(), this.agentPolicy(options.confirmedRevision), options.version, this.publishedTag)
       return result.ok ? this.finishAgent(result, path) : result
     })
   }
@@ -1462,7 +1494,7 @@ export class UpdateService {
       return { notes, releases: typeof info.behind === 'number' ? info.behind : notes.length }
     }
     const path = this.deps.agentDir()
-    const repo = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)$/.exec(str(info.repo_url))?.[1]
+    const repo = githubRepo(str(info.repo_url))
     const latest = str(info.latest_sha)
     const getPublicJson = this.deps.getPublicJson
     if (!path || !repo || !getPublicJson || !SHA.test(latest)) return { notes: [], releases: 0 }
