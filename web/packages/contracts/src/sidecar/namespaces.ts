@@ -120,8 +120,11 @@ export const STATE_DB_METHODS = {
   'state_db.sync_usage': { params: Session.extend({ input_tokens: z.number().int().optional(), output_tokens: z.number().int().optional(), estimated_cost: z.number().nullable().optional(), model: z.string().nullable().optional(), title: z.string().nullable().optional(), message_count: z.number().int().nullable().optional(), cache_read_tokens: z.number().int().optional(), cache_write_tokens: z.number().int().optional(), api_call_count: z.number().int().nullable().optional() }), result: Ok },
   /** TAL-574: `manual` writes a user-requested title (rename or regenerate) with `user` provenance; otherwise it is an `llm` auto title. */
   'state_db.sync_title': { params: Session.extend({ title: z.string(), manual: z.boolean().optional() }), result: Ok },
-  /** TAL-792: `refused` when another Agent process holds a live turn lease or compression lock on a row the delete would remove; nothing is removed. */
-  'state_db.delete_cli_session': { params: Session, result: Ok.extend({ refused: SessionDeleteRefusedSchema.optional() }) },
+  /**
+   * TAL-792: `session_ids` (default `[session_id]`, a compression lineage tip first) go in one transaction. `refused` when
+   * another Agent process holds a live turn lease or compression lock on any row the delete would remove; nothing is removed.
+   */
+  'state_db.delete_cli_session': { params: Session.extend({ session_ids: z.array(z.string().min(1)).min(1).optional() }), result: Ok.extend({ refused: SessionDeleteRefusedSchema.optional() }) },
   /** TAL-258: append one row through the Agent's `SessionDB.append_message` (bumps `message_count`); `ok` is false without a state.db. */
   'state_db.append_message': { params: Session.extend({ role: z.string().min(1), content: z.string(), tool_name: z.string().nullable().optional(), timestamp: z.number().nullable().optional() }), result: Ok },
 } as const

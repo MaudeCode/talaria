@@ -292,7 +292,7 @@ class _ActiveWriteGuard(Exception):
     """Another Agent process holds a live turn lease or compression lock on a row the delete would remove."""
 
 
-def _delete_locked(sid: str, home: Path) -> bool:
+def _delete_locked(sids: list[str], home: Path) -> bool:
     stale_complete = _process_stale_manifests(home)
     db_path = home / "state.db"
     if not db_path.exists():
@@ -301,12 +301,12 @@ def _delete_locked(sid: str, home: Path) -> bool:
     if agent_db is None:
         return False
     try:
-        return _delete_rows(sid, home, db_path, getattr(agent_db, "_guarded_ids", None)) and stale_complete
+        return _delete_rows(sids, home, db_path, getattr(agent_db, "_guarded_ids", None)) and stale_complete
     finally:
         _close(agent_db)
 
 
-def _delete_rows(sid: str, home: Path, db_path: Path, guarded_ids) -> bool:
+def _delete_rows(sids: list[str], home: Path, db_path: Path, guarded_ids) -> bool:
     with closing(sqlite3.connect(str(db_path))) as conn:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
@@ -353,51 +353,56 @@ def _delete_rows(sid: str, home: Path, db_path: Path, guarded_ids) -> bool:
                 return by_id.get(record["delegate_from"]) or {}
             return by_id.get(record["parent_id"]) or {}
 
-        preserved = {r["id"] for r in records if r["id"] != sid and must_preserve(r, lineage_parent(r))}
-        while True:
-            descendants = {r["id"] for r in records if r["id"] != sid and r["parent_id"] in preserved}
-            new_ids = descendants - preserved
-            if not new_ids:
-                break
-            preserved.update(new_ids)
-        found, frontier = {sid}, {sid}
-        while frontier:
-            next_frontier = set()
-            for record in records:
-                row_id = record["id"]
-                if row_id in found or row_id in preserved:
-                    continue
-                parent_id, delegate_from = record["parent_id"], record["delegate_from"]
-                if delegate_from not in frontier and parent_id not in frontier:
-                    continue
-                if must_preserve(record, lineage_parent(record)):
-                    continue
-                if delegate_from is not None:
-                    if delegate_from in frontier:
+        def delegates_of(sid: str) -> list[str]:
+            preserved = {r["id"] for r in records if r["id"] != sid and must_preserve(r, lineage_parent(r))}
+            while True:
+                descendants = {r["id"] for r in records if r["id"] != sid and r["parent_id"] in preserved}
+                new_ids = descendants - preserved
+                if not new_ids:
+                    break
+                preserved.update(new_ids)
+            found, frontier = {sid}, {sid}
+            while frontier:
+                next_frontier = set()
+                for record in records:
+                    row_id = record["id"]
+                    if row_id in found or row_id in preserved:
+                        continue
+                    parent_id, delegate_from = record["parent_id"], record["delegate_from"]
+                    if delegate_from not in frontier and parent_id not in frontier:
+                        continue
+                    if must_preserve(record, lineage_parent(record)):
+                        continue
+                    if delegate_from is not None:
+                        if delegate_from in frontier:
+                            next_frontier.add(row_id)
+                        continue
+                    if record["source"] != "subagent":
+                        continue
+                    if parent_id in frontier and record["model_config_known"]:
                         next_frontier.add(row_id)
-                    continue
-                if record["source"] != "subagent":
-                    continue
-                if parent_id in frontier and record["model_config_known"]:
-                    next_frontier.add(row_id)
-            found.update(next_frontier)
-            frontier = next_frontier
-        delegate_ids = sorted(found - {sid})
-        all_removed = [sid, *delegate_ids]
-        # TAL-792: the Agent's own user-delete guard (Agent v0.21.6+), run in this write transaction. A live writer's
-        # turn lease or compression lock on any removed row refuses; expired or dead-holder guards are reclaimed.
+                found.update(next_frontier)
+                frontier = next_frontier
+            return sorted(found - {sid})
+
+        # TAL-792: one transaction removes every requested row (a compression lineage, tip first) with its delegates.
+        plan = [(sid, delegates_of(sid)) for sid in dict.fromkeys(sids)]
+        all_removed = list(dict.fromkeys(i for sid, delegate_ids in plan for i in (sid, *delegate_ids)))
+        # The Agent's own user-delete guard (Agent v0.21.6+), checked over every row before any is removed. A live
+        # writer's turn lease or compression lock refuses the whole delete; expired or dead-holder guards are reclaimed.
         if guarded_ids is not None and guarded_ids(conn, all_removed):
             raise _ActiveWriteGuard
         placeholders = ",".join("?" * len(all_removed))
-        for child_id in delegate_ids:
-            conn.execute("DELETE FROM messages WHERE session_id = ?", (child_id,))
-        for child_id in delegate_ids:
-            conn.execute("UPDATE sessions SET parent_session_id = NULL WHERE parent_session_id = ?", (child_id,))
-        for child_id in delegate_ids:
-            conn.execute("DELETE FROM sessions WHERE id = ?", (child_id,))
-        conn.execute("UPDATE sessions SET parent_session_id = NULL WHERE parent_session_id = ?", (sid,))
-        conn.execute("DELETE FROM messages WHERE session_id = ?", (sid,))
-        conn.execute("DELETE FROM sessions WHERE id = ?", (sid,))
+        for sid, delegate_ids in plan:
+            for child_id in delegate_ids:
+                conn.execute("DELETE FROM messages WHERE session_id = ?", (child_id,))
+            for child_id in delegate_ids:
+                conn.execute("UPDATE sessions SET parent_session_id = NULL WHERE parent_session_id = ?", (child_id,))
+            for child_id in delegate_ids:
+                conn.execute("DELETE FROM sessions WHERE id = ?", (child_id,))
+            conn.execute("UPDATE sessions SET parent_session_id = NULL WHERE parent_session_id = ?", (sid,))
+            conn.execute("DELETE FROM messages WHERE session_id = ?", (sid,))
+            conn.execute("DELETE FROM sessions WHERE id = ?", (sid,))
         tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
         for table in ("compression_locks", "session_model_usage", "telegram_dm_topic_bindings"):
             if table in tables:
@@ -425,14 +430,14 @@ def _delete_rows(sid: str, home: Path, db_path: Path, guarded_ids) -> bool:
         return _process_manifests(conn, sessions_dir, alive_query=alive_after_commit)
 
 
-def delete_cli_session(home: Path, sid: str) -> dict:
+def delete_cli_session(home: Path, sids: list[str]) -> dict:
     try:
         with _thread_lock(home), _process_lock(home):
-            return {"ok": _delete_locked(sid, home)}
+            return {"ok": _delete_locked(sids, home)}
     except _ActiveWriteGuard:  # the uncommitted transaction rolls back on close: nothing is removed
         return {"ok": False, "refused": "active_turn"}
     except Exception:  # noqa: BLE001
-        log.warning("Failed to delete CLI session %s from state.db", sid, exc_info=True)
+        log.warning("Failed to delete CLI sessions %s from state.db", sids, exc_info=True)
         return {"ok": False}
 
 
@@ -466,6 +471,7 @@ def register(registry) -> None:
     @registry.method("state_db.delete_cli_session")
     def delete(ctx: CallContext, params: dict) -> dict:
         sid = _session_id(params)
-        if not _is_safe_session_id(sid):
+        sids = params.get("session_ids") or [sid]
+        if not isinstance(sids, list) or not all(isinstance(i, str) and _is_safe_session_id(i) for i in [sid, *sids]):
             raise InvalidParams("unsafe session_id")
-        return delete_cli_session(profile_home_param(params).resolve(), sid)
+        return delete_cli_session(profile_home_param(params).resolve(), sids)

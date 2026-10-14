@@ -341,9 +341,9 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
       automaticTurnsHeld: (sid: string): boolean => turns.automaticTurnsHeld(sid),
       evictAgent: (sid, endSession) => { if (sidecar) sidecar.call('chat.evict_agent', endSession ? { session_id: sid, clear_session: true } : { session_id: sid }).catch(() => undefined) },
       closeTerminal: (sid) => { deps.terminals.close(sid) },
-      deleteCliSession: async (profile, sid) => {
+      deleteCliSession: async (profile, sid, sids) => {
         if (!sidecar) return { ok: false }
-        return await sidecar.call('state_db.delete_cli_session', { profile_home: profileHome(profile ?? activeProfile()), session_id: sid })
+        return await sidecar.call('state_db.delete_cli_session', { profile_home: profileHome(profile ?? activeProfile()), session_id: sid, session_ids: sids })
       },
     },
     attachmentDir,
