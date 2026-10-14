@@ -210,6 +210,31 @@ turn in the exhausted session instead of being blocked with recovery guidance.
 
 ---
 
+## "Local model server unavailable"
+
+**Symptom.** A chat on a model from the picker's **Local** group ends with
+`Local model server unavailable`, and the details say the local model server is
+turned off or isn't running.
+
+**Why.** Local models run on Hermes Agent's managed llama.cpp server, which has
+no API key to fix (`condition: local_runtime_unavailable`). The server is either
+turned off in Hermes (`local_runtime.enabled: false` in `config.yaml`) or still
+starting after a boot or model download.
+
+**Fix.**
+
+1. If the details say the server is turned off, turn it back on in Hermes Agent
+   (`hermes model` -> **Local models**, or the Agent desktop's Local Models pane).
+2. If they say it isn't running, wait a moment and select **Retry**: the first
+   chat after a start loads the model.
+3. Otherwise, pick a model from another provider.
+
+**When it's a bug.** It is a bug if a Local model fails with `Authentication
+failed`, or if a downloaded model is missing from the **Local** group after
+`POST /api/models/refresh`.
+
+---
+
 ## Installed PWA opens to a blank screen after an update
 
 **Symptom.** The installed PWA or home-screen app opens to a blank screen after a WebUI update, while the same URL often works again in a normal browser tab.

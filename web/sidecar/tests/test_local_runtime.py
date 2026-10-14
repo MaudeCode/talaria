@@ -52,6 +52,15 @@ def test_a_turn_on_the_local_provider_with_its_server_off_is_local_runtime_unava
     # The profile's own provider, when the turn names none.
     message, _ = sidecar.call("providers.resolve_runtime", {"profile_home": home})
     assert message["error"]["data"]["condition"] == "local_runtime_unavailable", message
+    # The inference-provider environment, when neither the turn nor the profile names one.
+    (hermes_home / "config.yaml").write_text("local_runtime:\n  enabled: false\n")
+    env = SidecarProcess(hermes_home, env={"HERMES_INFERENCE_PROVIDER": "llama.cpp"})
+    try:
+        message, _ = env.call("providers.resolve_runtime", {"profile_home": home, "target_model": "tiny-test-Q4_K_M"})
+    finally:
+        env.close()
+    assert message["error"]["data"]["condition"] == "local_runtime_unavailable", message
+    (hermes_home / "config.yaml").write_text(OFF)
 
     message, _ = sidecar.call("chat.start", {"profile_home": home, "session_id": "sess-local", "stream_id": "st-local", "user_message": "hi",
                                              "workspace": home, "conversation_history": [], "model": "tiny-test-Q4_K_M", "model_provider": "llamacpp"})

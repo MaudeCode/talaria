@@ -317,21 +317,15 @@ def model_ids(provider_id: str, *, force_refresh: bool) -> tuple[list[str], bool
 
 
 def _requests_local_runtime(requested: str | None) -> bool:
-    """Whether a resolution asks for the Agent's managed llama.cpp provider, by name or as the profile's provider."""
+    """Whether a resolution asks for the Agent's managed llama.cpp provider, picked the way the Agent picks it: the
+    named provider, else the profile's, else ``HERMES_INFERENCE_PROVIDER``."""
     try:
         from hermes_cli.providers import LLAMACPP_ALIASES
+        from hermes_cli.runtime_provider import resolve_requested_provider
+
+        return resolve_requested_provider(requested) in LLAMACPP_ALIASES
     except Exception:  # noqa: BLE001 - an Agent without the local runtime
         return False
-    name = str(requested or "").strip().lower()
-    if not name:
-        try:
-            from hermes_cli.config import load_config
-
-            model = load_config().get("model")
-        except Exception:  # noqa: BLE001
-            return False
-        name = str(model.get("provider") or "").strip().lower() if isinstance(model, dict) else ""
-    return name in LLAMACPP_ALIASES
 
 
 def runtime_failure(exc: Exception, requested: str | None, message: str | None = None) -> RpcError:
