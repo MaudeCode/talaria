@@ -190,6 +190,31 @@ describe('compaction before the next turn', () => {
     expect(stored.updated_at).toBe(before)
   })
 
+  it("forgets the old model's figures on a switch, so the first turn on the new model never waits", async () => {
+    const sid = await seeded({ ...OVER, post_compression_context_tokens_estimate: 450, model: 'old-model' })
+    expect((await post(s, '/api/session/update', { session_id: sid, model: 'new-model' })).status).toBe(200)
+    expect(s.deps.sessionStore.get(sid)).toMatchObject({ next_turn_threshold_tokens: null, post_compression_context_tokens_estimate: null, threshold_tokens: 0, last_prompt_tokens: 0 })
+    await turn(sid, 'on the new model', { model: 'new-model' })
+    expect(compressCalls).toBe(0)
+    // A switch through the turn itself forgets them too, even when that turn fails before reporting its own.
+    const switched = await seeded({ ...OVER, post_compression_context_tokens_estimate: 450, model: 'old-model' })
+    sidecar.respond('chat.start', () => { throw new SidecarError('provider down', { condition: 'sidecar_error' }) })
+    await turn(switched, 'fails', { model: 'new-model' })
+    expect(s.deps.sessionStore.get(switched)).toMatchObject({ next_turn_threshold_tokens: null, post_compression_context_tokens_estimate: null })
+    expect(s.deps.sessions.compactionDue(s.deps.sessionStore.get(switched))).toBe(false)
+  })
+
+  it('tells open clients when a background job installs its result', async () => {
+    const sid = await seeded(OVER)
+    const reasons: string[] = []
+    const publish = s.deps.events.publish.bind(s.deps.events)
+    const spy = vi.spyOn(s.deps.events, 'publish').mockImplementation((reason, opts) => { if (opts?.sessionId === sid) reasons.push(String(reason)); publish(reason, opts) })
+    try {
+      expect(await s.deps.sessions.ensureCompacted(sid)).toBe(true)
+      expect(reasons).toContain('session_compress')
+    } finally { spy.mockRestore() }
+  })
+
   it("leaves a turn on another model to the Agent's own preflight", async () => {
     const sid = await seeded({ ...OVER, model: 'old-model' })
     let model: unknown

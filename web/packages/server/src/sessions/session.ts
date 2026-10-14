@@ -185,6 +185,17 @@ export type ContextUsage = Record<(typeof CONTEXT_USAGE_FIELDS)[number], number 
  * post-compression estimate, else the last prompt; never the cumulative `input_tokens`. The window is the session's
  * `context_length`, else `windowFallback()` (the model catalog); there is no guessed default. Unknown stays null.
  */
+/**
+ * TAL-1005: a model or provider change voids the context figures measured on the old one (its threshold, last prompt,
+ * post-compression estimate, and next turn's threshold) until a turn on the new one reports its own.
+ */
+export function forgetContextFigures(s: Session): void {
+  s.threshold_tokens = 0
+  s.last_prompt_tokens = 0
+  s.post_compression_context_tokens_estimate = null
+  s.next_turn_threshold_tokens = null
+}
+
 export function contextUsage(fields: { post_compression_context_tokens_estimate?: unknown; last_prompt_tokens?: unknown; context_length?: unknown; threshold_tokens?: unknown }, windowFallback?: () => number | null): ContextUsage {
   const positive = (v: unknown): number | null => { const n = Math.trunc(Number(v ?? 0)); return Number.isFinite(n) && n > 0 ? n : null }
   const used = positive(fields.post_compression_context_tokens_estimate) ?? positive(fields.last_prompt_tokens)

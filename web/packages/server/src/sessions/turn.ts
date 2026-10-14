@@ -21,7 +21,7 @@ import { ChatUsageSchema, ConnectorOperationSnapshotSchema, type ClarifyAnswers,
 import { catalogNames, connectorOperation } from '../tools/connectors.js'
 import { PendingPrompts, clarifyReply } from './pending.js'
 import { RunJournal, type RunJournalWriter } from './journal.js'
-import { COMPRESSION_RECOVERY_ACTION_START_FOCUSED, COMPRESSION_RECOVERY_TERMINAL_STATE, CONTEXT_USAGE_FIELDS, Session, contextUsage, titleFrom, type Message } from './session.js'
+import { COMPRESSION_RECOVERY_ACTION_START_FOCUSED, COMPRESSION_RECOVERY_TERMINAL_STATE, CONTEXT_USAGE_FIELDS, Session, contextUsage, forgetContextFigures, titleFrom, type Message } from './session.js'
 import { anchorMessageKey, compressionReference, markerSummary, visibleMessagesForAnchor } from './compress.js'
 import { buildActiveTurnToken, completedToolIndex, publicToolFrame, redactNestedMessageContainers, redactSessionData, redactString, withToolId } from '../redact.js'
 import { dict, findPersonality, type Config, type PersonalityRow } from '../config/agent-config.js'
@@ -441,9 +441,11 @@ export class TurnRunner {
     const attachments = opts.attachments ?? []
     // A background wakeup stays one in a forked session too (TAL-460).
     const source = opts.source !== 'process_wakeup' && str(s.source_tag).toLowerCase() === 'fork' ? 'fork' : (opts.source ?? 'webui')
-    // TAL-1005: the threshold the last turn reported holds for a turn on the same model only, and is judged before admission
-    // clears the post-compression estimate. A `/btw` clone is thrown away after one answer, so it is never due.
-    const compactionDue = !opts.ephemeral && str(s.model) === str(opts.model) && str(s.model_provider) === str(opts.modelProvider) && this.deps.service().compactionDue(s)
+    // TAL-1005: the context figures the last turn reported hold for a turn on the same model only, and are judged before
+    // admission clears the post-compression estimate. A `/btw` clone is thrown away after one answer, so it is never due.
+    const sameRuntime = str(s.model) === str(opts.model) && str(s.model_provider) === str(opts.modelProvider)
+    const compactionDue = !opts.ephemeral && sameRuntime && this.deps.service().compactionDue(s)
+    if (!sameRuntime) forgetContextFigures(s)
     s.workspace = opts.workspace
     s.model = opts.model
     s.model_provider = opts.modelProvider
