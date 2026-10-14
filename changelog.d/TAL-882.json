@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Talaria Web runs /goal like the Agent: /goal gate, wait, show, continue and pause for now no longer replace your goal, goal gates run in the session's workspace, and /goal resume picks the work back up right away.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

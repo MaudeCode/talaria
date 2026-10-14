@@ -37,10 +37,11 @@ export const GoalDecisionSchema = z.object({
 })
 export const GOALS_METHODS = {
   'goals.get': { params: GoalSession, result: GoalStatusSchema },
-  'goals.command': { params: GoalSession.extend({ args: z.string(), stream_running: z.boolean().optional() }), result: GoalCommandResultSchema },
+  // `workspace`: the session's declared workspace, where the Agent runs goal gates (TAL-882).
+  'goals.command': { params: GoalSession.extend({ args: z.string(), stream_running: z.boolean().optional(), workspace: z.string().optional() }), result: GoalCommandResultSchema },
   'goals.snapshot': { params: GoalSession, result: z.object({ goal: GoalStateSchema.nullable(), snapshot: z.string().nullable() }) },
   'goals.restore': { params: GoalSession.extend({ snapshot: z.string().nullable() }), result: z.object({ goal: GoalStateSchema.nullable() }) },
-  'goals.evaluate': { params: GoalSession.extend({ last_response: z.string(), user_initiated: z.boolean().optional() }), result: GoalDecisionSchema },
+  'goals.evaluate': { params: GoalSession.extend({ last_response: z.string(), user_initiated: z.boolean().optional(), workspace: z.string().optional() }), result: GoalDecisionSchema },
 } as const
 
 // ── commands / plugins ─────────────────────────────────────────────────

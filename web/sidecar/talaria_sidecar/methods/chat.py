@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from ..errors import InvalidParams, RpcError
-from ..home import profile_home_param, scoped_home
+from ..home import profile_home_param, scoped_home, session_workspace
 from ..rpc import CallContext
 from .checkpoints import checkpoint_kwargs
 from .toolsets import disabled_toolsets
@@ -520,14 +520,8 @@ def _turn_identity(session_id: str, workspace: str):
     except Exception:  # noqa: BLE001
         log.debug("per-turn session context bind failed", exc_info=True)
     try:
-        from agent.runtime_cwd import _SESSION_CWD
-
-        tok = _SESSION_CWD.set(str(workspace))
-        resets.append(lambda: _SESSION_CWD.reset(tok))
-    except Exception:  # noqa: BLE001
-        log.debug("per-turn session cwd bind failed", exc_info=True)
-    try:
-        yield
+        with session_workspace(workspace):
+            yield
     finally:
         for reset in reversed(resets):
             try:

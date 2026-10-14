@@ -23,7 +23,7 @@
       "result": {
         "ok": true,
         "action": "set",
-        "message": "⊙ Goal set (20-turn budget): ship the sidecar\nI'll keep working until the goal is done, you pause/clear it, or the budget is exhausted.\nControls: /goal status · /goal pause · /goal resume · /goal clear",
+        "message": "⊙ Goal set (20-turn budget): ship the sidecar\nAfter each turn, a judge model checks if the goal is done. Hermes keeps working until it is, you pause/clear it, or the budget is exhausted. Use /goal status, /goal show, /goal pause, /goal resume, /goal clear.",
         "goal": {
           "goal": "ship the sidecar",
           "status": "active",
@@ -75,7 +75,7 @@
       "result": {
         "ok": true,
         "action": "resume",
-        "message": "▶ Goal resumed: ship the sidecar\nSend a new message, or type continue, to kick it off.",
+        "message": "▶ Goal resumed: ship the sidecar",
         "goal": {
           "goal": "ship the sidecar",
           "status": "active",
@@ -85,6 +85,7 @@
           "last_reason": "goal_judge auxiliary client unavailable: No LLM provider configured for task=goal_judge provider=auto. Run: hermes setup",
           "paused_reason": null
         },
+        "kickoff_prompt": "[Continuing toward your standing goal]\nGoal: ship the sidecar\n\nContinue working toward this goal. Take the next concrete step. If you believe the goal is complete, state so explicitly and stop. If you are blocked and need input from the user, say so clearly and stop.",
         "message_key": "goal_resumed",
         "message_args": [
           "ship the sidecar"
@@ -122,7 +123,7 @@
           "last_reason": null,
           "paused_reason": null
         },
-        "snapshot": "{\"goal\": \"ship the sidecar\", \"status\": \"active\", \"turns_used\": 0, \"max_turns\": 20, \"created_at\": 1791736145.897059, \"last_turn_at\": 0.0, \"last_verdict\": null, \"last_reason\": null, \"paused_reason\": null, \"consecutive_parse_failures\": 0, \"consecutive_transport_failures\": 0, \"subgoals\": [], \"waiting_on_pid\": null, \"waiting_on_session\": null, \"waiting_until\": 0.0, \"waiting_on_delegations\": 0, \"waiting_reason\": null, \"waiting_since\": 0.0, \"contract\": {\"outcome\": \"\", \"verification\": \"\", \"constraints\": \"\", \"boundaries\": \"\", \"stop_when\": \"\"}, \"gates\": []}"
+        "snapshot": "{\"goal\": \"ship the sidecar\", \"status\": \"active\", \"turns_used\": 0, \"max_turns\": 20, \"created_at\": 1791951630.947169, \"last_turn_at\": 0.0, \"last_verdict\": null, \"last_reason\": null, \"paused_reason\": null, \"consecutive_parse_failures\": 0, \"consecutive_transport_failures\": 0, \"subgoals\": [], \"waiting_on_pid\": null, \"waiting_on_session\": null, \"waiting_until\": 0.0, \"waiting_on_delegations\": 0, \"waiting_reason\": null, \"waiting_since\": 0.0, \"contract\": {\"outcome\": \"\", \"verification\": \"\", \"constraints\": \"\", \"boundaries\": \"\", \"stop_when\": \"\"}, \"gates\": []}"
       }
     }
   ],

@@ -1814,6 +1814,11 @@ describe('chat turns through the sidecar', () => {
     // Python `_default_max_turns`: 20 unless `goals.max_turns` is configured.
     expect(await json(res)).toMatchObject({ ok: true, message: `goal for ${sid}: status budget=20` })
     expect((await post(s, '/api/goal', { session_id: sid, args: '[SILENT]' })).status).toBe(200)
+    // TAL-882: a refused command answers with the Agent's reason, which clients show from `error`.
+    sidecar.respond('goals.command', () => ({ ok: false, action: 'gate', error: 'invalid_command', message: '/goal gate add: no active goal', goal: null }))
+    const refused = await post(s, '/api/goal', { session_id: sid, args: 'gate add true' })
+    expect(refused.status).toBe(400)
+    expect(await json(refused)).toMatchObject({ ok: false, error: '/goal gate add: no active goal', message: '/goal gate add: no active goal' })
   })
 
   it.each([
