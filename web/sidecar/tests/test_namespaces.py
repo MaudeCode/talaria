@@ -12,6 +12,7 @@ import sys
 import pytest
 
 from conftest import AGENT_DIR, AGENT_PYTHON, SidecarProcess, assert_matches, isolated_env, load_schema, requires_agent
+from connectors_portal import Portal, seed_identity, serve
 from scenarios import SCENARIOS, UNEXERCISED
 from talaria_sidecar import SIDECAR_RPC_VERSION
 from test_write_approval import create_skill, set_gates
@@ -127,6 +128,31 @@ def run_scenarios(proc: SidecarProcess, home: pathlib.Path):
         params = {**pending, "writes": [{"id": item["id"], "revision": item["revision"]} for item in message["result"]["items"]]}
         message, frames = proc.call(f"write_approval.{verb}", params, timeout=60)
         yield f"write_approval.{verb}", params, message, frames
+    yield from _connector_scenarios(proc, home)
+
+
+def _connector_scenarios(proc: SidecarProcess, home: pathlib.Path):
+    """TAL-818: the ``connectors.*`` namespace against the synthetic portal, signed in through ``runtime.env``."""
+    portal = Portal()
+    with serve(portal) as origin:
+        env = seed_identity(home, origin)
+        proc.call("runtime.env", {"set": env}, timeout=60)
+        scope = {"profile_home": str(home)}
+        steps = [
+            ("connectors.available", scope), ("connectors.catalog", scope), ("connectors.accounts", scope),
+            ("connectors.tools", {**scope, "connector": "gmail"}), ("connectors.policy.get", scope),
+            ("connectors.policy.set", {**scope, "connector": "gmail", "expected_revision": "rev-1", "enabled": False}),
+            ("connectors.connect", {**scope, "connector": "gmail"}),
+        ]
+        for method, params in steps:
+            message, frames = proc.call(method, params, timeout=90)
+            yield method, params, message, frames
+        op = {**scope, "op_id": message.get("result", {}).get("op_id", "")}
+        for method, params in (("connectors.operation", op), ("connectors.respond", {**op, "action": "skip", "target": "gmail"}),
+                               ("connectors.remove", {**scope, "connection_id": "conn-notion"})):
+            message, frames = proc.call(method, params, timeout=60)
+            yield method, params, message, frames
+        proc.call("runtime.env", {"unset": list(env)}, timeout=60)
 
 
 @requires_agent

@@ -1282,6 +1282,16 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
                 return json.dumps({"answers": {}, "timed_out": not cancelled})
             return ""
 
+        # TAL-818: a ``manage_connections`` card (a hosted connect, an MCP install) opened; the server turns the frame into
+        # the chat's connect card, which reads and answers the operation through ``connectors.operation`` / ``respond``.
+        def on_connection(payload):
+            from .connectors import remember_chat_operation
+
+            view = remember_chat_operation(home, payload)
+            if view is not None:
+                emit("connection", view)
+            return None
+
         # Approval bridge: the Agent parks dangerous commands in its gateway queue and calls back here.
         try:
             from tools.approval import register_gateway_notify, unregister_gateway_notify
@@ -1312,6 +1322,7 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             ("thinking_callback", on_thinking),
             ("notice_callback", on_notice),
             ("notice_clear_callback", on_notice_clear),
+            ("connection_callback", on_connection),
             ("api_mode", runtime.get("api_mode")),
             ("acp_command", runtime.get("acp_command")),
             ("acp_args", runtime.get("acp_args")),
@@ -1356,7 +1367,7 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
                     _AGENT_CACHE.move_to_end(session_id)
                     bind(agent)
         if agent is not None:
-            for name in ("stream_delta_callback", "reasoning_callback", "tool_progress_callback", "clarify_callback", "interim_assistant_callback", "tool_start_callback", "tool_complete_callback", "status_callback", "thinking_callback", "notice_callback", "notice_clear_callback"):
+            for name in ("stream_delta_callback", "reasoning_callback", "tool_progress_callback", "clarify_callback", "interim_assistant_callback", "tool_start_callback", "tool_complete_callback", "status_callback", "thinking_callback", "notice_callback", "notice_clear_callback", "connection_callback"):
                 if name in kwargs and hasattr(agent, name):
                     setattr(agent, name, kwargs[name])
         else:
