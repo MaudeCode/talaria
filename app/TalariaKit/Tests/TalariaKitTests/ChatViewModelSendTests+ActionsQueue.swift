@@ -315,6 +315,47 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(requestPaths, ["/api/session", "/api/session/truncate", "/api/chat/start"])
     }
 
+    /// A reload from a server that no longer says it holds deep cuts (a rollback) brings the device's prompt back (TAL-929).
+    @MainActor
+    func testReloadWithoutTheCapabilityAsksOnTheDeviceAgain() async throws {
+        var detailLoads = 0
+        var requestPaths: [String] = []
+        let viewModel = try makeViewModel(streamClient: SpySSEStreamingClient()) { request in
+            requestPaths.append(request.url?.path ?? "")
+            switch request.url?.path {
+            case "/api/session":
+                detailLoads += 1
+                let capability = detailLoads == 1 ? #""confirms_deep_truncate": true,"# : ""
+                return apiTestJSONResponse("""
+                {
+                  "session": {
+                    "session_id": "session-abc",
+                    \(capability)
+                    "messages": [
+                      {"role": "user", "content": "First question", "timestamp": 1, "message_id": "u-0"},
+                      {"role": "assistant", "content": "First answer", "timestamp": 2, "message_id": "a-1"},
+                      {"role": "user", "content": "Second question", "timestamp": 3, "message_id": "u-2"},
+                      {"role": "assistant", "content": "Second answer", "timestamp": 4, "message_id": "a-3"}
+                    ]
+                  }
+                }
+                """, for: request)
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        await viewModel.loadMessages()
+        await viewModel.loadMessages()
+        let context = try XCTUnwrap(viewModel.actionContext(for: viewModel.messages[0], visibleIndex: 0))
+        let didEdit = await viewModel.editMessage(context, newText: "Edited question")
+
+        XCTAssertFalse(didEdit)
+        XCTAssertEqual(requestPaths, ["/api/session", "/api/session"])
+        XCTAssertEqual(viewModel.deepTruncateConfirmation?.discardMessages, 3)
+    }
+
     @MainActor
     func testRegenerateAssistantResponseUsesPrecedingUserAndTruncatesAtAssistantIndex() async throws {
         var truncateKeepCount: Int?

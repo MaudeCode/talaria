@@ -86,7 +86,7 @@ public final class ChatViewModel {
     public private(set) var messageActionErrorMessage: String?
     /// An edit or regenerate the server held for confirmation (TAL-929); `confirmDeepTruncate` resends it.
     public private(set) var deepTruncateConfirmation: DeepTruncateConfirmation?
-    /// The loaded detail's `confirms_deep_truncate`; false until a detail says so (an older server never does).
+    /// The last loaded detail's `confirms_deep_truncate`: a detail without it is an older server's, which cuts at once.
     private var serverConfirmsDeepTruncate = false
     private(set) var cacheErrorMessage: String?
     public private(set) var lastError: Error?
@@ -213,7 +213,6 @@ public final class ChatViewModel {
         if let readOnly = session?.readOnly { isSessionReadOnly = readOnly }
         if let canBranch = session?.canBranch { self.canBranch = canBranch }
         if let assistantName = session?.assistantName { self.assistantName = assistantName }
-        if let confirms = session?.confirmsDeepTruncate { serverConfirmsDeepTruncate = confirms }
         if let session, session.statesEnabledToolsets { sessionToolsets = SessionToolsets(names: session.enabledToolsets) }
         // A detail relabels the workspace it reports, so a registry rename shows on the next load (TAL-303).
         if let workspace = session?.workspace, workspace == serverWorkspacePath {
@@ -1462,6 +1461,7 @@ public final class ChatViewModel {
                     Self.insertLocalOptimisticMessage(message, into: &mergedMessages)
                 }
                 applyReadOnlyState(from: session)
+                serverConfirmsDeepTruncate = session?.confirmsDeepTruncate == true
                 let newerSteerRows = pendingSteerRows(changedAfter: steerChangesAtFetch)
                 applyReloadedMessages(
                     mergedMessages,
@@ -1493,6 +1493,7 @@ public final class ChatViewModel {
             // After load arbitration only: a superseded response must not leave its
             // read-only flag behind once its transcript has been rejected.
             applyReadOnlyState(from: session)
+            serverConfirmsDeepTruncate = session?.confirmsDeepTruncate == true
             applyCompressionReference(from: session)
             applyBranchedFrom(from: session, modelContext: modelContext)
             let newerSteerRows = pendingSteerRows(changedAfter: steerChangesAtFetch)
