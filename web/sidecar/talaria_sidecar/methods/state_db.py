@@ -288,11 +288,44 @@ def _timestamp_value(value):
     return numeric if math.isfinite(numeric) else None
 
 
+def _is_continuation(parent: dict, child: dict) -> bool:
+    """The server's ``isContinuationSession``: ``child`` resumes ``parent`` after a compression or CLI close."""
+    lower = lambda v: str(v or "").strip().lower()  # noqa: E731
+    if lower(child.get("session_source")) == "fork":
+        return False
+    if lower(parent.get("source")) and lower(child.get("source")) and lower(parent.get("source")) != lower(child.get("source")):
+        return False
+    if parent.get("end_reason") not in ("compression", "cli_close"):
+        return False
+    if parent.get("ended_at") is None:
+        return True
+    try:
+        started, ended = float(child.get("started_at") or 0), float(parent["ended_at"])
+    except (TypeError, ValueError):
+        return False
+    return math.isfinite(started) and math.isfinite(ended) and started + 1.0 >= ended
+
+
+def _compression_lineage(records: list[dict], sid: str) -> list[str]:
+    """The server's ``stateDbCompressionLineage``: ``sid`` then each single continuation, up to 20 hops, root first."""
+    by_id = {r["id"]: r for r in records}
+    lineage, current = [sid], by_id.get(sid)
+    for _ in range(20):
+        if current is None:
+            break
+        nxt = [r for r in records if r["parent_id"] == current["id"] and _is_continuation(current, r)]
+        if len(nxt) != 1 or nxt[0]["id"] in lineage:
+            break
+        current = nxt[0]
+        lineage.append(current["id"])
+    return lineage
+
+
 class _ActiveWriteGuard(Exception):
     """Another Agent process holds a live turn lease or compression lock on a row the delete would remove."""
 
 
-def _delete_locked(sids: list[str], home: Path) -> bool:
+def _delete_locked(sid: str, home: Path, include_lineage: bool) -> bool:
     stale_complete = _process_stale_manifests(home)
     db_path = home / "state.db"
     if not db_path.exists():
@@ -301,12 +334,12 @@ def _delete_locked(sids: list[str], home: Path) -> bool:
     if agent_db is None:
         return False
     try:
-        return _delete_rows(sids, home, db_path, getattr(agent_db, "_guarded_ids", None)) and stale_complete
+        return _delete_rows(sid, include_lineage, home, db_path, getattr(agent_db, "_guarded_ids", None)) and stale_complete
     finally:
         _close(agent_db)
 
 
-def _delete_rows(sids: list[str], home: Path, db_path: Path, guarded_ids) -> bool:
+def _delete_rows(requested: str, include_lineage: bool, home: Path, db_path: Path, guarded_ids) -> bool:
     with closing(sqlite3.connect(str(db_path))) as conn:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
@@ -314,7 +347,7 @@ def _delete_rows(sids: list[str], home: Path, db_path: Path, guarded_ids) -> boo
         columns = {row[1] for row in conn.execute("PRAGMA table_info(sessions)").fetchall()}
         if not {"id", "parent_session_id"}.issubset(columns):
             return False
-        selected = ["id", "parent_session_id"] + [c if c in columns else f"NULL AS {c}" for c in ("model_config", "source", "end_reason", "started_at", "ended_at")]
+        selected = ["id", "parent_session_id"] + [c if c in columns else f"NULL AS {c}" for c in ("model_config", "source", "session_source", "end_reason", "started_at", "ended_at")]
         rows = conn.execute(f"SELECT {', '.join(selected)} FROM sessions").fetchall()
         records = []
         for row in rows:
@@ -330,7 +363,7 @@ def _delete_rows(sids: list[str], home: Path, db_path: Path, guarded_ids) -> boo
                     model_config, known = parsed, True
             records.append({
                 "id": row["id"], "parent_id": row["parent_session_id"], "delegate_from": model_config.get("_delegate_from"),
-                "branched_from": model_config.get("_branched_from"), "model_config_known": known, "source": row["source"],
+                "branched_from": model_config.get("_branched_from"), "model_config_known": known, "source": row["source"], "session_source": row["session_source"],
                 "end_reason": row["end_reason"], "started_at": row["started_at"], "ended_at": row["ended_at"],
             })
         by_id = {r["id"]: r for r in records}
@@ -385,8 +418,10 @@ def _delete_rows(sids: list[str], home: Path, db_path: Path, guarded_ids) -> boo
                 frontier = next_frontier
             return sorted(found - {sid})
 
-        # TAL-792: one transaction removes every requested row (a compression lineage, tip first) with its delegates.
-        plan = [(sid, delegates_of(sid)) for sid in dict.fromkeys(sids)]
+        # TAL-792: the compression continuations are resolved here, in the delete transaction, so one that a compression
+        # finished after the caller looked is guarded and removed too; one transaction removes them all, tip first.
+        sids = _compression_lineage(records, requested) if include_lineage else [requested]
+        plan = [(sid, delegates_of(sid)) for sid in reversed(sids)]
         all_removed = list(dict.fromkeys(i for sid, delegate_ids in plan for i in (sid, *delegate_ids)))
         # The Agent's own user-delete guard (Agent v0.21.6+), checked over every row before any is removed. A live
         # writer's turn lease or compression lock refuses the whole delete; expired or dead-holder guards are reclaimed.
@@ -430,14 +465,14 @@ def _delete_rows(sids: list[str], home: Path, db_path: Path, guarded_ids) -> boo
         return _process_manifests(conn, sessions_dir, alive_query=alive_after_commit)
 
 
-def delete_cli_session(home: Path, sids: list[str]) -> dict:
+def delete_cli_session(home: Path, sid: str, include_lineage: bool = False) -> dict:
     try:
         with _thread_lock(home), _process_lock(home):
-            return {"ok": _delete_locked(sids, home)}
+            return {"ok": _delete_locked(sid, home, include_lineage)}
     except _ActiveWriteGuard:  # the uncommitted transaction rolls back on close: nothing is removed
         return {"ok": False, "refused": "active_turn"}
     except Exception:  # noqa: BLE001
-        log.warning("Failed to delete CLI sessions %s from state.db", sids, exc_info=True)
+        log.warning("Failed to delete CLI session %s from state.db", sid, exc_info=True)
         return {"ok": False}
 
 
@@ -471,7 +506,6 @@ def register(registry) -> None:
     @registry.method("state_db.delete_cli_session")
     def delete(ctx: CallContext, params: dict) -> dict:
         sid = _session_id(params)
-        sids = params.get("session_ids") or [sid]
-        if not isinstance(sids, list) or not all(isinstance(i, str) and _is_safe_session_id(i) for i in [sid, *sids]):
+        if not _is_safe_session_id(sid):
             raise InvalidParams("unsafe session_id")
-        return delete_cli_session(profile_home_param(params).resolve(), sids)
+        return delete_cli_session(profile_home_param(params).resolve(), sid, params.get("include_compression_lineage") is True)

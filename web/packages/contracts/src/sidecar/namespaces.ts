@@ -121,10 +121,11 @@ export const STATE_DB_METHODS = {
   /** TAL-574: `manual` writes a user-requested title (rename or regenerate) with `user` provenance; otherwise it is an `llm` auto title. */
   'state_db.sync_title': { params: Session.extend({ title: z.string(), manual: z.boolean().optional() }), result: Ok },
   /**
-   * TAL-792: `session_ids` (default `[session_id]`, a compression lineage tip first) go in one transaction. `refused` when
-   * another Agent process holds a live turn lease or compression lock on any row the delete would remove; nothing is removed.
+   * TAL-792: `include_compression_lineage` also removes the session's compression continuations, resolved and removed in the
+   * same transaction (tip first). `refused` when another Agent process holds a live turn lease or compression lock on any
+   * row the delete would remove; nothing is removed.
    */
-  'state_db.delete_cli_session': { params: Session.extend({ session_ids: z.array(z.string().min(1)).min(1).optional() }), result: Ok.extend({ refused: SessionDeleteRefusedSchema.optional() }) },
+  'state_db.delete_cli_session': { params: Session.extend({ include_compression_lineage: z.boolean().optional() }), result: Ok.extend({ refused: SessionDeleteRefusedSchema.optional() }) },
   /** TAL-258: append one row through the Agent's `SessionDB.append_message` (bumps `message_count`); `ok` is false without a state.db. */
   'state_db.append_message': { params: Session.extend({ role: z.string().min(1), content: z.string(), tool_name: z.string().nullable().optional(), timestamp: z.number().nullable().optional() }), result: Ok },
 } as const

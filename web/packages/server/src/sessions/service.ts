@@ -119,10 +119,10 @@ export interface SessionServiceDeps {
     evictAgent: (sid: string, endSession?: boolean) => void
     closeTerminal: (sid: string) => void
     /**
-     * Python `delete_cli_session`: remove `sids` (tip first) from the profile's state.db in one transaction; `ok` is false
-     * on failure, with `refused` when another Agent process holds any of them (TAL-792).
+     * Python `delete_cli_session`: remove the session and its compression continuations from the profile's state.db in one
+     * transaction; `ok` is false on failure, with `refused` when another Agent process holds any of them (TAL-792).
      */
-    deleteCliSession: (profile: string | null, sid: string, sids: string[]) => Promise<SidecarResult<'state_db.delete_cli_session'>>
+    deleteCliSession: (profile: string | null, sid: string) => Promise<SidecarResult<'state_db.delete_cli_session'>>
   }
   attachmentDir: (sid: string) => string
   /** A deleted session can never be viewed, so its finished runs are cleared from the relay. */
@@ -1759,12 +1759,10 @@ export class SessionService {
 
   /** The session's state.db rows; resolves whether cleanup failed, and throws 409 `refused` when an Agent process holds a row. */
   private async deleteStateDbRows(profile: string | null, sid: string): Promise<boolean> {
-    // TAL-529: the compression continuations go too, tip first; the Agent's delete keeps and detaches them otherwise.
-    // TAL-792: all in one transaction, so a guard on any row refuses before any is removed.
-    let lineage: string[]
-    try { lineage = stateDbCompressionLineage(this.stateDbPath(profile), sid) } catch { return true }
+    // TAL-529: the compression continuations go too; the Agent's delete keeps and detaches them otherwise. TAL-792: the
+    // sidecar resolves them inside its delete transaction, so a guard on any of them refuses before anything is removed.
     let result: SidecarResult<'state_db.delete_cli_session'>
-    try { result = await this.deps.runtime.deleteCliSession(profile, sid, lineage.reverse()) } catch { return true }
+    try { result = await this.deps.runtime.deleteCliSession(profile, sid) } catch { return true }
     if (result.refused) throw new HttpFailure(409, 'In use by another Agent process. Try again later.', { refused: result.refused })
     return !result.ok
   }

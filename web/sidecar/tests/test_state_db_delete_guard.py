@@ -41,8 +41,8 @@ def _rows(home, sql: str) -> list:
         return [row[0] for row in db.execute(sql).fetchall()]
 
 
-def _delete(proc: SidecarProcess, home, session_id: str, lineage: list[str] | None = None) -> dict:
-    params = {"profile_home": str(home), "session_id": session_id, **({"session_ids": lineage} if lineage else {})}
+def _delete(proc: SidecarProcess, home, session_id: str, *, lineage: bool = False) -> dict:
+    params = {"profile_home": str(home), "session_id": session_id, **({"include_compression_lineage": True} if lineage else {})}
     result = proc.result("state_db.delete_cli_session", params)
     assert_matches("state_db.delete_cli_session", result)
     return result
@@ -92,22 +92,23 @@ def test_an_expired_guard_is_reclaimed_and_the_delete_proceeds(hermes_home) -> N
     assert _rows(hermes_home, "SELECT session_id FROM compression_locks") == []
 
 
-def test_a_guard_anywhere_in_the_compression_lineage_refuses_the_whole_delete(hermes_home) -> None:
+def test_the_lineage_is_resolved_and_guarded_inside_the_delete_transaction(hermes_home) -> None:
+    """The sidecar finds the compression continuations itself, in the delete transaction: a tip the caller never
+    named (a compression that finished after the caller looked) is guarded and deleted with its root."""
     _seed(hermes_home, "cli-root")
     _agent(hermes_home, f"""
         db.end_session("cli-root", "compression")
         db.create_session(session_id="cli-tip", source="cli", parent_session_id="cli-root")
         db.append_message("cli-tip", "user", "continued")
-        assert db.try_acquire_compression_lock("cli-root", {OTHER_PROCESS!r})
+        assert db.try_acquire_compression_lock("cli-tip", {OTHER_PROCESS!r})
     """)
     proc = SidecarProcess(hermes_home)
     try:
-        # Tip first, as the server sends the lineage: the root's lock refuses before the tip is removed.
-        assert _delete(proc, hermes_home, "cli-root", ["cli-tip", "cli-root"]) == {"ok": False, "refused": "active_turn"}
+        assert _delete(proc, hermes_home, "cli-root", lineage=True) == {"ok": False, "refused": "active_turn"}
         assert sorted(_rows(hermes_home, "SELECT id FROM sessions")) == ["cli-root", "cli-tip"]
         with closing(sqlite3.connect(hermes_home / "state.db")) as db, db:
             db.execute("UPDATE compression_locks SET expires_at = 1")
-        assert _delete(proc, hermes_home, "cli-root", ["cli-tip", "cli-root"]) == {"ok": True}
+        assert _delete(proc, hermes_home, "cli-root", lineage=True) == {"ok": True}
     finally:
         proc.close()
     assert _rows(hermes_home, "SELECT id FROM sessions") == []
