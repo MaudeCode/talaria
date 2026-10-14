@@ -139,6 +139,7 @@ def legacy(text, tokens, keep_tokens):
 OUTPUT = "cc -c build.c: warning: unused variable\\n" * 2000
 payloads = {
     "exit": {"output": OUTPUT, "exit_code": 2, "error": None},
+    "exit_camel": {"output": OUTPUT, "exitCode": 1},
     "error": {"output": OUTPUT, "error": "403 Forbidden\\n  (token expired)"},
     "unsuccessful": {"output": OUTPUT, "success": False},
     "killed": {"output": OUTPUT, "exit_code": 137, "completion_reason": "killed"},
@@ -170,10 +171,12 @@ def test_a_capped_tool_result_keeps_its_failure_outcome(tmp_path) -> None:
     for keep in (2000, 100):
         # Both the head-kept and the note-only branch end on the outcome the cut removed.
         assert out[f"exit/{keep}"]["tail"].endswith("visible transcript. FAILED: exit 2]")
+        # The server's outcome rule (``toolOutcome``) reads both spellings.
+        assert out[f"exit_camel/{keep}"]["tail"].endswith("visible transcript. FAILED: exit 1]")
         assert out[f"error/{keep}"]["tail"].endswith("visible transcript. FAILED: 403 Forbidden (token expired)]")
         assert out[f"unsuccessful/{keep}"]["tail"].endswith("visible transcript. FAILED]")
         # A process the agent killed exits non-zero by design; like successes and plain text it keeps today's note.
         for name in ("killed", "success", "plain"):
             assert out[f"{name}/{keep}"]["legacy"], (name, keep, out[f"{name}/{keep}"]["tail"])
     # The outcome counts against the remaining budget.
-    assert all(out[f"{name}/2000"]["fits"] for name in ("exit", "error", "unsuccessful", "killed", "success", "plain"))
+    assert all(out[f"{name}/2000"]["fits"] for name in ("exit", "exit_camel", "error", "unsuccessful", "killed", "success", "plain"))

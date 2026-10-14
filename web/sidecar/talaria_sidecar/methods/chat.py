@@ -282,7 +282,7 @@ def _rough_tokens(text: str) -> int:
 
 def _tool_failure_outcome(text: str) -> str:
     """`` FAILED: <error>`` for a JSON tool payload with a top-level ``error`` / ``success: false``, `` FAILED: exit N`` for
-    a non-zero ``exit_code`` the agent did not kill itself, else ``""``: the Agent's compression-stub rule
+    a non-zero ``exit_code`` / ``exitCode`` the agent did not kill itself, else ``""``: the Agent's compression-stub rule
     (``_payload_failure_suffix``, ``_sum_process_manage``). Payloads put these fields after ``output``, so a cut drops them."""
     try:
         payload = json.loads(text)
@@ -293,6 +293,7 @@ def _tool_failure_outcome(text: str) -> str:
     error = payload.get("error")
     if not error and payload.get("success") is not False:
         code = payload.get("exit_code")
+        code = payload.get("exitCode") if code is None else code
         if not isinstance(code, int) or isinstance(code, bool) or code == 0 or payload.get("completion_reason") == "killed":
             return ""
         error = f"exit {code}"
