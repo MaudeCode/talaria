@@ -1,14 +1,17 @@
 """``aux.complete`` with ``main_fallback``: the session's main model answers when no auxiliary client is configured
-or the auxiliary call fails (predecessor ``_llm_git_commit_message``)."""
+or the auxiliary call fails (predecessor ``_llm_git_commit_message``). Also how calls reach the Agent's ``call_llm``
+(TAL-823): its per-task permit wait and clients that cannot stream."""
 
 from __future__ import annotations
 
 import sys
+import threading
 import types
+from types import SimpleNamespace
 
 import pytest
 
-from talaria_sidecar.errors import RpcError
+from talaria_sidecar.errors import Cancelled, RpcError
 from talaria_sidecar.methods import aux, chat
 
 
@@ -122,3 +125,56 @@ def test_main_model_fallback_skips_memory_and_closes_the_agent(monkeypatch) -> N
     assert not agent.synced, f"the diff reached long-term memory: {agent.synced}"
     assert agent.kwargs["skip_memory"] is True and agent.kwargs["skip_background_review"] is True
     assert agent.closed and agent.end_session_on_close is False
+
+
+class CancelledCtx(Ctx):
+    def check_cancelled(self):
+        raise Cancelled()
+
+
+def _response(text: str):
+    return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=text), finish_reason="stop")], usage=None)
+
+
+def _install_call_llm(monkeypatch, client, call_llm, semaphore=None) -> None:
+    _patch(monkeypatch, lambda task, *, main_runtime=None: (client, "aux-model"))
+    module = sys.modules["agent.auxiliary_client"]
+    module.call_llm = call_llm
+    module._acquire_sync_aux_semaphore = lambda task: semaphore
+
+
+STREAMING_CLIENT = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=None, with_streaming_response=None)))
+
+
+@pytest.mark.parametrize("model", [None, "m"], ids=["auxiliary route", "explicit model"])
+def test_a_cancelled_call_queued_for_the_task_permit_never_dispatches(monkeypatch, model) -> None:
+    calls = []
+
+    def call_llm(task, *, main_runtime=None, messages, stream=False, **kwargs):
+        calls.append(stream)
+        return iter(()) if stream else _response("late title")
+
+    # Another title holds the task's only ``max_concurrency`` permit.
+    semaphore = threading.BoundedSemaphore(1)
+    semaphore.acquire()
+    _install_call_llm(monkeypatch, STREAMING_CLIENT, call_llm, semaphore)
+    with pytest.raises(Cancelled):
+        aux.complete("title_generation", MESSAGES, main_runtime=None, max_tokens=None, temperature=None, ctx=CancelledCtx(), model=model)
+    assert calls == []
+
+
+def test_a_client_that_cannot_stream_is_asked_once_without_stream(monkeypatch) -> None:
+    calls = []
+
+    def permit_wrapper(response):
+        # The Agent's ``_release_sync_semaphore_after_stream`` over the complete response a shim returns for ``stream=True``.
+        yield from response
+
+    def call_llm(task, *, main_runtime=None, messages, stream=False, **kwargs):
+        calls.append(stream)
+        return permit_wrapper(_response("Shim title")) if stream else _response("Shim title")
+
+    shim = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=None)))
+    _install_call_llm(monkeypatch, shim, call_llm, threading.BoundedSemaphore(2))
+    result = aux.complete("title_generation", MESSAGES, main_runtime=None, max_tokens=None, temperature=None, ctx=Ctx())
+    assert result["text"] == "Shim title" and calls == [False]

@@ -73,7 +73,7 @@ def _main_model_completion(messages: list, runtime: dict, *, task: str) -> dict:
     return {"model": str(runtime.get("model") or ""), "text": str((result or {}).get("final_response") or "").strip(), "usage": None, "finish_reason": None}
 
 
-def _model_completion(task: str, messages: list, *, model: str, provider: str | None, max_tokens: int | None, temperature: float | None) -> dict:
+def _model_completion(task: str, messages: list, *, model: str, provider: str | None, max_tokens: int | None, temperature: float | None, ctx: CallContext) -> dict:
     """TAL-258 (predecessor ``_agent_text_completion``): the named model answers itself through the Agent's ``call_llm``,
     reasoning off and no tools, so the caller sees its ``finish_reason``. ``max_tokens`` reaches the provider on the routes
     the Agent forwards a cap on. ``credential_missing`` when the model has no credential."""
@@ -82,11 +82,9 @@ def _model_completion(task: str, messages: list, *, model: str, provider: str | 
     runtime = _resolve_runtime(provider, model)
     if not runtime.get("api_key"):
         raise RpcError(f"no credential for model {model or 'default'!r}", condition="credential_missing")
-    from agent.auxiliary_client import call_llm
-
     resolved = model or str(runtime.get("model") or "")
-    response = call_llm(
-        task, provider=provider or runtime.get("provider"), model=resolved, base_url=runtime.get("base_url"), api_key=runtime.get("api_key"),
+    response = _call_llm(
+        task, ctx, provider=provider or runtime.get("provider"), model=resolved, base_url=runtime.get("base_url"), api_key=runtime.get("api_key"),
         api_mode=runtime.get("api_mode"), messages=messages, max_tokens=int(max_tokens) if max_tokens else None,
         temperature=float(temperature) if temperature is not None else None, reasoning_config={"enabled": False}, timeout=30.0,
     )
@@ -109,7 +107,7 @@ def complete(task: str, messages: list, *, main_runtime: dict | None, max_tokens
     auxiliary call fails, as the predecessor's git commit-message route did. An explicit ``model`` skips the auxiliary
     route: that model answers (``_model_completion``)."""
     if model is not None:
-        return _model_completion(task, messages, model=model, provider=provider, max_tokens=max_tokens, temperature=temperature)
+        return _model_completion(task, messages, model=model, provider=provider, max_tokens=max_tokens, temperature=temperature, ctx=ctx)
     try:
         from agent.auxiliary_client import get_text_auxiliary_client
     except Exception as exc:  # noqa: BLE001
@@ -123,28 +121,47 @@ def complete(task: str, messages: list, *, main_runtime: dict | None, max_tokens
         if main_fallback and main_runtime and main_runtime.get("model"):
             return _main_model_completion(messages, main_runtime, task=task)
         raise RpcError(f"no auxiliary model configured for task {task!r}", condition="aux_unconfigured")
-    create = _aux_request(task, client, model, messages, main_runtime=main_runtime, max_tokens=max_tokens, temperature=temperature)
+    create = _aux_request(task, client, model, messages, main_runtime=main_runtime, max_tokens=max_tokens, temperature=temperature, ctx=ctx)
+    # The Agent's Codex, Anthropic and Bedrock shims answer ``stream=True`` whole, so they are asked once without it.
+    stream = hasattr(client.chat.completions, "with_streaming_response")
     if main_fallback and main_runtime and main_runtime.get("model"):
         try:
-            return _stream_completion(create, model, ctx=ctx)
+            return _stream_completion(create, model, stream=stream, ctx=ctx)
         except RpcError:
             raise
         except Exception as exc:  # noqa: BLE001 - predecessor fell back to the main model
             log.debug("auxiliary %s call failed; falling back to the main model: %s", task, exc)
             return _main_model_completion(messages, main_runtime, task=task)
-    return _stream_completion(create, model, ctx=ctx)
+    return _stream_completion(create, model, stream=stream, ctx=ctx)
 
 
-def _streaming_call_llm():
-    """The Agent's ``call_llm`` when it streams with a caller's main runtime, else None (older Agents)."""
+def _call_llm(task: str, ctx: CallContext, **kwargs):
+    """The Agent's ``call_llm`` once the task's ``max_concurrency`` permit is free. ``call_llm`` waits for the permit
+    uncancellably and then dispatches a paid request, so the wait happens here, where a cancelled call stops."""
+    from agent import auxiliary_client
+
+    acquire = getattr(auxiliary_client, "_acquire_sync_aux_semaphore", None)
+    semaphore = acquire(task) if callable(acquire) else None
+    if semaphore is not None:
+        while not semaphore.acquire(timeout=0.25):
+            ctx.check_cancelled()
+        # ponytail: the permit goes back for call_llm to take (holding it would deadlock call_llm's own acquire); a
+        # concurrent call can win it in between, and this call then waits inside call_llm for one in-flight request.
+        semaphore.release()
+    ctx.check_cancelled()
+    return auxiliary_client.call_llm(task, **kwargs)
+
+
+def _call_llm_streams() -> bool:
+    """Whether the Agent's ``call_llm`` streams with a caller's main runtime (older Agents cannot)."""
     try:
         from agent.auxiliary_client import call_llm
     except ImportError:
-        return None
-    return call_llm if {"stream", "main_runtime"} <= inspect.signature(call_llm).parameters.keys() else None
+        return False
+    return {"stream", "main_runtime"} <= inspect.signature(call_llm).parameters.keys()
 
 
-def _aux_request(task: str, client, model: str, messages: list, *, main_runtime: dict | None, max_tokens: int | None, temperature: float | None):
+def _aux_request(task: str, client, model: str, messages: list, *, main_runtime: dict | None, max_tokens: int | None, temperature: float | None, ctx: CallContext):
     """``create(**stream)`` for one auxiliary request. TAL-823: through the Agent's ``call_llm`` funnel (plugin hooks, a
     custom provider's ``extra_body``, watchdogs, response unwrap, fallbacks) when it streams; else the raw client."""
     kwargs: dict = {"messages": messages}
@@ -152,22 +169,21 @@ def _aux_request(task: str, client, model: str, messages: list, *, main_runtime:
         kwargs["max_tokens"] = int(max_tokens)
     if temperature is not None:
         kwargs["temperature"] = float(temperature)
-    call_llm = _streaming_call_llm()
-    if call_llm is not None:
-        return lambda **stream: call_llm(task, main_runtime=main_runtime, **kwargs, **stream)
+    if _call_llm_streams():
+        return lambda **stream: _call_llm(task, ctx, main_runtime=main_runtime, **kwargs, **stream)
     return lambda **stream: client.chat.completions.create(model=model, **kwargs, **stream)
 
 
-def _stream_completion(create, model: str, *, ctx: CallContext) -> dict:
+def _stream_completion(create, model: str, *, stream: bool, ctx: CallContext) -> dict:
+    if not stream:
+        return _response_result(model, create())
     text_parts: list[str] = []
     usage = None
     finish_reason = None
     try:
-        stream = create(stream=True)
-        if hasattr(stream, "choices"):  # a shim that ignores ``stream=True`` answered whole
-            return _response_result(model, stream)
+        chunks = create(stream=True)
         try:
-            for chunk in stream:
+            for chunk in chunks:
                 ctx.check_cancelled()
                 choices = getattr(chunk, "choices", None) or []
                 delta = getattr(choices[0], "delta", None) if choices else None
@@ -182,7 +198,7 @@ def _stream_completion(create, model: str, *, ctx: CallContext) -> dict:
                     usage = _usage_dict(chunk_usage)
         finally:
             # Releases the connection and the Agent's per-task concurrency permit on cancel or failure, too.
-            close = getattr(stream, "close", None)
+            close = getattr(chunks, "close", None)
             if callable(close):
                 with contextlib.suppress(Exception):
                     close()
