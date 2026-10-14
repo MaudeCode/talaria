@@ -2120,6 +2120,35 @@ describe('chat turns through the sidecar', () => {
     expect(deletes).toEqual([sid])
   })
 
+  it('TAL-792: a session another Agent process is running or compressing answers 409 refused and stays; bulk delete skips it', async () => {
+    const persisted = async (): Promise<string> => {
+      const sid = await newSession(s)
+      const stored = s.deps.sessionStore.get(sid)
+      stored.messages = [{ role: 'user', content: 'guarded' }]
+      s.deps.sessionStore.save(stored)
+      return sid
+    }
+    const [guarded, free] = [await persisted(), await persisted()]
+    const file = (sid: string): string => join(s.state, 'sessions', `${sid}.json`)
+    sidecar.respond('state_db.delete_cli_session', (params) => (params.session_id === guarded ? { ok: false, refused: 'active_turn' } : { ok: true }))
+    try {
+      const res = await post(s, '/api/session/delete', { session_id: guarded })
+      expect(res.status).toBe(409)
+      expect(await json(res)).toEqual({ error: 'In use by another Agent process. Try again later.', refused: 'active_turn' })
+      expect(existsSync(file(guarded))).toBe(true)
+      expect((await s.get(`/api/session?session_id=${guarded}`)).status).toBe(200)
+
+      const bulk = await json(await post(s, '/api/sessions/bulk', { action: 'delete', session_ids: [guarded, free] }))
+      expect(bulk.results).toEqual([
+        { session_id: guarded, ok: false, status: 409, error: 'In use by another Agent process. Try again later.', refused: 'active_turn' },
+        { session_id: free, ok: true, state_db_cleanup_failed: false },
+      ])
+      expect([existsSync(file(guarded)), existsSync(file(free))]).toEqual([true, false])
+    } finally {
+      sidecar.respond('state_db.delete_cli_session', () => ({ ok: true }))
+    }
+  })
+
   it('a delegated subagent child is view-only: no goal, side question, or turn can run on it', async () => {
     const sid = await newSession(s)
     const child = s.deps.sessionStore.get(sid)

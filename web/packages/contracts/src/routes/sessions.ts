@@ -1,5 +1,6 @@
 import { oc } from '@orpc/contract'
 import { z } from 'zod'
+import { SessionDeleteRefusedSchema } from '../sidecar/namespaces.js'
 import { SessionIdSchema, SessionRowSchema, SessionEnvelopeSchema, SessionsListSchema, SessionNewRequestSchema, DraftSchema, DraftResponseSchema, ProjectSchema, ProjectsSchema, SessionStatusSchema, SessionUsageSchema, SessionDeleteResultSchema, ShareReadSchema, ShareCreateResponseSchema, ActivitySceneRowSchema, ToolResultViewSchema, SessionSchema, AttachmentSchema } from '../views.js'
 
 /** Session, project, share, and draft routes. Response rows are loose: the sidecar carries operator-defined extras. */
@@ -39,9 +40,12 @@ export const SessionsBulkRequestSchema = z.object({
   action: z.enum(['archive', 'unarchive', 'delete']),
   session_ids: z.array(SessionIdSchema).min(1).max(200).refine((ids) => new Set(ids).size === ids.length, 'session_ids must be unique'),
 })
-/** Each id's outcome: `status`/`error` are what the single-session route would have answered; one failure never stops the rest. */
+/**
+ * Each id's outcome: `status`/`error`/`refused` are what the single-session route would have answered; one failure never
+ * stops the rest.
+ */
 export const SessionsBulkResultSchema = z.object({
-  results: z.array(z.object({ session_id: z.string(), ok: z.boolean(), status: z.number().int().optional(), error: z.string().optional(), state_db_cleanup_failed: z.boolean().optional() })),
+  results: z.array(z.object({ session_id: z.string(), ok: z.boolean(), status: z.number().int().optional(), error: z.string().optional(), state_db_cleanup_failed: z.boolean().optional(), refused: SessionDeleteRefusedSchema.optional() })),
 })
 
 /** TAL-258: the handoff dock's body. `since` is a unix time (a numeric string is accepted); only later messages count. */
@@ -131,7 +135,7 @@ export const sessionsContract = {
     usage: oc.route({ method: 'GET', path: '/api/session/usage', tags }).input(SessionQuery).output(SessionUsageSchema),
     new: oc.route({ method: 'POST', path: '/api/session/new', tags }).input(SessionNewRequestSchema).output(SessionEnvelopeSchema.extend({ worktree_skipped: z.string().optional() })),
     rename: oc.route({ method: 'POST', path: '/api/session/rename', tags }).input(SessionBody.extend({ title: z.string() })).output(SessionEnvelopeSchema),
-    delete: oc.route({ method: 'POST', path: '/api/session/delete', tags }).input(z.object({ session_id: z.string() })).output(SessionDeleteResultSchema),
+    delete: oc.route({ method: 'POST', path: '/api/session/delete', tags, summary: 'Delete a session and its Agent state.db rows. 409 with `refused: active_turn` while another Agent process runs or compresses it; the session is kept.' }).input(z.object({ session_id: z.string() })).output(SessionDeleteResultSchema),
     pin: oc.route({ method: 'POST', path: '/api/session/pin', tags }).input(SessionBody.extend({ pinned: z.boolean().optional() })).output(OkSchema.extend({ session: SessionRowSchema })),
     archive: oc.route({ method: 'POST', path: '/api/session/archive', tags }).input(SessionBody.extend({ archived: z.boolean().optional() })).output(OkSchema.extend({ session: SessionRowSchema })),
     move: oc.route({ method: 'POST', path: '/api/session/move', tags }).input(SessionBody.extend({ project_id: z.string().nullable().optional() })).output(OkSchema.extend({ session: SessionRowSchema })),

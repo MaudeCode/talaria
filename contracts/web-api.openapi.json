@@ -2743,6 +2743,12 @@
                           },
                           "state_db_cleanup_failed": {
                             "type": "boolean"
+                          },
+                          "refused": {
+                            "enum": [
+                              "active_turn"
+                            ],
+                            "type": "string"
                           }
                         },
                         "required": [
@@ -9480,6 +9486,7 @@
     "/api/session/delete": {
       "post": {
         "operationId": "session.delete",
+        "summary": "Delete a session and its Agent state.db rows. 409 with `refused: active_turn` while another Agent process runs or compresses it; the session is kept.",
         "tags": [
           "sessions"
         ],

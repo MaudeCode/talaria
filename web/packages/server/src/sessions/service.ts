@@ -3,7 +3,7 @@
  * detail payload, list and search, and every mutation with its guards.
  * Runtime concerns owned by other domains arrive through `SessionServiceDeps`.
  */
-import type { ChatReadiness, PendingSteer, RecoveryAudit, RecoveryRepair } from '@maudecode/talaria-web-contracts'
+import type { ChatReadiness, PendingSteer, RecoveryAudit, RecoveryRepair, SidecarResult } from '@maudecode/talaria-web-contracts'
 import type { RunJournal } from './journal.js'
 import { str } from '../util.js'
 import { randomUUID } from 'node:crypto'
@@ -118,8 +118,11 @@ export interface SessionServiceDeps {
     /** Drop the session's cached agent; `endSession` (delete/clear) also ends its approval grants and parked approvals. */
     evictAgent: (sid: string, endSession?: boolean) => void
     closeTerminal: (sid: string) => void
-    /** Python `delete_cli_session`: remove the session's rows from the profile's state.db; resolves false on failure. */
-    deleteCliSession: (profile: string | null, sid: string) => Promise<boolean>
+    /**
+     * Python `delete_cli_session`: remove the session and its compression continuations from the profile's state.db in one
+     * transaction; `ok` is false on failure, with `refused` when another Agent process holds any of them (TAL-792).
+     */
+    deleteCliSession: (profile: string | null, sid: string) => Promise<SidecarResult<'state_db.delete_cli_session'>>
   }
   attachmentDir: (sid: string) => string
   /** A deleted session can never be viewed, so its finished runs are cleared from the relay. */
@@ -1729,9 +1732,14 @@ export class SessionService {
     // Python `_is_messaging_session_id`: decided before the JSON is gone, from WebUI metadata or the Agent's row.
     const isMessaging = this.isMessagingSession(sid)
     if (this.activeRunBlocking(sid)) throw new HttpFailure(409, 'Session has an active run; stop it before deleting')
+    let stateDbCleanupFailed = false
     try {
-      await this.store.withLock(sid, () => {
+      await this.store.withLock(sid, async () => {
         if (this.activeRunBlocking(sid)) throw new HttpFailure(409, 'Session has an active run; stop it before deleting')
+        // TAL-792: state.db goes first, so another Agent process running or compressing the session refuses the delete
+        // before anything of Talaria's is removed. Python: the Agent/CLI transcript goes too (else a claimable CLI row
+        // resurfaces in the sidebar), but a messaging channel's memory is never erased from the WebUI.
+        if (!isMessaging && !orphaned) stateDbCleanupFailed = await this.deleteStateDbRows(eventProfile, sid)
         // A public share outlives its session file, and revokeShare needs the session, so revoke it first.
         try { this.deps.shares.revoke(this.store.get(sid, { metadataOnly: true })) } catch (error) { if (!(error instanceof SessionNotFound)) throw error }
         if (!this.store.deleteFiles(sid)) throw new HttpFailure(500, 'Failed to delete session data')
@@ -1745,21 +1753,20 @@ export class SessionService {
     // Python `delete_run_journal` (#3802): a deleted session leaves no replayable run journal behind.
     try { this.deps.journal?.deleteSession(sid) } catch { /* ignore */ }
     this.deps.runtime.closeTerminal(sid)
-    // Python: the Agent/CLI transcript in state.db goes too (else a claimable CLI row resurfaces in the sidebar), but a
-    // messaging channel's memory is never erased from the WebUI; the actual outcome is reported.
-    let stateDbCleanupFailed = false
-    if (!isMessaging && !orphaned) {
-      // TAL-529: the compression continuations go too, tip first; the Agent's delete keeps and detaches them otherwise.
-      let lineage: string[] = []
-      try { lineage = stateDbCompressionLineage(this.stateDbPath(eventProfile), sid) } catch { stateDbCleanupFailed = true }
-      for (const id of lineage.reverse()) {
-        try { if (!(await this.deps.runtime.deleteCliSession(eventProfile, id))) stateDbCleanupFailed = true } catch { stateDbCleanupFailed = true }
-      }
-    }
     this.publish('session_delete', eventProfile)
     // Only a sidecar session is ever published to the relay.
     if (hadSidecar) this.deps.clearRelayCompletions?.(sid, eventProfile)
     return { ok: true, state_db_cleanup_failed: stateDbCleanupFailed, ...retained }
+  }
+
+  /** The session's state.db rows; resolves whether cleanup failed, and throws 409 `refused` when an Agent process holds a row. */
+  private async deleteStateDbRows(profile: string | null, sid: string): Promise<boolean> {
+    // TAL-529: the compression continuations go too; the Agent's delete keeps and detaches them otherwise. TAL-792: the
+    // sidecar resolves them inside its delete transaction, so a guard on any of them refuses before anything is removed.
+    let result: SidecarResult<'state_db.delete_cli_session'>
+    try { result = await this.deps.runtime.deleteCliSession(profile, sid) } catch { return true }
+    if (result.refused) throw new HttpFailure(409, 'In use by another Agent process. Try again later.', { refused: result.refused })
+    return !result.ok
   }
 
   cleanup(zeroOnly: boolean): Record<string, unknown> {

@@ -288,11 +288,74 @@ def _timestamp_value(value):
     return numeric if math.isfinite(numeric) else None
 
 
-def _delete_locked(sid: str, home: Path) -> bool:
+def _is_continuation(parent: dict, child: dict) -> bool:
+    """The server's ``isContinuationSession``: ``child`` resumes ``parent`` after a compression or CLI close."""
+    lower = lambda v: str(v or "").strip().lower()  # noqa: E731
+    if lower(child.get("session_source")) == "fork":
+        return False
+    if lower(parent.get("source")) and lower(child.get("source")) and lower(parent.get("source")) != lower(child.get("source")):
+        return False
+    if parent.get("end_reason") not in ("compression", "cli_close"):
+        return False
+    if parent.get("ended_at") is None:
+        return True
+    try:
+        started, ended = float(child.get("started_at") or 0), float(parent["ended_at"])
+    except (TypeError, ValueError):
+        return False
+    return math.isfinite(started) and math.isfinite(ended) and started + 1.0 >= ended
+
+
+def _compression_lineage(records: list[dict], sid: str) -> list[str]:
+    """The server's ``stateDbCompressionLineage``: ``sid`` then each single continuation, up to 20 hops, root first."""
+    by_id = {r["id"]: r for r in records}
+    lineage, current = [sid], by_id.get(sid)
+    for _ in range(20):
+        if current is None:
+            break
+        nxt = [r for r in records if r["parent_id"] == current["id"] and _is_continuation(current, r)]
+        if len(nxt) != 1 or nxt[0]["id"] in lineage:
+            break
+        current = nxt[0]
+        lineage.append(current["id"])
+    return lineage
+
+
+class _ActiveWriteGuard(Exception):
+    """Another Agent process holds a live turn lease or compression lock on a row the delete would remove."""
+
+
+def _delete_locked(sid: str, home: Path, include_lineage: bool) -> bool:
     stale_complete = _process_stale_manifests(home)
     db_path = home / "state.db"
     if not db_path.exists():
         return False
+    agent_db = _session_db(home)
+    if agent_db is None:
+        return False
+    try:
+        guarded = _write_guard_check(agent_db)
+        if guarded is None:  # fail closed: without the Agent's guard, a live writer's rows cannot be told apart
+            log.warning("Agent has no session write-guard check; state.db rows are kept")
+            return False
+        return _delete_rows(sid, include_lineage, home, db_path, guarded) and stale_complete
+    finally:
+        _close(agent_db)
+
+
+def _write_guard_check(agent_db):
+    """The Agent's own user-delete guard, ``(conn, ids) -> bool``: true when a live turn lease or compression lock protects
+    any id; expired or dead-holder guards are reclaimed. ``_guarded_ids`` from v0.21.6, the per-row check before it."""
+    guarded_ids = getattr(agent_db, "_guarded_ids", None)
+    if guarded_ids is not None:
+        return lambda conn, ids: bool(guarded_ids(conn, ids))
+    rejects = getattr(agent_db, "_write_guards_reject", None)
+    if rejects is not None:
+        return lambda conn, ids: any(rejects(conn, i, allow_closed_compression_parent=True) for i in ids)
+    return None
+
+
+def _delete_rows(requested: str, include_lineage: bool, home: Path, db_path: Path, guarded) -> bool:
     with closing(sqlite3.connect(str(db_path))) as conn:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
@@ -300,7 +363,7 @@ def _delete_locked(sid: str, home: Path) -> bool:
         columns = {row[1] for row in conn.execute("PRAGMA table_info(sessions)").fetchall()}
         if not {"id", "parent_session_id"}.issubset(columns):
             return False
-        selected = ["id", "parent_session_id"] + [c if c in columns else f"NULL AS {c}" for c in ("model_config", "source", "end_reason", "started_at", "ended_at")]
+        selected = ["id", "parent_session_id"] + [c if c in columns else f"NULL AS {c}" for c in ("model_config", "source", "session_source", "end_reason", "started_at", "ended_at")]
         rows = conn.execute(f"SELECT {', '.join(selected)} FROM sessions").fetchall()
         records = []
         for row in rows:
@@ -316,7 +379,7 @@ def _delete_locked(sid: str, home: Path) -> bool:
                     model_config, known = parsed, True
             records.append({
                 "id": row["id"], "parent_id": row["parent_session_id"], "delegate_from": model_config.get("_delegate_from"),
-                "branched_from": model_config.get("_branched_from"), "model_config_known": known, "source": row["source"],
+                "branched_from": model_config.get("_branched_from"), "model_config_known": known, "source": row["source"], "session_source": row["session_source"],
                 "end_reason": row["end_reason"], "started_at": row["started_at"], "ended_at": row["ended_at"],
             })
         by_id = {r["id"]: r for r in records}
@@ -339,47 +402,58 @@ def _delete_locked(sid: str, home: Path) -> bool:
                 return by_id.get(record["delegate_from"]) or {}
             return by_id.get(record["parent_id"]) or {}
 
-        preserved = {r["id"] for r in records if r["id"] != sid and must_preserve(r, lineage_parent(r))}
-        while True:
-            descendants = {r["id"] for r in records if r["id"] != sid and r["parent_id"] in preserved}
-            new_ids = descendants - preserved
-            if not new_ids:
-                break
-            preserved.update(new_ids)
-        found, frontier = {sid}, {sid}
-        while frontier:
-            next_frontier = set()
-            for record in records:
-                row_id = record["id"]
-                if row_id in found or row_id in preserved:
-                    continue
-                parent_id, delegate_from = record["parent_id"], record["delegate_from"]
-                if delegate_from not in frontier and parent_id not in frontier:
-                    continue
-                if must_preserve(record, lineage_parent(record)):
-                    continue
-                if delegate_from is not None:
-                    if delegate_from in frontier:
+        def delegates_of(sid: str) -> list[str]:
+            preserved = {r["id"] for r in records if r["id"] != sid and must_preserve(r, lineage_parent(r))}
+            while True:
+                descendants = {r["id"] for r in records if r["id"] != sid and r["parent_id"] in preserved}
+                new_ids = descendants - preserved
+                if not new_ids:
+                    break
+                preserved.update(new_ids)
+            found, frontier = {sid}, {sid}
+            while frontier:
+                next_frontier = set()
+                for record in records:
+                    row_id = record["id"]
+                    if row_id in found or row_id in preserved:
+                        continue
+                    parent_id, delegate_from = record["parent_id"], record["delegate_from"]
+                    if delegate_from not in frontier and parent_id not in frontier:
+                        continue
+                    if must_preserve(record, lineage_parent(record)):
+                        continue
+                    if delegate_from is not None:
+                        if delegate_from in frontier:
+                            next_frontier.add(row_id)
+                        continue
+                    if record["source"] != "subagent":
+                        continue
+                    if parent_id in frontier and record["model_config_known"]:
                         next_frontier.add(row_id)
-                    continue
-                if record["source"] != "subagent":
-                    continue
-                if parent_id in frontier and record["model_config_known"]:
-                    next_frontier.add(row_id)
-            found.update(next_frontier)
-            frontier = next_frontier
-        delegate_ids = sorted(found - {sid})
-        all_removed = [sid, *delegate_ids]
+                found.update(next_frontier)
+                frontier = next_frontier
+            return sorted(found - {sid})
+
+        # TAL-792: the compression continuations are resolved here, in the delete transaction, so one that a compression
+        # finished after the caller looked is guarded and removed too; one transaction removes them all, tip first.
+        sids = _compression_lineage(records, requested) if include_lineage else [requested]
+        plan = [(sid, delegates_of(sid)) for sid in reversed(sids)]
+        all_removed = list(dict.fromkeys(i for sid, delegate_ids in plan for i in (sid, *delegate_ids)))
+        # The Agent's own user-delete guard, checked over every row before any is removed. A live writer's turn lease or
+        # compression lock refuses the whole delete; expired or dead-holder guards are reclaimed.
+        if guarded(conn, all_removed):
+            raise _ActiveWriteGuard
         placeholders = ",".join("?" * len(all_removed))
-        for child_id in delegate_ids:
-            conn.execute("DELETE FROM messages WHERE session_id = ?", (child_id,))
-        for child_id in delegate_ids:
-            conn.execute("UPDATE sessions SET parent_session_id = NULL WHERE parent_session_id = ?", (child_id,))
-        for child_id in delegate_ids:
-            conn.execute("DELETE FROM sessions WHERE id = ?", (child_id,))
-        conn.execute("UPDATE sessions SET parent_session_id = NULL WHERE parent_session_id = ?", (sid,))
-        conn.execute("DELETE FROM messages WHERE session_id = ?", (sid,))
-        conn.execute("DELETE FROM sessions WHERE id = ?", (sid,))
+        for sid, delegate_ids in plan:
+            for child_id in delegate_ids:
+                conn.execute("DELETE FROM messages WHERE session_id = ?", (child_id,))
+            for child_id in delegate_ids:
+                conn.execute("UPDATE sessions SET parent_session_id = NULL WHERE parent_session_id = ?", (child_id,))
+            for child_id in delegate_ids:
+                conn.execute("DELETE FROM sessions WHERE id = ?", (child_id,))
+            conn.execute("UPDATE sessions SET parent_session_id = NULL WHERE parent_session_id = ?", (sid,))
+            conn.execute("DELETE FROM messages WHERE session_id = ?", (sid,))
+            conn.execute("DELETE FROM sessions WHERE id = ?", (sid,))
         tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
         for table in ("compression_locks", "session_model_usage", "telegram_dm_topic_bindings"):
             if table in tables:
@@ -404,17 +478,18 @@ def _delete_locked(sid: str, home: Path) -> bool:
             except Exception:  # noqa: BLE001 - fail closed: treat as alive
                 return set(ids)
 
-        cleanup_complete = _process_manifests(conn, sessions_dir, alive_query=alive_after_commit)
-        return stale_complete and cleanup_complete
+        return _process_manifests(conn, sessions_dir, alive_query=alive_after_commit)
 
 
-def delete_cli_session(home: Path, sid: str) -> bool:
+def delete_cli_session(home: Path, sid: str, include_lineage: bool = False) -> dict:
     try:
         with _thread_lock(home), _process_lock(home):
-            return _delete_locked(sid, home)
+            return {"ok": _delete_locked(sid, home, include_lineage)}
+    except _ActiveWriteGuard:  # the uncommitted transaction rolls back on close: nothing is removed
+        return {"ok": False, "refused": "active_turn"}
     except Exception:  # noqa: BLE001
         log.warning("Failed to delete CLI session %s from state.db", sid, exc_info=True)
-        return False
+        return {"ok": False}
 
 
 def register(registry) -> None:
@@ -449,4 +524,4 @@ def register(registry) -> None:
         sid = _session_id(params)
         if not _is_safe_session_id(sid):
             raise InvalidParams("unsafe session_id")
-        return {"ok": delete_cli_session(profile_home_param(params).resolve(), sid)}
+        return delete_cli_session(profile_home_param(params).resolve(), sid, params.get("include_compression_lineage") is True)

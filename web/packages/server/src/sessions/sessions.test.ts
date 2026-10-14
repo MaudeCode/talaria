@@ -1759,12 +1759,14 @@ describe('a compressed Web session follows its state.db lineage (TAL-529)', () =
     expect(await served(sid)).toEqual([...settled, 'CLI on tip', 'CLI reply'])
   })
 
-  it('deleting the session removes its compression continuation too, tip first', async () => {
+  it('deleting the session removes its compression continuation too, resolved inside one sidecar transaction (TAL-792)', async () => {
     const sid = await compressedSession()
-    const deleted: string[] = []
-    sidecar.respond('state_db.delete_cli_session', (params) => { deleted.push(str(params.session_id)); return { ok: true } })
+    const calls: unknown[] = []
+    sidecar.respond('state_db.delete_cli_session', (params) => { calls.push(params); return { ok: true } })
     expect(await json(await post(s, '/api/session/delete', { session_id: sid }))).toEqual({ ok: true, state_db_cleanup_failed: false })
-    expect(deleted).toEqual([`${sid}-tip`, sid])
+    // The sidecar resolves the continuations inside its delete transaction, so a compression finishing meanwhile is covered.
+    expect(calls).toEqual([expect.objectContaining({ session_id: sid, include_compression_lineage: true })])
+    expect(calls[0]).not.toHaveProperty('session_ids')
   })
 })
 
